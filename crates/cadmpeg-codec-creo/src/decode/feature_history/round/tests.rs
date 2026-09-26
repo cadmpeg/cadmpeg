@@ -81,7 +81,12 @@ fn chamfer_does_not_use_a_cone_prototype_as_model_space_placement() {
         });
 
     assert_eq!(
-        super::chamfer_constant_distance(&scan, &cadmpeg_ir::document::CadIr::empty(), 4),
+        super::chamfer_constant_distance(
+            &scan,
+            &cadmpeg_ir::document::CadIr::empty(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            4
+        ),
         None
     );
 }
@@ -157,10 +162,26 @@ fn chamfer_uses_transferred_model_plane_carrier() {
         source_object: None,
     });
 
-    assert_eq!(super::chamfer_constant_distance(&scan, &ir, 914), Some(0.5));
+    assert_eq!(
+        super::chamfer_constant_distance(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            914
+        ),
+        Some(0.5)
+    );
 
     let transferred_plane_row = scan.surfaces.rows.pop().expect("support plane row");
-    assert_eq!(super::chamfer_constant_distance(&scan, &ir, 914), Some(0.5));
+    assert_eq!(
+        super::chamfer_constant_distance(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            914
+        ),
+        Some(0.5)
+    );
     scan.surfaces.rows.push(transferred_plane_row);
 
     scan.planes.outlines.push(crate::surface::OutlinePlane {
@@ -170,7 +191,15 @@ fn chamfer_uses_transferred_model_plane_carrier() {
         u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
         offset: 31,
     });
-    assert_eq!(super::chamfer_constant_distance(&scan, &ir, 914), Some(0.5));
+    assert_eq!(
+        super::chamfer_constant_distance(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            914
+        ),
+        Some(0.5)
+    );
 
     let mut conflicting_ir = ir.clone();
     match &mut conflicting_ir.model.surfaces[0].geometry {
@@ -189,7 +218,12 @@ fn chamfer_uses_transferred_model_plane_carrier() {
         _ => panic!("transferred plane geometry"),
     }
     assert_eq!(
-        super::chamfer_constant_distance(&scan, &conflicting_ir, 914),
+        super::chamfer_constant_distance(
+            &scan,
+            &conflicting_ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            914
+        ),
         None
     );
 }
@@ -320,11 +354,27 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
         },
     ]);
 
-    assert_eq!(super::chamfer_constant_distance(&scan, &ir, 914), Some(0.5));
+    assert_eq!(
+        super::chamfer_constant_distance(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            914
+        ),
+        Some(0.5)
+    );
 
     let duplicate = scan.surfaces.parameters[0].clone();
     scan.surfaces.parameters.push(duplicate);
-    assert_eq!(super::chamfer_constant_distance(&scan, &ir, 914), None);
+    assert_eq!(
+        super::chamfer_constant_distance(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            914
+        ),
+        None
+    );
 }
 
 #[test]
@@ -369,7 +419,15 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
         },
     ]);
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    assert_eq!(super::round_support_radius(&scan, &ir, 913), Some(0.5));
+    assert_eq!(
+        super::round_support_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            913
+        ),
+        Some(0.5)
+    );
 
     for (id, x) in [(3, -9.0), (4, -8.0)] {
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
@@ -386,7 +444,15 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
             source_object: None,
         });
     }
-    assert_eq!(super::round_support_radius(&scan, &ir, 913), Some(0.5));
+    assert_eq!(
+        super::round_support_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            913
+        ),
+        Some(0.5)
+    );
 
     match &mut ir.model.surfaces[0].geometry {
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -403,7 +469,15 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
         }
         _ => panic!("transferred support plane"),
     }
-    assert_eq!(super::round_support_radius(&scan, &ir, 913), None);
+    assert_eq!(
+        super::round_support_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            913
+        ),
+        None
+    );
 
     match &mut ir.model.surfaces[0].geometry {
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -421,10 +495,19 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
         _ => panic!("transferred support plane"),
     }
     scan.features.affected_ids[0].ids.insert(3, 99);
-    assert_eq!(super::round_support_radius(&scan, &ir, 913), None);
+    assert_eq!(
+        super::round_support_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            913
+        ),
+        None
+    );
     let frame = super::round_support_envelope_cylinder(
         &scan,
         &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
         913,
         crate::surface::Type24RoundEnvelope {
             diameter: 2.0,
@@ -440,6 +523,7 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
     assert!(super::round_support_envelope_cylinder(
         &scan,
         &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
         913,
         crate::surface::Type24RoundEnvelope {
             diameter: 2.0,
@@ -492,17 +576,49 @@ fn round_support_radius_requires_distinct_parallel_cap_planes() {
     ]);
     let ir = cadmpeg_ir::document::CadIr::empty();
 
-    assert_eq!(super::round_support_radius(&scan, &ir, 913), Some(0.5));
+    assert_eq!(
+        super::round_support_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            913
+        ),
+        Some(0.5)
+    );
 
     scan.planes.positional_frames[2].normal = cadmpeg_ir::units::UnitVector3::Y_AXIS;
     scan.planes.positional_frames[3].normal = cadmpeg_ir::units::UnitVector3::Y_AXIS;
-    assert_eq!(super::round_support_radius(&scan, &ir, 913), None);
+    assert_eq!(
+        super::round_support_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            913
+        ),
+        None
+    );
 
     scan.features.affected_ids[0].ids[0] = 3;
-    assert_eq!(super::round_support_radius(&scan, &ir, 913), None);
+    assert_eq!(
+        super::round_support_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            913
+        ),
+        None
+    );
 
     scan.features.affected_ids[0].ids = vec![1, 1, 3, 4];
-    assert_eq!(super::round_support_radius(&scan, &ir, 913), None);
+    assert_eq!(
+        super::round_support_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            913
+        ),
+        None
+    );
 }
 
 #[test]
@@ -552,7 +668,14 @@ fn round_placed_cylinder_radius_rejects_duplicate_model_surfaces() {
         },
     ]);
 
-    assert_eq!(super::round_placed_cylinder_radius(&ir, &row), None);
+    assert_eq!(
+        super::round_placed_cylinder_radius(
+            &ir,
+            &row,
+            &crate::decode::source_carriers::SourceUnitCarriers::default()
+        ),
+        None
+    );
 }
 
 #[test]
@@ -617,7 +740,13 @@ fn round_uses_complete_placed_cylinders_with_cap_and_support_rows() {
     }
 
     assert_eq!(
-        super::round_constant_radius(&scan, &ir, 913).expect("round constant radius"),
+        super::round_constant_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            913
+        )
+        .expect("round constant radius"),
         Some(0.5)
     );
 }
@@ -678,7 +807,13 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
     }
 
     assert_eq!(
-        super::round_constant_radius(&scan, &ir, 913).expect("round constant radius"),
+        super::round_constant_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            913
+        )
+        .expect("round constant radius"),
         Some(0.5)
     );
     if let cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
@@ -699,12 +834,24 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
         .expect("valid CylinderSurface fixture");
     }
     assert_eq!(
-        super::round_constant_radius(&scan, &ir, 913).expect("round constant radius"),
+        super::round_constant_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            913
+        )
+        .expect("round constant radius"),
         None
     );
     ir.model.surfaces.pop();
     assert_eq!(
-        super::round_constant_radius(&scan, &ir, 913).expect("round constant radius"),
+        super::round_constant_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            913
+        )
+        .expect("round constant radius"),
         Some(0.5)
     );
 }
@@ -810,7 +957,13 @@ fn legacy_round_dimension_supplies_constant_radius() {
         });
     let ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
-        super::round_constant_radius(&scan, &ir, 913).expect("round constant radius"),
+        super::round_constant_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            913
+        )
+        .expect("round constant radius"),
         Some(2.0)
     );
 }
@@ -828,7 +981,13 @@ fn legacy_variable_round_dimension_withholds_radius() {
         });
     let ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
-        super::round_constant_radius(&scan, &ir, 913).expect("round constant radius"),
+        super::round_constant_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            913
+        )
+        .expect("round constant radius"),
         None
     );
 }

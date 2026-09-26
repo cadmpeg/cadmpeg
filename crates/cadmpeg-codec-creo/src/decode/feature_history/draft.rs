@@ -153,6 +153,7 @@ pub(super) fn thicken_feature_definition(
 pub(super) fn linear_extrusion_extent_and_direction(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
     let transforms = scan
@@ -175,37 +176,43 @@ pub(super) fn linear_extrusion_extent_and_direction(
         _ => None,
     };
     if let ([transform], Some(definition)) = (transforms.as_slice(), definition) {
-        if let Some(extent) = generated_arc_cylinder_extent(scan, ir, definition, transform)
-            .or_else(|| {
-                feature_plane_equations(scan, ir, feature_id).and_then(|planes| {
-                    extrusion_extent_and_direction(transform.origin(), transform.normal(), planes)
-                })
+        if let Some(extent) = generated_arc_cylinder_extent(
+            scan,
+            ir,
+            source_carriers,
+            definition,
+            transform,
+        )
+        .or_else(|| {
+            feature_plane_equations(scan, ir, source_carriers, feature_id).and_then(|planes| {
+                extrusion_extent_and_direction(transform.origin(), transform.normal(), planes)
             })
-        {
+        }) {
             return Some(extent);
         }
     }
-    generated_cap_plane_extent(scan, ir, feature_id)
+    generated_cap_plane_extent(scan, ir, source_carriers, feature_id)
         .or_else(|| {
             unique_transform.and_then(|transform| {
-                generated_bounded_cylinder_extent(scan, ir, feature_id, transform)
+                generated_bounded_cylinder_extent(scan, ir, source_carriers, feature_id, transform)
             })
         })
         .or_else(|| {
             unique_transform.and_then(|transform| {
-                generated_nurbs_translation_extent(scan, ir, feature_id, transform)
+                generated_nurbs_translation_extent(scan, ir, source_carriers, feature_id, transform)
             })
         })
         .or_else(|| {
-            (transforms.is_empty())
-                .then_some(())
-                .and_then(|()| generated_rectilinear_plane_extent(scan, ir, feature_id, section))
+            (transforms.is_empty()).then_some(()).and_then(|()| {
+                generated_rectilinear_plane_extent(scan, ir, source_carriers, feature_id, section)
+            })
         })
 }
 
 pub(in super::super) fn schema_feature_definition(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     schema_class: Option<SchemaClass>,
     kind: &str,
@@ -252,7 +259,7 @@ pub(in super::super) fn schema_feature_definition(
             .then(|| counterbore_dimensions(scan, ir, feature_id))
             .flatten();
         let stepped_directed = (stepped_form == Some(HoleForm::Counterbore))
-            .then(|| counterbore_directed_placement(scan, ir, feature_id))
+            .then(|| counterbore_directed_placement(scan, ir, source_carriers, feature_id))
             .flatten();
         let stepped_axis = (stepped_form == Some(HoleForm::Counterbore)
             && stepped_directed.is_none())
@@ -474,8 +481,13 @@ pub(in super::super) fn schema_feature_definition(
     }
     if schema_class == Some(SchemaClass::Round) {
         let mut observed_radii = round_observed_radii(scan, feature_id);
-        observed_radii.extend(round_placed_cylinder_radii(scan, ir, feature_id));
-        let radius = round_constant_radius(scan, ir, feature_id)?
+        observed_radii.extend(round_placed_cylinder_radii(
+            scan,
+            ir,
+            source_carriers,
+            feature_id,
+        ));
+        let radius = round_constant_radius(scan, ir, source_carriers, feature_id)?
             .and_then(cadmpeg_ir::scalar::PositiveLength::new)
             .map_or_else(
                 || {
@@ -507,7 +519,7 @@ pub(in super::super) fn schema_feature_definition(
                     cadmpeg_ir::features::edge_treatments::ChamferGroup {
                         edges: feature_edge_selection(scan, ir, feature_id)
                             .unwrap_or(EdgeSelection::Unresolved),
-                        spec: chamfer_constant_distance(scan, ir, feature_id)
+                        spec: chamfer_constant_distance(scan, ir, source_carriers, feature_id)
                             .and_then(cadmpeg_ir::scalar::PositiveLength::new)
                             .map_or_else(
                                 || ChamferSpec::Unresolved { form: None },
@@ -658,7 +670,8 @@ pub(in super::super) fn schema_feature_definition(
             output_kind.is_some(),
             preceding_features_establish_body(ir),
         );
-        let extent_and_direction = linear_extrusion_extent_and_direction(scan, ir, feature_id);
+        let extent_and_direction =
+            linear_extrusion_extent_and_direction(scan, ir, source_carriers, feature_id);
         let construction = extent_and_direction
             .map(|(extent, direction)| (Some(Vector3::from(direction)), extent));
         let (direction, extent) = construction.unwrap_or((None, unresolved_extrude_extent()));
@@ -734,7 +747,9 @@ pub(in super::super) fn schema_feature_definition(
                     },
                 ));
             }
-            if let Some(definition) = reconciled_datum_plane_definition(scan, ir, *surface_id) {
+            if let Some(definition) =
+                reconciled_datum_plane_definition(scan, ir, source_carriers, *surface_id)
+            {
                 return Ok(definition);
             }
             return Ok(IrFeatureDefinition::Operation(
@@ -833,7 +848,11 @@ pub(in super::super) fn schema_feature_definition(
             preceding_features_establish_body(ir),
         );
         return Ok(extrude_feature_definition_with_profile(
-            scan, ir, feature_id, op,
+            scan,
+            ir,
+            source_carriers,
+            feature_id,
+            op,
         ));
     }
     if schema_class == Some(SchemaClass::Surface)
@@ -851,11 +870,13 @@ pub(in super::super) fn schema_feature_definition(
     }
     if schema_class.and_then(schema_operation_kind).is_none() {
         if let Some(definition) =
-            named_or_referenced_feature_definition(scan, ir, feature_id, kind)?
+            named_or_referenced_feature_definition(scan, ir, source_carriers, feature_id, kind)?
         {
             return Ok(definition);
         }
-        if let Some(definition) = unbounded_feature_plane_definition(scan, ir, feature_id) {
+        if let Some(definition) =
+            unbounded_feature_plane_definition(scan, ir, source_carriers, feature_id)
+        {
             return Ok(definition);
         }
     }
@@ -894,9 +915,10 @@ pub(in super::super) fn datum_plane_feature_definition(
 fn reconciled_datum_plane_definition(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     surface_id: u32,
 ) -> Option<IrFeatureDefinition> {
-    let plane = reconciled_model_plane(&placed_planes(scan), ir, surface_id)?;
+    let plane = reconciled_model_plane(&placed_planes(scan), ir, source_carriers, surface_id)?;
     let normal = Vector3::from(plane.normal);
     let u_axis = placed_plane_surfaces(scan)
         .get(&surface_id)
@@ -912,7 +934,7 @@ fn reconciled_datum_plane_definition(
             let [surface] = surfaces.as_slice() else {
                 return None;
             };
-            match &surface.geometry {
+            match source_carriers.surface_geometry(surface) {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
                     let u_axis = plane_surface.frame().reference().as_raw();
                     Some(*u_axis)
@@ -935,6 +957,7 @@ fn reconciled_datum_plane_definition(
 pub(in super::super) fn unbounded_feature_plane_definition(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
 ) -> Option<IrFeatureDefinition> {
     let rows = scan
@@ -952,7 +975,7 @@ pub(in super::super) fn unbounded_feature_plane_definition(
         && row.next_surface == 0
         && crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(*row))
     .then_some(())?;
-    reconciled_datum_plane_definition(scan, ir, row.id)
+    reconciled_datum_plane_definition(scan, ir, source_carriers, row.id)
 }
 
 pub(in super::super) fn numbered_feature_name_has_family(name: &str, family: &str) -> bool {

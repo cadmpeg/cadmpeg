@@ -14,7 +14,7 @@ use crate::vecmath::normalize;
 use crate::vecmath::unit_length;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
-use cadmpeg_ir::geometry::{nurbs::NurbsSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{nurbs::NurbsSurface, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{IdentityKey, SurfaceId};
 
 /// General reconstructed sweep-extent geometry tolerance.
@@ -203,6 +203,7 @@ mod tests {
 pub(in super::super) fn generated_bounded_cylinder_extent(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     transform: Option<&crate::placement::FeatureSectionTransform>,
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
@@ -242,24 +243,23 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
             .iter()
             .filter(|surface| surface.id == id)
             .collect::<Vec<_>>();
+        let source_geometry = match surfaces.as_slice() {
+            [] => None,
+            [surface] => Some(source_carriers.surface_geometry(surface)),
+            _ => return None,
+        };
         match kind {
-            CylinderExtentSurface::Plane => match surfaces.as_slice() {
-                [] => {
+            CylinderExtentSurface::Plane => match source_geometry {
+                None => {
                     if let Some(plane) = local_planes.get(&row.id) {
                         planes.push((plane.origin, plane.normal));
                     }
                 }
-                [Surface {
-                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)),
-                    ..
-                }] => {
-                    let plane = reconciled_model_plane(&local_planes, ir, row.id)?;
+                Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))) => {
+                    let plane = reconciled_model_plane(&local_planes, ir, source_carriers, row.id)?;
                     planes.push((plane.origin, plane.normal));
                 }
-                [Surface {
-                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }),
-                    ..
-                }] => {
+                Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })) => {
                     if let Some(plane) = local_planes.get(&row.id) {
                         planes.push((plane.origin, plane.normal));
                     }
@@ -267,16 +267,11 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
                 _ => return None,
             },
             CylinderExtentSurface::Carrier => {
-                match surfaces.as_slice() {
-                    [Surface {
-                        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }),
-                        ..
-                    }] => {}
-                    [Surface {
-                        geometry:
-                            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
-                        ..
-                    }] => {
+                match source_geometry {
+                    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })) => {}
+                    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                        cylinder_surface,
+                    ))) => {
                         let origin = cylinder_surface.origin().get();
                         let axis = *cylinder_surface.frame().axis();
                         let parameters = crate::surface::unique_surface_parameter(
@@ -445,6 +440,7 @@ pub(in super::super) fn nurbs_translation_span(
 pub(in super::super) fn generated_nurbs_translation_extent(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     transform: Option<&crate::placement::FeatureSectionTransform>,
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
@@ -484,34 +480,32 @@ pub(in super::super) fn generated_nurbs_translation_extent(
             .iter()
             .filter(|surface| surface.id == id)
             .collect::<Vec<_>>();
+        let source_geometry = match surfaces.as_slice() {
+            [] => None,
+            [surface] => Some(source_carriers.surface_geometry(surface)),
+            _ => return None,
+        };
         match kind {
             TranslationExtentSurface::Plane => {
-                let plane = match surfaces.as_slice() {
-                    []
-                    | [Surface {
-                        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }),
-                        ..
-                    }] => local_planes.get(&row.id).copied(),
-                    [Surface {
-                        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)),
-                        ..
-                    }] => Some(reconciled_model_plane(&local_planes, ir, row.id)?),
+                let plane = match source_geometry {
+                    None | Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })) => {
+                        local_planes.get(&row.id).copied()
+                    }
+                    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))) => Some(
+                        reconciled_model_plane(&local_planes, ir, source_carriers, row.id)?,
+                    ),
                     _ => return None,
                 };
                 if let Some(plane) = plane {
                     planes.push((plane.origin, plane.normal));
                 }
             }
-            TranslationExtentSurface::Carrier => match surfaces.as_slice() {
-                [] => {}
-                [Surface {
-                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
-                    ..
-                }] => carriers.push(nurbs_translation_span(nurbs)?),
-                [Surface {
-                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }),
-                    ..
-                }] => {}
+            TranslationExtentSurface::Carrier => match source_geometry {
+                None => {}
+                Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))) => {
+                    carriers.push(nurbs_translation_span(nurbs)?);
+                }
+                Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })) => {}
                 _ => return None,
             },
         }
@@ -689,6 +683,7 @@ fn rectilinear_extent_from_section_plane(
 pub(in super::super) fn generated_rectilinear_plane_extent(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     section: Option<&crate::feature::definitions::FeatureSection3d>,
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
@@ -730,16 +725,17 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
             .iter()
             .filter(|surface| surface.id == id)
             .collect::<Vec<_>>();
-        let plane = match surfaces.as_slice() {
-            [] => return None,
-            [Surface {
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }),
-                ..
-            }] => local_planes.get(&row.id).copied(),
-            [Surface {
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)),
-                ..
-            }] => Some(reconciled_model_plane(&local_planes, ir, row.id)?),
+        let source_geometry = match surfaces.as_slice() {
+            [surface] => source_carriers.surface_geometry(surface),
+            _ => return None,
+        };
+        let plane = match source_geometry {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => {
+                local_planes.get(&row.id).copied()
+            }
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => Some(
+                reconciled_model_plane(&local_planes, ir, source_carriers, row.id)?,
+            ),
             _ => return None,
         };
         let Some(plane) = plane else {
@@ -910,30 +906,45 @@ fn derived_blind_extrusion_span(
 pub(in super::super) fn resolved_feature_extrusion_span(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     definition: &crate::feature::definitions::FeatureDefinition,
     transform: &crate::placement::FeatureSectionTransform,
 ) -> Option<ExtrusionSpan> {
     let feature_id = feature_id_for_section_transform(definition, transform)?;
-    generated_arc_cylinder_extent(scan, ir, definition, transform)
+    generated_arc_cylinder_extent(scan, ir, source_carriers, definition, transform)
         .and_then(|(extent, direction)| derived_blind_extrusion_span(transform, &extent, direction))
         .or_else(|| {
-            feature_plane_equations(scan, ir, feature_id)
+            feature_plane_equations(scan, ir, source_carriers, feature_id)
                 .and_then(|planes| extrusion_span(transform.origin(), transform.normal(), planes))
         })
         .or_else(|| {
-            generated_cap_plane_extent(scan, ir, feature_id).and_then(|(extent, direction)| {
+            generated_cap_plane_extent(scan, ir, source_carriers, feature_id).and_then(
+                |(extent, direction)| derived_blind_extrusion_span(transform, &extent, direction),
+            )
+        })
+        .or_else(|| {
+            generated_bounded_cylinder_extent(
+                scan,
+                ir,
+                source_carriers,
+                feature_id,
+                Some(transform),
+            )
+            .and_then(|(extent, direction)| {
                 derived_blind_extrusion_span(transform, &extent, direction)
             })
         })
         .or_else(|| {
-            generated_bounded_cylinder_extent(scan, ir, feature_id, Some(transform)).and_then(
-                |(extent, direction)| derived_blind_extrusion_span(transform, &extent, direction),
+            generated_nurbs_translation_extent(
+                scan,
+                ir,
+                source_carriers,
+                feature_id,
+                Some(transform),
             )
-        })
-        .or_else(|| {
-            generated_nurbs_translation_extent(scan, ir, feature_id, Some(transform)).and_then(
-                |(extent, direction)| derived_blind_extrusion_span(transform, &extent, direction),
-            )
+            .and_then(|(extent, direction)| {
+                derived_blind_extrusion_span(transform, &extent, direction)
+            })
         })
 }
 

@@ -727,8 +727,14 @@ fn named_revolve_transfers_profile_axis() {
             construction,
             op: BooleanOp::NewBody,
         },
-    )) = named_feature_definition(&scan, &ir, 822, "Revolve")
-        .expect("a named revolve states no blank key")
+    )) = named_feature_definition(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        822,
+        "Revolve",
+    )
+    .expect("a named revolve states no blank key")
     else {
         panic!("named revolve axis");
     };
@@ -754,8 +760,14 @@ fn named_extrude_with_evaluated_body_is_new_body() {
 
     let Some(cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::Extrude { op, solid, .. },
-    )) = named_feature_definition(&scan, &ir, 822, "Extrude")
-        .expect("a named extrude states no blank key")
+    )) = named_feature_definition(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        822,
+        "Extrude",
+    )
+    .expect("a named extrude states no blank key")
     else {
         panic!("named extrude definition");
     };
@@ -778,8 +790,15 @@ fn schema_numbered_extrude_with_evaluated_body_is_new_body() {
     });
 
     let IrFeatureDefinition::Operation(IrFeatureOperation::Extrude { op, solid, .. }) =
-        schema_feature_definition(&scan, &ir, 822, None, "Extrude 822")
-            .expect("valid test fixture")
+        schema_feature_definition(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            822,
+            None,
+            "Extrude 822",
+        )
+        .expect("valid test fixture")
     else {
         panic!("schema numbered extrude definition");
     };
@@ -826,17 +845,27 @@ fn conflicting_section_sweep_names_remain_unresolved() {
         "Revolve 822",
     ] {
         assert!(
-            named_feature_definition(&scan, &ir, 822, kind)
-                .expect("a conflicting name states no blank key")
-                .is_none(),
+            named_feature_definition(
+                &scan,
+                &ir,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                822,
+                kind
+            )
+            .expect("a conflicting name states no blank key")
+            .is_none(),
             "conflicting section-sweep name projected: {kind}"
         );
     }
-    assert!(
-        named_or_referenced_feature_definition(&scan, &ir, 822, "Native Feature")
-            .expect("a native feature states no blank key")
-            .is_none()
-    );
+    assert!(named_or_referenced_feature_definition(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        822,
+        "Native Feature"
+    )
+    .expect("a native feature states no blank key")
+    .is_none());
 }
 
 #[test]
@@ -865,11 +894,15 @@ fn conflicting_display_states_do_not_select_reference_family() {
         });
     let ir = CadIr::empty();
 
-    assert!(
-        named_or_referenced_feature_definition(&scan, &ir, 822, "Native Feature")
-            .expect("a native feature states no blank key")
-            .is_none()
-    );
+    assert!(named_or_referenced_feature_definition(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        822,
+        "Native Feature"
+    )
+    .expect("a native feature states no blank key")
+    .is_none());
 }
 
 #[test]

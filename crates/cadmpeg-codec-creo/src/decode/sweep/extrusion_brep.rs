@@ -96,6 +96,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     diagnostics: &mut crate::decode::surfaces::brep::BrepTransferDiagnostics,
+    source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
@@ -124,7 +125,9 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         let Some(sketch_id) = model_sketch_id(scan, definition) else {
             continue;
         };
-        let Some(span) = resolved_feature_extrusion_span(scan, ir, definition, transform) else {
+        let Some(span) =
+            resolved_feature_extrusion_span(scan, ir, source_carriers, definition, transform)
+        else {
             continue;
         };
         let feature_key = IdentityKey::from(feature_id);

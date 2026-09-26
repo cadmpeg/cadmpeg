@@ -688,7 +688,7 @@ pub(in super::super) fn build_ir(
         &mut source_carriers,
     )?;
     let geometry_generator_feature_count =
-        emit_model_features(ctx, scan, &mut ir, &mut annotations)?;
+        emit_model_features(ctx, scan, &mut ir, &mut annotations, &source_carriers)?;
     let (feature_result_topology_count, feature_result_edge_count) = finish_feature_transfers(
         ctx,
         scan,

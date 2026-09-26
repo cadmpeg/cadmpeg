@@ -234,10 +234,22 @@ pub(super) fn transfer_and_record_scanned_geometry(
     let mut brep_diagnostics = diagnostics;
     let feature_revolution_brep_count =
         transfer_resolved_revolution_breps(ctx, scan, ir, annotations, transfer_losses)?;
-    let feature_circular_extrusion_brep_count =
-        transfer_resolved_circular_extrusion_breps(ctx, scan, ir, annotations, transfer_losses)?;
-    let feature_extrusion_brep_count =
-        transfer_resolved_extrusion_breps(ctx, scan, ir, annotations, &mut brep_diagnostics)?;
+    let feature_circular_extrusion_brep_count = transfer_resolved_circular_extrusion_breps(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
+    let feature_extrusion_brep_count = transfer_resolved_extrusion_breps(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        &mut brep_diagnostics,
+        source_carriers,
+    )?;
     retain_unresolved_surface_carriers(ctx, scan, ir, annotations, source_carriers)?;
     let transferred_part_product = transfer_part_product(ctx, scan, ir, annotations)?;
     let decoded_feature_skamp_count = scan
