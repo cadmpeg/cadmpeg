@@ -60,11 +60,11 @@ fn duplicate_typed_fields_cannot_replace_a_native_arena() {
         };
         let mut namespace = NativeNamespace::default();
         namespace
-            .set_arena("records", &[record("second")])
+            .set_arena(&crate::native::test_ctx(), "records", &[record("second")])
             .expect("distinct keys are legal");
         let before = namespace.clone();
         let error = namespace
-            .set_arena("records", &[record("first")])
+            .set_arena(&crate::native::test_ctx(), "records", &[record("first")])
             .expect_err("duplicate fields must not collapse to their last value");
         assert!(error.to_string().contains("duplicate key first"), "{error}");
         assert_eq!(namespace, before);
@@ -129,7 +129,7 @@ fn raw_json_values_use_the_same_canonical_native_admission() {
         document
             .native
             .namespace_mut("future")
-            .set_arena("records", &[record])
+            .set_arena(&crate::native::test_ctx(), "records", &[record])
             .expect("raw fields have ordinary JSON semantics");
         let wire = serde_json::to_value(&document).expect("document writes");
         let admitted: crate::CadIr = serde_json::from_value(wire.clone()).expect("document reads");
@@ -152,7 +152,7 @@ fn raw_json_values_use_the_same_canonical_native_admission() {
         .expect("object fixture");
     let mut namespace = NativeNamespace::default();
     namespace
-        .set_arena("records", &[raw])
+        .set_arena(&crate::native::test_ctx(), "records", &[raw])
         .expect("raw object record");
     assert_eq!(
         namespace.arenas()["records"][0].field("value"),
@@ -166,7 +166,7 @@ fn raw_json_values_use_the_same_canonical_native_admission() {
             raw: RawValue::from_string(json.to_owned()).expect("raw JSON retains duplicate keys"),
         };
         let error = namespace
-            .set_arena("records", &[record])
+            .set_arena(&crate::native::test_ctx(), "records", &[record])
             .expect_err("duplicate raw keys");
         assert!(error.to_string().contains("duplicate key a"), "{error}");
         assert_eq!(namespace, before);
@@ -175,6 +175,7 @@ fn raw_json_values_use_the_same_canonical_native_admission() {
     let ordinary = serde_json::json!({"$serde_json::private::RawValue": "null"});
     namespace
         .set_arena(
+            &crate::native::test_ctx(),
             "records",
             &[serde_json::json!({
                 "id": "test:native:record#ordinary", "value": ordinary.clone(),

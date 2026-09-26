@@ -141,6 +141,7 @@ fn registered_arena(key: &str) -> Result<(), CodecError> {
 /// be an observable change. On non-empty input the records are serialized under
 /// `key`.
 pub(super) fn store_arena<T: Serialize>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     key: &str,
     records: &[T],
@@ -150,12 +151,13 @@ pub(super) fn store_arena<T: Serialize>(
         return Ok(());
     }
     let namespace = ir.native.namespace_mut("creo");
-    namespace.set_arena(key, records)?;
+    namespace.set_arena(ctx, key, records)?;
     Ok(())
 }
 
 /// Annotate each record with `annotate_each`, then store them as arena `key`.
 pub(super) fn emit_arena<T, F>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     key: &str,
@@ -169,12 +171,13 @@ where
     for record in records {
         annotate_each(annotations, record);
     }
-    store_arena(ir, key, records)
+    store_arena(ctx, ir, key, records)
 }
 
 /// Emit an arena whose provenance comes entirely from each record's own fields.
 #[expect(clippy::too_many_arguments)]
 pub(super) fn emit_uniform<T: Serialize>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     key: &str,
@@ -185,7 +188,7 @@ pub(super) fn emit_uniform<T: Serialize>(
     tag: &str,
     exactness: Exactness,
 ) -> Result<(), CodecError> {
-    emit_arena(ir, annotations, key, records, |annotations, record| {
+    emit_arena(ctx, ir, annotations, key, records, |annotations, record| {
         annotate(
             annotations,
             id(record),

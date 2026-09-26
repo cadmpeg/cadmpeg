@@ -140,9 +140,35 @@ fn x63_decode_counts_object_copies_in_retained_budget() {
 
     let mut options = DecodeOptions::default();
     options.policy.limits.max_retained_bytes = document.len() as u64;
-    let error = FcstdCodec
-        .decode(&mut Cursor::new(bytes), &options)
-        .expect_err("object text copies consume the retained budget before entry retention");
+    let mut error = None;
+    for _ in 0..256 {
+        let refused = FcstdCodec
+            .decode(&mut Cursor::new(&bytes), &options)
+            .expect_err("object text copies consume the retained budget before entry retention");
+        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            &refused
+        else {
+            panic!("expected retained refusal: {refused:?}");
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes
+        );
+        if limit.operation == "retain FCStd entry" {
+            let exact = limit.used + limit.additional - 1;
+            options.policy.limits.max_retained_bytes = exact;
+            error = Some(
+                FcstdCodec
+                    .decode(&mut Cursor::new(&bytes), &options)
+                    .expect_err("one byte below entry need refuses"),
+            );
+            break;
+        }
+        let next = limit.used + limit.additional;
+        assert!(next > options.policy.limits.max_retained_bytes);
+        options.policy.limits.max_retained_bytes = next;
+    }
+    let error = error.expect("entry charge reached within fixture admissions");
     assert!(
         matches!(
             &error,
@@ -674,7 +700,11 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     corrupted
         .native
         .namespace_mut("fcstd")
-        .set_arena("logical_ledger", &missing_payload)
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "logical_ledger",
+            &missing_payload,
+        )
         .expect("replace logical ledger");
     assert!(crate::validate_native(&corrupted).iter().any(|finding| {
         finding
@@ -792,7 +822,11 @@ fn native_validation_rejects_duplicate_extension_identity() {
     corrupted
         .native
         .namespace_mut("fcstd")
-        .set_arena("extensions", &extensions)
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "extensions",
+            &extensions,
+        )
         .expect("replace extensions");
     let findings = crate::validate_native(&corrupted);
     assert!(findings.iter().any(|finding| {

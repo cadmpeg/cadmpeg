@@ -41,11 +41,13 @@ use super::super::surfaces::brep::BrepTransferDiagnostics;
 /// Reference lines, circles, conics, and ellipse carriers, each annotated
 /// against the `MdlRefInfo` stream at the record offset.
 pub(super) fn emit_reference_arenas(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "reference_lines",
@@ -57,6 +59,7 @@ pub(super) fn emit_reference_arenas(
         Exactness::ByteExact,
     )?;
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "reference_circles",
@@ -68,6 +71,7 @@ pub(super) fn emit_reference_arenas(
         Exactness::Derived,
     )?;
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "reference_conics",
@@ -79,6 +83,7 @@ pub(super) fn emit_reference_arenas(
         Exactness::ByteExact,
     )?;
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "reference_ellipses",
@@ -98,6 +103,7 @@ pub(super) fn emit_reference_arenas(
 /// order the source streams are read; that order fixes the annotation stream
 /// numbering, so the emissions must not be reordered.
 pub(super) fn emit_geometry_arenas(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -105,6 +111,7 @@ pub(super) fn emit_geometry_arenas(
 ) -> Result<(), CodecError> {
     let surface_rows = surface_row_records(scan, &scan.surfaces.rows, "visibgeom");
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "surface_rows",
@@ -118,6 +125,7 @@ pub(super) fn emit_geometry_arenas(
     let nonvisible_surface_rows =
         surface_row_records(scan, &scan.surfaces.nonvisible_rows, "novisgeom");
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "nonvisible_surface_rows",
@@ -134,6 +142,7 @@ pub(super) fn emit_geometry_arenas(
         "cross_section_geometry",
     );
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "cross_section_surface_rows",
@@ -146,6 +155,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     let surface_contours = surface_contour_records(scan, &scan.surfaces.contours, "visibgeom");
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "surface_contours",
@@ -159,6 +169,7 @@ pub(super) fn emit_geometry_arenas(
     let nonvisible_surface_contours =
         surface_contour_records(scan, &scan.surfaces.nonvisible_contours, "novisgeom");
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "nonvisible_surface_contours",
@@ -175,6 +186,7 @@ pub(super) fn emit_geometry_arenas(
         "cross_section_geometry",
     );
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "cross_section_surface_contours",
@@ -188,6 +200,7 @@ pub(super) fn emit_geometry_arenas(
     let surface_prototypes =
         surface_prototype_records(scan, &scan.surfaces.prototype_records, "visibgeom");
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "surface_prototypes",
@@ -204,6 +217,7 @@ pub(super) fn emit_geometry_arenas(
         "novisgeom",
     );
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "nonvisible_surface_prototypes",
@@ -216,6 +230,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     let tabulated_cylinder_curve_replays = tabulated_cylinder_curve_replay_records(scan);
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "tabulated_cylinder_curve_replays",
@@ -228,6 +243,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     let curve_parameters = curve_parameter_records(scan, &scan.curves.parameters, "visibgeom");
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "curve_parameters",
@@ -241,6 +257,7 @@ pub(super) fn emit_geometry_arenas(
     let nonvisible_curve_parameters =
         curve_parameter_records(scan, &scan.curves.nonvisible_parameters, "novisgeom");
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "nonvisible_curve_parameters",
@@ -253,6 +270,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     let fc_curve_coordinates = fc_curve_coordinate_records(scan);
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "fc_curve_coordinates",
@@ -264,16 +282,22 @@ pub(super) fn emit_geometry_arenas(
         Exactness::ByteExact,
     )?;
     let fc05_circles = fc05_circle_records(scan);
-    store_arena(ir, "fc05_circles", &fc05_circles)?;
+    store_arena(ctx, ir, "fc05_circles", &fc05_circles)?;
     let fc05_cylinder_cap_pairs = fc05_cylinder_cap_pair_records(scan);
-    store_arena(ir, "fc05_cylinder_cap_pairs", &fc05_cylinder_cap_pairs)?;
+    store_arena(ctx, ir, "fc05_cylinder_cap_pairs", &fc05_cylinder_cap_pairs)?;
     let prototype_pcurves = prototype_pcurve_records(scan);
-    store_arena(ir, "prototype_pcurves", &prototype_pcurves)?;
+    store_arena(ctx, ir, "prototype_pcurves", &prototype_pcurves)?;
     let curve_prototype_topology = curve_prototype_topology_records(scan);
-    store_arena(ir, "curve_prototype_topology", &curve_prototype_topology)?;
+    store_arena(
+        ctx,
+        ir,
+        "curve_prototype_topology",
+        &curve_prototype_topology,
+    )?;
     let curve_prototypes =
         curve_prototype_records(scan, &scan.curves.prototypes, "creo:curve:prototype");
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "curve_prototypes",
@@ -290,6 +314,7 @@ pub(super) fn emit_geometry_arenas(
         "creo:novisgeom:curve_prototype",
     );
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "nonvisible_curve_prototypes",
@@ -306,6 +331,7 @@ pub(super) fn emit_geometry_arenas(
         "creo:cross_section_geometry:curve_prototype",
     );
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "cross_section_curve_prototypes",
@@ -319,6 +345,7 @@ pub(super) fn emit_geometry_arenas(
     let curve_topology_rows =
         curve_topology_row_records(scan, &scan.curves.topology_rows, "visibgeom");
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "curve_topology_rows",
@@ -332,6 +359,7 @@ pub(super) fn emit_geometry_arenas(
     let nonvisible_curve_topology_rows =
         curve_topology_row_records(scan, &scan.curves.nonvisible_topology_rows, "novisgeom");
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "nonvisible_curve_topology_rows",
@@ -344,6 +372,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     let cross_section_curve_rows = cross_section_curve_row_records(scan);
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "cross_section_curve_rows",
@@ -355,9 +384,10 @@ pub(super) fn emit_geometry_arenas(
         Exactness::ByteExact,
     )?;
     let loop_array_frames = loop_array_frame_records(scan);
-    store_arena(ir, "loop_array_frames", &loop_array_frames)?;
+    store_arena(ctx, ir, "loop_array_frames", &loop_array_frames)?;
     let loop_array_records = loop_array_record_records(scan);
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "loop_array_records",
@@ -370,6 +400,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     let half_edges = half_edge_records(scan);
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "half_edges",
@@ -381,19 +412,21 @@ pub(super) fn emit_geometry_arenas(
         Exactness::Derived,
     )?;
     let native_loops = loop_records(scan);
-    store_arena(ir, "loops", &native_loops)?;
+    store_arena(ctx, ir, "loops", &native_loops)?;
     let topological_vertices = topological_vertex_records(scan);
-    store_arena(ir, "topological_vertices", &topological_vertices)?;
+    store_arena(ctx, ir, "topological_vertices", &topological_vertices)?;
     let half_edge_vertex_incidence = half_edge_vertex_incidence_records(scan);
     store_arena(
+        ctx,
         ir,
         "half_edge_vertex_incidence",
         &half_edge_vertex_incidence,
     )?;
     let face_components = face_component_records(scan);
-    store_arena(ir, "face_components", &face_components)?;
+    store_arena(ctx, ir, "face_components", &face_components)?;
     let face_admission_rejections = brep_diagnostics.face_admission_rejection_records();
     store_arena(
+        ctx,
         ir,
         "brep_face_admission_rejections",
         &face_admission_rejections,
@@ -405,6 +438,7 @@ pub(super) fn emit_geometry_arenas(
         "visibgeom",
     );
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "surface_parameters",
@@ -422,6 +456,7 @@ pub(super) fn emit_geometry_arenas(
         "novisgeom",
     );
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "nonvisible_surface_parameters",
@@ -439,6 +474,7 @@ pub(super) fn emit_geometry_arenas(
         "cross_section_geometry",
     );
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "cross_section_surface_parameters",
@@ -454,61 +490,66 @@ pub(super) fn emit_geometry_arenas(
         &scan.planes.local_systems,
         "creo:surface:plane_local_system",
     );
-    store_arena(ir, "plane_local_systems", &plane_local_systems)?;
+    store_arena(ctx, ir, "plane_local_systems", &plane_local_systems)?;
     let cross_section_plane_local_systems = plane_local_system_records(
         scan,
         &scan.planes.cross_section_local_systems,
         "creo:cross_section_geometry:plane_local_system",
     );
     store_arena(
+        ctx,
         ir,
         "cross_section_plane_local_systems",
         &cross_section_plane_local_systems,
     )?;
     let plane_envelopes =
         plane_envelope_records(scan, &scan.planes.envelopes, "creo:surface:plane_envelope");
-    store_arena(ir, "plane_envelopes", &plane_envelopes)?;
+    store_arena(ctx, ir, "plane_envelopes", &plane_envelopes)?;
     let cross_section_plane_envelopes = plane_envelope_records(
         scan,
         &scan.planes.cross_section_envelopes,
         "creo:cross_section_geometry:plane_envelope",
     );
     store_arena(
+        ctx,
         ir,
         "cross_section_plane_envelopes",
         &cross_section_plane_envelopes,
     )?;
     let outline_planes =
         outline_plane_records(scan, &scan.planes.outlines, "creo:surface:outline_plane");
-    store_arena(ir, "outline_planes", &outline_planes)?;
+    store_arena(ctx, ir, "outline_planes", &outline_planes)?;
     let positional_frame_planes = outline_plane_records(
         scan,
         &scan.planes.positional_frames,
         "creo:surface:positional_frame_plane",
     );
-    store_arena(ir, "positional_frame_planes", &positional_frame_planes)?;
+    store_arena(ctx, ir, "positional_frame_planes", &positional_frame_planes)?;
     let cross_section_outline_planes = outline_plane_records(
         scan,
         &scan.planes.cross_section_outlines,
         "creo:cross_section_geometry:outline_plane",
     );
     store_arena(
+        ctx,
         ir,
         "cross_section_outline_planes",
         &cross_section_outline_planes,
     )?;
     let datum_planes = datum_plane_records(scan);
-    store_arena(ir, "datum_planes", &datum_planes)?;
+    store_arena(ctx, ir, "datum_planes", &datum_planes)?;
     let datum_cylinders = datum_cylinder_records(scan);
-    store_arena(ir, "datum_cylinders", &datum_cylinders)?;
+    store_arena(ctx, ir, "datum_cylinders", &datum_cylinders)?;
     let feature_section_transforms = feature_section_transform_records(scan);
     store_arena(
+        ctx,
         ir,
         "feature_section_transforms",
         &feature_section_transforms,
     )?;
     let feature_placement_instructions = feature_placement_instruction_records(scan);
     store_arena(
+        ctx,
         ir,
         "feature_placement_instructions",
         &feature_placement_instructions,
@@ -530,9 +571,10 @@ pub(super) fn emit_geometry_arenas(
         .iter()
         .map(|(record, _)| record)
         .collect::<Vec<_>>();
-    store_arena(ir, "pcurve_endpoints", &pcurve_endpoint_payload)?;
+    store_arena(ctx, ir, "pcurve_endpoints", &pcurve_endpoint_payload)?;
     let feature_definitions = feature_definition_records(scan);
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "feature_definitions",
@@ -545,6 +587,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     let feature_entities = feature_entity_records(scan);
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "feature_entities",
@@ -557,6 +600,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     let feature_entity_references = feature_entity_reference_records(scan);
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "feature_entity_references",
@@ -569,6 +613,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     let feature_entity_tables = feature_entity_table_records(scan);
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "feature_entity_tables",
@@ -581,6 +626,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     let feature_surface_replays = feature_surface_replay_associations(scan);
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "feature_surface_replays",
@@ -593,6 +639,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     let feature_geometry_tables = feature_geometry_table_records(scan);
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "feature_geometry_tables",
@@ -605,6 +652,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     let feature_loop_history_entries = feature_loop_history_entry_records(scan);
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "feature_loop_history_entries",
@@ -617,6 +665,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     let feature_affected_ids = feature_affected_id_records(scan);
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "feature_affected_ids",
@@ -629,6 +678,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     let feature_replay_affected_ids = feature_replay_affected_id_records(scan);
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "feature_replay_affected_ids",
@@ -641,6 +691,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     let surface_merge_replay_affected_ids = surface_merge_replay_affected_id_records(scan);
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "surface_merge_replay_affected_ids",
@@ -653,6 +704,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     let feature_loop_restore_directions = feature_loop_restore_direction_records(scan);
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "feature_loop_restore_directions",
@@ -665,6 +717,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     let feature_revolution_extents = feature_revolution_extent_records(scan);
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "feature_revolution_extents",
@@ -677,6 +730,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     let feature_rows = feature_row_records(scan);
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "feature_rows",
@@ -689,6 +743,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     let depdb_recipe_rows = depdb_recipe_row_records(scan);
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "depdb_recipe_rows",
@@ -701,6 +756,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     let feature_choices = feature_choice_records(scan);
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "feature_choices",
@@ -713,6 +769,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     let feature_choice_fields = feature_choice_field_records(scan);
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "feature_choice_fields",
@@ -725,6 +782,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     let sketches = sketch_records(scan);
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "sketches",
@@ -749,9 +807,10 @@ pub(super) fn emit_geometry_arenas(
             Exactness::ByteExact,
         );
     }
-    store_arena(ir, "curve_expressions", &curve_expressions)?;
+    store_arena(ctx, ir, "curve_expressions", &curve_expressions)?;
     let feature_operation_states = feature_operation_state_records(scan);
     emit_arena(
+        ctx,
         ir,
         annotations,
         "feature_operation_states",
@@ -775,6 +834,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     let feature_reference_names = feature_reference_name_records(scan);
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "feature_reference_names",
@@ -794,7 +854,7 @@ pub(super) fn emit_geometry_arenas(
             "configuration_driver_table_pointer",
             Exactness::ByteExact,
         );
-        store_arena(ir, "configuration", &[family_table])?;
+        store_arena(ctx, ir, "configuration", &[family_table])?;
     }
     Ok(())
 }

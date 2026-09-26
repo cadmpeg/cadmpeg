@@ -111,10 +111,11 @@ impl ProteinRecord {
 
     pub(crate) fn install(
         &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         namespace: &mut NativeNamespace,
     ) -> Result<(), NativeConvertError> {
-        namespace.set_arena("protein", std::slice::from_ref(self))?;
-        namespace.set_arena("protein_entries", self.entries())
+        namespace.set_arena(ctx, "protein", std::slice::from_ref(self))?;
+        namespace.set_arena(ctx, "protein_entries", self.entries())
     }
 
     pub(crate) fn read(namespace: &NativeNamespace) -> Result<Self, NativeConvertError> {
@@ -390,7 +391,9 @@ mod tests {
             }],
         };
         let mut namespace = NativeNamespace::default();
-        record.install(&mut namespace).expect("valid test fixture");
+        record
+            .install(&crate::native::test_ctx(), &mut namespace)
+            .expect("valid test fixture");
         let mut wire = namespace
             .arena_as::<serde_json::Value>("protein")
             .expect("valid test fixture");
@@ -401,7 +404,7 @@ mod tests {
         );
         wire[0]["entry_count"] = serde_json::json!(0);
         namespace
-            .set_arena("protein", &wire)
+            .set_arena(&crate::native::test_ctx(), "protein", &wire)
             .expect("valid test fixture");
         assert!(ProteinRecord::read(&namespace)
             .expect_err("invalid test fixture")
@@ -411,7 +414,7 @@ mod tests {
             id: "inventor:protein:state#root".into(),
         };
         namespace
-            .set_arena("protein", &[absent])
+            .set_arena(&crate::native::test_ctx(), "protein", &[absent])
             .expect("valid test fixture");
         assert!(ProteinRecord::read(&namespace).is_err());
     }
@@ -433,7 +436,9 @@ mod tests {
             },
         ] {
             let mut namespace = NativeNamespace::default();
-            record.install(&mut namespace).expect("valid test fixture");
+            record
+                .install(&crate::native::test_ctx(), &mut namespace)
+                .expect("valid test fixture");
             assert!(record.entries().is_empty());
             assert_eq!(
                 ProteinRecord::read(&namespace).expect("valid test fixture"),
@@ -467,7 +472,7 @@ mod tests {
             wire["compression"] = serde_json::json!("banana");
             let mut namespace = NativeNamespace::default();
             namespace
-                .set_arena("protein_entries", &[wire])
+                .set_arena(&crate::native::test_ctx(), "protein_entries", &[wire])
                 .expect("Protein entry fixture serializes");
             assert!(namespace
                 .arena_as::<ProteinEntryRecord>("protein_entries")

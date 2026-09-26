@@ -453,7 +453,11 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         namespace.arena_as("reference_signature_cohorts").unwrap();
     cohorts[0]["second_reference"] = serde_json::json!(6);
     namespace
-        .set_arena("reference_signature_cohorts", &cohorts)
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "reference_signature_cohorts",
+            &cohorts,
+        )
         .unwrap();
     let error = crate::native::CatiaNative::load(&namespace)
         .expect_err("cohort second_reference not following its first");
