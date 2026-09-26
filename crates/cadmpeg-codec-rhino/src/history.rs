@@ -825,25 +825,28 @@ fn extended_geometry_json(
     writer_version: Option<i64>,
     scale: MillimeterScale,
     warnings: &mut Diagnostics,
+    refusal: &mut Option<cadmpeg_core::CodecError>,
 ) -> Option<String> {
     let data = expand.data();
     let semantic = if crate::mesh::supported_class(value.class_id) {
         let mut budget = crate::mesh::MeshBudget::new();
-        let mesh = crate::mesh::decode(
-            expand,
-            data,
-            value.class_data_range.clone(),
-            archive,
-            crate::mesh::MeshDecodeOptions {
-                writer_version,
-                association: None,
-                id: "rhino:history:embedded-mesh".to_string(),
-                scale,
-                userdata: &value.userdata,
-            },
-            &mut budget,
-        )
-        .ok()?;
+        let mesh = optional_geometry(
+            crate::mesh::decode(
+                expand,
+                data,
+                value.class_data_range.clone(),
+                archive,
+                crate::mesh::MeshDecodeOptions {
+                    writer_version,
+                    association: None,
+                    id: "rhino:history:embedded-mesh".to_string(),
+                    scale,
+                    userdata: &value.userdata,
+                },
+                &mut budget,
+            ),
+            refusal,
+        )?;
         serde_json::json!({
             "kind": "mesh",
             "vertices": mesh.tessellation.vertices(),
@@ -853,7 +856,7 @@ fn extended_geometry_json(
             "channels": mesh.tessellation.channels(),
         })
     } else if crate::subd::supported_class(value.class_id) {
-        let subd = crate::subd::decode(
+        let subd = match crate::subd::decode(
             data,
             value.class_data_range.clone(),
             archive,
@@ -862,8 +865,14 @@ fn extended_geometry_json(
                 &cadmpeg_ir::identity_namespace!("rhino", "history", "subd"),
                 cadmpeg_ir::identity_key!("embedded"),
             ),
-        )
-        .ok()?;
+        ) {
+            Ok(subd) => subd,
+            Err(crate::subd::SubdError::Resource(limit)) => {
+                *refusal = Some(cadmpeg_core::CodecError::ResourceLimit(limit));
+                return None;
+            }
+            Err(_) => return None,
+        };
         match subd {
             None => serde_json::json!({
                 "kind": "subd",
@@ -886,17 +895,19 @@ fn extended_geometry_json(
         }
     } else if crate::extrusion::supported_class(value.class_id) {
         let mut budget = crate::mesh::MeshBudget::new();
-        let extrusion = crate::extrusion::decode(
-            expand,
-            data,
-            value.class_data_range.clone(),
-            archive,
-            writer_version,
-            scale,
-            &value.userdata,
-            &mut budget,
-        )
-        .ok()?;
+        let extrusion = optional_geometry(
+            crate::extrusion::decode(
+                expand,
+                data,
+                value.class_data_range.clone(),
+                archive,
+                writer_version,
+                scale,
+                &value.userdata,
+                &mut budget,
+            ),
+            refusal,
+        )?;
         let boundaries = extrusion
             .boundaries
             .iter()
@@ -941,8 +952,10 @@ fn extended_geometry_json(
             &crate::cage::decode(expand, value.class_data_range.clone(), scale, archive).ok()?,
         )
     } else if value.class_id == crate::morph::CLASS {
-        let morph =
-            crate::morph::decode(expand, value.class_data_range.clone(), scale, archive).ok()?;
+        let morph = optional_geometry(
+            crate::morph::decode(expand, value.class_data_range.clone(), scale, archive),
+            refusal,
+        )?;
         let control = match &morph.control {
             crate::morph::Control::Curve { start, end } => serde_json::json!({
                 "kind": "curve",
@@ -994,10 +1007,13 @@ fn extended_geometry_json(
             archive,
             writer_version,
             scale,
+            refusal,
         );
     } else if value.class_id == crate::hatch::CLASS {
-        let mut hatch =
-            crate::hatch::decode(expand, value.class_data_range.clone(), scale, archive).ok()?;
+        let mut hatch = optional_geometry(
+            crate::hatch::decode(expand, value.class_data_range.clone(), scale, archive),
+            refusal,
+        )?;
         if let Err(errors) =
             crate::hatch::apply_userdata(data, &value.userdata, scale, archive, &mut hatch)
         {
@@ -1081,7 +1097,10 @@ fn extended_geometry_json(
         }
         semantic
     } else if value.class_id == crate::detail::CLASS {
-        let detail = crate::detail::decode(data, value.class_data_range.clone(), archive).ok()?;
+        let detail = optional_geometry(
+            crate::detail::decode(expand.ctx(), data, value.class_data_range.clone(), archive),
+            refusal,
+        )?;
         serde_json::json!({
             "kind": "detail_view",
             "boundary": detail.boundary.reported_geometry(),
@@ -1144,6 +1163,33 @@ struct GeometrySink<'a> {
     untyped: usize,
     failed: usize,
     redundant_repairs: usize,
+    refusal: Option<cadmpeg_core::CodecError>,
+}
+
+#[derive(Debug)]
+pub(crate) enum ProjectionError {
+    Admission(String),
+    Codec(cadmpeg_core::CodecError),
+}
+
+impl From<String> for ProjectionError {
+    fn from(message: String) -> Self {
+        Self::Admission(message)
+    }
+}
+
+fn optional_geometry<T>(
+    result: Result<T, crate::curves::GeometryError>,
+    refusal: &mut Option<cadmpeg_core::CodecError>,
+) -> Option<T> {
+    match result {
+        Ok(value) => Some(value),
+        Err(crate::curves::GeometryError::Codec(error)) => {
+            *refusal = Some(error);
+            None
+        }
+        Err(_) => None,
+    }
 }
 
 fn structured_value_properties(
@@ -1174,13 +1220,21 @@ fn structured_value_properties(
                 );
                 if let Some((expand, archive, writer_version, scale)) = geometry_context {
                     let data = expand.data();
-                    if let Ok(decoded) = crate::curves::decode(
-                        data,
-                        value.class_id,
-                        value.class_data_range.clone(),
-                        scale,
-                        archive,
-                    ) {
+                    let decoded = optional_geometry(
+                        crate::curves::decode(
+                            expand.ctx(),
+                            data,
+                            value.class_id,
+                            value.class_data_range.clone(),
+                            scale,
+                            archive,
+                        ),
+                        &mut sink.refusal,
+                    );
+                    if sink.refusal.is_some() {
+                        return;
+                    }
+                    if let Some(decoded) = decoded {
                         sink.untyped += 1;
                         let semantic = match decoded {
                             crate::curves::DecodedGeometry::Point { position, .. } => {
@@ -1205,18 +1259,25 @@ fn structured_value_properties(
                         if let Ok(semantic) = semantic {
                             properties.insert(format!("{key}.{index}.geometry"), semantic);
                         }
-                    } else if let Some(semantic) = extended_geometry_json(
-                        expand,
-                        value,
-                        archive,
-                        writer_version,
-                        scale,
-                        sink.warnings,
-                    ) {
-                        sink.untyped += 1;
-                        properties.insert(format!("{key}.{index}.geometry"), semantic);
                     } else {
-                        sink.failed += 1;
+                        let semantic = extended_geometry_json(
+                            expand,
+                            value,
+                            archive,
+                            writer_version,
+                            scale,
+                            sink.warnings,
+                            &mut sink.refusal,
+                        );
+                        if sink.refusal.is_some() {
+                            return;
+                        }
+                        if let Some(semantic) = semantic {
+                            sink.untyped += 1;
+                            properties.insert(format!("{key}.{index}.geometry"), semantic);
+                        } else {
+                            sink.failed += 1;
+                        }
                     }
                 } else {
                     sink.untyped += 1;
@@ -1328,7 +1389,7 @@ pub(crate) fn project(
     )>,
     ir: &mut cadmpeg_ir::document::CadIr,
     warnings: &mut Diagnostics,
-) -> Result<(usize, usize, usize, usize), String> {
+) -> Result<(usize, usize, usize, usize), ProjectionError> {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::ids::{Identity, IdentityKey};
 
@@ -1351,6 +1412,7 @@ pub(crate) fn project(
         untyped: 0,
         failed: 0,
         redundant_repairs: 0,
+        refusal: None,
     };
     let mut ids = Vec::with_capacity(records.len());
     let mut native_ids = Vec::with_capacity(records.len());
@@ -1430,6 +1492,9 @@ pub(crate) fn project(
                 &mut properties,
                 &mut sink,
             );
+            if let Some(error) = sink.refusal.take() {
+                return Err(ProjectionError::Codec(error));
+            }
             if geometry_context.is_none()
                 && matches!(&value.value, Value::Geometries(values) if !values.is_empty())
             {

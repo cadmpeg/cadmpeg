@@ -23,7 +23,9 @@ use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Color;
-use cadmpeg_protein::appearance::{is_physical_schema, neutral_property_name, texture_asset};
+use cadmpeg_protein::appearance::{
+    is_physical_schema, neutral_property_name, texture_asset, TextureAssetResult,
+};
 use cadmpeg_protein::{
     CONTINUATION_MARKER, PAGE_SIZE, RECORD_MARKER, STREAM_HEADER_LEN, TERMINAL_MARKER,
 };
@@ -257,10 +259,10 @@ fn patch_instance_colors(
     patched: &mut std::collections::BTreeSet<String>,
     notes: &mut Vec<String>,
 ) -> Result<(), CodecError> {
-    let frames = cadmpeg_protein::framing::record_frames(bytes)?;
+    let frames = cadmpeg_protein::framing::record_frames_for_edit(bytes)?;
     let schema_driven = cadmpeg_protein::has_schemas(protein);
     let decoded = if schema_driven {
-        let outcome = cadmpeg_protein::decode_detailed(protein, bytes)?;
+        let outcome = cadmpeg_protein::decode_frames_for_edit(protein, &frames)?;
         notes.extend(outcome.rejected.iter().map(|rejected| {
             format!(
                 "Protein record {} rejected: {}",
@@ -537,10 +539,13 @@ pub(crate) fn decode_with_body_bindings<'a>(
         let Some(instance) = instance_properties(ctx, protein)? else {
             continue;
         };
-        let record_frames = cadmpeg_protein::framing::record_frames(instance.window())?;
+        let record_frames =
+            cadmpeg_protein::framing::record_frames_admitted(ctx, instance.window())?;
         let catalog = definition_catalog(ctx, protein)?;
-        let mut appearances = if cadmpeg_protein::has_schemas(protein.window()) {
-            let outcome = cadmpeg_protein::decode_detailed(protein.window(), instance.window())?;
+        let schema_catalog = cadmpeg_protein::SchemaCatalog::load(ctx, protein)?;
+        let mut appearances = if let Some(mut schema_catalog) = schema_catalog {
+            let outcome =
+                cadmpeg_protein::decode_frames_admitted(ctx, &mut schema_catalog, &record_frames)?;
             notes.extend(outcome.rejected.iter().map(|rejected| {
                 format!(
                     "Protein {} record {} rejected: {}",
@@ -548,7 +553,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
                 )
             }));
             let records = outcome.records;
-            let (mut decoded, untyped_count) = appearances_from_schema_records(&records)?;
+            let (mut decoded, untyped_count) = appearances_from_schema_records(ctx, &records)?;
             untyped_distance_properties = untyped_distance_properties
                 .checked_add(untyped_count)
                 .ok_or_else(|| {
@@ -690,21 +695,24 @@ pub(crate) fn decode_with_body_bindings<'a>(
 }
 
 fn appearances_from_schema_records(
+    ctx: &DecodeContext<'_>,
     records: &[cadmpeg_protein::DecodedRecord],
 ) -> Result<(Vec<Appearance>, usize), CodecError> {
     let mut textures = BTreeMap::new();
     let mut untyped_distance_properties = 0usize;
-    for decoded in records.iter().map(texture_asset) {
-        let (texture, untyped_count) = decoded?;
-        untyped_distance_properties = untyped_distance_properties
-            .checked_add(untyped_count)
-            .ok_or_else(|| {
-                CodecError::Malformed("untyped material distance count overflows".into())
-            })?;
-        if untyped_count != 0 {
-            continue;
-        }
-        let Some(texture) = texture else { continue };
+    for record in records {
+        let texture = match texture_asset(ctx, record)? {
+            TextureAssetResult::NotTexture => continue,
+            TextureAssetResult::UnknownDistanceUnit { count } => {
+                untyped_distance_properties = untyped_distance_properties
+                    .checked_add(count)
+                    .ok_or_else(|| {
+                        CodecError::Malformed("untyped material distance count overflows".into())
+                    })?;
+                continue;
+            }
+            TextureAssetResult::Usable(texture) => texture,
+        };
         match textures.entry(texture.asset_guid.clone()) {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(texture);
@@ -740,7 +748,7 @@ fn appearances_from_schema_records(
                 }
                 for guid in property.connections() {
                     if let Some(texture) = textures.get(guid) {
-                        connected.push(texture.clone().into_ref(id.clone()));
+                        connected.push(texture.to_ref(ctx, id)?);
                     }
                 }
             }
@@ -1745,7 +1753,7 @@ fn definition_catalog<'a>(
     else {
         return Ok(std::collections::HashMap::new());
     };
-    let frames = cadmpeg_protein::framing::record_frames(entry.window())?;
+    let frames = cadmpeg_protein::framing::record_frames_admitted(ctx, entry.window())?;
     let mut definitions = std::collections::HashMap::new();
     for frame in frames {
         let definition = decode_definition_catalog_record(frame.bytes())?;
@@ -1852,8 +1860,10 @@ fn nested_entry<'a>(
     protein: View<'a>,
     suffix: &str,
 ) -> Result<Option<View<'a>>, CodecError> {
-    let Ok(archive) = ArchiveSnapshot::new(protein) else {
-        return Ok(None);
+    let archive = match ArchiveSnapshot::new(ctx, protein) {
+        Ok(archive) => archive,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => return Ok(None),
     };
     for entry in archive.entries() {
         if entry.name.ends_with(suffix) {

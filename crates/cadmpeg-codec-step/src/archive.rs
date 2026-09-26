@@ -32,10 +32,13 @@ pub(crate) fn has_root_marker(prefix: &[u8]) -> bool {
     // CE-07: the root name is evidence only when it is an entry in a
     // structurally parsed ZIP central directory. Payloads, comments, and
     // unrelated entry names are not root evidence.
-    has_zip_magic(prefix)
-        && ArchiveSnapshot::new(View::over_retained(prefix))
-            .ok()
-            .is_some_and(|archive| archive.entry(ROOT_NAME).is_some())
+    const MAX_PROBE_BYTES: usize = 1024 * 1024;
+    if !has_zip_magic(prefix) || prefix.len() > MAX_PROBE_BYTES {
+        return false;
+    }
+    zip::ZipArchive::new(std::io::Cursor::new(prefix))
+        .ok()
+        .is_some_and(|archive| archive.file_names().any(|name| name == ROOT_NAME))
 }
 
 /// One STEP ZIP container whose required root member is proven present.
@@ -50,7 +53,7 @@ pub(crate) fn open_root<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
 ) -> Result<OpenedRoot<'a>, CodecError> {
-    let archive = ArchiveSnapshot::new(root)?;
+    let archive = ArchiveSnapshot::new(ctx, root)?;
     for entry in archive.entries() {
         validate_entry_name(&entry.name)?;
         if entry.uses_utf8_name_encoding() {

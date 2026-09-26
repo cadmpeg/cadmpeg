@@ -66,7 +66,7 @@ impl Scan<'_> {
 /// Parse the SPLMSSTR container and inflate streams in its canonical part entry.
 pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, CodecError> {
     let (container, streams) = if container::looks_like_nx(root.window()) {
-        let container = container::scan_bytes(root.window())?;
+        let container = container::scan_bytes(ctx, root.window())?;
         let streams = parasolid::extract_streams(ctx, root, &container)?;
         (container, streams)
     } else {

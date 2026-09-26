@@ -504,7 +504,7 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
                     role: FeatureTreeNodeRole::History,
                     children: cadmpeg_ir::features::TreeChildren::default(),
                 }),
-                outputs,
+                (outputs).try_into().unwrap(),
             ),
             native_ref: None,
         };
@@ -571,7 +571,7 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
 #[test]
 fn current_body_writers_close_false_suppression_without_a_configuration() {
     let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
-    let feature = |id: &str, ordinal, dependencies: Vec<FeatureId>, outputs| Feature {
+    let feature = |id: &str, ordinal, dependencies: Vec<FeatureId>, outputs: Vec<BodyId>| Feature {
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
@@ -587,7 +587,7 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
                 role: FeatureTreeNodeRole::History,
                 children: cadmpeg_ir::features::TreeChildren::default(),
             }),
-            outputs,
+            (outputs).try_into().unwrap(),
         ),
         native_ref: None,
     };
@@ -663,7 +663,9 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
                 role: FeatureTreeNodeRole::History,
                 children: cadmpeg_ir::features::TreeChildren::default(),
             }),
-            vec![BodyId::mint("test:model:entity#body").expect("identity grammar")],
+            (vec![BodyId::mint("test:model:entity#body").expect("identity grammar")])
+                .try_into()
+                .unwrap(),
         ),
         native_ref: None,
     };
@@ -1128,7 +1130,7 @@ fn boolean_target_output_requires_one_resolved_segment_body() {
     let definition = FeatureDefinition::Operation(FeatureOperation::Combine {
         operands: cadmpeg_ir::features::CombineOperands::new(
             BodySelection::Resolved {
-                bodies: vec![body.clone()],
+                bodies: vec![body.clone()].try_into().expect("distinct bodies"),
                 native: "target".into(),
             },
             BodySelection::Unresolved,

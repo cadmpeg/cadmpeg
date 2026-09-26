@@ -865,14 +865,17 @@ fn project_dimension(
         name: object_name(entity),
         visible: None,
         targets: targets(entity, feature_index, topology)?,
-        definition: PmiDefinition::Dimension {
-            dimension,
-            nominal: match nominal {
-                Some(value) => Some(pmi_value(value, quantity)?),
-                None => None,
-            },
-            tolerance,
-        },
+        definition: PmiDefinition::Dimension(
+            cadmpeg_ir::pmi::PmiDimension::new(
+                dimension,
+                match nominal {
+                    Some(value) => Some(pmi_value(value, quantity)?),
+                    None => None,
+                },
+                tolerance,
+            )
+            .ok()?,
+        ),
     })
 }
 

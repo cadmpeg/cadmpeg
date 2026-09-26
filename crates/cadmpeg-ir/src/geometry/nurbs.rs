@@ -296,6 +296,24 @@ impl<P> NurbsPoles3<P> {
 }
 
 impl<P: Copy> NurbsPoles3<P> {
+    /// One borrowed pole position in parameter order.
+    #[must_use]
+    pub fn point_at(&self, index: usize) -> Option<P> {
+        match self {
+            Self::Polynomial { points } => points.get(index).copied(),
+            Self::Rational { points } => points.get(index).map(|pole| pole.point),
+        }
+    }
+
+    /// One rational weight, absent for a polynomial curve or invalid index.
+    #[must_use]
+    pub fn weight_at(&self, index: usize) -> Option<f64> {
+        match self {
+            Self::Polynomial { .. } => None,
+            Self::Rational { points } => points.get(index).map(|pole| pole.weight.get()),
+        }
+    }
+
     /// Pole positions in parameter order.
     #[must_use]
     pub fn points(&self) -> Vec<P> {

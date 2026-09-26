@@ -3263,11 +3263,10 @@ impl<'a> Builder<'a> {
         }
         for annotation in &annotations {
             match &annotation.definition {
-                PmiDefinition::Dimension {
-                    dimension,
-                    nominal,
-                    tolerance,
-                } => {
+                PmiDefinition::Dimension(relation) => {
+                    let dimension = relation.kind();
+                    let nominal = relation.nominal();
+                    let tolerance = relation.tolerance();
                     let aspect = target_ref(annotation).unwrap_or(fallback_aspect);
                     let name = annotation.name.as_deref().unwrap_or("");
                     let (entity, kind_exact) = match dimension {
