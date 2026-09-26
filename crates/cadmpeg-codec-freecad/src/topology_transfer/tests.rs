@@ -783,11 +783,14 @@ fn face_connectivity_partitions_transitively_without_reordering() {
 
 #[test]
 fn indirect_analytic_frames_reverse_the_pcurve_u_parameter() {
+    let origin = cadmpeg_ir::features::FinitePoint3::ZERO;
+    let axis = cadmpeg_ir::features::FiniteVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap();
+    let reference = cadmpeg_ir::features::FiniteVector3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap();
     let surface = TextSurface::Sphere {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 1.0,
+        center: origin,
+        axis,
+        ref_direction: reference,
+        radius: cadmpeg_ir::scalar::FiniteReal::ONE,
         u_reversed: true,
     };
     let affine = surface_parameter_affine(&surface);
@@ -795,11 +798,11 @@ fn indirect_analytic_frames_reverse_the_pcurve_u_parameter() {
     assert_eq!(affine.v_scale, 1.0);
 
     let cone = TextSurface::Cone {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 1.0,
-        half_angle: std::f64::consts::FRAC_PI_3,
+        origin,
+        axis,
+        ref_direction: reference,
+        radius: cadmpeg_ir::scalar::FiniteReal::ONE,
+        half_angle: cadmpeg_ir::scalar::FiniteReal::new(std::f64::consts::FRAC_PI_3).unwrap(),
         u_reversed: true,
     };
     let affine = surface_parameter_affine(&cone);
