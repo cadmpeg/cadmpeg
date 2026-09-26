@@ -78,8 +78,9 @@ fn decode_container<'a>(
     let sketch_inventory = crate::sketch::inventory(ctx, &container.rse)?;
     let feature_inventory = crate::feature::inventory(ctx, &container.rse)?;
     let mut ir = CadIr::empty();
+    let mut admitted_entities = 0_u64;
     let (design_parameters, unresolved_design_parameters) =
-        crate::design::project_parameters(&design_inventory);
+        crate::design::project_parameters(ctx, &design_inventory, &mut admitted_entities)?;
     ir.model.parameters = design_parameters;
     let sketch_projection = crate::sketch::project(&sketch_inventory, &ir.model.parameters);
     let unresolved_sketches = sketch_projection.unresolved_sketches;
@@ -101,7 +102,6 @@ fn decode_container<'a>(
     ir.model.feature_result_topologies = feature_projection.result_topologies;
     // Charge semantic IR before native-arena materialization and kernel BREP
     // transfer so max_entities refuses that work.
-    let mut admitted_entities = 0_u64;
     ctx.admit_entities(
         ir.model.entity_count() as u64,
         &mut admitted_entities,
