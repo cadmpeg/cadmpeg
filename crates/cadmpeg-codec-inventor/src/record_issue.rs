@@ -2,6 +2,32 @@
 //! Located parser failures shared by the Inventor record families.
 
 use serde::{Deserialize, Serialize};
+use std::fmt::Write;
+
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+
+#[derive(Default)]
+struct ByteCounter(usize);
+
+impl Write for ByteCounter {
+    fn write_str(&mut self, text: &str) -> std::fmt::Result {
+        self.0 = self.0.checked_add(text.len()).ok_or(std::fmt::Error)?;
+        Ok(())
+    }
+}
+
+pub(crate) fn admit_issue_detail(
+    ctx: &DecodeContext<'_>,
+    error: &CodecError,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let mut detail_len = ByteCounter::default();
+    write!(&mut detail_len, "{error}").map_err(|_| {
+        ctx.refuse_codec_limit("Inventor issue detail byte count", u64::MAX - 1, u64::MAX)
+    })?;
+    ctx.charge_retained(detail_len.0 as u64, operation)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum RecordIssueFamily {
