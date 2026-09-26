@@ -1531,8 +1531,11 @@ fn decode_geometry_fallback_transfers_an_external_a8_pole_grid() {
 #[test]
 fn decode_float_packed_stream_transfers_an_elided_a8_surface_with_native_topology() {
     let stream = a8_elided_surface_stream_with_native_vertex_chain();
-    let graph = crate::families::b5::graph::parse(&stream, &mut crate::nurbs::LaneRefusals::new())
-        .expect("generated A8 topology");
+    let graph = crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::parse(ctx, &stream, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("generated A8 topology");
     assert!(graph.complete);
     assert_eq!(graph.faces.len(), 1);
     assert_eq!(graph.loops.len(), 1);

@@ -1860,13 +1860,17 @@ fn try_decode_standard_population(
         .iter()
         .map(|support| support.tag)
         .collect::<HashSet<_>>();
-    let object_evidence = standard_object_evidence(
+    let object_evidence = match standard_object_evidence(
+        ctx,
         scan,
         &freeform_tags,
         &edge_tags,
         &consolidated_records,
         refusal,
-    );
+    ) {
+        Ok(evidence) => evidence,
+        Err(error) => return Some(Err(error)),
+    };
     let standard_limit_curve_count = object_evidence.limit_curves.len();
     let revolution_record_count = crate::families::b2::records::b2_revolutions_from_records(
         &scan.data,
@@ -3038,25 +3042,27 @@ impl StandardSurfaceEvidence {
 }
 
 fn standard_object_evidence(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     tags: &HashSet<u32>,
     edge_tags: &HashSet<u32>,
     consolidated_records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> StandardObjectEvidence {
+) -> Result<StandardObjectEvidence, cadmpeg_core::CodecError> {
     let mut evidence = standard_object_evidence_from_streams(
+        ctx,
         container::logical_record_streams(scan),
         tags,
         edge_tags,
         refusal,
-    );
+    )?;
     merge_standard_limit_curves_from_records(
         &mut evidence.limit_curves,
         &scan.data,
         consolidated_records,
         refusal,
     );
-    evidence
+    Ok(evidence)
 }
 
 fn merge_standard_limit_curves_from_records(
@@ -3082,11 +3088,12 @@ fn merge_standard_limit_curves_from_records(
 }
 
 pub(super) fn standard_object_evidence_from_streams(
+    ctx: &DecodeContext<'_>,
     streams: impl IntoIterator<Item = Vec<u8>>,
     tags: &HashSet<u32>,
     edge_tags: &HashSet<u32>,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> StandardObjectEvidence {
+) -> Result<StandardObjectEvidence, cadmpeg_core::CodecError> {
     let mut surface_candidates = HashMap::<u32, Option<StandardSurfaceEvidence>>::new();
     let mut support_candidates =
         HashMap::<u32, Option<crate::families::b5::transfer::ResolvedOffsetSupport>>::new();
@@ -3165,8 +3172,8 @@ pub(super) fn standard_object_evidence_from_streams(
             refusal,
         );
         let targeted_graph = crate::families::b5::graph::targeted_geometry_graph_from_frames(
-            &stream, &frames, refusal,
-        );
+            ctx, &stream, &frames, refusal,
+        )?;
         for &(object_id, surface_id) in &surface_bindings {
             let Some(surface) = targeted_surfaces.get(&surface_id) else {
                 continue;
@@ -3299,7 +3306,8 @@ pub(super) fn standard_object_evidence_from_streams(
                 })
                 .or_insert(Some(owners));
         }
-        let Some(graph) = crate::families::b5::graph::parse_from_frames(&stream, &frames, refusal)
+        let Some(graph) =
+            crate::families::b5::graph::parse_from_frames(ctx, &stream, &frames, refusal)?
         else {
             continue;
         };
@@ -3337,7 +3345,7 @@ pub(super) fn standard_object_evidence_from_streams(
                     .all(|surface| !repeated_population_ids.contains(surface))
             })
     });
-    StandardObjectEvidence {
+    Ok(StandardObjectEvidence {
         surface_geometries: surface_candidates
             .iter()
             .filter_map(|(&tag, evidence)| Some((tag, evidence.as_ref()?.geometry_ref()?.clone())))
@@ -3384,7 +3392,7 @@ pub(super) fn standard_object_evidence_from_streams(
             .filter_map(|(edge, support)| Some((edge, support?)))
             .collect(),
         limit_curves,
-    }
+    })
 }
 
 fn standard_surface_evidence(
@@ -4316,7 +4324,8 @@ fn attach_standard_topology(
     }
     let edge_classes = standard_curve_edge_classes(&supports);
     let edge_geometry = standard_curve_geometry_gauge_keys(&supports);
-    let topology_graph = crate::families::b5::graph::parse(source, refusal);
+    let topology_graph = crate::families::b5::graph::parse(ctx, source, refusal)
+        .map_err(StandardTopologyError::Resource)?;
     let mut native_edges = topology_graph
         .as_ref()
         .and_then(crate::families::b5::graph::B5Graph::referenced_edge_vertex_references)

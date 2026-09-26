@@ -12,7 +12,14 @@ pub fn container_directory(data: &[u8]) {
 
 /// Exercise `b5 03` object-stream graph parsing.
 pub fn b5_parse(data: &[u8]) {
-    let _probe = crate::families::b5::graph::parse(data, &mut crate::nurbs::LaneRefusals::new());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+    else {
+        return;
+    };
+    let _probe =
+        crate::families::b5::graph::parse(&ctx, data, &mut crate::nurbs::LaneRefusals::new());
 }
 
 /// Exercise `e5 0d 03` topology parsing and orientation solving.
