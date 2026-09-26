@@ -6,7 +6,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::ops::Range;
 
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 use cadmpeg_ir::subd::SubdScheme;
 use cadmpeg_ir::subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdSurface, SubdVertex, SubdVertexTag,
@@ -155,7 +157,7 @@ struct ComponentBase {
 #[derive(Debug, Clone)]
 struct RawVertex {
     base: ComponentBase,
-    point: Point3,
+    point: FinitePoint3,
     tag: Option<SubdVertexTag>,
     edges: Vec<ComponentPointer>,
     faces: Vec<ComponentPointer>,
@@ -165,8 +167,8 @@ struct RawVertex {
 struct RawEdge {
     base: ComponentBase,
     tag: Option<SubdEdgeTag>,
-    sector_coefficients: [f64; 2],
-    sharpness: [f64; 2],
+    sector_coefficients: [FiniteReal; 2],
+    sharpness: [NonNegativeReal; 2],
     vertices: [ComponentPointer; 2],
     faces: Vec<ComponentPointer>,
 }
@@ -606,15 +608,15 @@ fn read_edge(
         _ => return Err(malformed(reader.position() - 1, "invalid SubD edge tag")),
     };
     let face_count = usize::from(reader.u16()?);
-    let sector_coefficients = [reader.f64()?, reader.f64()?];
-    if sector_coefficients.iter().any(|value| !value.is_finite()) {
+    let [first, second] = [reader.f64()?, reader.f64()?];
+    let (Some(first), Some(second)) = (FiniteReal::new(first), FiniteReal::new(second)) else {
         return Err(malformed(
             reader.position() - 16,
             "SubD edge sector coefficient is not finite",
         ));
-    }
-    let start = reader.f64()?;
-    validate_sharpness(start, reader.position() - 8)?;
+    };
+    let sector_coefficients = [first, second];
+    let start = validate_sharpness(reader.f64()?, reader.position() - 8)?;
     if reader.u16()? != 2 {
         return Err(malformed(
             reader.position() - 2,
@@ -638,8 +640,7 @@ fn read_edge(
         if archive.value() >= 80 {
             match reader.u8()? {
                 8 => {
-                    sharpness[1] = reader.f64()?;
-                    validate_sharpness(sharpness[1], reader.position() - 8)?;
+                    sharpness[1] = validate_sharpness(reader.f64()?, reader.position() - 8)?;
                 }
                 255 => {
                     return Ok(RawEdge {
@@ -1180,28 +1181,22 @@ fn materialize(
                     "invalid materialized SubD vertex tag",
                 )
             })?;
-            SubdVertex::new(
-                Point3::new(
-                    crate::wire::scaled_coordinate(vertex.point.x, scale)
-                        .ok_or_else(|| {
-                            malformed(vertex.base.source_offset, "scaled SubD vertex is invalid")
-                        })?
-                        .get(),
-                    crate::wire::scaled_coordinate(vertex.point.y, scale)
-                        .ok_or_else(|| {
-                            malformed(vertex.base.source_offset, "scaled SubD vertex is invalid")
-                        })?
-                        .get(),
-                    crate::wire::scaled_coordinate(vertex.point.z, scale)
-                        .ok_or_else(|| {
-                            malformed(vertex.base.source_offset, "scaled SubD vertex is invalid")
-                        })?
-                        .get(),
+            let point = vertex.point.get();
+            Ok(SubdVertex::from_parts(
+                FinitePoint3::from_coordinates(
+                    crate::wire::scaled_coordinate(point.x, scale).ok_or_else(|| {
+                        malformed(vertex.base.source_offset, "scaled SubD vertex is invalid")
+                    })?,
+                    crate::wire::scaled_coordinate(point.y, scale).ok_or_else(|| {
+                        malformed(vertex.base.source_offset, "scaled SubD vertex is invalid")
+                    })?,
+                    crate::wire::scaled_coordinate(point.z, scale).ok_or_else(|| {
+                        malformed(vertex.base.source_offset, "scaled SubD vertex is invalid")
+                    })?,
                 ),
                 tag,
                 None,
-            )
-            .map_err(|error| malformed(vertex.base.source_offset, error.to_string()))
+            ))
         })
         .collect::<Result<Vec<_>, SubdError>>()?;
     let edges = level
@@ -1214,7 +1209,7 @@ fn materialize(
                     "invalid materialized SubD edge tag",
                 )
             })?;
-            SubdEdge::new(
+            SubdEdge::from_checked_parts(
                 [
                     *vertex_indices
                         .get(&edge.vertices[0].archive_id)
@@ -1301,15 +1296,10 @@ fn capped_u32(reader: &mut BoundedReader<'_>, cap: usize, label: &str) -> Result
     Ok(value)
 }
 
-fn point(reader: &mut BoundedReader<'_>, label: &str) -> Result<Point3, SubdError> {
+fn point(reader: &mut BoundedReader<'_>, label: &str) -> Result<FinitePoint3, SubdError> {
     let values = [reader.f64()?, reader.f64()?, reader.f64()?];
-    if values.iter().any(|value| !value.is_finite()) {
-        return Err(malformed(
-            reader.position() - 24,
-            format!("{label} is not finite"),
-        ));
-    }
-    Ok(Point3::new(values[0], values[1], values[2]))
+    FinitePoint3::new(Point3::new(values[0], values[1], values[2]))
+        .ok_or_else(|| malformed(reader.position() - 24, format!("{label} is not finite")))
 }
 
 fn read_finite_values(
@@ -1328,12 +1318,8 @@ fn read_finite_values(
     Ok(())
 }
 
-fn validate_sharpness(value: f64, offset: usize) -> Result<(), SubdError> {
-    if !value.is_finite() || value < 0.0 {
-        Err(malformed(offset, "SubD edge sharpness is invalid"))
-    } else {
-        Ok(())
-    }
+fn validate_sharpness(value: f64, offset: usize) -> Result<NonNegativeReal, SubdError> {
+    NonNegativeReal::new(value).ok_or_else(|| malformed(offset, "SubD edge sharpness is invalid"))
 }
 
 fn read_mapping_tag(

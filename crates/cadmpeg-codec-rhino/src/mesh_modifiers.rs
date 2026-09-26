@@ -6,6 +6,7 @@ use crate::loss::Diagnostics;
 use crate::objects::{AttributeUserdata, AttributeUserdataDescriptor};
 use crate::settings;
 use crate::wire::Uuid;
+use cadmpeg_ir::scalar::FiniteReal;
 
 const XML_USERDATA_VERSION: i32 = 2;
 const DISPLACEMENT_ROOT: &str = "new-displacement-object-data";
@@ -98,21 +99,21 @@ pub(crate) struct DisplacementModifier {
     /// Texture mapping channel.
     pub(crate) channel: i32,
     /// Black-point remapping value.
-    pub(crate) black_point: f64,
+    pub(crate) black_point: FiniteReal,
     /// White-point remapping value.
-    pub(crate) white_point: f64,
+    pub(crate) white_point: FiniteReal,
     /// Initial sweep quality (`sweep-pitch`).
     pub(crate) sweep_pitch: i32,
     /// Number of refinement steps.
     pub(crate) refine_steps: i32,
     /// Refinement sensitivity.
-    pub(crate) refine_sensitivity: f64,
+    pub(crate) refine_sensitivity: FiniteReal,
     /// Whether the final face-count limit is enabled.
     pub(crate) face_count_limit_enabled: bool,
     /// Final face-count limit.
     pub(crate) face_count_limit: i32,
     /// Post-weld angle in degrees.
-    pub(crate) post_weld_angle: f64,
+    pub(crate) post_weld_angle: FiniteReal,
     /// Mesh memory limit in megabytes.
     pub(crate) mesh_memory_limit: i32,
     /// Whether fairing is enabled.
@@ -140,9 +141,9 @@ pub(crate) struct DisplacementSubItem {
     /// Sub-object texture mapping channel.
     pub(crate) channel: i32,
     /// Sub-object black-point remapping value.
-    pub(crate) black_point: f64,
+    pub(crate) black_point: FiniteReal,
     /// Sub-object white-point remapping value.
-    pub(crate) white_point: f64,
+    pub(crate) white_point: FiniteReal,
 }
 
 /// The XML parameters written by `ON_EdgeSofteningUserData`.
@@ -154,7 +155,7 @@ pub(crate) struct EdgeSofteningModifier {
     /// Whether edge softening is enabled.
     pub(crate) on: bool,
     /// Edge-softening radius.
-    pub(crate) softening: f64,
+    pub(crate) softening: FiniteReal,
     /// Whether softened edges are chamfered.
     pub(crate) chamfer: bool,
     /// Whether edges are left faceted; serialized as `unweld`.
@@ -162,7 +163,7 @@ pub(crate) struct EdgeSofteningModifier {
     /// Whether to soften edges despite an excessive radius.
     pub(crate) force_softening: bool,
     /// Adjacent-face angle threshold in degrees.
-    pub(crate) edge_angle_threshold: f64,
+    pub(crate) edge_angle_threshold: FiniteReal,
 }
 
 /// The XML parameters written by `ON_ThickeningUserData`.
@@ -180,7 +181,7 @@ pub(crate) struct ThickeningModifier {
     /// Whether only the offset surface is produced.
     pub(crate) offset_only: bool,
     /// Thickening distance.
-    pub(crate) distance: f64,
+    pub(crate) distance: FiniteReal,
 }
 
 /// The XML parameters written by `ON_CurvePipingUserData`.
@@ -192,7 +193,7 @@ pub(crate) struct CurvePipingModifier {
     /// Whether curve piping is enabled.
     pub(crate) on: bool,
     /// Pipe radius.
-    pub(crate) radius: f64,
+    pub(crate) radius: FiniteReal,
     /// Number of pipe segments.
     pub(crate) segments: i32,
     /// Whether the pipe is faceted; serialized as the inverse `weld` value.
@@ -240,7 +241,7 @@ pub(crate) struct ShutLiningCurve {
     /// Curve object UUID; nil UUIDs are represented as `None`.
     pub(crate) uuid: Option<Uuid>,
     /// Shut-line radius.
-    pub(crate) radius: f64,
+    pub(crate) radius: FiniteReal,
     /// Shut-line profile.
     pub(crate) profile: i32,
     /// Whether this curve creates a shut-line.
@@ -632,7 +633,7 @@ fn parse_shut_lining_xml(xml: &str, xml_version: i32) -> Result<ShutLiningModifi
 fn parse_shut_lining_curve(node: roxmltree::Node<'_, '_>) -> ShutLiningCurve {
     ShutLiningCurve {
         uuid: field_uuid_untyped(node, "uuid"),
-        radius: field_f64_untyped(node, "radius", 1.0),
+        radius: field_f64_untyped(node, "radius", FiniteReal::ONE),
         profile: field_i32_untyped(node, "profile", 0),
         enabled: field_bool_untyped(node, "enabled", false),
         pull: field_bool_untyped(node, "pull", false),
@@ -775,9 +776,9 @@ fn field_f64(
     parent: roxmltree::Node<'_, '_>,
     name: &str,
     default: f64,
-) -> Result<f64, FramingError> {
+) -> Result<FiniteReal, FramingError> {
     let Some(node) = typed_child(parent, name) else {
-        return Ok(default);
+        return FiniteReal::new(default).ok_or_else(|| malformed_typed_field(name, "default"));
     };
     let text = node.text().unwrap_or_default().trim();
     let kind = attribute(node, "type").unwrap_or_default();
@@ -793,7 +794,7 @@ fn field_f64(
         None
     };
     value
-        .filter(|value| value.is_finite())
+        .and_then(FiniteReal::new)
         .ok_or_else(|| malformed_typed_field(name, kind))
 }
 
@@ -833,17 +834,19 @@ fn field_i32_untyped(parent: roxmltree::Node<'_, '_>, name: &str, default: i32) 
     }
 }
 
-fn field_f64_untyped(parent: roxmltree::Node<'_, '_>, name: &str, default: f64) -> f64 {
+fn field_f64_untyped(
+    parent: roxmltree::Node<'_, '_>,
+    name: &str,
+    default: FiniteReal,
+) -> FiniteReal {
     let Some(node) = direct_child(parent, name) else {
         return default;
     };
     let text = node.text().unwrap_or_default().trim();
-    let value = text.parse::<f64>().unwrap_or(0.0);
-    if value.is_finite() {
-        value
-    } else {
-        0.0
-    }
+    text.parse::<f64>()
+        .ok()
+        .and_then(FiniteReal::new)
+        .unwrap_or(FiniteReal::ZERO)
 }
 
 fn field_cap_type(parent: roxmltree::Node<'_, '_>, name: &str) -> CapType {
@@ -1105,14 +1108,14 @@ mod tests {
         assert_eq!(displacement.xml_version, 2);
         assert!(displacement.on);
         assert_eq!(displacement.channel, 7);
-        assert_eq!(displacement.black_point, -0.25);
-        assert_eq!(displacement.white_point, 0.85);
+        assert_eq!(displacement.black_point.get(), -0.25);
+        assert_eq!(displacement.white_point.get(), 0.85);
         assert_eq!(displacement.sweep_pitch, 12);
         assert_eq!(displacement.refine_steps, 3);
-        assert_eq!(displacement.refine_sensitivity, 0.75);
+        assert_eq!(displacement.refine_sensitivity.get(), 0.75);
         assert!(displacement.face_count_limit_enabled);
         assert_eq!(displacement.face_count_limit, 5432);
-        assert_eq!(displacement.post_weld_angle, 22.5);
+        assert_eq!(displacement.post_weld_angle.get(), 22.5);
         assert_eq!(displacement.mesh_memory_limit, 1024);
         assert!(displacement.fairing_enabled);
         assert_eq!(displacement.fairing_amount, 6);
@@ -1122,8 +1125,8 @@ mod tests {
         assert_eq!(displacement.sub_items[0].face_index, 3);
         assert!(displacement.sub_items[0].on);
         assert_eq!(displacement.sub_items[0].channel, 9);
-        assert_eq!(displacement.sub_items[0].black_point, -0.1);
-        assert_eq!(displacement.sub_items[0].white_point, 0.6);
+        assert_eq!(displacement.sub_items[0].black_point.get(), -0.1);
+        assert_eq!(displacement.sub_items[0].white_point.get(), 0.6);
         assert!(warnings.is_empty());
     }
 
@@ -1156,11 +1159,11 @@ mod tests {
         let edge_softening = modifiers.edge_softening.expect("edge softening");
         assert_eq!(edge_softening.xml_version, 2);
         assert!(edge_softening.on);
-        assert_eq!(edge_softening.softening, 0.25);
+        assert_eq!(edge_softening.softening.get(), 0.25);
         assert!(edge_softening.chamfer);
         assert!(!edge_softening.faceted);
         assert!(edge_softening.force_softening);
-        assert_eq!(edge_softening.edge_angle_threshold, 17.5);
+        assert_eq!(edge_softening.edge_angle_threshold.get(), 17.5);
         assert!(modifiers.displacement.is_none());
         assert!(warnings.is_empty());
     }
@@ -1184,11 +1187,11 @@ mod tests {
         .expect("edge-softening userdata");
         let edge_softening = modifiers.edge_softening.expect("edge softening");
         assert!(edge_softening.on);
-        assert_eq!(edge_softening.softening, 0.1);
+        assert_eq!(edge_softening.softening.get(), 0.1);
         assert!(!edge_softening.chamfer);
         assert!(!edge_softening.faceted);
         assert!(!edge_softening.force_softening);
-        assert_eq!(edge_softening.edge_angle_threshold, 12.5);
+        assert_eq!(edge_softening.edge_angle_threshold.get(), 12.5);
         assert!(warnings.is_empty());
     }
 
@@ -1209,7 +1212,7 @@ mod tests {
         assert!(!thickening.solid);
         assert!(thickening.both_sides);
         assert!(thickening.offset_only);
-        assert_eq!(thickening.distance, 0.25);
+        assert_eq!(thickening.distance.get(), 0.25);
         assert!(modifiers.displacement.is_none());
         assert!(modifiers.edge_softening.is_none());
         assert!(warnings.is_empty());
@@ -1239,7 +1242,7 @@ mod tests {
         assert!(!thickening.solid);
         assert!(thickening.both_sides);
         assert!(thickening.offset_only);
-        assert_eq!(thickening.distance, 0.1);
+        assert_eq!(thickening.distance.get(), 0.1);
         assert!(warnings.is_empty());
     }
 
@@ -1260,7 +1263,7 @@ mod tests {
         let curve_piping = modifiers.curve_piping.expect("curve piping");
         assert_eq!(curve_piping.xml_version, 2);
         assert!(curve_piping.on);
-        assert_eq!(curve_piping.radius, 2.25);
+        assert_eq!(curve_piping.radius.get(), 2.25);
         assert_eq!(curve_piping.segments, 12);
         assert!(!curve_piping.faceted);
         assert_eq!(curve_piping.accuracy, 73);
@@ -1292,7 +1295,7 @@ mod tests {
         .expect("curve-piping userdata");
         let curve_piping = modifiers.curve_piping.expect("curve piping");
         assert!(curve_piping.on);
-        assert_eq!(curve_piping.radius, 1.0);
+        assert_eq!(curve_piping.radius.get(), 1.0);
         assert_eq!(curve_piping.segments, 16);
         assert!(curve_piping.faceted);
         assert_eq!(curve_piping.accuracy, 50);
@@ -1319,7 +1322,7 @@ mod tests {
         assert!(shut_lining.force_update);
         assert_eq!(shut_lining.curves.len(), 3);
         assert_eq!(shut_lining.curves[0].uuid, None);
-        assert_eq!(shut_lining.curves[0].radius, 1.0);
+        assert_eq!(shut_lining.curves[0].radius.get(), 1.0);
         assert_eq!(shut_lining.curves[0].profile, 0);
         assert!(!shut_lining.curves[0].enabled);
         assert!(!shut_lining.curves[0].pull);
@@ -1328,12 +1331,12 @@ mod tests {
             shut_lining.curves[1].uuid.map(|uuid| uuid.to_string()),
             Some("10000000-0000-0000-0000-000000000001".into())
         );
-        assert_eq!(shut_lining.curves[1].radius, 0.25);
+        assert_eq!(shut_lining.curves[1].radius.get(), 0.25);
         assert_eq!(shut_lining.curves[1].profile, 1);
         assert!(shut_lining.curves[1].enabled);
         assert!(shut_lining.curves[1].pull);
         assert!(!shut_lining.curves[1].is_bump);
-        assert_eq!(shut_lining.curves[2].radius, 2.5);
+        assert_eq!(shut_lining.curves[2].radius.get(), 2.5);
         assert_eq!(shut_lining.curves[2].profile, 4);
         assert!(!shut_lining.curves[2].enabled);
         assert!(!shut_lining.curves[2].pull);
@@ -1365,7 +1368,7 @@ mod tests {
         assert!(!shut_lining.force_update);
         assert_eq!(shut_lining.curves.len(), 1);
         let curve = &shut_lining.curves[0];
-        assert_eq!(curve.radius, 3.25);
+        assert_eq!(curve.radius.get(), 3.25);
         assert_eq!(curve.profile, 7);
         assert!(curve.enabled);
         assert!(curve.pull);
@@ -1392,7 +1395,7 @@ mod tests {
         assert!(!shut_lining.auto_update);
         assert!(!shut_lining.force_update);
         assert_eq!(shut_lining.curves.len(), 1);
-        assert_eq!(shut_lining.curves[0].radius, 2.75);
+        assert_eq!(shut_lining.curves[0].radius.get(), 2.75);
         assert_eq!(shut_lining.curves[0].profile, 3);
         assert!(!shut_lining.curves[0].enabled);
         assert!(!shut_lining.curves[0].pull);
