@@ -6,7 +6,7 @@ use crate::records::mesh::DesignRelaxedGuidText;
 use crate::records::references::DesignClassTag;
 use crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate;
 use cadmpeg_ir::scalar::FiniteReal;
-use serde::{Deserialize, Serialize};
+use serde::{ser::SerializeSeq, Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(
     deserialize_curve_secondary_identity,
@@ -57,11 +57,8 @@ pub(crate) struct DesignHoleTangentPoint {
 /// the direction as a unit model-space vector. The remaining fields preserve
 /// the carrier's base-level evidence so later Hole forms can bind their input
 /// records without reparsing the byte stream.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignHoleConstructionWire",
-    into = "DesignHoleConstructionWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "DesignHoleConstructionWire")]
 pub(crate) struct DesignHoleConstruction {
     /// Point-data record selected by the Hole scope.
     pub(crate) point_record_index: u32,
@@ -178,43 +175,76 @@ impl TryFrom<DesignHoleConstructionWire> for DesignHoleConstruction {
     }
 }
 
-impl From<DesignHoleConstruction> for DesignHoleConstructionWire {
-    fn from(record: DesignHoleConstruction) -> Self {
-        Self {
-            point_record_index: record.point_record_index,
-            point_record_byte_offset: record.point_record_byte_offset,
-            position: record.position,
-            position_offset: record.position_offset,
-            direction: record.direction,
-            direction_offset: record.direction_offset,
-            point_parameters: record.point_parameters,
-            point_parameter_offsets: record.point_parameter_offsets,
-            reference_type: record.reference_type,
-            reference_type_offset: record.reference_type_offset,
-            tangent_point_data: record
-                .tangent_point_data
-                .as_ref()
-                .map(|tangent| tangent.data.value),
-            tangent_point_data_prefix: record
-                .tangent_point_data
-                .as_ref()
-                .map(|tangent| tangent.prefix),
-            tangent_point_data_offset: record
-                .tangent_point_data
-                .as_ref()
-                .map(|tangent| tangent.data.offset),
-            input_record_indices: record
-                .input_records
-                .iter()
-                .map(|reference| reference.value)
-                .collect(),
-            input_record_offsets: record
-                .input_records
-                .iter()
-                .map(|reference| reference.offset)
-                .collect(),
-            face_selection: record.face_selection,
+struct InputRecordIndices<'a>(&'a [Located<u32>]);
+
+impl Serialize for InputRecordIndices<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut seq = serializer.serialize_seq(Some(self.0.len()))?;
+        for record in self.0 {
+            seq.serialize_element(&record.value)?;
         }
+        seq.end()
+    }
+}
+
+struct InputRecordOffsets<'a>(&'a [Located<u32>]);
+
+impl Serialize for InputRecordOffsets<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut seq = serializer.serialize_seq(Some(self.0.len()))?;
+        for record in self.0 {
+            seq.serialize_element(&record.offset)?;
+        }
+        seq.end()
+    }
+}
+
+#[derive(Serialize)]
+struct HoleConstructionView<'a> {
+    point_record_index: u32,
+    point_record_byte_offset: u64,
+    position: &'a [FiniteReal; 3],
+    position_offset: u64,
+    direction: &'a [FiniteReal; 3],
+    direction_offset: u64,
+    point_parameters: &'a [FiniteReal; 2],
+    point_parameter_offsets: &'a [u64; 2],
+    reference_type: u32,
+    reference_type_offset: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tangent_point_data: Option<&'a [FiniteReal; 3]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tangent_point_data_prefix: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tangent_point_data_offset: Option<u64>,
+    input_record_indices: InputRecordIndices<'a>,
+    input_record_offsets: InputRecordOffsets<'a>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    face_selection: Option<&'a DesignHoleFaceSelection>,
+}
+
+impl Serialize for DesignHoleConstruction {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let tangent = self.tangent_point_data.as_ref();
+        HoleConstructionView {
+            point_record_index: self.point_record_index,
+            point_record_byte_offset: self.point_record_byte_offset,
+            position: &self.position,
+            position_offset: self.position_offset,
+            direction: &self.direction,
+            direction_offset: self.direction_offset,
+            point_parameters: &self.point_parameters,
+            point_parameter_offsets: &self.point_parameter_offsets,
+            reference_type: self.reference_type,
+            reference_type_offset: self.reference_type_offset,
+            tangent_point_data: tangent.map(|value| &value.data.value),
+            tangent_point_data_prefix: tangent.map(|value| value.prefix),
+            tangent_point_data_offset: tangent.map(|value| value.data.offset),
+            input_record_indices: InputRecordIndices(&self.input_records),
+            input_record_offsets: InputRecordOffsets(&self.input_records),
+            face_selection: self.face_selection.as_ref(),
+        }
+        .serialize(serializer)
     }
 }
 
@@ -223,11 +253,8 @@ impl From<DesignHoleConstruction> for DesignHoleConstructionWire {
 /// Hole selections are scope references rather than construction-group
 /// members. Their envelope is the same persistent entity-selection grammar
 /// used by grouped operands, but the scope owns the selection directly.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignHoleFaceSelectionWire",
-    into = "DesignHoleFaceSelectionWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "DesignHoleFaceSelectionWire")]
 pub(crate) struct DesignHoleFaceSelection {
     /// Indexed record carrying the persistent selection envelope.
     pub(crate) record_index: u32,
@@ -357,33 +384,121 @@ impl TryFrom<DesignHoleFaceSelectionWire> for DesignHoleFaceSelection {
     }
 }
 
-impl From<DesignHoleFaceSelection> for DesignHoleFaceSelectionWire {
-    fn from(record: DesignHoleFaceSelection) -> Self {
-        Self {
-            record_index: record.record_index,
-            byte_offset: record.byte_offset,
-            class_tag: record.class_tag.into(),
-            asset_id: record.asset_id,
-            asset_id_offset: record.asset_id_offset,
-            context_id: record.context_id,
-            context_id_offset: record.context_id_offset,
-            identity_record_index: record.identity_record_index,
-            identity_record_offset: record.identity_record_offset,
-            primary_identity: record.primary_identity,
-            primary_identity_offset: record.primary_identity_offset,
-            secondary_identity: record.secondary.map(|secondary| secondary.identity.value),
-            secondary_identity_offset: record.secondary.map(|secondary| secondary.identity.offset),
-            curve_secondary_identity: record
-                .secondary
-                .and_then(|secondary| secondary.curve_identity)
-                .map(|identity| identity.value),
-            curve_secondary_identity_offset: record
-                .secondary
-                .and_then(|secondary| secondary.curve_identity)
-                .map(|identity| identity.offset),
-            historical_face_candidates: record.historical_face_candidates,
-            next_record_index: record.next_record_index,
-            next_byte_offset: record.next_byte_offset,
+#[derive(Serialize)]
+struct HoleFaceSelectionView<'a> {
+    record_index: u32,
+    byte_offset: u64,
+    class_tag: &'a str,
+    asset_id: &'a DesignRelaxedGuidText,
+    asset_id_offset: u64,
+    context_id: &'a DesignRelaxedGuidText,
+    context_id_offset: u64,
+    identity_record_index: u32,
+    identity_record_offset: u64,
+    primary_identity: u64,
+    primary_identity_offset: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    secondary_identity: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    secondary_identity_offset: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    curve_secondary_identity: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    curve_secondary_identity_offset: Option<u64>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    historical_face_candidates: &'a Vec<DesignEntitySelectionFaceCandidate>,
+    next_record_index: u32,
+    next_byte_offset: u64,
+}
+
+impl Serialize for DesignHoleFaceSelection {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let secondary = self.secondary;
+        let curve = secondary.and_then(|value| value.curve_identity);
+        HoleFaceSelectionView {
+            record_index: self.record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag.as_str(),
+            asset_id: &self.asset_id,
+            asset_id_offset: self.asset_id_offset,
+            context_id: &self.context_id,
+            context_id_offset: self.context_id_offset,
+            identity_record_index: self.identity_record_index,
+            identity_record_offset: self.identity_record_offset,
+            primary_identity: self.primary_identity,
+            primary_identity_offset: self.primary_identity_offset,
+            secondary_identity: secondary.map(|value| value.identity.value),
+            secondary_identity_offset: secondary.map(|value| value.identity.offset),
+            curve_secondary_identity: curve.map(|value| value.value),
+            curve_secondary_identity_offset: curve.map(|value| value.offset),
+            historical_face_candidates: &self.historical_face_candidates,
+            next_record_index: self.next_record_index,
+            next_byte_offset: self.next_byte_offset,
         }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DesignHoleConstruction, DesignHoleFaceSelection};
+    use cadmpeg_test_support::native_serialization::assert_native_limit;
+
+    #[test]
+    fn hole_construction_input_columns_stream_once_with_retained_limit() {
+        #[derive(serde::Serialize)]
+        struct Row<'a> {
+            id: &'static str,
+            construction: &'a DesignHoleConstruction,
+        }
+
+        let construction = serde_json::json!({
+            "point_record_index": 1, "point_record_byte_offset": 2,
+            "position": [0.0, 1.0, 2.0], "position_offset": 3,
+            "direction": [0.0, 0.0, 1.0], "direction_offset": 4,
+            "point_parameters": [0.0, 1.0], "point_parameter_offsets": [5, 6],
+            "reference_type": 0, "reference_type_offset": 7,
+            "input_record_indices": [8], "input_record_offsets": [9]
+        });
+        let admitted: DesignHoleConstruction =
+            serde_json::from_value(construction.clone()).expect("valid fixture");
+        let row = Row {
+            id: "f3d:design:hole#1",
+            construction: &admitted,
+        };
+        assert_native_limit(
+            &row,
+            serde_json::json!({"id": row.id, "construction": construction}),
+        );
+    }
+
+    #[test]
+    fn hole_face_selection_streams_once_with_retained_limit() {
+        #[derive(serde::Serialize)]
+        struct Row<'a> {
+            id: &'static str,
+            selection: &'a DesignHoleFaceSelection,
+        }
+
+        let selection = serde_json::json!({
+            "record_index": 1, "byte_offset": 2, "class_tag": "451",
+            "asset_id": "11111111-1111-1111-1111-111111111111",
+            "asset_id_offset": 3,
+            "context_id": "22222222-2222-2222-2222-222222222222",
+            "context_id_offset": 4,
+            "identity_record_index": 5, "identity_record_offset": 6,
+            "primary_identity": 7, "primary_identity_offset": 8,
+            "next_record_index": 9, "next_byte_offset": 10
+        });
+        let admitted: DesignHoleFaceSelection =
+            serde_json::from_value(selection.clone()).expect("valid fixture");
+        let row = Row {
+            id: "f3d:design:hole-selection#1",
+            selection: &admitted,
+        };
+        assert_native_limit(
+            &row,
+            serde_json::json!({"id": row.id, "selection": selection}),
+        );
     }
 }
