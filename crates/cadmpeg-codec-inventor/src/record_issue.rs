@@ -22,8 +22,16 @@ pub(crate) fn admit_issue_detail(
     error: &CodecError,
     operation: &'static str,
 ) -> Result<(), CodecError> {
+    admit_formatted(ctx, format_args!("{error}"), operation)
+}
+
+pub(crate) fn admit_formatted(
+    ctx: &DecodeContext<'_>,
+    args: std::fmt::Arguments<'_>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
     let mut detail_len = ByteCounter::default();
-    write!(&mut detail_len, "{error}").map_err(|_| {
+    detail_len.write_fmt(args).map_err(|_| {
         ctx.refuse_codec_limit("Inventor issue detail byte count", u64::MAX - 1, u64::MAX)
     })?;
     ctx.charge_retained(detail_len.0 as u64, operation)
