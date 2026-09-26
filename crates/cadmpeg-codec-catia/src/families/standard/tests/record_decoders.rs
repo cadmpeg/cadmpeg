@@ -305,6 +305,13 @@ fn standard_topology_accepts_delimiters_between_counted_edge_tables() {
 
 #[test]
 fn fbb_topology_reads_u24_mesh_and_edge_handles() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[0],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("topology fixture fits the service profile");
     let mut bytes = vec![0x01, 0x44, 0x01, 0xff, 10, 0, 0, 0, 10];
     for handle in [
         1u32, 0x01_0010, 0x01_0011, 0x01_0012, 0x01_0013, 0x01_0014, 0x01_0015, 0x01_0016,
@@ -386,7 +393,7 @@ fn fbb_topology_reads_u24_mesh_and_edge_handles() {
     );
     assert_eq!(
         quotient
-            .bind_vertex_points(&[
+            .bind_vertex_points(&ctx, &[
                 [0, 1],
                 [1, 2],
                 [2, 3],
@@ -396,6 +403,7 @@ fn fbb_topology_reads_u24_mesh_and_edge_handles() {
                 [2, 3],
                 [3, 0],
             ])
+            .expect("coordinate binding fits the service profile")
             .expect("coordinate binding"),
         vec![0, 1, 2, 3]
     );
@@ -782,10 +790,18 @@ fn standard_curve_support_fallback_requires_one_complete_edge_run() {
 
 #[test]
 fn topology_binds_logical_vertices_from_exact_edge_endpoint_pairs() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[0],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("topology fixture fits the service profile");
     let topology = crate::families::standard::fbb::parse_standard(&standard_quad_topology_stream())
         .expect("quad topology");
     let assignment = topology
-        .bind_vertex_points(&[[0, 1], [1, 2], [2, 3], [3, 0]])
+        .bind_vertex_points(&ctx, &[[0, 1], [1, 2], [2, 3], [3, 0]])
+        .expect("coordinate binding fits the service profile")
         .expect("unique point assignment");
 
     assert_eq!(assignment, vec![0, 1, 2, 3]);

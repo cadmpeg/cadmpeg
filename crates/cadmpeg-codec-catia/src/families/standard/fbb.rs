@@ -369,16 +369,23 @@ pub(super) fn prune_edge_candidates_by_port_domains_with_deferred(
 /// phase budget.
 #[must_use]
 pub(super) fn parse_standard_endpoint_candidates(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
     budget: &WorkBudget<'_>,
-) -> Option<StandardTopology> {
-    let face_run = selected_standard_run(bytes)?;
+) -> Result<Option<StandardTopology>, cadmpeg_core::CodecError> {
+    let Some(face_run) = selected_standard_run(bytes) else {
+        return Ok(None);
+    };
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let (edge_rows, vertex_header) = parse_standard_edge_tables(bytes, after_faces)?;
-    let vertex_points = parse_vertex_table(bytes, vertex_header)?;
+    let Some((edge_rows, vertex_header)) = parse_standard_edge_tables(bytes, after_faces) else {
+        return Ok(None);
+    };
+    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+        return Ok(None);
+    };
     if edge_rows.len() != edge_faces.len()
         || edge_rows.len() != edge_candidates.len()
         || edge_candidates.iter().any(Vec::is_empty)
@@ -388,10 +395,11 @@ pub(super) fn parse_standard_endpoint_candidates(
             .flatten()
             .any(|point| *point >= vertex_points.len())
     {
-        return None;
+        return Ok(None);
     }
 
     reconstruct_incidence_candidates(
+        ctx,
         &edge_rows,
         &vertex_points,
         edge_faces,
@@ -407,17 +415,24 @@ pub(super) fn parse_standard_endpoint_candidates(
 /// Search charges the supplied topology phase budget.
 #[must_use]
 pub(super) fn parse_standard_port_endpoint_candidates(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
     edge_ports: &[[u32; 2]],
     budget: &WorkBudget<'_>,
-) -> Option<StandardTopology> {
-    let face_run = selected_standard_run(bytes)?;
+) -> Result<Option<StandardTopology>, cadmpeg_core::CodecError> {
+    let Some(face_run) = selected_standard_run(bytes) else {
+        return Ok(None);
+    };
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let (edge_rows, vertex_header) = parse_standard_edge_tables(bytes, after_faces)?;
-    let vertex_points = parse_vertex_table(bytes, vertex_header)?;
+    let Some((edge_rows, vertex_header)) = parse_standard_edge_tables(bytes, after_faces) else {
+        return Ok(None);
+    };
+    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+        return Ok(None);
+    };
     if edge_rows.len() != edge_faces.len()
         || edge_rows.len() != edge_candidates.len()
         || edge_rows.len() != edge_ports.len()
@@ -428,9 +443,10 @@ pub(super) fn parse_standard_port_endpoint_candidates(
             .flatten()
             .any(|point| *point >= vertex_points.len())
     {
-        return None;
+        return Ok(None);
     }
     reconstruct_incidence_candidates(
+        ctx,
         &edge_rows,
         &vertex_points,
         edge_faces,

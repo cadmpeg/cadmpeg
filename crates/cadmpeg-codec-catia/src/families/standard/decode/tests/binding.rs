@@ -197,45 +197,68 @@ fn owner_face_bounds_are_not_a_witness_for_other_fixed_nine_dialects() {
 
 #[test]
 fn owner_face_swaps_bind_when_every_complete_matching_has_one_carrier() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[0], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).expect("binding fixture fits the service profile");
     let domains = vec![
         vec![(0, vec![7]), (1, vec![7]), (2, vec![7])],
         vec![(0, vec![7]), (1, vec![7])],
     ];
 
     assert_eq!(
-        invariant_face_carrier_bindings(&domains, 3, None),
+        invariant_face_carrier_bindings(&ctx, &domains, 3, None)
+            .expect("binding fits the service profile"),
         Some(vec![Some(7), Some(7)])
     );
 }
 
 #[test]
 fn owner_face_matching_withholds_carrier_labels_that_change_under_a_swap() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[0], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).expect("binding fixture fits the service profile");
     let domains = vec![
         vec![(0, vec![7]), (1, vec![9])],
         vec![(0, vec![9]), (1, vec![7])],
     ];
 
     assert_eq!(
-        invariant_face_carrier_bindings(&domains, 2, None),
+        invariant_face_carrier_bindings(&ctx, &domains, 2, None)
+            .expect("binding fits the service profile"),
         Some(vec![None, None])
     );
 }
 
 #[test]
 fn owner_face_matching_removes_labels_outside_every_complete_matching() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[0], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).expect("binding fixture fits the service profile");
     let domains = vec![vec![(0, vec![7]), (1, vec![99])], vec![(1, vec![11])]];
 
     assert_eq!(
-        invariant_face_carrier_bindings(&domains, 2, None),
+        invariant_face_carrier_bindings(&ctx, &domains, 2, None)
+            .expect("binding fits the service profile"),
         Some(vec![Some(7), Some(11)])
     );
 }
 
 #[test]
 fn owner_face_matching_requires_every_face_to_have_a_distinct_owner() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[0], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).expect("binding fixture fits the service profile");
     let domains = vec![vec![(0, vec![7])], Vec::new()];
 
-    assert_eq!(invariant_face_carrier_bindings(&domains, 2, None), None);
+    assert_eq!(
+        invariant_face_carrier_bindings(&ctx, &domains, 2, None)
+            .expect("binding fits the service profile"),
+        None
+    );
 }
 
 #[test]

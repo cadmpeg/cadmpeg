@@ -82,6 +82,7 @@ fn standard_mesh_ports_preserve_global_terminal_handle_identity() {
 
 #[test]
 fn standard_mesh_resolver_derives_trim_components_from_local_ports() {
+    catia_test_context!(ctx);
     let mut bytes = standard_quad_topology_stream();
     let header = bytes
         .windows(3)
@@ -99,10 +100,12 @@ fn standard_mesh_resolver_derives_trim_components_from_local_ports() {
 
     let (topology, assignment) =
         crate::solve::mesh_quotient::parse_standard_mesh_endpoint_candidates(
+            &ctx,
             &bytes,
             &[[0, 0]; 4],
             &candidates,
         )
+        .expect("service resource budget")
         .expect("trim occurrence endpoint quotient");
 
     assert_eq!(assignment, vec![0, 1, 2, 3]);
@@ -147,6 +150,7 @@ fn standard_mesh_ports_are_occurrence_components_not_coordinate_indices() {
 
 #[test]
 fn standard_mesh_coverage_reports_exact_matched_partition() {
+    catia_test_context!(ctx);
     let coverage = crate::solve::missing_edge::standard_mesh_face_coverage(
         &standard_quad_topology_stream(),
         &[[0, 0]; 4],
@@ -254,10 +258,12 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
     );
     let (searched, point_assignment) =
         crate::solve::mesh_quotient::parse_standard_mesh_endpoint_candidates(
+            &ctx,
             &bytes,
             &[[0, 0]; 4],
             &[Vec::new(), vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]],
         )
+        .expect("service resource budget")
         .expect("abstract mesh quotient search");
     assert_eq!(searched.logical_vertex_count(), 4);
     assert_eq!(
@@ -409,6 +415,7 @@ fn standard_mesh_runs_include_flanking_segments() {
 
 #[test]
 fn standard_mesh_gap_assignment_uses_compact_endpoint_identity() {
+    catia_test_context!(ctx);
     let mut bytes = standard_quad_topology_stream();
     for _ in 0..4 {
         let row = bytes
@@ -437,10 +444,12 @@ fn standard_mesh_gap_assignment_uses_compact_endpoint_identity() {
             == 4
     }));
     let (topology, points) = crate::solve::mesh_quotient::parse_standard_mesh_endpoint_candidates(
+        &ctx,
         &bytes,
         &[[0, 0]; 4],
         &[vec![[0, 1]], vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]],
     )
+    .expect("service resource budget")
     .expect("endpoint-constrained full gap");
     assert_eq!(topology.logical_vertex_count(), 4);
     assert_eq!(points, [0, 1, 2, 3]);
@@ -448,6 +457,7 @@ fn standard_mesh_gap_assignment_uses_compact_endpoint_identity() {
 
 #[test]
 fn standard_mesh_endpoint_domains_ignore_row_local_endpoint_order() {
+    catia_test_context!(ctx);
     let mut bytes = standard_quad_topology_stream();
     let header = bytes
         .windows(3)
@@ -460,10 +470,12 @@ fn standard_mesh_endpoint_domains_ignore_row_local_endpoint_order() {
     bytes[first_row + 6..first_row + 8].copy_from_slice(&start);
 
     let (topology, _) = crate::solve::mesh_quotient::parse_standard_mesh_endpoint_candidates(
+        &ctx,
         &bytes,
         &[[0, 0]; 4],
         &[vec![[0, 1]], vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]],
     )
+    .expect("service resource budget")
     .expect("independent endpoint-port gauge");
     let coedges = &topology.faces()[0].boundaries[0].coedges;
     assert!(coedges.iter().all(|coedge| !coedge.reversed));

@@ -11,7 +11,8 @@ use crate::solve::missing_edge::{
     standard_mesh_boundary_assignments, MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment,
 };
 use crate::solve::union_find::UnionFind;
-use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::decode::{alloc_filled, DecodeContext};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::{features::NonEmptyMembers, topology::BodyKind};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -208,23 +209,28 @@ impl StandardTopology {
     /// exact unordered endpoint pair per physical edge. A result is returned
     /// only when the induced bijection is unique.
     #[must_use]
-    pub(super) fn bind_vertex_points(&self, edge_point_pairs: &[[usize; 2]]) -> Option<Vec<usize>> {
+    pub(super) fn bind_vertex_points(
+        &self,
+        ctx: &DecodeContext<'_>,
+        edge_point_pairs: &[[usize; 2]],
+    ) -> Result<Option<Vec<usize>>, CodecError> {
         if edge_point_pairs.len() != self.edge_rows.len()
             || self.logical_vertex_count != self.vertex_points.len()
         {
-            return None;
+            return Ok(None);
         }
-        let edge_vertices = self.edge_vertices()?;
+        let Some(edge_vertices) = self.edge_vertices() else {
+            return Ok(None);
+        };
         let all_points: HashSet<usize> = (0..self.vertex_points.len()).collect();
-        let mut domains = alloc_filled(
+        let mut domains = ctx.alloc_filled(
             self.logical_vertex_count,
             all_points,
             "catia standard vertex point domains",
-        )
-        .ok()?;
+        )?;
         for (edge, pair) in edge_vertices.into_iter().zip(edge_point_pairs) {
             if pair[0] >= self.vertex_points.len() || pair[1] >= self.vertex_points.len() {
-                return None;
+                return Ok(None);
             }
             let [start, end] = edge;
             let candidates = HashSet::from(*pair);
@@ -232,10 +238,10 @@ impl StandardTopology {
             domains[end].retain(|point| candidates.contains(point));
         }
         if domains.iter().any(HashSet::is_empty) {
-            return None;
+            return Ok(None);
         }
 
-        unique_coordinate_bijection(&domains, &self.vertex_points)
+        unique_coordinate_bijection(ctx, &domains, &self.vertex_points)
     }
 
     /// Logical endpoint components in physical edge-row direction.

@@ -31,6 +31,7 @@ fn direction_work_estimate_states_no_figure_the_work_counter_cannot_hold() {
 /// two unknown uses over the same shape and leaves the search open.
 #[test]
 fn a_face_the_work_counter_cannot_estimate_exhausts_the_search() {
+    catia_test_context!(ctx);
     let outcome_for = |unknown_use_count: usize| {
         let assignments = vec![vec![MeshFaceBoundaryAssignment {
             boundaries: vec![(0..unknown_use_count)
@@ -50,6 +51,7 @@ fn a_face_the_work_counter_cannot_estimate_exhausts_the_search() {
             domains.push(domain);
         }
         let mut search = MeshSelectionSearch {
+            ctx: &ctx,
             assignments: &assignments,
             possible_face_equations: vec![Vec::new()],
             possible_face_choices: vec![Vec::new()],
@@ -70,7 +72,9 @@ fn a_face_the_work_counter_cannot_estimate_exhausts_the_search() {
         let quotient = MeshQuotient::new(domains);
         let budget = WorkBudget::new(10_000);
         let propagation_budget = WorkBudget::new(0);
-        search.search_from_state(&quotient, true, &budget, &propagation_budget);
+        search
+            .search_from_state(&quotient, true, &budget, &propagation_budget)
+            .expect("service resource budget");
         matches!(search.outcome, SearchOutcome::Exhausted)
     };
 
