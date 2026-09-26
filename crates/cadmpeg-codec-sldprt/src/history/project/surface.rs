@@ -2,12 +2,9 @@
 //! Surface-feature projection.
 
 use crate::records::Feature;
-use cadmpeg_ir::{
-    features::{
-        EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation, PathRef,
-        RuledSurfaceMode, SurfaceExtension, TrimRegion,
-    },
-    scalar::Length,
+use cadmpeg_ir::features::{
+    EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation, PathRef, RuledSurfaceMode,
+    SurfaceExtension, TrimRegion,
 };
 use std::collections::HashMap;
 
@@ -26,14 +23,14 @@ pub(super) fn project_offset_surface(feature: &Feature) -> FeatureDefinition {
             .parameters
             .get("Distance")
             .or_else(|| feature.parameters.get("D1"))
-            .and_then(|value| parse_length_mm(value))
-            .and_then(Length::new),
+            .and_then(|value| parse_length_mm(value)),
     })
 }
 
 pub(super) fn project_knit_surface(feature: &Feature) -> FeatureDefinition {
     let gap_tolerance = match feature.parameters.get("GapTolerance") {
-        Some(value) => parse_length_mm(value).and_then(cadmpeg_ir::scalar::NonNegativeLength::new),
+        Some(value) => parse_length_mm(value)
+            .and_then(|value| cadmpeg_ir::scalar::NonNegativeLength::try_from(value).ok()),
         None => None,
     };
     FeatureDefinition::Operation(FeatureOperation::KnitSurface {
@@ -123,8 +120,7 @@ pub(super) fn project_extend_surface(feature: &Feature) -> FeatureDefinition {
             .parameters
             .get("Distance")
             .or_else(|| feature.parameters.get("D1"))
-            .and_then(|value| parse_positive_length_mm(value))
-            .and_then(cadmpeg_ir::scalar::PositiveLength::new),
+            .and_then(|value| parse_positive_length_mm(value)),
         method: feature
             .properties
             .get("Method")
@@ -134,12 +130,12 @@ pub(super) fn project_extend_surface(feature: &Feature) -> FeatureDefinition {
 }
 
 pub(super) fn project_ruled_surface(feature: &Feature) -> Option<FeatureDefinition> {
-    let distance = cadmpeg_ir::scalar::PositiveLength::new(parse_positive_length_mm(
+    let distance = parse_positive_length_mm(
         feature
             .parameters
             .get("Distance")
             .or_else(|| feature.parameters.get("D1"))?,
-    )?)?;
+    )?;
     let mode = match feature
         .properties
         .get("Mode")?

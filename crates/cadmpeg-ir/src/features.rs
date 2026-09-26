@@ -416,6 +416,13 @@ impl FeatureCoordinateFrame {
     pub fn new(origin: Point3, x_axis: Vector3, y_axis: Vector3, z_axis: Vector3) -> Option<Self> {
         let plane = FeatureUnitPlaneFrame::new(origin, x_axis, y_axis)?;
         let z_axis = UnitVector3::new(z_axis)?;
+        Self::from_parts(plane, z_axis)
+    }
+
+    /// Build a frame from admitted axes and an admitted plane origin.
+    pub fn from_parts(plane: FeatureUnitPlaneFrame, z_axis: UnitVector3) -> Option<Self> {
+        let x_axis = *plane.u_axis().as_raw();
+        let y_axis = *plane.v_axis().as_raw();
         let z = *z_axis.as_raw();
         (x_axis.dot(z).abs() <= EPS_FEATURE_UNIT_FRAME
             && y_axis.dot(z).abs() <= EPS_FEATURE_UNIT_FRAME
@@ -527,6 +534,10 @@ macro_rules! checked_feature_plane_frame {
                 let origin = FinitePoint3::new(origin)?;
                 let normal = FeatureDirection3::new(normal)?;
                 let u_axis = FeatureDirection3::new(u_axis)?;
+                Self::from_parts(origin, normal, u_axis)
+            }
+            /// Build a plane frame from admitted parts; only perpendicularity remains to check.
+            pub fn from_parts(origin: FinitePoint3, normal: FeatureDirection3, u_axis: FeatureDirection3) -> Option<Self> {
                 let $normal_length = normal.norm();
                 let $u_length = u_axis.norm();
                 if normal.dot(u_axis.get()).abs() > $bound { return None; }

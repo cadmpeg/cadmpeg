@@ -41,7 +41,6 @@ use cadmpeg_ir::{
         patterns::{PatternKind, PatternSeed, PatternTransform},
         FeatureDefinition, FeatureOperation, PathRef,
     },
-    scalar::{PositiveAngle, PositiveLength},
     units::UnitVector3,
 };
 use std::collections::{HashMap, HashSet};
@@ -407,14 +406,14 @@ pub(crate) fn bind_pattern_inputs(
                             .and_then(|value| {
                                 crate::history::literals::parse_positive_dimension_length_mm(value)
                             })
-                            .map(|value| value / 1000.0);
+                            .map(|value| value.get() / 1000.0);
                         let second_spacing_m = feature
                             .parameters
                             .get("D4")
                             .and_then(|value| {
                                 crate::history::literals::parse_positive_dimension_length_mm(value)
                             })
-                            .map(|value| value / 1000.0);
+                            .map(|value| value.get() / 1000.0);
                         directions.extend(linear_pattern_display_directions(
                             &lane.native_payload,
                             start,
@@ -575,15 +574,14 @@ pub(crate) fn bind_pattern_inputs(
             match candidates.as_slice() {
                 [first] if direction.is_none() => *direction = Some(admitted_direction(*first)?),
                 [first, second_direction] => {
-                    let parameters =
-                        native.and_then(|feature| {
-                            Some((
-                            PositiveLength::new(feature.parameters.get("D4").and_then(|value| {
+                    let parameters = native.and_then(|feature| {
+                        Some((
+                            feature.parameters.get("D4").and_then(|value| {
                                 crate::history::literals::parse_positive_dimension_length_mm(value)
-                            })?)?,
+                            })?,
                             feature.parameters.get("D2")?.parse::<u32>().ok()?,
                         ))
-                        });
+                    });
                     if let (true, true, Some((spacing, count))) =
                         (direction.is_none(), second.is_none(), parameters)
                     {
@@ -703,11 +701,7 @@ pub(crate) fn bind_pattern_inputs(
             *slot = PatternKind::new(PatternTransform::Circular {
                 axis_origin: admitted_point(*axis_origin)?,
                 axis_dir: admitted_direction(*axis_dir)?,
-                angle: PositiveAngle::new(angle).ok_or_else(|| {
-                    cadmpeg_core::CodecError::Malformed(
-                        "SolidWorks projected angle must be positive and finite".into(),
-                    )
-                })?,
+                angle,
                 count,
             })
             .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
@@ -1422,8 +1416,8 @@ fn bind_detached_spatial_relation_objects(
             let exact = dimensions.iter().all(|(name, expected_mm)| {
                 scalars.iter().any(|(candidate, value_m)| {
                     candidate == name
-                        && (value_m * 1000.0 - expected_mm).abs()
-                            <= expected_mm.abs().max(1.0)
+                        && (value_m * 1000.0 - expected_mm.get()).abs()
+                            <= expected_mm.get().abs().max(1.0)
                                 * EPS_BINDINGS_BIND_DETACHED_SPATIAL_RELATION_OBJECTS_E9
                 })
             });

@@ -58,12 +58,14 @@ fn offset_plane_support_origin(
     if let Some(origin) = source_properties
         .get("ReferenceFaceOrigin")
         .and_then(|value| parse_point3_mm(value))
+        .map(cadmpeg_ir::features::FinitePoint3::get)
     {
         return origin;
     }
     let origin = source_properties
         .get("Origin")
         .and_then(|value| parse_point3_mm(value))
+        .map(cadmpeg_ir::features::FinitePoint3::get)
         .unwrap_or(fallback_origin);
     if native.is_some_and(|native| native.starts_with(SURFACE_COMPONENT_SELECTION_PREFIX)) {
         return Point3::new(
@@ -247,6 +249,7 @@ pub(crate) fn bind_topology_selections(
                             .source_properties
                             .get("Origin")
                             .and_then(|value| parse_point3_mm(value))
+                            .map(cadmpeg_ir::features::FinitePoint3::get)
                         else {
                             break 'feature_edit;
                         };

@@ -179,7 +179,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                         .is_some_and(|value| {
                             crate::history::literals::parse_dimension_length_mm(value).is_some_and(
                                 |value| {
-                                    (value - scalar.value.get() * 1000.0).abs()
+                                    (value.get() - scalar.value.get() * 1000.0).abs()
                                         <= EPS_TERMINATIONS_ENRICH_HISTORY_EXTRUSION_TERMINATIONS_E9
                                 },
                             )

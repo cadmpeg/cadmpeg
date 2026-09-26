@@ -1153,6 +1153,56 @@ fn feature_coordinate_frame_admission_preserves_wire_and_handedness_bound() {
 }
 
 #[test]
+fn checked_feature_frame_parts_preserve_wire_and_cross_field_refusal() {
+    use crate::features::{
+        FeatureCoordinateFrame, FeatureDatumPlaneFrame, FeatureDirection3,
+        FeatureSupportPlaneFrame, FeatureUnitPlaneFrame, FinitePoint3,
+    };
+    use crate::units::UnitVector3;
+
+    let origin = Point3::new(1.0, 2.0, 3.0);
+    let x = Vector3::new(1.0, 0.0, 0.0);
+    let y = Vector3::new(0.0, 1.0, 0.0);
+    let z = Vector3::new(0.0, 0.0, 1.0);
+    let admitted_origin = FinitePoint3::new(origin).unwrap();
+    let plane = FeatureUnitPlaneFrame::from_parts(
+        admitted_origin,
+        UnitVector3::new(x).unwrap(),
+        UnitVector3::new(y).unwrap(),
+    )
+    .unwrap();
+    let frame = FeatureCoordinateFrame::from_parts(plane, UnitVector3::new(z).unwrap()).unwrap();
+    assert_eq!(frame, FeatureCoordinateFrame::new(origin, x, y, z).unwrap());
+    assert!(FeatureCoordinateFrame::from_parts(plane, UnitVector3::new(x).unwrap()).is_none());
+
+    let normal = Vector3::new(0.0, 0.0, 2.0);
+    let u_axis = Vector3::new(-3.0, 0.0, 0.0);
+    let admitted_normal = FeatureDirection3::new(normal).unwrap();
+    let admitted_u_axis = FeatureDirection3::new(u_axis).unwrap();
+    let datum =
+        FeatureDatumPlaneFrame::from_parts(admitted_origin, admitted_normal, admitted_u_axis)
+            .unwrap();
+    let support =
+        FeatureSupportPlaneFrame::from_parts(admitted_origin, admitted_normal, admitted_u_axis)
+            .unwrap();
+    assert_eq!(
+        datum,
+        FeatureDatumPlaneFrame::new(origin, normal, u_axis).unwrap()
+    );
+    assert_eq!(
+        support,
+        FeatureSupportPlaneFrame::new(origin, normal, u_axis).unwrap()
+    );
+    let parallel = FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap();
+    assert!(
+        FeatureDatumPlaneFrame::from_parts(admitted_origin, admitted_normal, parallel).is_none()
+    );
+    assert!(
+        FeatureSupportPlaneFrame::from_parts(admitted_origin, admitted_normal, parallel).is_none()
+    );
+}
+
+#[test]
 fn feature_unit_plane_and_image_bounds_reject_degenerate_geometry() {
     use crate::features::{FeatureImageBounds, FeatureUnitPlaneFrame, EPS_FEATURE_UNIT_FRAME};
     use crate::math::{Point2, Point3, Vector3};

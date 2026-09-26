@@ -421,7 +421,7 @@ pub(crate) fn enrich_history_reference_planes(
             .iter()
             .filter(|(_, candidate_index, candidate)| {
                 candidate_index.0 == index.0
-                    && offset_plane_reference_frame_matches(*candidate, frame, distance)
+                    && offset_plane_reference_frame_matches(*candidate, frame, distance.get())
             })
             .collect::<Vec<_>>();
         if let Some(source) = select_reference_plane_frame_source(
@@ -447,7 +447,9 @@ pub(crate) fn enrich_history_reference_planes(
                                     candidate_source == *source
                                         && candidate_index.0 == history_index
                                         && offset_plane_reference_frame_matches(
-                                            *candidate, *offset, distance,
+                                            *candidate,
+                                            *offset,
+                                            distance.get(),
                                         )
                                 },
                             )
@@ -1720,7 +1722,8 @@ pub(crate) fn enrich_history_reference_axes(
                     Some((
                         crate::history::literals::parse_point3_mm(
                             feature.properties.get("Origin")?,
-                        )?,
+                        )?
+                        .get(),
                         crate::history::literals::parse_vector3(
                             feature.properties.get("Direction")?,
                         )?,
@@ -2428,10 +2431,10 @@ fn fixed_reference_plane_frame_candidates(
 
 fn offset_reference_plane_frame_pair(
     payload: &[u8],
-    distance: f64,
+    distance: cadmpeg_ir::scalar::Length,
 ) -> Option<(ReferencePlaneFrame, ReferencePlaneFrame)> {
     let valid_pair = |result: ReferencePlaneFrame, reference: ReferencePlaneFrame| {
-        (distance.is_finite() && offset_plane_reference_frame_matches(reference, result, distance))
+        offset_plane_reference_frame_matches(reference, result, distance.get())
             .then_some((result, reference))
     };
     let matrix_candidates = matrix_reference_plane_frame_candidates(payload);
