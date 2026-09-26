@@ -185,6 +185,22 @@ fn rse_segment_native_projection_refuses_malformed_and_unpaired_copies() {
     }
 }
 
+#[test]
+fn rse_unavailable_record_frame_refuses_issue_copy() {
+    let bytes = primary_envelope_fixture();
+    let arena = DecodeArena::new();
+    let (setup_ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("fixture context");
+    let mut container = InventorContainer::open(&setup_ctx, root).expect("fixture container");
+    let SegmentBulkState::Framed(bulk) = &mut container.rse.segments[0].bulk else {
+        panic!("fixture bulk must be framed");
+    };
+    bulk.records = RecordFrameState::Unavailable("frame issue".into());
+    let operations = rse_retained_refusal_operations(&arena, &container);
+    assert!(operations.contains(&"retain Inventor RSe frame issue"));
+}
+
 fn rse_retained_refusal_operations<'a>(
     arena: &DecodeArena,
     container: &InventorContainer<'a>,
