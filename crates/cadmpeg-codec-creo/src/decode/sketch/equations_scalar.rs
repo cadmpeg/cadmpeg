@@ -4,6 +4,7 @@
 use super::axis::SectionAxis;
 
 use crate::feature::definitions::VariableType;
+use cadmpeg_ir::scalar::{Angle, NonNegativeLength, PositiveLength};
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::feature_history::dimensions::{
@@ -659,9 +660,7 @@ pub(super) fn section_relation_radius_scalar_values(
             } else {
                 value
             };
-            value
-                .is_finite()
-                .then_some(((VariableType::Radius, radius), value))
+            PositiveLength::new(value).map(|value| ((VariableType::Radius, radius), value.get()))
         })
         .collect()
 }
@@ -705,8 +704,12 @@ pub(super) fn section_equation_scalar_seed_values(
         .into_iter()
         .filter(|constraint| constraint.active)
     {
-        merge_scalar_value_candidate(&mut values, constraint.radius_variable, constraint.value);
-        merge_scalar_value_candidate(&mut values, constraint.scalar, constraint.value);
+        merge_scalar_value_candidate(
+            &mut values,
+            constraint.radius_variable,
+            constraint.value.get(),
+        );
+        merge_scalar_value_candidate(&mut values, constraint.scalar, constraint.value.get());
     }
     for (variable, value) in section_relation_radius_scalar_values(definition) {
         merge_scalar_value_candidate(&mut values, variable, value);
@@ -923,8 +926,11 @@ pub(super) fn section_equation_scalar_values_from_coordinates(
         section_equation_radial_constraints(definition, coordinates, &ambiguous_point_ids)
     {
         for (variable, value) in [
-            (constraint.radius, constraint.radius_value),
-            (constraint.angle, constraint.angle_value),
+            (
+                constraint.radius,
+                constraint.radius_value.map(NonNegativeLength::get),
+            ),
+            (constraint.angle, constraint.angle_value.map(Angle::get)),
         ] {
             let Some(value) = value else {
                 continue;
@@ -1170,8 +1176,8 @@ pub(in crate::decode) struct SectionRadialConstraint {
     pub(in crate::decode) second: u32,
     pub(in crate::decode) radius: SectionScalarVariable,
     angle: SectionScalarVariable,
-    pub(in crate::decode) radius_value: Option<f64>,
-    pub(in crate::decode) angle_value: Option<f64>,
+    pub(in crate::decode) radius_value: Option<NonNegativeLength>,
+    pub(in crate::decode) angle_value: Option<Angle>,
     pub(in crate::decode) equation_id: u32,
     pub(in crate::decode) offset: usize,
     pub(in crate::decode) active: bool,
@@ -1179,11 +1185,11 @@ pub(in crate::decode) struct SectionRadialConstraint {
 
 impl SectionRadialConstraint {
     pub(super) fn offset(self) -> Option<[f64; 2]> {
-        let radius = self.radius_value?;
-        if radius.abs() <= EPS_RADIAL_ZERO {
+        let radius = self.radius_value?.get();
+        if radius <= EPS_RADIAL_ZERO {
             return Some([0.0; 2]);
         }
-        let angle = self.angle_value?;
+        let angle = self.angle_value?.get();
         Some([radius * angle.cos(), radius * angle.sin()])
     }
 }
@@ -1306,13 +1312,11 @@ fn section_equation_radial_constraint_rows_with_scalar_values(
                 reconcile_equation_value(resolved, Some(*value)).ok()
             };
             let mut radius_value = match scalar_value(radius)? {
-                Some(value) if value.is_finite() && value >= 0.0 => Some(value),
-                Some(_) => return None,
+                Some(value) => Some(NonNegativeLength::new(value)?),
                 None => None,
             };
             let mut angle_value = match scalar_value(angle)? {
-                Some(value) if value.is_finite() => Some(value),
-                Some(_) => return None,
+                Some(value) => Some(Angle::new(value)?),
                 None => None,
             };
             let active = !section_solver_equation_is_disabled(definition, equation.equation_id);
@@ -1328,28 +1332,28 @@ fn section_equation_radial_constraint_rows_with_scalar_values(
                         return None;
                     }
                     let delta = [second[0] - first[0], second[1] - first[1]];
-                    let distance = delta[0].hypot(delta[1]);
+                    let distance = NonNegativeLength::new(delta[0].hypot(delta[1]))?;
                     let scale = distance
-                        .abs()
-                        .max(radius_value.unwrap_or(0.0).abs())
+                        .get()
+                        .max(radius_value.map_or(0.0, NonNegativeLength::get))
                         .max(1.0);
                     if radius_value
-                        .is_some_and(|value| (value - distance).abs() > EPS_RADIAL_VALUE * scale)
+                        .is_some_and(|value| (value.get() - distance.get()).abs() > EPS_RADIAL_VALUE * scale)
                     {
                         return None;
                     }
                     radius_value.get_or_insert(distance);
-                    if distance > EPS_RADIAL_ZERO {
+                    if distance.get() > EPS_RADIAL_ZERO {
                         let derived_angle = delta[1].atan2(delta[0]);
                         if angle_value.is_some_and(|value| {
                             let difference =
-                                (value - derived_angle).rem_euclid(std::f64::consts::TAU);
+                                (value.get() - derived_angle).rem_euclid(std::f64::consts::TAU);
                             difference.min(std::f64::consts::TAU - difference)
                                 > EPS_RADIAL_ANGLE
                         }) {
                             return None;
                         }
-                        angle_value.get_or_insert(derived_angle);
+                        angle_value.get_or_insert(Angle::new(derived_angle)?);
                     }
                 }
             }
@@ -1411,8 +1415,12 @@ pub(in crate::decode) fn resolved_section_scalar_values(
         .into_iter()
         .filter(|constraint| constraint.active)
     {
-        merge_scalar_value_candidate(&mut values, constraint.radius_variable, constraint.value);
-        merge_scalar_value_candidate(&mut values, constraint.scalar, constraint.value);
+        merge_scalar_value_candidate(
+            &mut values,
+            constraint.radius_variable,
+            constraint.value.get(),
+        );
+        merge_scalar_value_candidate(&mut values, constraint.scalar, constraint.value.get());
     }
     for (variable, value) in section_relation_radius_scalar_values(definition) {
         merge_scalar_value_candidate(&mut values, variable, value);
@@ -1421,8 +1429,11 @@ pub(in crate::decode) fn resolved_section_scalar_values(
         section_equation_radial_constraints(definition, &coordinates, &ambiguous_point_ids)
     {
         for (variable, value) in [
-            (constraint.radius, constraint.radius_value),
-            (constraint.angle, constraint.angle_value),
+            (
+                constraint.radius,
+                constraint.radius_value.map(NonNegativeLength::get),
+            ),
+            (constraint.angle, constraint.angle_value.map(Angle::get)),
         ] {
             let Some(value) = value else {
                 continue;
