@@ -143,6 +143,8 @@ pub(crate) enum FramingError {
     },
     /// A required EOF marker was missing.
     MissingEof,
+    /// The active decode session refused a resource request.
+    Resource(cadmpeg_core::decode::ResourceLimit),
 }
 
 impl FramingError {
@@ -179,6 +181,7 @@ impl fmt::Display for FramingError {
                 write!(f, "range {offset}..{end} exceeds bound {bound}")
             }
             Self::MissingEof => f.write_str("missing end-of-file chunk"),
+            Self::Resource(limit) => cadmpeg_core::CodecError::ResourceLimit(*limit).fmt(f),
         }
     }
 }
