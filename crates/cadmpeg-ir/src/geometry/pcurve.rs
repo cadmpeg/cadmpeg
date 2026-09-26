@@ -16,6 +16,11 @@ use crate::units::{FinitePoint2, FiniteVector, NonzeroPoint2};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+fn finite_axis_is_nonzero(axis: FinitePoint2) -> bool {
+    let axis = axis.get();
+    axis.u.hypot(axis.v) > 0.0
+}
+
 /// One rational pole in parameter space: its position and its weight.
 // A source states a raw position; a `PcurveNurbs` holds the admitted row,
 // whose position is a `FinitePoint2`.
@@ -575,6 +580,22 @@ struct CirclePcurveWire {
 }
 
 impl CirclePcurve {
+    /// Build from admitted finite axes and a positive radius. Only the two
+    /// nonzero axis conditions remain to check.
+    pub fn from_parts(
+        center: FinitePoint2,
+        x_axis: FinitePoint2,
+        y_axis: FinitePoint2,
+        radius: PositiveReal,
+    ) -> Option<Self> {
+        (finite_axis_is_nonzero(x_axis) && finite_axis_is_nonzero(y_axis)).then_some(Self {
+            center,
+            x_axis,
+            y_axis,
+            radius,
+        })
+    }
+
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(
         center: Point2,
@@ -675,6 +696,24 @@ struct EllipsePcurveWire {
 }
 
 impl EllipsePcurve {
+    /// Build from admitted finite axes and positive radii. Only the two
+    /// nonzero axis conditions remain to check.
+    pub fn from_parts(
+        center: FinitePoint2,
+        x_axis: FinitePoint2,
+        y_axis: FinitePoint2,
+        major_radius: PositiveReal,
+        minor_radius: PositiveReal,
+    ) -> Option<Self> {
+        (finite_axis_is_nonzero(x_axis) && finite_axis_is_nonzero(y_axis)).then_some(Self {
+            center,
+            x_axis,
+            y_axis,
+            major_radius,
+            minor_radius,
+        })
+    }
+
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(
         center: Point2,
@@ -866,6 +905,22 @@ struct ParabolaPcurveWire {
 }
 
 impl ParabolaPcurve {
+    /// Build from admitted finite axes and a positive focal distance. Only
+    /// the two nonzero axis conditions remain to check.
+    pub fn from_parts(
+        vertex: FinitePoint2,
+        x_axis: FinitePoint2,
+        y_axis: FinitePoint2,
+        focal_distance: PositiveReal,
+    ) -> Option<Self> {
+        (finite_axis_is_nonzero(x_axis) && finite_axis_is_nonzero(y_axis)).then_some(Self {
+            vertex,
+            x_axis,
+            y_axis,
+            focal_distance,
+        })
+    }
+
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(
         vertex: Point2,
@@ -964,6 +1019,24 @@ struct HyperbolaPcurveWire {
 }
 
 impl HyperbolaPcurve {
+    /// Build from admitted finite axes and positive radii. Only the two
+    /// nonzero axis conditions remain to check.
+    pub fn from_parts(
+        center: FinitePoint2,
+        x_axis: FinitePoint2,
+        y_axis: FinitePoint2,
+        major_radius: PositiveReal,
+        minor_radius: PositiveReal,
+    ) -> Option<Self> {
+        (finite_axis_is_nonzero(x_axis) && finite_axis_is_nonzero(y_axis)).then_some(Self {
+            center,
+            x_axis,
+            y_axis,
+            major_radius,
+            minor_radius,
+        })
+    }
+
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(
         center: Point2,
