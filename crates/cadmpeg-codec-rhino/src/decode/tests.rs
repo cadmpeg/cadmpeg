@@ -100,7 +100,7 @@ fn rejected_expansion_discards_every_report_bucket() {
 #[test]
 fn hatch_plane_places_and_scales_plane_space_loops_once() {
     let admitted = |values| {
-        crate::settings::PlaneLane::Admitted(
+        crate::settings::CoordinateLane::Admitted(
             cadmpeg_ir::units::FiniteVector::new(values).expect("finite test plane"),
         )
     };
@@ -109,7 +109,7 @@ fn hatch_plane_places_and_scales_plane_space_loops_once() {
         xaxis: cadmpeg_ir::units::FiniteVector::new([0.0, 1.0, 0.0]).expect("finite test x axis"),
         yaxis: cadmpeg_ir::units::FiniteVector::new([-1.0, 0.0, 0.0]).expect("finite test y axis"),
         zaxis: cadmpeg_ir::units::FiniteVector::new([0.0, 0.0, 1.0]).expect("finite test z axis"),
-        equation: crate::settings::PlaneLane::Admitted(
+        equation: crate::settings::CoordinateLane::Admitted(
             cadmpeg_ir::units::FiniteVector::new([0.0, 0.0, 1.0, -30.0])
                 .expect("finite test plane equation"),
         ),
@@ -399,11 +399,14 @@ fn source_shaped_plane_brep() -> (Vec<u8>, crate::brep::RawBrep) {
         .enumerate()
         .map(|(index, edges)| crate::brep::RawBrepVertex {
             index: i32::try_from(index).expect("index"),
-            point: [
-                f64::from((index == 1) as u8),
-                f64::from((index == 2) as u8),
-                0.0,
-            ],
+            point: crate::settings::CoordinateLane::Admitted(
+                crate::test_support::point3([
+                    f64::from((index == 1) as u8),
+                    f64::from((index == 2) as u8),
+                    0.0,
+                ])
+                .0,
+            ),
             edges: edges.into_iter().collect(),
             tolerance: 0.01,
             source_range: 0..0,
@@ -720,7 +723,9 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
     let (data, mut raw) = source_shaped_plane_brep();
     raw.vertices.push(crate::brep::RawBrepVertex {
         index: 3,
-        point: [2.0, 2.0, 0.0],
+        point: crate::settings::CoordinateLane::Admitted(
+            crate::test_support::point3([2.0, 2.0, 0.0]).0,
+        ),
         edges: Vec::new(),
         tolerance: 0.0,
         source_range: 0..0,

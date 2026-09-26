@@ -12,7 +12,7 @@ use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::Scan;
 use crate::loss::RhinoLossCode;
 use crate::objects::{ClassUserdata, UserdataDescriptor};
-use crate::settings::{utf16, MillimeterScale, Plane, PlaneLane, UnitBinding};
+use crate::settings::{utf16, CoordinateLane, MillimeterScale, Plane, UnitBinding};
 use crate::wire::{scaled_coordinate, uuid, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
@@ -83,11 +83,11 @@ struct AnnotationRecord {
     source_uuid: String,
     kind: AnnotationKind,
     rich_text: String,
-    plane_origin: crate::settings::PlaneLane<3>,
+    plane_origin: crate::settings::CoordinateLane<3>,
     plane_x_axis: cadmpeg_ir::units::FiniteVector<3>,
     plane_y_axis: cadmpeg_ir::units::FiniteVector<3>,
     plane_z_axis: cadmpeg_ir::units::FiniteVector<3>,
-    plane_equation: crate::settings::PlaneLane<4>,
+    plane_equation: crate::settings::CoordinateLane<4>,
     dimstyle_uuid: Option<String>,
     annotation_type: i32,
     text_rectangle_width: FiniteReal,
@@ -95,7 +95,7 @@ struct AnnotationRecord {
     horizontal_alignment: i32,
     vertical_alignment: i32,
     wrapped: bool,
-    horizontal_direction: PlaneLane<2>,
+    horizontal_direction: CoordinateLane<2>,
     allow_text_scaling: bool,
     legacy_text_display_mode: Option<i32>,
     legacy_user_text: Option<String>,
@@ -320,17 +320,17 @@ fn scaled_plane(
             FramingError::structural(offset, "scaled annotation plane is invalid")
         })?;
     }
-    plane.origin = crate::settings::PlaneLane::Admitted(scaled.into());
+    plane.origin = crate::settings::CoordinateLane::Admitted(scaled.into());
     let constant = scaled_coordinate(plane.equation[3], scale)
         .ok_or_else(|| FramingError::structural(offset, "scaled annotation equation is invalid"))?;
     plane.equation = plane.equation.with_fourth(constant);
     Ok(plane)
 }
 
-fn plane_horizontal_direction(plane: Plane) -> PlaneLane<2> {
+fn plane_horizontal_direction(plane: Plane) -> CoordinateLane<2> {
     let x = plane.xaxis.finite_components();
     let y = plane.yaxis.finite_components();
-    PlaneLane::Admitted([x[0], y[0]].into())
+    CoordinateLane::Admitted([x[0], y[0]].into())
 }
 
 fn decode_annotation(

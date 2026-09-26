@@ -79,15 +79,15 @@ pub(crate) struct Vector3(pub(crate) FiniteVector<3>);
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Interval(pub(crate) FiniteVector<2>);
 
-/// A plane lane admitted from source or derived by dimension arithmetic.
+/// A coordinate lane admitted from source or derived by reconstruction arithmetic.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum PlaneLane<const N: usize> {
+pub(crate) enum CoordinateLane<const N: usize> {
     Admitted(FiniteVector<N>),
-    /// Dimension arithmetic preserves its result, including overflow.
+    /// Reconstruction arithmetic preserves its result, including overflow.
     Derived([f64; N]),
 }
 
-impl<const N: usize> PlaneLane<N> {
+impl<const N: usize> CoordinateLane<N> {
     pub(crate) fn get(self) -> [f64; N] {
         match self {
             Self::Admitted(value) => value.get(),
@@ -96,7 +96,7 @@ impl<const N: usize> PlaneLane<N> {
     }
 }
 
-impl<const N: usize> Serialize for PlaneLane<N>
+impl<const N: usize> Serialize for CoordinateLane<N>
 where
     [f64; N]: Serialize,
 {
@@ -105,7 +105,7 @@ where
     }
 }
 
-impl PlaneLane<4> {
+impl CoordinateLane<4> {
     pub(crate) fn with_fourth(self, value: FiniteReal) -> Self {
         match self {
             Self::Admitted(values) => Self::Admitted(values.with_fourth(value)),
@@ -117,7 +117,7 @@ impl PlaneLane<4> {
     }
 }
 
-impl<const N: usize> std::ops::Deref for PlaneLane<N> {
+impl<const N: usize> std::ops::Deref for CoordinateLane<N> {
     type Target = [f64; N];
 
     fn deref(&self) -> &Self::Target {
@@ -132,7 +132,7 @@ impl<const N: usize> std::ops::Deref for PlaneLane<N> {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Plane {
     /// Origin.
-    pub(crate) origin: PlaneLane<3>,
+    pub(crate) origin: CoordinateLane<3>,
     /// X axis.
     pub(crate) xaxis: FiniteVector<3>,
     /// Y axis.
@@ -140,7 +140,7 @@ pub(crate) struct Plane {
     /// Z axis.
     pub(crate) zaxis: FiniteVector<3>,
     /// Plane equation.
-    pub(crate) equation: PlaneLane<4>,
+    pub(crate) equation: CoordinateLane<4>,
 }
 
 /// A serialized axis-aligned bounding box.
@@ -853,11 +853,15 @@ pub(crate) fn plane(reader: &mut BoundedReader<'_>) -> Result<Plane, FramingErro
     let equation_offset = reader.position();
     let equation = [reader.f64()?, reader.f64()?, reader.f64()?, reader.f64()?];
     Ok(Plane {
-        origin: PlaneLane::Admitted(origin.0),
+        origin: CoordinateLane::Admitted(origin.0),
         xaxis: xaxis.0,
         yaxis: yaxis.0,
         zaxis: zaxis.0,
-        equation: PlaneLane::Admitted(finite_array(equation_offset, equation, "plane equation")?),
+        equation: CoordinateLane::Admitted(finite_array(
+            equation_offset,
+            equation,
+            "plane equation",
+        )?),
     })
 }
 

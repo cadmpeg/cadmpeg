@@ -4207,7 +4207,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                 .then(cadmpeg_ir::identity_key!(".slot-"))
                 .then(index),
         );
-        let position = crate::wire::scaled_point(vertex.point, scale).ok_or_else(|| {
+        let position = crate::wire::scaled_point(vertex.point.get(), scale).ok_or_else(|| {
             crate::curves::GeometryError::unpositioned("scaled Brep vertex coordinate is invalid")
         })?;
         staged.draft.model_mut().points.push(Point::new(

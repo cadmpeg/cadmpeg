@@ -13,7 +13,7 @@ use crate::mesh::MeshExpand;
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, FramingError};
 use crate::curves::{DecodedCurve, DecodedGeometry, GeometryError};
 use crate::objects::{parse_class_wrapper, ClassUserdata, UserdataDescriptor};
-use crate::settings::{MillimeterScale, Plane, PlaneLane};
+use crate::settings::{CoordinateLane, MillimeterScale, Plane};
 use crate::wire::{scaled_coordinate, ExactVec, Uuid};
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_ir::units::FiniteVector;
@@ -141,11 +141,11 @@ fn read_plane(view: &mut View<'_>) -> Result<Plane, GeometryError> {
         GeometryError::malformed(equation_offset, "plane equation contains a nonfinite value")
     })?;
     Ok(Plane {
-        origin: PlaneLane::Admitted(origin),
+        origin: CoordinateLane::Admitted(origin),
         xaxis,
         yaxis,
         zaxis,
-        equation: PlaneLane::Admitted(equation),
+        equation: CoordinateLane::Admitted(equation),
     })
 }
 
@@ -535,11 +535,11 @@ pub(crate) mod tests {
             .expect("hatch");
             assert!(matches!(
                 hatch.plane.origin,
-                crate::settings::PlaneLane::Admitted(_)
+                crate::settings::CoordinateLane::Admitted(_)
             ));
             assert!(matches!(
                 hatch.plane.equation,
-                crate::settings::PlaneLane::Admitted(_)
+                crate::settings::CoordinateLane::Admitted(_)
             ));
         });
     }
