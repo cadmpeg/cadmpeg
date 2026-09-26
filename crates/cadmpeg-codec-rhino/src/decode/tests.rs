@@ -5,9 +5,9 @@ use super::{
     append_record_links, c2_curve_to_nurbs_join, coedge_sense, edge_param_range, edge_vertices,
     face_sense, finite_tolerance, hatch_plane_transform, region_shell_groups,
     region_shell_groups_without_records, scaled_tolerance, seal_for_test, set_exactness,
-    stage_brep, stage_extrusion_caps, transform_decoded_curve, with_expand, with_expand_bytes,
-    BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError, CommittedExtrusionBoundary,
-    DecodeContext, ReportBuckets,
+    stage_brep, stage_extrusion_caps, transform_decoded_curve, transform_surface, with_expand,
+    with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
+    CommittedExtrusionBoundary, DecodeContext, ReportBuckets,
 };
 use crate::chunks::ArchiveVersion;
 use crate::loss::Diagnostics;
@@ -130,6 +130,115 @@ fn hatch_plane_places_and_scales_plane_space_loops_once() {
     };
     assert_eq!(curve.control_points()[0], Point3::new(100.0, 200.0, 300.0));
     assert_eq!(curve.control_points()[1], Point3::new(100.0, 220.0, 300.0));
+}
+
+#[test]
+fn instance_line_transform_keeps_component_division_and_collapse_refusal() {
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::geometry::analytic::LineCurve;
+    use cadmpeg_ir::transform::Transform;
+    use cadmpeg_ir::units::UnitVector3;
+
+    let line = || {
+        crate::curves::DecodedCurve::leaf(
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(LineCurve::new(
+                FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).expect("finite origin"),
+                UnitVector3::new(Vector3::new(0.6, 0.8, 0.0)).expect("unit direction"),
+            ))),
+            Diagnostics::new(),
+        )
+    };
+    let transform = Transform::affine([
+        [2.0, 0.0, 0.0, 4.0],
+        [0.0, 3.0, 0.0, 5.0],
+        [0.0, 0.0, 4.0, 6.0],
+    ])
+    .expect("finite affine transform");
+    let mut decoded = line();
+    transform_decoded_curve(&mut decoded, transform).expect("transformed line");
+    let CurveGeometry::Solved(SolvedCurveGeometry::Line(transformed_line)) =
+        decoded.reported_geometry()
+    else {
+        panic!("line remains solved");
+    };
+    assert_eq!(
+        transformed_line.origin().get(),
+        Point3::new(6.0, 11.0, 18.0)
+    );
+    let delta = Vector3::new(
+        (1.0 + 0.6) * 2.0 + 4.0 - 6.0,
+        (2.0 + 0.8) * 3.0 + 5.0 - 11.0,
+        0.0,
+    );
+    let length = delta.norm();
+    assert_eq!(
+        [
+            transformed_line.direction().as_raw().x,
+            transformed_line.direction().as_raw().y,
+            transformed_line.direction().as_raw().z,
+        ]
+        .map(f64::to_bits),
+        [delta.x / length, delta.y / length, delta.z / length].map(f64::to_bits)
+    );
+
+    let mut collapsed = line();
+    let zero_linear = Transform::affine([
+        [0.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 0.0],
+    ])
+    .expect("finite collapsed transform");
+    assert_eq!(
+        transform_decoded_curve(&mut collapsed, zero_linear),
+        Err("instance line transform collapsed its direction".to_string())
+    );
+}
+
+#[test]
+fn instance_plane_transform_keeps_component_division() {
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::geometry::analytic::PlaneSurface;
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::transform::Transform;
+    use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
+
+    let frame = OrthonormalFrame3::from_units(
+        UnitVector3::Z_AXIS,
+        UnitVector3::new(Vector3::new(0.6, 0.8, 0.0)).expect("unit reference"),
+    )
+    .expect("orthogonal frame");
+    let mut surface = Surface {
+        id: "rhino:object:surface#normalized"
+            .try_into()
+            .expect("surface id"),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(PlaneSurface::new(
+            FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).expect("finite origin"),
+            frame,
+        ))),
+        source_object: None,
+    };
+    let transform = Transform::affine([
+        [2.0, 0.0, 0.0, 4.0],
+        [0.0, 3.0, 0.0, 5.0],
+        [0.0, 0.0, 4.0, 6.0],
+    ])
+    .expect("finite affine transform");
+    transform_surface(&mut surface, transform).expect("transformed plane");
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) = surface.geometry else {
+        panic!("plane remains solved");
+    };
+    assert_eq!(plane.origin().get(), Point3::new(6.0, 11.0, 18.0));
+    let delta = Vector3::new(
+        (1.0 + 0.6) * 2.0 + 4.0 - 6.0,
+        (2.0 + 0.8) * 3.0 + 5.0 - 11.0,
+        0.0,
+    );
+    let length = delta.norm();
+    let reference = plane.frame().reference().as_raw();
+    assert_eq!(
+        [reference.x, reference.y, reference.z].map(f64::to_bits),
+        [delta.x / length, delta.y / length, delta.z / length].map(f64::to_bits)
+    );
 }
 
 /// The region fixture resolved the way validation resolves it.
