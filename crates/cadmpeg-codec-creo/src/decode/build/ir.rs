@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Container IR bootstrap and model-entity assembly.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -17,8 +17,6 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::PositiveLength;
-use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
@@ -186,12 +184,7 @@ fn transfer_reference_lines(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> Result<BTreeSet<usize>, CodecError> {
-    let length_scale = scan
-        .framing
-        .principal_unit
-        .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm);
-    let mut transferred_indices = BTreeSet::new();
+) -> Result<(), CodecError> {
     let line3d_id_counts =
         scan.references
             .lines
@@ -248,20 +241,10 @@ fn transfer_reference_lines(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model curves")?;
-        let origin = if let Some(scale) = length_scale {
-            line.start.scaled(scale).ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "Creo reference line origin cannot be represented in millimeters".into(),
-                )
-            })?
-        } else {
-            line.start
-        };
-        let index = ir.model.curves.len();
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction),
+                cadmpeg_ir::geometry::analytic::LineCurve::new(line.start, direction),
             )),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
@@ -278,9 +261,8 @@ fn transfer_reference_lines(
                 instance_path: Vec::new(),
             }),
         });
-        transferred_indices.insert(index);
     }
-    Ok(transferred_indices)
+    Ok(())
 }
 
 fn transfer_reference_circles(
@@ -288,13 +270,7 @@ fn transfer_reference_circles(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> Result<BTreeSet<usize>, CodecError> {
-    let length_scale = scan
-        .framing
-        .principal_unit
-        .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm);
-    let scale_mm = length_scale.map_or(1.0, cadmpeg_ir::scalar::PositiveReal::get);
-    let mut transferred_indices = BTreeSet::new();
+) -> Result<(), CodecError> {
     let circle_id_counts =
         scan.references
             .circles
@@ -342,25 +318,10 @@ fn transfer_reference_circles(
             })?;
         let center = cadmpeg_ir::features::FinitePoint3::new(Point3::from(circle.center))
             .ok_or_else(|| CodecError::malformed("CircleCurve.center must be finite"))?;
-        let center = if let Some(scale) = length_scale {
-            center.scaled(scale).ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "Creo reference circle center cannot be represented in millimeters".into(),
-                )
-            })?
-        } else {
-            center
-        };
-        let radius = PositiveLength::new(circle.radius.get() * scale_mm).ok_or_else(|| {
-            CodecError::NotImplemented(
-                "Creo reference circle radius cannot be represented in millimeters".into(),
-            )
-        })?;
-        let index = ir.model.curves.len();
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::new(center, frame, radius),
+                cadmpeg_ir::geometry::analytic::CircleCurve::new(center, frame, circle.radius),
             )),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
@@ -377,9 +338,8 @@ fn transfer_reference_circles(
                 instance_path: Vec::new(),
             }),
         });
-        transferred_indices.insert(index);
     }
-    Ok(transferred_indices)
+    Ok(())
 }
 
 fn transfer_reference_ellipses(
@@ -387,13 +347,7 @@ fn transfer_reference_ellipses(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> Result<BTreeSet<usize>, CodecError> {
-    let length_scale = scan
-        .framing
-        .principal_unit
-        .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm);
-    let scale_mm = length_scale.map_or(1.0, cadmpeg_ir::scalar::PositiveReal::get);
-    let mut transferred_indices = BTreeSet::new();
+) -> Result<(), CodecError> {
     let ellipse_id_counts = scan.references.ellipses.iter().fold(
         BTreeMap::<u32, usize>::new(),
         |mut counts, ellipse| {
@@ -430,45 +384,22 @@ fn transfer_reference_ellipses(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model curves")?;
-        let frame =
-            cadmpeg_ir::units::OrthonormalFrame3::from_units(ellipse.axis, ellipse.major_direction)
-                .ok_or_else(|| {
-                    CodecError::malformed(
-                        "EllipseCurve.axis/ref_direction must form an orthonormal frame",
-                    )
-                })?;
-        let center = if let Some(scale) = length_scale {
-            ellipse.center.scaled(scale).ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "Creo reference ellipse center cannot be represented in millimeters".into(),
-                )
-            })?
-        } else {
-            ellipse.center
-        };
-        let major_radius =
-            PositiveLength::new(ellipse.major_radius.get() * scale_mm).ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "Creo reference ellipse major radius cannot be represented in millimeters"
-                        .into(),
-                )
-            })?;
-        let minor_radius =
-            PositiveLength::new(ellipse.minor_radius.get() * scale_mm).ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "Creo reference ellipse minor radius cannot be represented in millimeters"
-                        .into(),
-                )
-            })?;
-        let index = ir.model.curves.len();
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
                 cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
-                    center,
-                    frame,
-                    major_radius,
-                    minor_radius,
+                    ellipse.center,
+                    cadmpeg_ir::units::OrthonormalFrame3::from_units(
+                        ellipse.axis,
+                        ellipse.major_direction,
+                    )
+                    .ok_or_else(|| {
+                        CodecError::malformed(
+                            "EllipseCurve.axis/ref_direction must form an orthonormal frame",
+                        )
+                    })?,
+                    ellipse.major_radius,
+                    ellipse.minor_radius,
                 )
                 .map_err(CodecError::malformed)?,
             )),
@@ -487,9 +418,8 @@ fn transfer_reference_ellipses(
                 instance_path: Vec::new(),
             }),
         });
-        transferred_indices.insert(index);
     }
-    Ok(transferred_indices)
+    Ok(())
 }
 
 fn transfer_display_tessellations(
@@ -498,10 +428,6 @@ fn transfer_display_tessellations(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
-    let length_scale = scan
-        .framing
-        .principal_unit
-        .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm);
     for strip in &scan.primitives.triangle_strips {
         let id = format!("creo:solid_primdata:tessellation#{}", strip.offset);
         annotate(
@@ -513,40 +439,11 @@ fn transfer_display_tessellations(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model tessellations")?;
-        let positions = strip
-            .positions
-            .iter()
-            .copied()
-            .map(|position| {
-                let position = Point3::from(position);
-                let Some(scale) = length_scale else {
-                    return Ok(position);
-                };
-                if !position.is_finite() {
-                    return Err(CodecError::malformed(format_args!(
-                        "SolidPrimdata display triangle strip at byte {}: vertices contain a non-finite coordinate",
-                        strip.offset
-                    )));
-                }
-                let position = Point3::new(
-                    position.x * scale.get(),
-                    position.y * scale.get(),
-                    position.z * scale.get(),
-                );
-                if !position.is_finite() {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SolidPrimdata display triangle strip at byte {} has a vertex that cannot be represented in millimeters",
-                        strip.offset
-                    )));
-                }
-                Ok(position)
-            })
-            .collect::<Result<Vec<_>, CodecError>>()?;
         ir.model.tessellations.push(
             Tessellation::new(
                 id,
                 cadmpeg_ir::tessellation::TessellationMesh::from_strip_lanes(
-                    positions,
+                    strip.positions.iter().copied().map(Point3::from).collect(),
                     // A primitive that carries only `mv_p_xyz` states an
                     // unshaded strip set: the normal lane is absent, never
                     // empty.
@@ -580,12 +477,7 @@ fn transfer_datum_plane_surfaces(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> Result<BTreeSet<usize>, CodecError> {
-    let length_scale = scan
-        .framing
-        .principal_unit
-        .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm);
-    let mut transferred_indices = BTreeSet::new();
+) -> Result<(), CodecError> {
     for plane in &scan.planes.datums {
         let normal = plane.plane.normal();
         let id = SurfaceId::compose(&crate::identity::ACTDATUM_SURFACE, plane.id);
@@ -598,20 +490,15 @@ fn transfer_datum_plane_surfaces(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
-        let origin = plane_origin_mm(
-            Point3::new(
-                normal[0] * plane.plane.offset,
-                normal[1] * plane.plane.offset,
-                normal[2] * plane.plane.offset,
-            ),
-            length_scale,
-        )?;
-        let index = ir.model.surfaces.len();
         ir.model.surfaces.push(Surface {
             id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    origin,
+                    Point3::new(
+                        normal[0] * plane.plane.offset,
+                        normal[1] * plane.plane.offset,
+                        normal[2] * plane.plane.offset,
+                    ),
                     Vector3::from(normal),
                     cadmpeg_ir::geometry::derive_reference_direction(Vector3::from(normal)),
                 )
@@ -633,29 +520,8 @@ fn transfer_datum_plane_surfaces(
                 instance_path: Vec::new(),
             }),
         });
-        transferred_indices.insert(index);
     }
-    Ok(transferred_indices)
-}
-
-fn plane_origin_mm(origin: Point3, scale: Option<PositiveReal>) -> Result<Point3, CodecError> {
-    if !origin.is_finite() {
-        return Err(CodecError::malformed("PlaneSurface.origin must be finite"));
-    }
-    let Some(scale) = scale else {
-        return Ok(origin);
-    };
-    let origin = Point3::new(
-        origin.x * scale.get(),
-        origin.y * scale.get(),
-        origin.z * scale.get(),
-    );
-    if !origin.is_finite() {
-        return Err(CodecError::NotImplemented(
-            "Creo plane origin cannot be represented in millimeters".into(),
-        ));
-    }
-    Ok(origin)
+    Ok(())
 }
 
 fn transfer_placed_plane_surfaces_into_ir(
@@ -663,12 +529,7 @@ fn transfer_placed_plane_surfaces_into_ir(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> Result<BTreeSet<usize>, CodecError> {
-    let length_scale = scan
-        .framing
-        .principal_unit
-        .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm);
-    let mut transferred_indices = BTreeSet::new();
+) -> Result<(), CodecError> {
     for (surface_id, (plane, u_axis, offset)) in placed_plane_surfaces(scan) {
         let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, surface_id);
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
@@ -700,13 +561,11 @@ fn transfer_placed_plane_surfaces_into_ir(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
-        let origin = plane_origin_mm(Point3::from(plane.origin), length_scale)?;
-        let index = ir.model.surfaces.len();
         ir.model.surfaces.push(Surface {
             id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    origin,
+                    Point3::from(plane.origin),
                     Vector3::from(plane.normal),
                     Vector3::from(u_axis),
                 )
@@ -727,9 +586,8 @@ fn transfer_placed_plane_surfaces_into_ir(
                 instance_path: Vec::new(),
             }),
         });
-        transferred_indices.insert(index);
     }
-    Ok(transferred_indices)
+    Ok(())
 }
 
 /// Build source metadata, preserved geometry records, and transferred entities.
@@ -746,29 +604,12 @@ pub(in super::super) fn build_ir(
     emit_legacy_arenas(scan, &mut ir, &mut annotations)?;
     let unknowns = preserve_passthrough_sections(ctx, scan, &mut annotations)?;
     emit_reference_arenas(scan, &mut ir, &mut annotations)?;
-    let mut converted_reference_curves =
-        transfer_reference_lines(ctx, scan, &mut ir, &mut annotations)?;
-    converted_reference_curves.extend(transfer_reference_circles(
-        ctx,
-        scan,
-        &mut ir,
-        &mut annotations,
-    )?);
-    converted_reference_curves.extend(transfer_reference_ellipses(
-        ctx,
-        scan,
-        &mut ir,
-        &mut annotations,
-    )?);
+    transfer_reference_lines(ctx, scan, &mut ir, &mut annotations)?;
+    transfer_reference_circles(ctx, scan, &mut ir, &mut annotations)?;
+    transfer_reference_ellipses(ctx, scan, &mut ir, &mut annotations)?;
     transfer_display_tessellations(ctx, scan, &mut ir, &mut annotations)?;
-    let mut converted_surfaces =
-        transfer_datum_plane_surfaces(ctx, scan, &mut ir, &mut annotations)?;
-    converted_surfaces.extend(transfer_placed_plane_surfaces_into_ir(
-        ctx,
-        scan,
-        &mut ir,
-        &mut annotations,
-    )?);
+    transfer_datum_plane_surfaces(ctx, scan, &mut ir, &mut annotations)?;
+    transfer_placed_plane_surfaces_into_ir(ctx, scan, &mut ir, &mut annotations)?;
     transfer_and_record_scanned_geometry(
         ctx,
         scan,
@@ -789,14 +630,7 @@ pub(in super::super) fn build_ir(
         .principal_unit
         .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm)
     {
-        super::units::normalize_model_lengths(
-            &mut ir,
-            length_scale_mm,
-            &super::units::ConvertedGeometry {
-                curves: converted_reference_curves,
-                surfaces: converted_surfaces,
-            },
-        )?;
+        super::units::normalize_model_lengths(&mut ir, length_scale_mm)?;
     }
     collect_feature_coverage(
         scan,
@@ -815,6 +649,3 @@ pub(in super::super) fn build_ir(
         transfer_losses,
     })
 }
-
-#[cfg(test)]
-mod tests;

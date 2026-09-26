@@ -913,7 +913,7 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
             entity_id: 11,
             center: [2.0, 0.0, -3.0],
             center_stored: true,
-            radius: cadmpeg_ir::scalar::PositiveReal::new(0.5).expect("positive radius"),
+            radius: cadmpeg_ir::scalar::PositiveLength::new(0.5).expect("positive radius"),
             axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             start: cadmpeg_ir::features::FinitePoint3::new([2.5, 0.0, -3.0].into())
                 .expect("finite start"),
@@ -925,7 +925,7 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
             entity_id: 12,
             center: [2.0, 38.0, -3.0],
             center_stored: true,
-            radius: cadmpeg_ir::scalar::PositiveReal::new(0.5).expect("positive radius"),
+            radius: cadmpeg_ir::scalar::PositiveLength::new(0.5).expect("positive radius"),
             axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             start: cadmpeg_ir::features::FinitePoint3::new([2.5, 38.0, -3.0].into())
                 .expect("finite start"),
@@ -1014,7 +1014,7 @@ fn fc05_model_witness_uses_a_unique_reference_when_tangency_improves() {
             entity_id: 7,
             center: [1.0, 0.0, 0.5],
             center_stored: true,
-            radius: cadmpeg_ir::scalar::PositiveReal::new(1.0).expect("positive radius"),
+            radius: cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("positive radius"),
             axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             start: cadmpeg_ir::features::FinitePoint3::new([2.0, 0.0, 0.5].into())
                 .expect("finite start"),
