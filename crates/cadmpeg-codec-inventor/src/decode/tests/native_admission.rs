@@ -13,11 +13,12 @@ use crate::decode::{
     admit_coverage_entries, admit_kernel_annotation, admit_kernel_unknown_fidelity,
     admit_native_record_items, admit_presentation_native_projection, admit_rse_segment_projection,
     admit_untransferred_carrier, admitted_kernel_attribute, admitted_loss, clone_product_body_ids,
-    collect_body_ids, decode_container, index_face_colors, index_projected_colors,
-    insert_source_attribute, project_preview_asset, project_property_set_issue,
-    project_protein_records, project_protein_state, project_root_product,
-    project_ufrx_embedded_reference, project_ufrx_external_reference, project_ufrx_model_state,
-    project_ufrx_occurrence, project_ufrx_representation, project_ufrx_state, structural_issue,
+    collect_body_ids, decode_container, index_asm_face_keys, index_face_colors,
+    index_projected_colors, insert_source_attribute, project_preview_asset,
+    project_property_set_issue, project_protein_records, project_protein_state,
+    project_root_product, project_ufrx_embedded_reference, project_ufrx_external_reference,
+    project_ufrx_model_state, project_ufrx_occurrence, project_ufrx_representation,
+    project_ufrx_state, property_set_name, structural_issue,
 };
 
 use crate::assembly::{AssemblyInventory, AssemblyOccurrence};
@@ -30,6 +31,7 @@ use crate::loss::InventorLossCode;
 use crate::native::ufrx::UfrxRecord;
 use crate::native::{AssemblyPlacementRecordWire, StructuralIssueRecord};
 use crate::presentation::{PmAppDefaultStyle, PresentationInventory};
+use crate::property_set::{Property, PropertySection, PropertyValue};
 use crate::protein::{ProteinInstanceRecords, ProteinState};
 use crate::record_identity::Located;
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
@@ -37,6 +39,38 @@ use crate::rse::{DocumentKind, RecordFrameState, SegmentBulkState, SegmentKind};
 use crate::test_support::test_fixtures::{fixture_with_ufrx, primary_envelope_fixture};
 use crate::test_support::test_fixtures::{push_u16, push_u32, push_utf16};
 use crate::InventorCodec;
+
+#[test]
+fn property_set_name_scan_refuses_work_before_lookup() {
+    let bytes = [];
+    let section = PropertySection {
+        fmtid: [0; 16],
+        code_page: None,
+        offsets_ordered: true,
+        dictionary_entries: 0,
+        properties: vec![Property {
+            id: 1,
+            name: None,
+            value: PropertyValue::Empty { type_code: 0 },
+            raw: View::over_retained(&bytes),
+        }],
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    assert!(matches!(
+        property_set_name(&ctx, &section),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "scan Inventor property set name"
+    ));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    assert!(property_set_name(&ctx, &section)
+        .expect("name scan")
+        .is_none());
+}
 
 #[test]
 fn rse_segment_native_projection_refuses_before_pair_id_creation() {
@@ -62,6 +96,54 @@ fn rse_segment_native_projection_refuses_before_pair_id_creation() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
     admit_rse_segment_projection(&ctx, &container).expect("admitted RSe projection");
+}
+
+#[test]
+fn rse_segment_native_projection_refuses_each_parsed_copy_before_creation() {
+    let bytes = primary_envelope_fixture();
+    let arena = DecodeArena::new();
+    let (setup_ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("fixture context");
+    let container = InventorContainer::open(&setup_ctx, root).expect("fixture container");
+    let mut cap = 0;
+    let mut operations = Vec::new();
+    let mut admitted = false;
+    for _ in 0..128 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+        match admit_rse_segment_projection(&ctx, &container) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                assert!(limit.used + limit.additional > cap);
+                operations.push(limit.operation);
+                cap = limit.used + limit.additional;
+            }
+            Ok(()) => {
+                admitted = true;
+                break;
+            }
+            Err(error) => panic!("unexpected projection error: {error}"),
+        }
+    }
+    assert!(admitted, "RSe projection did not reach service success");
+    for operation in [
+        "retain Inventor segment pair id",
+        "retain Inventor segment metadata id",
+        "retain Inventor segment display name",
+        "retain Inventor segment GUID",
+        "retain Inventor segment body digest",
+        "retain Inventor segment bulk id",
+        "retain Inventor compressed bulk digest",
+        "retain Inventor expanded bulk digest",
+    ] {
+        assert!(
+            operations.contains(&operation),
+            "no refusal for {operation}"
+        );
+    }
 }
 
 #[test]
@@ -430,17 +512,27 @@ fn preview_asset_refuses_collection_and_retained_limits_before_creation() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert!(matches!(
-        project_preview_asset(&ctx, 0, "inventor:property:value#1-0-17", b"image", "image/png"),
+        project_preview_asset(&ctx, &mut 0_u64, 0, "inventor:property:value#1-0-17", b"image", "image/png"),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "collect Inventor preview asset"
     ));
 
     policy = DecodePolicy::service();
+    policy.limits.max_entities = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        project_preview_asset(&ctx, &mut 0_u64, 0, "inventor:property:value#1-0-17", b"image", "image/png"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::Entities
+                && limit.operation == "admit Inventor preview asset entity"
+    ));
+
+    policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 7;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert!(matches!(
-        project_preview_asset(&ctx, 0, "inventor:property:value#1-0-17", b"image", "image/png"),
+        project_preview_asset(&ctx, &mut 0_u64, 0, "inventor:property:value#1-0-17", b"image", "image/png"),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain Inventor preview identity key"
@@ -449,7 +541,7 @@ fn preview_asset_refuses_collection_and_retained_limits_before_creation() {
     policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert!(matches!(
-        project_preview_asset(&ctx, 0, "inventor:property:value#1-0-17", b"image", "image/png"),
+        project_preview_asset(&ctx, &mut 0_u64, 0, "inventor:property:value#1-0-17", b"image", "image/png"),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::MaterializedBytes
                 && limit.operation == "format Inventor preview ordinal"
@@ -458,6 +550,7 @@ fn preview_asset_refuses_collection_and_retained_limits_before_creation() {
         .expect("service context");
     let asset = project_preview_asset(
         &ctx,
+        &mut 0_u64,
         0,
         "inventor:property:value#1-0-17",
         b"image",
@@ -1056,6 +1149,36 @@ fn face_color_index_refuses_limits_before_face_id_copy() {
     assert_eq!(
         index_face_colors(&ctx, [(&id, color)]).expect("admitted color")[&id],
         color
+    );
+}
+
+#[test]
+fn asm_face_key_index_refuses_before_face_id_copy() {
+    let id = FaceId::mint("inventor:test:face#one").expect("valid face id");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    assert!(matches!(
+        index_asm_face_keys(&ctx, [(&id, 7)]),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "index Inventor ASM face keys"
+    ));
+    policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(id.as_str().len() - 1).expect("id fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    assert!(matches!(
+        index_asm_face_keys(&ctx, [(&id, 7)]),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor ASM face key id"
+    ));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    assert_eq!(
+        index_asm_face_keys(&ctx, [(&id, 7)]).expect("admitted key")[&id],
+        7
     );
 }
 

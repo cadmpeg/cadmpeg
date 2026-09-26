@@ -67,12 +67,6 @@ fn decode_container<'a>(
     let recovery = DialectRecovery::of(ctx, container)?;
     let matched = recovery.classify(ctx)?;
     let dialects = crate::dialect::layers(ctx, &matched, &container.rse.active_carrier)?;
-    // The kernel layer, classified from the carrier's own header. Non-primary:
-    // its format is `acis`, the embedded layer `cadmpeg-asm` owns.
-    let kernel_match = dialects
-        .iter()
-        .find(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
-        .cloned();
     let mut assembly_inventory = crate::assembly::inventory(ctx, &container.rse)?;
     let mut presentation_inventory = crate::presentation::inventory(ctx, &container.rse)?;
     let design_inventory = crate::design::inventory(ctx, &container.rse)?;
@@ -282,7 +276,12 @@ fn decode_container<'a>(
                             if let Some((bytes, media_type)) = preview_bytes(&property.value) {
                                 let ordinal = ir.model.assets.len();
                                 ir.model.assets.push(project_preview_asset(
-                                    ctx, ordinal, &native_id, bytes, media_type,
+                                    ctx,
+                                    &mut admitted_entities,
+                                    ordinal,
+                                    &native_id,
+                                    bytes,
+                                    media_type,
                                 )?);
                             }
                         }
@@ -1082,7 +1081,13 @@ fn decode_container<'a>(
         _ => None,
     };
     let kernel_brep = kernel_brep.unwrap_or_else(AsmBrep::default);
-    let face_keys = cadmpeg_asm::brep::key_maps::face_keys(&kernel_brep.face_native_keys);
+    let face_keys = index_asm_face_keys(
+        ctx,
+        kernel_brep
+            .face_native_keys
+            .iter()
+            .filter_map(|record| record.asm_face_key.map(|key| (&record.face, key))),
+    )?;
     let (
         _,
         AsmTransferRemainder {
@@ -1156,7 +1161,16 @@ fn decode_container<'a>(
         ))?);
     }
     losses.extend(dialect_loss(ctx, &matched, &recovery)?);
-    if let Some(kernel) = kernel_match.as_ref() {
+    if let Some(kernel) = ir
+        .source
+        .as_ref()
+        .and_then(SourceMeta::dialects)
+        .and_then(|layers| {
+            layers
+                .iter()
+                .find(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
+        })
+    {
         losses.extend(kernel_dialect_loss(ctx, kernel)?);
     }
     if !ctx.container_only()
@@ -2486,12 +2500,21 @@ fn project_property_set_issue(
 
 fn project_preview_asset(
     ctx: &DecodeContext<'_>,
+    admitted_entities: &mut u64,
     ordinal: usize,
     native_id: &str,
     bytes: &[u8],
     media_type: &str,
 ) -> Result<Asset, CodecError> {
     ctx.charge_collection_items(1, "collect Inventor preview asset")?;
+    let next_entities = admitted_entities.checked_add(1).ok_or_else(|| {
+        ctx.refuse_codec_limit("Inventor preview entity count", u64::MAX - 1, u64::MAX)
+    })?;
+    ctx.admit_entities(
+        next_entities,
+        admitted_entities,
+        "admit Inventor preview asset entity",
+    )?;
     let key_len = 8_u64 + u64::from(ordinal.checked_ilog10().map_or(1, |digits| digits + 1));
     ctx.charge_retained(key_len, "retain Inventor preview identity key")?;
     ctx.charge_retained(24_u64 + key_len, "retain Inventor preview asset id")?;
@@ -3330,6 +3353,19 @@ fn index_face_colors<'b>(
     Ok(output)
 }
 
+fn index_asm_face_keys<'b>(
+    ctx: &DecodeContext<'_>,
+    entries: impl IntoIterator<Item = (&'b FaceId, u64)>,
+) -> Result<HashMap<FaceId, u64>, CodecError> {
+    let mut output = HashMap::new();
+    for (id, key) in entries {
+        ctx.charge_collection_items(1, "index Inventor ASM face keys")?;
+        charge_retained_len(ctx, id.as_str().len(), "retain Inventor ASM face key id")?;
+        output.insert(id.clone(), key);
+    }
+    Ok(output)
+}
+
 fn version_record(
     ctx: &DecodeContext<'_>,
     version: VersionTuple,
@@ -3705,14 +3741,13 @@ fn property_set_name(
     ctx: &DecodeContext<'_>,
     section: &PropertySection<'_>,
 ) -> Result<Option<String>, CodecError> {
-    match section
-        .properties
-        .iter()
-        .find(|property| property.id == 255)
-    {
-        Some(property) => property.value.scalar_text(ctx),
-        None => Ok(None),
+    for property in &section.properties {
+        ctx.charge_work(1, "scan Inventor property set name")?;
+        if property.id == 255 {
+            return property.value.scalar_text(ctx);
+        }
     }
+    Ok(None)
 }
 
 fn known_property_set_fmtid(set_name: &str) -> Option<[u8; 16]> {
