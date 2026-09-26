@@ -1074,12 +1074,13 @@ pub(in super::super) fn transfer_native_brep(
         .map(|binding| (binding.half_edge, binding))
         .collect::<BTreeMap<_, _>>();
     let solved_vertex_result = solve_topological_vertices(
+        ctx,
         scan,
         ir,
         &carriers,
         curve_evidence.nurbs_endpoints,
         source_carriers,
-    );
+    )?;
     let solved_vertices = &solved_vertex_result.points;
     let mut native_pcurves = NativePcurveCandidates::new();
     for (curve_id, faces, face_0_endpoints, face_1_endpoints, offset) in scan

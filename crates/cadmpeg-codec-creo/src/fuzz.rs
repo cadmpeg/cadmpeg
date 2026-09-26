@@ -14,9 +14,13 @@ pub fn datum(data: &[u8]) {
 }
 
 /// Exercise Creo curve prototype extraction.
-pub fn curve_prototypes(data: &[u8]) {
+pub fn curve_prototypes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+) -> Result<(), cadmpeg_core::CodecError> {
     let _probe = crate::curve::prototypes(data);
-    let _probe = crate::curve::expression_records(data);
+    let _probe = crate::curve::expression_records_with_model_name(ctx, data, None)?;
+    Ok(())
 }
 
 /// Exercise Creo surface namespace row extraction.
@@ -80,7 +84,8 @@ mod tests {
     #[test]
     fn wrappers_accept_empty() {
         super::datum(&[]);
-        super::curve_prototypes(&[]);
+        crate::decode::with_test_decode_ctx(|ctx| super::curve_prototypes(ctx, &[]))
+            .expect("curve fuzz wrapper");
         super::surface_rows(&[]);
         super::scalar(&[]);
         super::compact_int(&[]);
@@ -93,7 +98,8 @@ mod tests {
     fn wrappers_accept_fixture() {
         let data = crate::test_support::build_prt("1.0", &[]);
         super::datum(&data);
-        super::curve_prototypes(&data);
+        crate::decode::with_test_decode_ctx(|ctx| super::curve_prototypes(ctx, &data))
+            .expect("curve fuzz wrapper");
         super::surface_rows(&data);
         super::scalar(&data);
         super::compact_int(&data);

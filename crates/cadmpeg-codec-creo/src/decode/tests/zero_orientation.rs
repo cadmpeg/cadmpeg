@@ -420,7 +420,11 @@ fn revolution_axis_uses_the_unique_complete_section_centerline() {
     )
     .expect("valid section frame");
 
-    let axis = resolved_revolution_axis(&definition, &transform).expect("axis");
+    let axis = crate::decode::with_test_decode_ctx(|ctx| {
+        resolved_revolution_axis(ctx, &definition, &transform)
+    })
+    .expect("test section solve")
+    .expect("axis");
     assert_eq!(axis.origin, Point3::new(5.0, 7.0, 9.0));
     assert_eq!(axis.direction, Vector3::new(0.0, 0.0, 1.0));
 }
@@ -589,7 +593,8 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
     )
     .expect("valid section frame");
     assert_eq!(
-        revolution_axis_for_transfer(
+        crate::decode::with_test_decode_ctx(|ctx| revolution_axis_for_transfer(
+            ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -597,7 +602,8 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
             &carrier_only_definition,
             &transform,
             Some(&full_turn),
-        ),
+        ))
+        .expect("test section solve"),
         Some(RevolutionAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
                 .expect("finite point fixture"),
@@ -805,13 +811,16 @@ fn named_revolve_transfers_profile_axis() {
             construction,
             op: BooleanOp::NewBody,
         },
-    )) = named_feature_definition(
-        &scan,
-        &ir,
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        822,
-        "Revolve",
-    )
+    )) = crate::decode::with_test_decode_ctx(|ctx| {
+        named_feature_definition(
+            ctx,
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            822,
+            "Revolve",
+        )
+    })
     .expect("a named revolve states no blank key")
     else {
         panic!("named revolve axis");
@@ -838,13 +847,16 @@ fn named_extrude_with_evaluated_body_is_new_body() {
 
     let Some(cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::Extrude { op, solid, .. },
-    )) = named_feature_definition(
-        &scan,
-        &ir,
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        822,
-        "Extrude",
-    )
+    )) = crate::decode::with_test_decode_ctx(|ctx| {
+        named_feature_definition(
+            ctx,
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            822,
+            "Extrude",
+        )
+    })
     .expect("a named extrude states no blank key")
     else {
         panic!("named extrude definition");
@@ -868,14 +880,17 @@ fn schema_numbered_extrude_with_evaluated_body_is_new_body() {
     });
 
     let IrFeatureDefinition::Operation(IrFeatureOperation::Extrude { op, solid, .. }) =
-        schema_feature_definition(
-            &scan,
-            &ir,
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-            822,
-            None,
-            "Extrude 822",
-        )
+        crate::decode::with_test_decode_ctx(|ctx| {
+            schema_feature_definition(
+                ctx,
+                &scan,
+                &ir,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                822,
+                None,
+                "Extrude 822",
+            )
+        })
         .expect("valid test fixture")
     else {
         panic!("schema numbered extrude definition");
@@ -923,27 +938,31 @@ fn conflicting_section_sweep_names_remain_unresolved() {
         "Revolve 822",
     ] {
         assert!(
-            named_feature_definition(
+            crate::decode::with_test_decode_ctx(|ctx| named_feature_definition(
+                ctx,
                 &scan,
                 &ir,
                 &crate::decode::source_carriers::SourceUnitCarriers::default(),
                 822,
                 kind
-            )
+            ))
             .expect("a conflicting name states no blank key")
             .is_none(),
             "conflicting section-sweep name projected: {kind}"
         );
     }
-    assert!(named_or_referenced_feature_definition(
-        &scan,
-        &ir,
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        822,
-        "Native Feature"
-    )
-    .expect("a native feature states no blank key")
-    .is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| named_or_referenced_feature_definition(
+            ctx,
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            822,
+            "Native Feature"
+        ))
+        .expect("a native feature states no blank key")
+        .is_none()
+    );
 }
 
 #[test]
@@ -972,15 +991,18 @@ fn conflicting_display_states_do_not_select_reference_family() {
         });
     let ir = CadIr::empty();
 
-    assert!(named_or_referenced_feature_definition(
-        &scan,
-        &ir,
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        822,
-        "Native Feature"
-    )
-    .expect("a native feature states no blank key")
-    .is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| named_or_referenced_feature_definition(
+            ctx,
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            822,
+            "Native Feature"
+        ))
+        .expect("a native feature states no blank key")
+        .is_none()
+    );
 }
 
 #[test]
@@ -1000,8 +1022,11 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         }),
         offset: 10,
     };
-    let nurbs = saved_spline_nurbs(&spline, &mut crate::lane_refusal::LaneRefusals::new())
-        .expect("clamped interpolation spline");
+    let nurbs = crate::decode::with_test_decode_ctx(|ctx| {
+        saved_spline_nurbs(ctx, &spline, &mut crate::lane_refusal::LaneRefusals::new())
+    })
+    .expect("test spline allocation")
+    .expect("clamped interpolation spline");
     for (parameter, expected) in [(0.0, 0.0), (1.0, 1.0), (2.0, 2.0)] {
         let point = nurbs.control_points().iter().enumerate().fold(
             [0.0; 3],
@@ -1045,7 +1070,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         assert!(derivative[1].abs() < 1.0e-12 && derivative[2].abs() < 1.0e-12);
     }
     assert!(
-        matches!(saved_spline_sketch_geometry(&spline, &mut crate::lane_refusal::LaneRefusals::new()).map(cadmpeg_ir::sketches::SketchGeometry::into_definition),
+        matches!(crate::decode::with_test_decode_ctx(|ctx| saved_spline_sketch_geometry(ctx, &spline, &mut crate::lane_refusal::LaneRefusals::new())).expect("test spline allocation").map(cadmpeg_ir::sketches::SketchGeometry::into_definition),
             Some(SketchGeometryDefinition::Nurbs { curve }) if curve.degree() == 3
         )
     );
@@ -1106,23 +1131,35 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         offset: 1,
     };
     assert_eq!(
-        materialized_saved_section_external_ids(
+        crate::decode::with_test_decode_ctx(|ctx| materialized_saved_section_external_ids(
+            ctx,
             &definition,
             &mut crate::lane_refusal::LaneRefusals::new()
-        ),
+        ))
+        .expect("test spline allocation"),
         BTreeSet::from([42])
     );
 
     let mut incomplete = spline;
     incomplete.declared_point_count = Some(4);
     assert!(
-        saved_spline_nurbs(&incomplete, &mut crate::lane_refusal::LaneRefusals::new()).is_none()
+        crate::decode::with_test_decode_ctx(|ctx| saved_spline_nurbs(
+            ctx,
+            &incomplete,
+            &mut crate::lane_refusal::LaneRefusals::new()
+        ))
+        .expect("test spline allocation")
+        .is_none()
     );
-    assert!(saved_spline_sketch_geometry(
-        &incomplete,
-        &mut crate::lane_refusal::LaneRefusals::new()
-    )
-    .is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| saved_spline_sketch_geometry(
+            ctx,
+            &incomplete,
+            &mut crate::lane_refusal::LaneRefusals::new()
+        ))
+        .expect("test spline allocation")
+        .is_none()
+    );
 
     let mut duplicate_saved_id = definition.clone();
     duplicate_saved_id
@@ -1133,11 +1170,15 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         .push(crate::feature::definitions::FeatureSavedEntity::Spline(
             incomplete,
         ));
-    assert!(materialized_saved_section_external_ids(
-        &duplicate_saved_id,
-        &mut crate::lane_refusal::LaneRefusals::new()
-    )
-    .is_empty());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| materialized_saved_section_external_ids(
+            ctx,
+            &duplicate_saved_id,
+            &mut crate::lane_refusal::LaneRefusals::new()
+        ))
+        .expect("test spline allocation")
+        .is_empty()
+    );
 
     let mut ambiguous_external_id = definition;
     let duplicate_opaque = ambiguous_external_id
@@ -1162,11 +1203,15 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         .as_mut()
         .expect("segments")
         .declared_count = 2;
-    assert!(materialized_saved_section_external_ids(
-        &ambiguous_external_id,
-        &mut crate::lane_refusal::LaneRefusals::new()
-    )
-    .is_empty());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| materialized_saved_section_external_ids(
+            ctx,
+            &ambiguous_external_id,
+            &mut crate::lane_refusal::LaneRefusals::new()
+        ))
+        .expect("test spline allocation")
+        .is_empty()
+    );
 
     let mut incomplete_segment_table = ambiguous_external_id;
     incomplete_segment_table
@@ -1176,10 +1221,12 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         .rows
         .edit_opaque(Vec::pop);
     assert_eq!(
-        materialized_saved_section_external_ids(
+        crate::decode::with_test_decode_ctx(|ctx| materialized_saved_section_external_ids(
+            ctx,
             &incomplete_segment_table,
             &mut crate::lane_refusal::LaneRefusals::new()
-        ),
+        ))
+        .expect("test spline allocation"),
         BTreeSet::from([42])
     );
 }
@@ -1204,11 +1251,15 @@ fn tensor_product_collocation_preserves_position_and_derivative_order() {
         [zero, zero, zero, zero],
     )
     .expect("complete interpolation grid");
-    let nurbs = interpolation_spline_surface(
-        &grid,
-        &"interpolation grid fixture",
-        &mut crate::lane_refusal::LaneRefusals::new(),
-    )
+    let nurbs = crate::decode::with_test_decode_ctx(|ctx| {
+        interpolation_spline_surface(
+            ctx,
+            &grid,
+            &"interpolation grid fixture",
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )
+    })
+    .expect("test spline allocation")
     .expect("bicubic tensor-product surface");
 
     assert_eq!((nurbs.u_count(), nurbs.v_count()), (4, 4));
@@ -1616,7 +1667,11 @@ fn carrier_solver_accepts_two_carrier_tangent_vertices() {
         ref_direction: [1.0, 0.0, 0.0],
         radius: 2.0,
     });
-    assert_eq!(solve_carriers(&[plane, sphere]), Some([0.0, 0.0, 2.0]));
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(ctx, &[plane, sphere]))
+            .expect("test carrier solve"),
+        Some([0.0, 0.0, 2.0])
+    );
 
     let second_sphere = CarrierEquation::Sphere(SphereEquation {
         center: [5.0, 0.0, 0.0],
@@ -1624,7 +1679,8 @@ fn carrier_solver_accepts_two_carrier_tangent_vertices() {
         radius: 3.0,
     });
     assert_eq!(
-        solve_carriers(&[sphere, second_sphere]),
+        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(ctx, &[sphere, second_sphere]))
+            .expect("test carrier solve"),
         Some([2.0, 0.0, 0.0])
     );
 
@@ -1633,7 +1689,11 @@ fn carrier_solver_accepts_two_carrier_tangent_vertices() {
         ref_direction: [0.0, 1.0, 0.0],
         radius: 2.0,
     });
-    assert_eq!(solve_carriers(&[sphere, secant]), None);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(ctx, &[sphere, secant]))
+            .expect("test carrier solve"),
+        None
+    );
 }
 
 #[test]
@@ -1682,8 +1742,11 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
         origin: [3.0 + 7.0_f64.sqrt(), 0.0, 0.0],
         normal: [1.0, 0.0, 1.0],
     });
-    let vertex = solve_carriers(&[cone, secant_torus, tangent_plane])
-        .expect("unique cone-torus circle tangent");
+    let vertex = crate::decode::with_test_decode_ctx(|ctx| {
+        solve_carriers(ctx, &[cone, secant_torus, tangent_plane])
+    })
+    .expect("test carrier solve")
+    .expect("unique cone-torus circle tangent");
     assert!((vertex[0] - upper_radius).abs() < 1.0e-12);
     assert!(vertex[1].abs() < 1.0e-12);
     assert!((vertex[2] - upper_parameter).abs() < 1.0e-12);
@@ -1762,7 +1825,11 @@ fn axis_containing_plane_torus_components_support_edges_and_vertices() {
         normal: [1.0, 0.0, 0.0],
     });
     assert_eq!(
-        solve_carriers(&[plane, torus, tangent_plane]),
+        crate::decode::with_test_decode_ctx(|ctx| solve_carriers(
+            ctx,
+            &[plane, torus, tangent_plane]
+        ))
+        .expect("test carrier solve"),
         Some([4.0, 0.0, 0.0])
     );
 

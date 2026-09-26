@@ -5,7 +5,6 @@ use super::axis::SectionAxis;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::{Angle, Length, PositiveLength};
 use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry, SketchGeometryDefinition, SketchId};
@@ -862,9 +861,10 @@ fn saved_points_coincide(first: [f64; 2], second: [f64; 2]) -> bool {
 }
 
 pub(in crate::decode) fn saved_profile_chains(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     sketch: &SketchId,
     geometries: &[(u32, SketchGeometry)],
-) -> Vec<Vec<SketchEntityUse>> {
+) -> Result<Vec<Vec<SketchEntityUse>>, cadmpeg_core::CodecError> {
     let mut profiles = geometries
         .iter()
         .filter(|(_, geometry)| is_full_circle_geometry(geometry))
@@ -883,10 +883,7 @@ pub(in crate::decode) fn saved_profile_chains(
             Some((*external_id, saved_geometry_endpoints(geometry)?))
         })
         .collect::<Vec<_>>();
-    let Ok(mut mates) = alloc_filled(rows.len(), [None; 2], "creo saved profile endpoint mates")
-    else {
-        return profiles;
-    };
+    let mut mates = ctx.alloc_filled(rows.len(), [None; 2], "creo saved profile endpoint mates")?;
     for (row_index, (_, endpoints)) in rows.iter().enumerate() {
         for endpoint_index in 0..2 {
             let matches = rows
@@ -951,7 +948,7 @@ pub(in crate::decode) fn saved_profile_chains(
         }
         remaining.retain(|index| !used.contains(index));
     }
-    profiles
+    Ok(profiles)
 }
 
 pub(in crate::decode) fn resolved_section_segment_geometry(

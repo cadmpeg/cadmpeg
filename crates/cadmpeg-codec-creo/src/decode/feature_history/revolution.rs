@@ -82,6 +82,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
         };
         let extent = feature_revolution_extent(scan, feature_id);
         let Some(axis) = revolution_axis_for_transfer(
+            ctx,
             scan,
             ir,
             source_carriers,
@@ -89,10 +90,11 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             definition,
             transform,
             extent.as_ref(),
-        ) else {
+        )?
+        else {
             continue;
         };
-        let points = resolved_section_points(definition);
+        let points = resolved_section_points(ctx, definition)?;
         let mut generating_ids = definition
             .trim_entities
             .iter()
@@ -495,6 +497,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
         };
         let extent = feature_revolution_extent(scan, feature_id);
         let Some(axis) = revolution_axis_for_transfer(
+            ctx,
             scan,
             ir,
             source_carriers,
@@ -502,7 +505,8 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
             definition,
             transform,
             extent.as_ref(),
-        ) else {
+        )?
+        else {
             continue;
         };
         let Some(sketch_id) = model_sketch_id(scan, definition) else {
