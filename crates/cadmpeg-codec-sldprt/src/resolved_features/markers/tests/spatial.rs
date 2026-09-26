@@ -820,7 +820,12 @@ fn legacy_sketch_prefix_uses_the_shared_entity_body() {
     let entities = sketch_input_entities(&payload, "lane");
 
     assert_eq!(entities.len(), 1);
-    assert_eq!(entities[0].coordinates_m, Some([1.25, -2.5]));
+    assert_eq!(
+        entities[0]
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([1.25, -2.5])
+    );
     assert_eq!(entities[0].local_id(), Some(41));
 }
 
@@ -851,7 +856,12 @@ fn terminal_wide_geometry_locus_coordinate_record_is_a_point() {
             panic!("expected one marker entity");
         };
         assert_eq!(entity.kind(), SketchInputKind::Point);
-        assert_eq!(entity.coordinates_m, Some([0.025, -0.004]));
+        assert_eq!(
+            entity
+                .coordinates_m
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some([0.025, -0.004])
+        );
 
         payload[134..138].copy_from_slice(&6u32.to_le_bytes());
         assert_eq!(
@@ -915,7 +925,12 @@ fn packed_legacy_geometry_locus_carries_profile_coordinates() {
     let entities = sketch_input_entities(&payload, "lane");
     assert_eq!(entities.len(), 1);
     assert_eq!(entities[0].kind(), SketchInputKind::Point);
-    assert_eq!(entities[0].coordinates_m, Some([0.025, -0.004]));
+    assert_eq!(
+        entities[0]
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.025, -0.004])
+    );
     assert_eq!(
         entities[0]
             .state_value
@@ -1109,7 +1124,12 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
             .find(|entity| entity.offset() == offset as u64)
             .expect("linked profile point");
         assert_eq!(point.kind(), SketchInputKind::Point);
-        assert_eq!(point.coordinates_m, Some([1.25, -2.5]));
+        assert_eq!(
+            point
+                .coordinates_m
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some([1.25, -2.5])
+        );
     }
     payload[offset..offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
     payload[offset + 17..offset + 21].copy_from_slice(&2u32.to_le_bytes());
@@ -1179,7 +1199,12 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
         .find(|entity| entity.offset() == offset as u64)
         .expect("extended-tail linked profile point");
     assert_eq!(point.kind(), SketchInputKind::Point);
-    assert_eq!(point.coordinates_m, Some([1.25, -2.5]));
+    assert_eq!(
+        point
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([1.25, -2.5])
+    );
 
     extended[offset..offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
     extended[offset + 158..].copy_from_slice(SKETCH_MARKER);
@@ -1266,7 +1291,12 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
         .find(|entity| entity.offset() == offset as u64)
         .expect("legacy geometry linked profile point");
     assert_eq!(entity.kind(), SketchInputKind::Point);
-    assert_eq!(entity.coordinates_m, Some([1.25, -2.5]));
+    assert_eq!(
+        entity
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([1.25, -2.5])
+    );
 }
 
 #[test]

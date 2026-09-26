@@ -101,7 +101,7 @@ fn native_dimensioned_circle_construction_state(
     {
         return None;
     }
-    let [cu, cv] = center.coordinates_m?;
+    let [cu, cv] = center.coordinates_m?.get();
     let mut states = Vec::new();
     for lane in lanes {
         if !lane.sketch_entities.iter().any(|marker| {
@@ -120,7 +120,10 @@ fn native_dimensioned_circle_construction_state(
             let Some(radial) = roster.get(radial_index) else {
                 continue;
             };
-            let Some([ru, rv]) = radial.coordinates_m else {
+            let Some([ru, rv]) = radial
+                .coordinates_m
+                .map(cadmpeg_ir::units::FiniteVector::get)
+            else {
                 continue;
             };
             if same_dimension_length((ru - cu).hypot(rv - cv) * 1000.0, radius) {
@@ -177,7 +180,10 @@ fn unique_native_radial_witness(
     center: &SketchInputEntity,
     expected_radius: f64,
 ) -> bool {
-    let Some([cu, cv]) = center.coordinates_m else {
+    let Some([cu, cv]) = center
+        .coordinates_m
+        .map(cadmpeg_ir::units::FiniteVector::get)
+    else {
         return false;
     };
     let candidates = lane
@@ -192,7 +198,10 @@ fn unique_native_radial_witness(
                 )
         })
         .filter(|candidate| {
-            let Some([ru, rv]) = candidate.coordinates_m else {
+            let Some([ru, rv]) = candidate
+                .coordinates_m
+                .map(cadmpeg_ir::units::FiniteVector::get)
+            else {
                 return false;
             };
             let radius = (ru - cu).hypot(rv - cv) * 1000.0;
@@ -238,16 +247,16 @@ fn dimensioned_arc_native_geometry(
     } else if let [first, second] = endpoints.as_slice() {
         (
             [
-                marker.coordinates_m?,
-                first.coordinates_m?,
-                second.coordinates_m?,
+                marker.coordinates_m?.get(),
+                first.coordinates_m?.get(),
+                second.coordinates_m?.get(),
             ],
             Some([first.id().to_string(), second.id().to_string()]),
         )
     } else {
         return unique_native_radial_witness(lane, marker, expected_radius).then_some(
             DimensionedCurveNative::Circle {
-                center: marker.coordinates_m?,
+                center: marker.coordinates_m?.get(),
             },
         );
     };
@@ -364,7 +373,7 @@ fn unique_declared_entity_handle_circular_carrier<'a>(
                         return None;
                     }
                     DimensionedCurveNative::Circle {
-                        center: marker.coordinates_m?,
+                        center: marker.coordinates_m?.get(),
                     }
                 }
                 _ => return None,
@@ -395,7 +404,7 @@ fn dimensioned_relation_carrier<'a>(
     if let Some((marker, center)) = declared_slot_handle_dimension_center(lanes, feature, operand) {
         return Some(DimensionedRelationCarrier {
             marker,
-            geometry: DimensionedCarrierGeometry::Center(center.coordinates_m?),
+            geometry: DimensionedCarrierGeometry::Center(center.coordinates_m?.get()),
             construction: Some(true),
         });
     }
@@ -405,7 +414,7 @@ fn dimensioned_relation_carrier<'a>(
         )?;
         return Some(DimensionedRelationCarrier {
             marker,
-            geometry: DimensionedCarrierGeometry::Center(marker.coordinates_m?),
+            geometry: DimensionedCarrierGeometry::Center(marker.coordinates_m?.get()),
             construction: Some(false),
         });
     }
@@ -416,7 +425,7 @@ fn dimensioned_relation_carrier<'a>(
         let marker = declared_entity_handle_point_dimension_center(lanes, feature, operand)?;
         return Some(DimensionedRelationCarrier {
             marker,
-            geometry: DimensionedCarrierGeometry::Center(marker.coordinates_m?),
+            geometry: DimensionedCarrierGeometry::Center(marker.coordinates_m?.get()),
             construction: Some(false),
         });
     }
@@ -538,7 +547,7 @@ fn dimensioned_relation_carrier<'a>(
         marker,
         geometry: match curve {
             Some(curve) => DimensionedCarrierGeometry::Curve(curve),
-            None => DimensionedCarrierGeometry::Center(marker.coordinates_m?),
+            None => DimensionedCarrierGeometry::Center(marker.coordinates_m?.get()),
         },
         construction,
     })
@@ -1132,8 +1141,8 @@ fn terminal_repeated_radial_circle_pairs<'a>(
             if center_index != radial_index.checked_add(1)? {
                 return None;
             }
-            let [cu, cv] = center.coordinates_m?;
-            let [ru, rv] = radial.coordinates_m?;
+            let [cu, cv] = center.coordinates_m?.get();
+            let [ru, rv] = radial.coordinates_m?.get();
             same_dimension_length((ru - cu).hypot(rv - cv), radius).then_some((*center, *radial))
         })
         .collect::<Vec<_>>();
@@ -1221,9 +1230,7 @@ fn reconcile_direct_circle_dimension_carriers(
                 return None;
             };
             if !matches!(marker.kind(), SketchInputKind::LineOrCircle)
-                || !marker
-                    .coordinates_m
-                    .is_some_and(|[u, v]| u.is_finite() && v.is_finite())
+                || marker.coordinates_m.is_none()
             {
                 return None;
             }
@@ -1369,7 +1376,7 @@ pub(crate) fn project_marker_dimensioned_circles(
             .filter_map(|marker| {
                 marker
                     .coordinates_m
-                    .map(|coordinates| (marker, coordinates))
+                    .map(|coordinates| (marker, coordinates.get()))
             })
             .collect::<Vec<_>>();
         let native_carriers = entities
@@ -1600,7 +1607,7 @@ pub(crate) fn project_marker_dimensioned_circles(
             let transformed = pairs
                 .iter()
                 .filter_map(|(center, _)| {
-                    let [cu, cv] = center.coordinates_m?;
+                    let [cu, cv] = center.coordinates_m?.get();
                     let native =
                         quantize(Point2::new(cu * NATIVE_TO_IR, cv * NATIVE_TO_IR), QUANTUM);
                     let centers = transforms
@@ -1697,7 +1704,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                     .filter_map(|marker| {
                         marker
                             .coordinates_m
-                            .map(|coordinates| (marker, coordinates))
+                            .map(|coordinates| (marker, coordinates.get()))
                     })
                     .collect::<Vec<_>>();
                 roster.sort_unstable_by_key(|(marker, _)| marker.offset());

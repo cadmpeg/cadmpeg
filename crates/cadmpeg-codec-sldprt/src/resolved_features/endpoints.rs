@@ -1040,14 +1040,18 @@ fn current_wide_arc_direct_markers<'a>(
         Some([endpoints[0]?, endpoints[1]?])
     };
     let has_unique_center = |endpoints: [&SketchInputEntity; 2]| {
-        let [start_u, start_v] = endpoints[0].coordinates_m?;
-        let [end_u, end_v] = endpoints[1].coordinates_m?;
+        let [start_u, start_v] = endpoints[0].coordinates_m?.get();
+        let [end_u, end_v] = endpoints[1].coordinates_m?.get();
         let candidates = markers
             .iter()
             .filter(|marker| {
                 marker.feature_ref == curve.feature_ref && marker.kind() == SketchInputKind::Arc
             })
-            .filter_map(|marker| marker.coordinates_m)
+            .filter_map(|marker| {
+                marker
+                    .coordinates_m
+                    .map(cadmpeg_ir::units::FiniteVector::get)
+            })
             .map(|[u, v]| Point2::new(u, v))
             .collect::<Vec<_>>();
         unique_arc_center_marker(
@@ -1814,7 +1818,11 @@ pub(super) fn inferred_point_coordinates_by_index(
         .sketch_entities
         .iter()
         .filter(|marker| marker.feature_ref.as_deref() == Some(feature))
-        .filter_map(|marker| marker.coordinates_m)
+        .filter_map(|marker| {
+            marker
+                .coordinates_m
+                .map(cadmpeg_ir::units::FiniteVector::get)
+        })
         .collect::<Vec<_>>();
     candidates.sort_by(|left, right| {
         left[0]
@@ -2004,7 +2012,11 @@ pub(super) fn implicit_coordinate_roster_curve_endpoints(
     let endpoints = indices.map(|index| {
         if let Some(point) = coordinates
             .get(usize::try_from(index).ok()?)
-            .and_then(|marker| marker.coordinates_m)
+            .and_then(|marker| {
+                marker
+                    .coordinates_m
+                    .map(cadmpeg_ir::units::FiniteVector::get)
+            })
         {
             Some(point)
         } else {
@@ -2087,9 +2099,14 @@ pub(super) fn implicit_profile_chain_closure_endpoints(
         let [first, second] = endpoints.as_slice() else {
             continue;
         };
-        let [Some(first_coordinates), Some(second_coordinates)] =
-            [first.coordinates_m, second.coordinates_m]
-        else {
+        let [Some(first_coordinates), Some(second_coordinates)] = [
+            first
+                .coordinates_m
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            second
+                .coordinates_m
+                .map(cadmpeg_ir::units::FiniteVector::get),
+        ] else {
             continue;
         };
         let coordinates = [first_coordinates, second_coordinates];
@@ -2181,7 +2198,7 @@ pub(super) fn extended_declared_inline_line_endpoints(
             )
     });
     let external = match (candidates.next(), candidates.next()) {
-        (Some(external), None) => external.coordinates_m?,
+        (Some(external), None) => external.coordinates_m?.get(),
         _ => return None,
     };
     Some([external, finite_coordinate_pair(payload, offset + 58)?])
@@ -2229,7 +2246,7 @@ pub(super) fn extended_linked_inline_line_endpoints(
             )
     });
     let external = match (candidates.next(), candidates.next()) {
-        (Some(external), None) => external.coordinates_m?,
+        (Some(external), None) => external.coordinates_m?.get(),
         _ => return None,
     };
     Some([external, record.inline])
@@ -2261,7 +2278,7 @@ pub(super) fn extended_identity_inline_line_endpoints(
     let endpoint = candidates.next()?;
     candidates.next().is_none().then_some([
         finite_coordinate_pair(payload, offset + 58)?,
-        endpoint.coordinates_m?,
+        endpoint.coordinates_m?.get(),
     ])
 }
 
@@ -2353,8 +2370,8 @@ pub(super) fn coordinate_roster_arc_center(
     } else {
         first_index.min(second_index).checked_sub(1)?
     };
-    let first = resolved_endpoints[0].coordinates_m?;
-    let second = resolved_endpoints[1].coordinates_m?;
+    let first = resolved_endpoints[0].coordinates_m?.get();
+    let second = resolved_endpoints[1].coordinates_m?.get();
     let roster = |include_relations: bool| {
         let mut coordinates = markers
             .iter()
@@ -2399,7 +2416,11 @@ pub(super) fn coordinate_roster_arc_center(
         if endpoint_pair_matches([*first_marker, *second_marker]) {
             if let Some(center) = coordinates
                 .get(center_index)
-                .and_then(|marker| marker.coordinates_m)
+                .and_then(|marker| {
+                    marker
+                        .coordinates_m
+                        .map(cadmpeg_ir::units::FiniteVector::get)
+                })
                 .filter(|center| equidistant(*center))
             {
                 if !roster_centers
@@ -2424,7 +2445,11 @@ pub(super) fn coordinate_roster_arc_center(
             marker.feature_ref == curve.feature_ref
                 && marker.object_index() == u32::try_from(center_index).ok()
         })
-        .filter_map(|marker| marker.coordinates_m)
+        .filter_map(|marker| {
+            marker
+                .coordinates_m
+                .map(cadmpeg_ir::units::FiniteVector::get)
+        })
         .filter(|center| equidistant(*center))
         .collect::<Vec<_>>();
     centers.sort_by(|left, right| {
@@ -2446,8 +2471,8 @@ pub(super) fn legacy_marker104_arc_center(
     endpoints: [&SketchInputEntity; 2],
 ) -> Option<[f64; 2]> {
     legacy_marker104_arc_endpoints(payload, curve, markers)?;
-    let [first_u, first_v] = endpoints[0].coordinates_m?;
-    let [second_u, second_v] = endpoints[1].coordinates_m?;
+    let [first_u, first_v] = endpoints[0].coordinates_m?.get();
+    let [second_u, second_v] = endpoints[1].coordinates_m?.get();
     let mut centers = markers
         .iter()
         .copied()
@@ -2460,7 +2485,11 @@ pub(super) fn legacy_marker104_arc_center(
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
         })
-        .filter_map(|marker| marker.coordinates_m)
+        .filter_map(|marker| {
+            marker
+                .coordinates_m
+                .map(cadmpeg_ir::units::FiniteVector::get)
+        })
         .filter(|center| {
             let first_radius = (first_u - center[0]).hypot(first_v - center[1]);
             let second_radius = (second_u - center[0]).hypot(second_v - center[1]);
@@ -2496,8 +2525,8 @@ pub(super) fn legacy_compact_diameter_arc_center(
     {
         return None;
     }
-    let [first_u, first_v] = endpoints[0].coordinates_m?;
-    let [second_u, second_v] = endpoints[1].coordinates_m?;
+    let [first_u, first_v] = endpoints[0].coordinates_m?.get();
+    let [second_u, second_v] = endpoints[1].coordinates_m?.get();
     if first_u == second_u && first_v == second_v {
         return None;
     }
@@ -2514,7 +2543,11 @@ pub(super) fn legacy_compact_diameter_arc_center(
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
         })
-        .filter_map(|marker| marker.coordinates_m)
+        .filter_map(|marker| {
+            marker
+                .coordinates_m
+                .map(cadmpeg_ir::units::FiniteVector::get)
+        })
         .filter(|center| {
             same_dimension_length(center[0], midpoint[0])
                 && same_dimension_length(center[1], midpoint[1])
@@ -2557,7 +2590,7 @@ pub(super) fn coordinate_circle_radius(
     {
         return None;
     }
-    let [center_u, center_v] = circle.coordinates_m?;
+    let [center_u, center_v] = circle.coordinates_m?.get();
     let mut coordinates = markers
         .iter()
         .copied()
@@ -2597,7 +2630,11 @@ pub(super) fn coordinate_circle_radius(
             let (u_min, u_max, v_min, v_max) = (*u.first()?, *u.last()?, *v.first()?, *v.last()?);
             let mut points = grid
                 .iter()
-                .filter_map(|marker| marker.coordinates_m)
+                .filter_map(|marker| {
+                    marker
+                        .coordinates_m
+                        .map(cadmpeg_ir::units::FiniteVector::get)
+                })
                 .collect::<Vec<_>>();
             points.sort_by(|left, right| {
                 left[0]
@@ -2673,8 +2710,8 @@ pub(super) fn legacy_coordinate_circle_radius(
     if radial_points.next().is_some() {
         return None;
     }
-    let center = circle.coordinates_m?;
-    let radial = radial.coordinates_m?;
+    let center = circle.coordinates_m?.get();
+    let radial = radial.coordinates_m?.get();
     let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
     (radius.is_finite() && radius > 0.0).then_some(radius)
 }
@@ -2738,8 +2775,8 @@ pub(super) fn coordinate_roster_full_circle(
         })
         .collect::<Vec<_>>();
     points.sort_unstable_by_key(|marker| marker.offset());
-    let center = points.first()?.coordinates_m?;
-    let radial = points.get(radial_index)?.coordinates_m?;
+    let center = points.first()?.coordinates_m?.get();
+    let radial = points.get(radial_index)?.coordinates_m?.get();
     let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
     (radius.is_finite() && radius > 0.0).then_some((center, radius))
 }
@@ -2817,8 +2854,8 @@ pub(super) fn extended_geometry_full_circle(
         })
         .collect::<Vec<_>>();
     coordinates.sort_unstable_by_key(|marker| marker.offset());
-    let center = coordinates.get(center_index)?.coordinates_m?;
-    let radial = coordinates.get(radial_index)?.coordinates_m?;
+    let center = coordinates.get(center_index)?.coordinates_m?.get();
+    let radial = coordinates.get(radial_index)?.coordinates_m?.get();
     let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
     (radius.is_finite() && radius > 0.0).then_some((center, radius))
 }
@@ -2975,10 +3012,16 @@ pub(super) fn equal_index_coordinate_roster_full_circle(
             radial_index
                 .checked_sub(1)
                 .and_then(|index| coordinates.get(index))
-                .and_then(|marker| marker.coordinates_m),
-            coordinates
-                .get(radial_index)
-                .and_then(|marker| marker.coordinates_m),
+                .and_then(|marker| {
+                    marker
+                        .coordinates_m
+                        .map(cadmpeg_ir::units::FiniteVector::get)
+                }),
+            coordinates.get(radial_index).and_then(|marker| {
+                marker
+                    .coordinates_m
+                    .map(cadmpeg_ir::units::FiniteVector::get)
+            }),
         ) {
             let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
             if radius.is_finite() && radius > 0.0 {
@@ -3000,8 +3043,11 @@ pub(super) fn equal_index_coordinate_roster_full_circle(
         .collect::<Vec<_>>();
     points.sort_unstable_by_key(|marker| marker.offset());
     let center_index = usize::from(center_index.checked_sub(1)?);
-    let center = points.get(center_index)?.coordinates_m?;
-    let radial = points.get(center_index.checked_add(1)?)?.coordinates_m?;
+    let center = points.get(center_index)?.coordinates_m?.get();
+    let radial = points
+        .get(center_index.checked_add(1)?)?
+        .coordinates_m?
+        .get();
     let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
     (radius.is_finite() && radius > 0.0).then_some((center, radius))
 }
@@ -3088,10 +3134,11 @@ pub(super) fn current_profile_circle_dimension(
         })
         .collect::<Vec<_>>();
     points.sort_unstable_by_key(|marker| marker.offset());
-    let center = points.first()?.coordinates_m?;
+    let center = points.first()?.coordinates_m?.get();
     let radial = points
         .get(usize::from(radial_index).checked_sub(1)?)?
-        .coordinates_m?;
+        .coordinates_m?
+        .get();
     let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
     (radius.is_finite() && radius > 0.0).then_some((center, radius))
 }
@@ -3172,7 +3219,7 @@ pub(super) fn compact_profile_full_circle(
         })
         .collect::<Vec<_>>();
     points.sort_unstable_by_key(|marker| marker.offset());
-    let center = points.first()?.coordinates_m?;
+    let center = points.first()?.coordinates_m?.get();
     let mut radials = points
         .iter()
         .copied()
@@ -3183,7 +3230,11 @@ pub(super) fn compact_profile_full_circle(
                 .and_then(|index| points.get(index))
                 .copied(),
         )
-        .filter_map(|marker| marker.coordinates_m)
+        .filter_map(|marker| {
+            marker
+                .coordinates_m
+                .map(cadmpeg_ir::units::FiniteVector::get)
+        })
         .filter(|radial| {
             let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
             radius.is_finite() && radius > 0.0
@@ -3246,8 +3297,8 @@ pub(super) fn compact_legacy_terminal_diameter_circle(
         offset + diam_circ::RADIAL_ORDINAL,
     )?);
     let roster = compact_legacy_embedded_coordinate_roster(payload, circle, markers)?;
-    let center = roster.first()?.coordinates_m?;
-    let radial = roster.get(radial_index)?.coordinates_m?;
+    let center = roster.first()?.coordinates_m?.get();
+    let radial = roster.get(radial_index)?.coordinates_m?.get();
     let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
     (radius.is_finite() && radius > 0.0).then_some((center, radius))
 }
@@ -3312,7 +3363,7 @@ pub(super) fn compact_legacy_profile_full_circle(
         })
         .collect::<Vec<_>>();
     points.sort_unstable_by_key(|marker| marker.offset());
-    let center = points.first()?.coordinates_m?;
+    let center = points.first()?.coordinates_m?.get();
     let feature_start = usize::try_from(points.first()?.offset()).ok()?;
     let radial_offset = (feature_start..=offset)
         .filter(|candidate| sketch_marker_prefix_at(payload, *candidate))
@@ -3320,7 +3371,7 @@ pub(super) fn compact_legacy_profile_full_circle(
     let mut radial_candidates = points
         .iter()
         .filter(|marker| usize::try_from(marker.offset()).ok() == Some(radial_offset));
-    let radial = radial_candidates.next()?.coordinates_m?;
+    let radial = radial_candidates.next()?.coordinates_m?.get();
     if radial_candidates.next().is_some() {
         return None;
     }
@@ -3391,7 +3442,7 @@ pub(super) fn legacy_profile_radial_circle(
         })
         .collect::<Vec<_>>();
     coordinates.sort_unstable_by_key(|marker| marker.offset());
-    let center = coordinates.first()?.coordinates_m?;
+    let center = coordinates.first()?.coordinates_m?.get();
     let mut radials = [
         coordinates.get(usize::from(radial_index)).copied(),
         usize::from(radial_index)
@@ -3401,7 +3452,11 @@ pub(super) fn legacy_profile_radial_circle(
     ]
     .into_iter()
     .flatten()
-    .filter_map(|marker| marker.coordinates_m)
+    .filter_map(|marker| {
+        marker
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get)
+    })
     .filter(|radial| {
         let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
         radius.is_finite() && radius > 0.0
@@ -3498,8 +3553,8 @@ pub(super) fn wide_coordinate_roster_full_circle(
         .into_iter()
         .flatten()
         .filter_map(|(center_index, radial_index)| {
-            let center = coordinates.get(center_index)?.coordinates_m?;
-            let radial = coordinates.get(radial_index)?.coordinates_m?;
+            let center = coordinates.get(center_index)?.coordinates_m?.get();
+            let radial = coordinates.get(radial_index)?.coordinates_m?.get();
             let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
             (radius.is_finite() && radius > 0.0).then_some((center, radius))
         })
@@ -3571,7 +3626,7 @@ pub(super) fn coordinate_ellipse_axes(
     {
         return None;
     }
-    let [center_u, center_v] = ellipse.coordinates_m?;
+    let [center_u, center_v] = ellipse.coordinates_m?.get();
     let mut following = markers
         .iter()
         .copied()

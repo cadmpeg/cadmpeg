@@ -1295,7 +1295,7 @@ mod relation_records_tests {
     ) -> crate::records::SketchInputEntity {
         let mut marker = crate::records::SketchInputEntity::new(id, "lane", ordinal, offset, kind);
         marker.feature_ref = Some("sketch".into());
-        marker.coordinates_m = coordinates_m;
+        marker.coordinates_m = coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         marker
     }
 
@@ -1547,7 +1547,7 @@ mod relation_records_tests {
             )],
         );
         lane.sketch_entities = dynamic_point_markers();
-        lane.sketch_entities[3].coordinates_m = Some([1.0, 0.0]);
+        lane.sketch_entities[3].coordinates_m = cadmpeg_ir::units::FiniteVector::new([1.0, 0.0]);
 
         let instances = relation_instances(&sketch_history(), &lane);
         let [relation] = instances.as_slice() else {
@@ -2225,7 +2225,7 @@ fn dynamic_solver_line<'a>(
     let [first, second] = points.get(start..start + 2)? else {
         return None;
     };
-    (first.coordinates_m? != second.coordinates_m?).then_some([*first, *second])
+    (first.coordinates_m?.get() != second.coordinates_m?.get()).then_some([*first, *second])
 }
 
 fn point_distance(first: [f64; 2], second: [f64; 2]) -> f64 {
@@ -2327,14 +2327,20 @@ fn bind_dynamic_point_relation(
          second_candidates: &[&crate::records::SketchInputEntity]| {
             let mut matches = Vec::<(String, String)>::new();
             for first in first_candidates {
-                let Some(first_coordinates) = first.coordinates_m else {
+                let Some(first_coordinates) = first
+                    .coordinates_m
+                    .map(cadmpeg_ir::units::FiniteVector::get)
+                else {
                     continue;
                 };
                 for second in second_candidates {
                     if first.id() == second.id() {
                         continue;
                     }
-                    let Some(second_coordinates) = second.coordinates_m else {
+                    let Some(second_coordinates) = second
+                        .coordinates_m
+                        .map(cadmpeg_ir::units::FiniteVector::get)
+                    else {
                         continue;
                     };
                     let measured = horizontal.map_or_else(
@@ -2439,7 +2445,7 @@ fn bind_dynamic_point_line_relation(
     let mut matches = point_candidates
         .iter()
         .filter_map(|point| {
-            let coordinates = point.coordinates_m?;
+            let coordinates = point.coordinates_m?.get();
             let measured = ((coordinates[0] - first[0]) * direction[1]
                 - (coordinates[1] - first[1]) * direction[0])
                 .abs()
@@ -2495,15 +2501,19 @@ fn bind_dynamic_line_relation(
         clear_relation_operands(relation);
         return;
     }
-    let [Some(first_line_first), Some(first_line_second)] =
-        first_markers.map(|marker| marker.coordinates_m)
-    else {
+    let [Some(first_line_first), Some(first_line_second)] = first_markers.map(|marker| {
+        marker
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get)
+    }) else {
         clear_relation_operands(relation);
         return;
     };
-    let [Some(second_line_first), Some(second_line_second)] =
-        second_markers.map(|marker| marker.coordinates_m)
-    else {
+    let [Some(second_line_first), Some(second_line_second)] = second_markers.map(|marker| {
+        marker
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get)
+    }) else {
         clear_relation_operands(relation);
         return;
     };

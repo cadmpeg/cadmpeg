@@ -79,7 +79,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
             constructed_marker.feature_ref = Some("feature".into());
             constructed_marker = constructed_marker.with_test_identity(Some(0), Some(0));
             constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-            constructed_marker.coordinates_m = Some([0.001, 0.002]);
+            constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.001, 0.002]);
             constructed_marker.links = None;
             constructed_marker
         }],

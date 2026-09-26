@@ -666,6 +666,8 @@ fn resolve_sweep_surface(
             profile_derived.then_some(Exactness::Derived),
         )),
         SweepKind::Swept { direction } => {
+            let unit_direction = *direction;
+            let direction = direction.as_raw();
             // Ruling extent: face vertex travel bracketed by the profile poles'
             // own travel along the sweep direction, in millimetres.
             let project = |p: &cadmpeg_ir::math::Point3| {
@@ -717,7 +719,7 @@ fn resolve_sweep_surface(
             Some((
                 SolvedSurfaceGeometry::Nurbs(sweep::swept_nurbs(
                     &curve,
-                    *direction,
+                    unit_direction,
                     v_start - pad,
                     v_end + pad,
                     &record,

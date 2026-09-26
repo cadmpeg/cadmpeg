@@ -100,7 +100,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
             constructed_marker.feature_ref = Some("position".into());
             constructed_marker = constructed_marker.with_test_identity(Some(object_index), None);
             constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-            constructed_marker.coordinates_m = Some(coordinates_m);
+            constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new(coordinates_m);
             constructed_marker.links = None;
             constructed_marker
         })
@@ -146,7 +146,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
             constructed_marker.feature_ref = Some("position".into());
             constructed_marker = constructed_marker.with_test_identity(Some(3), None);
             constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-            constructed_marker.coordinates_m = Some([1.0, 1.0]);
+            constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([1.0, 1.0]);
             constructed_marker.links = None;
             constructed_marker
         },
@@ -157,7 +157,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
                 SketchInputEntity::new(marker_id, marker_parent, 3, 3, SketchInputKind::Point);
             constructed_marker.feature_ref = Some("position".into());
             constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-            constructed_marker.coordinates_m = Some([0.0, 0.0]);
+            constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]);
             constructed_marker.links = None;
             constructed_marker
         },
@@ -250,7 +250,7 @@ fn curve_markers_can_contain_unmatched_construction_loci() {
             constructed_marker =
                 constructed_marker.with_test_identity(Some((ordinal + 1) as u32), None);
             constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-            constructed_marker.coordinates_m = Some(coordinates_m);
+            constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new(coordinates_m);
             constructed_marker.links = None;
             constructed_marker
         })
@@ -295,7 +295,7 @@ fn curve_markers_can_contain_unmatched_construction_loci() {
 
 #[test]
 fn paired_object_loci_select_a_congruent_bore_pattern() {
-    let marker = |id: &str, ordinal, object_index, kind, coordinates_m| {
+    let marker = |id: &str, ordinal, object_index, kind, coordinates_m: Option<[f64; 2]>| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
         let mut constructed_marker = SketchInputEntity::new(
@@ -308,7 +308,8 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
         constructed_marker.feature_ref = Some("position".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -661,7 +662,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         constructed_marker.feature_ref = Some("native-position-sketch".into());
         constructed_marker = constructed_marker.with_test_identity(Some(1), None);
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = Some([0.002, 0.003]);
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.002, 0.003]);
         constructed_marker.links = None;
         constructed_marker
     });
@@ -673,7 +674,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         constructed_marker.set_test_id("origin-marker");
         constructed_marker =
             constructed_marker.with_test_identity(None, constructed_marker.local_id());
-        constructed_marker.coordinates_m = Some([0.0, 0.0]);
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]);
         constructed_marker
     });
     lane.sketch_entities.push({
@@ -696,7 +697,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         constructed_marker =
             constructed_marker.with_test_identity(Some(2), constructed_marker.local_id());
         constructed_marker.reclassify(SketchInputKind::Arc);
-        constructed_marker.coordinates_m = Some([0.014, 0.025]);
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.014, 0.025]);
         constructed_marker
     });
     lane.sketch_entities.push({
@@ -708,7 +709,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         constructed_marker =
             constructed_marker.with_test_identity(None, constructed_marker.local_id());
         constructed_marker.reclassify(SketchInputKind::Point);
-        constructed_marker.coordinates_m = Some([0.0, 0.0]);
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]);
         constructed_marker
     });
     lane.sketch_entities
@@ -740,7 +741,8 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
     let mut paired_lane = lane.clone();
     paired_lane.sketch_entities.truncate(4);
     paired_lane.sketch_entities[0].reclassify(SketchInputKind::Arc);
-    paired_lane.sketch_entities[0].coordinates_m = Some([0.012, 0.023]);
+    paired_lane.sketch_entities[0].coordinates_m =
+        cadmpeg_ir::units::FiniteVector::new([0.012, 0.023]);
     let mut alternate_configuration = lane.clone();
     alternate_configuration.id = "alternate-lane".into();
     alternate_configuration.configuration = Some("alternate".into());
@@ -840,7 +842,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         constructed_marker =
             constructed_marker.with_test_identity(Some(3), constructed_marker.local_id());
         constructed_marker.reclassify(SketchInputKind::Arc);
-        constructed_marker.coordinates_m = Some([0.016, 0.027]);
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.016, 0.027]);
         constructed_marker
     });
     let mut incomplete_features = vec![model_hole(), features[1].clone()];
@@ -913,7 +915,7 @@ fn unique_unindexed_point_locus_is_projected() {
         );
         constructed_marker.feature_ref = Some("native-position-sketch".into());
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = Some(coordinates_m);
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new(coordinates_m);
         constructed_marker.links = None;
         constructed_marker
     };

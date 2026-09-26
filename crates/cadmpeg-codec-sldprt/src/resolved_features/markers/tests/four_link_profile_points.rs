@@ -95,7 +95,12 @@ fn current_four_link_profile_point_decodes_and_drives_reverse_incidence() {
         .find(|entity| entity.offset() == first as u64)
         .expect("first linked profile point");
     assert_eq!(first_entity.kind(), SketchInputKind::Point);
-    assert_eq!(first_entity.coordinates_m, Some([1.0, 2.0]));
+    assert_eq!(
+        first_entity
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([1.0, 2.0])
+    );
     assert_eq!(first_entity.local_id(), Some(32));
 
     let curve = {

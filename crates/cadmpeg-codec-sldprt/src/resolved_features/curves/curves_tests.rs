@@ -162,7 +162,8 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -242,14 +243,14 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
     }
     let mut adjacent = markers.clone();
     adjacent[1].coordinates_m = None;
-    adjacent[2].coordinates_m = Some([0.025, 0.011]);
+    adjacent[2].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.025, 0.011]);
     assert_eq!(
         indexed_rectangle_from_line_cycle(&payload, &adjacent.iter().collect::<Vec<_>>(),),
         None
     );
 
     let mut three_corners = markers;
-    three_corners[2].coordinates_m = Some([0.025, -0.011]);
+    three_corners[2].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.025, -0.011]);
     assert_eq!(
         indexed_rectangle_from_line_cycle(&payload, &three_corners.iter().collect::<Vec<_>>(),),
         Some([
@@ -286,15 +287,15 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
             Point2::new(-0.025, 0.011),
         ])
     );
-    three_corners[2].coordinates_m = Some([0.024, -0.010]);
+    three_corners[2].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.024, -0.010]);
     assert_eq!(
         indexed_rectangle_from_line_cycle(&payload, &three_corners.iter().collect::<Vec<_>>(),),
         None
     );
-    three_corners[0].coordinates_m = Some([0.013, -0.025]);
-    three_corners[1].coordinates_m = Some([0.0, -0.03]);
-    three_corners[2].coordinates_m = Some([0.01, 0.0]);
-    three_corners[3].coordinates_m = Some([0.0, 0.0]);
+    three_corners[0].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.013, -0.025]);
+    three_corners[1].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, -0.03]);
+    three_corners[2].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.01, 0.0]);
+    three_corners[3].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]);
     for (index, edge) in [[2u16, 4u16], [2, 3], [3, 1], [4, 1]]
         .into_iter()
         .enumerate()
@@ -350,7 +351,7 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
         .enumerate()
     {
         *marker = marker.with_test_position(marker.ordinal(), u64::try_from(index + 1).unwrap());
-        marker.coordinates_m = Some(coordinates);
+        marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new(coordinates);
         marker.reclassify(SketchInputKind::Point);
     }
     for (index, marker) in wide_markers[5..].iter_mut().enumerate() {
@@ -381,7 +382,7 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
     three_sides[CURVE_START + 2 * 92 + 17..CURVE_START + 2 * 92 + 21]
         .copy_from_slice(&2u32.to_le_bytes());
     let mut three_side_markers = wide_markers[..8].to_vec();
-    three_side_markers[4].coordinates_m = Some([1.0e-17, 0.0]);
+    three_side_markers[4].coordinates_m = cadmpeg_ir::units::FiniteVector::new([1.0e-17, 0.0]);
     three_side_markers[7].reclassify(SketchInputKind::Arc);
     assert_eq!(
         indexed_rectangle_from_line_cycle(
@@ -446,7 +447,8 @@ fn compact_legacy_object_index_cycle_carries_rectangle() {
             constructed_marker.feature_ref = Some("feature".into());
             constructed_marker = constructed_marker.with_test_identity(Some(object_index), None);
             constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-            constructed_marker.coordinates_m = coordinates_m;
+            constructed_marker.coordinates_m =
+                coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
             constructed_marker.links = None;
             constructed_marker
         };
@@ -549,8 +551,8 @@ fn compact_legacy_object_index_cycle_carries_rectangle() {
     }
     let mut diagonal = markers;
     diagonal[0].reclassify(SketchInputKind::Point);
-    diagonal[0].coordinates_m = Some([0.0, 0.0]);
-    diagonal[1].coordinates_m = Some([2.0, 1.0]);
+    diagonal[0].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]);
+    diagonal[1].coordinates_m = cadmpeg_ir::units::FiniteVector::new([2.0, 1.0]);
     diagonal[2].coordinates_m = None;
     diagonal[3].coordinates_m = None;
     assert_eq!(
@@ -605,7 +607,8 @@ fn current_compact_line_cycle_infers_its_missing_rectangle_corner() {
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -700,7 +703,7 @@ fn dimensioned_rectangle_selects_one_complete_marker_product() {
             SketchInputEntity::new(marker_id, marker_parent, 0, 0, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker.state_value = None;
-        constructed_marker.coordinates_m = Some([u, v]);
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([u, v]);
         constructed_marker.links = None;
         constructed_marker
     };

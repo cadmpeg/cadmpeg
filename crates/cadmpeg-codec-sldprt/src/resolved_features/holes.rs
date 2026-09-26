@@ -1521,7 +1521,7 @@ pub(crate) fn project_hole_position_sketches(
                         })
                     {
                         let loci = position_markers.into_iter().filter_map(|marker| {
-                            let [u, v] = marker.coordinates_m?;
+                            let [u, v] = marker.coordinates_m?.get();
                             (u != 0.0 || v != 0.0).then_some((marker, [u, v]))
                         });
                         let loci = loci.collect::<Vec<_>>();
@@ -1643,13 +1643,15 @@ fn paired_object_locus_markers<'a>(
         .iter()
         .zip(lane.sketch_entities.iter().skip(1))
         .filter_map(|(object, anchor)| {
-            let coordinates = object.coordinates_m?;
+            let coordinates = object.coordinates_m?.get();
             (object.feature_ref.as_deref() == Some(feature)
                 && anchor.feature_ref.as_deref() == Some(feature)
                 && object.object_index().is_some()
                 && anchor.object_index().is_none()
                 && anchor.kind() == SketchInputKind::Point
-                && anchor.coordinates_m == Some([0.0, 0.0]))
+                && anchor
+                    .coordinates_m
+                    .is_some_and(|coordinates| coordinates == [0.0, 0.0]))
             .then_some((object, coordinates))
         })
         .collect()
@@ -3656,7 +3658,8 @@ fn marker_pattern_bore_axes(
                 candidate.id() != paired.id()
                     && candidate.feature_ref.as_deref() == Some(feature)
                     && candidate.object_index().is_some()
-                    && candidate.coordinates_m.is_some_and(|[u, v]| {
+                    && candidate.coordinates_m.is_some_and(|coordinates| {
+                        let [u, v] = coordinates.get();
                         same_dimension_length(paired_u * 1000.0, u * 1000.0)
                             && same_dimension_length(paired_v * 1000.0, v * 1000.0)
                     })
@@ -3677,7 +3680,7 @@ fn marker_pattern_bore_axes(
                 ) || paired.contains(marker.id())
             })
             .filter_map(|marker| {
-                let [u, v] = marker.coordinates_m?;
+                let [u, v] = marker.coordinates_m?.get();
                 Some(Point2::new(u * 1000.0, v * 1000.0))
             })
             .collect::<Vec<_>>();

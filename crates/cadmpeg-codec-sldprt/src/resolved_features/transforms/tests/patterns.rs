@@ -1074,7 +1074,7 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         .iter()
         .take(3)
         .map(|marker| {
-            let [u, v] = marker.coordinates_m.unwrap();
+            let [u, v] = marker.coordinates_m.unwrap().get();
             SketchEntity::new(
                 SketchEntityId::mint(format!("synthetic:test:id#bound-{}", marker.id())).unwrap(),
                 sketch.clone(),
