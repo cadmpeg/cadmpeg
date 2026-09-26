@@ -75,9 +75,7 @@ pub(super) fn project_pattern(
         Some(match form {
             NativePatternClass::Linear => PatternKind::new(PatternTransform::Linear {
                 direction: match feature.properties.get("Direction") {
-                    Some(value) => Some(cadmpeg_ir::features::FeatureDirection3::new(
-                        parse_valid_direction(value)?,
-                    )?),
+                    Some(value) => Some(parse_valid_direction(value)?),
                     None => None,
                 },
                 spacing: parse_positive_dimension_length_mm(
@@ -99,9 +97,7 @@ pub(super) fn project_pattern(
                 ) {
                     (Some(direction), Some(spacing), Some(count)) => {
                         Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
-                            direction: cadmpeg_ir::features::FeatureDirection3::new(
-                                parse_valid_direction(direction)?,
-                            )?,
+                            direction: parse_valid_direction(direction)?,
                             spacing: parse_positive_dimension_length_mm(spacing)?,
                             count: parse_count(count)?,
                         })
@@ -112,9 +108,7 @@ pub(super) fn project_pattern(
             .ok()?,
             NativePatternClass::Circular => PatternKind::new(PatternTransform::Circular {
                 axis_origin: parse_point3_mm(feature.properties.get("AxisOrigin")?)?,
-                axis_dir: cadmpeg_ir::features::FeatureDirection3::new(parse_valid_direction(
-                    feature.properties.get("AxisDirection")?,
-                )?)?,
+                axis_dir: parse_valid_direction(feature.properties.get("AxisDirection")?)?,
                 angle: feature
                     .parameters
                     .get("Angle")
@@ -146,9 +140,7 @@ pub(super) fn project_pattern(
             .ok()?,
             NativePatternClass::Mirror => PatternKind::new(PatternTransform::Mirror {
                 plane_origin: parse_point3_mm(feature.properties.get("PlaneOrigin")?)?,
-                plane_normal: cadmpeg_ir::features::FeatureDirection3::new(parse_valid_direction(
-                    feature.properties.get("PlaneNormal")?,
-                )?)?,
+                plane_normal: parse_valid_direction(feature.properties.get("PlaneNormal")?)?,
             })
             .ok()?,
         })

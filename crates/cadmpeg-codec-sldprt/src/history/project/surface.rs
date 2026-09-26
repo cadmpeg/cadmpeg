@@ -145,9 +145,7 @@ pub(super) fn project_ruled_surface(feature: &Feature) -> Option<FeatureDefiniti
         "normal" => RuledSurfaceMode::Normal { distance },
         "tangent" => RuledSurfaceMode::Tangent { distance },
         "direction" => RuledSurfaceMode::Direction {
-            direction: cadmpeg_ir::features::FeatureDirection3::new(parse_valid_direction(
-                feature.properties.get("Direction")?,
-            )?)?,
+            direction: parse_valid_direction(feature.properties.get("Direction")?)?,
             distance,
         },
         _ => return None,

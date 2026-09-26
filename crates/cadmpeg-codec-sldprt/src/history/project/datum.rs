@@ -143,9 +143,7 @@ pub(super) fn project_projected_curve(
         .get(source.as_str())
         .map_or_else(|| source.clone(), |id| (*id).to_string());
     let direction = match feature.properties.get("Direction") {
-        Some(value) => CurveProjectionDirection::Vector(
-            cadmpeg_ir::features::FeatureDirection3::new(parse_valid_direction(value)?)?,
-        ),
+        Some(value) => CurveProjectionDirection::Vector(parse_valid_direction(value)?),
         None => CurveProjectionDirection::State(CurveProjectionDirectionState::TargetNormal),
     };
     Some(FeatureDefinition::Operation(
@@ -219,7 +217,7 @@ pub(super) fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
     };
     Some(FeatureDefinition::Operation(FeatureOperation::Helix {
         axis_origin,
-        axis_direction: cadmpeg_ir::features::FeatureDirection3::new(axis_direction)?,
+        axis_direction,
         radius,
         shape: cadmpeg_ir::features::HelixShape::Cylindrical {
             pitch: cadmpeg_ir::scalar::NonZeroLength::try_from(pitch).ok()?,
