@@ -294,7 +294,8 @@ fn decode_container<'a>(
             (Vec::new(), None)
         }
     };
-    let material_catalog = crate::materials::project_catalog(&protein_instances)?;
+    let material_catalog =
+        crate::materials::project_catalog(ctx, &protein_instances, &mut admitted_entities)?;
     let mut protein_issues = Vec::new();
     let mut ufrx_issues = Vec::new();
     let protein_assets = protein_instances
@@ -1462,6 +1463,12 @@ fn decode_container<'a>(
                     losses.push(InventorLossCode::ProteinGuidAmbiguous.note(format!(
                         "The Protein catalog contains {} duplicate asset GUID(s); ambiguous texture joins were refused.",
                         material_catalog.duplicate_guids.len()
+                    )));
+                }
+                if material_catalog.untyped_distance_properties != 0 {
+                    losses.push(InventorLossCode::MaterialDistanceUnitUntyped.note(format!(
+                        "{} Protein texture Distance property value(s) retain an untyped unit tag; their typed texture carriers were omitted.",
+                        material_catalog.untyped_distance_properties
                     )));
                 }
             }
