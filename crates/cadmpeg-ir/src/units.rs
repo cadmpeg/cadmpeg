@@ -438,6 +438,15 @@ impl UnitVector3 {
         let largest = value.x.abs().max(value.y.abs()).max(value.z.abs());
         Self(divided_by_largest_component(value, largest))
     }
+    /// Apply the largest-component chart with reciprocal multiplication to an
+    /// admitted unit direction. The chart keeps the unit admission.
+    #[must_use]
+    pub fn recharted_by_reciprocal(self) -> Self {
+        let value = self.0;
+        let largest = value.x.abs().max(value.y.abs()).max(value.z.abs());
+        let scaled = Vector3::new(value.x / largest, value.y / largest, value.z / largest);
+        Self(scaled.scale(1.0 / scaled.norm()))
+    }
     /// Normalize a finite nonzero displacement with the binade chart used by
     /// [`crate::features::FiniteVector3::unit_nonzero`].
     #[must_use]
@@ -1802,6 +1811,17 @@ mod tests {
         ] {
             assert_eq!(UnitVector3::normalized_by_reciprocal(value), None);
         }
+    }
+
+    #[test]
+    fn reciprocal_rechart_keeps_component_bits_without_new_admission() {
+        let source = Vector3::new(3.0, 4.0, 5.0);
+        let admitted = UnitVector3::normalized_by_reciprocal(source).unwrap();
+        let raw = *admitted.as_raw();
+        let largest = raw.x.abs().max(raw.y.abs()).max(raw.z.abs());
+        let scaled = Vector3::new(raw.x / largest, raw.y / largest, raw.z / largest);
+        let expected = scaled.scale(1.0 / scaled.norm());
+        assert_eq!(*admitted.recharted_by_reciprocal().as_raw(), expected);
     }
 
     #[test]

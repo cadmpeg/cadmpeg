@@ -514,6 +514,22 @@ struct SpatialOffsetCurveConstructionWire {
 }
 
 impl SpatialOffsetCurveConstruction {
+    /// Admit an offset distance with an admitted reference direction.
+    pub fn try_from_parts(
+        source: CurveId,
+        distance: f64,
+        reference_direction: UnitVector3,
+        self_intersect: Option<bool>,
+    ) -> Result<Self, ProceduralGeometryError> {
+        Ok(Self {
+            source,
+            distance: FiniteReal::new(distance).ok_or(ProceduralGeometryError::Payload(
+                "SpatialOffset.distance is not finite",
+            ))?,
+            reference_direction,
+            self_intersect,
+        })
+    }
     /// Admit the construction parameters.
     pub fn try_new(
         source: CurveId,
@@ -525,14 +541,7 @@ impl SpatialOffsetCurveConstruction {
             ProceduralGeometryError::Payload("invalid spatial curve offset"),
         )?;
 
-        Ok(Self {
-            source,
-            distance: FiniteReal::new(distance).ok_or(ProceduralGeometryError::Payload(
-                "SpatialOffset.distance is not finite",
-            ))?,
-            reference_direction,
-            self_intersect,
-        })
+        Self::try_from_parts(source, distance, reference_direction, self_intersect)
     }
     /// Return the source.
     pub fn source(&self) -> &CurveId {

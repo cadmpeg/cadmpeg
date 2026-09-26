@@ -23,9 +23,12 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{
+    Angle, FiniteReal, NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal,
+};
 use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::transform::{Transform, Transform2};
+use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 
 use crate::ids;
 use crate::loss::StepLossCode;
@@ -41,14 +44,17 @@ const EPS_GEOMETRY_READ_EXACT_GEOMETRY: f64 = 1.0e-12;
 const RANGE_INFERENCE_WORK_UNITS: u64 = 4_096;
 
 pub(super) struct GeometryData {
-    pub(super) placements: BTreeMap<u64, (Point3, Vector3, Vector3)>,
+    pub(super) placements: BTreeMap<u64, (FinitePoint3, UnitVector3, UnitVector3)>,
     pub(super) transformation_operators: BTreeMap<u64, Transform>,
     pub(super) units: UnitScales,
 }
 
 pub(super) fn placement_transform(
-    (origin, z_axis, x_axis): (Point3, Vector3, Vector3),
+    (origin, z_axis, x_axis): (FinitePoint3, UnitVector3, UnitVector3),
 ) -> Option<Transform> {
+    let origin = origin.get();
+    let z_axis = z_axis.as_raw();
+    let x_axis = x_axis.as_raw();
     let y_axis = Vector3::new(
         z_axis.y * x_axis.z - z_axis.z * x_axis.y,
         z_axis.z * x_axis.x - z_axis.x * x_axis.z,
@@ -557,7 +563,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .and_then(Value::reference)
                 .and_then(|direction| directions.get(&direction).copied())
                 .zip(named_parameter(record, "VECTOR", 2).and_then(Value::number))
-                .map(|(direction, magnitude)| direction.scale(magnitude * record_scale));
+                .map(|(direction, magnitude)| direction.as_raw().scale(magnitude * record_scale));
             let value2 = named_parameter(record, "VECTOR", 1)
                 .and_then(Value::reference)
                 .and_then(|direction| directions2.get(&direction).copied())
@@ -586,13 +592,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         {
             let placement = named_parameter(record, placement_type, 1)
                 .and_then(Value::reference)
-                .and_then(|point| points.get(&point).copied().map(FinitePoint3::get))
+                .and_then(|point| points.get(&point).copied())
                 .map(|origin| {
                     let axis = optional_direction(
                         named_parameter(record, placement_type, 2),
                         &directions,
                     )
-                        .unwrap_or(Vector3::new(0.0, 0.0, 1.0));
+                        .unwrap_or(UnitVector3::Z_AXIS);
                     let reference = match optional_direction(
                         named_parameter(record, placement_type, 3),
                         &directions,
@@ -604,11 +610,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                                 losses.push(StepLossCode::PlacementReferenceInferred.note(format!(
                                         "AXIS2_PLACEMENT_3D #{id} has a reference direction parallel to its axis; inferred an orthogonal reference"
                                     )));
-                                first_projected_axis(axis)
-                                    .unwrap_or(Vector3::new(1.0, 0.0, 0.0))
+                                first_projected_axis(axis).unwrap_or(UnitVector3::X_AXIS)
                             }
                         }
-                        None => first_projected_axis(axis).unwrap_or(Vector3::new(1.0, 0.0, 0.0)),
+                        None => first_projected_axis(axis).unwrap_or(UnitVector3::X_AXIS),
                     };
                     (origin, axis, reference)
                 });
@@ -738,33 +743,28 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         let geometry = match curve_kind {
             LeafCurveEntity::Line => named_parameter(record, "LINE", 1)
                 .and_then(Value::reference)
-                .and_then(|point| points.get(&point).copied().map(FinitePoint3::get))
+                .and_then(|point| points.get(&point).copied())
                 .zip(
                     named_parameter(record, "LINE", 2)
                         .and_then(Value::reference)
                         .and_then(|vector| vectors.get(&vector).copied())
                         .and_then(normalize),
                 )
-                .and_then(|(origin, direction)| {
-                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, direction)
-                        .ok()
-                        .map(SolvedCurveGeometry::Line)
-                        .map(CurveGeometry::Solved)
+                .map(|(origin, direction)| {
+                    CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                        cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction),
+                    ))
                 }),
             LeafCurveEntity::Circle => named_parameter(record, "CIRCLE", 1)
                 .and_then(Value::reference)
                 .and_then(|placement| placements.get(&placement).copied())
                 .zip(named_parameter(record, "CIRCLE", 2).and_then(Value::number))
                 .and_then(|((center, axis, ref_direction), radius)| {
-                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                        center,
-                        axis,
-                        ref_direction,
-                        radius * record_scale,
-                    )
-                    .ok()
-                    .map(SolvedCurveGeometry::Circle)
-                    .map(CurveGeometry::Solved)
+                    let frame = OrthonormalFrame3::from_units(axis, ref_direction)?;
+                    let radius = PositiveLength::new(radius * record_scale)?;
+                    Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                        cadmpeg_ir::geometry::analytic::CircleCurve::new(center, frame, radius),
+                    )))
                 }),
             LeafCurveEntity::Ellipse => named_parameter(record, "ELLIPSE", 1)
                 .and_then(Value::reference)
@@ -777,18 +777,25 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         let second_radius = second_radius * record_scale;
                         let (major_direction, major_radius, minor_radius) =
                             if first_radius >= second_radius {
-                                (reference_direction, first_radius, second_radius)
+                                (*reference_direction.as_raw(), first_radius, second_radius)
                             } else {
                                 // STEP ELLIPSE stores two ordered semiaxes;
                                 // neither position is required to be the
                                 // longer one. The IR ellipse is canonicalized
                                 // around its semi-major direction.
-                                (axis.cross(reference_direction), second_radius, first_radius)
+                                (
+                                    axis.as_raw().cross(*reference_direction.as_raw()),
+                                    second_radius,
+                                    first_radius,
+                                )
                             };
-                        cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
+                        let major_direction = UnitVector3::new(major_direction)?;
+                        let frame = OrthonormalFrame3::from_units(axis, major_direction)?;
+                        let major_radius = PositiveLength::new(major_radius)?;
+                        let minor_radius = PositiveLength::new(minor_radius)?;
+                        cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
                             center,
-                            axis,
-                            major_direction,
+                            frame,
                             major_radius,
                             minor_radius,
                         )
@@ -802,15 +809,15 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .and_then(|placement| placements.get(&placement).copied())
                 .zip(named_parameter(record, "PARABOLA", 2).and_then(Value::number))
                 .and_then(|((vertex, axis, major_direction), focal_distance)| {
-                    cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
-                        vertex,
-                        axis,
-                        major_direction,
-                        focal_distance * record_scale,
-                    )
-                    .ok()
-                    .map(SolvedCurveGeometry::Parabola)
-                    .map(CurveGeometry::Solved)
+                    let frame = OrthonormalFrame3::from_units(axis, major_direction)?;
+                    let focal_distance = PositiveLength::new(focal_distance * record_scale)?;
+                    Some(CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
+                        cadmpeg_ir::geometry::analytic::ParabolaCurve::new(
+                            vertex,
+                            frame,
+                            focal_distance,
+                        ),
+                    )))
                 }),
             LeafCurveEntity::Hyperbola => named_parameter(record, "HYPERBOLA", 1)
                 .and_then(Value::reference)
@@ -819,16 +826,17 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .zip(named_parameter(record, "HYPERBOLA", 3).and_then(Value::number))
                 .and_then(
                     |(((center, axis, major_direction), major_radius), minor_radius)| {
-                        cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
-                            center,
-                            axis,
-                            major_direction,
-                            major_radius * record_scale,
-                            minor_radius * record_scale,
-                        )
-                        .ok()
-                        .map(SolvedCurveGeometry::Hyperbola)
-                        .map(CurveGeometry::Solved)
+                        let frame = OrthonormalFrame3::from_units(axis, major_direction)?;
+                        let major_radius = PositiveLength::new(major_radius * record_scale)?;
+                        let minor_radius = PositiveLength::new(minor_radius * record_scale)?;
+                        Some(CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
+                            cadmpeg_ir::geometry::analytic::HyperbolaCurve::new(
+                                center,
+                                frame,
+                                major_radius,
+                                minor_radius,
+                            ),
+                        )))
                     },
                 ),
             LeafCurveEntity::Polyline => polyline(id, record, &points, &mut losses)
@@ -1157,7 +1165,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         let curve = CurveId::from(ids::data(kind!("curve"), id));
         let curve_index = CurveIndex(ir.model.curves.len());
         let procedural =
-            match cadmpeg_ir::geometry::curve_payloads::SpatialOffsetCurveConstruction::try_new(
+            match cadmpeg_ir::geometry::curve_payloads::SpatialOffsetCurveConstruction::try_from_parts(
                 source,
                 distance * unit_scales.length([id]),
                 reference_direction,
@@ -1320,12 +1328,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         .and_then(|placement| placements.get(&placement).copied()),
                 )
                 .map(|(directrix, (axis_origin, axis_direction, _))| {
-                    cadmpeg_ir::geometry::surface_payloads::AxisRevolutionSurfaceConstruction::try_new(
-                        directrix,
-                        axis_origin,
-                        axis_direction,
-                    )
-                    .map(ProceduralSurfaceDefinition::AxisRevolution)
+                    let construction =
+                        cadmpeg_ir::geometry::surface_payloads::AxisRevolutionSurfaceConstruction::from_parts(
+                            directrix,
+                            axis_origin,
+                            axis_direction,
+                        );
+                    Ok(ProceduralSurfaceDefinition::AxisRevolution(construction))
                 })),
             _ => continue,
         };
@@ -1376,23 +1385,19 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             .and_then(|placement| placements.get(&placement).copied());
         let geometry = match surface_kind {
             LeafSurfaceEntity::Plane => placement.and_then(|(origin, normal, u_axis)| {
-                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, normal, u_axis)
-                    .ok()
-                    .map(SolvedSurfaceGeometry::Plane)
-                    .map(SurfaceGeometry::Solved)
+                let frame = OrthonormalFrame3::from_units(normal, u_axis)?;
+                Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, frame),
+                )))
             }),
             LeafSurfaceEntity::Cylindrical => placement
                 .zip(named_parameter(record, "CYLINDRICAL_SURFACE", 2).and_then(Value::number))
                 .and_then(|((origin, axis, ref_direction), radius)| {
-                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                        origin,
-                        axis,
-                        ref_direction,
-                        radius * record_scale,
-                    )
-                    .ok()
-                    .map(SolvedSurfaceGeometry::Cylinder)
-                    .map(SurfaceGeometry::Solved)
+                    let frame = OrthonormalFrame3::from_units(axis, ref_direction)?;
+                    let radius = PositiveLength::new(radius * record_scale)?;
+                    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                        cadmpeg_ir::geometry::analytic::CylinderSurface::new(origin, frame, radius),
+                    )))
                 }),
             // ISO 10303-42 `conical_surface` holds `semi_angle` in `(0, pi/2)`.
             // Every finite value comes through, because the IR cone uses the
@@ -1408,46 +1413,44 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .zip(named_parameter(record, "CONICAL_SURFACE", 2).and_then(Value::number))
                 .zip(named_parameter(record, "CONICAL_SURFACE", 3).and_then(Value::number))
                 .and_then(|(((origin, axis, ref_direction), radius), half_angle)| {
-                    cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                        origin,
-                        axis,
-                        ref_direction,
-                        radius * record_scale,
-                        1.0,
-                        half_angle * record_angle_scale,
-                    )
-                    .ok()
-                    .map(SolvedSurfaceGeometry::Cone)
-                    .map(SurfaceGeometry::Solved)
+                    let frame = OrthonormalFrame3::from_units(axis, ref_direction)?;
+                    let radius = NonNegativeLength::new(radius * record_scale)?;
+                    let half_angle = Angle::new(half_angle * record_angle_scale)?;
+                    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+                        cadmpeg_ir::geometry::analytic::ConeSurface::new(
+                            origin,
+                            frame,
+                            radius,
+                            PositiveReal::ONE,
+                            half_angle,
+                        ),
+                    )))
                 }),
             LeafSurfaceEntity::Spherical => placement
                 .zip(named_parameter(record, "SPHERICAL_SURFACE", 2).and_then(Value::number))
                 .and_then(|((center, axis, ref_direction), radius)| {
-                    cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                        center,
-                        axis,
-                        ref_direction,
-                        radius * record_scale,
-                    )
-                    .ok()
-                    .map(SolvedSurfaceGeometry::Sphere)
-                    .map(SurfaceGeometry::Solved)
+                    let frame = OrthonormalFrame3::from_units(axis, ref_direction)?;
+                    let radius = NonZeroLength::new(radius * record_scale)?;
+                    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+                        cadmpeg_ir::geometry::analytic::SphereSurface::new(center, frame, radius),
+                    )))
                 }),
             LeafSurfaceEntity::Toroidal | LeafSurfaceEntity::DegenerateToroidal => placement
                 .zip(named_parameter(record, surface_type, 2).and_then(Value::number))
                 .zip(named_parameter(record, surface_type, 3).and_then(Value::number))
                 .and_then(
                     |(((center, axis, ref_direction), major_radius), minor_radius)| {
-                        cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-                            center,
-                            axis,
-                            ref_direction,
-                            major_radius * record_scale,
-                            minor_radius * record_scale,
-                        )
-                        .ok()
-                        .map(SolvedSurfaceGeometry::Torus)
-                        .map(SurfaceGeometry::Solved)
+                        let frame = OrthonormalFrame3::from_units(axis, ref_direction)?;
+                        let major_radius = PositiveLength::new(major_radius * record_scale)?;
+                        let minor_radius = NonZeroLength::new(minor_radius * record_scale)?;
+                        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+                            cadmpeg_ir::geometry::analytic::TorusSurface::new(
+                                center,
+                                frame,
+                                major_radius,
+                                minor_radius,
+                            ),
+                        )))
                     },
                 ),
             LeafSurfaceEntity::BSplineWithKnots
@@ -3828,8 +3831,10 @@ fn line_parameter_scale(
     resolve(exchange, curve, length_scale, losses, &mut BTreeSet::new())
 }
 
-fn orthogonal_reference(axis: Vector3, reference: Vector3) -> Option<Vector3> {
-    let projection = axis.dot(reference);
+fn orthogonal_reference(axis: UnitVector3, reference: UnitVector3) -> Option<UnitVector3> {
+    let axis = axis.as_raw();
+    let reference = reference.as_raw();
+    let projection = axis.dot(*reference);
     normalize(Vector3::new(
         reference.x - projection * axis.x,
         reference.y - projection * axis.y,
@@ -3837,8 +3842,7 @@ fn orthogonal_reference(axis: Vector3, reference: Vector3) -> Option<Vector3> {
     ))
 }
 
-fn first_projected_axis(axis: Vector3) -> Option<Vector3> {
-    let axis = normalize(axis)?;
+fn first_projected_axis(axis: UnitVector3) -> Option<UnitVector3> {
     project_axis(default_reference_axis(axis), axis)
 }
 
@@ -5239,7 +5243,7 @@ fn numbers(value: &Value) -> Option<Vec<f64>> {
     value.list()?.iter().map(Value::number).collect()
 }
 
-pub(super) fn normalize(vector: Vector3) -> Option<Vector3> {
+pub(super) fn normalize(vector: Vector3) -> Option<UnitVector3> {
     if !vector.is_finite() {
         return None;
     }
@@ -5248,43 +5252,48 @@ pub(super) fn normalize(vector: Vector3) -> Option<Vector3> {
         return None;
     }
     let scaled = Vector3::new(vector.x / scale, vector.y / scale, vector.z / scale);
-    let length = scaled.norm();
-    Some(scaled.scale(1.0 / length))
+    UnitVector3::normalized_by_reciprocal(scaled)
 }
 
-fn project_axis(vector: Vector3, normal: Vector3) -> Option<Vector3> {
-    let vector = normalize(vector)?;
-    let normal = normalize(normal)?;
+fn project_axis(vector: UnitVector3, normal: UnitVector3) -> Option<UnitVector3> {
+    let vector = *vector.recharted_by_reciprocal().as_raw();
+    let normal = *normal.recharted_by_reciprocal().as_raw();
     normalize(vector - normal.scale(vector.dot(normal)))
 }
 
-fn second_project_axis(z_axis: Vector3, x_axis: Vector3, vector: Vector3) -> Option<Vector3> {
-    let vector = normalize(vector)?;
-    let z_axis = normalize(z_axis)?;
-    let x_axis = normalize(x_axis)?;
+fn second_project_axis(
+    z_axis: UnitVector3,
+    x_axis: UnitVector3,
+    vector: UnitVector3,
+) -> Option<UnitVector3> {
+    let vector = *vector.recharted_by_reciprocal().as_raw();
+    let z_axis = *z_axis.recharted_by_reciprocal().as_raw();
+    let x_axis = *x_axis.recharted_by_reciprocal().as_raw();
     let projected = (vector - z_axis.scale(vector.dot(z_axis))) - x_axis.scale(vector.dot(x_axis));
     normalize(projected)
 }
 
 fn base_axis_3d(
-    axis1: Option<Vector3>,
-    axis2: Option<Vector3>,
-    axis3: Option<Vector3>,
-) -> Option<[Vector3; 3]> {
-    let z_axis = normalize(axis3.unwrap_or(Vector3::new(0.0, 0.0, 1.0)))?;
+    axis1: Option<UnitVector3>,
+    axis2: Option<UnitVector3>,
+    axis3: Option<UnitVector3>,
+) -> Option<[UnitVector3; 3]> {
+    let z_axis = axis3
+        .unwrap_or(UnitVector3::Z_AXIS)
+        .recharted_by_reciprocal();
     let default_x = default_reference_axis(z_axis);
     let x_axis = project_axis(axis1.unwrap_or(default_x), z_axis)?;
-    let y_axis = second_project_axis(z_axis, x_axis, axis2.unwrap_or(Vector3::new(0.0, 1.0, 0.0)))?;
+    let y_axis = second_project_axis(z_axis, x_axis, axis2.unwrap_or(UnitVector3::Y_AXIS))?;
     Some([x_axis, y_axis, z_axis])
 }
 
 const AXIS_PARALLEL_TOLERANCE: f64 = EPS_GEOMETRY_READ_EXACT_GEOMETRY;
 
-fn default_reference_axis(axis: Vector3) -> Vector3 {
-    if axis.x.abs() >= 1.0 - AXIS_PARALLEL_TOLERANCE {
-        Vector3::new(0.0, 1.0, 0.0)
+fn default_reference_axis(axis: UnitVector3) -> UnitVector3 {
+    if axis.as_raw().x.abs() >= 1.0 - AXIS_PARALLEL_TOLERANCE {
+        UnitVector3::Y_AXIS
     } else {
-        Vector3::new(1.0, 0.0, 0.0)
+        UnitVector3::X_AXIS
     }
 }
 
@@ -5304,7 +5313,7 @@ fn transformation_direction<T: Copy>(
 fn cartesian_transformation_operator(
     record: &RawRecord,
     points: &BTreeMap<u64, FinitePoint3>,
-    directions: &BTreeMap<u64, Vector3>,
+    directions: &BTreeMap<u64, UnitVector3>,
 ) -> Option<Transform> {
     let axis1 = transformation_direction(
         record,
@@ -5338,6 +5347,9 @@ fn cartesian_transformation_operator(
     )
     .ok()?;
     let [axis_x, axis_y, axis_z] = base_axis_3d(axis1, axis2, axis3)?;
+    let axis_x = axis_x.as_raw();
+    let axis_y = axis_y.as_raw();
+    let axis_z = axis_z.as_raw();
     Transform::affine([
         [
             axis_x.x * scale,
@@ -5419,8 +5431,8 @@ fn base_axis_2d(axis1: Option<Point2>, axis2: Option<Point2>) -> Option<(Point2,
 
 fn optional_direction(
     value: Option<&Value>,
-    directions: &BTreeMap<u64, Vector3>,
-) -> Option<Vector3> {
+    directions: &BTreeMap<u64, UnitVector3>,
+) -> Option<UnitVector3> {
     match value? {
         Value::Omitted => None,
         Value::Reference(id) => directions.get(id).copied(),
