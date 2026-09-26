@@ -155,7 +155,7 @@ fn decode_container<'a>(
                     section_count: property_set.sections.len() as u64,
                 });
                 for (section_ordinal, section) in property_set.sections.iter().enumerate() {
-                    let set_name = property_set_name(section);
+                    let set_name = property_set_name(ctx, section)?;
                     let identity_matches = set_name
                         .as_deref()
                         .and_then(known_property_set_fmtid)
@@ -198,15 +198,16 @@ fn decode_container<'a>(
                             descriptor.stream.directory_id(),
                             property.id
                         );
-                        let scalar_value = property.value.scalar_text();
+                        let scalar_value = property.value.scalar_text(ctx)?;
                         metadata.consider(
+                            ctx,
                             &section.fmtid,
                             property.id,
                             property_name.as_deref(),
                             scalar_value.as_deref(),
                             &native_id,
-                        );
-                        if is_preview(&section.fmtid, property.id, property_name.as_deref()) {
+                        )?;
+                        if is_preview(ctx, &section.fmtid, property.id, property_name.as_deref())? {
                             if let Some((bytes, media_type)) = preview_bytes(&property.value) {
                                 let data =
                                     ctx.copy_retained(bytes, "retain Inventor preview asset")?;
@@ -535,7 +536,7 @@ fn decode_container<'a>(
         }
     }
     attributes.insert("document_kind".into(), document_kind.label().into());
-    metadata.apply_attributes(&mut attributes);
+    metadata.apply_attributes(ctx, &mut attributes)?;
     ir.source = Some(SourceMeta::classified(
         dialects,
         cadmpeg_core::text::named_entries("the inventor document", attributes)?,
@@ -2082,20 +2083,23 @@ struct MetadataProjection {
 impl MetadataProjection {
     fn consider(
         &mut self,
+        ctx: &DecodeContext<'_>,
         fmtid: &[u8; 16],
         property_id: u32,
         name: Option<&str>,
         value: Option<&str>,
         native_id: &str,
-    ) {
+    ) -> Result<(), CodecError> {
         let Some(value) = value.filter(|value| !value.is_empty()) else {
-            return;
+            return Ok(());
         };
-        let normalized = name.map(normalize_property_name);
+        let normalized = name
+            .map(|name| normalize_property_name(ctx, name))
+            .transpose()?;
         if matches!(normalized.as_deref(), Some("documentkind" | "documenttype")) {
             self.document_kind = DocumentKind::parse_property(value);
             if self.document_kind.is_some() {
-                return;
+                return Ok(());
             }
         }
         let target = if fmtid == &FMTID_SUMMARY_INFORMATION && property_id == 2
@@ -2117,20 +2121,32 @@ impl MetadataProjection {
         };
         if let Some(target) = target {
             if target.is_none() {
+                charge_retained_len(ctx, value.len(), "retain Inventor metadata value")?;
                 *target = Some(value.into());
             } else if target.as_deref() != Some(value) {
+                charge_items(ctx, 1, "collect Inventor BOM property")?;
+                charge_retained_len(ctx, native_id.len(), "retain Inventor BOM property key")?;
+                charge_retained_len(ctx, value.len(), "retain Inventor BOM property value")?;
                 self.bom_properties.insert(native_id.into(), value.into());
             }
-            return;
+            return Ok(());
         }
         if let Some(name) = name {
+            charge_items(ctx, 1, "collect Inventor BOM property")?;
+            charge_retained_len(ctx, name.len(), "retain Inventor BOM property key")?;
+            charge_retained_len(ctx, value.len(), "retain Inventor BOM property value")?;
             self.bom_properties.insert(name.into(), value.into());
         } else {
             self.unmapped += 1;
         }
+        Ok(())
     }
 
-    fn apply_attributes(&self, attributes: &mut BTreeMap<String, String>) {
+    fn apply_attributes(
+        &self,
+        ctx: &DecodeContext<'_>,
+        attributes: &mut BTreeMap<String, String>,
+    ) -> Result<(), CodecError> {
         for (name, value) in [
             ("title", &self.title),
             ("author", &self.author),
@@ -2138,25 +2154,61 @@ impl MetadataProjection {
             ("part_number", &self.part_number),
         ] {
             if let Some(value) = value {
+                charge_items(ctx, 1, "collect Inventor metadata attribute")?;
+                charge_retained_len(ctx, name.len(), "retain Inventor metadata attribute key")?;
+                charge_retained_len(ctx, value.len(), "retain Inventor metadata attribute value")?;
                 attributes.insert(name.into(), value.clone());
             }
         }
+        Ok(())
     }
 }
 
-fn normalize_property_name(name: &str) -> String {
-    name.chars()
+fn normalize_property_name(ctx: &DecodeContext<'_>, name: &str) -> Result<String, CodecError> {
+    ctx.charge_work(
+        u64::try_from(name.len()).map_err(|_| {
+            ctx.refuse_codec_limit("Inventor property name length", u64::MAX - 1, u64::MAX)
+        })?,
+        "normalize Inventor property name",
+    )?;
+    let normalized_len = name
+        .chars()
         .filter(|character| character.is_alphanumeric())
         .flat_map(char::to_lowercase)
-        .collect()
+        .try_fold(0_usize, |len, character| {
+            len.checked_add(character.len_utf8())
+        })
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "Inventor normalized property name length",
+                u64::MAX - 1,
+                u64::MAX,
+            )
+        })?;
+    charge_retained_len(
+        ctx,
+        normalized_len,
+        "retain Inventor normalized property name",
+    )?;
+    Ok(name
+        .chars()
+        .filter(|character| character.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect())
 }
 
-fn property_set_name(section: &PropertySection<'_>) -> Option<String> {
-    section
+fn property_set_name(
+    ctx: &DecodeContext<'_>,
+    section: &PropertySection<'_>,
+) -> Result<Option<String>, CodecError> {
+    match section
         .properties
         .iter()
         .find(|property| property.id == 255)
-        .and_then(|property| property.value.scalar_text())
+    {
+        Some(property) => property.value.scalar_text(ctx),
+        None => Ok(None),
+    }
 }
 
 fn known_property_set_fmtid(set_name: &str) -> Option<[u8; 16]> {
@@ -2333,14 +2385,22 @@ fn property_value_kind(value: &PropertyValue<'_>) -> PropertyValueKind {
     }
 }
 
-fn is_preview(fmtid: &[u8; 16], property_id: u32, name: Option<&str>) -> bool {
-    fmtid == &FMTID_SUMMARY_INFORMATION && property_id == 17
-        || name.is_some_and(|name| {
-            matches!(
-                normalize_property_name(name).as_str(),
-                "thumbnail" | "preview" | "previewimage"
-            )
-        })
+fn is_preview(
+    ctx: &DecodeContext<'_>,
+    fmtid: &[u8; 16],
+    property_id: u32,
+    name: Option<&str>,
+) -> Result<bool, CodecError> {
+    if fmtid == &FMTID_SUMMARY_INFORMATION && property_id == 17 {
+        return Ok(true);
+    }
+    match name {
+        Some(name) => Ok(matches!(
+            normalize_property_name(ctx, name)?.as_str(),
+            "thumbnail" | "preview" | "previewimage"
+        )),
+        None => Ok(false),
+    }
 }
 
 fn preview_bytes<'a>(value: &'a PropertyValue<'a>) -> Option<(&'a [u8], &'static str)> {
