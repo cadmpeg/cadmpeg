@@ -16,7 +16,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal};
-use cadmpeg_ir::units::{FiniteVector, UnitVector3};
+use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader};
 use crate::curves::{decode_embedded_curve, error, exact_nurbs, DecodedCurve, GeometryError};
@@ -1285,7 +1285,7 @@ fn read_plane_surface_with_parameterization(
         ));
     }
     let native_plane = plane(reader)?;
-    validate_plane(native_plane, reader.position())?;
+    let frame = validate_plane(native_plane, reader.position())?;
     let domain = increasing_interval(interval(reader)?.0, reader.position(), "plane U domain")?;
     let v_domain = increasing_interval(interval(reader)?.0, reader.position(), "plane V domain")?;
     let (u_extents, v_extents) = if version & 0x0f == 1 {
@@ -1297,14 +1297,11 @@ fn read_plane_surface_with_parameterization(
         (domain, v_domain)
     };
     let geometry = TypedSurface::Plane {
-        plane: cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+        plane: cadmpeg_ir::geometry::analytic::PlaneSurface::new(
             crate::wire::scaled_point(native_plane.origin, scale)
-                .ok_or_else(|| error(reader.position(), "scaled plane origin is invalid"))?
-                .get(),
-            vector(native_plane.zaxis),
-            vector(native_plane.xaxis),
-        )
-        .map_err(|message| error(reader.position(), message))?,
+                .ok_or_else(|| error(reader.position(), "scaled plane origin is invalid"))?,
+            frame,
+        ),
         parameterization: PlaneParameterization {
             u_domain: domain,
             v_domain,
@@ -1579,7 +1576,7 @@ fn increasing_interval(
     }
 }
 
-fn validate_plane(value: Plane, offset: usize) -> Result<(), GeometryError> {
+fn validate_plane(value: Plane, offset: usize) -> Result<OrthonormalFrame3, GeometryError> {
     let x = vector(value.xaxis);
     let y = vector(value.yaxis);
     let z = vector(value.zaxis);
@@ -1600,7 +1597,8 @@ fn validate_plane(value: Plane, offset: usize) -> Result<(), GeometryError> {
             "plane frame is not orthonormal and right-handed",
         ));
     }
-    Ok(())
+    OrthonormalFrame3::new(z, x)
+        .ok_or_else(|| error(offset, "plane frame is not orthonormal and right-handed"))
 }
 
 #[cfg(test)]
