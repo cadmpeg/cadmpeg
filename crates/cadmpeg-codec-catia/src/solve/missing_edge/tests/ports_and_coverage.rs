@@ -7,6 +7,57 @@ use crate::test_support::test_topology::{
     compact_standard_triangle_topology_stream, standard_quad_topology_stream,
 };
 
+fn placement_endpoint_limit_operation(max_collection_items: u64) -> &'static str {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_collection_items;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let bytes = standard_quad_topology_stream();
+    let error = crate::solve::missing_edge::standard_mesh_placement_endpoint_pairs(
+        &ctx,
+        &bytes,
+        &[[0, 0]; 4],
+        &[None, Some([1, 2]), Some([2, 3]), Some([3, 0])],
+    )
+    .expect_err("placement endpoint allocation exceeds the collection limit");
+    match error {
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems =>
+        {
+            limit.operation
+        }
+        other => panic!("expected collection resource limit, got {other:?}"),
+    }
+}
+
+#[test]
+fn placement_endpoint_domains_propagate_collection_refusal() {
+    assert_eq!(
+        placement_endpoint_limit_operation(0),
+        "catia_placement_endpoint_domains"
+    );
+}
+
+#[test]
+fn placement_endpoint_counts_propagate_collection_refusal() {
+    assert_eq!(
+        placement_endpoint_limit_operation(4),
+        "catia_placement_counts"
+    );
+}
+
+#[test]
+fn placement_endpoint_bound_counts_propagate_collection_refusal() {
+    assert_eq!(
+        placement_endpoint_limit_operation(8),
+        "catia_placement_bound_counts"
+    );
+}
+
 #[test]
 fn compact_standard_ports_reuse_handles_in_the_global_trim_namespace() {
     let ports = crate::solve::missing_edge::standard_global_edge_port_identities(
@@ -307,10 +358,12 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
         .expect("endpoint domain inferred from ordered neighbors");
     assert_eq!(inferred_cycle_domains[0], [[0, 1]]);
     let endpoint_domains = crate::solve::missing_edge::standard_mesh_placement_endpoint_pairs(
+        &ctx,
         &bytes,
         &[[0, 0]; 4],
         &[None, Some([1, 2]), Some([2, 3]), Some([3, 0])],
     )
+    .expect("service resource budget")
     .expect("gap-corner endpoint domains");
     assert_eq!(endpoint_domains[0], [[0, 1]]);
     let endpoint_assignments =

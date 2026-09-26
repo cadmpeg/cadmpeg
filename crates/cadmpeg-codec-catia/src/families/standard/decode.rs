@@ -4757,8 +4757,13 @@ fn attach_standard_topology(
                 })
                 .collect::<Vec<_>>();
             let mut changed = false;
-            if let Some(placement_domains) =
-                missing_edge::standard_mesh_placement_endpoint_pairs(spine, &edge_faces, &seeds)
+            if let Some(placement_domains) = missing_edge::standard_mesh_placement_endpoint_pairs(
+                ctx,
+                spine,
+                &edge_faces,
+                &seeds,
+            )
+            .map_err(StandardTopologyError::Resource)?
             {
                 for (edge, mut domain) in placement_domains.into_iter().enumerate() {
                     if deferred_port_edges[edge] {
