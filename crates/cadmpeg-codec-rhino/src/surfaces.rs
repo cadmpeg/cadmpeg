@@ -16,7 +16,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal};
-use cadmpeg_ir::units::FiniteVector;
+use cadmpeg_ir::units::{FiniteVector, UnitVector3};
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader};
 use crate::curves::{decode_embedded_curve, error, exact_nurbs, DecodedCurve, GeometryError};
@@ -135,7 +135,7 @@ pub(crate) enum DecodedProceduralSurface {
         /// Scaled axis origin.
         axis_origin: Point3,
         /// Unit axis direction.
-        axis_direction: Vector3,
+        axis_direction: UnitVector3,
         /// Native angular interval.
         angular_interval: [f64; 2],
         /// Native revolution parameter interval.
@@ -175,7 +175,7 @@ impl DecodedProceduralSurface {
                 let [directrix] = *children;
                 let directrix = commit_child(0, "directrix", directrix)?;
                 ProceduralSurfaceDefinition::Revolution(
-                    cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis(
+                    cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis_parts(
                         axis_origin,
                         axis_direction,
                     )
@@ -461,22 +461,16 @@ fn read_revolution(
         ));
     }
     let axis_delta = Vector3::new(to.x - from.x, to.y - from.y, to.z - from.z);
-    let axis_length = axis_delta.norm();
-    if !axis_length.is_finite() || axis_length <= 0.0 {
-        return Err(error(reader.position(), "revolution axis is invalid"));
-    }
-    let axis_direction = Vector3::new(
-        axis_delta.x / axis_length,
-        axis_delta.y / axis_length,
-        axis_delta.z / axis_length,
-    );
+    let axis_direction = UnitVector3::normalized_with_length(axis_delta)
+        .map(|(direction, _)| direction)
+        .ok_or_else(|| error(reader.position(), "revolution axis is invalid"))?;
     let child = decode_embedded_curve(ctx, data, reader, scale, archive, depth + 1)?;
     let profile = exact_nurbs(&child, version_offset)?;
     let geometry = revolution_nurbs(
         ctx,
         &profile,
         from,
-        axis_direction,
+        *axis_direction.as_raw(),
         RevolutionIntervals {
             angle: angular_interval,
             parameter: parameter_interval,

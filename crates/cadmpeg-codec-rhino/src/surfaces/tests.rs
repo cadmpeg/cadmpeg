@@ -1369,7 +1369,7 @@ fn revolution_major_versions_decode_child_and_scale_coordinates_once() {
         assert!((axis_origin.x - 25.4).abs() < 1.0e-12);
         assert!((axis_origin.y - 50.8).abs() < 1.0e-12);
         assert!((axis_origin.z - 76.2).abs() < 1.0e-12);
-        assert_eq!(axis_direction, Vector3::new(0.0, 0.0, 1.0));
+        assert_eq!(*axis_direction.as_raw(), Vector3::new(0.0, 0.0, 1.0));
         assert_eq!(angular_interval, [0.25, 1.25]);
         assert!(!transposed);
         assert_eq!(

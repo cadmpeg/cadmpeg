@@ -764,14 +764,14 @@ struct DisplacementRecord {
     on: bool,
     texture: Option<String>,
     channel: i32,
-    black_point: f64,
-    white_point: f64,
+    black_point: FiniteReal,
+    white_point: FiniteReal,
     sweep_pitch: i32,
     refine_steps: i32,
-    refine_sensitivity: f64,
+    refine_sensitivity: FiniteReal,
     face_count_limit_enabled: bool,
     face_count_limit: i32,
-    post_weld_angle: f64,
+    post_weld_angle: FiniteReal,
     mesh_memory_limit: i32,
     fairing_enabled: bool,
     fairing_amount: i32,
@@ -787,8 +787,8 @@ struct DisplacementSubItemRecord {
     on: bool,
     texture: Option<String>,
     channel: i32,
-    black_point: f64,
-    white_point: f64,
+    black_point: FiniteReal,
+    white_point: FiniteReal,
 }
 
 #[derive(Debug, Serialize)]
@@ -796,11 +796,11 @@ struct DisplacementSubItemRecord {
 struct EdgeSofteningRecord {
     xml_version: i32,
     on: bool,
-    softening: f64,
+    softening: FiniteReal,
     chamfer: bool,
     faceted: bool,
     force_softening: bool,
-    edge_angle_threshold: f64,
+    edge_angle_threshold: FiniteReal,
 }
 
 #[derive(Debug, Serialize)]
@@ -811,7 +811,7 @@ struct ThickeningRecord {
     solid: bool,
     both_sides: bool,
     offset_only: bool,
-    distance: f64,
+    distance: FiniteReal,
 }
 
 #[derive(Debug, Serialize)]
@@ -819,7 +819,7 @@ struct ThickeningRecord {
 struct CurvePipingRecord {
     xml_version: i32,
     on: bool,
-    radius: f64,
+    radius: FiniteReal,
     segments: i32,
     faceted: bool,
     accuracy: i32,
@@ -841,7 +841,7 @@ struct ShutLiningRecord {
 #[allow(clippy::struct_excessive_bools)]
 struct ShutLiningCurveRecord {
     uuid: Option<String>,
-    radius: f64,
+    radius: FiniteReal,
     profile: i32,
     enabled: bool,
     pull: bool,
