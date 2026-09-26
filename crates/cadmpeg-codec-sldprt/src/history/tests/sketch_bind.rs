@@ -612,11 +612,10 @@ fn decode_projects_full_ellipse_sketch_geometry() {
         SketchGeometryDefinition::Ellipse {
             center,
             major_angle: value,
-            major_radius: actual_major_radius,
-            minor_radius: actual_minor_radius,
+            radii,
             bounds: None,
         } if *center == cadmpeg_ir::math::Point2 { u: 0.0, v: 0.0 }
-            && ((value.get() - std::f64::consts::FRAC_PI_2).abs() < EPS_ELLIPSE_ANGLE) && actual_major_radius.get() == 2000.0 && actual_minor_radius.get() == 1000.0
+            && ((value.get() - std::f64::consts::FRAC_PI_2).abs() < EPS_ELLIPSE_ANGLE) && radii.major().get() == 2000.0 && radii.minor().get() == 1000.0
     ));
 }
 

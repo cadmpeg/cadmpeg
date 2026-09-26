@@ -275,8 +275,10 @@ fn counted_dimension_groups_resolve_centered_entities() {
         SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
             center: Point2::new(1.0, 2.0),
             major_angle: Angle::new(0.25).unwrap(),
-            major_radius: Length::new(4.0).unwrap(),
-            minor_radius: Length::new(1.5).unwrap(),
+            radii: cadmpeg_ir::sketches::EllipseRadii {
+                major_radius: Length::new(4.0).unwrap(),
+                minor_radius: Length::new(1.5).unwrap(),
+            },
             bounds: None,
         })
         .unwrap(),
