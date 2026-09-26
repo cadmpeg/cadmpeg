@@ -1136,9 +1136,9 @@ fn read_nurbs_curve_inner(
     if minor >= 1 {
         reader.bool()?;
     }
-    let periodic = periodic_knots(&knots, order, cv_count);
+    let periodic = periodic_knots_checked(&knots, order, cv_count);
     admit_reconstructed_knots(ctx, stored_knot_count)?;
-    let full_knots = reconstruct_knots(&knots, order, cv_count)?;
+    let full_knots = reconstruct_checked_knots(&knots, order, cv_count)?;
     reader.skip_remaining()?;
     admit_nurbs_pole_conversion(ctx, stored_cv_count, rational != 0)?;
     let poles = NurbsPoles3::from_checked_lanes(control_points, weights)
@@ -1212,8 +1212,8 @@ pub(crate) fn read_nurbs_surface_prefix(
     }
     let v_knots = read_knots(ctx, reader, v_knot_count)?;
     validate_stored_domain(&v_knots, v_order, v_count, reader.position())?;
-    let u_periodic = periodic_knots(&u_knots, u_order, u_count);
-    let v_periodic = periodic_knots(&v_knots, v_order, v_count);
+    let u_periodic = periodic_knots_checked(&u_knots, u_order, u_count);
+    let v_periodic = periodic_knots_checked(&v_knots, v_order, v_count);
     let stored_cv_count = crate::wire::element_count(reader, (dimension + rational) as usize * 8)?;
     let expected_cv_count = u_count
         .checked_mul(v_count)
@@ -1230,9 +1230,9 @@ pub(crate) fn read_nurbs_surface_prefix(
         scale,
     )?;
     admit_reconstructed_knots(ctx, u_knot_count)?;
-    let u_knots = reconstruct_knots(&u_knots, u_order, u_count)?;
+    let u_knots = reconstruct_checked_knots(&u_knots, u_order, u_count)?;
     admit_reconstructed_knots(ctx, v_knot_count)?;
-    let v_knots = reconstruct_knots(&v_knots, v_order, v_count)?;
+    let v_knots = reconstruct_checked_knots(&v_knots, v_order, v_count)?;
     let row_len = v_count;
     let point_rows = copy_rows(
         ctx,
@@ -1346,7 +1346,7 @@ fn read_knots(
     ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     count: usize,
-) -> Result<Vec<f64>, GeometryError> {
+) -> Result<Vec<FiniteReal>, GeometryError> {
     let count_u64 = u64::try_from(count)
         .map_err(|_| GeometryError::not_implemented("NURBS knot count exceeds address space"))?;
     let bytes = count_u64
@@ -1361,7 +1361,10 @@ fn read_knots(
     for _ in 0..count {
         let knot_offset = reader.position();
         let value = reader.f64()?;
-        if !value.is_finite() || knots.last().is_some_and(|last| value < *last) {
+        let Some(value) = FiniteReal::new(value) else {
+            return Err(error(knot_offset, "NURBS knots are invalid"));
+        };
+        if knots.last().is_some_and(|last| value < *last) {
             return Err(error(knot_offset, "NURBS knots are invalid"));
         }
         knots.push(value);
@@ -1464,25 +1467,65 @@ pub(crate) fn reconstruct_knots(
     order: usize,
     cv_count: usize,
 ) -> Result<Vec<f64>, GeometryError> {
+    let ([start, end], capacity, allocation_bytes) =
+        reconstructed_endpoints(knots.len(), order, cv_count, |index| knots[index])?;
+    let mut result = Vec::new();
+    result.try_reserve_exact(capacity).map_err(|_| {
+        crate::curves::allocation_failed("Rhino NURBS reconstructed knots", allocation_bytes)
+    })?;
+    result.push(start.get());
+    result.extend_from_slice(knots);
+    result.push(end.get());
+    Ok(result)
+}
+
+fn reconstruct_checked_knots(
+    knots: &[FiniteReal],
+    order: usize,
+    cv_count: usize,
+) -> Result<KnotVector, GeometryError> {
+    let ([start, end], capacity, allocation_bytes) =
+        reconstructed_endpoints(knots.len(), order, cv_count, |index| knots[index].get())?;
+    let mut result = Vec::new();
+    result.try_reserve_exact(capacity).map_err(|_| {
+        crate::curves::allocation_failed("Rhino NURBS reconstructed knots", allocation_bytes)
+    })?;
+    result.push(start);
+    result.extend_from_slice(knots);
+    result.push(end);
+    KnotVector::from_finite_lanes(result)
+        .map_err(|_| GeometryError::unpositioned("NURBS reconstructed knots are invalid"))
+}
+
+fn reconstructed_endpoints(
+    knot_count: usize,
+    order: usize,
+    cv_count: usize,
+    knot: impl Fn(usize) -> f64,
+) -> Result<([FiniteReal; 2], usize, u64), GeometryError> {
     let m = order
         .checked_add(cv_count)
         .and_then(|value| value.checked_sub(2))
         .ok_or_else(|| GeometryError::unpositioned("NURBS knot arithmetic overflow"))?;
-    if knots.len() != m || order < 2 || cv_count < order {
+    if knot_count != m || order < 2 || cv_count < order {
         return Err(GeometryError::unpositioned(
             "NURBS knot reconstruction input is invalid",
         ));
     }
-    let mut start = knots[0];
-    if order > 2 && cv_count >= 2 * order - 2 && cv_count >= 6 && knots[0] < knots[order - 2] {
-        start = knots[0] - (knots[cv_count - order + 1] - knots[cv_count - order]);
+    let mut start = knot(0);
+    if order > 2 && cv_count >= 2 * order - 2 && cv_count >= 6 && knot(0) < knot(order - 2) {
+        start = knot(0) - (knot(cv_count - order + 1) - knot(cv_count - order));
     }
-    let mut end = knots[m - 1];
-    if order > 2 && cv_count >= 2 * order - 2 && cv_count >= 6 && knots[cv_count - 1] < knots[m - 1]
-    {
-        end = knots[m - 1] + (knots[order + 1] - knots[order]);
+    let mut end = knot(m - 1);
+    if order > 2 && cv_count >= 2 * order - 2 && cv_count >= 6 && knot(cv_count - 1) < knot(m - 1) {
+        end = knot(m - 1) + (knot(order + 1) - knot(order));
     }
-    if !start.is_finite() || !end.is_finite() || start > knots[0] || end < knots[m - 1] {
+    let (Some(start), Some(end)) = (FiniteReal::new(start), FiniteReal::new(end)) else {
+        return Err(GeometryError::unpositioned(
+            "NURBS reconstructed knots are invalid",
+        ));
+    };
+    if start.get() > knot(0) || end.get() < knot(m - 1) {
         return Err(GeometryError::unpositioned(
             "NURBS reconstructed knots are invalid",
         ));
@@ -1496,17 +1539,24 @@ pub(crate) fn reconstruct_knots(
         .ok_or_else(|| {
             GeometryError::not_implemented("NURBS reconstructed knot bytes exceed address space")
         })?;
-    let mut result = Vec::new();
-    result.try_reserve_exact(capacity).map_err(|_| {
-        crate::curves::allocation_failed("Rhino NURBS reconstructed knots", allocation_bytes)
-    })?;
-    result.push(start);
-    result.extend_from_slice(knots);
-    result.push(end);
-    Ok(result)
+    Ok(([start, end], capacity, allocation_bytes))
 }
 
 pub(crate) fn periodic_knots(knots: &[f64], order: usize, cv_count: usize) -> bool {
+    periodic_knots_by(knots, order, cv_count, |value| *value, true)
+}
+
+fn periodic_knots_checked(knots: &[FiniteReal], order: usize, cv_count: usize) -> bool {
+    periodic_knots_by(knots, order, cv_count, |value| value.get(), false)
+}
+
+fn periodic_knots_by<T>(
+    knots: &[T],
+    order: usize,
+    cv_count: usize,
+    value: impl Fn(&T) -> f64,
+    require_source_finite: bool,
+) -> bool {
     // This is ON_IsKnotVectorPeriodic over the stored, zero-based knot array.
     if order < 3 || cv_count < order || (order <= 4 && cv_count < order + 2) {
         return false;
@@ -1516,11 +1566,14 @@ pub(crate) fn periodic_knots(knots: &[f64], order: usize, cv_count: usize) -> bo
     }
     let scale = knots
         .iter()
-        .fold(0.0_f64, |scale, value| scale.max(value.abs()));
-    if scale == 0.0 || !scale.is_finite() || knots.iter().any(|knot| !knot.is_finite()) {
+        .fold(0.0_f64, |scale, knot| scale.max(value(knot).abs()));
+    if scale == 0.0
+        || !scale.is_finite()
+        || require_source_finite && knots.iter().any(|knot| !value(knot).is_finite())
+    {
         return false;
     }
-    let knot = |index: usize| knots[index] / scale;
+    let knot = |index: usize| value(&knots[index]) / scale;
     let mut tolerance = (knot(order - 1) - knot(order - 3)).abs() * f64::EPSILON.sqrt();
     tolerance = tolerance.max((knot(cv_count - 1) - knot(order - 2)).abs() * f64::EPSILON.sqrt());
     let mut paired = 2 * (order - 2);
@@ -1538,7 +1591,7 @@ pub(crate) fn periodic_knots(knots: &[f64], order: usize, cv_count: usize) -> bo
 }
 
 fn validate_stored_domain(
-    knots: &[f64],
+    knots: &[FiniteReal],
     order: usize,
     cv_count: usize,
     offset: usize,
