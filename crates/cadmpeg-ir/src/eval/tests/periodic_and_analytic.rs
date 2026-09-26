@@ -121,7 +121,10 @@ fn point_evaluation_borrows_only_indexed_nurbs_and_polyline_rows() {
     )
     .unwrap();
     assert_eq!(
-        curve.pole_rows().point_at(1).map(|point| point.get()),
+        curve
+            .pole_rows()
+            .point_at(1)
+            .map(crate::features::FinitePoint3::get),
         Some(Point3::new(2.0, 0.0, 0.0))
     );
     assert_eq!(curve.pole_rows().weight_at(1), Some(2.0));
@@ -141,10 +144,13 @@ fn point_evaluation_borrows_only_indexed_nurbs_and_polyline_rows() {
     )
     .unwrap();
     assert_eq!(
-        polyline.point_at(1).map(|point| point.get()),
+        polyline.point_at(1).map(crate::features::FinitePoint3::get),
         Some(Point3::new(2.0, 0.0, 0.0))
     );
-    assert_eq!(polyline.parameter_at(1).map(|value| value.get()), Some(1.0));
+    assert_eq!(
+        polyline.parameter_at(1).map(crate::scalar::FiniteReal::get),
+        Some(1.0)
+    );
     assert!(polyline.point_at(2).is_none());
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline));
     assert_eq!(

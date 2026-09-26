@@ -200,8 +200,8 @@ fn schema_generation_produces_definitions() {
 fn model_feature_schema_describes_serialized_regeneration_parent() {
     use crate::document::Model;
     use crate::features::{
-        Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
-        FeatureTreeNodeRole, TreeChildren,
+        DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
+        FeatureOperation, FeatureTreeNodeRole, TreeChildren,
     };
 
     let parent = FeatureId::mint("test:model:feature#parent").unwrap();
@@ -212,11 +212,11 @@ fn model_feature_schema_describes_serialized_regeneration_parent() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
+        dependencies: DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: FeatureContent::default(),
         evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
             FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::SolidBodies,

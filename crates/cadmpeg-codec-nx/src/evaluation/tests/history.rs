@@ -101,7 +101,7 @@ fn exact_empty_replay_input_precedes_a_new_body_construction() {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                     bodies: BodySelection::Resolved {
-                        bodies: Default::default(),
+                        bodies: cadmpeg_ir::features::DistinctMembers::default(),
                         native: "nx:segment-body-bindings".to_string(),
                     },
                 }),

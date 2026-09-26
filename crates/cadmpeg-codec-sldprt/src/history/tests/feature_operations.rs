@@ -90,7 +90,7 @@ fn decode_resolves_feature_topology_selections() {
             operands,
 
             ..
-        }) if matches!((operands.target(), operands.tools(),), (BodySelection::Resolved { bodies, native }, BodySelection::Resolved { .. },) if bodies.as_slice() == &[base.ir().model.bodies[0].id.clone()] && native == body)));
+        }) if matches!((operands.target(), operands.tools(),), (BodySelection::Resolved { bodies, native }, BodySelection::Resolved { .. },) if bodies.as_slice() == [base.ir().model.bodies[0].id.clone()] && native == body)));
     assert!(matches!(
         decoded.ir().model.features[3].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
