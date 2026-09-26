@@ -3528,7 +3528,7 @@ fn revolution_definition(
     );
     let angle = || {
         scalar_named(properties, "Angle")
-            .filter(|angle| angle.is_finite() && *angle > 0.0)
+            .filter(|angle| *angle > 0.0)
             .and_then(|angle| cadmpeg_ir::scalar::PositiveAngle::new(angle.to_radians()))
     };
     let mode = enumeration_selector(properties, "Type", 0)?;
@@ -3576,7 +3576,7 @@ fn revolution_definition(
                 second: AngularTermination::Angle {
                     angle: cadmpeg_ir::scalar::PositiveAngle::new(
                         scalar_named(properties, "Angle2")
-                            .filter(|angle| angle.is_finite() && *angle > 0.0)?
+                            .filter(|angle| *angle > 0.0)?
                             .to_radians(),
                     )?,
                 },
@@ -3745,7 +3745,6 @@ fn part_construction_geometry_definition(
     };
     let angle = |name: &str| {
         scalar_named(properties, name)
-            .filter(|value| value.is_finite())
             .and_then(|value| cadmpeg_ir::scalar::Angle::new(value.to_radians()))
     };
     match kind {
@@ -3873,7 +3872,7 @@ fn parametric_helix_definition(
         let pitch = scalar_named(properties, "Pitch").filter(|value| *value > 0.0)?;
         let height = scalar_named(properties, "Height").filter(|value| *value > 0.0)?;
         let angle = scalar_named(properties, "Angle").unwrap_or(0.0);
-        if !angle.is_finite() || angle.abs() >= 90.0 {
+        if angle.abs() >= 90.0 {
             return None;
         }
         let clockwise = match enumeration_selector(properties, "LocalCoord", 0)? {
@@ -4058,8 +4057,7 @@ fn extrusion_shape(
             _ => return None,
         };
         let signed_length = |name| match scalar_named(properties, name) {
-            Some(value) if value.is_finite() => Some(value),
-            Some(_) => None,
+            Some(value) => Some(value),
             None => Some(0.0),
         };
         let mut forward = signed_length("LengthFwd")?;
@@ -4398,7 +4396,7 @@ fn fillet_definition(
             })
             .then_some(radius)?
     } else {
-        scalar_named(properties, "Radius").filter(|radius| radius.is_finite() && *radius > 0.0)?
+        scalar_named(properties, "Radius").filter(|radius| *radius > 0.0)?
     };
     Some(FeatureDefinition::Operation(FeatureOperation::Fillet {
         groups: cadmpeg_ir::features::NonEmptyMembers::one(
@@ -4509,7 +4507,7 @@ fn shell_join(kind: &str, properties: &[&PropertyRecord]) -> Option<ShellJoin> {
 
 fn thickness_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
     let thickness = scalar_named(properties, "Value")?;
-    if !thickness.is_finite() || thickness == 0.0 {
+    if thickness == 0.0 {
         return None;
     }
     let source_name = if kind == "Part::Thickness" {
@@ -4545,7 +4543,7 @@ fn offset_shape_definition(
 ) -> Option<FeatureDefinition> {
     let source = singular_operand(properties, "Source")?;
     let distance = scalar_named(properties, "Value")
-        .filter(|distance| distance.is_finite() && *distance != 0.0)?;
+        .filter(|distance| *distance != 0.0)?;
     let mode = shell_mode(kind, properties)?;
     if kind == "Part::Offset2D" && mode == ShellMode::BothSides {
         return None;
@@ -4732,9 +4730,6 @@ fn draft_definition(
     };
     let reversed = bool_property(properties, "Reversed").unwrap_or(false);
     let angle = scalar_named(properties, "Angle")?;
-    if !angle.is_finite() {
-        return None;
-    }
     Some(FeatureDefinition::Operation(FeatureOperation::Draft {
         faces: cadmpeg_ir::features::FaceSelection::Native(faces.id.clone()),
         anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
