@@ -111,6 +111,49 @@ fn rational_quadratic_arc_evaluates_on_the_circle() {
 }
 
 #[test]
+fn point_evaluation_borrows_only_indexed_nurbs_and_polyline_rows() {
+    let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+        Some(vec![1.0, 2.0]),
+        false,
+    )
+    .unwrap();
+    assert_eq!(
+        curve.pole_rows().point_at(1).map(|point| point.get()),
+        Some(Point3::new(2.0, 0.0, 0.0))
+    );
+    assert_eq!(curve.pole_rows().weight_at(1), Some(2.0));
+    assert!(curve.pole_rows().point_at(2).is_none());
+    assert_eq!(
+        crate::eval::nurbs_curve_point_at(&curve, 0.5).map(crate::features::FinitePoint3::get),
+        Ok(Point3::new(4.0 / 3.0, 0.0, 0.0))
+    );
+
+    let polyline = crate::geometry::sampled::PolylineCurve::new(
+        PolylineSamples::Unparameterized {
+            points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)]
+                .try_into()
+                .unwrap(),
+        },
+        0.01,
+    )
+    .unwrap();
+    assert_eq!(
+        polyline.point_at(1).map(|point| point.get()),
+        Some(Point3::new(2.0, 0.0, 0.0))
+    );
+    assert_eq!(polyline.parameter_at(1).map(|value| value.get()), Some(1.0));
+    assert!(polyline.point_at(2).is_none());
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline));
+    assert_eq!(
+        crate::eval::curve_point(&geometry, 0.5).map(crate::features::FinitePoint3::get),
+        Ok(Point3::new(1.0, 0.0, 0.0))
+    );
+}
+
+#[test]
 fn rational_pcurve_membership_finds_interior_points_without_sampling() {
     use crate::math::Point2;
 
