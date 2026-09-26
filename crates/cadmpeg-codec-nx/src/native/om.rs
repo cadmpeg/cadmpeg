@@ -803,7 +803,7 @@ pub(crate) fn expression_parameter_names(expression: &str) -> Vec<&str> {
 pub(crate) fn evaluate_parameterized_expression(
     expression: &str,
     mut parameter_value: impl FnMut(&str) -> Option<f64>,
-) -> Option<f64> {
+) -> Option<FiniteReal> {
     let bytes = expression.as_bytes();
     let mut substituted = String::with_capacity(expression.len());
     let mut at = 0usize;
@@ -4296,7 +4296,7 @@ pub(super) fn expressions(container: &Container) -> Vec<Expression> {
                     };
                     Some(declaration.id.clone())
                 });
-            let value = expression.constant_value().and_then(FiniteReal::new);
+            let value = expression.constant_value();
             let Some(source_table) = cadmpeg_core::text::NonBlankString::new(format!(
                 "nx:om-entry-{entry_index}:expression-table#{table_offset}"
             )) else {
@@ -4378,7 +4378,7 @@ fn evaluate_expression_graphs(expressions: &mut [Expression]) {
                 }
                 values.get(&key).copied()
             });
-            if let Some(value) = evaluated.and_then(FiniteReal::new) {
+            if let Some(value) = evaluated {
                 expression.value = Some(value);
                 values.insert(expression_key.clone(), value.get());
                 changed = true;

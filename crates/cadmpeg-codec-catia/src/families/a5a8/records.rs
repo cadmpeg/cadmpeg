@@ -616,7 +616,7 @@ pub(in crate::families) fn rolling_ball_limit_curve(
     )
 }
 
-/// One position and unit reference direction in an `a5/a6/a7 03 39` jet.
+/// One position in an `a5/a6/a7 03 39` jet.
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::families) struct GuideCurveSite {
     /// Parameter knot.
@@ -627,9 +627,6 @@ pub(in crate::families) struct GuideCurveSite {
     pub(in crate::families) second_derivative: FiniteVector<6>,
     /// Guide-curve point.
     pub(in crate::families) point: FiniteVector<3>,
-    /// Unit direction from the first stored triple to the second: the
-    /// square root of its summed squares is within `1e-9` of one.
-    pub(super) direction: [f64; 3],
 }
 
 /// Width-coded guide-curve and reference-direction jet.
@@ -641,7 +638,7 @@ pub(in crate::families) struct A5GuideCurve {
     pub(in crate::families) header_token: u32,
     /// Parametric degree.
     pub(in crate::families) degree: u32,
-    /// Position and unit-direction values at the knot sites.
+    /// Positions whose source triples pass the unit-direction gate.
     pub(in crate::families) sites: Vec<GuideCurveSite>,
 }
 
@@ -827,7 +824,6 @@ fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Guide
                 first_derivative: first_derivative.into(),
                 second_derivative: second_derivative.into(),
                 point: [value[0], value[1], value[2]].into(),
-                direction,
             })
         })
         .collect();

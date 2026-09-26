@@ -1342,7 +1342,7 @@ impl Serialize for FeaturePayloadScalarPair {
         record.serialize_field("operation_label", &self.operation_label)?;
         record.serialize_field(payload_key, payload_id)?;
         record.serialize_field("ordinal", &self.ordinal)?;
-        record.serialize_field("values", &atoms.map(ShiftedBinary64::value))?;
+        record.serialize_field("values", &atoms.map(|atom| atom.value().get()))?;
         record.serialize_field("raw_values", &atoms.map(ShiftedBinary64::raw))?;
         record.serialize_field("payload_offset", &payload_offset)?;
         record.serialize_field("value_payload_offsets", &positions)?;
@@ -1437,7 +1437,7 @@ impl From<FeaturePayloadScalar> for FeaturePayloadScalarWire {
             payload: value.payload,
             ordinal: value.ordinal,
             field_code: value.field_code,
-            value: value.scalar.value(),
+            value: value.scalar.value().get(),
             raw_value: value.scalar.raw(),
             payload_offset: value.payload_offset,
             source_offset: value.source_offset,
@@ -2141,7 +2141,7 @@ impl From<FeatureSketchPayloadScalarLane> for FeatureSketchPayloadScalarLaneWire
             values: record
                 .lane
                 .iter()
-                .map(|(_, scalar, _)| scalar.value())
+                .map(|(_, scalar, _)| scalar.value().get())
                 .collect(),
             raw_values: record
                 .lane
@@ -2264,7 +2264,7 @@ pub(super) struct FeatureSketchFixedPoint {
     /// Exact fixed-pair field carrying the two values.
     pub(super) fixed_pair: String,
     /// Ordered values reconstructed from the `30` shifted-binary64 atoms and scaled by `1/4`.
-    pub(super) values: [f64; 2],
+    pub(super) values: [cadmpeg_ir::scalar::FiniteReal; 2],
     /// Absolute source offset of the fixed-pair discriminator.
     pub(super) source_offset: u64,
 }
@@ -2327,7 +2327,7 @@ impl From<OffsetStoreNamedPoint> for OffsetStoreNamedPointWire {
             id: value.id,
             name: value.name,
             data_blocks: value.data_blocks,
-            values: value.values.map(|token| token.scalar.value()),
+            values: value.values.map(|token| token.scalar.value().get()),
             raw_values: value.values.map(|token| token.scalar.raw()),
             value_source_offsets: value.values.map(|token| token.source_offset),
             source_offset: value.source_offset,
@@ -2782,7 +2782,7 @@ impl From<FeatureExtrudePayloadHeader> for FeatureExtrudePayloadHeaderWire {
         Self {
             id: value.id,
             operation_label: value.operation_label,
-            scalars: value.scalars.map(ShiftedBinary64::value),
+            scalars: value.scalars.map(|scalar| scalar.value().get()),
             raw_scalars: value.scalars.map(ShiftedBinary64::raw),
             source_offset: value.source_offset,
         }
@@ -6000,10 +6000,7 @@ pub(super) fn feature_sketch_points(
                 named_record: record.id.clone(),
                 name: name.frame.value().to_owned(),
                 scalar_fields: [first.id.clone(), second.id.clone()],
-                coordinates: cadmpeg_ir::units::FiniteVector::new([
-                    first.scalar.value(),
-                    second.scalar.value(),
-                ])?,
+                coordinates: [first.scalar.value(), second.scalar.value()].into(),
             })
         })
         .collect()
@@ -6059,6 +6056,13 @@ pub(super) fn feature_sketch_fixed_points(
             {
                 return None;
             }
+            let [Some(first), Some(second)] = pair
+                .values
+                .map(SketchScaledAtom::value)
+                .map(cadmpeg_ir::scalar::FiniteReal::new)
+            else {
+                return None;
+            };
             Some(FeatureSketchFixedPoint {
                 id: record
                     .id
@@ -6067,7 +6071,7 @@ pub(super) fn feature_sketch_fixed_points(
                 named_record: record.id.clone(),
                 name: name.frame.value().to_owned(),
                 fixed_pair: pair.id.clone(),
-                values: pair.values.map(SketchScaledAtom::value),
+                values: [first, second],
                 source_offset: pair.source_offset,
             })
         })
@@ -6347,7 +6351,7 @@ pub(super) fn feature_sketch_point_uses(
             .coordinates
             .iter()
             .zip(named_point.values.map(|token| token.scalar.value()))
-            .any(|(first, second)| first.to_bits() != second.to_bits())
+            .any(|(first, second)| first.to_bits() != second.get().to_bits())
         {
             continue;
         }
@@ -7802,10 +7806,7 @@ pub(super) fn feature_block_payload_points(
                 named_record: record.id.clone(),
                 name: name.frame.value().to_owned(),
                 scalar_fields: [first.id.clone(), second.id.clone()],
-                coordinates: cadmpeg_ir::units::FiniteVector::new([
-                    first.scalar.value(),
-                    second.scalar.value(),
-                ])?,
+                coordinates: [first.scalar.value(), second.scalar.value()].into(),
             })
         })
         .collect()

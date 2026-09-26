@@ -352,6 +352,20 @@ impl UnitVector3 {
         let largest = value.x.abs().max(value.y.abs()).max(value.z.abs());
         (largest != 0.0).then(|| Self(divided_by_largest_component(value, largest)))
     }
+    /// Apply the largest-component chart again to an admitted unit direction.
+    /// This preserves the chart's component-division order without another admission.
+    #[must_use]
+    pub fn recharted_by_largest_component(self) -> Self {
+        let value = self.0;
+        let largest = value.x.abs().max(value.y.abs()).max(value.z.abs());
+        Self(divided_by_largest_component(value, largest))
+    }
+    /// Normalize a finite nonzero displacement with the binade chart used by
+    /// [`crate::features::FiniteVector3::unit_nonzero`].
+    #[must_use]
+    pub fn normalized_nonzero(value: crate::features::FiniteVector3) -> Option<Self> {
+        value.unit_nonzero().map(Self)
+    }
     /// Normalize three exact sums, each rescaled into the frame of the largest
     /// exponent, and reverse them when `reversed` is set.
     ///
@@ -1452,6 +1466,10 @@ mod tests {
                 .expect("finite nonzero direction");
             assert_eq!(*unit.as_raw(), divided(value));
             assert_eq!(UnitVector3::new(*unit.as_raw()), Some(unit));
+            assert_eq!(
+                *unit.recharted_by_largest_component().as_raw(),
+                divided(*unit.as_raw())
+            );
         }
         for value in [
             Vector3::new(0.0, 0.0, 0.0),
@@ -1481,6 +1499,45 @@ mod tests {
         ] {
             assert_eq!(UnitVector3::normalized_by_reciprocal(value), None);
         }
+    }
+
+    #[test]
+    fn norm_division_normalization_preserves_component_bits_and_refusals() {
+        for value in [
+            Vector3::new(3.0, 4.0, 0.0),
+            Vector3::new(1.0e-300, -2.0e-300, 0.0),
+        ] {
+            let length = value.norm();
+            let expected = Vector3::new(value.x / length, value.y / length, value.z / length);
+            let (actual, _) = UnitVector3::normalized_with_length(value).expect("finite direction");
+            assert_eq!(actual.as_raw().x.to_bits(), expected.x.to_bits());
+            assert_eq!(actual.as_raw().y.to_bits(), expected.y.to_bits());
+            assert_eq!(actual.as_raw().z.to_bits(), expected.z.to_bits());
+        }
+        for value in [
+            Vector3::new(0.0, 0.0, 0.0),
+            Vector3::new(f64::INFINITY, 1.0, 0.0),
+            Vector3::new(f64::NAN, 1.0, 0.0),
+            // The norm of two smallest subnormals rounds to one of them, so the
+            // quotients are (1, 1, 0), which is not a unit vector.
+            Vector3::new(f64::from_bits(1), f64::from_bits(1), 0.0),
+        ] {
+            assert_eq!(UnitVector3::normalized_with_length(value), None);
+        }
+    }
+
+    #[test]
+    fn nonzero_finite_vector_normalization_preserves_binade_components() {
+        let value = crate::features::FiniteVector3::new(Vector3::new(0.0, 0.0, 1.0e-310))
+            .expect("finite vector");
+        let expected = value.unit_nonzero().expect("nonzero vector");
+        let actual = UnitVector3::normalized_nonzero(value).expect("nonzero vector");
+        assert_eq!(actual.as_raw().x.to_bits(), expected.x.to_bits());
+        assert_eq!(actual.as_raw().y.to_bits(), expected.y.to_bits());
+        assert_eq!(actual.as_raw().z.to_bits(), expected.z.to_bits());
+        let zero = crate::features::FiniteVector3::new(Vector3::new(0.0, 0.0, 0.0))
+            .expect("finite vector");
+        assert_eq!(UnitVector3::normalized_nonzero(zero), None);
     }
 
     #[test]

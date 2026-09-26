@@ -36,22 +36,48 @@ pub(crate) type SupportUv = [Option<SupportUvLane>; 2];
 
 /// Support parameters checked against their chart sample count.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct SupportUvLane(Vec<[f64; 2]>);
+pub(crate) struct SupportUvLane(Vec<FiniteVector<2>>);
 
 impl SupportUvLane {
     /// Construct one parameter pair per chart sample.
+    #[cfg(test)]
     pub(crate) fn new(values: Vec<[f64; 2]>, sample_count: usize) -> Option<Self> {
+        (values.len() == sample_count).then_some(())?;
+        Some(Self(
+            values
+                .into_iter()
+                .map(FiniteVector::new)
+                .collect::<Option<Vec<_>>>()?,
+        ))
+    }
+
+    /// Construct a lane from values already admitted by a source tuple.
+    pub(crate) fn from_checked(values: Vec<FiniteVector<2>>, sample_count: usize) -> Option<Self> {
         (values.len() == sample_count).then_some(Self(values))
     }
 
+    pub(crate) fn from_present_values(values: Vec<[f64; 2]>) -> Option<Self> {
+        Some(Self(
+            values
+                .into_iter()
+                .map(|pair| {
+                    let checked = FiniteVector::new(pair)?;
+                    pair.iter()
+                        .all(|value| *value != MISSING_PARAMETER)
+                        .then_some(checked)
+                })
+                .collect::<Option<Vec<_>>>()?,
+        ))
+    }
+
     /// Ordered support parameter pairs.
-    pub(crate) fn as_slice(&self) -> &[[f64; 2]] {
+    pub(crate) fn as_slice(&self) -> &[FiniteVector<2>] {
         &self.0
     }
 }
 
 impl std::ops::Deref for SupportUvLane {
-    type Target = [[f64; 2]];
+    type Target = [FiniteVector<2>];
 
     fn deref(&self) -> &Self::Target {
         self.as_slice()
@@ -929,7 +955,7 @@ fn chart_ext_point_at(stream: &[u8], at: usize) -> Option<(Point3, f64, [[f64; 2
     let parameter = mid.f64_be()?;
     let norm = tangent.iter().map(|v| v * v).sum::<f64>().sqrt();
     let parameter_lanes = [[u0, v0], [u1, v1]];
-    ((norm - 1.0).abs() < EPS_INTERSECTION_CHART_POINTS_E9 && parameter.is_finite()).then_some((
+    ((norm - 1.0).abs() < EPS_INTERSECTION_CHART_POINTS_E9).then_some((
         point,
         parameter,
         parameter_lanes,

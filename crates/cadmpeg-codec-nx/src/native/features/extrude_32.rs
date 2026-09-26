@@ -158,7 +158,7 @@ impl From<FeatureExtrudePayload32Branch> for FeatureExtrudePayload32BranchWire {
             id: branch.id,
             operation_label: branch.operation_label,
             body_object_index: branch.frame.terminal().value(),
-            scalar: branch.frame.scalar().value(),
+            scalar: branch.frame.scalar().value().get(),
             raw_scalar: branch.frame.scalar().raw(),
             atoms_be: branch
                 .frame
