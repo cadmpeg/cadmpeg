@@ -2,6 +2,7 @@
 //! Finite support-UV tuples with their exact packing marker.
 
 use super::{SupportUv, SupportUvLane};
+use cadmpeg_ir::scalar::FiniteReal;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SupportUvPacking {
@@ -40,7 +41,7 @@ impl SupportUvPacking {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SupportUvValues {
     packing: SupportUvPacking,
-    values: Vec<f64>,
+    values: Vec<FiniteReal>,
 }
 impl SupportUvValues {
     pub(crate) fn new(packing: SupportUvPacking, values: Vec<f64>) -> Result<Self, &'static str> {
@@ -48,9 +49,10 @@ impl SupportUvValues {
         if values.len() < packing.width() * 2 || !values.len().is_multiple_of(packing.width()) {
             return Err("values: must contain at least two complete tuples for marker");
         }
-        if !values.iter().all(|value| value.is_finite()) {
-            return Err("values: scalars must be finite");
-        }
+        let values = values
+            .into_iter()
+            .map(|value| FiniteReal::new(value).ok_or("values: scalars must be finite"))
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(Self { packing, values })
     }
 
@@ -63,25 +65,25 @@ impl SupportUvValues {
     pub(super) fn packing(&self) -> SupportUvPacking {
         self.packing
     }
-    pub(crate) fn values(&self) -> &[f64] {
+    pub(crate) fn values(&self) -> &[FiniteReal] {
         &self.values
     }
     pub(crate) fn into_values(self) -> Vec<f64> {
-        self.values
+        self.values.into_iter().map(FiniteReal::get).collect()
     }
 
     pub(super) fn support_uv(&self, sample_count: usize) -> SupportUv {
         let first = self
             .values()
             .chunks_exact(self.packing.width())
-            .map(|row| [row[0], row[1]])
+            .map(|row| [row[0].get(), row[1].get()])
             .collect();
         let second = match self.packing {
             SupportUvPacking::Form2 | SupportUvPacking::Form3 => None,
             SupportUvPacking::Form4 => Some(
                 self.values()
                     .chunks_exact(4)
-                    .map(|row| [row[2], row[3]])
+                    .map(|row| [row[2].get(), row[3].get()])
                     .collect(),
             ),
         };

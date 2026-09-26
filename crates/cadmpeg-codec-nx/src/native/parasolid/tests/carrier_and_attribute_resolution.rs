@@ -420,7 +420,15 @@ fn decode_emits_charted_surface_intersection_construction() {
     assert_eq!(support_uv.len(), 1);
     assert_eq!(support_uv[0].values.count(), 4);
     assert_eq!(support_uv[0].values.marker(), 2);
-    assert_eq!(support_uv[0].values.values(), [0.0, 0.0, 0.01, 0.0]);
+    assert_eq!(
+        support_uv[0]
+            .values
+            .values()
+            .iter()
+            .map(|value| value.get())
+            .collect::<Vec<_>>(),
+        [0.0, 0.0, 0.01, 0.0]
+    );
     assert!(matches!(
         support_uv[0].framing,
         crate::intersection::SupportUvFraming::Direct
