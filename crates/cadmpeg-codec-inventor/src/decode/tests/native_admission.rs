@@ -166,6 +166,44 @@ fn active_carrier_native_record_refuses_before_id_creation() {
 }
 
 #[test]
+fn selected_active_carrier_refuses_token_and_digest_before_native_copy() {
+    let bytes = primary_envelope_fixture();
+    let arena = DecodeArena::new();
+    let (setup_ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("fixture context");
+    let container = InventorContainer::open(&setup_ctx, root).expect("fixture container");
+    let ActiveCarrierState::Selected(carrier) = &container.rse.active_carrier else {
+        panic!("fixture must select an active carrier");
+    };
+    let id_len = "inventor:kernel:active-carrier#root".len();
+    let token_len = carrier.segment_token.as_str().len();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        u64::try_from(id_len + token_len - 1).expect("token budget fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    assert!(matches!(
+        admit_active_carrier_projection(&ctx, &container.rse.active_carrier),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor active carrier segment token"
+    ));
+    policy.limits.max_retained_bytes =
+        u64::try_from(id_len + token_len + 63).expect("digest budget fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    assert!(matches!(
+        admit_active_carrier_projection(&ctx, &container.rse.active_carrier),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor active carrier digest"
+    ));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    admit_active_carrier_projection(&ctx, &container.rse.active_carrier)
+        .expect("admitted selected carrier");
+}
+
+#[test]
 fn assembly_occurrence_native_record_refuses_before_id_creation() {
     let inventory = AssemblyInventory {
         occurrences: vec![AssemblyOccurrence {
