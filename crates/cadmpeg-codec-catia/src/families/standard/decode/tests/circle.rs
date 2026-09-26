@@ -175,7 +175,8 @@ fn sphere_section_axis_preserves_a_subnormal_center_offset() {
         .expect("unit sphere frame is valid"),
     ));
     assert_eq!(
-        circle_axis_from_carrier(Point3::new(0.0, 0.0, 1e-310), 1.0, &sphere),
+        circle_axis_from_carrier(Point3::new(0.0, 0.0, 1e-310), 1.0, &sphere)
+            .map(cadmpeg_ir::math::Vector3::from),
         Some(Vector3::new(0.0, 0.0, 1.0))
     );
 }
