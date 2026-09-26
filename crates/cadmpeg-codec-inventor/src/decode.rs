@@ -293,43 +293,7 @@ fn decode_container<'a>(
             }
         }
     }
-    let protein = match &container.protein {
-        ProteinState::Absent => ProteinRecord::Absent {
-            id: "inventor:protein:state#root".into(),
-        },
-        ProteinState::Empty { stream } => ProteinRecord::Empty {
-            id: "inventor:protein:state#root".into(),
-            directory_id: stream.directory_id(),
-        },
-        ProteinState::Malformed { stream, detail } => ProteinRecord::Malformed {
-            id: "inventor:protein:state#root".into(),
-            directory_id: stream.directory_id(),
-            detail: detail.clone(),
-        },
-        ProteinState::Package(package) => {
-            let entries = package
-                .archive
-                .entries()
-                .iter()
-                .enumerate()
-                .map(|(ordinal, entry)| ProteinEntryRecord {
-                    id: format!("inventor:protein:entry#{ordinal}"),
-                    ordinal: ordinal as u32,
-                    name: entry.name.clone(),
-                    compression: entry.compression,
-                    crc32: entry.crc32,
-                    compressed_size: entry.compressed_size,
-                    uncompressed_size: entry.uncompressed_size,
-                })
-                .collect::<Vec<_>>();
-            ProteinRecord::Package {
-                id: "inventor:protein:state#root".into(),
-                directory_id: package.stream.directory_id(),
-                declared_len: package.declared_len,
-                entries,
-            }
-        }
-    };
+    let protein = project_protein_state(ctx, &container.protein)?;
     let (protein_instances, protein_semantic_issue) = match &container.protein {
         ProteinState::Package(package) => match crate::protein::decode_instances(ctx, package) {
             Ok(instances) => (instances, None),
@@ -341,225 +305,15 @@ fn decode_container<'a>(
     };
     let material_catalog =
         crate::materials::project_catalog(ctx, &protein_instances, &mut admitted_entities)?;
-    for instance in &protein_instances {
-        admit_native_items(ctx, instance.records.len())?;
-        admit_native_items(ctx, instance.rejected.len())?;
-    }
-    let mut protein_issues = Vec::new();
+    let ProteinNativeRecords {
+        assets: protein_assets,
+        rejections: protein_rejections,
+        issues: protein_issues,
+    } = project_protein_records(ctx, protein_instances)?;
     let mut ufrx_issues = Vec::new();
-    let protein_assets = protein_instances
-        .iter()
-        .flat_map(|instance| {
-            instance.records.iter().map(|asset| ProteinAssetRecordWire {
-                id: format!(
-                    "inventor:protein:asset#{}-{}",
-                    sha256_hex(instance.entry_name.as_bytes()),
-                    asset.ordinal
-                ),
-                entry_name: instance.entry_name.clone(),
-                ordinal: asset.ordinal,
-                asset: asset.clone(),
-            })
-        })
-        .filter_map(|wire| admit_protein_asset(wire, &mut protein_issues))
-        .collect::<Vec<_>>();
-    let protein_rejections = protein_instances
-        .iter()
-        .flat_map(|instance| {
-            instance
-                .rejected
-                .iter()
-                .map(|rejected| ProteinRejectionRecordWire {
-                    id: format!(
-                        "inventor:protein:rejection#{}-{}",
-                        sha256_hex(instance.entry_name.as_bytes()),
-                        rejected.ordinal
-                    ),
-                    entry_name: instance.entry_name.clone(),
-                    ordinal: rejected.ordinal,
-                    detail: rejected.detail.clone(),
-                })
-        })
-        .filter_map(|wire| admit_protein_rejection(wire, &mut protein_issues))
-        .collect::<Vec<_>>();
     ir.model.appearances = material_catalog.appearances;
     let protein_appearance_count = ir.model.appearances.len();
-    let ufrx = match &container.ufrx {
-        UfrxState::Absent => UfrxRecord::Absent {
-            id: "inventor:ufrx:state#root".into(),
-        },
-        UfrxState::Malformed { stream, detail } => UfrxRecord::Malformed {
-            id: "inventor:ufrx:state#root".into(),
-            directory_id: stream.directory_id(),
-            detail: detail.clone(),
-        },
-        UfrxState::Unsupported {
-            stream,
-            schema,
-            section_versions,
-            source,
-            detail,
-        } => UfrxRecord::Unsupported {
-            id: "inventor:ufrx:state#root".into(),
-            directory_id: stream.directory_id(),
-            schema: *schema,
-            section_versions: section_versions.clone(),
-            tail_len: source.window().len() as u64,
-            tail_sha256: crate::native::digest::Sha256Hex::digest(source.window()),
-            detail: detail.clone(),
-        },
-        UfrxState::Parsed(document) => {
-            let model_states = document
-                .model_states
-                .iter()
-                .enumerate()
-                .filter_map(|(ordinal, state)| {
-                    let admitted = UfrxModelStateRecord::try_from(UfrxModelStateRecordWire {
-                        id: format!("inventor:ufrx:model-state#{ordinal}"),
-                        ordinal: ordinal as u32,
-                        prefix: state.prefix,
-                        name: state.name.clone(),
-                        state: state.state,
-                        prefix_count: state.prefix_count,
-                        parameters: state
-                            .parameters
-                            .iter()
-                            .map(|parameter| UfrxModelStateParameterRecord {
-                                name: parameter.name.clone(),
-                                tag: parameter.tag,
-                                kind: parameter.kind,
-                                state: parameter.state,
-                                value: parameter.value.clone(),
-                                trailer: parameter.trailer,
-                            })
-                            .collect(),
-                        suffix_len: state.suffix.window().len() as u64,
-                        suffix_sha256: sha256_hex(state.suffix.window()),
-                    });
-                    admit_ufrx_record(
-                        admitted,
-                        &format!("ufrx-model-state-{ordinal}"),
-                        &mut ufrx_issues,
-                    )
-                })
-                .collect::<Vec<_>>();
-            let references = document
-                .references
-                .iter()
-                .enumerate()
-                .filter_map(|(ordinal, reference)| {
-                    let admitted = ExternalReferenceRecord::try_from(ExternalReferenceRecordWire {
-                        id: format!("inventor:ufrx:external-reference#{ordinal}"),
-                        ordinal: ordinal as u32,
-                        path: reference.path.clone(),
-                        library_id: reference.library_id,
-                        library_name: reference.library_name.clone(),
-                        display_name: reference.display_name.clone(),
-                        state_groups: reference.state_groups.clone(),
-                        state: reference.state,
-                        document_id: Some(hex(&reference.document_id)),
-                        database_id: hex(&reference.database_id),
-                        reference_id: reference.reference_id,
-                        occurrence_count: reference.occurrence_count,
-                        version: reference.version,
-                        flags: reference.flags,
-                    });
-                    admit_ufrx_record(
-                        admitted,
-                        &format!("ufrx-external-reference-{ordinal}"),
-                        &mut ufrx_issues,
-                    )
-                })
-                .collect::<Vec<_>>();
-            let embedded = document
-                .embedded_references
-                .iter()
-                .enumerate()
-                .filter_map(|(ordinal, reference)| {
-                    let admitted = EmbeddedReferenceRecord::try_from(EmbeddedReferenceRecordWire {
-                        id: format!("inventor:ufrx:embedded-reference#{ordinal}"),
-                        ordinal: ordinal as u32,
-                        value_0: reference.value_0,
-                        filetime: reference.filetime,
-                        value_1: reference.value_1,
-                        extended_value: reference.extended_value,
-                        value_2: reference.value_2,
-                        path: reference.path.clone(),
-                        library_id: reference.library_id,
-                        library_name: reference.library_name.clone(),
-                        state: reference.state,
-                        display_name: reference.display_name.clone(),
-                        state_values: reference.state_values,
-                        record_len: reference.source.window().len() as u64,
-                        record_sha256: sha256_hex(reference.source.window()),
-                    });
-                    admit_ufrx_record(
-                        admitted,
-                        &format!("ufrx-embedded-reference-{ordinal}"),
-                        &mut ufrx_issues,
-                    )
-                })
-                .collect::<Vec<_>>();
-            let occurrences = document
-                .occurrences
-                .iter()
-                .enumerate()
-                .filter_map(|(ordinal, occurrence)| {
-                    let admitted = UfrxOccurrenceRecord::try_from(UfrxOccurrenceRecordWire {
-                        id: format!("inventor:ufrx:occurrence#{ordinal}"),
-                        ordinal: ordinal as u32,
-                        end_string_flag: occurrence.end_string_flag,
-                        file_reference_id: occurrence.file_reference_id,
-                        occurrence_id: occurrence.occurrence_id,
-                        header_value: occurrence.header_value,
-                        title: occurrence.title.clone(),
-                        header_padding_words: occurrence.header_padding_words,
-                        record_len: occurrence.source.window().len() as u64,
-                        record_sha256: sha256_hex(occurrence.source.window()),
-                    });
-                    admit_ufrx_record(
-                        admitted,
-                        &format!("ufrx-occurrence-{ordinal}"),
-                        &mut ufrx_issues,
-                    )
-                })
-                .collect::<Vec<_>>();
-            UfrxRecord::ParsedPrefix {
-                id: "inventor:ufrx:state#root".into(),
-                directory_id: document.stream.directory_id(),
-                schema: document.schema,
-                section_versions: document.section_versions.clone(),
-                original_file_name: document.original_file_name.clone(),
-                caption: document.caption.clone(),
-                representation: document.representation.as_ref().and_then(|state| {
-                    let admitted =
-                        UfrxRepresentationRecord::try_from(UfrxRepresentationRecordWire {
-                            prefix: state.prefix,
-                            active_representation: state
-                                .active_representation
-                                .as_ref()
-                                .map(|(name, _)| name.clone()),
-                            active_representation_kind: state
-                                .active_representation
-                                .as_ref()
-                                .map(|(_, kind)| kind.clone()),
-                            secondary_active_lod_state: state.secondary_active_lod_state,
-                            active_model_state: state.active_model_state.clone(),
-                            active_model_state_state: state.active_model_state_state,
-                        });
-                    admit_ufrx_record(admitted, "ufrx-representation", &mut ufrx_issues)
-                }),
-                model_states,
-                external_references: references,
-                embedded_references: embedded,
-                occurrences,
-                tail_len: document.unparsed_tail.window().len() as u64,
-                tail_sha256: crate::native::digest::Sha256Hex::digest(
-                    document.unparsed_tail.window(),
-                ),
-            }
-        }
-    };
+    let ufrx = project_ufrx_state(ctx, &container.ufrx, &mut ufrx_issues)?;
     let protein_admission_issue_count = protein_issues.len();
     let ufrx_issue_count = ufrx_issues.len();
     let mut structural_issues = protein_issues;
@@ -682,10 +436,10 @@ fn decode_container<'a>(
         ParsedState::Absent | ParsedState::Unavailable(_) => Vec::new(),
     };
     if let ParsedState::Unavailable(detail) = &container.rse.registry {
-        structural_issues.push(structural_issue("segment_registry", detail));
+        structural_issues.push(structural_issue(ctx, "segment_registry", detail)?);
     }
     if let ParsedState::Unavailable(detail) = &container.rse.revisions {
-        structural_issues.push(structural_issue("revision_table", detail));
+        structural_issues.push(structural_issue(ctx, "revision_table", detail)?);
     }
     structural_issues.extend(container.rse.segments.iter().flat_map(|segment| {
         segment
@@ -1798,6 +1552,23 @@ fn charge_items(
     ctx.charge_collection_items(count, operation)
 }
 
+fn wire_len(
+    ctx: &DecodeContext<'_>,
+    len: usize,
+    operation: &'static str,
+) -> Result<u64, CodecError> {
+    u64::try_from(len).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))
+}
+
+fn record_ordinal(
+    ctx: &DecodeContext<'_>,
+    ordinal: usize,
+    operation: &'static str,
+) -> Result<u32, CodecError> {
+    u32::try_from(ordinal)
+        .map_err(|_| ctx.refuse_codec_limit(operation, u64::from(u32::MAX), u64::MAX))
+}
+
 fn charge_retained_len(
     ctx: &DecodeContext<'_>,
     bytes: usize,
@@ -1825,6 +1596,52 @@ fn retained_format(
 ) -> Result<String, CodecError> {
     crate::record_issue::admit_formatted(ctx, value, operation)?;
     Ok(value.to_string())
+}
+
+fn retained_hex(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let len = bytes.len().checked_mul(2).ok_or_else(|| {
+        ctx.refuse_codec_limit("Inventor hexadecimal length", u64::MAX - 1, u64::MAX)
+    })?;
+    charge_retained_len(ctx, len, operation)?;
+    ctx.charge_work(
+        u64::try_from(bytes.len()).map_err(|_| {
+            ctx.refuse_codec_limit("Inventor hexadecimal work", u64::MAX - 1, u64::MAX)
+        })?,
+        "encode Inventor hexadecimal bytes",
+    )?;
+    Ok(hex(bytes))
+}
+
+fn retained_sha256(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    ctx.charge_retained(64, operation)?;
+    ctx.charge_work(
+        u64::try_from(bytes.len())
+            .map_err(|_| ctx.refuse_codec_limit("Inventor digest work", u64::MAX - 1, u64::MAX))?,
+        "hash Inventor native bytes",
+    )?;
+    Ok(sha256_hex(bytes))
+}
+
+fn retained_native_sha256(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    operation: &'static str,
+) -> Result<crate::native::digest::Sha256Hex, CodecError> {
+    ctx.charge_retained(64, operation)?;
+    ctx.charge_work(
+        u64::try_from(bytes.len())
+            .map_err(|_| ctx.refuse_codec_limit("Inventor digest work", u64::MAX - 1, u64::MAX))?,
+        "hash Inventor native bytes",
+    )?;
+    Ok(crate::native::digest::Sha256Hex::digest(bytes))
 }
 
 fn project_property_set_issue(
@@ -1881,6 +1698,593 @@ fn project_preview_asset(
         Some(native_id.to_owned()),
     )
     .map_err(CodecError::Malformed)
+}
+
+fn project_protein_state(
+    ctx: &DecodeContext<'_>,
+    state: &ProteinState<'_>,
+) -> Result<ProteinRecord, CodecError> {
+    let id = retained_clone(
+        ctx,
+        "inventor:protein:state#root",
+        "retain Inventor Protein state id",
+    )?;
+    Ok(match state {
+        ProteinState::Absent => ProteinRecord::Absent { id },
+        ProteinState::Empty { stream } => ProteinRecord::Empty {
+            id,
+            directory_id: stream.directory_id(),
+        },
+        ProteinState::Malformed { stream, detail } => ProteinRecord::Malformed {
+            id,
+            directory_id: stream.directory_id(),
+            detail: retained_clone(ctx, detail, "retain Inventor Protein state detail")?,
+        },
+        ProteinState::Package(package) => {
+            let entries = package
+                .archive
+                .entries()
+                .iter()
+                .enumerate()
+                .map(|(ordinal, entry)| -> Result<_, CodecError> {
+                    Ok(ProteinEntryRecord {
+                        id: retained_format(
+                            ctx,
+                            format_args!("inventor:protein:entry#{ordinal}"),
+                            "retain Inventor Protein entry id",
+                        )?,
+                        ordinal: record_ordinal(ctx, ordinal, "Inventor Protein entry ordinal")?,
+                        name: retained_clone(
+                            ctx,
+                            &entry.name,
+                            "retain Inventor Protein entry name",
+                        )?,
+                        compression: entry.compression,
+                        crc32: entry.crc32,
+                        compressed_size: entry.compressed_size,
+                        uncompressed_size: entry.uncompressed_size,
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            ProteinRecord::Package {
+                id,
+                directory_id: package.stream.directory_id(),
+                declared_len: package.declared_len,
+                entries,
+            }
+        }
+    })
+}
+
+struct ProteinNativeRecords {
+    assets: Vec<ProteinAssetRecord>,
+    rejections: Vec<ProteinRejectionRecord>,
+    issues: Vec<StructuralIssueRecord>,
+}
+
+fn project_protein_records(
+    ctx: &DecodeContext<'_>,
+    instances: Vec<crate::protein::ProteinInstanceRecords>,
+) -> Result<ProteinNativeRecords, CodecError> {
+    for instance in &instances {
+        admit_native_items(ctx, instance.records.len())?;
+        admit_native_items(ctx, instance.rejected.len())?;
+    }
+    let mut assets = Vec::new();
+    let mut rejections = Vec::new();
+    let mut issues = Vec::new();
+    for instance in instances {
+        if instance.records.is_empty() && instance.rejected.is_empty() {
+            continue;
+        }
+        let entry_name_len = u64::try_from(instance.entry_name.len()).map_err(|_| {
+            ctx.refuse_codec_limit("Inventor Protein entry name length", u64::MAX - 1, u64::MAX)
+        })?;
+        ctx.charge_work(entry_name_len, "hash Inventor Protein entry name")?;
+        let _digest_reservation = ctx.reserve_scoped(64, "hash Inventor Protein entry name")?;
+        let entry_digest = sha256_hex(instance.entry_name.as_bytes());
+        for asset in instance.records {
+            let id = retained_format(
+                ctx,
+                format_args!("inventor:protein:asset#{}-{}", entry_digest, asset.ordinal),
+                "retain Inventor Protein asset id",
+            )?;
+            let entry_name = retained_clone(
+                ctx,
+                &instance.entry_name,
+                "retain Inventor Protein asset entry name",
+            )?;
+            let wire = ProteinAssetRecordWire {
+                id,
+                entry_name,
+                ordinal: asset.ordinal,
+                asset,
+            };
+            if let Some(record) = admit_protein_asset(ctx, wire, &mut issues)? {
+                assets.push(record);
+            }
+        }
+        for rejected in instance.rejected {
+            let id = retained_format(
+                ctx,
+                format_args!(
+                    "inventor:protein:rejection#{}-{}",
+                    entry_digest, rejected.ordinal
+                ),
+                "retain Inventor Protein rejection id",
+            )?;
+            let entry_name = retained_clone(
+                ctx,
+                &instance.entry_name,
+                "retain Inventor Protein rejection entry name",
+            )?;
+            let wire = ProteinRejectionRecordWire {
+                id,
+                entry_name,
+                ordinal: rejected.ordinal,
+                detail: rejected.detail,
+            };
+            if let Some(record) = admit_protein_rejection(ctx, wire, &mut issues)? {
+                rejections.push(record);
+            }
+        }
+    }
+    Ok(ProteinNativeRecords {
+        assets,
+        rejections,
+        issues,
+    })
+}
+
+fn project_ufrx_state(
+    ctx: &DecodeContext<'_>,
+    state: &UfrxState<'_>,
+    issues: &mut Vec<StructuralIssueRecord>,
+) -> Result<UfrxRecord, CodecError> {
+    Ok(match state {
+        UfrxState::Absent => UfrxRecord::Absent {
+            id: retained_clone(
+                ctx,
+                "inventor:ufrx:state#root",
+                "retain Inventor UFRx state id",
+            )?,
+        },
+        UfrxState::Malformed { stream, detail } => UfrxRecord::Malformed {
+            id: retained_clone(
+                ctx,
+                "inventor:ufrx:state#root",
+                "retain Inventor UFRx state id",
+            )?,
+            directory_id: stream.directory_id(),
+            detail: retained_clone(ctx, detail, "retain Inventor UFRx state detail")?,
+        },
+        UfrxState::Unsupported {
+            stream,
+            schema,
+            section_versions,
+            source,
+            detail,
+        } => {
+            charge_items(
+                ctx,
+                section_versions.len(),
+                "copy Inventor UFRx section versions",
+            )?;
+            UfrxRecord::Unsupported {
+                id: retained_clone(
+                    ctx,
+                    "inventor:ufrx:state#root",
+                    "retain Inventor UFRx state id",
+                )?,
+                directory_id: stream.directory_id(),
+                schema: *schema,
+                section_versions: section_versions.clone(),
+                tail_len: wire_len(
+                    ctx,
+                    source.window().len(),
+                    "Inventor UFRx unsupported tail length",
+                )?,
+                tail_sha256: retained_native_sha256(
+                    ctx,
+                    source.window(),
+                    "retain Inventor UFRx unsupported tail digest",
+                )?,
+                detail: retained_clone(ctx, detail, "retain Inventor UFRx state detail")?,
+            }
+        }
+        UfrxState::Parsed(document) => {
+            let mut model_states = Vec::new();
+            for (ordinal, state) in document.model_states.iter().enumerate() {
+                if let Some(record) = project_ufrx_model_state(ctx, ordinal, state, issues)? {
+                    model_states.push(record);
+                }
+            }
+            let mut references = Vec::new();
+            for (ordinal, reference) in document.references.iter().enumerate() {
+                if let Some(record) =
+                    project_ufrx_external_reference(ctx, ordinal, reference, issues)?
+                {
+                    references.push(record);
+                }
+            }
+            let mut embedded = Vec::new();
+            for (ordinal, reference) in document.embedded_references.iter().enumerate() {
+                if let Some(record) =
+                    project_ufrx_embedded_reference(ctx, ordinal, reference, issues)?
+                {
+                    embedded.push(record);
+                }
+            }
+            let mut occurrences = Vec::new();
+            for (ordinal, occurrence) in document.occurrences.iter().enumerate() {
+                if let Some(record) = project_ufrx_occurrence(ctx, ordinal, occurrence, issues)? {
+                    occurrences.push(record);
+                }
+            }
+            let representation = document
+                .representation
+                .as_ref()
+                .map(|state| project_ufrx_representation(ctx, state, issues))
+                .transpose()?
+                .flatten();
+            UfrxRecord::ParsedPrefix {
+                id: retained_clone(
+                    ctx,
+                    "inventor:ufrx:state#root",
+                    "retain Inventor UFRx state id",
+                )?,
+                directory_id: document.stream.directory_id(),
+                schema: document.schema,
+                section_versions: {
+                    charge_items(
+                        ctx,
+                        document.section_versions.len(),
+                        "copy Inventor UFRx section versions",
+                    )?;
+                    document.section_versions.clone()
+                },
+                original_file_name: retained_clone(
+                    ctx,
+                    &document.original_file_name,
+                    "retain Inventor UFRx original file name",
+                )?,
+                caption: retained_clone(ctx, &document.caption, "retain Inventor UFRx caption")?,
+                representation,
+                model_states,
+                external_references: references,
+                embedded_references: embedded,
+                occurrences,
+                tail_len: wire_len(
+                    ctx,
+                    document.unparsed_tail.window().len(),
+                    "Inventor UFRx tail length",
+                )?,
+                tail_sha256: retained_native_sha256(
+                    ctx,
+                    document.unparsed_tail.window(),
+                    "retain Inventor UFRx tail digest",
+                )?,
+            }
+        }
+    })
+}
+
+fn project_ufrx_model_state(
+    ctx: &DecodeContext<'_>,
+    ordinal: usize,
+    state: &crate::external_reference::UfrxModelState<'_>,
+    issues: &mut Vec<StructuralIssueRecord>,
+) -> Result<Option<UfrxModelStateRecord>, CodecError> {
+    let issue_detail = if state.suffix.window().len() != 77 {
+        Some("suffix_len must be 77")
+    } else if state.name.chars().all(char::is_whitespace) {
+        Some("name must not be empty")
+    } else {
+        None
+    };
+    if let Some(detail) = issue_detail {
+        charge_retained_len(
+            ctx,
+            detail.len(),
+            "retain Inventor UFRx model-state conversion issue",
+        )?;
+    }
+    charge_items(
+        ctx,
+        state.parameters.len(),
+        "copy Inventor UFRx state parameters",
+    )?;
+    let parameters = state
+        .parameters
+        .iter()
+        .map(|parameter| -> Result<_, CodecError> {
+            Ok(UfrxModelStateParameterRecord {
+                name: retained_clone(ctx, &parameter.name, "retain Inventor UFRx parameter name")?,
+                tag: parameter.tag,
+                kind: parameter.kind,
+                state: parameter.state,
+                value: retained_clone(
+                    ctx,
+                    &parameter.value,
+                    "retain Inventor UFRx parameter value",
+                )?,
+                trailer: parameter.trailer,
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let admitted = UfrxModelStateRecord::try_from(UfrxModelStateRecordWire {
+        id: retained_format(
+            ctx,
+            format_args!("inventor:ufrx:model-state#{ordinal}"),
+            "retain Inventor UFRx model-state id",
+        )?,
+        ordinal: record_ordinal(ctx, ordinal, "Inventor UFRx model-state ordinal")?,
+        prefix: state.prefix,
+        name: retained_clone(ctx, &state.name, "retain Inventor UFRx model-state name")?,
+        state: state.state,
+        prefix_count: state.prefix_count,
+        parameters,
+        suffix_len: wire_len(
+            ctx,
+            state.suffix.window().len(),
+            "Inventor UFRx model-state suffix length",
+        )?,
+        suffix_sha256: retained_sha256(
+            ctx,
+            state.suffix.window(),
+            "retain Inventor UFRx model-state digest",
+        )?,
+    });
+    let scope = retained_format(
+        ctx,
+        format_args!("ufrx-model-state-{ordinal}"),
+        "retain Inventor UFRx model-state issue scope",
+    )?;
+    admit_ufrx_record(ctx, admitted, &scope, issues)
+}
+
+fn project_ufrx_external_reference(
+    ctx: &DecodeContext<'_>,
+    ordinal: usize,
+    reference: &crate::external_reference::InventorExternalReference,
+    issues: &mut Vec<StructuralIssueRecord>,
+) -> Result<Option<ExternalReferenceRecord>, CodecError> {
+    if reference.path.chars().all(char::is_whitespace)
+        && reference.document_id.iter().all(|byte| *byte == 0)
+    {
+        charge_retained_len(
+            ctx,
+            "path or a nonzero document_id is required".len(),
+            "retain Inventor UFRx external conversion issue",
+        )?;
+    }
+    charge_items(
+        ctx,
+        reference.state_groups.len(),
+        "copy Inventor UFRx reference state groups",
+    )?;
+    let admitted = ExternalReferenceRecord::try_from(ExternalReferenceRecordWire {
+        id: retained_format(
+            ctx,
+            format_args!("inventor:ufrx:external-reference#{ordinal}"),
+            "retain Inventor UFRx external reference id",
+        )?,
+        ordinal: record_ordinal(ctx, ordinal, "Inventor UFRx external ordinal")?,
+        path: retained_clone(ctx, &reference.path, "retain Inventor UFRx external path")?,
+        library_id: reference.library_id,
+        library_name: retained_clone(
+            ctx,
+            &reference.library_name,
+            "retain Inventor UFRx external library name",
+        )?,
+        display_name: retained_clone(
+            ctx,
+            &reference.display_name,
+            "retain Inventor UFRx external display name",
+        )?,
+        state_groups: reference.state_groups.clone(),
+        state: reference.state,
+        document_id: Some(retained_hex(
+            ctx,
+            &reference.document_id,
+            "retain Inventor UFRx document id",
+        )?),
+        database_id: retained_hex(
+            ctx,
+            &reference.database_id,
+            "retain Inventor UFRx database id",
+        )?,
+        reference_id: reference.reference_id,
+        occurrence_count: reference.occurrence_count,
+        version: reference.version,
+        flags: reference.flags,
+    });
+    let scope = retained_format(
+        ctx,
+        format_args!("ufrx-external-reference-{ordinal}"),
+        "retain Inventor UFRx external issue scope",
+    )?;
+    admit_ufrx_record(ctx, admitted, &scope, issues)
+}
+
+fn project_ufrx_embedded_reference(
+    ctx: &DecodeContext<'_>,
+    ordinal: usize,
+    reference: &crate::external_reference::InventorEmbeddedReference<'_>,
+    issues: &mut Vec<StructuralIssueRecord>,
+) -> Result<Option<EmbeddedReferenceRecord>, CodecError> {
+    if reference.source.window().is_empty() {
+        charge_retained_len(
+            ctx,
+            "record_len must not be zero".len(),
+            "retain Inventor UFRx embedded conversion issue",
+        )?;
+    }
+    let admitted = EmbeddedReferenceRecord::try_from(EmbeddedReferenceRecordWire {
+        id: retained_format(
+            ctx,
+            format_args!("inventor:ufrx:embedded-reference#{ordinal}"),
+            "retain Inventor UFRx embedded reference id",
+        )?,
+        ordinal: record_ordinal(ctx, ordinal, "Inventor UFRx embedded ordinal")?,
+        value_0: reference.value_0,
+        filetime: reference.filetime,
+        value_1: reference.value_1,
+        extended_value: reference.extended_value,
+        value_2: reference.value_2,
+        path: retained_clone(ctx, &reference.path, "retain Inventor UFRx embedded path")?,
+        library_id: reference.library_id,
+        library_name: retained_clone(
+            ctx,
+            &reference.library_name,
+            "retain Inventor UFRx embedded library name",
+        )?,
+        state: reference.state,
+        display_name: retained_clone(
+            ctx,
+            &reference.display_name,
+            "retain Inventor UFRx embedded display name",
+        )?,
+        state_values: reference.state_values,
+        record_len: wire_len(
+            ctx,
+            reference.source.window().len(),
+            "Inventor UFRx embedded length",
+        )?,
+        record_sha256: retained_sha256(
+            ctx,
+            reference.source.window(),
+            "retain Inventor UFRx embedded digest",
+        )?,
+    });
+    let scope = retained_format(
+        ctx,
+        format_args!("ufrx-embedded-reference-{ordinal}"),
+        "retain Inventor UFRx embedded issue scope",
+    )?;
+    admit_ufrx_record(ctx, admitted, &scope, issues)
+}
+
+fn project_ufrx_occurrence(
+    ctx: &DecodeContext<'_>,
+    ordinal: usize,
+    occurrence: &crate::external_reference::UfrxOccurrence<'_>,
+    issues: &mut Vec<StructuralIssueRecord>,
+) -> Result<Option<UfrxOccurrenceRecord>, CodecError> {
+    let issue_detail = if occurrence.header_padding_words > 8 {
+        Some("header_padding_words must not exceed 8")
+    } else if occurrence.source.window().is_empty() {
+        Some("record_len must not be zero")
+    } else {
+        None
+    };
+    if let Some(detail) = issue_detail {
+        charge_retained_len(
+            ctx,
+            detail.len(),
+            "retain Inventor UFRx occurrence conversion issue",
+        )?;
+    }
+    let admitted = UfrxOccurrenceRecord::try_from(UfrxOccurrenceRecordWire {
+        id: retained_format(
+            ctx,
+            format_args!("inventor:ufrx:occurrence#{ordinal}"),
+            "retain Inventor UFRx occurrence id",
+        )?,
+        ordinal: record_ordinal(ctx, ordinal, "Inventor UFRx occurrence ordinal")?,
+        end_string_flag: occurrence.end_string_flag,
+        file_reference_id: occurrence.file_reference_id,
+        occurrence_id: occurrence.occurrence_id,
+        header_value: occurrence.header_value,
+        title: occurrence
+            .title
+            .as_deref()
+            .map(|title| retained_clone(ctx, title, "retain Inventor UFRx occurrence title"))
+            .transpose()?,
+        header_padding_words: occurrence.header_padding_words,
+        record_len: wire_len(
+            ctx,
+            occurrence.source.window().len(),
+            "Inventor UFRx occurrence length",
+        )?,
+        record_sha256: retained_sha256(
+            ctx,
+            occurrence.source.window(),
+            "retain Inventor UFRx occurrence digest",
+        )?,
+    });
+    let scope = retained_format(
+        ctx,
+        format_args!("ufrx-occurrence-{ordinal}"),
+        "retain Inventor UFRx occurrence issue scope",
+    )?;
+    admit_ufrx_record(ctx, admitted, &scope, issues)
+}
+
+fn project_ufrx_representation(
+    ctx: &DecodeContext<'_>,
+    state: &crate::external_reference::UfrxRepresentationState,
+    issues: &mut Vec<StructuralIssueRecord>,
+) -> Result<Option<UfrxRepresentationRecord>, CodecError> {
+    let issue_detail = if let Some((name, kind)) = &state.active_representation {
+        if name.chars().all(char::is_whitespace) {
+            Some("active_representation must not be empty")
+        } else if kind.chars().all(char::is_whitespace) {
+            Some("active_representation_kind must not be empty")
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    let issue_detail = issue_detail.or_else(|| {
+        state
+            .active_model_state
+            .chars()
+            .all(char::is_whitespace)
+            .then_some("active_model_state must not be empty")
+    });
+    if let Some(detail) = issue_detail {
+        charge_retained_len(
+            ctx,
+            detail.len(),
+            "retain Inventor UFRx representation conversion issue",
+        )?;
+    }
+    let (active_representation, active_representation_kind) =
+        match state.active_representation.as_ref() {
+            Some((name, kind)) => (
+                Some(retained_clone(
+                    ctx,
+                    name,
+                    "retain Inventor UFRx representation name",
+                )?),
+                Some(retained_clone(
+                    ctx,
+                    kind,
+                    "retain Inventor UFRx representation kind",
+                )?),
+            ),
+            None => (None, None),
+        };
+    let wire = UfrxRepresentationRecordWire {
+        prefix: state.prefix,
+        active_representation,
+        active_representation_kind,
+        secondary_active_lod_state: state.secondary_active_lod_state,
+        active_model_state: retained_clone(
+            ctx,
+            &state.active_model_state,
+            "retain Inventor UFRx active model state",
+        )?,
+        active_model_state_state: state.active_model_state_state,
+    };
+    admit_ufrx_record(
+        ctx,
+        UfrxRepresentationRecord::try_from(wire),
+        "ufrx-representation",
+        issues,
+    )
 }
 
 fn admit_native_items(ctx: &DecodeContext<'_>, count: usize) -> Result<(), CodecError> {
@@ -2134,33 +2538,82 @@ fn apply_kernel_header(
 }
 
 fn admit_ufrx_record<T>(
+    ctx: &DecodeContext<'_>,
     admitted: Result<T, String>,
     scope: &str,
     issues: &mut Vec<StructuralIssueRecord>,
-) -> Option<T> {
-    admitted
-        .inspect_err(|detail| issues.push(structural_issue(scope, detail)))
-        .ok()
+) -> Result<Option<T>, CodecError> {
+    match admitted {
+        Ok(record) => Ok(Some(record)),
+        Err(detail) => {
+            issues.push(structural_issue(ctx, scope, &detail)?);
+            Ok(None)
+        }
+    }
 }
 
 fn admit_protein_asset(
+    ctx: &DecodeContext<'_>,
     wire: ProteinAssetRecordWire,
     issues: &mut Vec<StructuralIssueRecord>,
-) -> Option<ProteinAssetRecord> {
+) -> Result<Option<ProteinAssetRecord>, CodecError> {
+    let issue_detail = if wire.ordinal != wire.asset.ordinal {
+        Some("ordinal disagrees with asset.ordinal")
+    } else if !wire.entry_name.ends_with("InstanceProperties.bin") {
+        Some("entry_name must end with InstanceProperties.bin")
+    } else {
+        None
+    };
+    if let Some(detail) = issue_detail {
+        charge_retained_len(
+            ctx,
+            detail.len(),
+            "retain Inventor Protein asset conversion issue",
+        )?;
+    }
+    let scope_len = u64::try_from(wire.id.len()).map_err(|_| {
+        ctx.refuse_codec_limit(
+            "Inventor Protein issue scope length",
+            u64::MAX - 1,
+            u64::MAX,
+        )
+    })?;
+    let _scope_reservation =
+        ctx.reserve_scoped(scope_len, "copy Inventor Protein asset issue scope")?;
     let scope = wire.id.clone();
-    ProteinAssetRecord::try_from(wire)
-        .inspect_err(|detail| issues.push(structural_issue(&scope, detail)))
-        .ok()
+    admit_ufrx_record(ctx, ProteinAssetRecord::try_from(wire), &scope, issues)
 }
 
 fn admit_protein_rejection(
+    ctx: &DecodeContext<'_>,
     wire: ProteinRejectionRecordWire,
     issues: &mut Vec<StructuralIssueRecord>,
-) -> Option<ProteinRejectionRecord> {
+) -> Result<Option<ProteinRejectionRecord>, CodecError> {
+    let issue_detail = if !wire.entry_name.ends_with("InstanceProperties.bin") {
+        Some("entry_name must end with InstanceProperties.bin")
+    } else if wire.detail.chars().all(char::is_whitespace) {
+        Some("detail must not be empty")
+    } else {
+        None
+    };
+    if let Some(detail) = issue_detail {
+        charge_retained_len(
+            ctx,
+            detail.len(),
+            "retain Inventor Protein rejection conversion issue",
+        )?;
+    }
+    let scope_len = u64::try_from(wire.id.len()).map_err(|_| {
+        ctx.refuse_codec_limit(
+            "Inventor Protein issue scope length",
+            u64::MAX - 1,
+            u64::MAX,
+        )
+    })?;
+    let _scope_reservation =
+        ctx.reserve_scoped(scope_len, "copy Inventor Protein rejection issue scope")?;
     let scope = wire.id.clone();
-    ProteinRejectionRecord::try_from(wire)
-        .inspect_err(|detail| issues.push(structural_issue(&scope, detail)))
-        .ok()
+    admit_ufrx_record(ctx, ProteinRejectionRecord::try_from(wire), &scope, issues)
 }
 
 fn admit_assembly_placement(
@@ -2181,12 +2634,22 @@ fn admit_assembly_placement(
         .ok()
 }
 
-fn structural_issue(scope: &str, detail: &str) -> StructuralIssueRecord {
-    StructuralIssueRecord {
-        id: format!("inventor:rse:structural-issue#{scope}"),
-        scope: scope.into(),
-        detail: detail.into(),
-    }
+fn structural_issue(
+    ctx: &DecodeContext<'_>,
+    scope: &str,
+    detail: &str,
+) -> Result<StructuralIssueRecord, CodecError> {
+    ctx.charge_collection_items(1, "collect Inventor structural issue")?;
+    ctx.charge_entities(1, "admit Inventor structural issue")?;
+    Ok(StructuralIssueRecord {
+        id: retained_format(
+            ctx,
+            format_args!("inventor:rse:structural-issue#{scope}"),
+            "retain Inventor structural issue id",
+        )?,
+        scope: retained_clone(ctx, scope, "retain Inventor structural issue scope")?,
+        detail: retained_clone(ctx, detail, "retain Inventor structural issue detail")?,
+    })
 }
 
 const FMTID_SUMMARY_INFORMATION: [u8; 16] = [

@@ -11,14 +11,17 @@ use crate::container::InventorContainer;
 use crate::decode::{
     admit_assembly_placement, admit_native_record_items, clone_product_body_ids, collect_body_ids,
     decode_container, index_face_colors, index_projected_colors, project_preview_asset,
-    project_property_set_issue,
+    project_property_set_issue, project_protein_records, project_protein_state,
+    project_ufrx_embedded_reference, project_ufrx_external_reference, project_ufrx_model_state,
+    project_ufrx_occurrence, project_ufrx_representation, project_ufrx_state, structural_issue,
 };
 use crate::external_reference::{
     InventorEmbeddedReference, InventorExternalReference, UfrxDocument, UfrxModelState,
-    UfrxOccurrence, UfrxRepresentationState, UfrxState,
+    UfrxModelStateParameter, UfrxOccurrence, UfrxRepresentationState, UfrxState,
 };
 use crate::native::ufrx::UfrxRecord;
 use crate::native::{AssemblyPlacementRecordWire, StructuralIssueRecord};
+use crate::protein::{ProteinInstanceRecords, ProteinState};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
 use crate::test_support::test_fixtures::{fixture_with_ufrx, primary_envelope_fixture};
@@ -83,6 +86,454 @@ fn preview_asset_refuses_collection_and_retained_limits_before_creation() {
     assert_eq!(
         asset.native_ref.as_deref(),
         Some("inventor:property:value#1-0-17")
+    );
+}
+
+#[test]
+fn protein_state_refuses_retained_limit_before_id_creation() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    let id = "inventor:protein:state#root";
+    policy.limits.max_retained_bytes = u64::try_from(id.len() - 1).expect("id length fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        project_protein_state(&ctx, &ProteinState::Absent),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor Protein state id"
+    ));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    assert!(matches!(
+        project_protein_state(&ctx, &ProteinState::Absent).expect("admitted state"),
+        crate::native::protein::ProteinRecord::Absent { id: actual } if actual == id
+    ));
+}
+
+fn protein_asset_instance() -> Vec<ProteinInstanceRecords> {
+    vec![ProteinInstanceRecords {
+        entry_name: "AssetData/InstanceProperties.bin".into(),
+        records: vec![cadmpeg_protein::DecodedRecord {
+            ordinal: 0,
+            logical_offset: 0,
+            schema: "schema".into(),
+            guid: "guid".into(),
+            base: "base".into(),
+            asset_lib_id: "library".into(),
+            properties: std::collections::BTreeMap::new(),
+        }],
+        rejected: Vec::new(),
+    }]
+}
+
+fn protein_rejection_instance() -> Vec<ProteinInstanceRecords> {
+    vec![ProteinInstanceRecords {
+        entry_name: "AssetData/InstanceProperties.bin".into(),
+        records: Vec::new(),
+        rejected: vec![cadmpeg_protein::RejectedRecord {
+            ordinal: 1,
+            detail: "bad record".into(),
+        }],
+    }]
+}
+
+#[test]
+fn protein_asset_id_refuses_retained_limit_before_record_creation() {
+    let arena = DecodeArena::new();
+    let entry = "AssetData/InstanceProperties.bin";
+    let id_len = "inventor:protein:asset#".len() + 64 + "-0".len();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(id_len - 1).expect("id length fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        project_protein_records(&ctx, protein_asset_instance()),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor Protein asset id"
+    ));
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::try_from(entry.len() - 1).expect("entry length fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        project_protein_records(&ctx, protein_asset_instance()),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "hash Inventor Protein entry name"
+    ));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    let records = project_protein_records(&ctx, protein_asset_instance()).expect("admitted asset");
+    assert_eq!(records.assets.len(), 1);
+    assert!(records.rejections.is_empty());
+    assert!(records.issues.is_empty());
+}
+
+#[test]
+fn protein_rejection_id_refuses_retained_limit_before_record_creation() {
+    let arena = DecodeArena::new();
+    let id_len = "inventor:protein:rejection#".len() + 64 + "-1".len();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(id_len - 1).expect("id length fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        project_protein_records(&ctx, protein_rejection_instance()),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor Protein rejection id"
+    ));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    let records =
+        project_protein_records(&ctx, protein_rejection_instance()).expect("admitted rejection");
+    assert!(records.assets.is_empty());
+    assert_eq!(records.rejections.len(), 1);
+    assert!(records.issues.is_empty());
+}
+
+#[test]
+fn ufrx_state_id_refuses_retained_limit_before_record_creation() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    let id = "inventor:ufrx:state#root";
+    policy.limits.max_retained_bytes = u64::try_from(id.len() - 1).expect("id length fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        project_ufrx_state(&ctx, &UfrxState::Absent, &mut Vec::new()),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor UFRx state id"
+    ));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    assert!(matches!(
+        project_ufrx_state(&ctx, &UfrxState::Absent, &mut Vec::new()).expect("admitted state"),
+        UfrxRecord::Absent { id: actual } if actual == id
+    ));
+}
+
+#[test]
+fn ufrx_model_state_refuses_id_and_parameter_limits_before_creation() {
+    let bytes = [0_u8; 77];
+    let arena = DecodeArena::new();
+    let (setup_ctx, source) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("source context");
+    let mut state = UfrxModelState {
+        prefix: 0,
+        name: "Primary".into(),
+        state: [0; 2],
+        prefix_count: 0,
+        parameters: Vec::new(),
+        suffix: source,
+    };
+    let id_len = "inventor:ufrx:model-state#0".len();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(id_len - 1).expect("id length fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        project_ufrx_model_state(&ctx, 0, &state, &mut Vec::new()),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor UFRx model-state id"
+    ));
+    state.parameters.push(UfrxModelStateParameter {
+        name: "Length".into(),
+        tag: 0,
+        kind: 0,
+        state: 0,
+        value: "1".into(),
+        trailer: 0,
+    });
+    policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        project_ufrx_model_state(&ctx, 0, &state, &mut Vec::new()),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "copy Inventor UFRx state parameters"
+    ));
+    let mut issues = Vec::new();
+    assert!(project_ufrx_model_state(&setup_ctx, 0, &state, &mut issues)
+        .expect("admitted model state")
+        .is_some());
+    assert!(issues.is_empty());
+}
+
+#[test]
+fn structural_issue_refuses_collection_limit_before_record_creation() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        structural_issue(&ctx, "scope", "bad"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "collect Inventor structural issue"
+    ));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    let issue = structural_issue(&ctx, "scope", "bad").expect("admitted issue");
+    assert_eq!(issue.scope, "scope");
+    assert_eq!(issue.detail, "bad");
+}
+
+#[test]
+fn protein_conversion_issue_refuses_before_failure_text_creation() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        u64::try_from("entry_name must end with InstanceProperties.bin".len() - 1)
+            .expect("detail length fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let wire = serde_json::from_value(serde_json::json!({
+        "id": "asset", "entry_name": "bad.bin", "ordinal": 3,
+        "asset": { "ordinal": 3, "logical_offset": 0, "schema": "GenericSchema",
+            "guid": "asset-guid", "base": "", "asset_lib_id": "", "properties": {} }
+    }))
+    .expect("Protein asset wire fixture");
+    let mut issues = Vec::new();
+    assert!(matches!(
+        crate::decode::admit_protein_asset(&ctx, wire, &mut issues),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor Protein asset conversion issue"
+    ));
+    assert!(issues.is_empty());
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    let wire = serde_json::from_value(serde_json::json!({
+        "id": "asset", "entry_name": "bad.bin", "ordinal": 3,
+        "asset": { "ordinal": 3, "logical_offset": 0, "schema": "GenericSchema",
+            "guid": "asset-guid", "base": "", "asset_lib_id": "", "properties": {} }
+    }))
+    .expect("Protein asset wire fixture");
+    assert!(crate::decode::admit_protein_asset(&ctx, wire, &mut issues)
+        .expect("service admission")
+        .is_none());
+    assert_eq!(issues.len(), 1);
+}
+
+#[test]
+fn ufrx_model_state_conversion_issue_refuses_before_failure_text_creation() {
+    let bytes = [0_u8; 76];
+    let arena = DecodeArena::new();
+    let (_, source) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("source context");
+    let state = UfrxModelState {
+        prefix: 0,
+        name: "Primary".into(),
+        state: [0; 2],
+        prefix_count: 0,
+        parameters: Vec::new(),
+        suffix: source,
+    };
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        u64::try_from("suffix_len must be 77".len() - 1).expect("detail length fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let mut issues = Vec::new();
+    assert!(matches!(
+        project_ufrx_model_state(&ctx, 0, &state, &mut issues),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor UFRx model-state conversion issue"
+    ));
+    assert!(issues.is_empty());
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    assert!(project_ufrx_model_state(&ctx, 0, &state, &mut issues)
+        .expect("service admission")
+        .is_none());
+    assert_eq!(issues.len(), 1);
+}
+
+#[test]
+fn ufrx_external_reference_refuses_id_and_state_group_limits_before_creation() {
+    let arena = DecodeArena::new();
+    let mut reference = InventorExternalReference {
+        path: "part.ipt".into(),
+        library_id: 0,
+        library_name: String::new(),
+        display_name: String::new(),
+        state_groups: Vec::new(),
+        state: [0; 2],
+        document_id: [0; 16],
+        database_id: [0; 16],
+        reference_id: 7,
+        occurrence_count: 1,
+        version: 0,
+        flags: 0,
+    };
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        u64::try_from("inventor:ufrx:external-reference#0".len() - 1).expect("id length fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        project_ufrx_external_reference(&ctx, 0, &reference, &mut Vec::new()),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor UFRx external reference id"
+    ));
+    reference.state_groups.push([0; 3]);
+    policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        project_ufrx_external_reference(&ctx, 0, &reference, &mut Vec::new()),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "copy Inventor UFRx reference state groups"
+    ));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    assert!(
+        project_ufrx_external_reference(&ctx, 0, &reference, &mut Vec::new())
+            .expect("admitted reference")
+            .is_some()
+    );
+}
+
+#[test]
+fn ufrx_external_conversion_issue_refuses_before_failure_text_creation() {
+    let arena = DecodeArena::new();
+    let reference = InventorExternalReference {
+        path: String::new(),
+        library_id: 0,
+        library_name: String::new(),
+        display_name: String::new(),
+        state_groups: Vec::new(),
+        state: [0; 2],
+        document_id: [0; 16],
+        database_id: [0; 16],
+        reference_id: 7,
+        occurrence_count: 1,
+        version: 0,
+        flags: 0,
+    };
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        u64::try_from("path or a nonzero document_id is required".len() - 1)
+            .expect("detail length fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let mut issues = Vec::new();
+    assert!(matches!(
+        project_ufrx_external_reference(&ctx, 0, &reference, &mut issues),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor UFRx external conversion issue"
+    ));
+    assert!(issues.is_empty());
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    assert!(
+        project_ufrx_external_reference(&ctx, 0, &reference, &mut issues)
+            .expect("service admission")
+            .is_none()
+    );
+    assert_eq!(issues.len(), 1);
+}
+
+#[test]
+fn ufrx_embedded_reference_refuses_id_limit_before_creation() {
+    let bytes = [0_u8; 1];
+    let arena = DecodeArena::new();
+    let (_, source) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("source context");
+    let reference = InventorEmbeddedReference {
+        value_0: 0,
+        filetime: 0,
+        value_1: 0,
+        extended_value: None,
+        value_2: 0,
+        path: String::new(),
+        library_id: 0,
+        library_name: String::new(),
+        state: 0,
+        display_name: String::new(),
+        state_values: [0; 8],
+        source,
+    };
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        u64::try_from("inventor:ufrx:embedded-reference#0".len() - 1).expect("id length fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        project_ufrx_embedded_reference(&ctx, 0, &reference, &mut Vec::new()),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor UFRx embedded reference id"
+    ));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    assert!(
+        project_ufrx_embedded_reference(&ctx, 0, &reference, &mut Vec::new())
+            .expect("admitted embedded reference")
+            .is_some()
+    );
+}
+
+#[test]
+fn ufrx_occurrence_refuses_id_limit_before_creation() {
+    let bytes = [0_u8; 1];
+    let arena = DecodeArena::new();
+    let (_, source) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("source context");
+    let occurrence = UfrxOccurrence {
+        end_string_flag: 0,
+        file_reference_id: 0,
+        occurrence_id: 0,
+        header_value: 0,
+        title: None,
+        header_padding_words: 0,
+        source,
+    };
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        u64::try_from("inventor:ufrx:occurrence#0".len() - 1).expect("id length fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        project_ufrx_occurrence(&ctx, 0, &occurrence, &mut Vec::new()),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor UFRx occurrence id"
+    ));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    assert!(
+        project_ufrx_occurrence(&ctx, 0, &occurrence, &mut Vec::new())
+            .expect("admitted occurrence")
+            .is_some()
+    );
+}
+
+#[test]
+fn ufrx_representation_refuses_retained_limit_before_creation() {
+    let arena = DecodeArena::new();
+    let representation = UfrxRepresentationState {
+        prefix: 0,
+        active_representation: None,
+        secondary_active_lod_state: [0; 2],
+        active_model_state: "Primary".into(),
+        active_model_state_state: [0; 2],
+    };
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        u64::try_from("Primary".len() - 1).expect("name length fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        project_ufrx_representation(&ctx, &representation, &mut Vec::new()),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor UFRx active model state"
+    ));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    assert!(
+        project_ufrx_representation(&ctx, &representation, &mut Vec::new())
+            .expect("admitted representation")
+            .is_some()
     );
 }
 
@@ -628,6 +1079,9 @@ fn external_references_stream() -> Vec<u8> {
 
 #[test]
 fn protein_admission_keeps_later_assets_and_rejections() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
     let mut issues = Vec::new();
     let assets = ["bad.bin", "assets/InstanceProperties.bin"]
         .into_iter()
@@ -638,7 +1092,7 @@ fn protein_admission_keeps_later_assets_and_rejections() {
                     "guid": "asset-guid", "base": "", "asset_lib_id": "", "properties": {} }
             }))
             .expect("Protein asset wire fixture");
-            crate::decode::admit_protein_asset(wire, &mut issues)
+            crate::decode::admit_protein_asset(&ctx, wire, &mut issues).expect("service admission")
         })
         .collect::<Vec<_>>();
     assert_eq!(assets.len(), 1);
@@ -649,6 +1103,7 @@ fn protein_admission_keeps_later_assets_and_rejections() {
         .into_iter()
         .filter_map(|entry_name| {
             crate::decode::admit_protein_rejection(
+                &ctx,
                 crate::native::protein::ProteinRejectionRecordWire {
                     id: "rejection".into(),
                     entry_name: entry_name.into(),
@@ -657,6 +1112,7 @@ fn protein_admission_keeps_later_assets_and_rejections() {
                 },
                 &mut issues,
             )
+            .expect("service admission")
         })
         .collect::<Vec<_>>();
     assert_eq!(rejections.len(), 1);
