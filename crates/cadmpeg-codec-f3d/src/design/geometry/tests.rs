@@ -985,7 +985,7 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
 }
 
 #[test]
-fn unbranched_closed_sketch_components_project_as_ordered_profiles() {
+fn unbranched_closed_sketch_components_project_as_ordered_profiles_and_refuse_visit_limit() {
     let sketch = SketchId::mint("f3d:model:sketch#profile").unwrap();
     let line = |id: &str, start: Point2, end: Point2| {
         SketchEntity::new(
@@ -1031,7 +1031,19 @@ fn unbranched_closed_sketch_components_project_as_ordered_profiles() {
         ),
     ];
 
-    let profiles = closed_sketch_profiles(&sketch, &entities, 1.0e-6);
+    let profiles = closed_sketch_profiles(None, &sketch, &entities, 1.0e-6).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = closed_sketch_profiles(Some(&ctx), &sketch, &entities, 1.0e-6)
+        .err()
+        .expect("five edge visit marks exceed four admitted collection items");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+    ));
     assert_eq!(profiles.len(), 2);
     assert_eq!(profiles[0].len(), 1);
     assert_eq!(
@@ -1076,7 +1088,7 @@ fn branched_line_graph_projects_each_bounded_face() {
         line("synthetic:test:id#divider", (1.0, 0.0), (1.0, 1.0)),
     ];
 
-    let profiles = closed_sketch_profiles(&sketch, &entities, 1.0e-6);
+    let profiles = closed_sketch_profiles(None, &sketch, &entities, 1.0e-6).unwrap();
     assert_eq!(profiles.len(), 2);
     assert!(profiles.iter().all(|profile| profile.len() == 4));
     assert!(profiles.iter().all(|profile| profile
@@ -1109,7 +1121,7 @@ fn branched_line_graph_with_a_shared_corner_projects_bounded_faces() {
         line("synthetic:test:id#inner-left", (0.0, 41.0), (0.0, 47.0)),
     ];
 
-    let profiles = closed_sketch_profiles(&sketch, &entities, 1.0e-6);
+    let profiles = closed_sketch_profiles(None, &sketch, &entities, 1.0e-6).unwrap();
     assert_eq!(
         profiles
             .iter()

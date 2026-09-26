@@ -6,7 +6,8 @@ use crate::records::{
     sketch_relations::SketchRelationOperand,
     topology::extrude_selection::DesignExtrudeSelectionMember,
 };
-use cadmpeg_core::decode::{alloc_filled, WorkBudget};
+use cadmpeg_core::decode::{alloc_filled, DecodeContext, WorkBudget};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::scalar::PositiveLength;
@@ -2621,14 +2622,15 @@ fn point_distance(a: Point2, b: Point2) -> f64 {
 }
 
 pub(super) fn closed_sketch_profiles(
+    ctx: Option<&DecodeContext<'_>>,
     sketch: &cadmpeg_ir::sketches::SketchId,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     linear_tolerance: f64,
-) -> Vec<Vec<cadmpeg_ir::sketches::SketchEntityUse>> {
+) -> Result<Vec<Vec<cadmpeg_ir::sketches::SketchEntityUse>>, CodecError> {
     use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometryDefinition};
 
     if !linear_tolerance.is_finite() || linear_tolerance <= 0.0 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let mut profiles = entities
         .iter()
@@ -2654,7 +2656,7 @@ pub(super) fn closed_sketch_profiles(
         .collect::<Vec<_>>();
     if edges.is_empty() {
         profiles.sort_by(|a, b| a[0].entity.cmp(&b[0].entity));
-        return profiles;
+        return Ok(profiles);
     }
 
     let endpoints = edges
@@ -2700,10 +2702,9 @@ pub(super) fn closed_sketch_profiles(
         incident.sort_by(|a, b| edges[*a].0.id().cmp(edges[*b].0.id()));
     }
 
-    let Ok(mut visited) =
-        cadmpeg_core::decode::alloc_filled(edges.len(), false, "f3d edge component marks")
-    else {
-        return Vec::new();
+    let mut visited = match ctx {
+        Some(ctx) => ctx.alloc_filled(edges.len(), false, "f3d edge component marks")?,
+        None => alloc_filled(edges.len(), false, "f3d edge component marks")?,
     };
     let mut order = (0..edges.len()).collect::<Vec<_>>();
     order.sort_by(|a, b| edges[*a].0.id().cmp(edges[*b].0.id()));
@@ -2791,7 +2792,7 @@ pub(super) fn closed_sketch_profiles(
         }
     }
     profiles.sort_by(|a, b| a[0].entity.cmp(&b[0].entity));
-    profiles
+    Ok(profiles)
 }
 
 /// Half-edge walk over one branched line component. The local `outgoing` map
