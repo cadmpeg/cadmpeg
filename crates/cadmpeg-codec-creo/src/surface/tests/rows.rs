@@ -539,6 +539,174 @@ fn retains_named_spline_point_and_tangent_arrays() {
 }
 
 #[test]
+fn u_params_refuses_collection_limit_before_allocating_slots() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let payload = b"srf_prim_ptr(splsrf)\0\xe0\x02u_params\0\xf8\x04\x0f\x0f\x0f\x0f\xe3";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("small prototype payload is admitted");
+    let error = crate::surface::named_prototype_records(
+        &ctx,
+        payload,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect_err("four scalar slots exceed the three-item limit");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "admit Creo counted scalar array"
+    ));
+
+    let service = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &service)
+        .expect("small prototype payload is admitted");
+    let records = crate::surface::named_prototype_records(
+        &ctx,
+        payload,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect("service profile admits four slots");
+    let Some(SurfaceNamedValue::CountedScalarArray(array)) =
+        records[0].field("u_params").map(|field| &field.value)
+    else {
+        panic!("u_params must decode as a counted array");
+    };
+    assert_eq!(array.values(), &[Some(0.0); 4]);
+}
+
+#[test]
+fn v_params_refuses_collection_limit_before_allocating_slots() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let payload = b"srf_prim_ptr(splsrf)\0\xe0\x02v_params\0\xf8\x04\x0f\x0f\x0f\x0f\xe3";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("small prototype payload is admitted");
+    let error = crate::surface::named_prototype_records(
+        &ctx,
+        payload,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect_err("four scalar slots exceed the three-item limit");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "admit Creo counted scalar array"
+    ));
+
+    let service = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &service)
+        .expect("small prototype payload is admitted");
+    let records = crate::surface::named_prototype_records(
+        &ctx,
+        payload,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect("service profile admits four slots");
+    let Some(SurfaceNamedValue::CountedScalarArray(array)) =
+        records[0].field("v_params").map(|field| &field.value)
+    else {
+        panic!("v_params must decode as a counted array");
+    };
+    assert_eq!(array.values(), &[Some(0.0); 4]);
+}
+
+#[test]
+fn params_refuses_collection_limit_before_allocating_slots() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let payload = b"srf_prim_ptr(tab_cyl)\0\xe0\x02params\0\xf8\x03\xe6\xe3";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("small prototype payload is admitted");
+    let error = crate::surface::named_prototype_records(
+        &ctx,
+        payload,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect_err("three scalar slots exceed the two-item limit");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "admit Creo counted scalar array"
+    ));
+
+    let service = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &service)
+        .expect("small prototype payload is admitted");
+    let records = crate::surface::named_prototype_records(
+        &ctx,
+        payload,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect("service profile admits three slots");
+    let Some(SurfaceNamedValue::CountedScalarArray(array)) =
+        records[0].field("params").map(|field| &field.value)
+    else {
+        panic!("params must decode as a counted array");
+    };
+    assert_eq!(array.values(), &[Some(0.0); 3]);
+}
+
+#[test]
+fn counted_surface_arrays_share_the_collection_item_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let payload = b"srf_prim_ptr(splsrf)\0\
+        \xe0\x02u_params\0\xf8\x02\x0f\x0f\
+        \xe0\x02v_params\0\xf8\x02\x0f\x0f\xe3";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("small prototype payload is admitted");
+    let error = crate::surface::named_prototype_records(
+        &ctx,
+        payload,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect_err("two arrays require four items from one context");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "admit Creo counted scalar array"
+    ));
+
+    let service = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &service)
+        .expect("small prototype payload is admitted");
+    let records = crate::surface::named_prototype_records(
+        &ctx,
+        payload,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect("service profile admits both arrays");
+    for name in ["u_params", "v_params"] {
+        let Some(SurfaceNamedValue::CountedScalarArray(array)) =
+            records[0].field(name).map(|field| &field.value)
+        else {
+            panic!("{name} must decode as a counted array");
+        };
+        assert_eq!(array.values(), &[Some(0.0); 2]);
+    }
+}
+
+#[test]
 fn spline_slots_consume_unresolved_tokens_without_scanning_their_payloads() {
     let body = [0xaa, 0xe4, 1, 2, 3, 4, 5, 0xe4];
     let slots = named_spline_scalar_slots(
