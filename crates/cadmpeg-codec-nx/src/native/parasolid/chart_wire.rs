@@ -49,7 +49,7 @@ impl From<ParasolidChartRecord> for ChartWire {
             ext_support_uv: value
                 .data
                 .support_uv()
-                .map(|lane| lane.map(|lane| lane.as_slice().to_vec())),
+                .map(|lane| lane.map(|lane| lane.iter().map(|pair| **pair).collect())),
             point_layout: value.data.point_layout(),
             framing: value.framing,
             inflated_offset: value.inflated_offset,
