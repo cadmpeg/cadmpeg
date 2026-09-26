@@ -2,8 +2,8 @@
 //! Parameter-space curves, NURBS payloads, and source parameterization.
 
 use super::nurbs::{
-    admit_weight, non_finite_control_point, require_curve_cardinality, require_weight_lane,
-    KnotVector, NurbsCurve, NurbsError, PoleValue,
+    admit_finite_weight, admit_weight, non_finite_control_point, require_curve_cardinality,
+    require_weight_lane, KnotVector, NurbsCurve, NurbsError, PoleValue,
 };
 use super::{FitTolerance, MAX_GEOMETRY_NESTING};
 use crate::ids::PcurveId;
@@ -137,6 +137,22 @@ impl<P> PcurveNurbsPoles<P> {
         Ok(Self::Rational {
             points: weighted_poles_2(points, weights, |index, weight| {
                 admit_weight("pcurve poles", index, weight)
+            })?,
+        })
+    }
+
+    /// Pair parameter poles with finite weights, checking lane length and nonzero weights.
+    pub fn from_finite_lanes(
+        points: Vec<P>,
+        weights: Option<Vec<FiniteReal>>,
+    ) -> Result<Self, NurbsError> {
+        let Some(weights) = weights else {
+            return Ok(Self::Polynomial { points });
+        };
+        require_weight_lane("pcurve poles", points.len(), weights.len())?;
+        Ok(Self::Rational {
+            points: weighted_poles_2(points, weights, |index, weight| {
+                admit_finite_weight("pcurve poles", index, weight)
             })?,
         })
     }
@@ -1862,6 +1878,19 @@ impl PcurveNurbs {
         periodic: bool,
     ) -> Result<Self, NurbsError> {
         let poles = PcurveNurbsPoles::from_lanes(control_points, weights)?;
+        Self::new(degree, knots, poles, periodic)
+    }
+
+    /// Build from finite knot, pole, and weight lanes. Only relationships and
+    /// the nonzero weight condition are checked.
+    pub fn from_finite_lanes(
+        degree: u32,
+        knots: Vec<FiniteReal>,
+        control_points: Vec<FinitePoint2>,
+        weights: Option<Vec<FiniteReal>>,
+        periodic: bool,
+    ) -> Result<Self, NurbsError> {
+        let poles = PcurveNurbsPoles::from_finite_lanes(control_points, weights)?;
         Self::new(degree, knots, poles, periodic)
     }
 

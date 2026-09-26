@@ -1440,12 +1440,14 @@ Co 1001000 +2 1 +2 3 *
 fn refuses_a_pcurve_weight_lane_shorter_than_its_pole_lane() {
     let record = TextCurve2d::Nurbs(crate::brep::NurbsCurve2d {
         degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
+        knots: [0.0, 0.0, 1.0, 1.0]
+            .map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap())
+            .to_vec(),
         control_points: vec![
-            cadmpeg_ir::math::Point2::new(0.0, 0.0),
-            cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(0.0, 0.0)).unwrap(),
+            cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(1.0, 0.0)).unwrap(),
         ],
-        weights: Some(vec![1.0]),
+        weights: Some(vec![cadmpeg_ir::scalar::FiniteReal::ONE]),
         periodic: false,
     });
     let error = pcurve_geometry(&record).expect_err("a short weight lane is refused");
