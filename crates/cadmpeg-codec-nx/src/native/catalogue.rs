@@ -81,12 +81,13 @@ type CatalogueRow = FamilyRow<NativeModel, AnnotationBuilder, NativeNamespace, E
 
 /// Serialize a record family into its arena when non-empty.
 fn emit_arena<T: Serialize>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &[T],
     catalogue_row: &CatalogueRow,
     ns: &mut NativeNamespace,
 ) -> Result<(), NativeConvertError> {
     if !records.is_empty() {
-        ns.set_arena(catalogue_row.arena, records)?;
+        ns.set_arena(ctx, catalogue_row.arena, records)?;
     }
     Ok(())
 }
@@ -898,7 +899,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: None,
             note: note_display_jt_display_jt_indices,
         },
-        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_indices, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.display_jt_indices, r, ns),
         len: |m| m.display_jt.display_jt_indices.len(),
         counts_toward_emptiness: true,
     },
@@ -909,7 +910,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: None,
             note: note_display_jt_display_jt_documents,
         },
-        emit: |m, r, ns| emit_arena(m.display_jt.graph.documents(), r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, m.display_jt.graph.documents(), r, ns),
         len: |m| m.display_jt.graph.documents().len(),
         counts_toward_emptiness: false,
     },
@@ -920,7 +921,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("DISPLAY_JT_SEGMENT"),
             note: |m, r, tag, a| note_container(m.display_jt.graph.segments(), r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(m.display_jt.graph.segments(), r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, m.display_jt.graph.segments(), r, ns),
         len: |m| m.display_jt.graph.segments().len(),
         counts_toward_emptiness: false,
     },
@@ -933,7 +934,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(m.display_jt.graph.shape_lod_elements(), r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(m.display_jt.graph.shape_lod_elements(), r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, m.display_jt.graph.shape_lod_elements(), r, ns),
         len: |m| m.display_jt.graph.shape_lod_elements().len(),
         counts_toward_emptiness: false,
     },
@@ -946,7 +947,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.display_jt.display_jt_tri_strip_lod_headers, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_tri_strip_lod_headers, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.display_jt.display_jt_tri_strip_lod_headers, r, ns)
+        },
         len: |m| m.display_jt.display_jt_tri_strip_lod_headers.len(),
         counts_toward_emptiness: false,
     },
@@ -964,7 +967,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 );
             },
         },
-        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_initial_face_degree_symbols, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.display_jt.display_jt_initial_face_degree_symbols,
+                r,
+                ns,
+            )
+        },
         len: |m| m.display_jt.display_jt_initial_face_degree_symbols.len(),
         counts_toward_emptiness: false,
     },
@@ -982,7 +992,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 );
             },
         },
-        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_topology_packet_sequences, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.display_jt.display_jt_topology_packet_sequences,
+                r,
+                ns,
+            )
+        },
         len: |m| m.display_jt.display_jt_topology_packet_sequences.len(),
         counts_toward_emptiness: false,
     },
@@ -995,7 +1012,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.display_jt.display_jt_vertex_records_headers, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_vertex_records_headers, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.display_jt.display_jt_vertex_records_headers, r, ns)
+        },
         len: |m| m.display_jt.display_jt_vertex_records_headers.len(),
         counts_toward_emptiness: false,
     },
@@ -1008,7 +1027,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.display_jt.display_jt_coordinate_array_headers, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_coordinate_array_headers, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.display_jt.display_jt_coordinate_array_headers,
+                r,
+                ns,
+            )
+        },
         len: |m| m.display_jt.display_jt_coordinate_array_headers.len(),
         counts_toward_emptiness: false,
     },
@@ -1021,7 +1047,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.display_jt.display_jt_vertex_coordinates, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_vertex_coordinates, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.display_jt_vertex_coordinates, r, ns),
         len: |m| m.display_jt.display_jt_vertex_coordinates.len(),
         counts_toward_emptiness: false,
     },
@@ -1034,7 +1060,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.display_jt.display_jt_vertex_normals, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_vertex_normals, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.display_jt_vertex_normals, r, ns),
         len: |m| m.display_jt.display_jt_vertex_normals.len(),
         counts_toward_emptiness: false,
     },
@@ -1047,7 +1073,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.display_jt.display_jt_vertex_colors, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_vertex_colors, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.display_jt_vertex_colors, r, ns),
         len: |m| m.display_jt.display_jt_vertex_colors.len(),
         counts_toward_emptiness: false,
     },
@@ -1065,7 +1091,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 );
             },
         },
-        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_vertex_texture_coordinates, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.display_jt.display_jt_vertex_texture_coordinates,
+                r,
+                ns,
+            )
+        },
         len: |m| m.display_jt.display_jt_vertex_texture_coordinates.len(),
         counts_toward_emptiness: false,
     },
@@ -1076,7 +1109,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("DISPLAY_JT_VERTEX_FLAGS"),
             note: |m, r, tag, a| note_container(&m.display_jt.display_jt_vertex_flags, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_vertex_flags, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.display_jt_vertex_flags, r, ns),
         len: |m| m.display_jt.display_jt_vertex_flags.len(),
         counts_toward_emptiness: false,
     },
@@ -1094,8 +1127,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 );
             },
         },
-        emit: |m, r, ns| {
+        emit: |ctx, m, r, ns| {
             emit_arena(
+                ctx,
                 &m.display_jt.display_jt_geometric_transform_attributes,
                 r,
                 ns,
@@ -1113,7 +1147,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.display_jt.display_jt_material_attributes, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_material_attributes, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.display_jt_material_attributes, r, ns),
         len: |m| m.display_jt.display_jt_material_attributes.len(),
         counts_toward_emptiness: false,
     },
@@ -1126,7 +1160,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.display_jt.display_jt_polygon_meshes, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_polygon_meshes, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.display_jt_polygon_meshes, r, ns),
         len: |m| m.display_jt.display_jt_polygon_meshes.len(),
         counts_toward_emptiness: false,
     },
@@ -1139,7 +1173,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(m.display_jt.graph.compressed_element_sequences(), r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(m.display_jt.graph.compressed_element_sequences(), r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                m.display_jt.graph.compressed_element_sequences(),
+                r,
+                ns,
+            )
+        },
         len: |m| m.display_jt.graph.compressed_element_sequences().len(),
         counts_toward_emptiness: false,
     },
@@ -1152,7 +1193,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(m.display_jt.graph.compressed_elements(), r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(m.display_jt.graph.compressed_elements(), r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, m.display_jt.graph.compressed_elements(), r, ns),
         len: |m| m.display_jt.graph.compressed_elements().len(),
         counts_toward_emptiness: false,
     },
@@ -1165,7 +1206,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.display_jt.display_jt_string_property_atoms, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_string_property_atoms, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.display_jt.display_jt_string_property_atoms, r, ns)
+        },
         len: |m| m.display_jt.display_jt_string_property_atoms.len(),
         counts_toward_emptiness: false,
     },
@@ -1178,7 +1221,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.display_jt.display_jt_shape_lod_bindings, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_shape_lod_bindings, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.display_jt_shape_lod_bindings, r, ns),
         len: |m| m.display_jt.display_jt_shape_lod_bindings.len(),
         counts_toward_emptiness: false,
     },
@@ -1191,7 +1234,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.display_jt.display_jt_base_node_data, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_base_node_data, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.display_jt_base_node_data, r, ns),
         len: |m| m.display_jt.display_jt_base_node_data.len(),
         counts_toward_emptiness: false,
     },
@@ -1204,7 +1247,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.display_jt.display_jt_group_node_data, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_group_node_data, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.display_jt_group_node_data, r, ns),
         len: |m| m.display_jt.display_jt_group_node_data.len(),
         counts_toward_emptiness: false,
     },
@@ -1217,7 +1260,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.display_jt.display_jt_instance_nodes, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_instance_nodes, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.display_jt_instance_nodes, r, ns),
         len: |m| m.display_jt.display_jt_instance_nodes.len(),
         counts_toward_emptiness: false,
     },
@@ -1230,7 +1273,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.display_jt.display_jt_partition_nodes, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_partition_nodes, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.display_jt_partition_nodes, r, ns),
         len: |m| m.display_jt.display_jt_partition_nodes.len(),
         counts_toward_emptiness: false,
     },
@@ -1243,7 +1286,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.display_jt.display_jt_range_lod_nodes, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_range_lod_nodes, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.display_jt_range_lod_nodes, r, ns),
         len: |m| m.display_jt.display_jt_range_lod_nodes.len(),
         counts_toward_emptiness: false,
     },
@@ -1256,7 +1299,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.display_jt.display_jt_tri_strip_shape_nodes, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_tri_strip_shape_nodes, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.display_jt.display_jt_tri_strip_shape_nodes, r, ns)
+        },
         len: |m| m.display_jt.display_jt_tri_strip_shape_nodes.len(),
         counts_toward_emptiness: false,
     },
@@ -1267,7 +1312,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("UG_PART_SEGMENT_INDEX_ROW"),
             note: |m, r, tag, a| note_container(&m.segments.segment_index_rows, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.segments.segment_index_rows, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.segments.segment_index_rows, r, ns),
         len: |m| m.segments.segment_index_rows.len(),
         counts_toward_emptiness: true,
     },
@@ -1278,7 +1323,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("UG_PART_SEGMENT_STREAM_LINK"),
             note: |m, r, tag, a| note_container(&m.segments.segment_stream_links, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.segments.segment_stream_links, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.segments.segment_stream_links, r, ns),
         len: |m| m.segments.segment_stream_links.len(),
         counts_toward_emptiness: true,
     },
@@ -1289,7 +1334,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("UG_PART_SEGMENT_BODY_BINDING"),
             note: |m, r, tag, a| note_container(&m.segments.segment_body_bindings, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.segments.segment_body_bindings, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.segments.segment_body_bindings, r, ns),
         len: |m| m.segments.segment_body_bindings.len(),
         counts_toward_emptiness: true,
     },
@@ -1302,7 +1347,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.segments.segment_body_lineage_statuses, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.segments.segment_body_lineage_statuses, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.segments.segment_body_lineage_statuses, r, ns),
         len: |m| m.segments.segment_body_lineage_statuses.len(),
         counts_toward_emptiness: true,
     },
@@ -1313,7 +1358,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("PARASOLID_GROUP_RECORD"),
             note: |m, r, tag, a| note_per_stream(&m.parasolid.parasolid_group_records, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_group_records, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.parasolid_group_records, r, ns),
         len: |m| m.parasolid.parasolid_group_records.len(),
         counts_toward_emptiness: true,
     },
@@ -1321,7 +1366,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "parasolid_group_members",
         exactness: Exactness::Derived,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_group_members, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.parasolid_group_members, r, ns),
         len: |m| m.parasolid.parasolid_group_members.len(),
         counts_toward_emptiness: true,
     },
@@ -1334,7 +1379,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.parasolid_deltas_transmit_headers, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_deltas_transmit_headers, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.parasolid.parasolid_deltas_transmit_headers, r, ns)
+        },
         len: |m| m.parasolid.parasolid_deltas_transmit_headers.len(),
         counts_toward_emptiness: true,
     },
@@ -1352,8 +1399,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 );
             },
         },
-        emit: |m, r, ns| {
+        emit: |ctx, m, r, ns| {
             emit_arena(
+                ctx,
                 &m.parasolid.parasolid_deltas_terminal_null_references,
                 r,
                 ns,
@@ -1371,7 +1419,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.parasolid_deltas_records, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_deltas_records, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.parasolid_deltas_records, r, ns),
         len: |m| m.parasolid.parasolid_deltas_records.len(),
         counts_toward_emptiness: true,
     },
@@ -1384,7 +1432,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.parasolid_deltas_tombstones, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_deltas_tombstones, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.parasolid_deltas_tombstones, r, ns),
         len: |m| m.parasolid.parasolid_deltas_tombstones.len(),
         counts_toward_emptiness: true,
     },
@@ -1397,7 +1445,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.parasolid_deltas_body_revisions, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_deltas_body_revisions, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.parasolid_deltas_body_revisions, r, ns),
         len: |m| m.parasolid.parasolid_deltas_body_revisions.len(),
         counts_toward_emptiness: true,
     },
@@ -1415,7 +1463,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 );
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_deltas_term_use_numeric_tails, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.parasolid.parasolid_deltas_term_use_numeric_tails,
+                r,
+                ns,
+            )
+        },
         len: |m| m.parasolid.parasolid_deltas_term_use_numeric_tails.len(),
         counts_toward_emptiness: true,
     },
@@ -1433,7 +1488,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 );
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_deltas_tagged_reference_lanes, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.parasolid.parasolid_deltas_tagged_reference_lanes,
+                r,
+                ns,
+            )
+        },
         len: |m| m.parasolid.parasolid_deltas_tagged_reference_lanes.len(),
         counts_toward_emptiness: true,
     },
@@ -1446,7 +1508,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.parasolid_deltas_reference_type_maps, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_deltas_reference_type_maps, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.parasolid.parasolid_deltas_reference_type_maps,
+                r,
+                ns,
+            )
+        },
         len: |m| m.parasolid.parasolid_deltas_reference_type_maps.len(),
         counts_toward_emptiness: true,
     },
@@ -1464,7 +1533,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 );
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_deltas_reference_state_packets, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.parasolid.parasolid_deltas_reference_state_packets,
+                r,
+                ns,
+            )
+        },
         len: |m| m.parasolid.parasolid_deltas_reference_state_packets.len(),
         counts_toward_emptiness: true,
     },
@@ -1482,8 +1558,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 );
             },
         },
-        emit: |m, r, ns| {
+        emit: |ctx, m, r, ns| {
             emit_arena(
+                ctx,
                 &m.parasolid.parasolid_deltas_schema_reference_preambles,
                 r,
                 ns,
@@ -1510,8 +1587,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 );
             },
         },
-        emit: |m, r, ns| {
+        emit: |ctx, m, r, ns| {
             emit_arena(
+                ctx,
                 &m.parasolid.parasolid_deltas_reference_marker_packets,
                 r,
                 ns,
@@ -1534,7 +1612,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 );
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_deltas_type_150_state_packets, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.parasolid.parasolid_deltas_type_150_state_packets,
+                r,
+                ns,
+            )
+        },
         len: |m| m.parasolid.parasolid_deltas_type_150_state_packets.len(),
         counts_toward_emptiness: true,
     },
@@ -1552,8 +1637,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 );
             },
         },
-        emit: |m, r, ns| {
+        emit: |ctx, m, r, ns| {
             emit_arena(
+                ctx,
                 &m.parasolid.parasolid_deltas_inline_schema_declarations,
                 r,
                 ns,
@@ -1575,7 +1661,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.parasolid_deltas_inline_body_states, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_deltas_inline_body_states, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.parasolid.parasolid_deltas_inline_body_states, r, ns)
+        },
         len: |m| m.parasolid.parasolid_deltas_inline_body_states.len(),
         counts_toward_emptiness: true,
     },
@@ -1588,7 +1676,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.parasolid_deltas_residual_spans, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_deltas_residual_spans, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.parasolid_deltas_residual_spans, r, ns),
         len: |m| m.parasolid.parasolid_deltas_residual_spans.len(),
         counts_toward_emptiness: true,
     },
@@ -1601,7 +1689,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.parasolid_blend_surface_records, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_blend_surface_records, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.parasolid_blend_surface_records, r, ns),
         len: |m| m.parasolid.parasolid_blend_surface_records.len(),
         counts_toward_emptiness: true,
     },
@@ -1614,7 +1702,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.parasolid_blend_bound_records, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_blend_bound_records, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.parasolid_blend_bound_records, r, ns),
         len: |m| m.parasolid.parasolid_blend_bound_records.len(),
         counts_toward_emptiness: true,
     },
@@ -1627,7 +1715,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.parasolid_offset_surface_records, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_offset_surface_records, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.parasolid_offset_surface_records, r, ns),
         len: |m| m.parasolid.parasolid_offset_surface_records.len(),
         counts_toward_emptiness: true,
     },
@@ -1640,7 +1728,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.parasolid_trimmed_curve_records, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_trimmed_curve_records, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.parasolid_trimmed_curve_records, r, ns),
         len: |m| m.parasolid.parasolid_trimmed_curve_records.len(),
         counts_toward_emptiness: true,
     },
@@ -1653,7 +1741,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.parasolid_surface_curve_records, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_surface_curve_records, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.parasolid_surface_curve_records, r, ns),
         len: |m| m.parasolid.parasolid_surface_curve_records.len(),
         counts_toward_emptiness: true,
     },
@@ -1664,7 +1752,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: None,
             note: note_parasolid_parasolid_intersection_records,
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_intersection_records, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.parasolid_intersection_records, r, ns),
         len: |m| m.parasolid.parasolid_intersection_records.len(),
         counts_toward_emptiness: true,
     },
@@ -1677,7 +1765,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.parasolid_term_use_records, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_term_use_records, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.parasolid_term_use_records, r, ns),
         len: |m| m.parasolid.parasolid_term_use_records.len(),
         counts_toward_emptiness: true,
     },
@@ -1690,7 +1778,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.parasolid_support_uv_records, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_support_uv_records, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.parasolid_support_uv_records, r, ns),
         len: |m| m.parasolid.parasolid_support_uv_records.len(),
         counts_toward_emptiness: true,
     },
@@ -1701,7 +1789,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("CHART_s"),
             note: |m, r, tag, a| note_per_stream(&m.parasolid.parasolid_chart_records, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_chart_records, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.parasolid_chart_records, r, ns),
         len: |m| m.parasolid.parasolid_chart_records.len(),
         counts_toward_emptiness: true,
     },
@@ -1714,7 +1802,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.parasolid_attribute_definitions, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_attribute_definitions, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.parasolid_attribute_definitions, r, ns),
         len: |m| m.parasolid.parasolid_attribute_definitions.len(),
         counts_toward_emptiness: true,
     },
@@ -1722,7 +1810,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "parasolid_field_names_records",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_field_names_records, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.parasolid_field_names_records, r, ns),
         len: |m| m.parasolid.parasolid_field_names_records.len(),
         counts_toward_emptiness: true,
     },
@@ -1730,7 +1818,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "parasolid_attribute_field_names",
         exactness: Exactness::Derived,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_attribute_field_names, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.parasolid_attribute_field_names, r, ns),
         len: |m| m.parasolid.parasolid_attribute_field_names.len(),
         counts_toward_emptiness: true,
     },
@@ -1743,7 +1831,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.parasolid_entity_51_records, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_entity_51_records, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.parasolid_entity_51_records, r, ns),
         len: |m| m.parasolid.parasolid_entity_51_records.len(),
         counts_toward_emptiness: true,
     },
@@ -1756,7 +1844,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.parasolid_entity_52_integer_records, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_entity_52_integer_records, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.parasolid.parasolid_entity_52_integer_records, r, ns)
+        },
         len: |m| m.parasolid.parasolid_entity_52_integer_records.len(),
         counts_toward_emptiness: true,
     },
@@ -1769,7 +1859,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.parasolid_entity_53_double_records, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_entity_53_double_records, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.parasolid.parasolid_entity_53_double_records, r, ns)
+        },
         len: |m| m.parasolid.parasolid_entity_53_double_records.len(),
         counts_toward_emptiness: true,
     },
@@ -1782,7 +1874,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.parasolid_entity_54_string_records, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_entity_54_string_records, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.parasolid.parasolid_entity_54_string_records, r, ns)
+        },
         len: |m| m.parasolid.parasolid_entity_54_string_records.len(),
         counts_toward_emptiness: true,
     },
@@ -1795,7 +1889,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.parasolid_entity_vector_records, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_entity_vector_records, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.parasolid_entity_vector_records, r, ns),
         len: |m| m.parasolid.parasolid_entity_vector_records.len(),
         counts_toward_emptiness: true,
     },
@@ -1808,7 +1902,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.parasolid_entity_57_axis_records, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_entity_57_axis_records, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.parasolid_entity_57_axis_records, r, ns),
         len: |m| m.parasolid.parasolid_entity_57_axis_records.len(),
         counts_toward_emptiness: true,
     },
@@ -1821,7 +1915,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.parasolid_entity_58_tag_records, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_entity_58_tag_records, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.parasolid_entity_58_tag_records, r, ns),
         len: |m| m.parasolid.parasolid_entity_58_tag_records.len(),
         counts_toward_emptiness: true,
     },
@@ -1834,7 +1928,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.parasolid_entity_62_unicode_records, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_entity_62_unicode_records, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.parasolid.parasolid_entity_62_unicode_records, r, ns)
+        },
         len: |m| m.parasolid.parasolid_entity_62_unicode_records.len(),
         counts_toward_emptiness: true,
     },
@@ -1847,7 +1943,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.parasolid_entity_51_string_uses, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_entity_51_string_uses, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.parasolid_entity_51_string_uses, r, ns),
         len: |m| m.parasolid.parasolid_entity_51_string_uses.len(),
         counts_toward_emptiness: true,
     },
@@ -1860,7 +1956,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.parasolid_entity_51_numeric_uses, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_entity_51_numeric_uses, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.parasolid_entity_51_numeric_uses, r, ns),
         len: |m| m.parasolid.parasolid_entity_51_numeric_uses.len(),
         counts_toward_emptiness: true,
     },
@@ -1873,7 +1969,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_per_stream(&m.parasolid.parasolid_entity_51_structured_uses, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_entity_51_structured_uses, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.parasolid.parasolid_entity_51_structured_uses, r, ns)
+        },
         len: |m| m.parasolid.parasolid_entity_51_structured_uses.len(),
         counts_toward_emptiness: true,
     },
@@ -1884,7 +1982,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: None,
             note: note_parasolid_parasolid_attribute_class_uses,
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_attribute_class_uses, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.parasolid_attribute_class_uses, r, ns),
         len: |m| m.parasolid.parasolid_attribute_class_uses.len(),
         counts_toward_emptiness: true,
     },
@@ -1892,7 +1990,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "parasolid_attribute_field_uses",
         exactness: Exactness::Derived,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_attribute_field_uses, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.parasolid_attribute_field_uses, r, ns),
         len: |m| m.parasolid.parasolid_attribute_field_uses.len(),
         counts_toward_emptiness: true,
     },
@@ -1910,8 +2008,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 );
             },
         },
-        emit: |m, r, ns| {
+        emit: |ctx, m, r, ns| {
             emit_arena(
+                ctx,
                 &m.parasolid.parasolid_topology_attribute_list_references,
                 r,
                 ns,
@@ -1931,7 +2030,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: None,
             note: note_parasolid_parasolid_topology_attribute_class_uses,
         },
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_topology_attribute_class_uses, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.parasolid.parasolid_topology_attribute_class_uses,
+                r,
+                ns,
+            )
+        },
         len: |m| m.parasolid.parasolid_topology_attribute_class_uses.len(),
         counts_toward_emptiness: false,
     },
@@ -1942,7 +2048,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("OFFSET_STORE_OBJECT_FRAME"),
             note: |m, r, tag, a| note_container(&m.features.data_block_object_frames, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.features.data_block_object_frames, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.data_block_object_frames, r, ns),
         len: |m| m.features.data_block_object_frames.len(),
         counts_toward_emptiness: true,
     },
@@ -1953,7 +2059,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("OFFSET_STORE_NAMED_POINT"),
             note: |m, r, tag, a| note_container(&m.features.offset_store_named_points, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.features.offset_store_named_points, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.offset_store_named_points, r, ns),
         len: |m| m.features.offset_store_named_points.len(),
         counts_toward_emptiness: true,
     },
@@ -1966,7 +2072,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.features.feature_sketch_named_point_block_uses, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.features.feature_sketch_named_point_block_uses, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_sketch_named_point_block_uses,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_sketch_named_point_block_uses.len(),
         counts_toward_emptiness: true,
     },
@@ -1984,7 +2097,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 );
             },
         },
-        emit: |m, r, ns| emit_arena(&m.features.feature_sketch_preceding_named_point_uses, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_sketch_preceding_named_point_uses,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_sketch_preceding_named_point_uses.len(),
         counts_toward_emptiness: false,
     },
@@ -1995,7 +2115,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: None,
             note: note_features_feature_sketch_point_uses,
         },
-        emit: |m, r, ns| emit_arena(&m.features.feature_sketch_point_uses, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_sketch_point_uses, r, ns),
         len: |m| m.features.feature_sketch_point_uses.len(),
         counts_toward_emptiness: true,
     },
@@ -2013,7 +2133,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 );
             },
         },
-        emit: |m, r, ns| emit_arena(&m.features.feature_sketch_datum_csys_dependencies, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_sketch_datum_csys_dependencies,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_sketch_datum_csys_dependencies.len(),
         counts_toward_emptiness: true,
     },
@@ -2024,7 +2151,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: None,
             note: note_features_feature_input_block_identity_groups,
         },
-        emit: |m, r, ns| emit_arena(&m.features.feature_input_block_identity_groups, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.features.feature_input_block_identity_groups, r, ns)
+        },
         len: |m| m.features.feature_input_block_identity_groups.len(),
         counts_toward_emptiness: true,
     },
@@ -2035,7 +2164,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("OFFSET_STORE_ABR_REFERENCE_LANE"),
             note: |m, r, tag, a| note_container(&m.om.data_block_abr_reference_lanes, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.om.data_block_abr_reference_lanes, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.data_block_abr_reference_lanes, r, ns),
         len: |m| m.om.data_block_abr_reference_lanes.len(),
         counts_toward_emptiness: true,
     },
@@ -2046,7 +2175,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("UG_PART_SEGMENT_OM_LINK"),
             note: |m, r, tag, a| note_container(&m.segments.segment_om_links, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.segments.segment_om_links, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.segments.segment_om_links, r, ns),
         len: |m| m.segments.segment_om_links.len(),
         counts_toward_emptiness: true,
     },
@@ -2057,7 +2186,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("OM_RECORD_AREA"),
             note: |m, r, tag, a| note_container(&m.om.om_record_areas, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.om.om_record_areas, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.om_record_areas, r, ns),
         len: |m| m.om.om_record_areas.len(),
         counts_toward_emptiness: true,
     },
@@ -2068,7 +2197,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("OM_AUDIT_TRAIL_ROW"),
             note: |m, r, tag, a| note_container(&m.om.audit_trail_rows, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.om.audit_trail_rows, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.audit_trail_rows, r, ns),
         len: |m| m.om.audit_trail_rows.len(),
         counts_toward_emptiness: true,
     },
@@ -2079,7 +2208,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("OM_OPERATION_STATE_JOURNAL_GROUP"),
             note: |m, r, tag, a| note_container(&m.om.operation_state_journal_groups, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.om.operation_state_journal_groups, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.operation_state_journal_groups, r, ns),
         len: |m| m.om.operation_state_journal_groups.len(),
         counts_toward_emptiness: true,
     },
@@ -2090,7 +2219,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("OM_OPERATION_STATE_COUNTER"),
             note: |m, r, tag, a| note_container(&m.om.operation_state_counters, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.om.operation_state_counters, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.operation_state_counters, r, ns),
         len: |m| m.om.operation_state_counters.len(),
         counts_toward_emptiness: true,
     },
@@ -2105,13 +2234,13 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 }
             },
         },
-        emit: |m, r, ns| {
+        emit: |ctx, m, r, ns| {
             let groups =
                 m.om.operation_state_groups
                     .iter()
                     .flat_map(OmRollForwardStateTable::groups)
                     .collect::<Vec<_>>();
-            emit_arena(&groups, r, ns)
+            emit_arena(ctx, &groups, r, ns)
         },
         len: |m| {
             m.om.operation_state_groups
@@ -2128,7 +2257,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("OM_OPERATION_STATE_MESSAGE"),
             note: |m, r, tag, a| note_container(&m.om.operation_state_messages, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.om.operation_state_messages, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.operation_state_messages, r, ns),
         len: |m| m.om.operation_state_messages.len(),
         counts_toward_emptiness: true,
     },
@@ -2139,7 +2268,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("OM_OPERATION_STATE_STATUS"),
             note: |m, r, tag, a| note_container(&m.om.operation_state_statuses, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.om.operation_state_statuses, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.operation_state_statuses, r, ns),
         len: |m| m.om.operation_state_statuses.len(),
         counts_toward_emptiness: true,
     },
@@ -2150,7 +2279,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("OM_OPERATION_STATE_SLOT_LANE"),
             note: |m, r, tag, a| note_container(&m.om.operation_state_slot_lanes, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.om.operation_state_slot_lanes, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.operation_state_slot_lanes, r, ns),
         len: |m| m.om.operation_state_slot_lanes.len(),
         counts_toward_emptiness: true,
     },
@@ -2161,7 +2290,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("FEATURE_OPERATION_LABEL"),
             note: |m, r, tag, a| note_container(&m.features.feature_operation_labels, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.features.feature_operation_labels, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_operation_labels, r, ns),
         len: |m| m.features.feature_operation_labels.len(),
         counts_toward_emptiness: true,
     },
@@ -2172,7 +2301,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("FEATURE_SKETCH_RECORD"),
             note: |m, r, tag, a| note_container(&m.features.feature_sketch_records, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.features.feature_sketch_records, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_sketch_records, r, ns),
         len: |m| m.features.feature_sketch_records.len(),
         counts_toward_emptiness: true,
     },
@@ -2185,7 +2314,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.features.feature_sketch_payload_fixed_pairs, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.features.feature_sketch_payload_fixed_pairs, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.features.feature_sketch_payload_fixed_pairs, r, ns)
+        },
         len: |m| m.features.feature_sketch_payload_fixed_pairs.len(),
         counts_toward_emptiness: true,
     },
@@ -2198,7 +2329,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.features.feature_sketch_payload_mixed_pairs, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.features.feature_sketch_payload_mixed_pairs, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.features.feature_sketch_payload_mixed_pairs, r, ns)
+        },
         len: |m| m.features.feature_sketch_payload_mixed_pairs.len(),
         counts_toward_emptiness: true,
     },
@@ -2211,7 +2344,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.features.feature_sketch_fixed_points, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.features.feature_sketch_fixed_points, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_sketch_fixed_points, r, ns),
         len: |m| m.features.feature_sketch_fixed_points.len(),
         counts_toward_emptiness: true,
     },
@@ -2222,7 +2355,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("FEATURE_OPERATION_RECORD"),
             note: |m, r, tag, a| note_container(&m.features.feature_operation_records, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.features.feature_operation_records, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_operation_records, r, ns),
         len: |m| m.features.feature_operation_records.len(),
         counts_toward_emptiness: true,
     },
@@ -2235,7 +2368,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.features.feature_unlabeled_operation_records, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.features.feature_unlabeled_operation_records, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.features.feature_unlabeled_operation_records, r, ns)
+        },
         len: |m| m.features.feature_unlabeled_operation_records.len(),
         counts_toward_emptiness: true,
     },
@@ -2253,7 +2388,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 );
             },
         },
-        emit: |m, r, ns| emit_arena(&m.features.feature_unlabeled_operation_body_writes, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_unlabeled_operation_body_writes,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_unlabeled_operation_body_writes.len(),
         counts_toward_emptiness: true,
     },
@@ -2266,7 +2408,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.features.feature_operation_body_writes, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.features.feature_operation_body_writes, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_operation_body_writes, r, ns),
         len: |m| m.features.feature_operation_body_writes.len(),
         counts_toward_emptiness: true,
     },
@@ -2279,7 +2421,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.features.feature_operation_tagged_references, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.features.feature_operation_tagged_references, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.features.feature_operation_tagged_references, r, ns)
+        },
         len: |m| m.features.feature_operation_tagged_references.len(),
         counts_toward_emptiness: true,
     },
@@ -2297,7 +2441,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 );
             },
         },
-        emit: |m, r, ns| emit_arena(&m.features.feature_operation_data_block_references, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_operation_data_block_references,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_operation_data_block_references.len(),
         counts_toward_emptiness: true,
     },
@@ -2310,7 +2461,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.features.feature_operation_common_frames, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.features.feature_operation_common_frames, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_operation_common_frames, r, ns),
         len: |m| m.features.feature_operation_common_frames.len(),
         counts_toward_emptiness: true,
     },
@@ -2318,7 +2469,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_operation_terminal_discriminators",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_operation_terminal_discriminators, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_operation_terminal_discriminators,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_operation_terminal_discriminators.len(),
         counts_toward_emptiness: true,
     },
@@ -2331,7 +2489,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.features.feature_operation_terminal_frames, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.features.feature_operation_terminal_frames, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_operation_terminal_frames, r, ns),
         len: |m| m.features.feature_operation_terminal_frames.len(),
         counts_toward_emptiness: true,
     },
@@ -2344,7 +2502,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.features.feature_operation_state_journal_uses, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.features.feature_operation_state_journal_uses, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.features.feature_operation_state_journal_uses, r, ns)
+        },
         len: |m| m.features.feature_operation_state_journal_uses.len(),
         counts_toward_emptiness: true,
     },
@@ -2355,7 +2515,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("FEATURE_PAYLOAD_STRING"),
             note: |m, r, tag, a| note_container(&m.features.feature_payload_strings, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.features.feature_payload_strings, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_payload_strings, r, ns),
         len: |m| m.features.feature_payload_strings.len(),
         counts_toward_emptiness: true,
     },
@@ -2366,7 +2526,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("FEATURE_BODY_REFERENCE"),
             note: |m, r, tag, a| note_container(&m.features.feature_body_references, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.features.feature_body_references, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_body_references, r, ns),
         len: |m| m.features.feature_body_references.len(),
         counts_toward_emptiness: true,
     },
@@ -2379,7 +2539,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.features.feature_body_reference_occurrences, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.features.feature_body_reference_occurrences, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.features.feature_body_reference_occurrences, r, ns)
+        },
         len: |m| m.features.feature_body_reference_occurrences.len(),
         counts_toward_emptiness: false,
     },
@@ -2390,7 +2552,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("FEATURE_INPUT_BLOCK"),
             note: |m, r, tag, a| note_container(&m.features.feature_input_blocks, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.features.feature_input_blocks, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_input_blocks, r, ns),
         len: |m| m.features.feature_input_blocks.len(),
         counts_toward_emptiness: true,
     },
@@ -2403,7 +2565,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.features.feature_boolean_operations, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.features.feature_boolean_operations, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_boolean_operations, r, ns),
         len: |m| m.features.feature_boolean_operations.len(),
         counts_toward_emptiness: true,
     },
@@ -2414,7 +2576,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("EXPRESSION_DECLARATION"),
             note: |m, r, tag, a| note_container(&m.om.expression_declarations, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.om.expression_declarations, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.expression_declarations, r, ns),
         len: |m| m.om.expression_declarations.len(),
         counts_toward_emptiness: true,
     },
@@ -2425,7 +2587,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("OM_DATA_BLOCK_CONTROL_FORM"),
             note: |m, r, tag, a| note_container(&m.om.data_block_control_forms, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.om.data_block_control_forms, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.data_block_control_forms, r, ns),
         len: |m| m.om.data_block_control_forms.len(),
         counts_toward_emptiness: true,
     },
@@ -2436,7 +2598,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("OM_DATA_BLOCK_CONTROL_VALUE"),
             note: |m, r, tag, a| note_container(&m.om.data_block_control_values, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.om.data_block_control_values, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.data_block_control_values, r, ns),
         len: |m| m.om.data_block_control_values.len(),
         counts_toward_emptiness: true,
     },
@@ -2449,7 +2611,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.om.data_block_control_class_references, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.om.data_block_control_class_references, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.data_block_control_class_references, r, ns),
         len: |m| m.om.data_block_control_class_references.len(),
         counts_toward_emptiness: true,
     },
@@ -2460,7 +2622,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("OM_DATA_BLOCK_CONTROL_INDEX_VALUE"),
             note: |m, r, tag, a| note_container(&m.om.data_block_control_index_values, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.om.data_block_control_index_values, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.data_block_control_index_values, r, ns),
         len: |m| m.om.data_block_control_index_values.len(),
         counts_toward_emptiness: true,
     },
@@ -2471,7 +2633,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("OM_DATA_BLOCK_CONTROL_REFERENCE"),
             note: |m, r, tag, a| note_container(&m.om.data_block_control_references, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.om.data_block_control_references, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.data_block_control_references, r, ns),
         len: |m| m.om.data_block_control_references.len(),
         counts_toward_emptiness: true,
     },
@@ -2482,7 +2644,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("OM_DATA_BLOCK_CONTROL_HANDLE_PAIR"),
             note: |m, r, tag, a| note_container(&m.om.data_block_control_handle_pairs, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.om.data_block_control_handle_pairs, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.data_block_control_handle_pairs, r, ns),
         len: |m| m.om.data_block_control_handle_pairs.len(),
         counts_toward_emptiness: true,
     },
@@ -2493,7 +2655,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("OM_OBJECT_RECORD_HANDLE_PAIR"),
             note: |m, r, tag, a| note_container(&m.om.object_record_handle_pairs, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.om.object_record_handle_pairs, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.object_record_handle_pairs, r, ns),
         len: |m| m.om.object_record_handle_pairs.len(),
         counts_toward_emptiness: true,
     },
@@ -2504,7 +2666,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("OM_DATA_BLOCK_REFERENCE"),
             note: |m, r, tag, a| note_container(&m.om.data_block_references, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.om.data_block_references, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.data_block_references, r, ns),
         len: |m| m.om.data_block_references.len(),
         counts_toward_emptiness: true,
     },
@@ -2517,7 +2679,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                 note_container(&m.features.feature_parameter_bindings, r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.features.feature_parameter_bindings, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_parameter_bindings, r, ns),
         len: |m| m.features.feature_parameter_bindings.len(),
         counts_toward_emptiness: true,
     },
@@ -2528,7 +2690,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: None,
             note: note_features_feature_parameter_uses,
         },
-        emit: |m, r, ns| emit_arena(&m.features.feature_parameter_uses, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_parameter_uses, r, ns),
         len: |m| m.features.feature_parameter_uses.len(),
         counts_toward_emptiness: true,
     },
@@ -2539,7 +2701,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("OM_STORE_VERSION"),
             note: |m, r, tag, a| note_container(&m.om.store_headers, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.om.store_headers, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.store_headers, r, ns),
         len: |m| m.om.store_headers.len(),
         counts_toward_emptiness: true,
     },
@@ -2550,7 +2712,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("EXTREFSTREAM_STRING"),
             note: |m, r, tag, a| note_container(&m.om.external_references, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.om.external_references, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.external_references, r, ns),
         len: |m| m.om.external_references.len(),
         counts_toward_emptiness: true,
     },
@@ -2561,7 +2723,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("FAST_LOAD_COMPONENT_PROTOTYPE"),
             note: |m, r, tag, a| note_container(&m.structure.prototypes, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.structure.prototypes, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.structure.prototypes, r, ns),
         len: |m| m.structure.prototypes.len(),
         counts_toward_emptiness: true,
     },
@@ -2572,9 +2734,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("FAST_LOAD_COMPONENT_OCCURRENCE"),
             note: |m, r, tag, a| note_container(m.structure.occurrences.as_slice(), r, tag, a),
         },
-        emit: |m, r, ns| {
+        emit: |ctx, m, r, ns| {
             if !m.structure.occurrences.as_slice().is_empty() {
-                ns.set_arena_from(r.arena, m.structure.occurrences.wire_records())?;
+                ns.set_arena_from(ctx, r.arena, m.structure.occurrences.wire_records())?;
             }
             Ok(())
         },
@@ -2588,7 +2750,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("FAST_LOAD_COMPONENT_UUID"),
             note: |m, r, tag, a| note_container(&m.structure.uuids, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.structure.uuids, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.structure.uuids, r, ns),
         len: |m| m.structure.uuids.len(),
         counts_toward_emptiness: true,
     },
@@ -2599,7 +2761,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("FAST_LOAD_COMPONENT_OBJECT_GROUP"),
             note: |m, r, tag, a| note_container(&m.structure.object_groups, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.structure.object_groups, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.structure.object_groups, r, ns),
         len: |m| m.structure.object_groups.len(),
         counts_toward_emptiness: true,
     },
@@ -2610,7 +2772,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("SAVED_TOGGLE_STREAM"),
             note: |m, r, tag, a| note_container(&m.toggle.streams, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.toggle.streams, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.toggle.streams, r, ns),
         len: |m| m.toggle.streams.len(),
         counts_toward_emptiness: true,
     },
@@ -2621,7 +2783,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("SAVED_TOGGLE_ENTRY"),
             note: |m, r, tag, a| note_container(&m.toggle.entries, r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.toggle.entries, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.toggle.entries, r, ns),
         len: |m| m.toggle.entries.len(),
         counts_toward_emptiness: true,
     },
@@ -2629,7 +2791,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "external_reference_records",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.external_reference_records, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.external_reference_records, r, ns),
         len: |m| m.om.external_reference_records.len(),
         counts_toward_emptiness: true,
     },
@@ -2637,7 +2799,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "material_texture_assets",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.material_texture_assets, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.material_texture_assets, r, ns),
         len: |m| m.om.material_texture_assets.len(),
         counts_toward_emptiness: true,
     },
@@ -2645,7 +2807,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "material_texture_catalog_entries",
         exactness: Exactness::Derived,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.material_texture_catalog_entries, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.material_texture_catalog_entries, r, ns),
         len: |m| m.om.material_texture_catalog_entries.len(),
         counts_toward_emptiness: true,
     },
@@ -2653,7 +2815,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_body_segment_uses",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_body_segment_uses, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_body_segment_uses, r, ns),
         len: |m| m.features.feature_body_segment_uses.len(),
         counts_toward_emptiness: false,
     },
@@ -2661,7 +2823,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_operation_body_image_segment_uses",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_operation_body_image_segment_uses, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_operation_body_image_segment_uses,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_operation_body_image_segment_uses.len(),
         counts_toward_emptiness: false,
     },
@@ -2669,7 +2838,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_operation_body_partition_uses",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_operation_body_partition_uses, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_operation_body_partition_uses,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_operation_body_partition_uses.len(),
         counts_toward_emptiness: false,
     },
@@ -2677,8 +2853,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_operation_body_identity_segment_uses",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| {
+        emit: |ctx, m, r, ns| {
             emit_arena(
+                ctx,
                 &m.features.feature_operation_body_identity_segment_uses,
                 r,
                 ns,
@@ -2695,7 +2872,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_body_write_group_partition_uses",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_body_write_group_partition_uses, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_body_write_group_partition_uses,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_body_write_group_partition_uses.len(),
         counts_toward_emptiness: false,
     },
@@ -2703,7 +2887,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_body_data_block_uses",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_body_data_block_uses, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_body_data_block_uses, r, ns),
         len: |m| m.features.feature_body_data_block_uses.len(),
         counts_toward_emptiness: false,
     },
@@ -2711,7 +2895,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_symbolic_threads",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_symbolic_threads, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_symbolic_threads, r, ns),
         len: |m| m.features.feature_symbolic_threads.len(),
         counts_toward_emptiness: true,
     },
@@ -2719,7 +2903,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_threaded_hole_templates",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_threaded_hole_templates, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_threaded_hole_templates, r, ns),
         len: |m| m.features.feature_threaded_hole_templates.len(),
         counts_toward_emptiness: true,
     },
@@ -2727,7 +2911,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_simple_hole_templates",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_simple_hole_templates, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_simple_hole_templates, r, ns),
         len: |m| m.features.feature_simple_hole_templates.len(),
         counts_toward_emptiness: true,
     },
@@ -2735,7 +2919,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_simple_hole_repeated_scalar_lanes",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_simple_hole_repeated_scalar_lanes, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_simple_hole_repeated_scalar_lanes,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_simple_hole_repeated_scalar_lanes.len(),
         counts_toward_emptiness: true,
     },
@@ -2743,8 +2934,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_simple_hole_repeated_scalar_lane_block_references",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| {
+        emit: |ctx, m, r, ns| {
             emit_arena(
+                ctx,
                 &m.features
                     .feature_simple_hole_repeated_scalar_lane_block_references,
                 r,
@@ -2762,7 +2954,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_simple_hole_construction_groups",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_simple_hole_construction_groups, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_simple_hole_construction_groups,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_simple_hole_construction_groups.len(),
         counts_toward_emptiness: true,
     },
@@ -2770,8 +2969,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_hole_package_construction_group_lanes",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| {
+        emit: |ctx, m, r, ns| {
             emit_arena(
+                ctx,
                 &m.features.feature_hole_package_construction_group_lanes,
                 r,
                 ns,
@@ -2788,8 +2988,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_hole_package_construction_group_uses",
         exactness: Exactness::Derived,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| {
+        emit: |ctx, m, r, ns| {
             emit_arena(
+                ctx,
                 &m.features.feature_hole_package_construction_group_uses,
                 r,
                 ns,
@@ -2806,7 +3007,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_datum_csys_constructions",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_datum_csys_constructions, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_datum_csys_constructions, r, ns),
         len: |m| m.features.feature_datum_csys_constructions.len(),
         counts_toward_emptiness: true,
     },
@@ -2814,7 +3015,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_datum_csys_column_row_uses",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_datum_csys_column_row_uses, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.features.feature_datum_csys_column_row_uses, r, ns)
+        },
         len: |m| m.features.feature_datum_csys_column_row_uses.len(),
         counts_toward_emptiness: false,
     },
@@ -2822,7 +3025,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_datum_csys_payloads",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_datum_csys_payloads, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_datum_csys_payloads, r, ns),
         len: |m| m.features.feature_datum_csys_payloads.len(),
         counts_toward_emptiness: false,
     },
@@ -2830,7 +3033,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_datum_csys_payload_scalar_pairs",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_datum_csys_payload_scalar_pairs, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_datum_csys_payload_scalar_pairs,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_datum_csys_payload_scalar_pairs.len(),
         counts_toward_emptiness: false,
     },
@@ -2838,7 +3048,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_datum_csys_payload_fixed_pairs",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_datum_csys_payload_fixed_pairs, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_datum_csys_payload_fixed_pairs,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_datum_csys_payload_fixed_pairs.len(),
         counts_toward_emptiness: false,
     },
@@ -2846,7 +3063,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_datum_csys_payload_scalars",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_datum_csys_payload_scalars, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.features.feature_datum_csys_payload_scalars, r, ns)
+        },
         len: |m| m.features.feature_datum_csys_payload_scalars.len(),
         counts_toward_emptiness: false,
     },
@@ -2854,7 +3073,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_datum_csys_descriptors",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_datum_csys_descriptors, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_datum_csys_descriptors, r, ns),
         len: |m| m.features.feature_datum_csys_descriptors.len(),
         counts_toward_emptiness: false,
     },
@@ -2862,7 +3081,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_datum_csys_block_uses",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_datum_csys_block_uses, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_datum_csys_block_uses, r, ns),
         len: |m| m.features.feature_datum_csys_block_uses.len(),
         counts_toward_emptiness: true,
     },
@@ -2870,7 +3089,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_datum_plane_headers",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_datum_plane_headers, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_datum_plane_headers, r, ns),
         len: |m| m.features.feature_datum_plane_headers.len(),
         counts_toward_emptiness: true,
     },
@@ -2878,7 +3097,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_datum_plane_block_uses",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_datum_plane_block_uses, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_datum_plane_block_uses, r, ns),
         len: |m| m.features.feature_datum_plane_block_uses.len(),
         counts_toward_emptiness: true,
     },
@@ -2886,7 +3105,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_datum_plane_payloads",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_datum_plane_payloads, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_datum_plane_payloads, r, ns),
         len: |m| m.features.feature_datum_plane_payloads.len(),
         counts_toward_emptiness: true,
     },
@@ -2894,7 +3113,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_datum_plane_payload_scalar_pairs",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_datum_plane_payload_scalar_pairs, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_datum_plane_payload_scalar_pairs,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_datum_plane_payload_scalar_pairs.len(),
         counts_toward_emptiness: false,
     },
@@ -2902,7 +3128,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_datum_plane_descriptors",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_datum_plane_descriptors, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_datum_plane_descriptors, r, ns),
         len: |m| m.features.feature_datum_plane_descriptors.len(),
         counts_toward_emptiness: false,
     },
@@ -2910,7 +3136,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_datum_plane_csys_identity_uses",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_datum_plane_csys_identity_uses, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_datum_plane_csys_identity_uses,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_datum_plane_csys_identity_uses.len(),
         counts_toward_emptiness: false,
     },
@@ -2918,7 +3151,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_sketch_references",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_sketch_references, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_sketch_references, r, ns),
         len: |m| m.features.feature_sketch_references.len(),
         counts_toward_emptiness: true,
     },
@@ -2926,7 +3159,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_projected_curve_references",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_projected_curve_references, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.features.feature_projected_curve_references, r, ns)
+        },
         len: |m| m.features.feature_projected_curve_references.len(),
         counts_toward_emptiness: true,
     },
@@ -2934,8 +3169,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_projected_curve_construction_payloads",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| {
+        emit: |ctx, m, r, ns| {
             emit_arena(
+                ctx,
                 &m.features.feature_projected_curve_construction_payloads,
                 r,
                 ns,
@@ -2952,8 +3188,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_projected_curve_construction_strings",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| {
+        emit: |ctx, m, r, ns| {
             emit_arena(
+                ctx,
                 &m.features.feature_projected_curve_construction_strings,
                 r,
                 ns,
@@ -2970,7 +3207,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_fset_reference_graphs",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_fset_reference_graphs, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_fset_reference_graphs, r, ns),
         len: |m| m.features.feature_fset_reference_graphs.len(),
         counts_toward_emptiness: true,
     },
@@ -2978,7 +3215,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_fset_construction_payloads",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_fset_construction_payloads, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.features.feature_fset_construction_payloads, r, ns)
+        },
         len: |m| m.features.feature_fset_construction_payloads.len(),
         counts_toward_emptiness: true,
     },
@@ -2986,7 +3225,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_delete_reference_fields",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_delete_reference_fields, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_delete_reference_fields, r, ns),
         len: |m| m.features.feature_delete_reference_fields.len(),
         counts_toward_emptiness: true,
     },
@@ -2994,7 +3233,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_delete_construction_payloads",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_delete_construction_payloads, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.features.feature_delete_construction_payloads, r, ns)
+        },
         len: |m| m.features.feature_delete_construction_payloads.len(),
         counts_toward_emptiness: true,
     },
@@ -3002,7 +3243,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_pattern_references",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_pattern_references, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_pattern_references, r, ns),
         len: |m| m.features.feature_pattern_references.len(),
         counts_toward_emptiness: true,
     },
@@ -3010,7 +3251,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_pattern_counted_reference_lanes",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_pattern_counted_reference_lanes, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_pattern_counted_reference_lanes,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_pattern_counted_reference_lanes.len(),
         counts_toward_emptiness: true,
     },
@@ -3018,7 +3266,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_pattern_construction_payloads",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_pattern_construction_payloads, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_pattern_construction_payloads,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_pattern_construction_payloads.len(),
         counts_toward_emptiness: true,
     },
@@ -3026,7 +3281,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_pattern_construction_strings",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_pattern_construction_strings, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.features.feature_pattern_construction_strings, r, ns)
+        },
         len: |m| m.features.feature_pattern_construction_strings.len(),
         counts_toward_emptiness: true,
     },
@@ -3034,7 +3291,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_pattern_construction_fixed_lanes",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_pattern_construction_fixed_lanes, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_pattern_construction_fixed_lanes,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_pattern_construction_fixed_lanes.len(),
         counts_toward_emptiness: true,
     },
@@ -3042,7 +3306,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_pattern_transform_lanes",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_pattern_transform_lanes, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_pattern_transform_lanes, r, ns),
         len: |m| m.features.feature_pattern_transform_lanes.len(),
         counts_toward_emptiness: true,
     },
@@ -3050,7 +3314,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_multi_instance_output_lanes",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_multi_instance_output_lanes, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.features.feature_multi_instance_output_lanes, r, ns)
+        },
         len: |m| m.features.feature_multi_instance_output_lanes.len(),
         counts_toward_emptiness: true,
     },
@@ -3058,7 +3324,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_identical_instance_output_lanes",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_identical_instance_output_lanes, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_identical_instance_output_lanes,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_identical_instance_output_lanes.len(),
         counts_toward_emptiness: true,
     },
@@ -3066,7 +3339,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_point_construction_headers",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_point_construction_headers, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.features.feature_point_construction_headers, r, ns)
+        },
         len: |m| m.features.feature_point_construction_headers.len(),
         counts_toward_emptiness: true,
     },
@@ -3074,7 +3349,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_point_construction_scalar_lanes",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_point_construction_scalar_lanes, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_point_construction_scalar_lanes,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_point_construction_scalar_lanes.len(),
         counts_toward_emptiness: true,
     },
@@ -3082,7 +3364,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_draft_construction_references",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_draft_construction_references, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_draft_construction_references,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_draft_construction_references.len(),
         counts_toward_emptiness: true,
     },
@@ -3090,7 +3379,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_draft_construction_index_lanes",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_draft_construction_index_lanes, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_draft_construction_index_lanes,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_draft_construction_index_lanes.len(),
         counts_toward_emptiness: true,
     },
@@ -3098,7 +3394,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_draft_construction_payloads",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_draft_construction_payloads, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.features.feature_draft_construction_payloads, r, ns)
+        },
         len: |m| m.features.feature_draft_construction_payloads.len(),
         counts_toward_emptiness: true,
     },
@@ -3106,7 +3404,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_draft_construction_graph_payloads",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_draft_construction_graph_payloads, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_draft_construction_graph_payloads,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_draft_construction_graph_payloads.len(),
         counts_toward_emptiness: true,
     },
@@ -3114,7 +3419,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_draft_construction_fixed_lanes",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_draft_construction_fixed_lanes, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_draft_construction_fixed_lanes,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_draft_construction_fixed_lanes.len(),
         counts_toward_emptiness: true,
     },
@@ -3122,7 +3434,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_draft_construction_binary32_lanes",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_draft_construction_binary32_lanes, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_draft_construction_binary32_lanes,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_draft_construction_binary32_lanes.len(),
         counts_toward_emptiness: true,
     },
@@ -3130,7 +3449,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_draft_construction_graph_strings",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_draft_construction_graph_strings, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_draft_construction_graph_strings,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_draft_construction_graph_strings.len(),
         counts_toward_emptiness: true,
     },
@@ -3138,8 +3464,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_draft_construction_identity_frames",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| {
+        emit: |ctx, m, r, ns| {
             emit_arena(
+                ctx,
                 &m.features.feature_draft_construction_identity_frames,
                 r,
                 ns,
@@ -3152,7 +3479,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_draft_construction_terminal_lanes",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_draft_construction_terminal_lanes, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_draft_construction_terminal_lanes,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_draft_construction_terminal_lanes.len(),
         counts_toward_emptiness: true,
     },
@@ -3160,7 +3494,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_surface_construction_references",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_surface_construction_references, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_surface_construction_references,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_surface_construction_references.len(),
         counts_toward_emptiness: true,
     },
@@ -3168,7 +3509,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_surface_construction_payloads",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_surface_construction_payloads, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_surface_construction_payloads,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_surface_construction_payloads.len(),
         counts_toward_emptiness: true,
     },
@@ -3176,7 +3524,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_surface_construction_scalar_pairs",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_surface_construction_scalar_pairs, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_surface_construction_scalar_pairs,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_surface_construction_scalar_pairs.len(),
         counts_toward_emptiness: true,
     },
@@ -3184,7 +3539,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_surface_construction_strings",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_surface_construction_strings, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.features.feature_surface_construction_strings, r, ns)
+        },
         len: |m| m.features.feature_surface_construction_strings.len(),
         counts_toward_emptiness: true,
     },
@@ -3192,7 +3549,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_surface_construction_branches",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_surface_construction_branches, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_surface_construction_branches,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_surface_construction_branches.len(),
         counts_toward_emptiness: true,
     },
@@ -3200,7 +3564,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_swp104_leading_branches",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_swp104_leading_branches, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_swp104_leading_branches, r, ns),
         len: |m| m.features.feature_swp104_leading_branches.len(),
         counts_toward_emptiness: true,
     },
@@ -3208,8 +3572,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_thru_curve_construction_branch_groups",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| {
+        emit: |ctx, m, r, ns| {
             emit_arena(
+                ctx,
                 &m.features.feature_thru_curve_construction_branch_groups,
                 r,
                 ns,
@@ -3226,7 +3591,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_thru_curve_construction_envelopes",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_thru_curve_construction_envelopes, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_thru_curve_construction_envelopes,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_thru_curve_construction_envelopes.len(),
         counts_toward_emptiness: true,
     },
@@ -3234,7 +3606,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_extrude_profile_references",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_extrude_profile_references, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.features.feature_extrude_profile_references, r, ns)
+        },
         len: |m| m.features.feature_extrude_profile_references.len(),
         counts_toward_emptiness: true,
     },
@@ -3242,7 +3616,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_extrude_payload_headers",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_extrude_payload_headers, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_extrude_payload_headers, r, ns),
         len: |m| m.features.feature_extrude_payload_headers.len(),
         counts_toward_emptiness: true,
     },
@@ -3250,7 +3624,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_operation_body_scalar_triples",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_operation_body_scalar_triples, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_operation_body_scalar_triples,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_operation_body_scalar_triples.len(),
         counts_toward_emptiness: true,
     },
@@ -3258,7 +3639,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_operation_body_members",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_operation_body_members, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_operation_body_members, r, ns),
         len: |m| m.features.feature_operation_body_members.len(),
         counts_toward_emptiness: true,
     },
@@ -3266,7 +3647,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_operation_body_operands",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_operation_body_operands, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_operation_body_operands, r, ns),
         len: |m| m.features.feature_operation_body_operands.len(),
         counts_toward_emptiness: true,
     },
@@ -3274,7 +3655,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_operation_body_11_continuations",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_operation_body_11_continuations, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_operation_body_11_continuations,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_operation_body_11_continuations.len(),
         counts_toward_emptiness: true,
     },
@@ -3282,7 +3670,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_operation_body_reference_lanes",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_operation_body_reference_lanes, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_operation_body_reference_lanes,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_operation_body_reference_lanes.len(),
         counts_toward_emptiness: true,
     },
@@ -3290,7 +3685,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_extrude_construction_profiles",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_extrude_construction_profiles, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_extrude_construction_profiles,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_extrude_construction_profiles.len(),
         counts_toward_emptiness: true,
     },
@@ -3298,7 +3700,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_extrude_payload_32_branches",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_extrude_payload_32_branches, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.features.feature_extrude_payload_32_branches, r, ns)
+        },
         len: |m| m.features.feature_extrude_payload_32_branches.len(),
         counts_toward_emptiness: true,
     },
@@ -3306,7 +3710,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_extrude_32_constructions",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_extrude_32_constructions, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_extrude_32_constructions, r, ns),
         len: |m| m.features.feature_extrude_32_constructions.len(),
         counts_toward_emptiness: true,
     },
@@ -3314,7 +3718,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_block_construction_references",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_block_construction_references, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_block_construction_references,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_block_construction_references.len(),
         counts_toward_emptiness: true,
     },
@@ -3322,7 +3733,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_block_constructions",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_block_constructions, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_block_constructions, r, ns),
         len: |m| m.features.feature_block_constructions.len(),
         counts_toward_emptiness: true,
     },
@@ -3330,7 +3741,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_block_construction_payloads",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_block_construction_payloads, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.features.feature_block_construction_payloads, r, ns)
+        },
         len: |m| m.features.feature_block_construction_payloads.len(),
         counts_toward_emptiness: true,
     },
@@ -3338,7 +3751,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_block_payload_scalars",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_block_payload_scalars, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_block_payload_scalars, r, ns),
         len: |m| m.features.feature_block_payload_scalars.len(),
         counts_toward_emptiness: true,
     },
@@ -3346,7 +3759,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_block_payload_names",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_block_payload_names, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_block_payload_names, r, ns),
         len: |m| m.features.feature_block_payload_names.len(),
         counts_toward_emptiness: true,
     },
@@ -3354,7 +3767,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_block_payload_named_records",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_block_payload_named_records, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.features.feature_block_payload_named_records, r, ns)
+        },
         len: |m| m.features.feature_block_payload_named_records.len(),
         counts_toward_emptiness: true,
     },
@@ -3362,7 +3777,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_block_payload_points",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_block_payload_points, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_block_payload_points, r, ns),
         len: |m| m.features.feature_block_payload_points.len(),
         counts_toward_emptiness: true,
     },
@@ -3370,7 +3785,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_block_payload_point_groups",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_block_payload_point_groups, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.features.feature_block_payload_point_groups, r, ns)
+        },
         len: |m| m.features.feature_block_payload_point_groups.len(),
         counts_toward_emptiness: true,
     },
@@ -3378,7 +3795,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_block_dimensions",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_block_dimensions, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_block_dimensions, r, ns),
         len: |m| m.features.feature_block_dimensions.len(),
         counts_toward_emptiness: false,
     },
@@ -3386,7 +3803,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_sketch_construction_inputs",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_sketch_construction_inputs, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.features.feature_sketch_construction_inputs, r, ns)
+        },
         len: |m| m.features.feature_sketch_construction_inputs.len(),
         counts_toward_emptiness: true,
     },
@@ -3394,7 +3813,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_sketch_construction_payloads",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_sketch_construction_payloads, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.features.feature_sketch_construction_payloads, r, ns)
+        },
         len: |m| m.features.feature_sketch_construction_payloads.len(),
         counts_toward_emptiness: true,
     },
@@ -3402,7 +3823,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_sketch_payload_coordinate_pairs",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_sketch_payload_coordinate_pairs, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_sketch_payload_coordinate_pairs,
+                r,
+                ns,
+            )
+        },
         len: |m| m.features.feature_sketch_payload_coordinate_pairs.len(),
         counts_toward_emptiness: false,
     },
@@ -3410,7 +3838,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_sketch_payload_scalars",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_sketch_payload_scalars, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_sketch_payload_scalars, r, ns),
         len: |m| m.features.feature_sketch_payload_scalars.len(),
         counts_toward_emptiness: true,
     },
@@ -3418,7 +3846,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_sketch_payload_scalar_lanes",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_sketch_payload_scalar_lanes, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.features.feature_sketch_payload_scalar_lanes, r, ns)
+        },
         len: |m| m.features.feature_sketch_payload_scalar_lanes.len(),
         counts_toward_emptiness: true,
     },
@@ -3426,7 +3856,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_sketch_payload_names",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_sketch_payload_names, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_sketch_payload_names, r, ns),
         len: |m| m.features.feature_sketch_payload_names.len(),
         counts_toward_emptiness: true,
     },
@@ -3434,7 +3864,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_sketch_payload_named_records",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_sketch_payload_named_records, r, ns),
+        emit: |ctx, m, r, ns| {
+            emit_arena(ctx, &m.features.feature_sketch_payload_named_records, r, ns)
+        },
         len: |m| m.features.feature_sketch_payload_named_records.len(),
         counts_toward_emptiness: true,
     },
@@ -3442,7 +3874,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_sketch_points",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_sketch_points, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_sketch_points, r, ns),
         len: |m| m.features.feature_sketch_points.len(),
         counts_toward_emptiness: true,
     },
@@ -3450,7 +3882,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_sketch_point_groups",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_sketch_point_groups, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_sketch_point_groups, r, ns),
         len: |m| m.features.feature_sketch_point_groups.len(),
         counts_toward_emptiness: true,
     },
@@ -3458,7 +3890,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "expressions",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.expressions, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.expressions, r, ns),
         len: |m| m.om.expressions.len(),
         counts_toward_emptiness: true,
     },
@@ -3466,7 +3898,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "class_definitions",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.classes, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.classes, r, ns),
         len: |m| m.om.classes.len(),
         counts_toward_emptiness: true,
     },
@@ -3474,7 +3906,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "field_definitions",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.fields, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.fields, r, ns),
         len: |m| m.om.fields.len(),
         counts_toward_emptiness: true,
     },
@@ -3482,7 +3914,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "object_records",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.object_records, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.object_records, r, ns),
         len: |m| m.om.object_records.len(),
         counts_toward_emptiness: true,
     },
@@ -3490,7 +3922,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "rmfastload_object_id_tables",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.rmfastload_object_id_tables, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.rmfastload_object_id_tables, r, ns),
         len: |m| m.om.rmfastload_object_id_tables.len(),
         counts_toward_emptiness: true,
     },
@@ -3498,7 +3930,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "rmfastload_object_ids",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.rmfastload_object_ids, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.rmfastload_object_ids, r, ns),
         len: |m| m.om.rmfastload_object_ids.len(),
         counts_toward_emptiness: true,
     },
@@ -3506,7 +3938,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "data_blocks",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.data_blocks, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.data_blocks, r, ns),
         len: |m| m.om.data_blocks.len(),
         counts_toward_emptiness: true,
     },
@@ -3514,7 +3946,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "data_block_counted_index_lanes",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.data_block_counted_index_lanes, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.data_block_counted_index_lanes, r, ns),
         len: |m| m.om.data_block_counted_index_lanes.len(),
         counts_toward_emptiness: true,
     },
@@ -3522,7 +3954,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "data_block_index_rows",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.data_block_index_rows, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.data_block_index_rows, r, ns),
         len: |m| m.om.data_block_index_rows.len(),
         counts_toward_emptiness: false,
     },
@@ -3530,7 +3962,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "data_block_linked_index_rows",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.data_block_linked_index_rows, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.data_block_linked_index_rows, r, ns),
         len: |m| m.om.data_block_linked_index_rows.len(),
         counts_toward_emptiness: false,
     },
@@ -3538,7 +3970,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "data_block_target_index_rows",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.data_block_target_index_rows, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.data_block_target_index_rows, r, ns),
         len: |m| m.om.data_block_target_index_rows.len(),
         counts_toward_emptiness: false,
     },
@@ -3546,7 +3978,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "rm_creation_display_data_relations",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.rm_creation_display_data_relations, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.rm_creation_display_data_relations, r, ns),
         len: |m| m.om.rm_creation_display_data_relations.len(),
         counts_toward_emptiness: false,
     },
@@ -3554,7 +3986,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "part_color_tables",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.part_color_tables, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.part_color_tables, r, ns),
         len: |m| m.om.part_color_tables.len(),
         counts_toward_emptiness: false,
     },
@@ -3562,7 +3994,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "part_color_definitions",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.part_color_definitions, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.part_color_definitions, r, ns),
         len: |m| m.om.part_color_definitions.len(),
         counts_toward_emptiness: false,
     },
@@ -3570,7 +4002,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "rm_display_color_assignments",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.rm_display_color_assignments, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.rm_display_color_assignments, r, ns),
         len: |m| m.om.rm_display_color_assignments.len(),
         counts_toward_emptiness: false,
     },
@@ -3578,7 +4010,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "data_block_column_index_tables",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.data_block_column_index_tables, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.data_block_column_index_tables, r, ns),
         len: |m| m.om.data_block_column_index_tables.len(),
         counts_toward_emptiness: false,
     },
@@ -3586,7 +4018,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_input_column_row_uses",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_input_column_row_uses, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_input_column_row_uses, r, ns),
         len: |m| m.features.feature_input_column_row_uses.len(),
         counts_toward_emptiness: false,
     },
@@ -3594,7 +4026,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "feature_input_column_targets",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.features.feature_input_column_targets, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_input_column_targets, r, ns),
         len: |m| m.features.feature_input_column_targets.len(),
         counts_toward_emptiness: false,
     },
@@ -3602,7 +4034,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "string_values",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.string_values, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.string_values, r, ns),
         len: |m| m.om.string_values.len(),
         counts_toward_emptiness: true,
     },
@@ -3610,7 +4042,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "object_uuid_values",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.object_uuid_values, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.object_uuid_values, r, ns),
         len: |m| m.om.object_uuid_values.len(),
         counts_toward_emptiness: true,
     },
@@ -3618,7 +4050,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "object_references",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.object_references, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.object_references, r, ns),
         len: |m| m.om.object_references.len(),
         counts_toward_emptiness: true,
     },
@@ -3626,7 +4058,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "persistent_handles",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.persistent_handles, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.persistent_handles, r, ns),
         len: |m| m.om.persistent_handles.len(),
         counts_toward_emptiness: true,
     },
@@ -3634,7 +4066,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "configurations",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.configurations, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.configurations, r, ns),
         len: |m| m.om.configurations.len(),
         counts_toward_emptiness: true,
     },
@@ -3642,7 +4074,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "configuration_attribute_uses",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.configuration_attribute_uses, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.configuration_attribute_uses, r, ns),
         len: |m| m.om.configuration_attribute_uses.len(),
         counts_toward_emptiness: false,
     },
@@ -3650,7 +4082,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "part_attributes",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.part_attributes, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.part_attributes, r, ns),
         len: |m| m.om.part_attributes.len(),
         counts_toward_emptiness: true,
     },
@@ -3658,7 +4090,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "external_reference_indexed_records",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.external_reference_indexed_records, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.external_reference_indexed_records, r, ns),
         len: |m| m.om.external_reference_indexed_records.len(),
         counts_toward_emptiness: true,
     },
@@ -3666,7 +4098,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "external_reference_empty_records",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.external_reference_empty_records, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.external_reference_empty_records, r, ns),
         len: |m| m.om.external_reference_empty_records.len(),
         counts_toward_emptiness: true,
     },
@@ -3674,7 +4106,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "external_reference_tail_reference_pairs",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.external_reference_tail_reference_pairs, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.external_reference_tail_reference_pairs, r, ns),
         len: |m| m.om.external_reference_tail_reference_pairs.len(),
         counts_toward_emptiness: true,
     },
@@ -3682,7 +4114,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "external_reference_record_string_uses",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.external_reference_record_string_uses, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.external_reference_record_string_uses, r, ns),
         len: |m| m.om.external_reference_record_string_uses.len(),
         counts_toward_emptiness: true,
     },
@@ -3690,7 +4122,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "external_reference_record_children",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
-        emit: |m, r, ns| emit_arena(&m.om.external_reference_record_children, r, ns),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.external_reference_record_children, r, ns),
         len: |m| m.om.external_reference_record_children.len(),
         counts_toward_emptiness: true,
     },

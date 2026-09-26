@@ -1646,7 +1646,11 @@ mod tests {
         let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
         assert!(ActiveCarrierRecord::read(&namespace).is_err());
         namespace
-            .set_arena("active_carrier", std::slice::from_ref(&record))
+            .set_arena(
+                &crate::native::test_ctx(),
+                "active_carrier",
+                std::slice::from_ref(&record),
+            )
             .expect("valid carrier");
         assert_eq!(
             ActiveCarrierRecord::read(&namespace).expect("single carrier"),
@@ -1669,7 +1673,7 @@ mod tests {
             ],
         ] {
             namespace
-                .set_arena("active_carrier", &records)
+                .set_arena(&crate::native::test_ctx(), "active_carrier", &records)
                 .expect("valid wire records");
             assert!(ActiveCarrierRecord::read(&namespace)
                 .expect_err("invalid cardinality")
@@ -1912,4 +1916,16 @@ mod tests {
         wire["transform_encoding"] = serde_json::json!([0, 0]);
         assert!(serde_json::from_value::<super::AssemblyPlacementRecord>(wire).is_ok());
     }
+}
+
+#[cfg(test)]
+pub(crate) fn test_ctx() -> cadmpeg_core::decode::DecodeContext<'static> {
+    let arena = Box::leak(Box::new(cadmpeg_core::decode::DecodeArena::new()));
+    cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty test input fits the service policy")
+    .0
 }

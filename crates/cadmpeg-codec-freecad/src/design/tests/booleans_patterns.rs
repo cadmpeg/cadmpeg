@@ -406,7 +406,11 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
     corrupted
         .native
         .namespace_mut("fcstd")
-        .set_arena("design_census", &stale_census)
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "design_census",
+            &stale_census,
+        )
         .expect("replace design census");
     let corrupted_findings = crate::validate_native(&corrupted);
     assert!(

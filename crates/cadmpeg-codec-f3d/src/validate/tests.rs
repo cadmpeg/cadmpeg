@@ -352,7 +352,12 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
         ..crate::native::F3dNative::default()
     };
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    native.store(ir.native.namespace_mut("f3d")).unwrap();
+    native
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            ir.native.namespace_mut("f3d"),
+        )
+        .unwrap();
     let findings = crate::validate::validate_native(&ir);
     assert!(
         !findings.iter().any(|finding| {
@@ -375,7 +380,10 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
     duplicate_type_owner.design_types[1].entities =
         crate::records::identity::ReferenceRun::located(entities);
     duplicate_type_owner
-        .store(ir.native.namespace_mut("f3d"))
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            ir.native.namespace_mut("f3d"),
+        )
         .unwrap();
     assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
         finding.entity.as_deref()
@@ -407,7 +415,12 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
             native.design_feature_timelines[0].context_record_index,
         )
         .unwrap();
-    native.store(ir.native.namespace_mut("f3d")).unwrap();
+    native
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            ir.native.namespace_mut("f3d"),
+        )
+        .unwrap();
     assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
         finding.entity.as_deref() == Some(native.design_feature_timelines[0].id().as_str())
             && finding.message == "Fusion Design feature timeline has an invalid typed frame"
@@ -1639,7 +1652,12 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
     native.design_construction_operand_groups.push(group);
     native.design_construction_operand_identities.push(identity);
     native.design_record_headers.extend([wrapper, following]);
-    native.store(ir.native.namespace_mut("f3d")).unwrap();
+    native
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            ir.native.namespace_mut("f3d"),
+        )
+        .unwrap();
 
     let invalid_identity = |finding: &cadmpeg_ir::report::check::Finding| {
         finding.entity.as_deref() == Some(identity_id.as_str())
@@ -1656,7 +1674,12 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
         class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned()).unwrap(),
         byte_offset: 1_315,
     });
-    native.store(ir.native.namespace_mut("f3d")).unwrap();
+    native
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            ir.native.namespace_mut("f3d"),
+        )
+        .unwrap();
     assert!(crate::validate::validate_native(&ir)
         .iter()
         .any(invalid_identity));

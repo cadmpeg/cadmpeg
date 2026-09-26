@@ -674,7 +674,11 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     corrupted
         .native
         .namespace_mut("fcstd")
-        .set_arena("logical_ledger", &missing_payload)
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "logical_ledger",
+            &missing_payload,
+        )
         .expect("replace logical ledger");
     assert!(crate::validate_native(&corrupted).iter().any(|finding| {
         finding
@@ -792,7 +796,11 @@ fn native_validation_rejects_duplicate_extension_identity() {
     corrupted
         .native
         .namespace_mut("fcstd")
-        .set_arena("extensions", &extensions)
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "extensions",
+            &extensions,
+        )
         .expect("replace extensions");
     let findings = crate::validate_native(&corrupted);
     assert!(findings.iter().any(|finding| {
