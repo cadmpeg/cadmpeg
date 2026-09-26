@@ -1216,12 +1216,18 @@ pub(crate) fn project_marker_backed_sketches(
                                         marker,
                                         &object_markers,
                                     )
+                                    .map(|endpoints| {
+                                        endpoints.map(cadmpeg_ir::units::FiniteVector::get)
+                                    })
                                     .or_else(|| {
                                         extended_linked_inline_line_endpoints(
                                             &lane.native_payload,
                                             marker,
                                             &object_markers,
                                         )
+                                        .map(|endpoints| {
+                                            endpoints.map(cadmpeg_ir::units::FiniteVector::get)
+                                        })
                                     })
                                     .or_else(|| {
                                         extended_identity_inline_line_endpoints(
@@ -1229,6 +1235,9 @@ pub(crate) fn project_marker_backed_sketches(
                                             marker,
                                             &object_markers,
                                         )
+                                        .map(|endpoints| {
+                                            endpoints.map(cadmpeg_ir::units::FiniteVector::get)
+                                        })
                                     })
                                     .or_else(|| {
                                         implicit_coordinate_roster_curve_endpoints(
@@ -1255,6 +1264,9 @@ pub(crate) fn project_marker_backed_sketches(
                                             &lane.native_payload,
                                             index_from_u64(marker.offset())?,
                                         )
+                                        .map(|endpoints| {
+                                            endpoints.map(cadmpeg_ir::units::FiniteVector::get)
+                                        })
                                     })
                                 {
                                     let (Some(start), Some(end)) =
@@ -1368,9 +1380,9 @@ pub(crate) fn project_marker_backed_sketches(
                                 })
                             {
                                 let (Some(center), Some(start), Some(end)) = (
-                                    project_coordinates(center),
-                                    project_coordinates(start),
-                                    project_coordinates(end),
+                                    project_coordinates(center.get()),
+                                    project_coordinates(start.get()),
+                                    project_coordinates(end.get()),
                                 ) else {
                                     return None;
                                 };
@@ -1763,6 +1775,7 @@ pub(crate) fn project_marker_backed_sketches(
                     };
                     let Some([u, v]) =
                         legacy_extended_rectangle_diagonal_endpoint(&lane.native_payload, marker)
+                            .map(cadmpeg_ir::units::FiniteVector::get)
                     else {
                         continue;
                     };

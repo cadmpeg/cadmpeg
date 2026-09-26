@@ -237,7 +237,8 @@ fn dimensioned_arc_native_geometry(
     );
     let inline = usize::try_from(marker.offset())
         .ok()
-        .and_then(|offset| inline_arc_coordinates(&lane.native_payload, offset));
+        .and_then(|offset| inline_arc_coordinates(&lane.native_payload, offset))
+        .map(|coordinates| coordinates.map(cadmpeg_ir::units::FiniteVector::get));
     let ([center, start, end], endpoint_pair) = if let Some(coordinates) = inline {
         let endpoint_pair = match endpoints.as_slice() {
             [first, second] => Some([first.id().to_string(), second.id().to_string()]),

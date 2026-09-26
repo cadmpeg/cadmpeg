@@ -218,7 +218,7 @@ pub(super) fn extended_selector44_indexed_line(payload: &[u8], offset: usize) ->
 }
 
 struct LinkedProfileCurveRecord {
-    inline: [f64; 2],
+    inline: cadmpeg_ir::units::FiniteVector<2>,
     references: [u32; 2],
     state: u16,
     reference_count: u16,
@@ -2148,7 +2148,7 @@ pub(super) fn extended_declared_inline_line_endpoints(
     payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&SketchInputEntity],
-) -> Option<[[f64; 2]; 2]> {
+) -> Option<[cadmpeg_ir::units::FiniteVector<2>; 2]> {
     let offset = usize::try_from(curve.offset()).ok()?;
     let declaration = payload.get(offset + 96..offset + 106)?;
     let declaration_id = View::u16_le_at(declaration, 0)?;
@@ -2197,7 +2197,7 @@ pub(super) fn extended_declared_inline_line_endpoints(
             )
     });
     let external = match (candidates.next(), candidates.next()) {
-        (Some(external), None) => external.coordinates_m?.get(),
+        (Some(external), None) => external.coordinates_m?,
         _ => return None,
     };
     Some([external, finite_coordinate_pair(payload, offset + 58)?])
@@ -2207,7 +2207,7 @@ pub(super) fn extended_linked_inline_line_endpoints(
     payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&SketchInputEntity],
-) -> Option<[[f64; 2]; 2]> {
+) -> Option<[cadmpeg_ir::units::FiniteVector<2>; 2]> {
     let offset = usize::try_from(curve.offset()).ok()?;
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         != Some(LEGACY_EXTENDED_SKETCH_MARKER)
@@ -2245,7 +2245,7 @@ pub(super) fn extended_linked_inline_line_endpoints(
             )
     });
     let external = match (candidates.next(), candidates.next()) {
-        (Some(external), None) => external.coordinates_m?.get(),
+        (Some(external), None) => external.coordinates_m?,
         _ => return None,
     };
     Some([external, record.inline])
@@ -2255,7 +2255,7 @@ pub(super) fn extended_identity_inline_line_endpoints(
     payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&SketchInputEntity],
-) -> Option<[[f64; 2]; 2]> {
+) -> Option<[cadmpeg_ir::units::FiniteVector<2>; 2]> {
     let offset = usize::try_from(curve.offset()).ok()?;
     if !extended_identity_inline_line_record(payload, offset) {
         return None;
@@ -2277,7 +2277,7 @@ pub(super) fn extended_identity_inline_line_endpoints(
     let endpoint = candidates.next()?;
     candidates.next().is_none().then_some([
         finite_coordinate_pair(payload, offset + 58)?,
-        endpoint.coordinates_m?.get(),
+        endpoint.coordinates_m?,
     ])
 }
 

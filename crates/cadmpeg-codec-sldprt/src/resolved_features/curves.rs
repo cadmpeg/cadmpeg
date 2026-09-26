@@ -1893,7 +1893,7 @@ pub(super) fn current_wide_rectangle_line_endpoints(
 pub(super) fn legacy_extended_rectangle_diagonal_endpoint(
     payload: &[u8],
     marker: &SketchInputEntity,
-) -> Option<[f64; 2]> {
+) -> Option<cadmpeg_ir::units::FiniteVector<2>> {
     let offset = usize::try_from(marker.offset()).ok()?;
     if marker.kind() != SketchInputKind::LineOrCircle
         || payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())

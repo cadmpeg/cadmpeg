@@ -606,7 +606,10 @@ fn compact_legacy_generation_carries_points_curves_and_selected_axes() {
     payload[250..258].copy_from_slice(&(-1.0f64).to_le_bytes());
     payload[280..285].copy_from_slice(LEGACY_SKETCH_MARKER);
 
-    assert_eq!(marker_coordinates(&payload, 0), Some([0.029, 0.0]));
+    assert_eq!(
+        (marker_coordinates(&payload, 0)).map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.029, 0.0])
+    );
     assert_eq!(
         compact_legacy_curve_endpoint_indices(&payload, 132),
         Some([1, 2])
