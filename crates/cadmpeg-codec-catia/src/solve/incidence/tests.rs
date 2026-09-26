@@ -176,50 +176,110 @@ fn endpoint_candidate_validation_charges_full_incidence_work() {
 
 #[test]
 fn incidence_propagation_closes_degree_one_vertices_before_search() {
+    catia_test_context!(ctx);
     let mut choices = vec![vec![[0, 1]], vec![[1, 2], [3, 4]], vec![[2, 0]]];
     let edge_faces = [[0, 0], [0, 0], [0, 0]];
-    crate::solve::incidence::prune_incidence_choices(&mut choices, &edge_faces, 1, 5)
+    crate::solve::incidence::prune_incidence_choices(&ctx, &mut choices, &edge_faces, 1, 5)
+        .expect("service resource budget")
         .expect("face incidence is satisfiable");
     assert_eq!(choices, vec![vec![[0, 1]], vec![[1, 2]], vec![[2, 0]]]);
 }
 
 #[test]
+fn incidence_choice_pruning_refuses_face_edge_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let choices = vec![vec![[0, 1]], vec![[0, 1]]];
+    let edge_faces = [[0, 0], [0, 0]];
+    catia_test_context!(service_ctx);
+    let mut service_choices = choices.clone();
+    assert!(crate::solve::incidence::prune_incidence_choices(
+        &service_ctx,
+        &mut service_choices,
+        &edge_faces,
+        1,
+        2,
+    )
+    .expect("service budget")
+    .is_some());
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let mut limited_choices = choices;
+    let error = crate::solve::incidence::prune_incidence_choices(
+        &ctx,
+        &mut limited_choices,
+        &edge_faces,
+        1,
+        2,
+    )
+    .expect_err("face edge collection exceeds the limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_incidence_face_edges"));
+}
+
+#[test]
 fn incidence_propagation_removes_candidates_with_unsupported_vertices() {
+    catia_test_context!(ctx);
     let mut choices = vec![vec![[0, 1], [2, 3]], vec![[0, 1]]];
     let edge_faces = [[0, 0], [0, 0]];
-    crate::solve::incidence::prune_incidence_choices(&mut choices, &edge_faces, 1, 4)
+    crate::solve::incidence::prune_incidence_choices(&ctx, &mut choices, &edge_faces, 1, 4)
+        .expect("service resource budget")
         .expect("face incidence is satisfiable");
     assert_eq!(choices, vec![vec![[0, 1]], vec![[0, 1]]]);
 }
 
 #[test]
 fn incidence_deferred_support_retains_an_explicit_boundary_gap() {
+    catia_test_context!(ctx);
     let mut choices = vec![vec![[0, 1]]];
     let edge_faces = [[0, 0]];
 
-    prune_incidence_choices_with_deferred_support(&mut choices, &edge_faces, 1, 2)
+    prune_incidence_choices_with_deferred_support(&ctx, &mut choices, &edge_faces, 1, 2)
+        .expect("service resource budget")
         .expect("deferred boundary support is not an explicit contradiction");
     assert_eq!(choices, vec![vec![[0, 1]]]);
 }
 
 #[test]
 fn incidence_propagation_indexes_wide_endpoint_support_domains() {
+    catia_test_context!(ctx);
     let domain = (0..4096).map(|point| [0, point]).collect::<Vec<_>>();
     let mut choices = vec![domain.clone(), domain.clone()];
     let edge_faces = [[0, 0], [0, 0]];
 
-    crate::solve::incidence::prune_incidence_choices(&mut choices, &edge_faces, 1, domain.len())
-        .expect("each endpoint candidate has support from the other edge");
+    crate::solve::incidence::prune_incidence_choices(
+        &ctx,
+        &mut choices,
+        &edge_faces,
+        1,
+        domain.len(),
+    )
+    .expect("service resource budget")
+    .expect("each endpoint candidate has support from the other edge");
     assert_eq!(choices, vec![domain.clone(), domain]);
 }
 
 #[test]
 fn incidence_propagation_does_not_allocate_the_declared_point_product() {
+    catia_test_context!(ctx);
     let mut choices = vec![vec![[0, 1]], vec![[0, 1]]];
     let edge_faces = [[0, 0], [0, 0]];
 
-    crate::solve::incidence::prune_incidence_choices(&mut choices, &edge_faces, 1, usize::MAX)
-        .expect("sparse endpoint incidence is independent of the declared cardinality");
+    crate::solve::incidence::prune_incidence_choices(
+        &ctx,
+        &mut choices,
+        &edge_faces,
+        1,
+        usize::MAX,
+    )
+    .expect("service resource budget")
+    .expect("sparse endpoint incidence is independent of the declared cardinality");
     assert_eq!(choices, vec![vec![[0, 1]], vec![[0, 1]]]);
 }
 
