@@ -6066,7 +6066,7 @@ fn model_linear_sweep_jet(
         return Err(EvaluationFailure::NoValue);
     }
     let directrix = construction.directrix();
-    let direction = *construction.direction();
+    let direction = *construction.direction().finite();
     let differential = model_curve_differential_by_id_inner(index, directrix, u, budget)
         .map_err(|failure| failure.map(|point| offset(point, &[(v, direction.get())])))?;
     Ok(SurfaceJet {
