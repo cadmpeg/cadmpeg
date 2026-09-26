@@ -299,7 +299,10 @@ fn nx_object_record_handle_pairs_do_not_cross_records_or_long_runs() {
 
 #[test]
 fn native_retains_rmfastload_table_and_member_words() {
-    let container = container::scan_bytes(rmfastload_prt()).expect("required invariant");
+    let container = crate::test_support::with_decode_context(|ctx| {
+        container::scan_bytes(ctx, rmfastload_prt())
+    })
+    .expect("required invariant");
     let entry_offset = container
         .entries
         .iter()

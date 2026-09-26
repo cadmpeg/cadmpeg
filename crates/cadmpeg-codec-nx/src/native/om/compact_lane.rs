@@ -144,7 +144,9 @@ mod tests {
         store.splice(end..end, lane.iter().copied());
         store[end_at..end_at + 4].copy_from_slice(&((end + lane.len()) as u32).to_le_bytes());
         let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", store)]);
-        let container = container::scan_bytes(file).expect("required invariant");
+        let container =
+            crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
+                .expect("required invariant");
 
         let lanes = crate::native::om::compact_lane::data_block_abr_reference_lanes(&container);
         assert_eq!(lanes.len(), 1);

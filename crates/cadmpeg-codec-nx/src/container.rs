@@ -969,7 +969,10 @@ fn u48_le(d: &[u8], at: usize) -> u64 {
 }
 
 /// Parse an SPLMSSTR file image.
-pub(crate) fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, CodecError> {
+pub(crate) fn scan_bytes<'a>(
+    ctx: &DecodeContext<'_>,
+    data: impl Into<Cow<'a, [u8]>>,
+) -> Result<Container<'a>, CodecError> {
     let data = data.into();
     if !data.starts_with(MAGIC) {
         return Err(CodecError::WrongFormat(
@@ -1000,14 +1003,21 @@ pub(crate) fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container
         .ok_or_else(|| CodecError::Malformed("truncated FOOTER fingerprint".to_string()))?;
 
     let (mut entries, header_end) = directory_region(
+        ctx,
         &data,
         splmsstr::HEADER_MARKER,
         *b"HEADER",
         Region::Header,
         fo,
     )?;
-    let (footer_entries, footer_end) =
-        directory_region(&data, fo, *b"FOOTER", Region::Footer, footer_directory_end)?;
+    let (footer_entries, footer_end) = directory_region(
+        ctx,
+        &data,
+        fo,
+        *b"FOOTER",
+        Region::Footer,
+        footer_directory_end,
+    )?;
     entries.extend(footer_entries);
     if header_end > fo {
         return Err(CodecError::Malformed(
@@ -1138,6 +1148,7 @@ pub(crate) fn scan_legacy<'a>(
 }
 
 fn directory_region(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     marker_offset: usize,
     marker: [u8; 6],
@@ -1168,10 +1179,18 @@ fn directory_region(
             "directory entry count exceeds its bounded region".to_string(),
         ));
     }
-    let mut entries = Vec::with_capacity(capacity);
+    ctx.charge_collection_items(u64::from(count), "admit NX directory entries")?;
+    let entry_bytes = capacity
+        .checked_mul(std::mem::size_of::<DirEntry>())
+        .ok_or_else(|| CodecError::Malformed("directory entry storage overflows".into()))?;
+    ctx.charge_retained(entry_bytes as u64, "retain NX directory entries")?;
+    let mut entries = Vec::new();
+    entries
+        .try_reserve_exact(capacity)
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX directory entries", 0, capacity as u64))?;
     let mut at = entries_offset;
     for ordinal in 0..count {
-        let Some((entry, next)) = try_entry(data, at, region) else {
+        let Some((entry, next)) = try_entry(ctx, data, at, region, region_end, ordinal)? else {
             return Err(CodecError::malformed(format_args!(
                 "directory entry {ordinal} is truncated or malformed"
             )));
@@ -1190,19 +1209,38 @@ fn directory_region(
 /// Try to read one directory entry at `o`: `name_len:u32 LE`, then that many bytes
 /// of printable ASCII beginning `/Root`, then a 16-byte payload. Returns the entry
 /// and the offset just past its payload.
-fn try_entry(data: &[u8], o: usize, region: Region) -> Option<(DirEntry, usize)> {
-    let name_len = View::u32_le_at(data, o)? as usize;
+fn try_entry(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    o: usize,
+    region: Region,
+    region_end: usize,
+    ordinal: u32,
+) -> Result<Option<(DirEntry, usize)>, CodecError> {
+    let Some(name_len) = View::u32_le_at(data, o).and_then(|value| usize::try_from(value).ok())
+    else {
+        return Ok(None);
+    };
     if !(6..=128).contains(&name_len) {
-        return None;
+        return Ok(None);
     }
     let name_start = o + dir_entry::LEN;
     let name_end = name_start + name_len;
-    let raw = data.get(name_start..name_end)?;
+    let Some(raw) = data.get(name_start..name_end) else {
+        return Ok(None);
+    };
     if !raw.starts_with(b"/Root") || !raw.iter().all(|&b| (0x20..0x7f).contains(&b)) {
-        return None;
+        return Ok(None);
     }
-    let name = String::from_utf8_lossy(raw).into_owned();
     let payload = name_end;
+    let next = payload + file_payload::LEN;
+    if next > region_end {
+        return Err(CodecError::malformed(format_args!(
+            "directory entry {ordinal} extends beyond its bounded region"
+        )));
+    }
+    ctx.charge_retained(name_len as u64, "retain NX directory name")?;
+    let name = String::from_utf8_lossy(raw).into_owned();
     // Interpret the 16-byte payload as a file span when it lands within the file.
     let body = match (
         View::u64_le_at(data, payload),
@@ -1220,7 +1258,7 @@ fn try_entry(data: &[u8], o: usize, region: Region) -> Option<(DirEntry, usize)>
         }
         _ => DirEntryBody::Directory,
     };
-    Some((DirEntry { name, region, body }, payload + file_payload::LEN))
+    Ok(Some((DirEntry { name, region, body }, next)))
 }
 
 #[cfg(test)]

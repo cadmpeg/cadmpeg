@@ -5388,7 +5388,9 @@ mod tests {
     fn native_catalog_separates_offset_only_blocks_from_object_records() {
         let file =
             prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
-        let container = container::scan_bytes(file).expect("required invariant");
+        let container =
+            crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
+                .expect("required invariant");
 
         assert!(super::object_records(&container).is_empty());
         let blocks = super::data_blocks(&container);
@@ -5532,7 +5534,9 @@ mod tests {
             "/Root/UG_PART/UG_PART",
             offset_only_indexed_om_section_with_index_values(),
         )]);
-        let container = container::scan_bytes(file).expect("required invariant");
+        let container =
+            crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
+                .expect("required invariant");
 
         let forms = super::data_block_control_forms(&container);
         assert_eq!(forms.len(), 1);
@@ -5557,7 +5561,9 @@ mod tests {
             offset_only_indexed_om_section_with_control(&[0, 1, 0, 0, 0, 10, 0, 0, 0, 5, 0, 0]);
         store.extend_from_slice(&size_framed_om_section());
         let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", store)]);
-        let container = container::scan_bytes(file).expect("required invariant");
+        let container =
+            crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
+                .expect("required invariant");
 
         let classes = super::data_block_control_class_references(&container);
         assert_eq!(classes.len(), 1);
@@ -6102,8 +6108,10 @@ mod object_record_identity_tests {
 
     #[test]
     fn unique_indexed_object_records_receive_stable_identities() {
-        let container = crate::container::scan_bytes(prt_with_indexed_om_section())
-            .expect("required invariant");
+        let container = crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(ctx, prt_with_indexed_om_section())
+        })
+        .expect("required invariant");
         let records = super::object_records(&container);
         assert_eq!(records.len(), 2);
         assert!(records
