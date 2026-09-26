@@ -44,12 +44,33 @@ fn placement_axis_normalization_preserves_extreme_finite_directions() {
         Vector3::new(f64::from_bits(1), 0.0, 0.0),
     ] {
         assert_eq!(
-            super::super::normalize(vector),
+            super::super::normalize(vector).map(|unit| *unit.as_raw()),
             Some(Vector3::new(1.0, 0.0, 0.0))
         );
     }
     assert!(super::super::normalize(Vector3::new(0.0, 0.0, 0.0)).is_none());
     assert!(super::super::normalize(Vector3::new(f64::NAN, 1.0, 0.0)).is_none());
+}
+
+#[test]
+fn placement_projection_keeps_reciprocal_normalization_bits() {
+    let old_normalize = |vector: Vector3| {
+        let scale = vector.x.abs().max(vector.y.abs()).max(vector.z.abs());
+        let scaled = Vector3::new(vector.x / scale, vector.y / scale, vector.z / scale);
+        scaled.scale(1.0 / scaled.norm())
+    };
+    let axis = Vector3::new(3.0, 4.0, 5.0);
+    let reference = Vector3::new(4.0, 2.0, 1.0);
+    let admitted_axis = super::super::normalize(axis).expect("axis");
+    let admitted_reference = super::super::normalize(reference).expect("reference");
+    let old_axis = old_normalize(old_normalize(axis));
+    let old_reference = old_normalize(old_normalize(reference));
+    let expected = old_normalize(old_reference - old_axis.scale(old_reference.dot(old_axis)));
+    let actual =
+        super::super::project_axis(admitted_reference, admitted_axis).expect("projected reference");
+    assert_eq!(actual.as_raw().x.to_bits(), expected.x.to_bits());
+    assert_eq!(actual.as_raw().y.to_bits(), expected.y.to_bits());
+    assert_eq!(actual.as_raw().z.to_bits(), expected.z.to_bits());
 }
 
 #[test]

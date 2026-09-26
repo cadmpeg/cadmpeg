@@ -1069,6 +1069,18 @@ struct AxisRevolutionSurfaceConstructionWire {
 }
 
 impl AxisRevolutionSurfaceConstruction {
+    /// Build a construction from an admitted axis point and unit direction.
+    pub fn from_parts(
+        directrix: CurveId,
+        axis_origin: FinitePoint3,
+        axis_direction: UnitVector3,
+    ) -> Self {
+        Self {
+            directrix,
+            axis_origin,
+            axis_direction,
+        }
+    }
     /// Admit the construction parameters.
     pub fn try_new(
         directrix: CurveId,
@@ -1076,11 +1088,7 @@ impl AxisRevolutionSurfaceConstruction {
         axis_direction: Vector3,
     ) -> Result<Self, ProceduralGeometryError> {
         let (axis_origin, axis_direction) = admit_revolution_axis(axis_origin, axis_direction)?;
-        Ok(Self {
-            directrix,
-            axis_origin,
-            axis_direction,
-        })
+        Ok(Self::from_parts(directrix, axis_origin, axis_direction))
     }
     /// Return the directrix.
     pub fn directrix(&self) -> &CurveId {

@@ -1761,7 +1761,7 @@ fn normal_rows<'a>(
                 values[1].number()?,
                 values[2].number()?,
             );
-            super::geometry::normalize(normal).and_then(FiniteVector3::new)
+            super::geometry::normalize(normal).map(FiniteVector3::from)
         })
         .collect::<Option<Vec<_>>>()
         .map(|normals| (normals, bytes)))
