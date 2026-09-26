@@ -84,6 +84,7 @@ fn container_bounded_entry_tail_stops_at_the_next_stream() {
                 body: crate::container::DirEntryBody::File { offset: 3, len: 3 },
             },
         ],
+        fastload_table: None,
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
@@ -110,6 +111,7 @@ fn container_cached_operation_labels_preserve_section_materialization() {
                 len: payload.len() as u64,
             },
         }],
+        fastload_table: None,
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
@@ -153,6 +155,7 @@ fn container_caches_owned_section_layouts() {
                 len: payload_len,
             },
         }],
+        fastload_table: None,
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
@@ -241,6 +244,23 @@ fn container_counts_admitted_entries_in_each_region() {
     assert_eq!(container.entry_count(Region::Header), 1);
     assert_eq!(container.entry_count(Region::Footer), 1);
     assert_eq!(container.entries.len(), 2);
+}
+
+#[test]
+fn service_profile_admits_both_directory_regions() {
+    let mut file = single_part_prt();
+    file.truncate(file.len() - 8);
+    file.extend_from_slice(&1_u32.to_le_bytes());
+    file.extend_from_slice(&6_u32.to_le_bytes());
+    file.extend_from_slice(b"/Root/");
+    file.extend_from_slice(&[0; 16]);
+    file.extend_from_slice(&[0; 4]);
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &DecodePolicy::service()).unwrap();
+    let container =
+        container::scan_bytes(&ctx, file.as_slice()).expect("service directory admission");
+    assert_eq!(container.entry_count(Region::Header), 1);
+    assert_eq!(container.entry_count(Region::Footer), 1);
 }
 
 #[test]
@@ -402,6 +422,60 @@ fn container_reads_rmfastload_active_ids() {
         table.object_ids.as_slice()[49].to_le_bytes(),
         50u32.to_le_bytes()
     );
+    let (_, same_table) = container
+        .rmfastload_object_id_table()
+        .expect("shared RMFastLoad table");
+    assert!(std::ptr::eq(table, same_table));
+}
+
+#[test]
+fn fastload_id_table_refuses_collection_limit_before_reserve() {
+    let file = rmfastload_prt();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 50;
+    let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &policy).unwrap();
+    let error = container::scan_bytes(&ctx, file.as_slice())
+        .expect_err("fifty IDs need a second collection charge");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("FastLoad IDs must return a resource refusal: {error}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.operation, "admit NX FastLoad object IDs");
+}
+
+#[test]
+fn fastload_candidate_scan_refuses_work_limit_before_reading_count() {
+    let file = rmfastload_prt();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &policy).unwrap();
+    let error = container::scan_bytes(&ctx, file.as_slice())
+        .expect_err("candidate scan needs one work unit");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("FastLoad scan must return a resource refusal: {error}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "scan NX FastLoad table candidates");
+}
+
+#[test]
+fn fastload_id_table_refuses_retained_limit_before_reserve() {
+    let file = rmfastload_prt();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    let directory_bytes = std::mem::size_of::<DirEntry>() + "/Root/FastLoad/RMFastLoad".len();
+    policy.limits.max_retained_bytes =
+        (directory_bytes + 50 * std::mem::size_of::<u32>() - 1) as u64;
+    let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &policy).unwrap();
+    let error =
+        container::scan_bytes(&ctx, file.as_slice()).expect_err("ID copy needs one more byte");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("FastLoad IDs must return a resource refusal: {error}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, "retain NX FastLoad object IDs");
 }
 
 #[test]

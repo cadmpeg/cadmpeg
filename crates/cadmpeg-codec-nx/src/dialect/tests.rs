@@ -38,6 +38,7 @@ fn container(legacy_cfb: bool, version: u8) -> Container<'static> {
             crate::container::test_modern_layout(version)
         },
         entries: Vec::new(),
+        fastload_table: None,
         indexed_section_layouts: OnceLock::new(),
         om_section_cache: OnceLock::new(),
     }

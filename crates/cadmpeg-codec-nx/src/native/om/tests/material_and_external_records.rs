@@ -7,9 +7,35 @@ use crate::test_support::test_prt::prt_with_two_bodies_and_rmfastload;
 use crate::test_support::test_prt::rmfastload_prt;
 use crate::test_support::test_streams::partition_stream;
 use crate::NxCodec;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::codec::DecodeOptions;
 use std::io::Cursor;
+
+fn native_fastload_result(
+    policy: DecodePolicy,
+) -> Result<
+    Option<(
+        super::super::RmFastLoadObjectIdTable,
+        Vec<super::super::RmFastLoadObjectId>,
+    )>,
+    CodecError,
+> {
+    let file = rmfastload_prt();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &policy)?;
+    let container = container::scan_bytes(&ctx, file.as_slice())?;
+    super::super::rmfastload_object_id_table(&ctx, &container)
+}
+
+fn assert_fastload_limit(error: &CodecError, dimension: ResourceDimension, operation: &str) {
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("FastLoad must return a resource refusal: {error}");
+    };
+    assert_eq!(limit.dimension, dimension);
+    assert_eq!(limit.operation, operation);
+}
 
 #[test]
 fn decode_retains_strict_tiff_material_texture_assets() {
@@ -299,19 +325,20 @@ fn nx_object_record_handle_pairs_do_not_cross_records_or_long_runs() {
 
 #[test]
 fn native_retains_rmfastload_table_and_member_words() {
-    let container = crate::test_support::with_decode_context(|ctx| {
-        container::scan_bytes(ctx, rmfastload_prt())
-    })
-    .expect("required invariant");
-    let entry_offset = container
-        .entries
-        .iter()
-        .find(|entry| entry.name == "/Root/FastLoad/RMFastLoad")
-        .and_then(crate::container::DirEntry::file_span)
-        .expect("RMFastLoad span")
-        .0;
-    let (table, object_ids) =
-        super::super::rmfastload_object_id_table(&container).expect("native RMFastLoad table");
+    let (entry_offset, table, object_ids) = crate::test_support::with_decode_context(|ctx| {
+        let container = container::scan_bytes(ctx, rmfastload_prt()).expect("required invariant");
+        let entry_offset = container
+            .entries
+            .iter()
+            .find(|entry| entry.name == "/Root/FastLoad/RMFastLoad")
+            .and_then(crate::container::DirEntry::file_span)
+            .expect("RMFastLoad span")
+            .0;
+        let (table, object_ids) = super::super::rmfastload_object_id_table(ctx, &container)
+            .expect("native RMFastLoad admission")
+            .expect("native RMFastLoad table");
+        (entry_offset, table, object_ids)
+    });
 
     assert_eq!(table.id, "nx:rmfastload:object-id-table#0");
     assert_eq!(table.members.as_slice().len(), 50);
@@ -344,6 +371,108 @@ fn native_retains_rmfastload_table_and_member_words() {
     assert_eq!(
         super::super::rmfastload_target_object_id(&object_ids, 50),
         None
+    );
+}
+
+#[test]
+fn service_profile_admits_fastload_native_members() {
+    let (table, object_ids) = native_fastload_result(DecodePolicy::service())
+        .expect("service FastLoad admission")
+        .expect("FastLoad table");
+    assert_eq!(table.members.as_slice().len(), 50);
+    assert_eq!(object_ids.len(), 50);
+}
+
+#[test]
+fn fastload_identity_map_refuses_collection_limit_before_reserve() {
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 100;
+    let error = native_fastload_result(policy).expect_err("identity map needs fifty more items");
+    assert_fastload_limit(
+        &error,
+        ResourceDimension::CollectionItems,
+        "admit NX FastLoad identity counts",
+    );
+}
+
+#[test]
+fn fastload_identity_map_refuses_materialized_limit_before_reserve() {
+    let mut policy = DecodePolicy::default();
+    let map_entry_bytes = std::mem::size_of::<(u32, usize)>() + 4 * std::mem::size_of::<usize>();
+    policy.limits.max_materialized_bytes = (50 * map_entry_bytes - 1) as u64;
+    let error = native_fastload_result(policy).expect_err("identity map needs one more byte");
+    assert_fastload_limit(
+        &error,
+        ResourceDimension::MaterializedBytes,
+        "count NX FastLoad identities",
+    );
+}
+
+#[test]
+fn fastload_identity_map_refuses_work_limit_before_counting() {
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_work_units = 100;
+    let error = native_fastload_result(policy).expect_err("fifty IDs need one hundred work units");
+    assert_fastload_limit(
+        &error,
+        ResourceDimension::WorkUnits,
+        "count NX FastLoad identities",
+    );
+}
+
+#[test]
+fn fastload_native_records_refuse_collection_limit_before_reserve() {
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 201;
+    let error =
+        native_fastload_result(policy).expect_err("native records and links need one more item");
+    assert_fastload_limit(
+        &error,
+        ResourceDimension::CollectionItems,
+        "admit NX FastLoad native collections",
+    );
+}
+
+#[test]
+fn fastload_native_records_refuse_entity_limit_before_creation() {
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_entities = 50;
+    let error = native_fastload_result(policy)
+        .expect_err("fifty members and table need fifty-one entities");
+    assert_fastload_limit(
+        &error,
+        ResourceDimension::Entities,
+        "admit NX FastLoad native entities",
+    );
+}
+
+#[test]
+fn fastload_native_copies_refuse_retained_limit_before_creation() {
+    let mut policy = DecodePolicy::default();
+    let table_id = "nx:rmfastload:object-id-table#0";
+    let member_id_len = "nx:rmfastload:object-id#".len() + 10;
+    let stable_bytes = (1..=50)
+        .map(|value| format!("{table_id}:value#{value}").len())
+        .sum::<usize>();
+    let directory_bytes =
+        std::mem::size_of::<crate::container::DirEntry>() + "/Root/FastLoad/RMFastLoad".len();
+    let parsed_id_bytes = 50 * std::mem::size_of::<u32>();
+    let native_bytes = 50
+        * (std::mem::size_of::<super::super::RmFastLoadObjectId>()
+            + std::mem::size_of::<String>()
+            + 2 * member_id_len
+            + table_id.len())
+        + table_id.len()
+        + std::mem::size_of::<super::super::RmFastLoadObjectIdTable>()
+        + "/Root/FastLoad/RMFastLoad".len()
+        + stable_bytes;
+    policy.limits.max_retained_bytes =
+        (directory_bytes + parsed_id_bytes + native_bytes - 1) as u64;
+    let error = native_fastload_result(policy).expect_err("native copies need one more byte");
+    assert_fastload_limit(
+        &error,
+        ResourceDimension::RetainedBytes,
+        "retain NX FastLoad native copies",
     );
 }
 
