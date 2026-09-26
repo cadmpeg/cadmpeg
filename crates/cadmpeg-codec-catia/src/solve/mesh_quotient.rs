@@ -7579,16 +7579,20 @@ impl MeshSelectionSearch<'_, '_> {
                 }
                 return Ok(());
             };
-            let candidate = reconstruct_mesh_selection(
-                self.edge_rows.to_vec(),
-                self.vertex_points.to_vec(),
-                &selected_assignments,
-                &directions,
-            )
-            .and_then(|mut topology| {
-                let mut use_counts =
-                    alloc_filled(topology.edge_rows.len(), 0usize, "catia_search_edge_uses")
-                        .ok()?;
+            let candidate = 'candidate: {
+                let Some(mut topology) = reconstruct_mesh_selection(
+                    self.edge_rows.to_vec(),
+                    self.vertex_points.to_vec(),
+                    &selected_assignments,
+                    &directions,
+                ) else {
+                    break 'candidate None;
+                };
+                let mut use_counts = self.ctx.alloc_filled(
+                    topology.edge_rows.len(),
+                    0usize,
+                    "catia_search_edge_uses",
+                )?;
                 for coedge in topology
                     .faces
                     .iter()
@@ -7598,35 +7602,43 @@ impl MeshSelectionSearch<'_, '_> {
                     use_counts[coedge.edge_row] += 1;
                 }
                 if use_counts.iter().any(|count| *count > 2) {
-                    return None;
+                    break 'candidate None;
                 }
-                if use_counts.iter().all(|count| *count == 2) {
-                    orient_face_cycles(&mut topology.faces)?;
+                if use_counts.iter().all(|count| *count == 2)
+                    && orient_face_cycles(&mut topology.faces).is_none()
+                {
+                    break 'candidate None;
                 }
-                let edge_vertices = topology.edge_vertices()?;
-                let mut point_assignment = alloc_filled(
+                let Some(edge_vertices) = topology.edge_vertices() else {
+                    break 'candidate None;
+                };
+                let mut point_assignment = self.ctx.alloc_filled(
                     topology.logical_vertex_count,
                     None,
                     "catia_search_point_assignment",
-                )
-                .ok()?;
+                )?;
                 for (edge, vertices) in edge_vertices.into_iter().enumerate() {
                     for (port, vertex) in vertices.into_iter().enumerate() {
                         let root = quotient.union.find(edge * 2 + port);
-                        let point = *root_points.get(&root)?;
+                        let Some(&point) = root_points.get(&root) else {
+                            break 'candidate None;
+                        };
                         match point_assignment[vertex] {
-                            Some(stored) if stored != point => return None,
+                            Some(stored) if stored != point => break 'candidate None,
                             Some(_) => {}
                             None => point_assignment[vertex] = Some(point),
                         }
                     }
-                    let points = <[usize; 2]>::try_from(
-                        vertices
-                            .map(|vertex| point_assignment[vertex])
-                            .into_iter()
-                            .collect::<Option<Vec<_>>>()?,
-                    )
-                    .ok()?;
+                    let Some(points) = vertices
+                        .map(|vertex| point_assignment[vertex])
+                        .into_iter()
+                        .collect::<Option<Vec<_>>>()
+                    else {
+                        break 'candidate None;
+                    };
+                    let Ok(points) = <[usize; 2]>::try_from(points) else {
+                        break 'candidate None;
+                    };
                     let closed_ports =
                         quotient.union.find(edge * 2) == quotient.union.find(edge * 2 + 1);
                     if !mesh_edge_points_compatible(
@@ -7634,14 +7646,16 @@ impl MeshSelectionSearch<'_, '_> {
                         &self.edge_candidates[edge],
                         points,
                     ) {
-                        return None;
+                        break 'candidate None;
                     }
                 }
-                Some((
-                    topology,
-                    point_assignment.into_iter().collect::<Option<Vec<_>>>()?,
-                ))
-            });
+                let Some(point_assignment) =
+                    point_assignment.into_iter().collect::<Option<Vec<_>>>()
+                else {
+                    break 'candidate None;
+                };
+                Some((topology, point_assignment))
+            };
             if let Some(candidate) = candidate {
                 let gauge = self.candidate_gauge;
                 self.outcome.record_solved(candidate, |previous, next| {

@@ -1367,6 +1367,79 @@ fn completed_mesh_search_continues_to_check_uniqueness() {
 }
 
 #[test]
+fn completed_mesh_search_refuses_edge_and_point_collection_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let assignments = vec![vec![MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0,
+            start: 0,
+            end: 0,
+            reversed: Some(false),
+        }]],
+    }]];
+    let edge_rows = vec![EdgeRow {
+        kind: 1,
+        handles: vec![0],
+        boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+    }];
+    let edge_candidates = vec![vec![[0, 0]]];
+    let vertex_points = [[0.0; 3]];
+    let domain = Arc::new(HashSet::from([0]));
+    let quotient = MeshQuotient::new(vec![domain.clone(), domain]);
+    let run = |ctx: &DecodeContext<'_>| -> Result<SearchOutcome<(StandardTopology, Vec<usize>)>, CodecError> {
+        let mut search = MeshSelectionSearch {
+            ctx,
+            assignments: &assignments,
+            possible_face_equations: Vec::new(),
+            possible_face_choices: Vec::new(),
+            face_work: vec![Some(1)],
+            edge_candidates: &edge_candidates,
+            edge_rows: &edge_rows,
+            vertex_points: &vertex_points,
+            candidate_gauge: None,
+            port_identities: None,
+            fixed_face_directions: Vec::new(),
+            fixed_edge_orientations: Vec::new(),
+            edge_has_fixed_direction: Vec::new(),
+            selected: vec![Some((0, vec![vec![false]]))],
+            visited_states: HashSet::new(),
+            outcome: SearchOutcome::Open,
+            face_equation_cache: RefCell::default(),
+        };
+        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        search.search_state(&quotient, true, &budget, &budget)?;
+        Ok(search.outcome)
+    };
+
+    catia_test_context!(service_ctx);
+    assert!(matches!(
+        run(&service_ctx).expect("service resource budget"),
+        SearchOutcome::Solved(_)
+    ));
+    let mut refused = HashSet::new();
+    for limit in 0..128 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match run(&ctx) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                refused.insert(error.operation.to_owned());
+            }
+            Ok(SearchOutcome::Solved(_)) => break,
+            Ok(_) => panic!("completed selection must be solved"),
+            Err(error) => panic!("unexpected refusal: {error}"),
+        }
+    }
+    assert!(refused.contains("catia_search_edge_uses"));
+    assert!(refused.contains("catia_search_point_assignment"));
+}
+
+#[test]
 fn mesh_selection_declines_when_its_work_budget_is_exhausted() {
     catia_test_context!(ctx);
     let mut search = MeshSelectionSearch {
