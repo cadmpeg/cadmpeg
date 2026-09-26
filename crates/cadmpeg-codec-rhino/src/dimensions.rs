@@ -522,8 +522,8 @@ fn legacy_text_scaling(stored: Option<bool>) -> bool {
 
 fn shifted_plane(mut plane: Plane, point: [f64; 2]) -> Plane {
     let mut origin = plane.origin.get();
-    for index in 0..3 {
-        origin[index] += point[0] * plane.xaxis[index] + point[1] * plane.yaxis[index];
+    for (index, coordinate) in origin.iter_mut().enumerate() {
+        *coordinate += point[0] * plane.xaxis[index] + point[1] * plane.yaxis[index];
     }
     plane.origin = crate::settings::CoordinateLane::Derived(origin);
     let mut equation = plane.equation.get();
@@ -2186,7 +2186,7 @@ pub(crate) mod tests {
                 .windows(scale.len())
                 .enumerate()
                 .filter_map(|(index, window)| (window == scale).then_some(index))
-                .last()
+                .next_back()
                 .expect("distance scale in source bytes");
             bytes[offset..offset + 8].copy_from_slice(&refused.to_le_bytes());
             let result = decode(
