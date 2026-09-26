@@ -85,6 +85,11 @@ use serde::{Deserialize, Serialize};
 pub struct FiniteBinary32(f32);
 
 impl FiniteBinary32 {
+    /// Zero in source precision.
+    pub const ZERO: Self = Self(0.0);
+    /// One in source precision.
+    pub const ONE: Self = Self(1.0);
+
     /// Admit a finite binary32 value.
     #[must_use]
     pub fn new(value: f32) -> Option<Self> {
@@ -118,6 +123,50 @@ impl TryFrom<f32> for FiniteBinary32 {
 
 impl From<FiniteBinary32> for f32 {
     fn from(value: FiniteBinary32) -> Self {
+        value.get()
+    }
+}
+
+/// A finite binary32 fraction in the closed unit interval.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct UnitBinary32(f32);
+
+impl UnitBinary32 {
+    /// Admit a binary32 fraction in the closed unit interval.
+    #[must_use]
+    pub fn new(value: f32) -> Option<Self> {
+        (0.0..=1.0).contains(&value).then_some(Self(value))
+    }
+
+    /// Return the admitted value in its source precision.
+    #[must_use]
+    pub const fn get(self) -> f32 {
+        self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for UnitBinary32 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Self::new(f32::deserialize(deserializer)?)
+            .ok_or_else(|| serde::de::Error::custom("UnitBinary32 must be in [0, 1]"))
+    }
+}
+
+impl TryFrom<f32> for UnitBinary32 {
+    type Error = &'static str;
+
+    fn try_from(value: f32) -> Result<Self, Self::Error> {
+        Self::new(value).ok_or("UnitBinary32 must be in [0, 1]")
+    }
+}
+
+impl From<UnitBinary32> for f32 {
+    fn from(value: UnitBinary32) -> Self {
         value.get()
     }
 }
