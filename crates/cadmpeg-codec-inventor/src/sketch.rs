@@ -446,6 +446,7 @@ pub(crate) fn inventory(
                     return Err(error);
                 }
                 ctx.charge_collection_items(1, "admit Inventor PmDc sketch issue")?;
+                ctx.charge_entities(1, "admit Inventor PmDc sketch issue")?;
                 admit_issue_detail(ctx, &error, "retain Inventor PmDc sketch issue detail")?;
                 ctx.charge_retained(32, "retain Inventor PmDc sketch issue type id")?;
                 ctx.charge_retained(
@@ -2785,6 +2786,25 @@ mod tests {
                     && limit.operation == "admit Inventor PmDc sketch issue"
                     && limit.used == 0
         ));
+    }
+
+    #[test]
+    fn sketch_parse_issue_refuses_entity_limit_before_push() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_entities = 0;
+        assert!(matches!(
+            inventory_with_record(TRANSFORM_TYPE, &[], policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::Entities
+                    && limit.operation == "admit Inventor PmDc sketch issue"
+        ));
+        assert_eq!(
+            inventory_with_record(TRANSFORM_TYPE, &[], DecodePolicy::service())
+                .expect("service issue")
+                .issues
+                .len(),
+            1
+        );
     }
 
     #[test]

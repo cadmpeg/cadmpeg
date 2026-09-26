@@ -51,6 +51,24 @@ fn presentation_default_native_record_refuses_before_id_creation() {
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain Inventor default style id"
     ));
+    policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    assert!(matches!(
+        presentation_native_projection::project(&ctx, &mut inventory),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "collect Inventor native default style"
+    ));
+    policy = DecodePolicy::service();
+    policy.limits.max_entities = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    assert!(matches!(
+        presentation_native_projection::project(&ctx, &mut inventory),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::Entities
+                && limit.operation == "admit Inventor native default style"
+    ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
     presentation_native_projection::project(&ctx, &mut inventory).expect("admitted default style");
@@ -181,8 +199,35 @@ fn presentation_other_native_records_refuse_before_ids_text_and_reference_copies
             "no refusal for {operation}"
         );
     }
+    let mut entity_cap = 0;
+    let mut entity_operations = Vec::new();
+    for _ in 0..4 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_entities = entity_cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let Err(error) = presentation_native_projection::project(&ctx, &mut inventory) else {
+            panic!("native presentation record needs entity admission");
+        };
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected entity refusal: {error:?}");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::Entities);
+        entity_operations.push(limit.operation);
+        entity_cap = limit.used + limit.additional;
+    }
+    for operation in [
+        "admit Inventor native rendering style",
+        "admit Inventor native graphics face",
+        "admit Inventor native graphics style collection",
+        "admit Inventor native primary color style",
+    ] {
+        assert!(
+            entity_operations.contains(&operation),
+            "no refusal for {operation}"
+        );
+    }
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert!(matches!(
         presentation_native_projection::project(&ctx, &mut inventory),

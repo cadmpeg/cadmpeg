@@ -12,7 +12,9 @@ use crate::native::{
 };
 use crate::rse::{RecordFrameState, SegmentBulkState, SegmentMetaState};
 
-use super::{retained_clone, retained_format, retained_hex, retained_sha256, wire_len};
+use super::{
+    admit_native_items, retained_clone, retained_format, retained_hex, retained_sha256, wire_len,
+};
 
 pub(super) struct RseNativeProjection {
     pub(super) identity_issues: Vec<StructuralIssueRecord>,
@@ -46,6 +48,7 @@ pub(super) fn project(
     for segment in &container.rse.segments {
         let token = segment.pair.token.as_str();
         for (ordinal, detail) in segment.identity_issues.iter().enumerate() {
+            admit_native_items(ctx, 1)?;
             projection.identity_issues.push(StructuralIssueRecord {
                 id: retained_format(
                     ctx,
@@ -64,6 +67,7 @@ pub(super) fn project(
                 )?,
             });
         }
+        admit_native_items(ctx, 1)?;
         projection.segment_pairs.push(SegmentPairRecord {
             id: retained_format(
                 ctx,
@@ -76,6 +80,7 @@ pub(super) fn project(
         });
         match &segment.meta {
             SegmentMetaState::Parsed(meta) => {
+                admit_native_items(ctx, 1)?;
                 projection.segment_meta.push(SegmentMetaRecord {
                     id: retained_format(
                         ctx,
@@ -140,6 +145,7 @@ pub(super) fn project(
                     )?,
                 });
                 for section in &meta.tables.sections {
+                    admit_native_items(ctx, 1)?;
                     projection.meta_sections.push(MetaSectionRecord {
                         id: retained_format(
                             ctx,
@@ -166,6 +172,7 @@ pub(super) fn project(
                     });
                 }
                 for descriptor in &meta.tables.types {
+                    admit_native_items(ctx, 1)?;
                     projection.meta_types.push(MetaTypeRecord {
                         id: retained_format(
                             ctx,
@@ -184,6 +191,7 @@ pub(super) fn project(
                 }
             }
             SegmentMetaState::Malformed { detail, .. } => {
+                admit_native_items(ctx, 1)?;
                 projection.segment_meta_issues.push(SegmentMetaIssueRecord {
                     id: retained_format(
                         ctx,
@@ -200,6 +208,7 @@ pub(super) fn project(
                 let records = match &bulk.records {
                     RecordFrameState::Framed(table) => {
                         for record in &table.records {
+                            admit_native_items(ctx, 1)?;
                             projection
                                 .rse_records
                                 .push(RseRecordRecord::from_frame(ctx, token, record)?);
@@ -226,6 +235,7 @@ pub(super) fn project(
                         detail: retained_clone(ctx, detail, "retain Inventor RSe frame issue")?,
                     },
                 };
+                admit_native_items(ctx, 1)?;
                 projection.segment_bulk.push(SegmentBulkRecord {
                     id: retained_format(
                         ctx,
@@ -259,6 +269,7 @@ pub(super) fn project(
                 });
             }
             SegmentBulkState::Malformed(detail) => {
+                admit_native_items(ctx, 1)?;
                 projection.segment_bulk_issues.push(SegmentBulkIssueRecord {
                     id: retained_format(
                         ctx,
@@ -272,6 +283,7 @@ pub(super) fn project(
         }
     }
     for token in &container.rse.unpaired_metadata {
+        admit_native_items(ctx, 1)?;
         projection.unpaired_segments.push(UnpairedSegmentRecord {
             id: retained_format(
                 ctx,
@@ -287,6 +299,7 @@ pub(super) fn project(
         });
     }
     for token in &container.rse.unpaired_bulk {
+        admit_native_items(ctx, 1)?;
         projection.unpaired_segments.push(UnpairedSegmentRecord {
             id: retained_format(
                 ctx,

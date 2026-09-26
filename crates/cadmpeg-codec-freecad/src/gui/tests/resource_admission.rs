@@ -19,9 +19,35 @@ fn y4_2_decode_refuses_unadmitted_gui_text_copy() {
     // The ZIP snapshot retains four copies of each decoded central-directory name.
     let zip_names = 4 * ("Document.xml".len() + "GuiDocument.xml".len());
     options.policy.limits.max_retained_bytes = (zip_names + document.len() + gui.len()) as u64;
-    let error = FcstdCodec
-        .decode(&mut Cursor::new(bytes), &options)
-        .expect_err("GUI text copy must be admitted");
+    let mut error = None;
+    for _ in 0..256 {
+        let refused = FcstdCodec
+            .decode(&mut Cursor::new(&bytes), &options)
+            .expect_err("GUI text copy must be admitted");
+        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            &refused
+        else {
+            panic!("expected retained refusal: {refused:?}");
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes
+        );
+        if limit.operation.starts_with("FCStd GUI ") {
+            let exact = limit.used + limit.additional - 1;
+            options.policy.limits.max_retained_bytes = exact;
+            error = Some(
+                FcstdCodec
+                    .decode(&mut Cursor::new(&bytes), &options)
+                    .expect_err("one byte below GUI text need refuses"),
+            );
+            break;
+        }
+        let next = limit.used + limit.additional;
+        assert!(next > options.policy.limits.max_retained_bytes);
+        options.policy.limits.max_retained_bytes = next;
+    }
+    let error = error.expect("GUI charge reached within fixture admissions");
     assert!(
         matches!(
             &error,

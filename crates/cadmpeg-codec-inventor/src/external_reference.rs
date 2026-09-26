@@ -1095,6 +1095,79 @@ mod tests {
             .id()
     }
 
+    fn assert_diagnostic_refuses_retained_limit(
+        bytes: &[u8],
+        document_kind: &DocumentKind,
+        operation: &'static str,
+    ) {
+        let arena = DecodeArena::new();
+        let mut cap = 0;
+        let mut needed = None;
+        for _ in 0..64 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("fixture context");
+            match parse_stream(&ctx, root, stream_id(), document_kind) {
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::RetainedBytes =>
+                {
+                    let next = limit
+                        .used
+                        .checked_add(limit.additional)
+                        .expect("fixture charge fits u64");
+                    if limit.operation == operation {
+                        needed = Some(next);
+                        break;
+                    }
+                    assert!(next > cap, "fixture advances to its next retained charge");
+                    cap = next;
+                }
+                result => panic!("expected retained admission before {operation}: {result:?}"),
+            }
+        }
+        let needed = needed.expect("diagnostic reached within fixture charges");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = needed - 1;
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("limited context");
+        assert!(matches!(
+            parse_stream(&ctx, root, stream_id(), document_kind),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == operation
+                    && limit.limit == needed - 1
+        ));
+        let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
+            .expect("service context");
+        assert!(matches!(
+            parse_stream(&ctx, root, stream_id(), document_kind),
+            Err(CodecError::NotImplemented(_))
+        ));
+    }
+
+    #[test]
+    fn schema_15_document_kind_diagnostic_refuses_before_format() {
+        let (bytes, _) = fixture(15);
+        assert_diagnostic_refuses_retained_limit(
+            &bytes,
+            &DocumentKind::Unknown,
+            "retain UFRx schema header diagnostic",
+        );
+    }
+
+    #[test]
+    fn unframed_lod_diagnostic_refuses_before_format() {
+        let (mut bytes, invariant_offset) = fixture(11);
+        let lod_count_offset = invariant_offset + 2 + 4 + 4;
+        bytes[lod_count_offset..lod_count_offset + 4].copy_from_slice(&1_u32.to_le_bytes());
+        assert_diagnostic_refuses_retained_limit(
+            &bytes,
+            &DocumentKind::Assembly,
+            "retain UFRx unframed LOD diagnostic",
+        );
+    }
+
     #[test]
     fn supported_schemas_frame_external_references_and_retain_the_tail() {
         for schema in 11..=15 {

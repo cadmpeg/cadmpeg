@@ -33,10 +33,12 @@ use crate::native::protein::{
     ProteinRejectionRecord, ProteinRejectionRecordWire,
 };
 use crate::native::ufrx::{
-    EmbeddedReferenceRecord, EmbeddedReferenceRecordWire, ExternalReferenceRecord,
-    ExternalReferenceRecordWire, UfrxModelStateParameterRecord, UfrxModelStateRecord,
-    UfrxModelStateRecordWire, UfrxOccurrenceRecord, UfrxOccurrenceRecordWire, UfrxRecord,
-    UfrxRepresentationRecord, UfrxRepresentationRecordWire,
+    byte_document_id_present, embedded_reference_issue, external_reference_issue,
+    model_state_issue, occurrence_issue, representation_issue, EmbeddedReferenceRecord,
+    EmbeddedReferenceRecordWire, ExternalReferenceRecord, ExternalReferenceRecordWire,
+    UfrxModelStateParameterRecord, UfrxModelStateRecord, UfrxModelStateRecordWire,
+    UfrxOccurrenceRecord, UfrxOccurrenceRecordWire, UfrxRecord, UfrxRepresentationRecord,
+    UfrxRepresentationRecordWire,
 };
 use crate::native::{
     ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord,
@@ -48,9 +50,7 @@ use crate::native::{
 use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
 use crate::protein::ProteinState;
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
-use crate::rse::{
-    DatabaseState, DocumentKind, ParsedState, RecordFrameState, SegmentBulkState, SegmentMetaState,
-};
+use crate::rse::{DatabaseState, DocumentKind, ParsedState};
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     decode_container(ctx, &InventorContainer::open(ctx, root)?)
@@ -71,15 +71,6 @@ fn decode_container<'a>(
     let design_inventory = crate::design::inventory(ctx, &container.rse)?;
     let sketch_inventory = crate::sketch::inventory(ctx, &container.rse)?;
     let feature_inventory = crate::feature::inventory(ctx, &container.rse)?;
-    admit_native_record_items(
-        ctx,
-        container,
-        &assembly_inventory,
-        &presentation_inventory,
-        &design_inventory,
-        &sketch_inventory,
-        &feature_inventory,
-    )?;
     let mut ir = CadIr::empty();
     let mut admitted_entities = 0_u64;
     let (design_parameters, unresolved_design_parameters) =
@@ -133,6 +124,7 @@ fn decode_container<'a>(
     for descriptor in &container.property_sets {
         match &descriptor.state {
             PropertySetState::Malformed(detail) => {
+                admit_native_items(ctx, 1)?;
                 property_set_issues.push(project_property_set_issue(
                     ctx,
                     descriptor.stream.directory_id(),
@@ -141,6 +133,7 @@ fn decode_container<'a>(
                 )?);
             }
             PropertySetState::Parsed(property_set) => {
+                admit_native_items(ctx, 1)?;
                 let id = retained_format(
                     ctx,
                     format_args!("inventor:property:set#{}", descriptor.stream.directory_id()),
@@ -196,6 +189,7 @@ fn decode_container<'a>(
                             detail: "embedded property-set name does not match its FMTID".into(),
                         });
                     }
+                    admit_native_items(ctx, 1)?;
                     let section_id = retained_format(
                         ctx,
                         format_args!(
@@ -232,6 +226,7 @@ fn decode_container<'a>(
                         )?,
                     });
                     for property in &section.properties {
+                        admit_native_items(ctx, 1)?;
                         if let Some(name) = &property.name {
                             charge_retained_len(ctx, name.len(), "retain Inventor property name")?;
                         } else if identity_matches {
@@ -327,19 +322,9 @@ fn decode_container<'a>(
     }
     let protein = project_protein_state(ctx, &container.protein)?;
     let (protein_instances, protein_semantic_issue) = match &container.protein {
-        ProteinState::Package(package) => match crate::protein::decode_instances(ctx, package) {
-            Ok(instances) => (instances, None),
-            Err(error) => {
-                if !matches!(error, CodecError::ResourceLimit(_)) {
-                    crate::record_issue::admit_issue_detail(
-                        ctx,
-                        &error,
-                        "retain Inventor Protein semantic issue",
-                    )?;
-                }
-                (Vec::new(), Some(crate::issue_detail(error)?))
-            }
-        },
+        ProteinState::Package(package) => {
+            crate::protein::decode_instances_with_issue(ctx, package)?
+        }
         ProteinState::Absent | ProteinState::Empty { .. } | ProteinState::Malformed { .. } => {
             (Vec::new(), None)
         }
@@ -395,6 +380,7 @@ fn decode_container<'a>(
         .databases
         .iter()
         .map(|database| -> Result<_, CodecError> {
+            admit_native_items(ctx, 1)?;
             Ok(StorageBandRecord {
                 id: retained_format(
                     ctx,
@@ -417,6 +403,7 @@ fn decode_container<'a>(
             Some((descriptor, database))
         })
         .map(|(descriptor, database)| -> Result<_, CodecError> {
+            admit_native_items(ctx, 1)?;
             Ok(DatabaseRecord {
                 id: retained_format(
                     ctx,
@@ -437,6 +424,7 @@ fn decode_container<'a>(
     let mut database_issues = Vec::new();
     for descriptor in &container.rse.databases {
         if let Some(detail) = descriptor.issue_detail(ctx)? {
+            admit_native_items(ctx, 1)?;
             database_issues.push(DatabaseIssueRecord {
                 id: retained_format(
                     ctx,
@@ -454,6 +442,7 @@ fn decode_container<'a>(
             .iter()
             .enumerate()
             .map(|(ordinal, entry)| -> Result<_, CodecError> {
+                admit_native_items(ctx, 1)?;
                 Ok(SegmentRegistryRecord {
                     id: retained_format(
                         ctx,
@@ -498,6 +487,7 @@ fn decode_container<'a>(
             .iter()
             .enumerate()
             .map(|(ordinal, entry)| -> Result<_, CodecError> {
+                admit_native_items(ctx, 1)?;
                 Ok(RevisionRecord {
                     id: retained_format(
                         ctx,
@@ -535,6 +525,7 @@ fn decode_container<'a>(
     let segment_bulk = projection.segment_bulk;
     let segment_bulk_issues = projection.segment_bulk_issues;
     let unpaired_segments = projection.unpaired_segments;
+    admit_native_items(ctx, 1)?;
     let active_carrier = ActiveCarrierRecord::from_state(ctx, &container.rse.active_carrier)?;
     let assembly_occurrences = assembly_inventory
         .occurrences
@@ -545,6 +536,7 @@ fn decode_container<'a>(
         .placements
         .iter()
         .map(|placement| {
+            ctx.charge_collection_items(1, "collect Inventor placement conversion result")?;
             admit_assembly_placement(
                 ctx,
                 AssemblyPlacementRecordWire::from_placement(ctx, placement)?,
@@ -1748,6 +1740,7 @@ fn project_protein_state(
     ctx: &DecodeContext<'_>,
     state: &ProteinState<'_>,
 ) -> Result<ProteinRecord, CodecError> {
+    admit_native_items(ctx, 1)?;
     let id = retained_clone(
         ctx,
         "inventor:protein:state#root",
@@ -1771,6 +1764,7 @@ fn project_protein_state(
                 .iter()
                 .enumerate()
                 .map(|(ordinal, entry)| -> Result<_, CodecError> {
+                    admit_native_items(ctx, 1)?;
                     Ok(ProteinEntryRecord {
                         id: retained_format(
                             ctx,
@@ -1810,10 +1804,6 @@ fn project_protein_records(
     ctx: &DecodeContext<'_>,
     instances: Vec<crate::protein::ProteinInstanceRecords>,
 ) -> Result<ProteinNativeRecords, CodecError> {
-    for instance in &instances {
-        admit_native_items(ctx, instance.records.len())?;
-        admit_native_items(ctx, instance.rejected.len())?;
-    }
     let mut assets = Vec::new();
     let mut rejections = Vec::new();
     let mut issues = Vec::new();
@@ -1885,6 +1875,7 @@ fn project_ufrx_state(
     state: &UfrxState<'_>,
     issues: &mut Vec<StructuralIssueRecord>,
 ) -> Result<UfrxRecord, CodecError> {
+    admit_native_items(ctx, 1)?;
     Ok(match state {
         UfrxState::Absent => UfrxRecord::Absent {
             id: retained_clone(
@@ -2019,13 +2010,14 @@ fn project_ufrx_model_state(
     state: &crate::external_reference::UfrxModelState<'_>,
     issues: &mut Vec<StructuralIssueRecord>,
 ) -> Result<Option<UfrxModelStateRecord>, CodecError> {
-    let issue_detail = if state.suffix.window().len() != 77 {
-        Some("suffix_len must be 77")
-    } else if state.name.chars().all(char::is_whitespace) {
-        Some("name must not be empty")
-    } else {
-        None
-    };
+    let issue_detail = model_state_issue(
+        wire_len(
+            ctx,
+            state.suffix.window().len(),
+            "Inventor UFRx model-state suffix length",
+        )?,
+        &state.name,
+    );
     if let Some(detail) = issue_detail {
         charge_retained_len(
             ctx,
@@ -2033,15 +2025,12 @@ fn project_ufrx_model_state(
             "retain Inventor UFRx model-state conversion issue",
         )?;
     }
-    charge_items(
-        ctx,
-        state.parameters.len(),
-        "copy Inventor UFRx state parameters",
-    )?;
     let parameters = state
         .parameters
         .iter()
         .map(|parameter| -> Result<_, CodecError> {
+            ctx.charge_collection_items(1, "copy Inventor UFRx state parameters")?;
+            ctx.charge_entities(1, "admit Inventor UFRx state parameter")?;
             Ok(UfrxModelStateParameterRecord {
                 name: retained_clone(ctx, &parameter.name, "retain Inventor UFRx parameter name")?,
                 tag: parameter.tag,
@@ -2097,8 +2086,11 @@ fn project_ufrx_external_reference(
     reference: &crate::external_reference::InventorExternalReference,
     issues: &mut Vec<StructuralIssueRecord>,
 ) -> Result<Option<ExternalReferenceRecord>, CodecError> {
-    if reference.path.chars().all(char::is_whitespace)
-        && reference.document_id.iter().all(|byte| *byte == 0)
+    if external_reference_issue(
+        &reference.path,
+        byte_document_id_present(&reference.document_id),
+    )
+    .is_some()
     {
         charge_retained_len(
             ctx,
@@ -2165,7 +2157,13 @@ fn project_ufrx_embedded_reference(
     reference: &crate::external_reference::InventorEmbeddedReference<'_>,
     issues: &mut Vec<StructuralIssueRecord>,
 ) -> Result<Option<EmbeddedReferenceRecord>, CodecError> {
-    if reference.source.window().is_empty() {
+    if embedded_reference_issue(wire_len(
+        ctx,
+        reference.source.window().len(),
+        "Inventor UFRx embedded length",
+    )?)
+    .is_some()
+    {
         charge_retained_len(
             ctx,
             "record_len must not be zero".len(),
@@ -2227,13 +2225,14 @@ fn project_ufrx_occurrence(
     occurrence: &crate::external_reference::UfrxOccurrence<'_>,
     issues: &mut Vec<StructuralIssueRecord>,
 ) -> Result<Option<UfrxOccurrenceRecord>, CodecError> {
-    let issue_detail = if occurrence.header_padding_words > 8 {
-        Some("header_padding_words must not exceed 8")
-    } else if occurrence.source.window().is_empty() {
-        Some("record_len must not be zero")
-    } else {
-        None
-    };
+    let issue_detail = occurrence_issue(
+        occurrence.header_padding_words,
+        wire_len(
+            ctx,
+            occurrence.source.window().len(),
+            "Inventor UFRx occurrence length",
+        )?,
+    );
     if let Some(detail) = issue_detail {
         charge_retained_len(
             ctx,
@@ -2286,24 +2285,17 @@ fn project_ufrx_representation(
     state: &crate::external_reference::UfrxRepresentationState,
     issues: &mut Vec<StructuralIssueRecord>,
 ) -> Result<Option<UfrxRepresentationRecord>, CodecError> {
-    let issue_detail = if let Some((name, kind)) = &state.active_representation {
-        if name.chars().all(char::is_whitespace) {
-            Some("active_representation must not be empty")
-        } else if kind.chars().all(char::is_whitespace) {
-            Some("active_representation_kind must not be empty")
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-    let issue_detail = issue_detail.or_else(|| {
+    let issue_detail = representation_issue(
         state
-            .active_model_state
-            .chars()
-            .all(char::is_whitespace)
-            .then_some("active_model_state must not be empty")
-    });
+            .active_representation
+            .as_ref()
+            .map(|(name, _)| name.as_str()),
+        state
+            .active_representation
+            .as_ref()
+            .map(|(_, kind)| kind.as_str()),
+        &state.active_model_state,
+    );
     if let Some(detail) = issue_detail {
         charge_retained_len(
             ctx,
@@ -2353,130 +2345,6 @@ fn admit_native_items(ctx: &DecodeContext<'_>, count: usize) -> Result<(), Codec
     })?;
     ctx.charge_collection_items(count, "retain Inventor native structural records")?;
     ctx.charge_entities(count, "admit Inventor native structural records")
-}
-
-fn admit_native_record_items(
-    ctx: &DecodeContext<'_>,
-    container: &InventorContainer<'_>,
-    assembly: &crate::assembly::AssemblyInventory<'_>,
-    presentation: &crate::presentation::PresentationInventory<'_>,
-    design: &crate::design::DesignInventory,
-    sketch: &crate::sketch::SketchInventory,
-    feature: &crate::feature::FeatureInventory,
-) -> Result<(), CodecError> {
-    admit_native_items(ctx, 3)?;
-    for descriptor in &container.property_sets {
-        admit_native_items(ctx, 1)?;
-        if let PropertySetState::Parsed(property_set) = &descriptor.state {
-            for section in &property_set.sections {
-                ctx.charge_work(1, "count Inventor native property sections")?;
-                admit_native_items(ctx, 1)?;
-                admit_native_items(ctx, section.properties.len())?;
-            }
-        }
-    }
-    if let ProteinState::Package(package) = &container.protein {
-        admit_native_items(ctx, package.archive.entries().len())?;
-    }
-    if let UfrxState::Parsed(document) = &container.ufrx {
-        for state in &document.model_states {
-            ctx.charge_work(1, "count Inventor native UFRx states")?;
-            admit_native_items(ctx, state.parameters.len())?;
-        }
-        for reference in &document.references {
-            ctx.charge_work(1, "count Inventor native UFRx references")?;
-            charge_items(
-                ctx,
-                reference.state_groups.len(),
-                "retain Inventor native UFRx state groups",
-            )?;
-        }
-        for count in [
-            document.model_states.len(),
-            document.references.len(),
-            document.embedded_references.len(),
-            document.occurrences.len(),
-        ] {
-            admit_native_items(ctx, count)?;
-        }
-    }
-    if let UfrxState::Unsupported {
-        section_versions, ..
-    } = &container.ufrx
-    {
-        charge_items(
-            ctx,
-            section_versions.len(),
-            "retain Inventor native UFRx section versions",
-        )?;
-    }
-    admit_native_items(ctx, container.rse.databases.len())?;
-    admit_native_items(ctx, container.rse.databases.len())?;
-    match &container.rse.registry {
-        ParsedState::Parsed(registry) => admit_native_items(ctx, registry.entries.len())?,
-        ParsedState::Unavailable(_) => admit_native_items(ctx, 1)?,
-        ParsedState::Absent => {}
-    }
-    match &container.rse.revisions {
-        ParsedState::Parsed(table) => admit_native_items(ctx, table.entries.len())?,
-        ParsedState::Unavailable(_) => admit_native_items(ctx, 1)?,
-        ParsedState::Absent => {}
-    }
-    for segment in &container.rse.segments {
-        ctx.charge_work(1, "count Inventor native segment records")?;
-        admit_native_items(ctx, 3)?;
-        admit_native_items(ctx, segment.identity_issues.len())?;
-        if let SegmentMetaState::Parsed(meta) = &segment.meta {
-            admit_native_items(ctx, meta.tables.sections.len())?;
-            admit_native_items(ctx, meta.tables.types.len())?;
-        }
-        if let SegmentBulkState::Framed(bulk) = &segment.bulk {
-            if let RecordFrameState::Framed(table) = &bulk.records {
-                admit_native_items(ctx, table.records.len())?;
-            }
-        }
-    }
-    for count in [
-        container.rse.unpaired_metadata.len(),
-        container.rse.unpaired_bulk.len(),
-        assembly.occurrences.len(),
-        assembly.placements.len(),
-        assembly.issues.len(),
-        presentation.default_styles.len(),
-        presentation.rendering_styles.len(),
-        presentation.graphics_faces.len(),
-        presentation.graphics_style_collections.len(),
-        presentation.graphics_primary_color_styles.len(),
-        presentation.issues.len(),
-        design.parameters.len(),
-        design.expressions.len(),
-        design.units.len(),
-        design.issues.len(),
-        sketch.sketches.len(),
-        sketch.entities.len(),
-        sketch.transforms.len(),
-        sketch.directions.len(),
-        sketch.constraints.len(),
-        sketch.issues.len(),
-        feature.features.len(),
-        feature.pattern_features.len(),
-        feature.terminators.len(),
-        feature.properties.len(),
-        feature.labels.len(),
-        feature.entity_style_links.len(),
-        feature.issues.len(),
-    ] {
-        admit_native_items(ctx, count)?;
-    }
-    for occurrence in &assembly.occurrences {
-        ctx.charge_work(1, "count Inventor native occurrence references")?;
-        charge_items(
-            ctx,
-            occurrence.related_references.len(),
-            "retain Inventor native occurrence references",
-        )?;
-    }
-    Ok(())
 }
 
 fn collect_body_ids<'b>(
@@ -2647,7 +2515,10 @@ fn admit_ufrx_record<T>(
     issues: &mut Vec<StructuralIssueRecord>,
 ) -> Result<Option<T>, CodecError> {
     match admitted {
-        Ok(record) => Ok(Some(record)),
+        Ok(record) => {
+            admit_native_items(ctx, 1)?;
+            Ok(Some(record))
+        }
         Err(detail) => {
             issues.push(structural_issue(ctx, scope, &detail)?);
             Ok(None)
@@ -2754,7 +2625,11 @@ fn admit_assembly_placement(
     let segment_token = wire.segment_token.clone();
     let record_ordinal = wire.record_ordinal;
     match AssemblyPlacementRecord::try_from(wire) {
-        Ok(record) => Ok(Some(record)),
+        Ok(record) => {
+            ctx.charge_collection_items(1, "collect Inventor native assembly placement")?;
+            ctx.charge_entities(1, "admit Inventor native assembly placement")?;
+            Ok(Some(record))
+        }
         Err(detail) => {
             ctx.charge_collection_items(1, "collect Inventor placement conversion issue")?;
             ctx.charge_entities(1, "admit Inventor placement conversion issue")?;

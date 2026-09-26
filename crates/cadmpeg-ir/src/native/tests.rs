@@ -48,6 +48,84 @@ fn native_arena_json_copy_refuses_retained_limit_before_materialization() {
 }
 
 #[test]
+fn native_arena_name_refuses_retained_limit_before_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = "records".len() as u64 - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut namespace = crate::native::NativeNamespace::default();
+    let error = namespace
+        .set_arena(&limited, "records", &[] as &[serde_json::Value])
+        .unwrap_err();
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = cadmpeg_core::CodecError::from(error)
+    else {
+        panic!("native arena name must preserve the resource refusal")
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, "retain native arena name");
+    assert!(namespace.arenas().is_empty());
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    namespace
+        .set_arena(&service, "records", &[] as &[serde_json::Value])
+        .unwrap();
+    assert_eq!(namespace.arenas()["records"].len(), 0);
+}
+
+#[test]
+fn native_record_slot_refuses_collection_limit_before_json_materialization() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let record = serde_json::json!({"id": "test:native:record#first", "payload": "value"});
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut namespace = crate::native::NativeNamespace::default();
+    let error = namespace
+        .set_arena(&limited, "records", std::slice::from_ref(&record))
+        .unwrap_err();
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = cadmpeg_core::CodecError::from(error)
+    else {
+        panic!("native record storage must preserve the resource refusal")
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.operation, "store native record");
+    assert!(namespace.arenas().is_empty());
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    namespace
+        .set_arena(&service, "records", std::slice::from_ref(&record))
+        .unwrap();
+    assert_eq!(namespace.arenas()["records"].len(), 1);
+}
+
+#[test]
+fn native_arena_slot_refuses_collection_limit_before_insert() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut namespace = crate::native::NativeNamespace::default();
+    let error = namespace
+        .set_arena(&limited, "records", &[] as &[serde_json::Value])
+        .unwrap_err();
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = cadmpeg_core::CodecError::from(error)
+    else {
+        panic!("native arena storage must preserve the resource refusal")
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.operation, "store native arena");
+    assert!(namespace.arenas().is_empty());
+}
+
+#[test]
 fn typed_native_read_errors_identify_the_arena_and_stored_record() {
     use crate::native::NativeConvertError;
     use std::error::Error;

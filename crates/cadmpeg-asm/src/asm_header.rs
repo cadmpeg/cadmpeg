@@ -22,7 +22,7 @@
 //! `resnor`) follow the strings, then the SAB record stream.
 
 use crate::kernel_header::{
-    read_string_region, scan_string_region, BinaryHeader, KernelHeader, RefWidth,
+    read_string_region, scan_string_region, BinaryHeader, HeaderRegion, KernelHeader, RefWidth,
 };
 use crate::layout::asmheader_binaryfile4 as bf4;
 use crate::layout::asmheader_binaryfile8 as bf8;
@@ -97,8 +97,10 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Option<BinaryHeade
         RefWidth::Four => bf4::LEN,
         RefWidth::Eight => bf8::LEN,
     };
-    let ([family, version, date], [scale, linear, angular], _) =
-        read_string_region(ctx, bytes, start)?;
+    let HeaderRegion {
+        strings: [family, version, date],
+        doubles: [scale, linear, angular],
+    } = read_string_region(ctx, bytes, start)?;
     header.product_family = family;
     header.product_version = version;
     header.save_date = date;
