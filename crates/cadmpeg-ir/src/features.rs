@@ -182,6 +182,16 @@ impl FiniteVector3 {
         })
     }
 
+    /// Use admitted vector coordinates as a finite point.
+    #[must_use]
+    pub const fn as_point(self) -> FinitePoint3 {
+        FinitePoint3(Point3 {
+            x: self.0.x,
+            y: self.0.y,
+            z: self.0.z,
+        })
+    }
+
     /// Reverse all components.
     #[must_use]
     pub fn negated(self) -> Self {
