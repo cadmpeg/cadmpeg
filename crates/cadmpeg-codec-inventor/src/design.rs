@@ -1901,7 +1901,7 @@ mod tests {
             issues: Vec::new(),
         };
         let mut limited_policy = DecodePolicy::service();
-        limited_policy.limits.max_collection_items = 19;
+        limited_policy.limits.max_collection_items = 25;
         let limited_arena = DecodeArena::new();
         let (limited_ctx, _) = DecodeContext::from_root_bytes(&[], &limited_arena, &limited_policy)
             .expect("empty fixture view");
