@@ -623,3 +623,25 @@ fn a_unit_component_below_the_normal_range_is_one_quotient_of_its_component() {
     assert_eq!(unit.y.to_bits(), tiny.to_bits());
     assert_eq!(unit.z, 0.0);
 }
+
+#[test]
+fn finite_binary32_preserves_source_precision_and_rejects_nonfinite_values() {
+    use crate::scalar::FiniteBinary32;
+    use serde::de::value::{Error, F32Deserializer};
+
+    for source in [0.1_f32, -0.0_f32, f32::MIN_POSITIVE] {
+        let value = FiniteBinary32::new(source).unwrap();
+        assert_eq!(value.get().to_bits(), source.to_bits());
+        assert_eq!(
+            serde_json::to_string(&value).unwrap(),
+            serde_json::to_string(&source).unwrap()
+        );
+    }
+    for source in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        assert!(FiniteBinary32::new(source).is_none());
+        assert!(<FiniteBinary32 as serde::Deserialize>::deserialize(
+            F32Deserializer::<Error>::new(source)
+        )
+        .is_err());
+    }
+}
