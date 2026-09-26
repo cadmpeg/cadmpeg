@@ -232,6 +232,40 @@ fn radius_anchored_counterbore_accepts_signed_depth() {
 }
 
 #[test]
+fn overflowing_corner_spans_do_not_match_counterbore_dimensions() {
+    let table = crate::feature::definitions::FeatureDimensionTable {
+        declared_count: 4,
+        entity_ref: Some(88),
+        rows: [(0, 1, 8.0), (1, 2, 20.0), (2, 2, 60.0), (3, 2, -295.661)]
+            .into_iter()
+            .map(|(external_id, dimension_type, value)| {
+                crate::feature::definitions::FeatureDimension {
+                    dimension_type,
+                    value: crate::feature::definitions::DimensionValue::Resolved(value),
+                    value_body: Vec::new(),
+                    direction_byte: 0,
+                    auxiliary_value: Some(0.0),
+                    auxiliary_body: Vec::new(),
+                    external_id,
+                    references: None,
+                    offset: 0,
+                }
+            })
+            .collect(),
+        offset: 0,
+    };
+    let corners = [[-f64::MAX, -f64::MAX, 0.0], [f64::MAX, f64::MAX, 0.0]];
+    let spans = super::paired_corner_envelope_axis_spans(corners, corners)
+        .expect("finite counterbore corner coordinates");
+
+    assert!(super::counterbore_envelope_dimension_values(
+        std::iter::once(&table),
+        &[Some(spans), None],
+    )
+    .is_none());
+}
+
+#[test]
 fn counterbore_dimension_tuple_restricts_source_radii() {
     let dimensions = (40.0, 120.0, 8.0);
 

@@ -5,7 +5,7 @@ use super::axis::SectionAxis;
 
 use crate::feature::definitions::VariableType;
 use cadmpeg_core::decode::alloc_filled;
-use cadmpeg_ir::scalar::PositiveLength;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::feature_history::dimensions::feature_dimension_table_complete;
@@ -160,7 +160,9 @@ pub(in crate::decode) fn section_equation_function_six_distance_rows(
                         let delta = [second[0] - first[0], second[1] - first[1]];
                         let distance = PositiveLength::new(delta[0].hypot(delta[1]))?;
                         if stored_distance.is_some_and(|stored| {
-                            !approximately_equal(stored.get(), distance.get())
+                            !(FiniteReal::new(stored.get()))
+                                .zip(FiniteReal::new(distance.get()))
+                                .is_some_and(|(first, second)| approximately_equal(first, second))
                         }) {
                             return None;
                         }
@@ -225,7 +227,12 @@ fn section_equation_dimension_scalar_value(
     }
     let scalar_value = reconcile_equation_value(scalar.value.value(), equality_value).ok()?;
     match scalar_value {
-        Some(value) if valid(value) && approximately_equal(value, dimension_value) => {
+        Some(value)
+            if valid(value)
+                && (FiniteReal::new(value))
+                    .zip(FiniteReal::new(dimension_value))
+                    .is_some_and(|(first, second)| approximately_equal(first, second)) =>
+        {
             Some(dimension_value)
         }
         None if scalar.value == crate::feature::definitions::ScalarLane::DimensionDriven => {
@@ -980,7 +987,11 @@ pub(super) fn section_equal_length_coordinate_values(
         candidates
             .entry(*missing)
             .and_modify(|candidate| {
-                if candidate.is_some_and(|candidate| !approximately_equal(candidate, *value)) {
+                if candidate.is_some_and(|candidate| {
+                    !(FiniteReal::new(candidate))
+                        .zip(FiniteReal::new(*value))
+                        .is_some_and(|(first, second)| approximately_equal(first, second))
+                }) {
                     *candidate = None;
                 }
             })
@@ -1009,13 +1020,17 @@ fn quadratic_roots(quadratic: Coefficient, linear: Coefficient, constant: Coeffi
                         .max(1.0)
     });
     roots.sort_by(f64::total_cmp);
-    roots.dedup_by(|first, second| approximately_equal(*first, *second));
+    roots.dedup_by(|first, second| {
+        (FiniteReal::new(*first))
+            .zip(FiniteReal::new(*second))
+            .is_some_and(|(first, second)| approximately_equal(first, second))
+    });
     roots
 }
 
-pub(in crate::decode) fn approximately_equal(first: f64, second: f64) -> bool {
-    let scale = first.abs().max(second.abs()).max(1.0);
-    (first - second).abs() <= EPS_DISTANCE_AGREEMENT * scale
+pub(in crate::decode) fn approximately_equal(first: FiniteReal, second: FiniteReal) -> bool {
+    let scale = first.get().abs().max(second.get().abs()).max(1.0);
+    (first.get() - second.get()).abs() <= EPS_DISTANCE_AGREEMENT * scale
 }
 
 pub(in crate::decode) fn solve_section_coordinate_equations(

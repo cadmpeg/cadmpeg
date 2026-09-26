@@ -5,13 +5,19 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{DesignParameter, Feature, FeatureDefinition, ParameterValue};
 use cadmpeg_ir::geometry::{
     pcurve::Pcurve, Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, Surface,
     SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, SurfaceId};
+use cadmpeg_ir::products::Occurrence;
 use cadmpeg_ir::scalar::PositiveReal;
-use cadmpeg_ir::topology::{Coedge, Edge, EdgeCarrier, Face, Point, Vertex};
+use cadmpeg_ir::sketches::{
+    Sketch, SketchConstraint, SketchEntity, SketchEntityId, SketchGeometry,
+};
+use cadmpeg_ir::topology::{Body, Coedge, Edge, EdgeCarrier, Face, Point, Vertex};
+use cadmpeg_ir::transform::Transform;
 
 #[derive(Default)]
 pub(super) struct SourceUnitCarriers {
@@ -19,6 +25,7 @@ pub(super) struct SourceUnitCarriers {
     surfaces: BTreeMap<SurfaceId, SurfaceGeometry>,
     curves: BTreeMap<CurveId, CurveGeometry>,
     edge_parameter_ranges: BTreeMap<EdgeId, [f64; 2]>,
+    sketch_entities: BTreeMap<SketchEntityId, SketchGeometry>,
 }
 
 impl SourceUnitCarriers {
@@ -28,7 +35,155 @@ impl SourceUnitCarriers {
             surfaces: BTreeMap::new(),
             curves: BTreeMap::new(),
             edge_parameter_ranges: BTreeMap::new(),
+            sketch_entities: BTreeMap::new(),
         }
+    }
+
+    fn scale_product_translation(&self, transform: &mut Transform) -> Result<(), CodecError> {
+        if let Some(scale) = self.length_scale_mm {
+            *transform = transform.scaled_translation(scale).ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "Creo product transform translation cannot be represented in millimeters"
+                        .into(),
+                )
+            })?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn admit_body(&self, ir: &mut CadIr, mut body: Body) -> Result<(), CodecError> {
+        if let Some(transform) = body.transform.as_mut() {
+            self.scale_product_translation(transform)?;
+        }
+        ir.model.bodies.push(body);
+        Ok(())
+    }
+
+    pub(super) fn admit_occurrence(
+        &self,
+        ir: &mut CadIr,
+        mut occurrence: Occurrence,
+    ) -> Result<(), CodecError> {
+        self.scale_product_translation(&mut occurrence.transform)?;
+        if let Some(transform) = occurrence.linked_prototype.as_mut() {
+            self.scale_product_translation(transform)?;
+        }
+        ir.model.occurrences.push(occurrence);
+        Ok(())
+    }
+
+    pub(super) fn admit_feature(
+        &self,
+        ir: &mut CadIr,
+        mut feature: Feature,
+    ) -> Result<(), CodecError> {
+        if let Some(scale) = self.length_scale_mm {
+            let mut definition = feature.evaluation.definition().clone();
+            crate::decode::build::units::scale_feature_definition(&mut definition, scale)
+                .map_err(Self::unrepresentable_length)?;
+            feature.evaluation.set_definition(definition);
+        }
+        ir.model.features.push(feature);
+        Ok(())
+    }
+
+    pub(super) fn replace_feature_definition(
+        &self,
+        feature: &mut Feature,
+        mut definition: FeatureDefinition,
+    ) -> Result<(), CodecError> {
+        if let Some(scale) = self.length_scale_mm {
+            crate::decode::build::units::scale_feature_definition(&mut definition, scale)
+                .map_err(Self::unrepresentable_length)?;
+        }
+        feature.evaluation.set_definition(definition);
+        Ok(())
+    }
+
+    pub(super) fn admit_parameter(
+        &self,
+        ir: &mut CadIr,
+        mut parameter: DesignParameter,
+    ) -> Result<(), CodecError> {
+        if let (Some(scale), Some(ParameterValue::Length(length))) =
+            (self.length_scale_mm, parameter.value.as_mut())
+        {
+            crate::decode::build::units::scale_length(length, scale)
+                .map_err(Self::unrepresentable_length)?;
+        }
+        ir.model.parameters.push(parameter);
+        Ok(())
+    }
+
+    fn unrepresentable_length(error: CodecError) -> CodecError {
+        match error {
+            CodecError::Malformed(message) => CodecError::NotImplemented(message),
+            other => other,
+        }
+    }
+
+    pub(super) fn admit_sketch(
+        &self,
+        ir: &mut CadIr,
+        mut sketch: Sketch,
+    ) -> Result<(), CodecError> {
+        if let (Some(scale), Some((origin, _, _))) =
+            (self.length_scale_mm, sketch.resolved_placement())
+        {
+            let origin = origin.scaled(scale).ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "sketch origin cannot be represented in millimeters".into(),
+                )
+            })?;
+            sketch.placement = sketch.placement.with_origin(origin);
+        }
+        ir.model.sketches.push(sketch);
+        Ok(())
+    }
+
+    pub(super) fn admit_sketch_entities(
+        &mut self,
+        ir: &mut CadIr,
+        entities: Vec<SketchEntity>,
+    ) -> Result<(), CodecError> {
+        for mut entity in entities {
+            let source_geometry = entity.geometry.clone();
+            if let Some(scale) = self.length_scale_mm {
+                crate::decode::build::units::scale_sketch_geometry(&mut entity.geometry, scale)
+                    .map_err(Self::unrepresentable_length)?;
+            }
+            self.sketch_entities
+                .insert(entity.id().clone(), source_geometry);
+            ir.model.sketch_entities.push(entity);
+        }
+        Ok(())
+    }
+
+    pub(super) fn sketch_geometry<'a>(&'a self, entity: &'a SketchEntity) -> &'a SketchGeometry {
+        self.sketch_entities
+            .get(entity.id())
+            .unwrap_or(&entity.geometry)
+    }
+
+    pub(super) fn admit_sketch_constraints(
+        &self,
+        ir: &mut CadIr,
+        constraints: Vec<SketchConstraint>,
+    ) -> Result<(), CodecError> {
+        for mut constraint in constraints {
+            if let Some(scale) = self.length_scale_mm {
+                constraint.definition.scale_lengths(scale).map_err(|error| match error {
+                    cadmpeg_ir::sketches::scaling::SketchConstraintScaleError::LengthOverflow => {
+                        CodecError::NotImplemented("Creo scaled length must be finite".into())
+                    }
+                    cadmpeg_ir::sketches::scaling::SketchConstraintScaleError::InvalidLocalValue => {
+                        CodecError::malformed("invalid sketch constraint local arity or scalar value")
+                    }
+                })?;
+            }
+            ir.model.sketch_constraints.push(constraint);
+        }
+        Ok(())
     }
 
     pub(super) fn admit_surface(
@@ -326,6 +481,10 @@ impl SourceUnitCarriers {
 mod tests {
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::features::{
+        DesignParameter, Feature, FeatureDefinition, FeatureEvaluation, FeatureOperation,
+        FuzzyTolerance, ParameterValue,
+    };
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, HelixCurveConstruction, HelixFrame, ProceduralCurve,
         ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
@@ -333,13 +492,367 @@ mod tests {
     };
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
     use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::products::{Occurrence, OccurrenceParent, PrototypeReference};
     use cadmpeg_ir::scalar::PositiveReal;
-    use cadmpeg_ir::topology::{
-        Coedge, CoedgeUseCurve, Edge, EdgeCarrier, Face, FaceLoops, ParameterInterval, Point,
-        Sense, Vertex,
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput,
+        SketchEntity, SketchGeometry, SketchGeometryDefinition, SketchLocus, SketchPlacement,
+        SketchProfiles,
     };
+    use cadmpeg_ir::topology::{
+        Body, BodyKind, Coedge, CoedgeUseCurve, Edge, EdgeCarrier, Face, FaceLoops,
+        ParameterInterval, Point, Sense, Vertex,
+    };
+    use cadmpeg_ir::transform::Transform;
 
     use super::SourceUnitCarriers;
+
+    fn source_feature(definition: FeatureDefinition) -> Feature {
+        Feature {
+            id: cadmpeg_ir::features::FeatureId::mint("creo:test:feature#1")
+                .expect("identity grammar"),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+            evaluation: FeatureEvaluation::from_definition(definition),
+            native_ref: None,
+        }
+    }
+
+    fn source_length_parameter(value: f64) -> DesignParameter {
+        DesignParameter {
+            id: cadmpeg_ir::features::ParameterId::mint("creo:test:parameter#1")
+                .expect("identity grammar"),
+            owner: None,
+            ordinal: 0,
+            name: "length".into(),
+            expression: "length".into(),
+            display: None,
+            value: Some(ParameterValue::Length(
+                cadmpeg_ir::scalar::Length::new(value).expect("finite source length"),
+            )),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        }
+    }
+
+    fn source_sketch(origin: Point3) -> Sketch {
+        Sketch {
+            id: cadmpeg_ir::sketches::SketchId::mint("creo:test:sketch#1")
+                .expect("identity grammar"),
+            name: None,
+            configuration: None,
+            visible: None,
+            placement: SketchPlacement::try_resolved(
+                origin,
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("source placement"),
+            profiles: SketchProfiles::default(),
+            native_ref: None,
+        }
+    }
+
+    fn source_sketch_line(x: f64) -> SketchEntity {
+        SketchEntity::new(
+            cadmpeg_ir::sketches::SketchEntityId::mint("creo:test:sketch_entity#1")
+                .expect("identity grammar"),
+            cadmpeg_ir::sketches::SketchId::mint("creo:test:sketch#1").expect("identity grammar"),
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: cadmpeg_ir::math::Point2::new(x, 0.0),
+                end: cadmpeg_ir::math::Point2::new(2.0, 0.0),
+            })
+            .expect("source line"),
+        )
+    }
+
+    fn source_distance_constraint(value: f64) -> SketchConstraint {
+        let entity = cadmpeg_ir::sketches::SketchEntityId::mint("creo:test:sketch_entity#1")
+            .expect("identity grammar");
+        SketchConstraint {
+            id: cadmpeg_ir::sketches::SketchConstraintId::mint("creo:test:sketch_constraint#1")
+                .expect("identity grammar"),
+            sketch: cadmpeg_ir::sketches::SketchId::mint("creo:test:sketch#1")
+                .expect("identity grammar"),
+            definition: SketchConstraintDefinition::try_from(
+                SketchConstraintDefinitionInput::DistanceLociValue {
+                    first: SketchLocus::Start(entity.clone()),
+                    second: SketchLocus::End(entity),
+                    distance: cadmpeg_ir::scalar::Length::new(value)
+                        .expect("finite source distance"),
+                    parameter: None,
+                },
+            )
+            .expect("valid source distance"),
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
+            native_ref: None,
+        }
+    }
+
+    #[test]
+    fn planar_sketch_lengths_are_in_millimeters_at_admission() {
+        let mut ir = CadIr::empty();
+        let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+        carriers
+            .admit_sketch(&mut ir, source_sketch(Point3::new(1.0, 0.0, 0.0)))
+            .expect("sketch admission");
+        carriers
+            .admit_sketch_entities(&mut ir, vec![source_sketch_line(1.0)])
+            .expect("entity admission");
+        carriers
+            .admit_sketch_constraints(&mut ir, vec![source_distance_constraint(2.0)])
+            .expect("constraint admission");
+        assert_eq!(
+            ir.model.sketches[0]
+                .resolved_placement()
+                .expect("resolved placement")
+                .0
+                .get()
+                .x,
+            25.4
+        );
+        let SketchGeometryDefinition::Line { start, .. } =
+            ir.model.sketch_entities[0].geometry.definition()
+        else {
+            panic!("sketch line changed family");
+        };
+        assert_eq!(start.u, 25.4);
+        let SketchConstraintDefinitionInput::DistanceLociValue { distance, .. } =
+            ir.model.sketch_constraints[0].definition.kind()
+        else {
+            panic!("distance constraint changed family");
+        };
+        assert_eq!(distance.get(), 50.8);
+        let SketchGeometryDefinition::Line { start, .. } = carriers
+            .sketch_geometry(&ir.model.sketch_entities[0])
+            .definition()
+        else {
+            panic!("source sketch line changed family");
+        };
+        assert_eq!(start.u, 1.0);
+    }
+
+    #[test]
+    fn sketch_origin_overflow_refuses_before_admission() {
+        let mut ir = CadIr::empty();
+        let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+        let error = carriers
+            .admit_sketch(&mut ir, source_sketch(Point3::new(f64::MAX, 0.0, 0.0)))
+            .expect_err("millimeter placement cannot be represented");
+        assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
+        assert!(ir.model.sketches.is_empty());
+    }
+
+    #[test]
+    fn sketch_entity_overflow_refuses_before_admission() {
+        let mut ir = CadIr::empty();
+        let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+        let error = carriers
+            .admit_sketch_entities(&mut ir, vec![source_sketch_line(f64::MAX)])
+            .expect_err("millimeter line cannot be represented");
+        assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
+        assert!(ir.model.sketch_entities.is_empty());
+    }
+
+    #[test]
+    fn sketch_constraint_overflow_refuses_before_admission() {
+        let mut ir = CadIr::empty();
+        let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+        let error = carriers
+            .admit_sketch_constraints(&mut ir, vec![source_distance_constraint(f64::MAX)])
+            .expect_err("millimeter constraint cannot be represented");
+        assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
+        assert!(ir.model.sketch_constraints.is_empty());
+    }
+
+    #[test]
+    fn datum_offset_distance_is_in_millimeters_at_feature_admission() {
+        let mut ir = CadIr::empty();
+        let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+        carriers
+            .admit_feature(
+                &mut ir,
+                source_feature(FeatureDefinition::Operation(
+                    FeatureOperation::DatumOffsetPlane {
+                        reference: None,
+                        distance: cadmpeg_ir::scalar::Length::new(2.0).expect("finite distance"),
+                    },
+                )),
+            )
+            .expect("feature admission");
+        let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { distance, .. }) =
+            ir.model.features[0].evaluation.definition()
+        else {
+            panic!("datum offset feature changed family");
+        };
+        assert_eq!(distance.get(), 50.8);
+    }
+
+    #[test]
+    fn post_process_fuzzy_tolerance_is_in_millimeters_at_feature_admission() {
+        let mut ir = CadIr::empty();
+        let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+        carriers
+            .admit_feature(
+                &mut ir,
+                source_feature(FeatureDefinition::PostProcess {
+                    operation: FeatureOperation::StoredGeometry {},
+                    refine: false,
+                    fuzzy_tolerance: FuzzyTolerance::Explicit(
+                        cadmpeg_ir::scalar::PositiveLength::new(0.5)
+                            .expect("positive source tolerance"),
+                    ),
+                }),
+            )
+            .expect("feature admission");
+        let FeatureDefinition::PostProcess {
+            fuzzy_tolerance: FuzzyTolerance::Explicit(tolerance),
+            ..
+        } = ir.model.features[0].evaluation.definition()
+        else {
+            panic!("post process feature changed family");
+        };
+        assert_eq!(tolerance.get(), 12.7);
+    }
+
+    #[test]
+    fn feature_length_overflow_refuses_before_admission() {
+        let mut ir = CadIr::empty();
+        let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+        let error = carriers
+            .admit_feature(
+                &mut ir,
+                source_feature(FeatureDefinition::Operation(
+                    FeatureOperation::DatumOffsetPlane {
+                        reference: None,
+                        distance: cadmpeg_ir::scalar::Length::new(f64::MAX)
+                            .expect("finite source distance"),
+                    },
+                )),
+            )
+            .expect_err("millimeter distance cannot be represented");
+        assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
+        assert!(ir.model.features.is_empty());
+    }
+
+    #[test]
+    fn parameter_length_overflow_refuses_before_admission() {
+        let mut ir = CadIr::empty();
+        let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+        let error = carriers
+            .admit_parameter(&mut ir, source_length_parameter(f64::MAX))
+            .expect_err("millimeter parameter cannot be represented");
+        assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
+        assert!(ir.model.parameters.is_empty());
+    }
+
+    fn translated_product_transform(x: f64) -> Transform {
+        Transform::affine([
+            [1.0, 0.0, 0.0, x],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ])
+        .expect("finite source translation")
+    }
+
+    fn source_occurrence(transform: Transform, linked_prototype: Option<Transform>) -> Occurrence {
+        Occurrence {
+            id: cadmpeg_ir::ids::OccurrenceId::mint("creo:test:occurrence#0")
+                .expect("identity grammar"),
+            prototype: PrototypeReference::Local {
+                definition: cadmpeg_ir::ids::ProductDefinitionId::mint("creo:test:product#0")
+                    .expect("identity grammar"),
+            },
+            parent: OccurrenceParent::Root {},
+            ordinal: 0,
+            transform,
+            linked_prototype,
+            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+            name: None,
+            visible: None,
+            link: None,
+            native_ref: None,
+        }
+    }
+
+    #[test]
+    fn product_transform_translations_are_in_millimeters_at_admission() {
+        let mut ir = CadIr::empty();
+        let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+        carriers
+            .admit_body(
+                &mut ir,
+                Body {
+                    id: cadmpeg_ir::ids::BodyId::mint("creo:test:body#0")
+                        .expect("identity grammar"),
+                    kind: BodyKind::Solid,
+                    regions: Vec::new(),
+                    transform: Some(translated_product_transform(1.0)),
+                    name: None,
+                    color: None,
+                    visible: None,
+                },
+            )
+            .expect("body admission");
+        carriers
+            .admit_occurrence(
+                &mut ir,
+                source_occurrence(
+                    translated_product_transform(2.0),
+                    Some(translated_product_transform(3.0)),
+                ),
+            )
+            .expect("occurrence admission");
+        assert_eq!(
+            ir.model.bodies[0]
+                .transform
+                .expect("body transform")
+                .affine_rows()[0][3],
+            25.4
+        );
+        assert_eq!(ir.model.occurrences[0].transform.affine_rows()[0][3], 50.8);
+        assert_eq!(
+            ir.model.occurrences[0]
+                .linked_prototype
+                .expect("linked prototype")
+                .affine_rows()[0][3],
+            3.0 * 25.4
+        );
+    }
+
+    #[test]
+    fn product_transform_translation_overflow_refuses_before_admission() {
+        let mut ir = CadIr::empty();
+        let carriers = SourceUnitCarriers::new(PositiveReal::new(1000.0));
+        let error = carriers
+            .admit_occurrence(
+                &mut ir,
+                source_occurrence(translated_product_transform(f64::MAX), None),
+            )
+            .expect_err("a non-finite translation has no transform");
+        assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
+        assert!(
+            error.to_string().contains("transform translation"),
+            "{error}"
+        );
+        assert!(ir.model.occurrences.is_empty());
+    }
 
     #[test]
     fn scaled_cylinder_radius_overflow_refuses_unrepresentable_ir() {
@@ -429,8 +942,6 @@ mod tests {
             panic!("procedural construction changed family");
         };
         assert_eq!(construction.direction().get(), Vector3::new(0.0, 0.0, 25.4));
-        crate::decode::build::units::normalize_model_lengths(&mut ir, scale)
-            .expect("remaining unit normalization");
         let ProceduralSurfaceDefinition::Extrusion(construction) =
             ir.model.procedural_surfaces[0].definition()
         else {

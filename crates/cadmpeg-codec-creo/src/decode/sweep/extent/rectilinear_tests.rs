@@ -58,7 +58,8 @@ fn rectilinear_family(stations: &[(f64, bool)]) -> RectilinearPlaneFamily {
         stations: stations
             .iter()
             .map(|(coordinate, reversed)| RectilinearPlaneStation {
-                coordinate: *coordinate,
+                coordinate: cadmpeg_ir::scalar::FiniteReal::new(*coordinate)
+                    .expect("finite station fixture"),
                 reversed: *reversed,
             })
             .collect(),

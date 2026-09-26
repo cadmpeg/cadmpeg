@@ -114,7 +114,7 @@ pub(super) fn emit_model_features(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model features")?;
-        ir.model.features.push(Feature {
+        let feature = Feature {
             id,
             ordinal: ir.model.features.len() as u64,
             name: None,
@@ -135,7 +135,8 @@ pub(super) fn emit_model_features(
                 },
             ),
             native_ref: None,
-        });
+        };
+        source_carriers.admit_feature(ir, feature)?;
     }
     let row_feature_ids = ordered_row_feature_ids(&scan.features.rows);
     let mut geometry_generator_feature_count = 0;
@@ -154,7 +155,7 @@ pub(super) fn emit_model_features(
             Exactness::ByteExact,
         );
         ctx.charge_entities(1, "admit Creo model features")?;
-        ir.model.features.push(Feature {
+        let feature = Feature {
             id,
             ordinal: ir.model.features.len() as u64,
             name: None,
@@ -188,7 +189,8 @@ pub(super) fn emit_model_features(
                     .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
             native_ref: None,
-        });
+        };
+        source_carriers.admit_feature(ir, feature)?;
         refresh_feature_outputs(scan, ir)?;
         geometry_generator_feature_count += 1;
     }
@@ -329,7 +331,7 @@ pub(super) fn emit_model_features(
                     IrFeatureDefinition::Operation(IrFeatureOperation::StoredGeometry {})
                 );
             if upgrade_legacy_round {
-                existing.evaluation.set_definition(definition);
+                source_carriers.replace_feature_definition(existing, definition)?;
             }
             if name.is_some() {
                 existing.name = name;
@@ -380,7 +382,7 @@ pub(super) fn emit_model_features(
             operation_annotation_kind,
             operation_exactness,
         );
-        ir.model.features.push(Feature {
+        let feature = Feature {
             id,
             ordinal: (operation_ordinal_base + operation_index) as u64,
             name,
@@ -401,7 +403,8 @@ pub(super) fn emit_model_features(
                     .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
             native_ref,
-        });
+        };
+        source_carriers.admit_feature(ir, feature)?;
         refresh_feature_outputs(scan, ir)?;
     }
     for feature_id in row_feature_ids {
@@ -485,7 +488,7 @@ pub(super) fn emit_model_features(
             );
         }
         retain_native_feature_parameters(&mut source_properties, &definition, &parameters);
-        ir.model.features.push(Feature {
+        let feature = Feature {
             id,
             ordinal: ir.model.features.len() as u64,
             name: Some(
@@ -515,7 +518,8 @@ pub(super) fn emit_model_features(
                     .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
             native_ref: owning_feature_definition_ref(scan, feature_id),
-        });
+        };
+        source_carriers.admit_feature(ir, feature)?;
         refresh_feature_outputs(scan, ir)?;
     }
     for (child, parent) in regeneration_edges {
@@ -545,7 +549,7 @@ pub(super) fn finish_feature_transfers(
         .map(|state| state.edges().len())
         .sum::<usize>();
     let (transferred_feature_dimension_count, dimension_parameters) =
-        transfer_feature_dimensions(ctx, scan, ir, annotations)?;
+        transfer_feature_dimensions(ctx, scan, ir, annotations, source_carriers)?;
     let transferred_curve_expression_parameter_count = transfer_curve_expression_features(
         ctx,
         scan,

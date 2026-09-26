@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::{alloc_filled, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::pcurve::PcurveMetadata;
 use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
@@ -21,11 +22,15 @@ use cadmpeg_ir::ids::{
     RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::transform::{Transform, Transform2};
+use cadmpeg_ir::units::NonzeroPoint2;
+use cadmpeg_ir::units::UnitVector3;
 use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::brep::{
@@ -42,7 +47,7 @@ const EPS_TOPOLOGY_TRANSFER_DEGENERATE: f64 = 1.0e-10;
 const EPS_TOPOLOGY_TRANSFER_EXACT_GEOMETRY: f64 = 1.0e-12;
 
 struct IndexedPolygon {
-    samples: PolylineSamples<cadmpeg_ir::scalar::FiniteReal, cadmpeg_ir::features::FinitePoint3>,
+    samples: PolylineSamples<FiniteReal, FinitePoint3>,
     deflection: cadmpeg_ir::scalar::NonNegativeReal,
 }
 
@@ -53,8 +58,8 @@ impl IndexedPolygon {
     /// pairs them here and refuses a polygon whose lanes disagree. The IR
     /// carries the rows only.
     fn try_new(
-        nodes: Vec<cadmpeg_ir::features::FinitePoint3>,
-        parameters: Option<Vec<cadmpeg_ir::scalar::FiniteReal>>,
+        nodes: Vec<FinitePoint3>,
+        parameters: Option<Vec<FiniteReal>>,
         deflection: cadmpeg_ir::scalar::NonNegativeReal,
     ) -> Result<Self, CodecError> {
         let samples = match parameters {
@@ -86,7 +91,7 @@ impl IndexedPolygon {
         })
     }
 }
-type FacePcurve = (PcurveId, Option<[f64; 2]>);
+type FacePcurve = (PcurveId, Option<[FiniteReal; 2]>);
 
 pub(crate) struct TopologyOccurrence {
     pub(crate) property: String,
@@ -309,17 +314,7 @@ impl<'a> Builder<'a> {
                 ir.model.pcurves.push(Pcurve {
                     id: self.pcurve_id(position + 1, representation_index, false)?,
                     geometry: primary_geometry,
-                    metadata: PcurveMetadata::general(
-                        None,
-                        primary_range
-                            .map(|range| {
-                                cadmpeg_ir::units::FiniteVector::new(range)
-                                    .ok_or(PcurveMetadata::NON_FINITE_PARAMETER_RANGE)
-                            })
-                            .transpose()
-                            .map_err(cadmpeg_core::CodecError::malformed)?,
-                        None,
-                    ),
+                    metadata: PcurveMetadata::general(None, primary_range.map(Into::into), None),
                 });
                 if let Some(secondary) = secondary {
                     let secondary_read = match pcurve_geometry(&self.tables.curve2ds[secondary - 1])
@@ -349,13 +344,7 @@ impl<'a> Builder<'a> {
                         geometry: secondary_geometry,
                         metadata: PcurveMetadata::general(
                             None,
-                            secondary_range
-                                .map(|range| {
-                                    cadmpeg_ir::units::FiniteVector::new(range)
-                                        .ok_or(PcurveMetadata::NON_FINITE_PARAMETER_RANGE)
-                                })
-                                .transpose()
-                                .map_err(cadmpeg_core::CodecError::malformed)?,
+                            secondary_range.map(Into::into),
                             None,
                         ),
                     });
@@ -862,7 +851,6 @@ impl<'a> Builder<'a> {
                     .map(|point| {
                         face_transform
                             .apply_point(point.get())
-                            .map(cadmpeg_ir::features::FinitePoint3::get)
                             .ok_or_else(|| {
                             CodecError::malformed(format_args!(
                                 "placed triangulation node for face {} contains a non-finite coordinate",
@@ -894,7 +882,7 @@ impl<'a> Builder<'a> {
                 ir.model.surfaces.push(Surface {
                     id: id.clone(),
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(
-                        PolygonalSurface::from_scaled_deflection(
+                        PolygonalSurface::from_admitted_scaled_deflection(
                             vertices.clone(),
                             triangles.clone(),
                             triangulation.deflection,
@@ -930,13 +918,13 @@ impl<'a> Builder<'a> {
                 })
                 .transpose()?;
             ir.model.tessellations.push(
-                Tessellation::new(
+                Tessellation::from_parts(
                     crate::native::model_id(
                         "tessellation",
                         &self.payload.id,
                         format!("{index}@{face_key}"),
                     ),
-                    cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
+                    cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
                         vertices, triangles, normals,
                     )?,
                     Vec::new(),
@@ -1025,7 +1013,7 @@ impl<'a> Builder<'a> {
                                 pcurve,
                                 isoparametric: None,
                                 parameter_range: (parameter_range)
-                                    .map(cadmpeg_ir::geometry::DirectedParameterRange::new)
+                                    .map(cadmpeg_ir::geometry::DirectedParameterRange::from_finite_endpoints)
                                     .transpose()
                                     .map_err(CodecError::malformed)?,
                             })
@@ -1064,7 +1052,7 @@ impl<'a> Builder<'a> {
             loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
             name: None,
             color: None,
-            tolerance: positive_tolerance(tolerance),
+            tolerance: PositiveReal::from_finite(tolerance),
         });
         self.bind_topology(
             TextShapeKind::Face,
@@ -1153,9 +1141,7 @@ impl<'a> Builder<'a> {
             .or_else(|| {
                 polygon_representation.and_then(|(_, representation)| {
                     self.polygon_parameters(representation)
-                        .and_then(|parameters| {
-                            Some([parameters.first()?.get(), parameters.last()?.get()])
-                        })
+                        .and_then(|parameters| Some([*parameters.first()?, *parameters.last()?]))
                 })
             });
         let param_range = curve
@@ -1166,11 +1152,11 @@ impl<'a> Builder<'a> {
             });
         ir.model.edges.push(Edge {
             id: id.clone(),
-            carrier: cadmpeg_ir::topology::EdgeCarrier::new(curve, param_range)
+            carrier: cadmpeg_ir::topology::EdgeCarrier::from_finite_parts(curve, param_range)
                 .map_err(CodecError::malformed)?,
             start,
             end,
-            tolerance: positive_tolerance(tolerance),
+            tolerance: PositiveReal::from_finite(tolerance),
         });
         self.bind_topology(
             TextShapeKind::Edge,
@@ -1291,10 +1277,7 @@ impl<'a> Builder<'a> {
         IndexedPolygon::try_new(points, polygon.parameters.clone(), polygon.deflection)
     }
 
-    fn polygon_parameters(
-        &self,
-        representation: &TextEdgeRepresentation,
-    ) -> Option<&[cadmpeg_ir::scalar::FiniteReal]> {
+    fn polygon_parameters(&self, representation: &TextEdgeRepresentation) -> Option<&[FiniteReal]> {
         match representation {
             TextEdgeRepresentation::Polygon3d { polygon, .. } => {
                 self.tables.polygons3d[polygon - 1].parameters.as_deref()
@@ -1380,7 +1363,7 @@ impl<'a> Builder<'a> {
         ir.model.vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,
-            tolerance: positive_tolerance(tolerance * uniform_scale(transform)?.get()),
+            tolerance: positive_tolerance(tolerance.get() * uniform_scale(transform)?.get()),
         });
         self.bind_topology(
             TextShapeKind::Vertex,
@@ -1588,7 +1571,10 @@ impl<'a> Builder<'a> {
     }
 }
 
-fn bounded_pcurve_range(degenerated: bool, range: Option<[f64; 2]>) -> Option<[f64; 2]> {
+fn bounded_pcurve_range(
+    degenerated: bool,
+    range: Option<[FiniteReal; 2]>,
+) -> Option<[FiniteReal; 2]> {
     (!degenerated)
         .then_some(range)
         .flatten()
@@ -1597,8 +1583,8 @@ fn bounded_pcurve_range(degenerated: bool, range: Option<[f64; 2]>) -> Option<[f
 
 fn normalize_pcurve_parameter_range(
     geometry: &PcurveGeometry,
-    range: Option<[f64; 2]>,
-) -> Option<[f64; 2]> {
+    range: Option<[FiniteReal; 2]>,
+) -> Option<[FiniteReal; 2]> {
     let mut range = range?;
     let domain = match geometry {
         PcurveGeometry::Nurbs { nurbs } => {
@@ -1625,21 +1611,22 @@ fn normalize_pcurve_parameter_range(
     };
     let scale = range
         .into_iter()
+        .map(FiniteReal::get)
         .chain(domain)
         .fold(1.0_f64, |scale, value| scale.max(value.abs()));
     // Snap neighborhoods must not overlap, even on a small or translated domain.
     let tolerance =
         (scale * EPS_TOPOLOGY_TRANSFER_GEOMETRY).min((0.25 * domain[1] - 0.25 * domain[0]).abs());
     for value in &mut range {
-        if (domain[0]..=domain[1]).contains(value) {
+        if (domain[0]..=domain[1]).contains(&value.get()) {
             continue;
         }
-        let lower_distance = (*value - domain[0]).abs();
-        let upper_distance = (*value - domain[1]).abs();
+        let lower_distance = (value.get() - domain[0]).abs();
+        let upper_distance = (value.get() - domain[1]).abs();
         if lower_distance < upper_distance && lower_distance <= tolerance {
-            *value = domain[0];
+            *value = FiniteReal::new(domain[0])?;
         } else if upper_distance < lower_distance && upper_distance <= tolerance {
-            *value = domain[1];
+            *value = FiniteReal::new(domain[1])?;
         }
     }
     Some(range)
@@ -1721,66 +1708,74 @@ pub(crate) fn pcurve_geometry(
     curve: &TextCurve2d,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_ir::geometry::nurbs::NurbsError> {
     Ok(match curve {
-        TextCurve2d::Line { origin, direction } => {
-            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(*origin, *direction)
-                .ok()
-                .map(PcurveGeometry::Line)
-        }
+        TextCurve2d::Line { origin, direction } => NonzeroPoint2::new(direction.get())
+            .map(|direction| cadmpeg_ir::geometry::pcurve::LinePcurve::new(*origin, direction))
+            .map(PcurveGeometry::Line),
         TextCurve2d::Circle {
             center,
             x_axis,
             y_axis,
             radius,
-        } => {
-            cadmpeg_ir::geometry::pcurve::CirclePcurve::try_new(*center, *x_axis, *y_axis, *radius)
-                .ok()
-                .map(PcurveGeometry::Circle)
-        }
+        } => PositiveReal::from_finite(*radius)
+            .and_then(|radius| {
+                cadmpeg_ir::geometry::pcurve::CirclePcurve::from_parts(
+                    *center, *x_axis, *y_axis, radius,
+                )
+            })
+            .map(PcurveGeometry::Circle),
         TextCurve2d::Ellipse {
             center,
             x_axis,
             y_axis,
             major_radius,
             minor_radius,
-        } => cadmpeg_ir::geometry::pcurve::EllipsePcurve::try_new(
-            *center,
-            *x_axis,
-            *y_axis,
-            *major_radius,
-            *minor_radius,
-        )
-        .ok()
-        .map(PcurveGeometry::Ellipse),
+        } => PositiveReal::from_finite(*major_radius)
+            .zip(PositiveReal::from_finite(*minor_radius))
+            .and_then(|(major_radius, minor_radius)| {
+                cadmpeg_ir::geometry::pcurve::EllipsePcurve::from_parts(
+                    *center,
+                    *x_axis,
+                    *y_axis,
+                    major_radius,
+                    minor_radius,
+                )
+            })
+            .map(PcurveGeometry::Ellipse),
         TextCurve2d::Parabola {
             vertex,
             x_axis,
             y_axis,
             focal_distance,
-        } => cadmpeg_ir::geometry::pcurve::ParabolaPcurve::try_new(
-            *vertex,
-            *x_axis,
-            *y_axis,
-            *focal_distance,
-        )
-        .ok()
-        .map(PcurveGeometry::Parabola),
+        } => PositiveReal::from_finite(*focal_distance)
+            .and_then(|focal_distance| {
+                cadmpeg_ir::geometry::pcurve::ParabolaPcurve::from_parts(
+                    *vertex,
+                    *x_axis,
+                    *y_axis,
+                    focal_distance,
+                )
+            })
+            .map(PcurveGeometry::Parabola),
         TextCurve2d::Hyperbola {
             center,
             x_axis,
             y_axis,
             major_radius,
             minor_radius,
-        } => cadmpeg_ir::geometry::pcurve::HyperbolaPcurve::try_new(
-            *center,
-            *x_axis,
-            *y_axis,
-            *major_radius,
-            *minor_radius,
-        )
-        .ok()
-        .map(PcurveGeometry::Hyperbola),
+        } => PositiveReal::from_finite(*major_radius)
+            .zip(PositiveReal::from_finite(*minor_radius))
+            .and_then(|(major_radius, minor_radius)| {
+                cadmpeg_ir::geometry::pcurve::HyperbolaPcurve::from_parts(
+                    *center,
+                    *x_axis,
+                    *y_axis,
+                    major_radius,
+                    minor_radius,
+                )
+            })
+            .map(PcurveGeometry::Hyperbola),
         TextCurve2d::Nurbs(nurbs) => Some(PcurveGeometry::Nurbs {
-            nurbs: PcurveNurbs::from_lanes(
+            nurbs: PcurveNurbs::from_finite_lanes(
                 nurbs.degree,
                 nurbs.knots.clone(),
                 nurbs.control_points.clone(),
@@ -1795,7 +1790,7 @@ pub(crate) fn pcurve_geometry(
             let Some(basis) = pcurve_geometry(basis.curve())? else {
                 return Ok(None);
             };
-            cadmpeg_ir::geometry::pcurve::TrimmedPcurve::try_new(
+            cadmpeg_ir::geometry::pcurve::TrimmedPcurve::from_finite_parts(
                 *parameter_range,
                 true,
                 Box::new(basis),
@@ -1807,9 +1802,12 @@ pub(crate) fn pcurve_geometry(
             let Some(basis) = pcurve_geometry(basis.curve())? else {
                 return Ok(None);
             };
-            cadmpeg_ir::geometry::pcurve::OffsetPcurve::try_new(*distance, Box::new(basis))
-                .ok()
-                .map(PcurveGeometry::Offset)
+            cadmpeg_ir::geometry::pcurve::OffsetPcurve::from_finite_parts(
+                *distance,
+                Box::new(basis),
+            )
+            .ok()
+            .map(PcurveGeometry::Offset)
         }
     })
 }
@@ -1897,41 +1895,22 @@ fn transform_surface(
 /// Places every polyline sample, refusing a sample the transform sends out of
 /// the finite range.
 fn place_polyline_samples(
-    samples: &mut PolylineSamples<
-        cadmpeg_ir::scalar::FiniteReal,
-        cadmpeg_ir::features::FinitePoint3,
-    >,
+    samples: &mut PolylineSamples<FiniteReal, FinitePoint3>,
     transform: Transform,
 ) -> Result<(), CodecError> {
-    let place = |point: cadmpeg_ir::features::FinitePoint3| {
-        transform.apply_point(point.get()).ok_or_else(|| {
-            CodecError::malformed(
+    samples
+        .edit_admitted_points(|point| {
+            transform.apply_point(point.get()).ok_or_else(|| {
                 GeometryLayoutError::EditRefused(
                     "placed polyline sample contains a non-finite coordinate".to_string(),
                 )
-                .to_string(),
-            )
+            })
         })
-    };
-    let mut placed = samples.clone();
-    match &mut placed {
-        PolylineSamples::Unparameterized { points } => {
-            for point in points.iter_mut() {
-                *point = place(*point)?;
-            }
-        }
-        PolylineSamples::Parameterized { vertices } => {
-            for vertex in vertices.iter_mut() {
-                vertex.point = place(vertex.point)?;
-            }
-        }
-    }
-    *samples = placed;
-    Ok(())
+        .map_err(|error| CodecError::malformed(error.to_string()))
 }
 
-fn transform_normalized_vector(transform: Transform, vector: Vector3) -> Option<Vector3> {
-    transform.apply_vector(vector)?.unit_nonzero()
+fn transform_normalized_vector(transform: Transform, vector: Vector3) -> Option<FiniteVector3> {
+    UnitVector3::normalized_nonzero(transform.apply_vector(vector)?).map(FiniteVector3::from)
 }
 
 fn occurrence_label(shape: usize, transform: Transform) -> String {
@@ -2221,46 +2200,34 @@ fn unique_fallback_polygon_representation(
 
 pub(crate) fn normalize_occt_curve_range(
     geometry: &SolvedCurveGeometry,
-    range: Option<[f64; 2]>,
-) -> Option<[f64; 2]> {
+    range: Option<[FiniteReal; 2]>,
+) -> Option<[FiniteReal; 2]> {
     match geometry {
         SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => {
             let [start, end] = range?;
-            let sweep = end - start;
+            let sweep = end.get() - start.get();
             let tau = std::f64::consts::TAU;
-            if !start.is_finite()
-                || !end.is_finite()
-                || !sweep.is_finite()
-                || (sweep - tau).abs() <= EPS_TOPOLOGY_TRANSFER_GEOMETRY
-            {
+            if !sweep.is_finite() || (sweep - tau).abs() <= EPS_TOPOLOGY_TRANSFER_GEOMETRY {
                 return Some([start, end]);
             }
-            let canonical_start = start.rem_euclid(tau);
+            let canonical_start = start.get().rem_euclid(tau);
             let canonical_start =
                 if (tau - canonical_start).abs() <= EPS_TOPOLOGY_TRANSFER_EXACT_GEOMETRY {
                     0.0
                 } else {
                     canonical_start
                 };
-            Some([canonical_start, canonical_start + sweep])
+            Some([
+                FiniteReal::new(canonical_start)?,
+                FiniteReal::new(canonical_start + sweep)?,
+            ])
         }
         SolvedCurveGeometry::Parabola(parabola_curve) => {
-            use cadmpeg_ir::scalar::FiniteReal;
             let focal_distance = parabola_curve.focal_distance().magnitude();
             let [start, end] = range?;
             Some([
-                cadmpeg_ir::math::multiply_divide(
-                    FiniteReal::new(start)?,
-                    FiniteReal::HALF,
-                    focal_distance,
-                )?
-                .get(),
-                cadmpeg_ir::math::multiply_divide(
-                    FiniteReal::new(end)?,
-                    FiniteReal::HALF,
-                    focal_distance,
-                )?
-                .get(),
+                cadmpeg_ir::math::multiply_divide(start, FiniteReal::HALF, focal_distance)?,
+                cadmpeg_ir::math::multiply_divide(end, FiniteReal::HALF, focal_distance)?,
             ])
         }
         SolvedCurveGeometry::Transformed(placed) => {

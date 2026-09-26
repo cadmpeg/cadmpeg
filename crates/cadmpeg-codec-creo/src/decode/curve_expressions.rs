@@ -470,33 +470,41 @@ pub(super) fn transfer_curve_expression_features(
                 Exactness::Derived,
             );
             ctx.charge_entities(1, "admit Creo model parameters")?;
-            ir.model.parameters.push(DesignParameter {
-                id: parameter_id.clone(),
-                owner: Some(feature_id.clone()),
-                ordinal,
-                name: parameter_name.clone(),
-                expression: assignment.expression.clone(),
-                display: None,
-                value: assignment.value.as_ref().and_then(|value| match value {
-                    crate::curve::CurveExpressionValue::Number(value) => Some(
-                        ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(*value)?),
-                    ),
-                    crate::curve::CurveExpressionValue::Length(value) => Some(
-                        ParameterValue::Length(cadmpeg_ir::scalar::Length::new(*value)?),
-                    ),
-                    crate::curve::CurveExpressionValue::Angle(value) => Some(
-                        ParameterValue::Angle(cadmpeg_ir::scalar::Angle::new(value.to_radians())?),
-                    ),
-                    crate::curve::CurveExpressionValue::Quantity(_) => None,
-                    crate::curve::CurveExpressionValue::String(value) => {
-                        Some(ParameterValue::String(value.clone()))
-                    }
-                }),
-                dependencies: dependencies.into_iter().collect(),
-                properties: cadmpeg_core::text::named_entries(parameter_id.as_str(), properties)?,
-                pmi: None,
-                native_ref: Some(curve_expression_record_id(record)),
-            });
+            source_carriers.admit_parameter(
+                ir,
+                DesignParameter {
+                    id: parameter_id.clone(),
+                    owner: Some(feature_id.clone()),
+                    ordinal,
+                    name: parameter_name.clone(),
+                    expression: assignment.expression.clone(),
+                    display: None,
+                    value: assignment.value.as_ref().and_then(|value| match value {
+                        crate::curve::CurveExpressionValue::Number(value) => Some(
+                            ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(*value)?),
+                        ),
+                        crate::curve::CurveExpressionValue::Length(value) => Some(
+                            ParameterValue::Length(cadmpeg_ir::scalar::Length::new(*value)?),
+                        ),
+                        crate::curve::CurveExpressionValue::Angle(value) => {
+                            Some(ParameterValue::Angle(cadmpeg_ir::scalar::Angle::new(
+                                value.to_radians(),
+                            )?))
+                        }
+                        crate::curve::CurveExpressionValue::Quantity(_) => None,
+                        crate::curve::CurveExpressionValue::String(value) => {
+                            Some(ParameterValue::String(value.clone()))
+                        }
+                    }),
+                    dependencies: dependencies.into_iter().collect(),
+                    properties: cadmpeg_core::text::named_entries(
+                        parameter_id.as_str(),
+                        properties,
+                    )?,
+                    pmi: None,
+                    native_ref: Some(curve_expression_record_id(record)),
+                },
+            )?;
             transferred_parameter_count += 1;
             source_content.push(FeatureSourceContent::Parameter(parameter_id.clone()));
         }
@@ -586,29 +594,32 @@ pub(super) fn transfer_curve_expression_features(
                 })
             });
         ctx.charge_entities(1, "admit Creo model features")?;
-        ir.model.features.push(Feature {
-            id: feature_id,
-            ordinal,
-            name: Some(format!("Curve Equation {}", record.entity_id)),
-            suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-            source_properties: BTreeMap::new(),
-            source_tag: Some("crv_fr_eqn".to_string()),
-            source_text: Some(
-                record
-                    .lines
-                    .iter()
-                    .map(|line| line.text.as_str())
-                    .collect::<Vec<_>>()
-                    .join("\n"),
-            ),
-            source_content: source_content.try_into().map_err(|message: &'static str| {
-                cadmpeg_core::CodecError::Malformed(message.into())
-            })?,
+        source_carriers.admit_feature(
+            ir,
+            Feature {
+                id: feature_id,
+                ordinal,
+                name: Some(format!("Curve Equation {}", record.entity_id)),
+                suppressed: Some(false),
+                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                source_properties: BTreeMap::new(),
+                source_tag: Some("crv_fr_eqn".to_string()),
+                source_text: Some(
+                    record
+                        .lines
+                        .iter()
+                        .map(|line| line.text.as_str())
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                ),
+                source_content: source_content.try_into().map_err(|message: &'static str| {
+                    cadmpeg_core::CodecError::Malformed(message.into())
+                })?,
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
-            native_ref: Some(curve_expression_record_id(record)),
-        });
+                evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+                native_ref: Some(curve_expression_record_id(record)),
+            },
+        )?;
     }
     Ok(transferred_parameter_count)
 }

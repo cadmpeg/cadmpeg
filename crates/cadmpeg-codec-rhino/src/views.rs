@@ -1468,7 +1468,11 @@ fn retain_unbound_view_record(
 
 /// Result of installing saved and active view records.
 /// Installs saved and active view records with complete child accounting.
-pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<NativeInstall, CodecError> {
+pub(crate) fn install(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &Scan<'_>,
+    ir: &mut CadIr,
+) -> Result<NativeInstall, CodecError> {
     let binding = UnitBinding::from_units(scan.metadata.settings.units.as_ref());
     let mut views = Vec::new();
     let mut cplanes = Vec::new();
@@ -1558,8 +1562,8 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<NativeInstall, 
         }
     }
     let namespace = ir.native.namespace_mut("rhino");
-    namespace.set_arena("views", &views)?;
-    namespace.set_arena("construction_planes", &cplanes)?;
+    namespace.set_arena(ctx, "views", &views)?;
+    namespace.set_arena(ctx, "construction_planes", &cplanes)?;
     Ok(NativeInstall {
         losses,
         opaque_records,

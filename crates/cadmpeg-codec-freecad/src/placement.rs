@@ -3,7 +3,10 @@
 use crate::native::frame::FiniteFrame;
 use crate::native::{malformed, PropertyRecord};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::units::{FiniteVector, UnitVector3};
 
 pub(crate) fn placement_matrix(
     property: &PropertyRecord,
@@ -32,60 +35,65 @@ pub(crate) fn placement_matrix(
             .attributes
             .get(name)
             .and_then(|value| value.parse().ok())
-            .filter(|value: &f64| value.is_finite())
+            .and_then(FiniteReal::new)
     };
-    let position = ["Px", "Py", "Pz"]
-        .into_iter()
-        .map(|name| {
+    let position = ["Px", "Py", "Pz"].map(|name| {
+        number(name).ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "placement property {} has an invalid {name} component",
+                property.id
+            ))
+        })
+    });
+    let [px, py, pz] = position;
+    let position = [px?, py?, pz?];
+    let quaternion = if value.attributes.contains_key("A") {
+        let axis = ["Ox", "Oy", "Oz"].map(|name| {
             number(name).ok_or_else(|| {
                 CodecError::malformed(format_args!(
-                    "placement property {} has an invalid {name} component",
+                    "placement property {} has an invalid {name} axis component",
                     property.id
                 ))
             })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let quaternion = if value.attributes.contains_key("A") {
-        let axis = ["Ox", "Oy", "Oz"]
-            .into_iter()
-            .map(|name| {
-                number(name).ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "placement property {} has an invalid {name} axis component",
-                        property.id
-                    ))
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        });
+        let [ox, oy, oz] = axis;
+        let [ox, oy, oz] = [ox?, oy?, oz?];
         let angle = number("A").ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "placement property {} has an invalid A angle component",
                 property.id
             ))
         })?;
-        let axis = Vector3::new(axis[0], axis[1], axis[2]);
-        let unit = cadmpeg_ir::features::FiniteVector3::new(axis)
-            .and_then(cadmpeg_ir::features::FiniteVector3::unit_nonzero)
-            .unwrap_or(Vector3::new(0.0, 0.0, 1.0));
+        let axis = FiniteVector3::from_components(ox, oy, oz);
+        let unit = UnitVector3::normalized_nonzero(axis).unwrap_or(UnitVector3::Z_AXIS);
+        let unit = Vector3::from(unit);
         let (x, y, z) = (unit.x, unit.y, unit.z);
-        let half_angle = angle / 2.0;
+        let half_angle = angle.get() / 2.0;
         let scale = half_angle.sin();
-        vec![x * scale, y * scale, z * scale, half_angle.cos()]
+        let components = [x * scale, y * scale, z * scale, half_angle.cos()];
+        let [Some(q0), Some(q1), Some(q2), Some(q3)] = components.map(FiniteReal::new) else {
+            return Err(CodecError::malformed(format_args!(
+                "placement property {} has an invalid rotation",
+                property.id
+            )));
+        };
+        [q0, q1, q2, q3]
     } else {
-        ["Q0", "Q1", "Q2", "Q3"]
-            .into_iter()
-            .map(|name| {
-                number(name).ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "placement property {} has an invalid {name} quaternion component",
-                        property.id
-                    ))
-                })
+        let components = ["Q0", "Q1", "Q2", "Q3"].map(|name| {
+            number(name).ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "placement property {} has an invalid {name} quaternion component",
+                    property.id
+                ))
             })
-            .collect::<Result<Vec<_>, _>>()?
+        });
+        let [q0, q1, q2, q3] = components;
+        [q0?, q1?, q2?, q3?]
     };
-    let values = position.into_iter().chain(quaternion).collect::<Vec<_>>();
-    let matrix = placement_components(&values).ok_or_else(|| {
+    let [px, py, pz] = position;
+    let [q0, q1, q2, q3] = quaternion;
+    let values = FiniteVector::from([px, py, pz, q0, q1, q2, q3]);
+    let matrix = placement_components_admitted(values).ok_or_else(|| {
         CodecError::malformed(format_args!(
             "placement property {} has an invalid rotation",
             property.id
@@ -96,9 +104,11 @@ pub(crate) fn placement_matrix(
 
 pub(crate) fn placement_components(values: &[f64]) -> Option<FiniteFrame> {
     let [px, py, pz, x, y, z, w] = *<&[f64; 7]>::try_from(values).ok()?;
-    if values.iter().any(|value| !value.is_finite()) {
-        return None;
-    }
+    placement_components_admitted(FiniteVector::new([px, py, pz, x, y, z, w])?)
+}
+
+fn placement_components_admitted(values: FiniteVector<7>) -> Option<FiniteFrame> {
+    let [px, py, pz, x, y, z, w] = values.get();
     let scale = x.abs().max(y.abs()).max(z.abs()).max(w.abs());
     if scale == 0.0 {
         return None;

@@ -149,7 +149,13 @@ impl AsmEditSet {
 
     /// Frame the solved record partition without changing the input bytes.
     pub fn frame(bytes: &[u8]) -> Result<Self, CodecError> {
-        let header = asm_header::parse(bytes)
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            bytes,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::desktop(),
+        )?;
+        let header = asm_header::parse(&ctx, bytes)?
             .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
         let start = asm_header::record_stream_start_with_header(bytes, &header)
             .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;

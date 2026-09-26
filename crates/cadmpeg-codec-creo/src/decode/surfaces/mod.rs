@@ -125,6 +125,7 @@ pub(super) fn transfer_part_product(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let Some(model_name) = scan.framing.model_name.as_ref() else {
         return Ok(false);
@@ -168,21 +169,24 @@ pub(super) fn transfer_part_product(
         native_ref: None,
     });
     ctx.charge_entities(1, "admit Creo model occurrences")?;
-    ir.model.occurrences.push(Occurrence {
-        id: occurrence_id,
-        prototype: PrototypeReference::Local {
-            definition: product_id,
+    source_carriers.admit_occurrence(
+        ir,
+        Occurrence {
+            id: occurrence_id,
+            prototype: PrototypeReference::Local {
+                definition: product_id,
+            },
+            parent: OccurrenceParent::Root {},
+            ordinal: 0,
+            transform: Transform::identity(),
+            linked_prototype: None,
+            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+            name: Some(model_name.clone()),
+            visible: None,
+            link: None,
+            native_ref: None,
         },
-        parent: OccurrenceParent::Root {},
-        ordinal: 0,
-        transform: Transform::identity(),
-        linked_prototype: None,
-        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-        name: Some(model_name.clone()),
-        visible: None,
-        link: None,
-        native_ref: None,
-    });
+    )?;
     Ok(true)
 }
 

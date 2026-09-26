@@ -24,6 +24,7 @@ use cadmpeg_ir::products::{
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Body;
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::units::FiniteVector;
 
 pub(crate) fn transfer(
     objects: &[ObjectRecord],
@@ -81,7 +82,7 @@ pub(crate) fn transfer(
         let copy_on_change_group =
             linked_target(&owned, "LinkCopyOnChangeGroup", "App::PropertyLink", "Link")?;
         let copy_on_change_touched = bool_property(&owned, "LinkCopyOnChangeTouched")?;
-        let scale = scale_property(&owned)?.map(cadmpeg_ir::units::FiniteVector::from);
+        let scale = scale_property(&owned)?;
         let element_visibility = bool_list(&owned, "VisibilityList")?;
         let element_objects = sole_named_property("product", &owned, "ElementList")?
             .map(|property| {
@@ -1033,7 +1034,7 @@ fn neutral_link_target(
     }))
 }
 
-fn scale_property(properties: &[&PropertyRecord]) -> Result<Option<[FiniteReal; 3]>, CodecError> {
+fn scale_property(properties: &[&PropertyRecord]) -> Result<Option<FiniteVector<3>>, CodecError> {
     if let Some(property) = sole_named_property("product", properties, "ScaleVector")? {
         return vector_property(property).map(Some);
     }
@@ -1048,10 +1049,10 @@ fn scale_property(properties: &[&PropertyRecord]) -> Result<Option<[FiniteReal; 
         ))
     })?;
     let value = parse_finite(value, property, "Scale")?;
-    Ok(Some([value; 3]))
+    Ok(Some([value; 3].into()))
 }
 
-fn vector_property(property: &PropertyRecord) -> Result<[FiniteReal; 3], CodecError> {
+fn vector_property(property: &PropertyRecord) -> Result<FiniteVector<3>, CodecError> {
     let value = single_value(
         property,
         "App::PropertyVector",
@@ -1071,7 +1072,8 @@ fn vector_property(property: &PropertyRecord) -> Result<[FiniteReal; 3], CodecEr
         component("valueX")?,
         component("valueY")?,
         component("valueZ")?,
-    ])
+    ]
+    .into())
 }
 
 fn parse_finite(
