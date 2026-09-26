@@ -27,17 +27,6 @@ pub(in crate::decode) fn normalize_model_lengths(
         return Ok(());
     }
 
-    for body in &mut ir.model.bodies {
-        if let Some(transform) = body.transform.as_mut() {
-            scale_transform_translation(transform, scale)?;
-        }
-    }
-    for occurrence in &mut ir.model.occurrences {
-        scale_transform_translation(&mut occurrence.transform, scale)?;
-        if let Some(transform) = occurrence.linked_prototype.as_mut() {
-            scale_transform_translation(transform, scale)?;
-        }
-    }
     for feature in &mut ir.model.features {
         let mut definition = feature.evaluation.definition().clone();
         scale_feature_definition(&mut definition, scale)?;
@@ -142,9 +131,6 @@ fn scale_transform_translation(
     transform: &mut Transform,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
-    // `scale` is the length scale the file states and `transform` comes from
-    // the document, so a scale that drives a translation non-finite is a
-    // source the transform carrier refuses, not an impossible state.
     *transform = transform.scaled_translation(scale).ok_or_else(|| {
         CodecError::malformed(format_args!(
             "Creo length scale {} drives a transform translation the carrier refuses",
@@ -1331,7 +1317,6 @@ mod tests {
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::scalar::Length;
-    use cadmpeg_ir::transform::Transform;
     use std::collections::BTreeMap;
 
     const EPS_UNIT_SCALE: f64 = f64::EPSILON * 4096.0;
@@ -1346,40 +1331,6 @@ mod tests {
         FeatureDefinition, FeatureOperation, FuzzyTolerance, LinearTermination, PlanarProfileRef,
         ProfileRef,
     };
-
-    /// The length scale and the transform both come from the file, so a scale
-    /// that drives a translation non-finite is a `CodecError`, not a panic.
-    #[test]
-    fn a_length_scale_that_overflows_a_translation_is_refused() {
-        let transform = Transform::affine([
-            [1.0, 0.0, 0.0, f64::MAX],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-        ])
-        .expect("a finite affine fixture");
-        let mut ir = CadIr::empty();
-        ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
-            id: cadmpeg_ir::ids::OccurrenceId::mint("creo:test:occurrence#0")
-                .expect("identity grammar"),
-            prototype: cadmpeg_ir::products::PrototypeReference::Local {
-                definition: cadmpeg_ir::ids::ProductDefinitionId::mint("creo:test:product#0")
-                    .expect("identity grammar"),
-            },
-            parent: cadmpeg_ir::products::OccurrenceParent::Root {},
-            ordinal: 0,
-            transform,
-            linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-            name: None,
-            visible: None,
-            link: None,
-            native_ref: None,
-        });
-        let error = normalize_model_lengths(&mut ir, positive(1000.0))
-            .expect_err("a non-finite translation has no transform")
-            .to_string();
-        assert!(error.contains("transform translation"), "{error}");
-    }
 
     #[test]
     fn scales_model_geometry_and_feature_dimensions() {
