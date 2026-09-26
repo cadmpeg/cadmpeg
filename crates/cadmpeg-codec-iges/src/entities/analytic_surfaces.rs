@@ -7,12 +7,11 @@ use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_ir::features::FiniteVector3;
-use cadmpeg_ir::geometry::{
-    derive_reference_direction, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
-};
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::{Angle, NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal};
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -30,7 +29,7 @@ fn direction(
     sequence: u32,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
-) -> Result<Vector3, String> {
+) -> Result<UnitVector3, String> {
     let entry = entries
         .get(&sequence)
         .copied()
@@ -61,8 +60,7 @@ fn direction(
             "points to D{sequence}, whose direction components are not numeric"
         ));
     };
-    FiniteVector3::new(Vector3::new(x, y, z))
-        .and_then(FiniteVector3::unit_nonzero)
+    UnitVector3::normalized_nonzero(Vector3::new(x, y, z))
         .ok_or_else(|| format!("points to D{sequence}, whose direction is zero or non-finite"))
 }
 
@@ -72,7 +70,7 @@ fn required_direction(
     role: &str,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
-) -> Result<Vector3, String> {
+) -> Result<UnitVector3, String> {
     let sequence = pointer(record, index)
         .ok_or_else(|| format!("{role} pointer is missing, even, or non-integer"))?;
     direction(sequence, entries, records).map_err(|message| format!("{role} {message}"))
@@ -85,11 +83,11 @@ fn transformed_direction(
     transform: Transform,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
-) -> Result<Vector3, String> {
+) -> Result<UnitVector3, String> {
     let direction = required_direction(record, index, role, entries, records)?;
     transform
-        .apply_vector(direction)
-        .and_then(FiniteVector3::unit_nonzero)
+        .apply_vector(*direction.as_raw())
+        .and_then(|direction| UnitVector3::normalized_nonzero(direction.get()))
         .ok_or_else(|| format!("{role} collapses under the surface transformation"))
 }
 
@@ -101,7 +99,7 @@ fn form_reference_direction(
     transform: Transform,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
-) -> Result<Option<Vector3>, String> {
+) -> Result<Option<UnitVector3>, String> {
     if form == 0 {
         Ok(None)
     } else {
@@ -109,15 +107,41 @@ fn form_reference_direction(
     }
 }
 
-fn reference_direction(axis: Vector3, candidate: Option<Vector3>) -> Option<Vector3> {
+enum ReferenceDirectionError {
+    Parallel,
+    NotUnit,
+}
+
+fn reference_direction(
+    axis: UnitVector3,
+    candidate: Option<UnitVector3>,
+) -> Result<UnitVector3, ReferenceDirectionError> {
     match candidate {
         Some(candidate) => {
-            let v = candidate - axis.scale(axis.dot(candidate));
+            let axis_raw = *axis.as_raw();
+            let candidate_raw = *candidate.as_raw();
+            let v = candidate_raw - axis_raw.scale(axis_raw.dot(candidate_raw));
             let n = v.norm();
-            (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
+            if !n.is_finite() || n <= 0.0 {
+                return Err(ReferenceDirectionError::Parallel);
+            }
+            UnitVector3::normalized_by_reciprocal(v).ok_or(ReferenceDirectionError::NotUnit)
         }
-        None => Some(derive_reference_direction(axis)),
+        None => Ok(axis.derived_reference()),
     }
+}
+
+fn reference_frame(
+    axis: UnitVector3,
+    candidate: Option<UnitVector3>,
+    parallel_message: &'static str,
+    frame_message: &'static str,
+) -> Result<OrthonormalFrame3, &'static str> {
+    let reference = reference_direction(axis, candidate).map_err(|error| match error {
+        ReferenceDirectionError::Parallel => parallel_message,
+        ReferenceDirectionError::NotUnit => frame_message,
+    })?;
+    OrthonormalFrame3::from_units(axis, reference).ok_or(frame_message)
 }
 
 fn surface_transform(
@@ -180,10 +204,7 @@ pub(super) fn project(
             ));
             continue;
         };
-        let Some(location) = transform
-            .apply_point(location)
-            .map(cadmpeg_ir::features::FinitePoint3::get)
-        else {
+        let Some(location) = transform.apply_point(location) else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
         };
@@ -218,20 +239,19 @@ pub(super) fn project(
                         continue;
                     }
                 };
-                let Some(u_axis) = reference_direction(axis, candidate) else {
-                    losses.push(entity_loss(
-                        entry,
+                let Some(frame) = admit(
+                    reference_frame(
+                        axis,
+                        candidate,
                         "plane reference direction is parallel to its normal",
-                    ));
-                    continue;
-                };
-                let Some(payload) = admit(
-                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(location, axis, u_axis),
+                        "PlaneSurface.normal/u_axis must form an orthonormal frame",
+                    ),
                     entry,
                     &mut losses,
                 ) else {
                     continue;
                 };
+                let payload = cadmpeg_ir::geometry::analytic::PlaneSurface::new(location, frame);
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(payload))
             }
             192 => {
@@ -268,25 +288,28 @@ pub(super) fn project(
                         continue;
                     }
                 };
-                let Some(ref_direction) = reference_direction(axis, candidate) else {
-                    losses.push(entity_loss(
-                        entry,
-                        "cylinder reference direction is parallel to its axis",
-                    ));
-                    continue;
-                };
-                let Some(payload) = admit(
-                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                        location,
+                let Some(frame) = admit(
+                    reference_frame(
                         axis,
-                        ref_direction,
-                        radius,
+                        candidate,
+                        "cylinder reference direction is parallel to its axis",
+                        "CylinderSurface.axis/ref_direction must form an orthonormal frame",
                     ),
                     entry,
                     &mut losses,
                 ) else {
                     continue;
                 };
+                let Some(radius) = admit(
+                    PositiveLength::new(radius)
+                        .ok_or("CylinderSurface.radius must be positive and finite"),
+                    entry,
+                    &mut losses,
+                ) else {
+                    continue;
+                };
+                let payload =
+                    cadmpeg_ir::geometry::analytic::CylinderSurface::new(location, frame, radius);
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(payload))
             }
             194 => {
@@ -308,9 +331,12 @@ pub(super) fn project(
                     losses.push(entity_loss(entry, "cone radius is not numeric"));
                     continue;
                 };
-                let Some(half_angle) = record.number(4).map(f64::to_radians).filter(|angle| {
-                    angle.is_finite() && *angle > 0.0 && *angle < std::f64::consts::FRAC_PI_2
-                }) else {
+                let Some(half_angle) = record
+                    .number(4)
+                    .map(f64::to_radians)
+                    .and_then(Angle::new)
+                    .filter(|angle| angle.get() > 0.0 && angle.get() < std::f64::consts::FRAC_PI_2)
+                else {
                     losses.push(entity_loss(
                         entry,
                         "cone semi-angle is outside (0, 90) degrees",
@@ -332,27 +358,33 @@ pub(super) fn project(
                         continue;
                     }
                 };
-                let Some(ref_direction) = reference_direction(axis, candidate) else {
-                    losses.push(entity_loss(
-                        entry,
-                        "cone reference direction is parallel to its axis",
-                    ));
-                    continue;
-                };
-                let Some(payload) = admit(
-                    cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                        location,
+                let Some(frame) = admit(
+                    reference_frame(
                         axis,
-                        ref_direction,
-                        radius,
-                        1.0,
-                        half_angle,
+                        candidate,
+                        "cone reference direction is parallel to its axis",
+                        "ConeSurface.axis/ref_direction must form an orthonormal frame",
                     ),
                     entry,
                     &mut losses,
                 ) else {
                     continue;
                 };
+                let Some(radius) = admit(
+                    NonNegativeLength::new(radius)
+                        .ok_or("ConeSurface.radius must be nonnegative and finite"),
+                    entry,
+                    &mut losses,
+                ) else {
+                    continue;
+                };
+                let payload = cadmpeg_ir::geometry::analytic::ConeSurface::new(
+                    location,
+                    frame,
+                    radius,
+                    PositiveReal::ONE,
+                    half_angle,
+                );
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(payload))
             }
             196 => {
@@ -372,7 +404,7 @@ pub(super) fn project(
                 } else {
                     transform
                         .apply_vector(Vector3::new(0.0, 0.0, 1.0))
-                        .and_then(FiniteVector3::unit_nonzero)
+                        .and_then(|axis| UnitVector3::normalized_nonzero(axis.get()))
                         .ok_or_else(|| "sphere axis collapses under its transformation".to_owned())
                 };
                 let axis = match axis {
@@ -397,25 +429,23 @@ pub(super) fn project(
                         continue;
                     }
                 };
-                let Some(ref_direction) = reference_direction(axis, candidate) else {
-                    losses.push(entity_loss(
-                        entry,
-                        "sphere reference direction is parallel to its axis",
-                    ));
-                    continue;
-                };
-                let Some(payload) = admit(
-                    cadmpeg_ir::geometry::analytic::SphereSurface::try_with_radius(
-                        location,
+                let Some(frame) = admit(
+                    reference_frame(
                         axis,
-                        ref_direction,
-                        cadmpeg_ir::scalar::NonZeroLength::from(radius),
+                        candidate,
+                        "sphere reference direction is parallel to its axis",
+                        "SphereSurface.axis/ref_direction must form an orthonormal frame",
                     ),
                     entry,
                     &mut losses,
                 ) else {
                     continue;
                 };
+                let payload = cadmpeg_ir::geometry::analytic::SphereSurface::new(
+                    location,
+                    frame,
+                    NonZeroLength::from(radius),
+                );
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(payload))
             }
             198 => {
@@ -461,26 +491,40 @@ pub(super) fn project(
                         continue;
                     }
                 };
-                let Some(ref_direction) = reference_direction(axis, candidate) else {
-                    losses.push(entity_loss(
-                        entry,
-                        "torus reference direction is parallel to its axis",
-                    ));
-                    continue;
-                };
-                let Some(payload) = admit(
-                    cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-                        location,
+                let Some(frame) = admit(
+                    reference_frame(
                         axis,
-                        ref_direction,
-                        major_radius,
-                        minor_radius,
+                        candidate,
+                        "torus reference direction is parallel to its axis",
+                        "TorusSurface.axis/ref_direction must form an orthonormal frame",
                     ),
                     entry,
                     &mut losses,
                 ) else {
                     continue;
                 };
+                let Some(major_radius) = admit(
+                    PositiveLength::new(major_radius)
+                        .ok_or("TorusSurface.major_radius must be positive and finite"),
+                    entry,
+                    &mut losses,
+                ) else {
+                    continue;
+                };
+                let Some(minor_radius) = admit(
+                    NonZeroLength::new(minor_radius)
+                        .ok_or("TorusSurface.minor_radius must be finite and nonzero"),
+                    entry,
+                    &mut losses,
+                ) else {
+                    continue;
+                };
+                let payload = cadmpeg_ir::geometry::analytic::TorusSurface::new(
+                    location,
+                    frame,
+                    major_radius,
+                    minor_radius,
+                );
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(payload))
             }
             _ => {
