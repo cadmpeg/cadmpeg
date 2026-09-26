@@ -2366,7 +2366,7 @@ mod tests {
             "a"
         );
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 33;
+        policy.limits.max_retained_bytes = 32;
         let (ctx, source) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("label view");
         assert!(matches!(
@@ -2374,7 +2374,7 @@ mod tests {
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.operation == "retain Inventor feature label class id"
-                    && limit.used == 2
+                    && limit.used == 1
         ));
     }
 
