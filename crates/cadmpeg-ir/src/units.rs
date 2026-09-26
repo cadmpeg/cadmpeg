@@ -383,6 +383,23 @@ impl UnitVector3 {
             value.z / length,
         ))
     }
+
+    /// Normalize with the square-sum length and component divisions used by
+    /// a constructed feature axis. A finite positive square-sum length bounds
+    /// each finite quotient by one, so the result has unit length to rounding.
+    #[must_use]
+    pub fn normalized_by_square_sum_division(value: Vector3) -> Option<Self> {
+        let length = (value.x * value.x + value.y * value.y + value.z * value.z).sqrt();
+        if !length.is_finite() || length <= 0.0 {
+            return None;
+        }
+        Some(Self(Vector3::new(
+            value.x / length,
+            value.y / length,
+            value.z / length,
+        )))
+    }
+
     /// The unit direction of `value`: each component divided by the largest
     /// component magnitude, then by the `hypot` length of the quotients. The
     /// direction is absent when a component is not finite or every component
@@ -1495,6 +1512,21 @@ mod tests {
         ] {
             assert_eq!(UnitVector3::normalized_by_reciprocal(value), None);
         }
+    }
+
+    #[test]
+    fn square_sum_division_normalization_keeps_feature_axis_bits() {
+        let value = Vector3::new(3.0, 4.0, 0.0);
+        let length = (value.x * value.x + value.y * value.y + value.z * value.z).sqrt();
+        assert_eq!(
+            UnitVector3::normalized_by_square_sum_division(value)
+                .expect("finite axis")
+                .as_raw(),
+            &Vector3::new(value.x / length, value.y / length, value.z / length)
+        );
+        assert!(
+            UnitVector3::normalized_by_square_sum_division(Vector3::new(0.0, 0.0, 0.0)).is_none()
+        );
     }
 
     #[test]
