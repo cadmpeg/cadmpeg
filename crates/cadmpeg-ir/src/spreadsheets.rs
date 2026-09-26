@@ -4,6 +4,7 @@
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::num::NonZeroU32;
 
 use crate::features::{FeatureId, ParameterId};
@@ -108,15 +109,101 @@ pub struct Spreadsheet {
     /// Feature-tree node owning this sheet.
     pub feature: FeatureId,
     /// Used cells in persistence order.
-    pub cells: Vec<SpreadsheetCell>,
+    cells: Vec<SpreadsheetCell>,
     /// Non-default column widths.
-    pub column_widths: Vec<SpreadsheetDimension>,
+    column_widths: Vec<SpreadsheetDimension>,
     /// Non-default row heights.
-    pub row_heights: Vec<SpreadsheetDimension>,
+    row_heights: Vec<SpreadsheetDimension>,
     /// Merged rectangular ranges.
-    pub merged_ranges: Vec<SpreadsheetRange>,
+    merged_ranges: Vec<SpreadsheetRange>,
     /// Full-fidelity source sheet record.
     pub native_ref: Option<String>,
+}
+
+impl Spreadsheet {
+    /// Build a sheet with distinct cells and dimensions and disjoint merged ranges.
+    pub fn new(
+        id: SpreadsheetId,
+        feature: FeatureId,
+        cells: Vec<SpreadsheetCell>,
+        column_widths: Vec<SpreadsheetDimension>,
+        row_heights: Vec<SpreadsheetDimension>,
+        merged_ranges: Vec<SpreadsheetRange>,
+        native_ref: Option<String>,
+    ) -> Result<Self, String> {
+        let mut parameters = HashSet::new();
+        let mut addresses = HashSet::new();
+        for cell in &cells {
+            if !parameters.insert(&cell.parameter) {
+                return Err("spreadsheet repeats a cell identity".into());
+            }
+            if !addresses.insert(cell.address) {
+                return Err("spreadsheet cell address is repeated".into());
+            }
+        }
+        for (name, dimensions) in [
+            ("column_widths", &column_widths),
+            ("row_heights", &row_heights),
+        ] {
+            let mut indices = HashSet::new();
+            for dimension in dimensions {
+                if !indices.insert(dimension.index) {
+                    return Err(format!("{name} repeats an index"));
+                }
+            }
+        }
+        for (index, range) in merged_ranges.iter().enumerate() {
+            if !addresses.contains(&range.start()) {
+                return Err("merged range start has no cell".into());
+            }
+            if merged_ranges[..index]
+                .iter()
+                .any(|other| ranges_overlap(other, range))
+            {
+                return Err("merged ranges overlap".into());
+            }
+        }
+        Ok(Self {
+            id,
+            feature,
+            cells,
+            column_widths,
+            row_heights,
+            merged_ranges,
+            native_ref,
+        })
+    }
+
+    /// Used cells in persistence order.
+    #[must_use]
+    pub fn cells(&self) -> &[SpreadsheetCell] {
+        &self.cells
+    }
+
+    /// Non-default column widths.
+    #[must_use]
+    pub fn column_widths(&self) -> &[SpreadsheetDimension] {
+        &self.column_widths
+    }
+
+    /// Non-default row heights.
+    #[must_use]
+    pub fn row_heights(&self) -> &[SpreadsheetDimension] {
+        &self.row_heights
+    }
+
+    /// Merged rectangular ranges.
+    #[must_use]
+    pub fn merged_ranges(&self) -> &[SpreadsheetRange] {
+        &self.merged_ranges
+    }
+}
+
+fn ranges_overlap(left: &SpreadsheetRange, right: &SpreadsheetRange) -> bool {
+    left.start().row() <= right.end().row()
+        && right.start().row() <= left.end().row()
+        && left.start().col() <= right.end().col()
+        && right.start().col() <= left.end().col()
 }
 
 #[derive(Serialize, Deserialize)]
@@ -179,40 +266,42 @@ impl TryFrom<SpreadsheetWire> for Spreadsheet {
     type Error = String;
 
     fn try_from(wire: SpreadsheetWire) -> Result<Self, Self::Error> {
-        Ok(Self {
-            id: wire.id,
-            feature: wire.feature,
-            cells: wire.cells,
-            column_widths: wire
-                .column_widths
-                .into_iter()
-                .map(|wire| {
-                    let index = column_index(&wire.name)
-                        .and_then(NonZeroU32::new)
-                        .ok_or_else(|| format!("column_widths name is invalid: {}", wire.name))?;
-                    Ok(SpreadsheetDimension {
-                        index,
-                        pixels: wire.pixels,
-                    })
+        let column_widths = wire
+            .column_widths
+            .into_iter()
+            .map(|wire| {
+                let index = column_index(&wire.name)
+                    .and_then(NonZeroU32::new)
+                    .ok_or_else(|| format!("column_widths name is invalid: {}", wire.name))?;
+                Ok(SpreadsheetDimension {
+                    index,
+                    pixels: wire.pixels,
                 })
-                .collect::<Result<_, String>>()?,
-            row_heights: wire
-                .row_heights
-                .into_iter()
-                .map(|wire| {
-                    let index = wire
-                        .name
-                        .parse::<NonZeroU32>()
-                        .map_err(|_| format!("row_heights name is invalid: {}", wire.name))?;
-                    Ok(SpreadsheetDimension {
-                        index,
-                        pixels: wire.pixels,
-                    })
+            })
+            .collect::<Result<_, String>>()?;
+        let row_heights = wire
+            .row_heights
+            .into_iter()
+            .map(|wire| {
+                let index = wire
+                    .name
+                    .parse::<NonZeroU32>()
+                    .map_err(|_| format!("row_heights name is invalid: {}", wire.name))?;
+                Ok(SpreadsheetDimension {
+                    index,
+                    pixels: wire.pixels,
                 })
-                .collect::<Result<_, String>>()?,
-            merged_ranges: wire.merged_ranges,
-            native_ref: wire.native_ref,
-        })
+            })
+            .collect::<Result<_, String>>()?;
+        Self::new(
+            wire.id,
+            wire.feature,
+            wire.cells,
+            column_widths,
+            row_heights,
+            wire.merged_ranges,
+            wire.native_ref,
+        )
     }
 }
 
@@ -374,21 +463,89 @@ mod tests {
 
     #[test]
     fn spreadsheet_round_trip_preserves_b2_address() {
-        let sheet = Spreadsheet {
-            id: SpreadsheetId::mint("synthetic:test:spreadsheet#sheet").unwrap(),
-            feature: FeatureId::mint("synthetic:test:feature#feature").unwrap(),
-            cells: vec![SpreadsheetCell {
+        let sheet = Spreadsheet::new(
+            SpreadsheetId::mint("synthetic:test:spreadsheet#sheet").unwrap(),
+            FeatureId::mint("synthetic:test:feature#feature").unwrap(),
+            vec![SpreadsheetCell {
                 address: CellAddress::new(2, 2).unwrap(),
                 parameter: ParameterId::mint("synthetic:test:parameter#parameter").unwrap(),
             }],
-            column_widths: Vec::new(),
-            row_heights: Vec::new(),
-            merged_ranges: Vec::new(),
-            native_ref: None,
-        };
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+        )
+        .unwrap();
         let json = serde_json::to_string(&sheet).unwrap();
         let decoded: Spreadsheet = serde_json::from_str(&json).unwrap();
         assert_eq!(decoded, sheet);
+    }
+
+    fn base_sheet() -> serde_json::Value {
+        serde_json::json!({
+            "id": "synthetic:test:spreadsheet#sheet",
+            "feature": "synthetic:test:feature#feature",
+            "cells": [
+                {"address": "A1", "parameter": "synthetic:test:parameter#one"},
+                {"address": "B1", "parameter": "synthetic:test:parameter#two"}
+            ]
+        })
+    }
+
+    fn rejects(value: serde_json::Value, message: &str) {
+        let error = serde_json::from_value::<Spreadsheet>(value).expect_err(message);
+        assert!(error.to_string().contains(message), "{error}");
+    }
+
+    #[test]
+    fn spreadsheet_wire_rejects_duplicate_cell_identity() {
+        let mut value = base_sheet();
+        value["cells"][1]["parameter"] = value["cells"][0]["parameter"].clone();
+        rejects(value, "spreadsheet repeats a cell identity");
+    }
+
+    #[test]
+    fn spreadsheet_wire_rejects_duplicate_cell_address() {
+        let mut value = base_sheet();
+        value["cells"][1]["address"] = value["cells"][0]["address"].clone();
+        rejects(value, "spreadsheet cell address is repeated");
+    }
+
+    #[test]
+    fn spreadsheet_wire_rejects_duplicate_column_index() {
+        let mut value = base_sheet();
+        value["column_widths"] = serde_json::json!([
+            {"name": "A", "pixels": 10}, {"name": "A", "pixels": 20}
+        ]);
+        rejects(value, "column_widths repeats an index");
+    }
+
+    #[test]
+    fn spreadsheet_wire_rejects_duplicate_row_index() {
+        let mut value = base_sheet();
+        value["row_heights"] = serde_json::json!([
+            {"name": "1", "pixels": 10}, {"name": "1", "pixels": 20}
+        ]);
+        rejects(value, "row_heights repeats an index");
+    }
+
+    #[test]
+    fn spreadsheet_wire_rejects_missing_merge_start_cell() {
+        let mut value = base_sheet();
+        value["merged_ranges"] = serde_json::json!([
+            {"start": "C1", "end": "D1"}
+        ]);
+        rejects(value, "merged range start has no cell");
+    }
+
+    #[test]
+    fn spreadsheet_wire_rejects_overlapping_merges() {
+        let mut value = base_sheet();
+        value["merged_ranges"] = serde_json::json!([
+            {"start": "A1", "end": "B2"},
+            {"start": "B1", "end": "C2"}
+        ]);
+        rejects(value, "merged ranges overlap");
     }
 }
 

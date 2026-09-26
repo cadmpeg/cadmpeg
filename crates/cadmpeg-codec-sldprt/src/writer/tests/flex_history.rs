@@ -1084,7 +1084,9 @@ fn encoder_writes_source_less_native_features() {
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Resolved {
-                    bodies: vec![ir.model.bodies[0].id.clone()],
+                    bodies: vec![ir.model.bodies[0].id.clone()]
+                        .try_into()
+                        .expect("distinct bodies"),
                     native: "body-a".into(),
                 },
                 BodySelection::Native("body-b,body-c".into()),

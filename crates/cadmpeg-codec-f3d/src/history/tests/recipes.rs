@@ -997,7 +997,9 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     assert_eq!(
         selection,
         BodySelection::Resolved {
-            bodies: vec![BodyId::mint("f3d:brep:body#1").expect("identity grammar")],
+            bodies: vec![BodyId::mint("f3d:brep:body#1").expect("identity grammar")]
+                .try_into()
+                .expect("distinct bodies"),
             native: group_id.into(),
         }
     );
@@ -1131,7 +1133,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         FeatureDefinition::Operation(FeatureOperation::Scale {
             bodies: BodySelection::Resolved { ref bodies, ref native },
             ..
-        }) if bodies == &[body.id.clone()] && native == group_id
+        }) if bodies.as_slice() == [body.id.clone()] && native == group_id
     ));
 
     let mut move_scope = scope;
@@ -1197,7 +1199,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         FeatureDefinition::Operation(FeatureOperation::MoveBody {
             bodies: BodySelection::Resolved { ref bodies, ref native },
             ..
-        }) if bodies == &[body.id.clone()] && native == group_id
+        }) if bodies.as_slice() == [body.id.clone()] && native == group_id
     ));
 }
 
@@ -1223,10 +1225,12 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Native("native:scope".into()),
             }),
-            vec![
+            (vec![
                 BodyId::mint("test:model:body#2").expect("identity grammar"),
                 BodyId::mint("test:model:body#1").expect("identity grammar"),
-            ],
+            ])
+            .try_into()
+            .unwrap(),
         ),
         native_ref: Some("native:scope".into()),
     };
@@ -1235,7 +1239,7 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {
             bodies: BodySelection::Resolved { ref bodies, ref native }
-        }) if bodies == &[BodyId::mint("test:model:body#2").expect("identity grammar"), BodyId::mint("test:model:body#1").expect("identity grammar")]
+        }) if bodies.as_slice() == [BodyId::mint("test:model:body#2").expect("identity grammar"), BodyId::mint("test:model:body#1").expect("identity grammar")]
             && native == "native:scope"
     ));
 }

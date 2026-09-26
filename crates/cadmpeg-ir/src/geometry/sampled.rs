@@ -432,6 +432,28 @@ impl PolylineCurve {
         self.samples.count()
     }
 
+    /// One admitted point without collecting the sample lane.
+    #[must_use]
+    pub fn point_at(&self, index: usize) -> Option<FinitePoint3> {
+        match &self.samples {
+            PolylineSamples::Unparameterized { points } => points.get(index).copied(),
+            PolylineSamples::Parameterized { vertices } => vertices.get(index).map(|row| row.point),
+        }
+    }
+
+    /// One source parameter, or the sample index when none was stated.
+    #[must_use]
+    pub fn parameter_at(&self, index: usize) -> Option<FiniteReal> {
+        match &self.samples {
+            PolylineSamples::Unparameterized { points } => {
+                points.get(index).map(|_| FiniteReal::from_index(index))
+            }
+            PolylineSamples::Parameterized { vertices } => {
+                vertices.get(index).map(|row| row.parameter)
+            }
+        }
+    }
+
     /// Admitted source parameters, absent when the source stated none.
     pub fn parameters(&self) -> Option<impl Iterator<Item = FiniteReal> + '_> {
         self.samples.parameters()

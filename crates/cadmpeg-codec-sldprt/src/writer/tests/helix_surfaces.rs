@@ -714,7 +714,7 @@ fn semantic_writer_round_trips_move_copy_body() {
                 angle,
             }),
             copies: 2,
-        }) if ( bodies == std::slice::from_ref(&body_id) && native == &body
+        }) if ( bodies.as_slice() == std::slice::from_ref(&body_id) && native == &body
             && (angle.get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12) && matches!(geometry_1.get(), Vector3 { x: 1.0, y: 2.0, z: 3.0 }) && matches!(geometry_2.get(), Point3 { x: 4.0, y: 5.0, z: 6.0 }) && matches!(geometry_3.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
 
@@ -730,7 +730,8 @@ fn semantic_writer_round_trips_move_copy_body() {
             else {
                 panic!("typed body motion");
             };
-            *bodies = BodySelection::Bodies(vec![body_id.clone()]);
+            *bodies =
+                BodySelection::Bodies(vec![body_id.clone()].try_into().expect("distinct bodies"));
             *translation =
                 cadmpeg_ir::features::FiniteVector3::new(Vector3::new(-7.0, 8.0, 9.0)).unwrap();
             *rotation = Some(AxisAngle {
@@ -982,7 +983,7 @@ fn semantic_writer_round_trips_cut_with_surface() {
             targets: BodySelection::Resolved { bodies, native: body_native },
             tools: FaceSelection::Resolved { faces, native: face_native },
             reverse: Some(false),
-        }) if bodies == std::slice::from_ref(&body_id) && body_native == &body
+        }) if bodies.as_slice() == std::slice::from_ref(&body_id) && body_native == &body
             && faces == std::slice::from_ref(&face_id) && face_native == &face
     ));
 
@@ -997,7 +998,8 @@ fn semantic_writer_round_trips_cut_with_surface() {
             else {
                 panic!("typed surface cut");
             };
-            *targets = BodySelection::Bodies(vec![body_id.clone()]);
+            *targets =
+                BodySelection::Bodies(vec![body_id.clone()].try_into().expect("distinct bodies"));
             *tools = FaceSelection::Faces(vec![face_id.clone()]);
             *reverse = Some(true);
         });
