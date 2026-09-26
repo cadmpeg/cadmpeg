@@ -1296,17 +1296,18 @@ pub(in super::super) fn reference_circle_pair_cylinder_frame(
     let second_radius = second.radius.get();
     let radius_scale = radius.max(second_radius).max(1.0);
     ((second_radius - radius).abs() <= EPS_CYLINDER_GEOMETRY * radius_scale).then_some(())?;
-    let scale = first
-        .center
+    let first_center: [f64; 3] = first.center.get().into();
+    let second_center: [f64; 3] = second.center.get().into();
+    let scale = first_center
         .iter()
-        .chain(&second.center)
+        .chain(&second_center)
         .map(|value| value.abs())
         .fold(radius_scale, f64::max);
     let first_axis = crate::vecmath::unit_length(first.axis);
     let second_axis = crate::vecmath::unit_length(second.axis);
     ((dot(first_axis, second_axis).abs() - 1.0).abs() <= EPS_CYLINDER_GEOMETRY).then_some(())?;
     let displacement: [f64; 3] =
-        std::array::from_fn(|index| second.center[index] - first.center[index]);
+        std::array::from_fn(|index| second_center[index] - first_center[index]);
     let length = dot(displacement, displacement).sqrt();
     (length.is_finite() && length > EPS_CYLINDER_GEOMETRY * scale).then_some(())?;
     let center_direction = displacement.map(|value| value / length);
@@ -1315,7 +1316,8 @@ pub(in super::super) fn reference_circle_pair_cylinder_frame(
         .then_some(())?;
     let validated_radial = |circle: &crate::reference::ReferenceCircle, axis| {
         let start: [f64; 3] = circle.start.get().into();
-        let vector: [f64; 3] = std::array::from_fn(|index| start[index] - circle.center[index]);
+        let center: [f64; 3] = circle.center.get().into();
+        let vector: [f64; 3] = std::array::from_fn(|index| start[index] - center[index]);
         let length = dot(vector, vector).sqrt();
         ((length - radius).abs() <= EPS_CYLINDER_GEOMETRY * radius_scale
             && dot(axis, vector).abs() <= EPS_CYLINDER_GEOMETRY * radius_scale)
@@ -1324,7 +1326,7 @@ pub(in super::super) fn reference_circle_pair_cylinder_frame(
     let (radial, radial_length) = validated_radial(first, first_axis)?;
     validated_radial(second, second_axis)?;
     crate::surface::PositionalCylinderFrame::new(
-        first.center,
+        first_center,
         first_axis,
         radial.map(|value| value / radial_length),
         radius,

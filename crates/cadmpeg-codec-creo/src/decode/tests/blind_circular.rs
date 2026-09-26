@@ -1198,7 +1198,7 @@ fn opposite_reference_caps_select_one_round_envelope_axis() {
     let circle =
         |entity_id, axis, start: [f64; 3], end: [f64; 3]| crate::reference::ReferenceCircle {
             entity_id,
-            center: [0.0; 3],
+            center: cadmpeg_ir::features::FinitePoint3::ZERO,
             center_stored: true,
             radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
             axis: cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
@@ -1240,17 +1240,18 @@ fn opposite_reference_caps_select_one_round_envelope_axis() {
 
 #[test]
 fn coaxial_reference_circles_define_a_cylinder_frame() {
-    let circle = |entity_id, center, axis, start: [f64; 3]| crate::reference::ReferenceCircle {
-        entity_id,
-        center,
-        center_stored: true,
-        radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
-        axis: cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
-            .expect("unit axis"),
-        start: cadmpeg_ir::features::FinitePoint3::new(start.into()).expect("finite start"),
-        end: cadmpeg_ir::features::FinitePoint3::ZERO,
-        offset: 0,
-    };
+    let circle =
+        |entity_id, center: [f64; 3], axis, start: [f64; 3]| crate::reference::ReferenceCircle {
+            entity_id,
+            center: cadmpeg_ir::features::FinitePoint3::new(center.into()).expect("finite center"),
+            center_stored: true,
+            radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
+            axis: cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
+                .expect("unit axis"),
+            start: cadmpeg_ir::features::FinitePoint3::new(start.into()).expect("finite start"),
+            end: cadmpeg_ir::features::FinitePoint3::ZERO,
+            offset: 0,
+        };
     let first = circle(41, [3.0, 5.0, -2.0], [0.0, 0.0, 1.0], [3.0, 7.0, -2.0]);
     let second = circle(42, [3.0, 5.0, 4.0], [0.0, 0.0, -1.0], [1.0, 5.0, 4.0]);
 
@@ -1258,7 +1259,7 @@ fn coaxial_reference_circles_define_a_cylinder_frame() {
         reference_circle_pair_cylinder_frame(&[&first, &second]),
         Some(
             crate::surface::PositionalCylinderFrame::new(
-                first.center,
+                first.center.get().into(),
                 [0.0, 0.0, 1.0],
                 [0.0, 1.0, 0.0],
                 2.0,
