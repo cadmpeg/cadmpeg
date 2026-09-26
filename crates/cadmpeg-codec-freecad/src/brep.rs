@@ -843,7 +843,7 @@ pub(crate) enum TextPointRepresentation {
     /// Kind 1: point on a 3D curve.
     Curve3d {
         /// Curve parameter.
-        parameter: f64,
+        parameter: FiniteReal,
         /// One-based 3D curve index.
         curve: usize,
         /// Location index, or zero for identity.
@@ -852,7 +852,7 @@ pub(crate) enum TextPointRepresentation {
     /// Kind 2: point on a parameter-space curve of a surface.
     Pcurve {
         /// Parameter-curve parameter.
-        parameter: f64,
+        parameter: FiniteReal,
         /// One-based 2D curve index.
         curve: usize,
         /// One-based surface index.
@@ -863,9 +863,9 @@ pub(crate) enum TextPointRepresentation {
     /// Kind 3: point on a surface.
     Surface {
         /// First surface parameter.
-        parameter: f64,
+        parameter: FiniteReal,
         /// Second surface parameter.
-        second_parameter: f64,
+        second_parameter: FiniteReal,
         /// One-based surface index.
         surface: usize,
         /// Location index, or zero for identity.
@@ -886,8 +886,8 @@ impl TextPointRepresentation {
 
 #[derive(Serialize, Deserialize)]
 struct TextPointRepresentationWire {
-    parameter: f64,
-    second_parameter: Option<f64>,
+    parameter: FiniteReal,
+    second_parameter: Option<FiniteReal>,
     kind: u8,
     curve: Option<usize>,
     surface: Option<usize>,
@@ -1370,12 +1370,12 @@ impl TryFrom<TextEdgeRepresentationWire> for TextEdgeRepresentation {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum TextTShapeGeometry {
     Vertex {
-        tolerance: f64,
+        tolerance: FiniteReal,
         point: FinitePoint3,
         representations: Vec<TextPointRepresentation>,
     },
     Edge {
-        tolerance: f64,
+        tolerance: FiniteReal,
         same_parameter: bool,
         same_range: bool,
         degenerated: bool,
@@ -1383,7 +1383,7 @@ pub(crate) enum TextTShapeGeometry {
     },
     Face {
         natural_restriction: bool,
-        tolerance: f64,
+        tolerance: FiniteReal,
         surface: Option<TableRef<TextSurface>>,
         location: LocationRef,
         triangulation: Option<TableRef<TextTriangulation>>,
@@ -1535,12 +1535,12 @@ struct TextTShapeWire {
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum TextTShapeGeometryWire {
     Vertex {
-        tolerance: f64,
+        tolerance: FiniteReal,
         point: FinitePoint3,
         representations: Vec<TextPointRepresentation>,
     },
     Edge {
-        tolerance: f64,
+        tolerance: FiniteReal,
         same_parameter: bool,
         same_range: bool,
         degenerated: bool,
@@ -1548,7 +1548,7 @@ enum TextTShapeGeometryWire {
     },
     Face {
         natural_restriction: bool,
-        tolerance: f64,
+        tolerance: FiniteReal,
         surface: usize,
         location: usize,
         triangulation: Option<usize>,
@@ -1602,7 +1602,7 @@ impl<'a> TextTShapeOut<'a> {
                 point,
                 representations,
             } => TextTShapeGeometryOut::Vertex {
-                tolerance: *tolerance,
+                tolerance: tolerance.get(),
                 point: *point,
                 representations,
             },
@@ -1613,7 +1613,7 @@ impl<'a> TextTShapeOut<'a> {
                 degenerated,
                 representations,
             } => TextTShapeGeometryOut::Edge {
-                tolerance: *tolerance,
+                tolerance: tolerance.get(),
                 same_parameter: *same_parameter,
                 same_range: *same_range,
                 degenerated: *degenerated,
@@ -1627,7 +1627,7 @@ impl<'a> TextTShapeOut<'a> {
                 triangulation,
             } => TextTShapeGeometryOut::Face {
                 natural_restriction: *natural_restriction,
-                tolerance: *tolerance,
+                tolerance: tolerance.get(),
                 surface: surface.map_or(0, TableRef::index),
                 location: location.index(),
                 triangulation: triangulation.map(TableRef::index),
@@ -2940,7 +2940,7 @@ fn parse_binary_tshape(
     };
     let geometry = match kind {
         TextShapeKind::Vertex => {
-            let tolerance = cursor.f64("binary vertex tolerance")?;
+            let tolerance = cursor.finite_f64("binary vertex tolerance")?;
             let point = cursor.finite_point3("binary vertex point")?;
             let mut representations = Vec::new();
             loop {
@@ -2953,7 +2953,7 @@ fn parse_binary_tshape(
                         "binary vertex representation-count limit exceeded".into(),
                     ));
                 }
-                let parameter = cursor.f64("binary vertex parameter")?;
+                let parameter = cursor.finite_f64("binary vertex parameter")?;
                 let representation = match representation_kind {
                     1 => TextPointRepresentation::Curve3d {
                         parameter,
@@ -2993,7 +2993,8 @@ fn parse_binary_tshape(
                     },
                     3 => TextPointRepresentation::Surface {
                         parameter,
-                        second_parameter: cursor.f64("binary vertex second surface parameter")?,
+                        second_parameter: cursor
+                            .finite_f64("binary vertex second surface parameter")?,
                         surface: checked_binary_reference(
                             cursor.i32("binary vertex surface")?,
                             surface_count,
@@ -3022,7 +3023,7 @@ fn parse_binary_tshape(
             }
         }
         TextShapeKind::Edge => {
-            let tolerance = cursor.f64("binary edge tolerance")?;
+            let tolerance = cursor.finite_f64("binary edge tolerance")?;
             let same_parameter = cursor.bool("binary edge same-parameter flag")?;
             let same_range = cursor.bool("binary edge same-range flag")?;
             let degenerated = cursor.bool("binary edge degenerated flag")?;
@@ -3060,7 +3061,7 @@ fn parse_binary_tshape(
         }
         TextShapeKind::Face => {
             let natural_restriction = cursor.bool("binary face natural-restriction flag")?;
-            let tolerance = cursor.f64("binary face tolerance")?;
+            let tolerance = cursor.finite_f64("binary face tolerance")?;
             let surface = checked_binary_reference(
                 cursor.i32("binary face surface")?,
                 surface_count,
@@ -4557,11 +4558,11 @@ fn parse_vertex_geometry(
     cursor: &mut TokenCursor<'_>,
     counts: &BTreeMap<String, usize>,
 ) -> Result<TextTShapeGeometry, CodecError> {
-    let tolerance = cursor.real("vertex tolerance")?;
+    let tolerance = cursor.finite_real("vertex tolerance")?;
     let point = cursor.finite_point("vertex point")?;
     let mut representations = Vec::new();
     loop {
-        let parameter = cursor.real("vertex representation parameter")?;
+        let parameter = cursor.finite_real("vertex representation parameter")?;
         let kind = cursor.integer("vertex representation kind")?;
         if kind == 0 {
             break;
@@ -4593,7 +4594,7 @@ fn parse_vertex_geometry(
             },
             3 => TextPointRepresentation::Surface {
                 parameter,
-                second_parameter: cursor.real("vertex second surface parameter")?,
+                second_parameter: cursor.finite_real("vertex second surface parameter")?,
                 surface: parse_reference(cursor, "vertex surface", counts["Surfaces"], false)?,
                 location: location_of(cursor)?,
             },
@@ -4617,7 +4618,7 @@ fn parse_edge_geometry(
     counts: &BTreeMap<String, usize>,
     topology_version: u8,
 ) -> Result<TextTShapeGeometry, CodecError> {
-    let tolerance = cursor.real("edge tolerance")?;
+    let tolerance = cursor.finite_real("edge tolerance")?;
     let same_parameter = cursor.boolean("edge same-parameter flag")?;
     let same_range = cursor.boolean("edge same-range flag")?;
     let degenerated = cursor.boolean("edge degenerated flag")?;
@@ -4801,7 +4802,7 @@ fn parse_face_geometry(
     counts: &BTreeMap<String, usize>,
 ) -> Result<TextTShapeGeometry, CodecError> {
     let natural_restriction = cursor.boolean("face natural-restriction flag")?;
-    let tolerance = cursor.real("face tolerance")?;
+    let tolerance = cursor.finite_real("face tolerance")?;
     let surface = parse_reference(cursor, "face surface", counts["Surfaces"], true)?;
     let location = parse_reference(cursor, "face location", counts["Locations"], true)?;
     let triangulation = if cursor.peek() == Some("2") {
