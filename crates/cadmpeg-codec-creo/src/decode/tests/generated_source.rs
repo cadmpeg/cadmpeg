@@ -11,7 +11,8 @@ use crate::decode::feature_history::link::{
 };
 use crate::decode::holes::counterbore::{
     counterbore_axis_placement_from_sources, counterbore_cylinder_sources,
-    counterbore_dimension_values, counterbore_directed_span, counterbore_envelope_dimension_values,
+    counterbore_dimension_tuple_matches_radius, counterbore_dimension_values,
+    counterbore_directed_span, counterbore_envelope_dimension_values,
     counterbore_placement_from_corner_envelopes, counterbore_source_patch_geometries,
     counterbore_support_axis_placement, counterbore_unenveloped_dimension_values,
 };
@@ -40,6 +41,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::scalar::{Angle, Length, PositiveLength};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
@@ -713,6 +715,24 @@ fn overflowing_corner_span_does_not_match_finite_hole_dimensions() {
 }
 
 #[test]
+fn infinite_drilled_dimension_does_not_match_finite_envelope() {
+    let spans = admitted_spans([[Some(4.0), None], [Some(5.0), None], [None, None]]);
+    assert!(!dimension_pair_matches_envelope_spans(
+        f64::INFINITY,
+        5.0,
+        spans,
+    ));
+}
+
+#[test]
+fn infinite_counterbore_radius_does_not_match_finite_diameter() {
+    assert!(!counterbore_dimension_tuple_matches_radius(
+        (2.0, 4.0, 1.0),
+        f64::INFINITY,
+    ));
+}
+
+#[test]
 fn complementary_drilled_hole_envelopes_define_axis_placement() {
     let corners = [
         [[-10.0, 0.0, -10.0], [10.0, 45.0, 0.0]],
@@ -872,7 +892,7 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
                     drill_point_angle: angle,
                 },
                 ..
-            }, Some(actual_diameter),) if (approximately_equal(angle.get(), drill_point_angle)) && actual_diameter.get() == 8.4 && actual_length.get() == 25.0)));
+            }, Some(actual_diameter),) if ((FiniteReal::new(angle.get())).zip(FiniteReal::new(drill_point_angle)).is_some_and(|(first, second)| approximately_equal(first, second))) && actual_diameter.get() == 8.4 && actual_length.get() == 25.0)));
 
     let compact_entry =
         |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
@@ -1013,6 +1033,35 @@ fn counterbore_dimensions_require_complete_agreeing_radius_anchored_tables() {
     let conflicting = table(0.2);
     assert_eq!(
         counterbore_dimension_values([&first, &conflicting].into_iter(), &[0.3125]),
+        None
+    );
+}
+
+#[test]
+fn overflowing_counterbore_diameter_is_not_admitted() {
+    let table = crate::feature::definitions::FeatureDimensionTable {
+        declared_count: 4,
+        entity_ref: Some(88),
+        rows: [(2, 0.098, 0), (2, 0.46, 1), (1, 0.15, 2), (2, f64::MAX, 3)]
+            .into_iter()
+            .map(|(dimension_type, value, external_id)| {
+                crate::feature::definitions::FeatureDimension {
+                    dimension_type,
+                    value: crate::feature::definitions::DimensionValue::Resolved(value),
+                    value_body: Vec::new(),
+                    direction_byte: 0,
+                    auxiliary_value: Some(0.0),
+                    auxiliary_body: Vec::new(),
+                    external_id,
+                    references: None,
+                    offset: 0,
+                }
+            })
+            .collect(),
+        offset: 0,
+    };
+    assert_eq!(
+        counterbore_dimension_values(std::iter::once(&table), &[f64::MAX]),
         None
     );
 }
@@ -1678,7 +1727,13 @@ fn circle_remains_a_closed_extrusion_profile() {
         circle.clone(),
     ));
 
-    let profiles = resolved_sketch_profiles(&ir, &sketch_id, 1).expect("one circle profile");
+    let profiles = resolved_sketch_profiles(
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        &sketch_id,
+        1,
+    )
+    .expect("one circle profile");
     assert_eq!(
         profiles,
         vec![vec![

@@ -68,9 +68,14 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         let Some(sketch_id) = model_sketch_id(scan, definition) else {
             continue;
         };
-        let Some((section_center, radius)) =
-            resolved_circular_extrusion_profile(scan, ir, transform, feature_id, &sketch_id)
-        else {
+        let Some((section_center, radius)) = resolved_circular_extrusion_profile(
+            scan,
+            ir,
+            source_carriers,
+            transform,
+            feature_id,
+            &sketch_id,
+        ) else {
             continue;
         };
         let Some(span) =
@@ -487,15 +492,18 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             shells: vec![shell_id],
         });
         ctx.charge_entities(1, "admit Creo model bodies")?;
-        ir.model.bodies.push(Body {
-            id: body_id,
-            kind: BodyKind::Solid,
-            regions: vec![region_id],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        });
+        source_carriers.admit_body(
+            ir,
+            Body {
+                id: body_id,
+                kind: BodyKind::Solid,
+                regions: vec![region_id],
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
+        )?;
         transferred += 1;
     }
     Ok(transferred)
@@ -504,6 +512,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
 fn resolved_circular_extrusion_profile(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     transform: &crate::placement::FeatureSectionTransform,
     feature_id: u32,
     sketch_id: &SketchId,
@@ -520,7 +529,7 @@ fn resolved_circular_extrusion_profile(
                     exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
                         entity.id() == &entity_use.entity && entity.sketch == *sketch_id
                     }))
-                    .map(|entity| entity.geometry.definition())
+                    .map(|entity| source_carriers.sketch_geometry(entity).definition())
                 {
                     return Some(([center.u, center.v], radius.get()));
                 }
@@ -556,4 +565,68 @@ pub(in super::super) fn circular_section_profile_from_cylinder(
         ],
         radius,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
+        SketchGeometryDefinition, SketchId, SketchPlacement, SketchProfiles,
+    };
+
+    #[test]
+    fn circular_extrusion_profile_uses_source_sketch_geometry_after_admission() {
+        let sketch_id = SketchId::mint("creo:test:sketch#1").expect("identity grammar");
+        let entity_id =
+            SketchEntityId::mint("creo:test:sketch_entity#1").expect("identity grammar");
+        let mut ir = CadIr::empty();
+        ir.model.sketches.push(Sketch {
+            id: sketch_id.clone(),
+            name: None,
+            configuration: None,
+            visible: None,
+            placement: SketchPlacement::Unresolved {},
+            profiles: SketchProfiles::try_from(vec![vec![SketchEntityUse {
+                entity: entity_id.clone(),
+                reversed: false,
+            }]])
+            .expect("valid profile"),
+            native_ref: None,
+        });
+        let mut carriers = crate::decode::source_carriers::SourceUnitCarriers::new(
+            cadmpeg_ir::scalar::PositiveReal::new(25.4),
+        );
+        carriers
+            .admit_sketch_entities(
+                &mut ir,
+                vec![SketchEntity::new(
+                    entity_id,
+                    sketch_id.clone(),
+                    SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                        center: Point2::new(1.0, 0.0),
+                        radius: cadmpeg_ir::scalar::Length::new(2.0).expect("finite radius"),
+                    })
+                    .expect("source circle"),
+                )],
+            )
+            .expect("millimeter admission");
+        let scan = crate::container::scan_bytes_ok(Vec::new());
+        let transform = crate::placement::FeatureSectionTransform::new(
+            1,
+            Some(1),
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            0,
+        )
+        .expect("section transform");
+        assert_eq!(
+            super::resolved_circular_extrusion_profile(
+                &scan, &ir, &carriers, &transform, 1, &sketch_id,
+            ),
+            Some(([1.0, 0.0], 2.0))
+        );
+    }
 }
