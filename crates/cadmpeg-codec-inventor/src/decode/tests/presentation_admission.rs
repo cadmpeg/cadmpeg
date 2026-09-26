@@ -200,3 +200,72 @@ fn presentation_other_native_records_refuse_before_ids_text_and_reference_copies
                 && limit.operation == "copy Inventor graphics style references"
     ));
 }
+
+#[test]
+fn rendering_conversion_issue_refuses_before_failure_record_creation() {
+    let bytes = [];
+    let token = cadmpeg_ir::ids::IdentityKey::encode_segment("segment");
+    let inventory = PresentationInventory {
+        default_styles: Vec::new(),
+        rendering_styles: vec![Located::new(
+            PmAppRenderingStyle {
+                segment_version_major: 17,
+                header_value: 0,
+                header_id: 0,
+                state: 0,
+                flags: 0,
+                values: [0; 2],
+                default_state: 0,
+                value: 0,
+                name_reference: 0,
+                name: String::new(),
+                comment: String::new(),
+                long_name: String::new(),
+                extension: None,
+                suffix: View::over_retained(&bytes),
+            },
+            "type".into(),
+            &token,
+            1,
+        )],
+        graphics_faces: Vec::new(),
+        graphics_style_collections: Vec::new(),
+        graphics_primary_color_styles: Vec::new(),
+        issues: Vec::new(),
+    };
+    let arena = DecodeArena::new();
+    let issue = "rendering style extension disagrees with segment_version_major";
+    let id_len = "inventor:presentation:rendering-style#segment-1".len();
+    let token_len = "segment".len();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        u64::try_from(id_len + token_len + 64 + issue.len() - 1).expect("issue budget fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    assert!(matches!(
+        admit_presentation_native_projection(&ctx, &inventory),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor rendering conversion issue"
+    ));
+    policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    assert!(matches!(
+        admit_presentation_native_projection(&ctx, &inventory),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "collect Inventor rendering conversion issue"
+    ));
+    policy = DecodePolicy::service();
+    policy.limits.max_entities = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    assert!(matches!(
+        admit_presentation_native_projection(&ctx, &inventory),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::Entities
+                && limit.operation == "admit Inventor rendering conversion issue"
+    ));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    admit_presentation_native_projection(&ctx, &inventory).expect("admitted rendering issue");
+}
