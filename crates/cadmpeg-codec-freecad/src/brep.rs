@@ -18,7 +18,10 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::{FiniteBinary32, FiniteReal, NonNegativeReal, PositiveLength};
+use cadmpeg_ir::scalar::{
+    Angle, FiniteBinary32, FiniteReal, NonNegativeLength, NonNegativeReal, NonZeroLength,
+    PositiveLength, PositiveReal,
+};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::{FinitePoint2, OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::SourceObjectAssociation;
@@ -2085,43 +2088,43 @@ impl Serialize for NestedCurve {
 pub(crate) enum TextSurface {
     /// Infinite plane.
     Plane {
-        origin: Point3,
-        axis: Vector3,
-        u_axis: Vector3,
+        origin: FinitePoint3,
+        axis: FiniteVector3,
+        u_axis: FiniteVector3,
         v_reversed: bool,
     },
     /// Circular cylinder.
     Cylinder {
-        origin: Point3,
-        axis: Vector3,
-        ref_direction: Vector3,
-        radius: f64,
+        origin: FinitePoint3,
+        axis: FiniteVector3,
+        ref_direction: FiniteVector3,
+        radius: FiniteReal,
         u_reversed: bool,
     },
     /// Circular cone.
     Cone {
-        origin: Point3,
-        axis: Vector3,
-        ref_direction: Vector3,
-        radius: f64,
-        half_angle: f64,
+        origin: FinitePoint3,
+        axis: FiniteVector3,
+        ref_direction: FiniteVector3,
+        radius: FiniteReal,
+        half_angle: FiniteReal,
         u_reversed: bool,
     },
     /// Sphere.
     Sphere {
-        center: Point3,
-        axis: Vector3,
-        ref_direction: Vector3,
-        radius: f64,
+        center: FinitePoint3,
+        axis: FiniteVector3,
+        ref_direction: FiniteVector3,
+        radius: FiniteReal,
         u_reversed: bool,
     },
     /// Torus.
     Torus {
-        center: Point3,
-        axis: Vector3,
-        ref_direction: Vector3,
-        major_radius: f64,
-        minor_radius: f64,
+        center: FinitePoint3,
+        axis: FiniteVector3,
+        ref_direction: FiniteVector3,
+        major_radius: FiniteReal,
+        minor_radius: FiniteReal,
         u_reversed: bool,
     },
     /// Rational or non-rational tensor-product B-spline surface.
@@ -2247,7 +2250,7 @@ pub(crate) fn surface_parameter_affine(surface: &TextSurface) -> SurfaceParamete
             ..
         } => SurfaceParameterAffine {
             u_scale: if *u_reversed { -1.0 } else { 1.0 },
-            v_scale: half_angle.cos(),
+            v_scale: half_angle.get().cos(),
             ..identity
         },
         TextSurface::Trimmed {
@@ -3368,69 +3371,69 @@ fn parse_binary_surface(
     }
     Ok(match cursor.u8("binary surface kind")? {
         1 => {
-            let origin = cursor.point3("binary plane origin")?;
-            let axis = cursor.vector3("binary plane axis")?;
-            let u_axis = cursor.vector3("binary plane u axis")?;
+            let origin = cursor.finite_point3("binary plane origin")?;
+            let axis = cursor.finite_vector3("binary plane axis")?;
+            let u_axis = cursor.finite_vector3("binary plane u axis")?;
             let v_axis = cursor.vector3("binary plane v axis")?;
             TextSurface::Plane {
                 origin,
                 axis,
                 u_axis,
-                v_reversed: frame_v_reversed(axis, u_axis, v_axis),
+                v_reversed: frame_v_reversed(axis.get(), u_axis.get(), v_axis),
             }
         }
         2 => {
-            let origin = cursor.point3("binary cylinder origin")?;
-            let axis = cursor.vector3("binary cylinder axis")?;
-            let ref_direction = cursor.vector3("binary cylinder reference direction")?;
+            let origin = cursor.finite_point3("binary cylinder origin")?;
+            let axis = cursor.finite_vector3("binary cylinder axis")?;
+            let ref_direction = cursor.finite_vector3("binary cylinder reference direction")?;
             let y_direction = cursor.vector3("binary cylinder v direction")?;
             TextSurface::Cylinder {
                 origin,
                 axis,
                 ref_direction,
-                radius: cursor.f64("binary cylinder radius")?,
-                u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
+                radius: cursor.finite_f64("binary cylinder radius")?,
+                u_reversed: frame_v_reversed(axis.get(), ref_direction.get(), y_direction),
             }
         }
         3 => {
-            let origin = cursor.point3("binary cone origin")?;
-            let axis = cursor.vector3("binary cone axis")?;
-            let ref_direction = cursor.vector3("binary cone reference direction")?;
+            let origin = cursor.finite_point3("binary cone origin")?;
+            let axis = cursor.finite_vector3("binary cone axis")?;
+            let ref_direction = cursor.finite_vector3("binary cone reference direction")?;
             let y_direction = cursor.vector3("binary cone v direction")?;
             TextSurface::Cone {
                 origin,
                 axis,
                 ref_direction,
-                radius: cursor.f64("binary cone reference radius")?,
-                half_angle: cursor.f64("binary cone half angle")?,
-                u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
+                radius: cursor.finite_f64("binary cone reference radius")?,
+                half_angle: cursor.finite_f64("binary cone half angle")?,
+                u_reversed: frame_v_reversed(axis.get(), ref_direction.get(), y_direction),
             }
         }
         4 => {
-            let center = cursor.point3("binary sphere center")?;
-            let axis = cursor.vector3("binary sphere axis")?;
-            let ref_direction = cursor.vector3("binary sphere reference direction")?;
+            let center = cursor.finite_point3("binary sphere center")?;
+            let axis = cursor.finite_vector3("binary sphere axis")?;
+            let ref_direction = cursor.finite_vector3("binary sphere reference direction")?;
             let y_direction = cursor.vector3("binary sphere v direction")?;
             TextSurface::Sphere {
                 center,
                 axis,
                 ref_direction,
-                radius: cursor.f64("binary sphere radius")?,
-                u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
+                radius: cursor.finite_f64("binary sphere radius")?,
+                u_reversed: frame_v_reversed(axis.get(), ref_direction.get(), y_direction),
             }
         }
         5 => {
-            let center = cursor.point3("binary torus center")?;
-            let axis = cursor.vector3("binary torus axis")?;
-            let ref_direction = cursor.vector3("binary torus reference direction")?;
+            let center = cursor.finite_point3("binary torus center")?;
+            let axis = cursor.finite_vector3("binary torus axis")?;
+            let ref_direction = cursor.finite_vector3("binary torus reference direction")?;
             let y_direction = cursor.vector3("binary torus v direction")?;
             TextSurface::Torus {
                 center,
                 axis,
                 ref_direction,
-                major_radius: cursor.f64("binary torus major radius")?,
-                minor_radius: cursor.f64("binary torus minor radius")?,
-                u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
+                major_radius: cursor.finite_f64("binary torus major radius")?,
+                minor_radius: cursor.finite_f64("binary torus minor radius")?,
+                u_reversed: frame_v_reversed(axis.get(), ref_direction.get(), y_direction),
             }
         }
         6 => TextSurface::Extrusion {
@@ -5014,46 +5017,47 @@ fn parse_analytic_surface(
     kind: AnalyticSurfaceKind,
     cursor: &mut TokenCursor<'_>,
 ) -> Result<TextSurface, CodecError> {
-    let origin = cursor.point("surface origin")?;
-    let axis = cursor.vector("surface axis")?;
-    let ref_direction = cursor.vector("surface reference direction")?;
+    let origin = cursor.finite_point("surface origin")?;
+    let axis = cursor.finite_vector("surface axis")?;
+    let ref_direction = cursor.finite_vector("surface reference direction")?;
     let y_direction = cursor.vector("surface y direction")?;
+    let reversed = frame_v_reversed(axis.get(), ref_direction.get(), y_direction);
     Ok(match kind {
         AnalyticSurfaceKind::Plane => TextSurface::Plane {
             origin,
             axis,
             u_axis: ref_direction,
-            v_reversed: frame_v_reversed(axis, ref_direction, y_direction),
+            v_reversed: reversed,
         },
         AnalyticSurfaceKind::Cylinder => TextSurface::Cylinder {
             origin,
             axis,
             ref_direction,
-            radius: cursor.real("cylinder radius")?,
-            u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
+            radius: cursor.finite_real("cylinder radius")?,
+            u_reversed: reversed,
         },
         AnalyticSurfaceKind::Cone => TextSurface::Cone {
             origin,
             axis,
             ref_direction,
-            radius: cursor.real("cone radius")?,
-            half_angle: cursor.real("cone half angle")?,
-            u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
+            radius: cursor.finite_real("cone radius")?,
+            half_angle: cursor.finite_real("cone half angle")?,
+            u_reversed: reversed,
         },
         AnalyticSurfaceKind::Sphere => TextSurface::Sphere {
             center: origin,
             axis,
             ref_direction,
-            radius: cursor.real("sphere radius")?,
-            u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
+            radius: cursor.finite_real("sphere radius")?,
+            u_reversed: reversed,
         },
         AnalyticSurfaceKind::Torus => TextSurface::Torus {
             center: origin,
             axis,
             ref_direction,
-            major_radius: cursor.real("torus major radius")?,
-            minor_radius: cursor.real("torus minor radius")?,
-            u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
+            major_radius: cursor.finite_real("torus major radius")?,
+            minor_radius: cursor.finite_real("torus minor radius")?,
+            u_reversed: reversed,
         },
     })
 }
@@ -5928,25 +5932,34 @@ fn append_text_surface(
             axis,
             u_axis,
             ..
-        } => SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(*origin, *axis, *u_axis)
-                .map_err(CodecError::malformed)?,
-        )),
+        } => {
+            let frame = OrthonormalFrame3::new(axis.get(), u_axis.get()).ok_or_else(|| {
+                CodecError::malformed("PlaneSurface.normal/u_axis must form an orthonormal frame")
+            })?;
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::new(*origin, frame),
+            ))
+        }
         TextSurface::Cylinder {
             origin,
             axis,
             ref_direction,
             radius,
             ..
-        } => SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                *origin,
-                *axis,
-                *ref_direction,
-                *radius,
-            )
-            .map_err(CodecError::malformed)?,
-        )),
+        } => {
+            let frame =
+                OrthonormalFrame3::new(axis.get(), ref_direction.get()).ok_or_else(|| {
+                    CodecError::malformed(
+                        "CylinderSurface.axis/ref_direction must form an orthonormal frame",
+                    )
+                })?;
+            let radius = PositiveLength::from_assigned_real(*radius).ok_or_else(|| {
+                CodecError::malformed("CylinderSurface.radius must be positive and finite")
+            })?;
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::new(*origin, frame, radius),
+            ))
+        }
         // The persisted b-rep cone holds a signed half angle in
         // `0 < |half_angle| < pi/2`, and the sign selects the direction the
         // cross-section grows along the frame axis. The reader keeps it: the
@@ -5963,32 +5976,47 @@ fn append_text_surface(
             radius,
             half_angle,
             ..
-        } => SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-            cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                *origin,
-                *axis,
-                *ref_direction,
-                *radius,
-                1.0,
-                *half_angle,
-            )
-            .map_err(CodecError::malformed)?,
-        )),
+        } => {
+            let frame =
+                OrthonormalFrame3::new(axis.get(), ref_direction.get()).ok_or_else(|| {
+                    CodecError::malformed(
+                        "ConeSurface.axis/ref_direction must form an orthonormal frame",
+                    )
+                })?;
+            let radius =
+                NonNegativeLength::from_finite_assigned_real(*radius).ok_or_else(|| {
+                    CodecError::malformed("ConeSurface.radius must be nonnegative and finite")
+                })?;
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+                cadmpeg_ir::geometry::analytic::ConeSurface::new(
+                    *origin,
+                    frame,
+                    radius,
+                    PositiveReal::ONE,
+                    Angle::from_assigned_real(*half_angle),
+                ),
+            ))
+        }
         TextSurface::Sphere {
             center,
             axis,
             ref_direction,
             radius,
             ..
-        } => SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-            cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                *center,
-                *axis,
-                *ref_direction,
-                *radius,
-            )
-            .map_err(CodecError::malformed)?,
-        )),
+        } => {
+            let frame =
+                OrthonormalFrame3::new(axis.get(), ref_direction.get()).ok_or_else(|| {
+                    CodecError::malformed(
+                        "SphereSurface.axis/ref_direction must form an orthonormal frame",
+                    )
+                })?;
+            let radius = NonZeroLength::from_assigned_real(*radius).ok_or_else(|| {
+                CodecError::malformed("SphereSurface.radius must be finite and nonzero")
+            })?;
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+                cadmpeg_ir::geometry::analytic::SphereSurface::new(*center, frame, radius),
+            ))
+        }
         TextSurface::Torus {
             center,
             axis,
@@ -5996,16 +6024,30 @@ fn append_text_surface(
             major_radius,
             minor_radius,
             ..
-        } => SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-            cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-                *center,
-                *axis,
-                *ref_direction,
-                *major_radius,
-                *minor_radius,
-            )
-            .map_err(CodecError::malformed)?,
-        )),
+        } => {
+            let frame =
+                OrthonormalFrame3::new(axis.get(), ref_direction.get()).ok_or_else(|| {
+                    CodecError::malformed(
+                        "TorusSurface.axis/ref_direction must form an orthonormal frame",
+                    )
+                })?;
+            let major_radius =
+                PositiveLength::from_assigned_real(*major_radius).ok_or_else(|| {
+                    CodecError::malformed("TorusSurface.major_radius must be positive and finite")
+                })?;
+            let minor_radius =
+                NonZeroLength::from_assigned_real(*minor_radius).ok_or_else(|| {
+                    CodecError::malformed("TorusSurface.minor_radius must be finite and nonzero")
+                })?;
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+                cadmpeg_ir::geometry::analytic::TorusSurface::new(
+                    *center,
+                    frame,
+                    major_radius,
+                    minor_radius,
+                ),
+            ))
+        }
         TextSurface::Nurbs(nurbs) => {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs.clone()))
         }
@@ -6595,11 +6637,11 @@ pub(crate) mod tests {
         assert!(matches!(
             cone,
             TextSurface::Cone {
-                radius: 2.0,
-                half_angle: 0.5,
+                radius,
+                half_angle,
                 u_reversed: true,
                 ..
-            }
+            } if radius.get() == 2.0 && half_angle.get() == 0.5
         ));
 
         let tokens = [
@@ -6611,10 +6653,10 @@ pub(crate) mod tests {
         assert!(matches!(
             sphere,
             TextSurface::Sphere {
-                radius: 2.0,
+                radius,
                 u_reversed: true,
                 ..
-            }
+            } if radius.get() == 2.0
         ));
 
         let tokens = [
@@ -6626,11 +6668,11 @@ pub(crate) mod tests {
         assert!(matches!(
             torus,
             TextSurface::Torus {
-                major_radius: 4.0,
-                minor_radius: 1.0,
+                major_radius,
+                minor_radius,
                 u_reversed: true,
                 ..
-            }
+            } if major_radius.get() == 4.0 && minor_radius.get() == 1.0
         ));
     }
 
@@ -7322,6 +7364,35 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn native_analytic_surface_fields_remain_checked_and_wire_identical() {
+        let point = serde_json::json!({"x": 1.0, "y": 2.0, "z": 3.0});
+        let axis = serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0});
+        let reference = serde_json::json!({"x": 1.0, "y": 0.0, "z": 0.0});
+        let wires = [
+            serde_json::json!({"kind": "plane", "origin": point, "axis": axis, "u_axis": reference, "v_reversed": false}),
+            serde_json::json!({"kind": "cylinder", "origin": point, "axis": axis, "ref_direction": reference, "radius": 2.0, "u_reversed": false}),
+            serde_json::json!({"kind": "cone", "origin": point, "axis": axis, "ref_direction": reference, "radius": 2.0, "half_angle": -0.5, "u_reversed": false}),
+            serde_json::json!({"kind": "sphere", "center": point, "axis": axis, "ref_direction": reference, "radius": -2.0, "u_reversed": false}),
+            serde_json::json!({"kind": "torus", "center": point, "axis": axis, "ref_direction": reference, "major_radius": 4.0, "minor_radius": 1.0, "u_reversed": false}),
+        ];
+        for wire in wires {
+            let surface: TextSurface = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(&surface).unwrap(), wire);
+            if let TextSurface::Plane {
+                origin,
+                axis,
+                u_axis,
+                ..
+            } = surface
+            {
+                let _: FinitePoint3 = origin;
+                let _: FiniteVector3 = axis;
+                let _: FiniteVector3 = u_axis;
+            }
+        }
+    }
+
+    #[test]
     fn transfers_occt_revolution_surface_parameter_order() {
         let surface = crate::brep::TextSurface::Revolution {
             axis_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
@@ -7366,11 +7437,12 @@ pub(crate) mod tests {
     #[test]
     fn transfers_a_signed_cone_half_angle_without_moving_the_frame() {
         let surface = crate::brep::TextSurface::Cone {
-            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
-            ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            radius: 5.0,
-            half_angle: -0.715_584_993_317_674_8,
+            origin: FinitePoint3::ZERO,
+            axis: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)).unwrap(),
+            ref_direction: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
+                .unwrap(),
+            radius: FiniteReal::new(5.0).unwrap(),
+            half_angle: FiniteReal::new(-0.715_584_993_317_674_8).unwrap(),
             u_reversed: false,
         };
         let association = cadmpeg_ir::SourceObjectAssociation {
@@ -7613,9 +7685,9 @@ pub(crate) mod tests {
     /// carrier.
     fn nested_offset_surface(wrappers: usize) -> Result<TextSurface, String> {
         let mut surface = TextSurface::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            origin: FinitePoint3::ZERO,
+            axis: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)).unwrap(),
+            u_axis: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)).unwrap(),
             v_reversed: false,
         };
         for _ in 0..wrappers {
