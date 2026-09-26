@@ -272,7 +272,7 @@ fn rendered_diameter_resolves_rounded_applied_geometry() {
     diameter.doubles.insert("UpperLimit".into(), 4.1);
     let displayed = [RenderedDimension {
         kind: RenderedDimensionKind::Diameter,
-        value: 0.156,
+        value: cadmpeg_ir::scalar::PositiveReal::new(0.156).unwrap(),
         decimal_places: 3,
     }];
     let mut annotations = project(&root);
@@ -330,7 +330,7 @@ fn conflicting_pattern_sizes_do_not_resolve_a_nominal() {
         &root,
         &[RenderedDimension {
             kind: RenderedDimensionKind::Diameter,
-            value: 5.0,
+            value: cadmpeg_ir::scalar::PositiveReal::new(5.0).unwrap(),
             decimal_places: 1,
         }],
         &mut annotations,
@@ -393,7 +393,7 @@ fn empty_pattern_does_not_bind_an_unrelated_rendered_diameter() {
         &root,
         &[RenderedDimension {
             kind: RenderedDimensionKind::Diameter,
-            value: 0.25,
+            value: cadmpeg_ir::scalar::PositiveReal::new(0.25).unwrap(),
             decimal_places: 3,
         }],
         &mut annotations,
@@ -528,12 +528,12 @@ fn conflicting_rendered_units_do_not_resolve_a_nominal() {
             &[
                 RenderedDimension {
                     kind: RenderedDimensionKind::Diameter,
-                    value: 5.0,
+                    value: cadmpeg_ir::scalar::PositiveReal::new(5.0).unwrap(),
                     decimal_places: 1,
                 },
                 RenderedDimension {
                     kind: RenderedDimensionKind::Diameter,
-                    value: 0.2,
+                    value: cadmpeg_ir::scalar::PositiveReal::new(0.2).unwrap(),
                     decimal_places: 1,
                 },
             ],
@@ -749,7 +749,7 @@ fn rendered_depth_resolves_axial_nominal_planes() {
         &root,
         &[RenderedDimension {
             kind: RenderedDimensionKind::Depth,
-            value: 0.3,
+            value: cadmpeg_ir::scalar::PositiveReal::new(0.3).unwrap(),
             decimal_places: 2,
         }],
         &mut annotations,
@@ -1205,27 +1205,27 @@ fn scans_explicit_rendered_diameter_literals() {
         [
             RenderedDimension {
                 kind: RenderedDimensionKind::Diameter,
-                value: 0.156,
+                value: cadmpeg_ir::scalar::PositiveReal::new(0.156).unwrap(),
                 decimal_places: 3,
             },
             RenderedDimension {
                 kind: RenderedDimensionKind::Diameter,
-                value: 0.281,
+                value: cadmpeg_ir::scalar::PositiveReal::new(0.281).unwrap(),
                 decimal_places: 3,
             },
             RenderedDimension {
                 kind: RenderedDimensionKind::Diameter,
-                value: 0.438,
+                value: cadmpeg_ir::scalar::PositiveReal::new(0.438).unwrap(),
                 decimal_places: 3,
             },
             RenderedDimension {
                 kind: RenderedDimensionKind::Diameter,
-                value: 0.25,
+                value: cadmpeg_ir::scalar::PositiveReal::new(0.25).unwrap(),
                 decimal_places: 3,
             },
             RenderedDimension {
                 kind: RenderedDimensionKind::Depth,
-                value: 0.3,
+                value: cadmpeg_ir::scalar::PositiveReal::new(0.3).unwrap(),
                 decimal_places: 2,
             },
         ]
