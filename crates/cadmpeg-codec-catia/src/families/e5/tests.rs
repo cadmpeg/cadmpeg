@@ -20,6 +20,15 @@ use crate::test_support::test_e5::{
 use crate::variant::Variant;
 use crate::CatiaCodec;
 
+macro_rules! e5_test_context {
+    ($ctx:ident) => {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let ($ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("service decode context");
+    };
+}
+
 #[test]
 fn e5_circle_parser_reads_framed_carrier() {
     let stream = e5_circle_stream();
@@ -80,6 +89,7 @@ fn e5_edge_parser_reads_u24_reference_tokens() {
 
 #[test]
 fn e5_topology_follows_face_loop_and_serialized_edge_members() {
+    e5_test_context!(ctx);
     let mut bytes = Vec::new();
     for id in [10u32, 20, 30] {
         append_e5_record(&mut bytes, 0xfe, id, &[]);
@@ -192,7 +202,9 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
     );
     append_e5_record(&mut bytes, 0x01, 800, &[0x81, 0x18, 188, 2]);
 
-    let topology = crate::families::e5::graph::parse_topology(&bytes).expect("E5 graph");
+    let topology = crate::families::e5::graph::parse_topology(&ctx, &bytes)
+        .expect("service decode")
+        .expect("E5 graph");
     assert_eq!(topology.faces.len(), 2);
     assert_eq!(topology.faces[0].surface, 500);
     assert_eq!(
@@ -256,7 +268,11 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         .position(|window| window == [0xe5, 0x0d, 0x03, 0xc1])
         .expect("curve-support record");
     missing_support[support_start + 3] = 0x7f;
-    assert!(crate::families::e5::graph::parse_topology(&missing_support).is_none());
+    assert!(
+        crate::families::e5::graph::parse_topology(&ctx, &missing_support)
+            .expect("service decode")
+            .is_none()
+    );
 
     let mut missing_support_pcurve = bytes.clone();
     let support_start = missing_support_pcurve
@@ -264,7 +280,11 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         .position(|window| window == [0xe5, 0x0d, 0x03, 0xc1])
         .expect("curve-support record");
     missing_support_pcurve[support_start + 15..support_start + 17].copy_from_slice(&[0xff, 0x0f]);
-    assert!(crate::families::e5::graph::parse_topology(&missing_support_pcurve).is_none());
+    assert!(
+        crate::families::e5::graph::parse_topology(&ctx, &missing_support_pcurve)
+            .expect("service decode")
+            .is_none()
+    );
 
     let mut missing_bounds = bytes.clone();
     let bounds_start = missing_bounds
@@ -272,7 +292,11 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         .position(|window| window == [0xe5, 0x0d, 0x03, 0x0e])
         .expect("parameter-bound record");
     missing_bounds[bounds_start + 3] = 0x7f;
-    assert!(crate::families::e5::graph::parse_topology(&missing_bounds).is_none());
+    assert!(
+        crate::families::e5::graph::parse_topology(&ctx, &missing_bounds)
+            .expect("service decode")
+            .is_none()
+    );
 
     let mut missing_pcurve_surface = bytes;
     let pcurve_start = missing_pcurve_surface
@@ -284,7 +308,11 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         .expect("support pcurve record");
     missing_pcurve_surface[pcurve_start + 14..pcurve_start + 17]
         .copy_from_slice(&[0x18, 0x84, 0x03]);
-    assert!(crate::families::e5::graph::parse_topology(&missing_pcurve_surface).is_none());
+    assert!(
+        crate::families::e5::graph::parse_topology(&ctx, &missing_pcurve_surface)
+            .expect("service decode")
+            .is_none()
+    );
 }
 
 #[test]
@@ -482,6 +510,26 @@ fn decode_e5_stream_transfers_standalone_d8_carrier() {
 }
 
 #[test]
+fn e5_decode_route_propagates_orientation_collection_refusal() {
+    let file = object_main_catpart(&e5_torus_topology_stream());
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let error = CatiaCodec
+        .decode(
+            &mut Cursor::new(file),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        )
+        .expect_err("E5 orientation locations exceed the collection limit");
+    assert!(matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "catia e5 orientation locations"));
+}
+
+#[test]
 fn e5_route_propagates_station_collection_refusal() {
     let mut stream = e5_d8_rolling_ball_stream();
     for id in 100..109 {
@@ -538,7 +586,9 @@ fn e5_topology_refuses_entity_before_boundary_curve_append() {
                 ..DecodeOptions::default()
             },
         )
-        .expect_err("one raw record, four points, four vertices and one surface fill the allowance");
+        .expect_err(
+            "one raw record, four points, four vertices and one surface fill the allowance",
+        );
     assert!(matches!(
         error,
         cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -549,8 +599,11 @@ fn e5_topology_refuses_entity_before_boundary_curve_append() {
 
 #[test]
 fn decode_e5_stream_transfers_reference_closed_torus_topology() {
+    e5_test_context!(ctx);
     let stream = e5_torus_topology_stream();
-    crate::families::e5::graph::parse_topology(&stream).expect("generated E5 topology");
+    crate::families::e5::graph::parse_topology(&ctx, &stream)
+        .expect("service decode")
+        .expect("generated E5 topology");
     let file = object_main_catpart(&stream);
     assert_eq!(
         crate::container::scan_bytes(file.clone()).variant,
