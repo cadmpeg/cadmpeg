@@ -8851,13 +8851,14 @@ where
         )));
     };
     let coordinate_gauge = build_mesh_coordinate_gauge(
+        ctx,
         vertex_points.len(),
         &edge_rows,
         edge_faces,
         edge_geometry,
         edge_candidates,
         edge_identity_evidence,
-    );
+    )?;
     let candidate_gauge = Some(MeshCandidateGauge {
         edge_rows: &edge_rows,
         edge_faces,

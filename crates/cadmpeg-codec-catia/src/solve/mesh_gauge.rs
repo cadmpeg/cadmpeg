@@ -2,7 +2,8 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::decode::{alloc_filled, DecodeContext};
+use cadmpeg_core::CodecError;
 
 use super::mesh_quotient::{
     MeshEndpointRelationChoice, MeshEndpointRelationSelection, MeshEndpointRelationStateSignature,
@@ -202,16 +203,19 @@ fn intern_gauge_signatures<T: Ord>(signatures: impl IntoIterator<Item = T>) -> V
 }
 
 pub(super) fn build_mesh_coordinate_gauge(
+    ctx: &DecodeContext<'_>,
     point_count: usize,
     edge_rows: &[EdgeRow],
     edge_faces: &[[usize; 2]],
     edge_geometry: &[MeshEdgeGeometry],
     edge_candidates: &[Vec<[usize; 2]>],
     edge_identity_evidence: &[bool],
-) -> MeshCoordinateGauge {
+) -> Result<MeshCoordinateGauge, CodecError> {
     const MAX_COORDINATE_GAUGE_PERMUTATIONS: usize = 4_096;
-    let identity = || MeshCoordinateGauge {
-        components: Vec::new(),
+    let identity = || {
+        Ok(MeshCoordinateGauge {
+            components: Vec::new(),
+        })
     };
     if edge_rows.len() != edge_faces.len()
         || edge_rows.len() != edge_geometry.len()
@@ -235,9 +239,7 @@ pub(super) fn build_mesh_coordinate_gauge(
         .map(|options| normalized_endpoint_options(options))
         .collect::<Vec<_>>();
     let mut parent = (0..point_count).collect::<Vec<_>>();
-    let Ok(mut active) = alloc_filled(point_count, false, "catia_coordinate_gauge_active") else {
-        return identity();
-    };
+    let mut active = ctx.alloc_filled(point_count, false, "catia_coordinate_gauge_active")?;
     for edges in groups.values() {
         let mut group_points = Vec::new();
         for &edge in edges {
@@ -268,13 +270,11 @@ pub(super) fn build_mesh_coordinate_gauge(
         components
     };
     let coordinate_components = components_by_root.into_values().collect::<Vec<_>>();
-    let Ok(mut component_by_point) = alloc_filled(
+    let mut component_by_point = ctx.alloc_filled(
         point_count,
         None::<usize>,
         "catia_coordinate_gauge_components",
-    ) else {
-        return identity();
-    };
+    )?;
     for (component, points) in coordinate_components.iter().enumerate() {
         for &point in points {
             let Some(slot) = component_by_point.get_mut(point) else {
@@ -416,11 +416,7 @@ pub(super) fn build_mesh_coordinate_gauge(
                 bounded = false;
                 break;
             };
-            let Ok(mut used) = alloc_filled(class.len(), false, "catia_coordinate_gauge_used")
-            else {
-                bounded = false;
-                break;
-            };
+            let mut used = ctx.alloc_filled(class.len(), false, "catia_coordinate_gauge_used")?;
             let mut class_orders = Vec::with_capacity(class_order_count);
             enumerate_coordinate_permutations(
                 class,
@@ -459,7 +455,7 @@ pub(super) fn build_mesh_coordinate_gauge(
         permutations.dedup();
         components.push(permutations);
     }
-    MeshCoordinateGauge { components }
+    Ok(MeshCoordinateGauge { components })
 }
 
 fn mapped_endpoint_pair(
@@ -1089,6 +1085,7 @@ fn mesh_candidate_comparison_collapses_coordinate_row_gauge() {
 
 #[test]
 fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorphisms() {
+    catia_test_context!(ctx);
     const COMPONENT_COUNT: usize = 3;
     let edge_rows = (0..COMPONENT_COUNT * 2)
         .map(|edge| EdgeRow {
@@ -1121,13 +1118,15 @@ fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorph
         .collect::<Vec<_>>();
     let edge_identity_evidence = (0..COMPONENT_COUNT * 2).map(|_| false).collect::<Vec<_>>();
     let coordinate_gauge = build_mesh_coordinate_gauge(
+        &ctx,
         COMPONENT_COUNT * 4,
         &edge_rows,
         &edge_faces,
         &edge_geometry,
         &edge_candidates,
         &edge_identity_evidence,
-    );
+    )
+    .expect("service resource budget");
     assert_eq!(coordinate_gauge.components.len(), COMPONENT_COUNT);
     for component in 0..COMPONENT_COUNT {
         let mut coordinate_swap = (0..COMPONENT_COUNT * 4).collect::<Vec<_>>();
@@ -1222,13 +1221,15 @@ fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorph
         radius: 1,
     };
     let mismatched_coordinate_gauge = build_mesh_coordinate_gauge(
+        &ctx,
         COMPONENT_COUNT * 4,
         &edge_rows,
         &edge_faces,
         &mismatched_geometry,
         &edge_candidates,
         &edge_identity_evidence,
-    );
+    )
+    .expect("service resource budget");
     let mismatched_gauge = MeshCandidateGauge {
         edge_rows: &edge_rows,
         edge_faces: &edge_faces,
@@ -1577,6 +1578,7 @@ fn relation_state_memo_uses_coordinate_gauge_domain_alternatives() {
 
 #[test]
 fn relation_state_memo_applies_one_row_mapping_to_assigned_and_domains() {
+    catia_test_context!(ctx);
     let edge_rows = [
         EdgeRow {
             kind: 2,
@@ -1594,13 +1596,15 @@ fn relation_state_memo_applies_one_row_mapping_to_assigned_and_domains() {
     let edge_candidates = vec![vec![[0, 3], [1, 2]], vec![[0, 3], [1, 2]]];
     let edge_identity_evidence = [false, false];
     let coordinate_gauge = build_mesh_coordinate_gauge(
+        &ctx,
         4,
         &edge_rows,
         &edge_faces,
         &edge_geometry,
         &edge_candidates,
         &edge_identity_evidence,
-    );
+    )
+    .expect("service resource budget");
     let gauge = MeshCandidateGauge {
         edge_rows: &edge_rows,
         edge_faces: &edge_faces,
@@ -1625,4 +1629,66 @@ fn relation_state_memo_applies_one_row_mapping_to_assigned_and_domains() {
     let right = state(vec![None, Some([0, 3])], vec![(0, [0, 3]), (1, [1, 2])]);
 
     assert_eq!(left, right);
+}
+
+#[test]
+fn mesh_coordinate_gauge_propagates_collection_refusals() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+
+    let edge_rows = [
+        EdgeRow {
+            kind: 2,
+            handles: vec![10, 11],
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        },
+        EdgeRow {
+            kind: 2,
+            handles: vec![20, 21],
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        },
+    ];
+    let edge_faces = [[0, 1], [0, 1]];
+    let edge_geometry = [MeshEdgeGeometry::Line, MeshEdgeGeometry::Line];
+    let edge_candidates = vec![vec![[0, 3], [1, 2]], vec![[0, 3], [1, 2]]];
+    let edge_identity_evidence = [false, false];
+    let run = |ctx: &DecodeContext<'_>| {
+        build_mesh_coordinate_gauge(
+            ctx,
+            4,
+            &edge_rows,
+            &edge_faces,
+            &edge_geometry,
+            &edge_candidates,
+            &edge_identity_evidence,
+        )
+    };
+    catia_test_context!(service_ctx);
+    assert!(!run(&service_ctx)
+        .expect("service resource budget")
+        .components
+        .is_empty());
+
+    let mut refused = std::collections::HashSet::new();
+    for limit in 0..128 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match run(&ctx) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                refused.insert(error.operation.to_owned());
+            }
+            Ok(_) => break,
+            Err(error) => panic!("unexpected refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_coordinate_gauge_active",
+        "catia_coordinate_gauge_components",
+        "catia_coordinate_gauge_used",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
 }
