@@ -4223,7 +4223,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         staged.draft.model_mut().vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,
-            tolerance: scaled_tolerance(vertex.tolerance, scale)?,
+            tolerance: scaled_tolerance(resolved.vertices[index].tolerance, scale)?,
         });
         vertex_ids.push(vertex_id);
     }
@@ -4243,7 +4243,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                 .map_err(crate::curves::GeometryError::unpositioned)?,
             start: vertex_ids[vertices[0]].clone(),
             end: vertex_ids[vertices[1]].clone(),
-            tolerance: scaled_tolerance(edge.tolerance, scale)?,
+            tolerance: scaled_tolerance(resolved.edges[index].tolerance, scale)?,
         });
         edge_ids.push(id);
     }
@@ -4342,7 +4342,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
                         start: vertex_ids[trim_refs.vertices[0]].clone(),
                         end: vertex_ids[trim_refs.vertices[0]].clone(),
-                        tolerance: scaled_tolerance(trim.tolerances[1], scale)?,
+                        tolerance: scaled_tolerance(trim_refs.tolerances[1], scale)?,
                     });
                     synthetic_edges.insert(*trim_index, synthetic_id.clone());
                 }
@@ -5044,7 +5044,7 @@ fn decode_pcurves(
             metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                 Some(trim.proxy_reversed),
                 Some(trim.domain.0),
-                finite_tolerance(trim.tolerances[0]),
+                trim_refs.tolerances[0].fit(),
             ),
         });
         ids.insert(index, id);
@@ -5106,17 +5106,11 @@ fn c2_curve_to_nurbs_join(
     }
 }
 
-fn finite_tolerance(value: f64) -> Option<cadmpeg_ir::geometry::FitTolerance> {
-    cadmpeg_ir::geometry::FitTolerance::try_new(value)
-        .ok()
-        .filter(|_| value > 0.0)
-}
-
 fn scaled_tolerance(
-    value: f64,
+    value: crate::brep::BrepTolerance,
     scale: MillimeterScale,
 ) -> Result<Option<cadmpeg_ir::scalar::PositiveReal>, crate::curves::GeometryError> {
-    let Some(source) = cadmpeg_ir::scalar::PositiveReal::new(value) else {
+    let Some(source) = value.positive() else {
         return Ok(None);
     };
     let scaled = crate::wire::scaled_coordinate(source.get(), scale)

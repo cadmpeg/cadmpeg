@@ -3,11 +3,11 @@
 
 use super::{
     append_record_links, c2_curve_to_nurbs_join, coedge_sense, edge_param_range, edge_vertices,
-    face_sense, finite_tolerance, hatch_plane_transform, region_shell_groups,
-    region_shell_groups_without_records, scaled_tolerance, seal_for_test, set_exactness,
-    stage_brep, stage_extrusion_caps, transform_decoded_curve, transform_surface, with_expand,
-    with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
-    CommittedExtrusionBoundary, DecodeContext, ReportBuckets,
+    face_sense, hatch_plane_transform, region_shell_groups, region_shell_groups_without_records,
+    scaled_tolerance, seal_for_test, set_exactness, stage_brep, stage_extrusion_caps,
+    transform_decoded_curve, transform_surface, with_expand, with_expand_bytes, BrepDraft,
+    BrepTransferInput, BrepTransferKind, CandidateError, CommittedExtrusionBoundary, DecodeContext,
+    ReportBuckets,
 };
 use crate::chunks::ArchiveVersion;
 use crate::loss::Diagnostics;
@@ -52,8 +52,11 @@ fn decoded_nurbs(curve: NurbsCurve) -> crate::curves::DecodedCurve {
 /// no offset instead of naming byte 0.
 #[test]
 fn a_brep_staging_refusal_names_no_byte() {
-    let error = scaled_tolerance(f64::MAX, crate::test_support::millimeter_scale(f64::MAX))
-        .expect_err("overflowing scaled tolerance");
+    let error = scaled_tolerance(
+        crate::brep::BrepTolerance::new(f64::MAX).expect("valid source tolerance"),
+        crate::test_support::millimeter_scale(f64::MAX),
+    )
+    .expect_err("overflowing scaled tolerance");
     assert!(matches!(
         error,
         crate::curves::GeometryError::Malformed(
@@ -852,22 +855,25 @@ fn disconnected_incidence_produces_deterministic_shell_groups() {
 
 #[test]
 fn tolerance_scaling_maps_unset_and_zero_to_none() {
+    let admitted = |value| crate::brep::BrepTolerance::new(value).expect("valid source tolerance");
     assert_eq!(
-        scaled_tolerance(0.0, crate::test_support::millimeter_scale(25.4))
+        scaled_tolerance(admitted(0.0), crate::test_support::millimeter_scale(25.4))
             .expect("required invariant"),
         None
     );
     assert_eq!(
-        scaled_tolerance(0.5, crate::test_support::millimeter_scale(25.4))
+        scaled_tolerance(admitted(0.5), crate::test_support::millimeter_scale(25.4))
             .expect("required invariant")
             .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(12.7)
     );
     assert_eq!(
-        finite_tolerance(0.5).map(cadmpeg_ir::geometry::FitTolerance::get),
+        crate::brep::BrepTolerance::new(0.5)
+            .and_then(crate::brep::BrepTolerance::fit)
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
         Some(0.5)
     );
-    assert_eq!(finite_tolerance(-1.0), None);
+    assert_eq!(crate::brep::BrepTolerance::new(-1.0), None);
 }
 
 #[test]
@@ -887,6 +893,7 @@ fn edge_proxy_reversal_normalizes_endpoints_and_keeps_an_ascending_range() {
         curve: 0,
         vertices: [0, 1],
         trims: Vec::new(),
+        tolerance: crate::brep::BrepTolerance::new(0.0).expect("valid source tolerance"),
     };
     assert_eq!(edge_param_range(&edge), [3.0, 7.0]);
     assert_eq!(edge_vertices(&edge, &resolved), [0, 1]);

@@ -9,6 +9,7 @@ use std::ops::Range;
 
 use cadmpeg_core::decode::{alloc_filled, DecodeContext};
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::scalar::{NonNegativeReal, PositiveReal};
 use cadmpeg_ir::units::FiniteVector;
 
 use crate::chunks::{
@@ -47,6 +48,42 @@ const MAX_BREP_ITEMS: usize = 1 << 20;
 const ANONYMOUS: u32 = 0x4000_8000;
 const ON_UNSET_VALUE: f64 = -1.234_321_012_343_21e308;
 const ON_UNSET_POSITIVE_VALUE: f64 = -ON_UNSET_VALUE;
+
+/// A Brep tolerance admitted with both exact source unset sentinels.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum BrepTolerance {
+    UnsetLow,
+    UnsetHigh,
+    NonNegative(NonNegativeReal),
+}
+
+impl BrepTolerance {
+    pub(crate) fn new(value: f64) -> Option<Self> {
+        if value == ON_UNSET_VALUE {
+            Some(Self::UnsetLow)
+        } else if value == ON_UNSET_POSITIVE_VALUE {
+            Some(Self::UnsetHigh)
+        } else {
+            NonNegativeReal::new(value).map(Self::NonNegative)
+        }
+    }
+
+    pub(crate) fn positive(self) -> Option<PositiveReal> {
+        match self {
+            Self::NonNegative(value) => value.positive(),
+            Self::UnsetLow | Self::UnsetHigh => None,
+        }
+    }
+
+    pub(crate) fn fit(self) -> Option<cadmpeg_ir::geometry::FitTolerance> {
+        match self {
+            Self::NonNegative(value) => value
+                .positive()
+                .map(|_| cadmpeg_ir::geometry::FitTolerance::from(value)),
+            Self::UnsetLow | Self::UnsetHigh => None,
+        }
+    }
+}
 const ON_BREP_FACE_SIDE: Uuid = Uuid::from_canonical([
     0x30, 0x93, 0x03, 0x70, 0x0d, 0x5b, 0x4e, 0xe4, 0x80, 0x83, 0xbd, 0x63, 0x5c, 0x73, 0x98, 0xa4,
 ]);
@@ -415,14 +452,16 @@ pub(crate) struct RawBrep {
 }
 
 /// One vertex's references, resolved to array positions by validation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ResolvedVertex {
     /// Incident edge positions.
     pub(crate) edges: Vec<usize>,
+    /// Admitted source tolerance.
+    pub(crate) tolerance: BrepTolerance,
 }
 
 /// One edge's references, resolved to array positions by validation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ResolvedEdge {
     /// C3 child slot position.
     pub(crate) curve: usize,
@@ -430,10 +469,12 @@ pub(crate) struct ResolvedEdge {
     pub(crate) vertices: [usize; 2],
     /// Trim positions using this edge.
     pub(crate) trims: Vec<usize>,
+    /// Admitted source tolerance.
+    pub(crate) tolerance: BrepTolerance,
 }
 
 /// One trim's references, resolved to array positions by validation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ResolvedTrim {
     /// C2 child slot position, absent on a point-on-surface trim.
     pub(crate) curve: Option<usize>,
@@ -443,6 +484,8 @@ pub(crate) struct ResolvedTrim {
     pub(crate) vertices: [usize; 2],
     /// Owning loop position.
     pub(crate) loop_index: usize,
+    /// Admitted two-dimensional and three-dimensional source tolerances.
+    pub(crate) tolerances: [BrepTolerance; 2],
 }
 
 /// One loop's references, resolved to array positions by validation.
@@ -473,7 +516,7 @@ pub(crate) struct ResolvedFaceSide {
 }
 
 /// Every B-rep reference, resolved to an array position by validation.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct ResolvedBrep {
     /// Resolved vertex references, positionally aligned with the raw vertices.
     pub(crate) vertices: Vec<ResolvedVertex>,
@@ -539,8 +582,8 @@ impl ValidatedRawBrep {
         let mut resolved = ResolvedBrep::default();
         for vertex in &raw.vertices {
             let edges = slots(&vertex.edges, raw.edges.len(), "vertex edge")?;
-            finite_tolerance(vertex.tolerance, "vertex tolerance")?;
-            resolved.vertices.push(ResolvedVertex { edges });
+            let tolerance = finite_tolerance(vertex.tolerance, "vertex tolerance")?;
+            resolved.vertices.push(ResolvedVertex { edges, tolerance });
         }
         for (index, edge) in raw.edges.iter().enumerate() {
             let Some(curve) = child_slot(&raw.c3, edge.curve, RawBrepBaseType::Curve) else {
@@ -554,7 +597,7 @@ impl ValidatedRawBrep {
             unique(&edge.trims, "edge trim")?;
             ordered_interval(edge.proxy_domain, "edge proxy domain")?;
             ordered_interval(edge.domain, "edge domain")?;
-            finite_tolerance(edge.tolerance, "edge tolerance")?;
+            let tolerance = finite_tolerance(edge.tolerance, "edge tolerance")?;
             for trim in &trims {
                 if position(raw.trims[*trim].edge) != Some(index) {
                     return Err(error(
@@ -567,6 +610,7 @@ impl ValidatedRawBrep {
                 curve,
                 vertices,
                 trims,
+                tolerance,
             });
         }
         for (trim_index, trim) in raw.trims.iter().enumerate() {
@@ -604,7 +648,11 @@ impl ValidatedRawBrep {
             }
             ordered_interval(trim.proxy_domain, "trim proxy domain")?;
             ordered_interval(trim.domain, "trim domain")?;
-            for tolerance in trim.tolerances.into_iter().chain(trim.legacy_tolerances) {
+            let tolerances = [
+                finite_tolerance(trim.tolerances[0], "trim tolerance")?,
+                finite_tolerance(trim.tolerances[1], "trim tolerance")?,
+            ];
+            for tolerance in trim.legacy_tolerances {
                 finite_tolerance(tolerance, "trim tolerance")?;
             }
             let edge = if matches!(
@@ -632,6 +680,7 @@ impl ValidatedRawBrep {
                 edge,
                 vertices,
                 loop_index,
+                tolerances,
             });
         }
         validate_edge_incidences(&raw, &resolved)?;
@@ -2780,14 +2829,9 @@ fn ordered_interval(value: Interval, label: &str) -> Result<(), GeometryError> {
     Ok(())
 }
 
-fn finite_tolerance(value: f64, label: &str) -> Result<(), GeometryError> {
-    if !(value == ON_UNSET_VALUE
-        || value == ON_UNSET_POSITIVE_VALUE
-        || value.is_finite() && value >= 0.0)
-    {
-        return Err(GeometryError::unpositioned(format!("{label} is invalid")));
-    }
-    Ok(())
+fn finite_tolerance(value: f64, label: &str) -> Result<BrepTolerance, GeometryError> {
+    BrepTolerance::new(value)
+        .ok_or_else(|| GeometryError::unpositioned(format!("{label} is invalid")))
 }
 
 fn point(reader: &mut BoundedReader<'_>) -> Result<Point3, GeometryError> {
@@ -3738,13 +3782,17 @@ mod tests {
     /// The one-trim fixture resolved the way validation resolves it.
     fn degenerate_trim_resolved(curve: Option<usize>) -> ResolvedBrep {
         ResolvedBrep {
-            vertices: vec![ResolvedVertex { edges: Vec::new() }],
+            vertices: vec![ResolvedVertex {
+                edges: Vec::new(),
+                tolerance: super::BrepTolerance::new(0.0).expect("valid source tolerance"),
+            }],
             edges: Vec::new(),
             trims: vec![ResolvedTrim {
                 curve,
                 edge: None,
                 vertices: [0, 0],
                 loop_index: 0,
+                tolerances: [super::BrepTolerance::new(0.0).expect("valid source tolerance"); 2],
             }],
             loops: vec![ResolvedLoop {
                 trims: vec![0],

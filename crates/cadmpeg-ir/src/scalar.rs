@@ -412,6 +412,18 @@ impl NonNegativeReal {
     /// Zero dimensionless scalar.
     pub const ZERO: Self = Self(0.0);
 
+    /// Narrow an admitted nonnegative value to a positive value.
+    ///
+    /// Finiteness is already admitted; only zero can refuse.
+    #[must_use]
+    pub const fn positive(self) -> Option<PositiveReal> {
+        if self.0 > 0.0 {
+            Some(PositiveReal(self.0))
+        } else {
+            None
+        }
+    }
+
     /// Admit a finite scalar as nonnegative. Only its sign remains to check.
     #[must_use]
     pub const fn from_finite(value: FiniteReal) -> Option<Self> {
