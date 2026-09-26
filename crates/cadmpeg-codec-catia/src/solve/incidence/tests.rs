@@ -1724,7 +1724,9 @@ fn incidence_candidate_uses_a_separate_global_quotient_validation_budget() {
     assert!(!budget.exhausted());
     search.adjust(0, [0, 0]);
     search.assignment[0] = Some([0, 0]);
-    assert!(search.ordered_faces_feasible([0]));
+    assert!(search
+        .ordered_faces_feasible([0])
+        .expect("service resource budget"));
     assert!(!budget.exhausted());
 }
 
@@ -1768,8 +1770,12 @@ fn incidence_selection_validates_only_its_affected_faces() {
         state: IncidenceSearchState::Open,
     };
 
-    assert!(search.ordered_faces_feasible([0]));
-    assert!(!search.ordered_faces_feasible([1]));
+    assert!(search
+        .ordered_faces_feasible([0])
+        .expect("service resource budget"));
+    assert!(!search
+        .ordered_faces_feasible([1])
+        .expect("service resource budget"));
 }
 
 mod components;

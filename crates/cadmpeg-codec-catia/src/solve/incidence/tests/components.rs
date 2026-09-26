@@ -428,6 +428,7 @@ fn incidence_unordered_full_cycle_rejects_disconnected_degree_cycles() {
 
 #[test]
 fn deferred_boundary_enforces_anchored_gap_capacities() {
+    catia_test_context!(ctx);
     let domain = crate::solve::missing_edge::MeshDeferredFaceBoundary {
         cycles: vec![crate::solve::missing_edge::MeshDeferredBoundaryCycle {
             length: 6,
@@ -460,7 +461,8 @@ fn deferred_boundary_enforces_anchored_gap_capacities() {
     assert!(crate::solve::incidence::deferred_boundary_closes(
         &domain, &valid
     ));
-    let assignment = crate::solve::incidence::deferred_boundary_assignment(&domain, &valid)
+    let assignment = crate::solve::incidence::deferred_boundary_assignment(&ctx, &domain, &valid)
+        .expect("service resource budget")
         .expect("materialized deferred boundary");
     assert_eq!(
         assignment.boundaries[0]
@@ -484,6 +486,7 @@ fn deferred_boundary_enforces_anchored_gap_capacities() {
 
 #[test]
 fn deferred_boundary_materialization_assigns_canonical_positive_spans() {
+    catia_test_context!(ctx);
     let domain = crate::solve::missing_edge::MeshDeferredFaceBoundary {
         cycles: vec![crate::solve::missing_edge::MeshDeferredBoundaryCycle {
             length: 4,
@@ -492,7 +495,8 @@ fn deferred_boundary_materialization_assigns_canonical_positive_spans() {
         missing_edges: vec![0, 1],
     };
     let assignment =
-        crate::solve::incidence::deferred_boundary_assignment(&domain, &[[0, 1], [0, 1]])
+        crate::solve::incidence::deferred_boundary_assignment(&ctx, &domain, &[[0, 1], [0, 1]])
+            .expect("service resource budget")
             .expect("materialized deferred boundary");
 
     assert_eq!(
@@ -502,6 +506,52 @@ fn deferred_boundary_materialization_assigns_canonical_positive_spans() {
             .collect::<Vec<_>>(),
         vec![(0, 0, 3), (1, 3, 0)]
     );
+}
+
+#[test]
+fn deferred_boundary_materialization_refuses_match_collection_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let domain = crate::solve::missing_edge::MeshDeferredFaceBoundary {
+        cycles: vec![crate::solve::missing_edge::MeshDeferredBoundaryCycle {
+            length: 4,
+            exact_uses: Vec::new(),
+        }],
+        missing_edges: vec![0, 1],
+    };
+    let pairs = [[0, 1], [0, 1]];
+    catia_test_context!(service_ctx);
+    assert!(
+        crate::solve::incidence::deferred_boundary_assignment(&service_ctx, &domain, &pairs)
+            .expect("service resource budget")
+            .is_some()
+    );
+
+    let mut refused = HashSet::new();
+    for limit in 0..128 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match crate::solve::incidence::deferred_boundary_assignment(&ctx, &domain, &pairs) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                refused.insert(error.operation.to_owned());
+            }
+            Ok(Some(_)) => break,
+            Ok(None) => panic!("closed deferred boundary must materialize"),
+            Err(error) => panic!("unexpected refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_deferred_match",
+        "catia_deferred_visit",
+        "catia_deferred_boundaries",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
 }
 
 #[test]
@@ -870,6 +920,7 @@ fn deferred_components_select_gap_orders_in_the_abstract_quotient() {
 
 #[test]
 fn deferred_faces_share_one_endpoint_quotient() {
+    catia_test_context!(ctx);
     let use_ = |edge, reversed| MeshBoundaryEdgeCandidate {
         edge,
         start: edge,
@@ -895,6 +946,7 @@ fn deferred_faces_share_one_endpoint_quotient() {
 
     assert!(
         crate::solve::incidence::compact_boundary_domains_jointly_viable(
+            &ctx,
             &[domain(false), domain(false)],
             &choices,
             &[Some([0, 1]), Some([0, 1])],
@@ -902,9 +954,11 @@ fn deferred_faces_share_one_endpoint_quotient() {
             &quotient,
             &budget,
         )
+        .expect("service resource budget")
     );
     assert!(
         !crate::solve::incidence::compact_boundary_domains_jointly_viable(
+            &ctx,
             &[domain(false), domain(true)],
             &choices,
             &[Some([0, 1]), Some([0, 1])],
@@ -912,11 +966,13 @@ fn deferred_faces_share_one_endpoint_quotient() {
             &quotient,
             &budget,
         )
+        .expect("service resource budget")
     );
 }
 
 #[test]
 fn compact_faces_share_one_physical_edge_direction_gauge() {
+    catia_test_context!(ctx);
     let choices = vec![
         vec![[0, 1]],
         vec![[1, 2]],
@@ -942,6 +998,7 @@ fn compact_faces_share_one_physical_edge_direction_gauge() {
 
     assert!(
         crate::solve::incidence::compact_boundary_domains_jointly_viable(
+            &ctx,
             &domains,
             &choices,
             &assignment,
@@ -949,11 +1006,13 @@ fn compact_faces_share_one_physical_edge_direction_gauge() {
             &quotient,
             &budget,
         )
+        .expect("service resource budget")
     );
 }
 
 #[test]
 fn compact_face_quotient_states_accumulate_across_calls() {
+    catia_test_context!(ctx);
     let use_ = |edge, reversed| MeshBoundaryEdgeCandidate {
         edge,
         start: edge,
@@ -983,6 +1042,7 @@ fn compact_face_quotient_states_accumulate_across_calls() {
 
     let crate::solve::incidence::CompactBoundaryAdvanceOutcome::Complete(first_states) =
         crate::solve::incidence::advance_compact_boundary_domains(
+            &ctx,
             [&first],
             &choices,
             &assignment,
@@ -990,35 +1050,41 @@ fn compact_face_quotient_states_accumulate_across_calls() {
             initial.clone(),
             &budget,
         )
+        .expect("service resource budget")
     else {
         panic!("first face quotient");
     };
     assert!(matches!(
         crate::solve::incidence::advance_compact_boundary_domains(
+            &ctx,
             [&conflicting],
             &choices,
             &assignment,
             None,
             initial,
             &budget,
-        ),
+        )
+        .expect("service resource budget"),
         crate::solve::incidence::CompactBoundaryAdvanceOutcome::Complete(_)
     ));
     assert!(matches!(
         crate::solve::incidence::advance_compact_boundary_domains(
+            &ctx,
             [&conflicting],
             &choices,
             &assignment,
             None,
             first_states,
             &budget,
-        ),
+        )
+        .expect("service resource budget"),
         crate::solve::incidence::CompactBoundaryAdvanceOutcome::Rejected
     ));
 }
 
 #[test]
 fn compact_face_quotient_state_cap_is_exhausted() {
+    catia_test_context!(ctx);
     const EDGE_COUNT: usize = 14;
     let choices = vec![Vec::new(); EDGE_COUNT];
     let quotient = MeshQuotient::new(
@@ -1047,18 +1113,96 @@ fn compact_face_quotient_state_cap_is_exhausted() {
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
 
     let outcome = crate::solve::incidence::advance_compact_boundary_domains(
+        &ctx,
         [&domain],
         &choices,
         &assignment,
         None,
         vec![(quotient, HashSet::new())],
         &budget,
-    );
+    )
+    .expect("service resource budget");
     assert!(matches!(
         outcome,
         crate::solve::incidence::CompactBoundaryAdvanceOutcome::Exhausted
     ));
     assert!(!budget.exhausted());
+}
+
+#[test]
+fn compact_boundary_advance_refuses_edge_point_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: edge,
+        end: (edge + 1) % 2,
+        reversed: Some(false),
+    };
+    let domain = MeshFaceBoundaryDomain::DeferredValidation(
+        crate::solve::missing_edge::MeshDeferredFaceBoundary {
+            cycles: vec![crate::solve::missing_edge::MeshDeferredBoundaryCycle {
+                length: 2,
+                exact_uses: vec![(use_(0), 1), (use_(1), 1)],
+            }],
+            missing_edges: Vec::new(),
+        },
+    );
+    let choices = vec![vec![[0, 1]], vec![[0, 1]]];
+    let quotient =
+        crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [2, 3]])
+            .expect("initial quotient");
+    let budget = WorkBudget::new(10_000);
+    catia_test_context!(service_ctx);
+    let service = crate::solve::incidence::advance_compact_boundary_domains(
+        &service_ctx,
+        [&domain],
+        &choices,
+        &[Some([0, 1]), Some([0, 1])],
+        None,
+        vec![(quotient.clone(), HashSet::new())],
+        &budget,
+    )
+    .expect("service resource budget");
+    assert!(matches!(
+        service,
+        crate::solve::incidence::CompactBoundaryAdvanceOutcome::Complete(_)
+    ));
+
+    let mut refused = HashSet::new();
+    for limit in 0..128 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        let budget = WorkBudget::new(10_000);
+        match crate::solve::incidence::advance_compact_boundary_domains(
+            &ctx,
+            [&domain],
+            &choices,
+            &[Some([0, 1]), Some([0, 1])],
+            None,
+            vec![(quotient.clone(), HashSet::new())],
+            &budget,
+        ) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                refused.insert(error.operation.to_owned());
+            }
+            Ok(crate::solve::incidence::CompactBoundaryAdvanceOutcome::Complete(_)) => break,
+            Ok(_) => panic!("closed compact boundary must advance"),
+            Err(error) => panic!("unexpected refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia compact boundary edges",
+        "catia compact boundary selected edges",
+        "catia compact boundary edge points",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
 }
 
 #[test]

@@ -5801,23 +5801,50 @@ fn restore_unique_endpoint_pair_orientations(
         .collect()
 }
 
+fn charge_materialized_items(
+    ctx: &DecodeContext<'_>,
+    count: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let count =
+        u64::try_from(count).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    ctx.charge_collection_items(count, operation)
+}
+
 fn materialize_boundary_domains(
+    ctx: &DecodeContext<'_>,
     domains: &[MeshFaceBoundaryDomain],
     edge_pairs: &[[usize; 2]],
-) -> Option<Vec<Vec<MeshFaceBoundaryAssignment>>> {
-    domains
-        .iter()
-        .map(|domain| match domain {
-            MeshFaceBoundaryDomain::Ordered(assignments) => Some(assignments.clone()),
+) -> Result<Option<Vec<Vec<MeshFaceBoundaryAssignment>>>, CodecError> {
+    charge_materialized_items(ctx, domains.len(), "catia materialized boundary domains")?;
+    let mut materialized = Vec::with_capacity(domains.len());
+    for domain in domains {
+        let assignments = match domain {
+            MeshFaceBoundaryDomain::Ordered(assignments) => {
+                charge_materialized_items(
+                    ctx,
+                    assignments.len(),
+                    "catia materialized ordered assignments",
+                )?;
+                assignments.clone()
+            }
             MeshFaceBoundaryDomain::DeferredValidation(domain) => {
-                Some(vec![deferred_boundary_assignment(domain, edge_pairs)?])
+                let Some(assignment) = deferred_boundary_assignment(ctx, domain, edge_pairs)?
+                else {
+                    return Ok(None);
+                };
+                charge_materialized_items(ctx, 1, "catia materialized deferred boundary")?;
+                vec![assignment]
             }
             MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
-                let cycles = incidence_cycles(edges, edge_pairs)?;
+                let Some(cycles) = incidence_cycles(edges, edge_pairs) else {
+                    return Ok(None);
+                };
                 let [cycle] = cycles.as_slice() else {
-                    return None;
+                    return Ok(None);
                 };
                 let length = cycle.len();
+                charge_materialized_items(ctx, length, "catia materialized unordered boundary")?;
                 let boundary = cycle
                     .iter()
                     .enumerate()
@@ -5828,12 +5855,14 @@ fn materialize_boundary_domains(
                         reversed: Some(reversed),
                     })
                     .collect();
-                Some(vec![MeshFaceBoundaryAssignment {
+                vec![MeshFaceBoundaryAssignment {
                     boundaries: vec![boundary],
-                }])
+                }]
             }
-        })
-        .collect()
+        };
+        materialized.push(assignments);
+    }
+    Ok(Some(materialized))
 }
 
 // A concrete face assignment is viable only when each selected incident face
@@ -5882,6 +5911,7 @@ mod face_domain_support_tests {
     use crate::solve::missing_edge::MeshDeferredFaceBoundary;
     use crate::solve::missing_edge::MeshFaceBoundaryAssignment;
     use crate::solve::missing_edge::MeshFaceBoundaryDomain;
+    use std::collections::HashSet;
 
     fn assignment(edge: usize) -> MeshFaceBoundaryAssignment {
         MeshFaceBoundaryAssignment {
@@ -5995,6 +6025,7 @@ mod face_domain_support_tests {
 
     #[test]
     fn complete_endpoint_pairs_materialize_deferred_boundaries() {
+        catia_test_context!(ctx);
         let domains = [MeshFaceBoundaryDomain::DeferredValidation(
             MeshDeferredFaceBoundary {
                 cycles: vec![crate::solve::missing_edge::MeshDeferredBoundaryCycle {
@@ -6013,7 +6044,8 @@ mod face_domain_support_tests {
             },
         )];
 
-        let assignments = materialize_boundary_domains(&domains, &[[0, 1], [0, 1]])
+        let assignments = materialize_boundary_domains(&ctx, &domains, &[[0, 1], [0, 1]])
+            .expect("service resource budget")
             .expect("closed deferred boundary");
         assert_eq!(assignments.len(), 1);
         assert_eq!(assignments[0].len(), 1);
@@ -6027,9 +6059,60 @@ mod face_domain_support_tests {
     }
 
     #[test]
+    fn complete_endpoint_pairs_refuse_materialization_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let domains = [MeshFaceBoundaryDomain::DeferredValidation(
+            MeshDeferredFaceBoundary {
+                cycles: vec![crate::solve::missing_edge::MeshDeferredBoundaryCycle {
+                    length: 2,
+                    exact_uses: vec![(
+                        MeshBoundaryEdgeCandidate {
+                            edge: 0,
+                            start: 0,
+                            end: 1,
+                            reversed: Some(false),
+                        },
+                        1,
+                    )],
+                }],
+                missing_edges: vec![1],
+            },
+        )];
+        let pairs = [[0, 1], [0, 1]];
+        catia_test_context!(service_ctx);
+        assert!(materialize_boundary_domains(&service_ctx, &domains, &pairs)
+            .expect("service resource budget")
+            .is_some());
+
+        let mut refused = HashSet::new();
+        for limit in 0..128 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+                .expect("fixture fits the input limit");
+            match materialize_boundary_domains(&ctx, &domains, &pairs) {
+                Err(CodecError::ResourceLimit(error)) => {
+                    assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                    refused.insert(error.operation.to_owned());
+                }
+                Ok(Some(_)) => break,
+                Ok(None) => panic!("closed boundary must materialize"),
+                Err(error) => panic!("unexpected refusal: {error}"),
+            }
+        }
+        assert!(refused.contains("catia materialized boundary domains"));
+        assert!(refused.contains("catia materialized deferred boundary"));
+    }
+
+    #[test]
     fn complete_endpoint_pairs_materialize_unordered_cycle() {
+        catia_test_context!(ctx);
         let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2])];
-        let assignments = materialize_boundary_domains(&domains, &[[0, 1], [1, 2], [2, 0]])
+        let assignments = materialize_boundary_domains(&ctx, &domains, &[[0, 1], [1, 2], [2, 0]])
+            .expect("service resource budget")
             .expect("closed unordered boundary");
 
         assert_eq!(assignments.len(), 1);
@@ -8940,7 +9023,7 @@ where
                     .map(|pair| vec![pair])
                     .collect::<Vec<_>>();
                 let Some(mut mesh_assignments) =
-                    materialize_boundary_domains(&mesh_domains, &oriented_pairs)
+                    materialize_boundary_domains(ctx, &mesh_domains, &oriented_pairs)?
                 else {
                     return Ok(ControlFlow::Continue(()));
                 };
