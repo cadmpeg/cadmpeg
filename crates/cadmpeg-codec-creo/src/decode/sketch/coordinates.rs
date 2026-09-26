@@ -2,6 +2,7 @@
 //! Resolved section point coordinates from variables, dimensions, and equations.
 
 use super::axis::SectionAxis;
+use cadmpeg_ir::scalar::FiniteReal;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -104,6 +105,9 @@ fn append_point_on_line_equations(
         equation.add_point(target, SectionAxis::U, -delta_v);
         equation.add_point(target, SectionAxis::V, delta_u);
         equation.rhs = delta_u * first_v - delta_v * first_u;
+        let Some(rhs) = FiniteReal::new(equation.rhs) else {
+            continue;
+        };
         let missing_coefficient = if target_u.is_none() {
             delta_v.abs()
         } else {
@@ -112,7 +116,9 @@ fn append_point_on_line_equations(
         if missing_coefficient > EPS_POINT_ON_LINE_COEFFICIENT
             && !equations.iter().any(|candidate| {
                 candidate.terms == equation.terms
-                    && approximately_equal(candidate.rhs, equation.rhs)
+                    && (FiniteReal::new(candidate.rhs))
+                        .zip(Some(rhs))
+                        .is_some_and(|(first, second)| approximately_equal(first, second))
             })
         {
             equations.push(equation);
@@ -134,7 +140,10 @@ fn append_equal_length_coordinate_values(
         };
         let equation = SectionCoordinateEquation::point_value(variable.0, variable.1, value);
         if equations.iter().any(|candidate| {
-            candidate.terms == equation.terms && approximately_equal(candidate.rhs, equation.rhs)
+            candidate.terms == equation.terms
+                && (FiniteReal::new(candidate.rhs))
+                    .zip(FiniteReal::new(equation.rhs))
+                    .is_some_and(|(first, second)| approximately_equal(first, second))
         }) {
             continue;
         }
@@ -161,7 +170,10 @@ fn append_unique_auxiliary_coordinate_constraints(
     let mut appended = false;
     for equation in pending {
         if equations.iter().any(|candidate| {
-            candidate.terms == equation.terms && approximately_equal(candidate.rhs, equation.rhs)
+            candidate.terms == equation.terms
+                && (FiniteReal::new(candidate.rhs))
+                    .zip(FiniteReal::new(equation.rhs))
+                    .is_some_and(|(first, second)| approximately_equal(first, second))
         }) {
             continue;
         }
@@ -809,6 +821,7 @@ mod tests {
 
     use super::super::equations_scalar::resolved_section_scalar_values;
     use super::resolved_section_points;
+    use super::{append_point_on_line_equations, SectionAxis, SectionCoordinateEquation};
     use crate::feature::definitions::FeatureSolverTableHeader;
     use crate::feature::definitions::FeatureVariableTable;
     use crate::feature::definitions::{
@@ -817,6 +830,43 @@ mod tests {
         FeatureSegment, FeatureSegmentKind, FeatureSegmentTable, FeatureSkamp, FeatureSkampItem,
         FeatureVariableRow,
     };
+
+    #[test]
+    fn infinite_point_on_line_rhs_is_not_admitted() {
+        let coordinates = BTreeMap::from([
+            (1, [Some(0.0), Some(1.0e308)]),
+            (2, [Some(1.0e308), Some(1.0e308)]),
+            (3, [Some(0.0), None]),
+        ]);
+        let mut equations = Vec::new();
+        assert!(!append_point_on_line_equations(
+            &[(3, 1, 2)],
+            &coordinates,
+            &mut equations,
+        ));
+        assert!(equations.is_empty());
+    }
+
+    #[test]
+    fn finite_point_on_line_rhs_is_distinct_from_infinite_existing_rhs() {
+        let coordinates = BTreeMap::from([
+            (1, [Some(0.0), Some(0.0)]),
+            (2, [Some(1.0), Some(0.0)]),
+            (3, [Some(0.0), None]),
+        ]);
+        let mut existing = SectionCoordinateEquation::default();
+        existing.add_point(3, SectionAxis::U, 0.0);
+        existing.add_point(3, SectionAxis::V, 1.0);
+        existing.rhs = f64::INFINITY;
+        let mut equations = vec![existing];
+        assert!(append_point_on_line_equations(
+            &[(3, 1, 2)],
+            &coordinates,
+            &mut equations,
+        ));
+        assert_eq!(equations.len(), 2);
+        assert_eq!(equations[1].rhs, 0.0);
+    }
 
     fn incomplete_segment_definition() -> FeatureDefinition {
         FeatureDefinition {
