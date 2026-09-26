@@ -897,11 +897,11 @@ impl SubsetSurfaceConstruction {
         cache: Option<LegacyCache>,
     ) -> Self {
         Self {
-            cache,
             support,
             parameter_ranges,
             u_sense,
             v_sense,
+            cache,
         }
     }
     /// Return the support.

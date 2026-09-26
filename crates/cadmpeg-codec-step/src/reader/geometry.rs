@@ -4583,12 +4583,7 @@ fn decode_pcurve_geometry(
                     let distance = named_parameter(record, "OFFSET_CURVE_2D", 2)?
                         .number()
                         .and_then(FiniteReal::new)?;
-                    if named_parameter(record, "OFFSET_CURVE_2D", 3)?
-                        .logical()
-                        .is_none()
-                    {
-                        return None;
-                    }
+                    named_parameter(record, "OFFSET_CURVE_2D", 3)?.logical()?;
                     let (basis, basis_records) = decode_pcurve_geometry(
                         basis_id,
                         exchange,
@@ -5428,7 +5423,7 @@ fn cartesian_transformation_operator_2d(
         directions,
     )
     .ok()?;
-    let (axis1, axis2) = base_axis_2d(axis1, axis2)?;
+    let (axis1, axis2) = base_axis_2d(axis1, axis2);
     let origin = transformation_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_2D", 2)?
         .reference()
         .and_then(|id| points.get(&id).copied())?;
@@ -5448,7 +5443,7 @@ fn cartesian_transformation_operator_2d(
 fn base_axis_2d(
     axis1: Option<HypotDirection2>,
     axis2: Option<HypotDirection2>,
-) -> Option<(HypotDirection2, HypotDirection2)> {
+) -> (HypotDirection2, HypotDirection2) {
     match (axis1, axis2) {
         (Some(axis1), axis2) => {
             let axis1 = axis1.recharted_by_hypot();
@@ -5460,13 +5455,13 @@ fn base_axis_2d(
                     perpendicular = axis1.reverse_quarter_turn();
                 }
             }
-            Some((axis1, perpendicular))
+            (axis1, perpendicular)
         }
         (None, Some(axis2)) => {
             let axis2 = axis2.recharted_by_hypot();
-            Some((axis2.reverse_quarter_turn(), axis2))
+            (axis2.reverse_quarter_turn(), axis2)
         }
-        (None, None) => Some((HypotDirection2::X_AXIS, HypotDirection2::Y_AXIS)),
+        (None, None) => (HypotDirection2::X_AXIS, HypotDirection2::Y_AXIS),
     }
 }
 

@@ -94,8 +94,7 @@ fn placement_2d_axes_keep_hypot_normalization_bits() {
     let y_axis = HypotDirection2::normalized_with_length([2.0, 1.0])
         .expect("y direction")
         .0;
-    let (actual_x, actual_y) =
-        super::super::base_axis_2d(Some(x_axis), Some(y_axis)).expect("placement axes");
+    let (actual_x, actual_y) = super::super::base_axis_2d(Some(x_axis), Some(y_axis));
     let [actual_x_u, actual_x_v] = actual_x.get();
     let [actual_y_u, actual_y_v] = actual_y.get();
     assert_eq!(actual_x_u.to_bits(), old_x.u.to_bits());
