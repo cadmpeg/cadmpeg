@@ -667,20 +667,19 @@ pub(crate) fn resolve_transform(
             .get(&sequence)
             .copied()
             .ok_or_else(|| format!("transformation D{sequence} parameters are missing"))?;
-        let mut values = [0.0; 12];
+        let mut values = [FiniteReal::ZERO; 12];
         for (index, value) in values.iter_mut().enumerate() {
-            *value = record.number(index + 1).ok_or_else(|| {
+            let number = record.number(index + 1).ok_or_else(|| {
                 format!(
                     "transformation D{sequence} coefficient {} is not numeric",
                     index + 1
                 )
             })?;
-            if !value.is_finite() {
-                return Err(format!(
-                    "transformation D{sequence} has a non-finite coefficient"
-                ));
-            }
+            *value = FiniteReal::new(number).ok_or_else(|| {
+                format!("transformation D{sequence} has a non-finite coefficient")
+            })?;
         }
+        let mut values = values.map(FiniteReal::get);
         for index in [3, 7, 11] {
             values[index] *= length_factor;
         }
@@ -1380,12 +1379,12 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let mut values = [0.0; 7];
+        let mut values = [FiniteReal::ZERO; 7];
         let mut malformed = None;
         for (index, value) in values.iter_mut().enumerate() {
-            match record.number(index + 1) {
-                Some(number) if number.is_finite() => *value = number * factor,
-                _ => malformed = Some(index + 1),
+            match record.number(index + 1).and_then(FiniteReal::new) {
+                Some(number) => *value = number,
+                None => malformed = Some(index + 1),
             }
         }
         if let Some(index) = malformed {
@@ -1395,6 +1394,7 @@ pub(crate) fn project_geometry(
             ));
             continue;
         }
+        let values = values.map(|value| value.get() * factor);
         let transform = match resolve_transform(
             entry.transform,
             &entries,
@@ -1623,13 +1623,20 @@ pub(crate) fn project_geometry(
             ));
             continue;
         };
-        if !x.is_finite() || !y.is_finite() {
+        let Some(x) = FiniteReal::new(x) else {
             losses.push(entity_loss(
                 entry,
                 "X or Y reference coordinate is not finite",
             ));
             continue;
-        }
+        };
+        let Some(y) = FiniteReal::new(y) else {
+            losses.push(entity_loss(
+                entry,
+                "X or Y reference coordinate is not finite",
+            ));
+            continue;
+        };
         let required_real = |index| record.number(index).is_some_and(f64::is_finite);
         let optional_real = |index| record.number_or(index, 0.0).is_some_and(f64::is_finite);
         let shape_parameters_valid = match entry.form {
@@ -1669,7 +1676,9 @@ pub(crate) fn project_geometry(
                 continue;
             }
         };
-        let Some(position) = transform.apply_point(Point3::new(x * factor, y * factor, 0.0)) else {
+        let Some(position) =
+            transform.apply_point(Point3::new(x.get() * factor, y.get() * factor, 0.0))
+        else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
         };
@@ -1700,12 +1709,12 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let mut coordinates = [0.0; 6];
+        let mut coordinates = [FiniteReal::ZERO; 6];
         let mut malformed = None;
         for (index, coordinate) in coordinates.iter_mut().enumerate() {
-            match record.number(index + 1) {
-                Some(value) if value.is_finite() => *coordinate = value * factor,
-                _ => malformed = Some(index + 1),
+            match record.number(index + 1).and_then(FiniteReal::new) {
+                Some(value) => *coordinate = value,
+                None => malformed = Some(index + 1),
             }
         }
         if let Some(index) = malformed {
@@ -1715,6 +1724,7 @@ pub(crate) fn project_geometry(
             ));
             continue;
         }
+        let coordinates = coordinates.map(|coordinate| coordinate.get() * factor);
         let transform = match resolve_transform(
             entry.transform,
             &entries,
