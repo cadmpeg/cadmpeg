@@ -5,7 +5,7 @@
 #[cfg(test)]
 use std::num::NonZeroUsize;
 
-use cadmpeg_core::decode::{alloc_filled, work_units, DecodeContext, WorkBudget};
+use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
 
 /// Words in a zeroed bitset over `bits` positions.
@@ -3002,164 +3002,190 @@ fn propagate_common_deferred_quotients(
 }
 
 fn common_supported_corner_equations(
+    ctx: &DecodeContext<'_>,
     quotient: &mut MeshQuotient,
     assignments: &[MeshFaceBoundaryAssignment],
     budget: &WorkBudget<'_>,
-) -> Option<HashSet<[usize; 2]>> {
+) -> Result<Option<HashSet<[usize; 2]>>, CodecError> {
     fn compatible(quotient: &MeshQuotient, left: usize, right: usize) -> bool {
         let left = quotient.union.root(left);
         let right = quotient.union.root(right);
         left == right || !quotient.domains[left].is_disjoint(&quotient.domains[right])
     }
 
-    let mut common = None::<HashSet<[usize; 2]>>;
-    'assignments: for assignment in assignments {
-        if !budget.charge() {
-            return None;
-        }
-        let mut forced = HashSet::new();
-        for boundary in &assignment.boundaries {
-            if boundary.is_empty() {
+    (|| -> Option<Result<HashSet<[usize; 2]>, CodecError>> {
+        let mut common = None::<HashSet<[usize; 2]>>;
+        'assignments: for assignment in assignments {
+            if !budget.charge() {
                 return None;
             }
-            let directions = boundary
-                .iter()
-                .map(|use_| {
-                    use_.reversed
-                        .map_or_else(|| vec![false, true], |reversed| vec![reversed])
-                })
-                .collect::<Vec<_>>();
-            let mut supported = (0..boundary.len())
-                .map(|index| {
-                    let width = directions[(index + 1) % boundary.len()].len();
-                    let height = directions[index].len();
-                    let row = alloc_filled(width, false, "catia_boundary_dir_row").ok()?;
-                    alloc_filled(height, row, "catia_boundary_dir_grid").ok()
-                })
-                .collect::<Option<Vec<_>>>()?;
-            for first in 0..directions[0].len() {
-                let mut forward = directions
+            let mut forced = HashSet::new();
+            for boundary in &assignment.boundaries {
+                if boundary.is_empty() {
+                    return None;
+                }
+                let directions = boundary
                     .iter()
-                    .map(|states| alloc_filled(states.len(), false, "catia_boundary_forward").ok())
-                    .collect::<Option<Vec<_>>>()?;
-                forward[0][first] = true;
-                for index in 0..boundary.len().saturating_sub(1) {
-                    for left in 0..directions[index].len() {
-                        if !forward[index][left] {
-                            continue;
-                        }
-                        for right in 0..directions[index + 1].len() {
-                            let left_node = port(boundary[index], directions[index][left], true)?;
-                            let right_node =
-                                port(boundary[index + 1], directions[index + 1][right], false)?;
-                            if compatible(quotient, left_node, right_node) {
-                                forward[index + 1][right] = true;
+                    .map(|use_| {
+                        use_.reversed
+                            .map_or_else(|| vec![false, true], |reversed| vec![reversed])
+                    })
+                    .collect::<Vec<_>>();
+                let mut supported = match (0..boundary.len())
+                    .map(|index| {
+                        let width = directions[(index + 1) % boundary.len()].len();
+                        let height = directions[index].len();
+                        let row = ctx.alloc_filled(width, false, "catia_boundary_dir_row")?;
+                        ctx.alloc_filled(height, row, "catia_boundary_dir_grid")
+                    })
+                    .collect::<Result<Vec<_>, CodecError>>()
+                {
+                    Ok(supported) => supported,
+                    Err(error) => return Some(Err(error)),
+                };
+                for first in 0..directions[0].len() {
+                    let mut forward = match directions
+                        .iter()
+                        .map(|states| {
+                            ctx.alloc_filled(states.len(), false, "catia_boundary_forward")
+                        })
+                        .collect::<Result<Vec<_>, CodecError>>()
+                    {
+                        Ok(forward) => forward,
+                        Err(error) => return Some(Err(error)),
+                    };
+                    forward[0][first] = true;
+                    for index in 0..boundary.len().saturating_sub(1) {
+                        for left in 0..directions[index].len() {
+                            if !forward[index][left] {
+                                continue;
                             }
-                        }
-                    }
-                }
-                let last = boundary.len() - 1;
-                let mut backward = directions
-                    .iter()
-                    .map(|states| alloc_filled(states.len(), false, "catia_boundary_backward").ok())
-                    .collect::<Option<Vec<_>>>()?;
-                for state in 0..directions[last].len() {
-                    let left_node = port(boundary[last], directions[last][state], true)?;
-                    let right_node = port(boundary[0], directions[0][first], false)?;
-                    backward[last][state] =
-                        forward[last][state] && compatible(quotient, left_node, right_node);
-                }
-                for index in (0..last).rev() {
-                    for left in 0..directions[index].len() {
-                        backward[index][left] = forward[index][left]
-                            && (0..directions[index + 1].len()).any(|right| {
-                                if !backward[index + 1][right] {
-                                    return false;
-                                }
-                                let Some(left_node) =
-                                    port(boundary[index], directions[index][left], true)
-                                else {
-                                    return false;
-                                };
-                                let Some(right_node) =
-                                    port(boundary[index + 1], directions[index + 1][right], false)
-                                else {
-                                    return false;
-                                };
-                                compatible(quotient, left_node, right_node)
-                            });
-                    }
-                }
-                if !backward[0][first] {
-                    continue;
-                }
-                for index in 0..last {
-                    for left in 0..directions[index].len() {
-                        if !forward[index][left] {
-                            continue;
-                        }
-                        for right in 0..directions[index + 1].len() {
-                            if backward[index + 1][right] {
+                            for right in 0..directions[index + 1].len() {
                                 let left_node =
                                     port(boundary[index], directions[index][left], true)?;
                                 let right_node =
                                     port(boundary[index + 1], directions[index + 1][right], false)?;
                                 if compatible(quotient, left_node, right_node) {
-                                    supported[index][left][right] = true;
+                                    forward[index + 1][right] = true;
                                 }
                             }
                         }
                     }
-                }
-                for state in 0..directions[last].len() {
-                    if backward[last][state] {
-                        supported[last][state][first] = true;
+                    let last = boundary.len() - 1;
+                    let mut backward = match directions
+                        .iter()
+                        .map(|states| {
+                            ctx.alloc_filled(states.len(), false, "catia_boundary_backward")
+                        })
+                        .collect::<Result<Vec<_>, CodecError>>()
+                    {
+                        Ok(backward) => backward,
+                        Err(error) => return Some(Err(error)),
+                    };
+                    for state in 0..directions[last].len() {
+                        let left_node = port(boundary[last], directions[last][state], true)?;
+                        let right_node = port(boundary[0], directions[0][first], false)?;
+                        backward[last][state] =
+                            forward[last][state] && compatible(quotient, left_node, right_node);
                     }
-                }
-            }
-            if supported
-                .iter()
-                .any(|transitions| transitions.iter().flatten().all(|value| !value))
-            {
-                continue 'assignments;
-            }
-            for index in 0..boundary.len() {
-                let next = (index + 1) % boundary.len();
-                let mut equations = HashSet::new();
-                for left in 0..directions[index].len() {
-                    for right in 0..directions[next].len() {
-                        if supported[index][left][right] {
-                            let left = quotient.union.find(port(
-                                boundary[index],
-                                directions[index][left],
-                                true,
-                            )?);
-                            let right = quotient.union.find(port(
-                                boundary[next],
-                                directions[next][right],
-                                false,
-                            )?);
-                            equations.insert(if left <= right {
-                                [left, right]
-                            } else {
-                                [right, left]
-                            });
+                    for index in (0..last).rev() {
+                        for left in 0..directions[index].len() {
+                            backward[index][left] = forward[index][left]
+                                && (0..directions[index + 1].len()).any(|right| {
+                                    if !backward[index + 1][right] {
+                                        return false;
+                                    }
+                                    let Some(left_node) =
+                                        port(boundary[index], directions[index][left], true)
+                                    else {
+                                        return false;
+                                    };
+                                    let Some(right_node) = port(
+                                        boundary[index + 1],
+                                        directions[index + 1][right],
+                                        false,
+                                    ) else {
+                                        return false;
+                                    };
+                                    compatible(quotient, left_node, right_node)
+                                });
+                        }
+                    }
+                    if !backward[0][first] {
+                        continue;
+                    }
+                    for index in 0..last {
+                        for left in 0..directions[index].len() {
+                            if !forward[index][left] {
+                                continue;
+                            }
+                            for right in 0..directions[index + 1].len() {
+                                if backward[index + 1][right] {
+                                    let left_node =
+                                        port(boundary[index], directions[index][left], true)?;
+                                    let right_node = port(
+                                        boundary[index + 1],
+                                        directions[index + 1][right],
+                                        false,
+                                    )?;
+                                    if compatible(quotient, left_node, right_node) {
+                                        supported[index][left][right] = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    for state in 0..directions[last].len() {
+                        if backward[last][state] {
+                            supported[last][state][first] = true;
                         }
                     }
                 }
-                if equations.len() == 1 {
-                    if let Some(equation) = equations.into_iter().next() {
-                        forced.insert(equation);
+                if supported
+                    .iter()
+                    .any(|transitions| transitions.iter().flatten().all(|value| !value))
+                {
+                    continue 'assignments;
+                }
+                for index in 0..boundary.len() {
+                    let next = (index + 1) % boundary.len();
+                    let mut equations = HashSet::new();
+                    for left in 0..directions[index].len() {
+                        for right in 0..directions[next].len() {
+                            if supported[index][left][right] {
+                                let left = quotient.union.find(port(
+                                    boundary[index],
+                                    directions[index][left],
+                                    true,
+                                )?);
+                                let right = quotient.union.find(port(
+                                    boundary[next],
+                                    directions[next][right],
+                                    false,
+                                )?);
+                                equations.insert(if left <= right {
+                                    [left, right]
+                                } else {
+                                    [right, left]
+                                });
+                            }
+                        }
+                    }
+                    if equations.len() == 1 {
+                        if let Some(equation) = equations.into_iter().next() {
+                            forced.insert(equation);
+                        }
                     }
                 }
             }
+            match &mut common {
+                Some(common) => common.retain(|equation| forced.contains(equation)),
+                None => common = Some(forced),
+            }
         }
-        match &mut common {
-            Some(common) => common.retain(|equation| forced.contains(equation)),
-            None => common = Some(forced),
-        }
-    }
-    common
+        common.map(Ok)
+    })()
+    .transpose()
 }
 
 fn propagate_common_full_quotients(
@@ -3210,161 +3236,180 @@ fn propagate_common_full_quotients(
     quotient.edge_domains_viable(edge_candidates).then_some(())
 }
 pub(super) fn propagate_common_ordered_face_quotients(
+    ctx: &DecodeContext<'_>,
     domains: &[MeshFaceBoundaryDomain],
     edge_candidates: &[Vec<[usize; 2]>],
     quotient: &mut MeshQuotient,
     budget: &WorkBudget<'_>,
-) -> Option<()> {
-    const MAX_FACE_OPTIONS: usize = 4_096;
-    const MAX_ORDERED_FACE_CONSTRAINT_OPERATIONS: usize = 64;
-    const MAX_DEFERRED_FACE_CONSTRAINT_OPERATIONS: usize = 512;
-    let mut face_order = (0..domains.len()).collect::<Vec<_>>();
-    face_order.sort_unstable_by_key(|face| match &domains[*face] {
-        MeshFaceBoundaryDomain::DeferredValidation(_) => (0, 0),
-        MeshFaceBoundaryDomain::Ordered(assignments) => (1, assignments.len()),
-        MeshFaceBoundaryDomain::UnorderedFullCycle(_) => (2, 0),
-    });
-    loop {
-        let before = quotient.monotone_measure();
-        for &face in &face_order {
-            let domain = &domains[face];
-            let face_budget = WorkBudget::new(match domain {
-                MeshFaceBoundaryDomain::DeferredValidation(_) => {
-                    MAX_DEFERRED_FACE_CONSTRAINT_OPERATIONS
-                }
-                MeshFaceBoundaryDomain::Ordered(_)
-                | MeshFaceBoundaryDomain::UnorderedFullCycle(_) => {
-                    MAX_ORDERED_FACE_CONSTRAINT_OPERATIONS
-                }
-            });
-            if let MeshFaceBoundaryDomain::DeferredValidation(domain) = domain {
-                let mut merged_nodes = Vec::new();
-                for cycle in &domain.cycles {
-                    for index in 0..cycle.exact_uses.len() {
-                        let (left, left_span) = cycle.exact_uses[index];
-                        let right = cycle.exact_uses[(index + 1) % cycle.exact_uses.len()].0;
-                        let left_end = (left.start + left_span) % cycle.length;
-                        let capacity = (right.start + cycle.length - left_end) % cycle.length;
-                        if capacity != 0 {
-                            continue;
-                        }
-                        if left.reversed.is_none() || right.reversed.is_none() {
-                            continue;
-                        }
-                        let (left_reversed, right_reversed) = (left.reversed?, right.reversed?);
-                        let left_node = left
-                            .edge
-                            .checked_mul(2)?
-                            .checked_add(usize::from(!left_reversed))?;
-                        let right_node = right
-                            .edge
-                            .checked_mul(2)?
-                            .checked_add(usize::from(right_reversed))?;
-                        merged_nodes.push(quotient.merge(left_node, right_node)?);
+) -> Result<Option<()>, CodecError> {
+    (|| -> Option<Result<(), CodecError>> {
+        const MAX_FACE_OPTIONS: usize = 4_096;
+        const MAX_ORDERED_FACE_CONSTRAINT_OPERATIONS: usize = 64;
+        const MAX_DEFERRED_FACE_CONSTRAINT_OPERATIONS: usize = 512;
+        let mut face_order = (0..domains.len()).collect::<Vec<_>>();
+        face_order.sort_unstable_by_key(|face| match &domains[*face] {
+            MeshFaceBoundaryDomain::DeferredValidation(_) => (0, 0),
+            MeshFaceBoundaryDomain::Ordered(assignments) => (1, assignments.len()),
+            MeshFaceBoundaryDomain::UnorderedFullCycle(_) => (2, 0),
+        });
+        loop {
+            let before = quotient.monotone_measure();
+            for &face in &face_order {
+                let domain = &domains[face];
+                let face_budget = WorkBudget::new(match domain {
+                    MeshFaceBoundaryDomain::DeferredValidation(_) => {
+                        MAX_DEFERRED_FACE_CONSTRAINT_OPERATIONS
                     }
-                }
-                let affected_edges = merged_nodes
-                    .into_iter()
-                    .flat_map(|node| {
-                        let root = quotient.union.find(node);
-                        quotient.members(root).to_vec()
-                    })
-                    .map(|node| node / 2)
-                    .filter(|edge| !edge_candidates[*edge].is_empty())
-                    .collect::<HashSet<_>>();
-                if !quotient.propagate_edge_domains(affected_edges, edge_candidates, Some(budget)) {
-                    return None;
-                }
-                let Some(options) = deferred_face_quotient_options_limited(
-                    domain,
-                    edge_candidates,
-                    quotient,
-                    MAX_FACE_OPTIONS + 1,
-                    &face_budget,
-                ) else {
-                    continue;
-                };
-                if options.alternatives.len() <= MAX_FACE_OPTIONS
-                    && !options.alternatives.is_empty()
-                {
-                    propagate_common_deferred_quotients(
-                        options,
+                    MeshFaceBoundaryDomain::Ordered(_)
+                    | MeshFaceBoundaryDomain::UnorderedFullCycle(_) => {
+                        MAX_ORDERED_FACE_CONSTRAINT_OPERATIONS
+                    }
+                });
+                if let MeshFaceBoundaryDomain::DeferredValidation(domain) = domain {
+                    let mut merged_nodes = Vec::new();
+                    for cycle in &domain.cycles {
+                        for index in 0..cycle.exact_uses.len() {
+                            let (left, left_span) = cycle.exact_uses[index];
+                            let right = cycle.exact_uses[(index + 1) % cycle.exact_uses.len()].0;
+                            let left_end = (left.start + left_span) % cycle.length;
+                            let capacity = (right.start + cycle.length - left_end) % cycle.length;
+                            if capacity != 0 {
+                                continue;
+                            }
+                            if left.reversed.is_none() || right.reversed.is_none() {
+                                continue;
+                            }
+                            let (left_reversed, right_reversed) = (left.reversed?, right.reversed?);
+                            let left_node = left
+                                .edge
+                                .checked_mul(2)?
+                                .checked_add(usize::from(!left_reversed))?;
+                            let right_node = right
+                                .edge
+                                .checked_mul(2)?
+                                .checked_add(usize::from(right_reversed))?;
+                            merged_nodes.push(quotient.merge(left_node, right_node)?);
+                        }
+                    }
+                    let affected_edges = merged_nodes
+                        .into_iter()
+                        .flat_map(|node| {
+                            let root = quotient.union.find(node);
+                            quotient.members(root).to_vec()
+                        })
+                        .map(|node| node / 2)
+                        .filter(|edge| !edge_candidates[*edge].is_empty())
+                        .collect::<HashSet<_>>();
+                    if !quotient.propagate_edge_domains(
+                        affected_edges,
+                        edge_candidates,
+                        Some(budget),
+                    ) {
+                        return None;
+                    }
+                    let Some(options) = deferred_face_quotient_options_limited(
+                        domain,
                         edge_candidates,
                         quotient,
-                        budget,
-                    )?;
+                        MAX_FACE_OPTIONS + 1,
+                        &face_budget,
+                    ) else {
+                        continue;
+                    };
+                    if options.alternatives.len() <= MAX_FACE_OPTIONS
+                        && !options.alternatives.is_empty()
+                    {
+                        propagate_common_deferred_quotients(
+                            options,
+                            edge_candidates,
+                            quotient,
+                            budget,
+                        )?;
+                    }
+                    continue;
                 }
-                continue;
-            }
-            let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
-                continue;
-            };
-            if let Some(equations) =
-                common_supported_corner_equations(quotient, assignments, &face_budget)
-            {
-                let mut merged_nodes = Vec::new();
-                for [left, right] in equations {
-                    merged_nodes.push(quotient.merge(left, right)?);
+                let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
+                    continue;
+                };
+                let equations = match common_supported_corner_equations(
+                    ctx,
+                    quotient,
+                    assignments,
+                    &face_budget,
+                ) {
+                    Ok(equations) => equations,
+                    Err(error) => return Some(Err(error)),
+                };
+                if let Some(equations) = equations {
+                    let mut merged_nodes = Vec::new();
+                    for [left, right] in equations {
+                        merged_nodes.push(quotient.merge(left, right)?);
+                    }
+                    let affected_edges = merged_nodes
+                        .into_iter()
+                        .flat_map(|node| {
+                            let root = quotient.union.find(node);
+                            quotient.members(root).to_vec()
+                        })
+                        .map(|node| node / 2)
+                        .filter(|edge| !edge_candidates[*edge].is_empty())
+                        .collect::<HashSet<_>>();
+                    if !quotient.propagate_edge_domains(
+                        affected_edges,
+                        edge_candidates,
+                        Some(budget),
+                    ) {
+                        return None;
+                    }
                 }
-                let affected_edges = merged_nodes
-                    .into_iter()
-                    .flat_map(|node| {
-                        let root = quotient.union.find(node);
-                        quotient.members(root).to_vec()
-                    })
-                    .map(|node| node / 2)
-                    .filter(|edge| !edge_candidates[*edge].is_empty())
-                    .collect::<HashSet<_>>();
-                if !quotient.propagate_edge_domains(affected_edges, edge_candidates, Some(budget)) {
-                    return None;
-                }
-            }
-            if face_budget.exhausted() {
-                continue;
-            }
-            let mut alternatives = Vec::new();
-            let mut truncated = false;
-            for assignment in assignments {
-                if !face_budget.charge_by(quotient.signature_work()) {
-                    truncated = true;
-                    break;
-                }
-                let options = quotient.assignment_options_limited(
-                    assignment,
-                    edge_candidates,
-                    &HashSet::new(),
-                    MAX_FACE_OPTIONS + 1,
-                    Some(&face_budget),
-                );
                 if face_budget.exhausted() {
-                    truncated = true;
-                    break;
+                    continue;
                 }
-                if options.len() > MAX_FACE_OPTIONS {
-                    truncated = true;
-                    break;
+                let mut alternatives = Vec::new();
+                let mut truncated = false;
+                for assignment in assignments {
+                    if !face_budget.charge_by(quotient.signature_work()) {
+                        truncated = true;
+                        break;
+                    }
+                    let options = quotient.assignment_options_limited(
+                        assignment,
+                        edge_candidates,
+                        &HashSet::new(),
+                        MAX_FACE_OPTIONS + 1,
+                        Some(&face_budget),
+                    );
+                    if face_budget.exhausted() {
+                        truncated = true;
+                        break;
+                    }
+                    if options.len() > MAX_FACE_OPTIONS {
+                        truncated = true;
+                        break;
+                    }
+                    alternatives.extend(options.into_iter().map(|(_, quotient)| quotient));
+                    if alternatives.len() > MAX_FACE_OPTIONS {
+                        truncated = true;
+                        break;
+                    }
                 }
-                alternatives.extend(options.into_iter().map(|(_, quotient)| quotient));
+                if truncated {
+                    continue;
+                }
                 if alternatives.len() > MAX_FACE_OPTIONS {
-                    truncated = true;
-                    break;
+                    continue;
                 }
+                if alternatives.is_empty() {
+                    continue;
+                }
+                propagate_common_full_quotients(alternatives, edge_candidates, quotient)?;
             }
-            if truncated {
-                continue;
+            if quotient.monotone_measure() == before {
+                return Some(Ok(()));
             }
-            if alternatives.len() > MAX_FACE_OPTIONS {
-                continue;
-            }
-            if alternatives.is_empty() {
-                continue;
-            }
-            propagate_common_full_quotients(alternatives, edge_candidates, quotient)?;
         }
-        if quotient.monotone_measure() == before {
-            return Some(());
-        }
-    }
+    })()
+    .transpose()
 }
 
 fn mesh_boundary_domain_edges(domain: &MeshFaceBoundaryDomain) -> Vec<usize> {
@@ -6815,7 +6860,10 @@ impl MeshSelectionSearch<'_, '_> {
     }
 
     #[cfg(test)]
-    fn propagate_forced_face_equations(&self, quotient: &mut MeshQuotient) -> bool {
+    fn propagate_forced_face_equations(
+        &self,
+        quotient: &mut MeshQuotient,
+    ) -> Result<bool, CodecError> {
         let budget = WorkBudget::new(usize::MAX);
         self.propagate_forced_face_equations_from(quotient, None, &budget)
     }
@@ -6825,7 +6873,7 @@ impl MeshSelectionSearch<'_, '_> {
         quotient: &mut MeshQuotient,
         changed_edges: Option<&HashSet<usize>>,
         budget: &WorkBudget<'_>,
-    ) -> bool {
+    ) -> Result<bool, CodecError> {
         let mut queue = self
             .selected
             .iter()
@@ -6845,7 +6893,7 @@ impl MeshSelectionSearch<'_, '_> {
         let mut queued = queue.iter().copied().collect::<HashSet<_>>();
         while let Some(face) = queue.pop_front() {
             if !budget.charge() {
-                return true;
+                return Ok(true);
             }
             queued.remove(&face);
             if self.selected[face].is_some() {
@@ -6861,7 +6909,7 @@ impl MeshSelectionSearch<'_, '_> {
                     .all(|use_| use_.reversed.is_some());
             let equations = if deterministic {
                 let [choice] = self.possible_face_choices[face].as_slice() else {
-                    return false;
+                    return Ok(false);
                 };
                 choice.clone()
             } else {
@@ -6871,11 +6919,13 @@ impl MeshSelectionSearch<'_, '_> {
                     cached
                 } else {
                     let Some(common) = common_supported_corner_equations(
+                        self.ctx,
                         quotient,
                         &self.assignments[face],
                         budget,
-                    ) else {
-                        return budget.exhausted();
+                    )?
+                    else {
+                        return Ok(budget.exhausted());
                     };
                     let equations = common.into_iter().collect::<Vec<_>>();
                     let mut cache = self.face_equation_cache.borrow_mut();
@@ -6891,10 +6941,10 @@ impl MeshSelectionSearch<'_, '_> {
                     continue;
                 }
                 let Some(root) = quotient.merge(left, right) else {
-                    return false;
+                    return Ok(false);
                 };
                 if !quotient.propagate_component_edge_domains(root, self.edge_candidates, None) {
-                    return false;
+                    return Ok(false);
                 }
                 changed = true;
             }
@@ -6917,7 +6967,7 @@ impl MeshSelectionSearch<'_, '_> {
                 }
             }
         }
-        true
+        Ok(true)
     }
 
     fn selection_orientable(&self, selection: &[MeshFaceSelection]) -> Result<bool, CodecError> {
@@ -7083,7 +7133,7 @@ impl MeshSelectionSearch<'_, '_> {
                 &mut measured,
                 Some(changed_edges),
                 propagation_budget,
-            )
+            )?
         {
             return Ok(None);
         }
@@ -7452,7 +7502,7 @@ impl MeshSelectionSearch<'_, '_> {
                     &mut measured,
                     None,
                     propagation_budget,
-                )
+                )?
             {
                 return Ok(());
             }
@@ -8918,39 +8968,43 @@ where
             MeshCandidateRejection::PortCardinality,
         )));
     }
-    let Some((mesh_quotient, completed_edge_candidates)) = (|| {
-        let mut mesh_quotient =
-            initial_mesh_quotient(edge_candidates, vertex_points.len(), &port_identities)?;
-        let mut propagated_quotient = mesh_quotient.clone();
-        match propagate_common_ordered_face_quotients(
-            &mesh_domains,
-            edge_candidates,
-            &mut propagated_quotient,
-            budget,
-        ) {
-            Some(()) => mesh_quotient = propagated_quotient,
-            None if budget.exhausted() => {}
-            None => return None,
-        }
-        let completed_edge_candidates = if edge_candidates.iter().any(Vec::is_empty) {
-            propagate_common_boundary_components(
-                &mesh_domains,
-                edge_candidates,
-                &mut mesh_quotient,
-            )?;
-            edge_candidates.to_vec()
-        } else {
-            edge_candidates.to_vec()
-        };
-        if !mesh_quotient.edge_domains_viable(&completed_edge_candidates) {
-            return None;
-        }
-        Some((mesh_quotient, completed_edge_candidates))
-    })() else {
+    let Some(mut mesh_quotient) =
+        initial_mesh_quotient(edge_candidates, vertex_points.len(), &port_identities)
+    else {
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(
             MeshCandidateRejection::QuotientPreparation,
         )));
     };
+    let mut propagated_quotient = mesh_quotient.clone();
+    match propagate_common_ordered_face_quotients(
+        ctx,
+        &mesh_domains,
+        edge_candidates,
+        &mut propagated_quotient,
+        budget,
+    )? {
+        Some(()) => mesh_quotient = propagated_quotient,
+        None if budget.exhausted() => {}
+        None => {
+            return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(
+                MeshCandidateRejection::QuotientPreparation,
+            )))
+        }
+    }
+    if edge_candidates.iter().any(Vec::is_empty)
+        && propagate_common_boundary_components(&mesh_domains, edge_candidates, &mut mesh_quotient)
+            .is_none()
+    {
+        return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(
+            MeshCandidateRejection::QuotientPreparation,
+        )));
+    }
+    let completed_edge_candidates = edge_candidates.to_vec();
+    if !mesh_quotient.edge_domains_viable(&completed_edge_candidates) {
+        return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(
+            MeshCandidateRejection::QuotientPreparation,
+        )));
+    }
     let Some(class_constraint) =
         edge_class_search_constraint(ctx, edge_classes, &completed_edge_candidates)?
     else {

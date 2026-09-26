@@ -489,6 +489,7 @@ fn incidence_search_consumes_implicit_coordinate_root_pairs() {
 
 #[test]
 fn ordered_face_equations_narrow_unknown_edge_roots_before_pair_completion() {
+    catia_test_context!(ctx);
     let edge_candidates = vec![vec![[0, 1]], Vec::new(), vec![[0, 2]]];
     let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
         &edge_candidates,
@@ -511,11 +512,13 @@ fn ordered_face_equations_narrow_unknown_edge_roots_before_pair_completion() {
     let budget = WorkBudget::new(10_000);
 
     crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
+        &ctx,
         &domains,
         &edge_candidates,
         &mut quotient,
         &budget,
     )
+    .expect("service resource budget")
     .expect("common face equations");
     let completed = crate::solve::mesh_quotient::complete_mesh_endpoint_candidates_from_quotient(
         &edge_candidates,
@@ -526,6 +529,89 @@ fn ordered_face_equations_narrow_unknown_edge_roots_before_pair_completion() {
     .expect("completed edge domain");
 
     assert_eq!(completed[1], vec![[1, 2]]);
+}
+
+#[test]
+fn ordered_corner_equations_propagate_direction_collection_refusals() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let edge_candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[2, 0]]];
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![(0..3)
+            .map(|edge| MeshBoundaryEdgeCandidate {
+                edge,
+                start: 0,
+                end: 0,
+                reversed: None,
+            })
+            .collect()],
+    };
+    let domains = [MeshFaceBoundaryDomain::Ordered(vec![assignment.clone()])];
+    let run = |ctx: &DecodeContext<'_>| {
+        let mut quotient =
+            initial_mesh_quotient(&edge_candidates, 3, &[[10, 11], [12, 13], [14, 15]])
+                .expect("initial quotient");
+        let budget = WorkBudget::new(1_000);
+        let equations = crate::solve::mesh_quotient::common_supported_corner_equations(
+            ctx,
+            &mut quotient,
+            &[assignment.clone()],
+            &budget,
+        )?;
+        Ok::<_, CodecError>(equations)
+    };
+    catia_test_context!(service_ctx);
+    assert!(run(&service_ctx)
+        .expect("service resource budget")
+        .is_some());
+
+    let mut refused = HashSet::new();
+    for limit in 0..128 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match run(&ctx) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                refused.insert(error.operation.to_owned());
+            }
+            Ok(Some(_)) => break,
+            Ok(None) => panic!("closed corner cycle must admit equations"),
+            Err(error) => panic!("unexpected refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_boundary_dir_row",
+        "catia_boundary_dir_grid",
+        "catia_boundary_forward",
+        "catia_boundary_backward",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let budget = WorkBudget::new(1_000);
+    let mut quotient = initial_mesh_quotient(&edge_candidates, 3, &[[10, 11], [12, 13], [14, 15]])
+        .expect("initial quotient");
+    let error = crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
+        &ctx,
+        &domains,
+        &edge_candidates,
+        &mut quotient,
+        &budget,
+    )
+    .err()
+    .expect("direction row exceeds the collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_boundary_dir_row"));
 }
 
 #[test]
@@ -1691,7 +1777,9 @@ fn mesh_selection_merges_corner_equations_common_to_every_option() {
     let mut quotient =
         MeshQuotient::new((0..6).map(|_| Arc::new(HashSet::from([0, 1, 2]))).collect());
 
-    assert!(search.propagate_forced_face_equations(&mut quotient));
+    assert!(search
+        .propagate_forced_face_equations(&mut quotient)
+        .expect("service resource budget"));
     assert_eq!(quotient.find(1), quotient.find(2));
     assert_eq!(quotient.find(3), quotient.find(4));
     assert_eq!(quotient.find(5), quotient.find(0));
@@ -1741,7 +1829,9 @@ fn mesh_selection_merges_equations_common_to_every_assignment() {
     let mut quotient =
         MeshQuotient::new((0..6).map(|_| Arc::new(HashSet::from([0, 1, 2]))).collect());
 
-    assert!(search.propagate_forced_face_equations(&mut quotient));
+    assert!(search
+        .propagate_forced_face_equations(&mut quotient)
+        .expect("service resource budget"));
     assert_eq!(quotient.find(1), quotient.find(2));
     assert_eq!(quotient.root_count(), 5);
 }
@@ -1793,7 +1883,9 @@ fn mesh_selection_common_equations_ignore_infeasible_assignments() {
             .collect(),
     );
 
-    assert!(search.propagate_forced_face_equations(&mut quotient));
+    assert!(search
+        .propagate_forced_face_equations(&mut quotient)
+        .expect("service resource budget"));
     assert_eq!(quotient.find(1), quotient.find(2));
     assert_eq!(quotient.find(3), quotient.find(0));
     assert_eq!(quotient.root_count(), 4);
@@ -1842,7 +1934,9 @@ fn mesh_selection_propagates_closed_ports_without_enumerating_directions() {
     }
 
     assert_eq!(quotient.root_count(), 13);
-    assert!(search.propagate_forced_face_equations(&mut quotient));
+    assert!(search
+        .propagate_forced_face_equations(&mut quotient)
+        .expect("service resource budget"));
     assert_eq!(quotient.root_count(), 1);
 }
 
@@ -1891,15 +1985,21 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
     let mut quotient =
         MeshQuotient::new((0..6).map(|_| Arc::new(HashSet::from([0, 1, 2]))).collect());
 
-    assert!(search.propagate_forced_face_equations(&mut quotient));
+    assert!(search
+        .propagate_forced_face_equations(&mut quotient)
+        .expect("service resource budget"));
     assert_eq!(search.face_equation_cache.borrow().len(), 1);
     quotient.merge(4, 5).expect("unrelated component merge");
-    assert!(search.propagate_forced_face_equations(&mut quotient));
+    assert!(search
+        .propagate_forced_face_equations(&mut quotient)
+        .expect("service resource budget"));
     assert_eq!(search.face_equation_cache.borrow().len(), 1);
     quotient
         .merge(0, 4)
         .expect("component joined to a face port");
-    assert!(search.propagate_forced_face_equations(&mut quotient));
+    assert!(search
+        .propagate_forced_face_equations(&mut quotient)
+        .expect("service resource budget"));
     assert_eq!(search.face_equation_cache.borrow().len(), 2);
     {
         let mut cache = search.face_equation_cache.borrow_mut();
@@ -1908,6 +2008,8 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
         }
     }
     quotient.merge(1, 2).expect("new face-component merge");
-    assert!(search.propagate_forced_face_equations(&mut quotient));
+    assert!(search
+        .propagate_forced_face_equations(&mut quotient)
+        .expect("service resource budget"));
     assert_eq!(search.face_equation_cache.borrow().len(), 1);
 }
