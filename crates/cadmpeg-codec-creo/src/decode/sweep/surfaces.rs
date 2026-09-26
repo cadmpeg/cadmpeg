@@ -24,6 +24,7 @@ use super::nurbs::{
 };
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::identity::semantic_saved_section_entities;
+use crate::decode::source_carriers::SourceUnitCarriers;
 use crate::vecmath::normalize;
 use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
@@ -246,6 +247,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
@@ -314,25 +316,30 @@ pub(in super::super) fn transfer_saved_spline_curves(
                 Exactness::Derived,
             );
             ctx.charge_entities(1, "admit Creo model curves")?;
-            ir.model.curves.push(Curve {
-                id: curve_id,
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed)),
-                source_object: Some(SourceObjectAssociation {
-                    format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                        "FeatDefs:saved_spline#{}",
-                        suffix_key.as_str()
-                    ))
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                    })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                }),
-            });
+            source_carriers.admit_curve(
+                ir,
+                Curve {
+                    id: curve_id,
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed)),
+                    source_object: Some(SourceObjectAssociation {
+                        format: cadmpeg_ir::CodecFormat::Creo,
+                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                            "FeatDefs:saved_spline#{}",
+                            suffix_key.as_str()
+                        ))
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "source object_id must not be empty",
+                            )
+                        })?,
+                        name: None,
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    }),
+                },
+            )?;
             transferred += 1;
         }
     }
@@ -516,6 +523,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
@@ -586,24 +594,29 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 Exactness::Derived,
             );
             ctx.charge_entities(1, "admit Creo model surfaces")?;
-            ir.model.surfaces.push(Surface {
-                id,
-                geometry,
-                source_object: Some(SourceObjectAssociation {
-                    format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                        "VisibGeom:{surface_id}"
-                    ))
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                    })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                }),
-            });
+            source_carriers.admit_surface(
+                ir,
+                Surface {
+                    id,
+                    geometry,
+                    source_object: Some(SourceObjectAssociation {
+                        format: cadmpeg_ir::CodecFormat::Creo,
+                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                            "VisibGeom:{surface_id}"
+                        ))
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "source object_id must not be empty",
+                            )
+                        })?,
+                        name: None,
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    }),
+                },
+            )?;
             transferred += 1;
         }
 
@@ -650,24 +663,29 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 Exactness::Derived,
             );
             ctx.charge_entities(1, "admit Creo model surfaces")?;
-            ir.model.surfaces.push(Surface {
-                id,
-                geometry,
-                source_object: Some(SourceObjectAssociation {
-                    format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                        "VisibGeom:{native_surface_id}"
-                    ))
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                    })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                }),
-            });
+            source_carriers.admit_surface(
+                ir,
+                Surface {
+                    id,
+                    geometry,
+                    source_object: Some(SourceObjectAssociation {
+                        format: cadmpeg_ir::CodecFormat::Creo,
+                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                            "VisibGeom:{native_surface_id}"
+                        ))
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "source object_id must not be empty",
+                            )
+                        })?,
+                        name: None,
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    }),
+                },
+            )?;
             transferred += 1;
         }
 
@@ -695,7 +713,9 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 .then_some((surface_id, internal_id, spline))
             })
             .collect::<Vec<_>>();
-        let Some(span) = resolved_feature_extrusion_span(scan, ir, definition, transform) else {
+        let Some(span) =
+            resolved_feature_extrusion_span(scan, ir, source_carriers, definition, transform)
+        else {
             continue;
         };
         let lower_translation = transform.normal().map(|value| value * span.lower());
@@ -761,27 +781,32 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     Exactness::Derived,
                 );
                 ctx.charge_entities(1, "admit Creo model curves")?;
-                ir.model.curves.push(Curve {
-                    id: curve_id.clone(),
-                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix.clone())),
-                    source_object: Some(SourceObjectAssociation {
-                        format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                            "FeatDefs:saved_spline#{}",
-                            suffix_key.as_str()
-                        ))
-                        .ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed(
-                                "source object_id must not be empty",
-                            )
-                        })?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
-                        instance_path: Vec::new(),
-                    }),
-                });
+                source_carriers.admit_curve(
+                    ir,
+                    Curve {
+                        id: curve_id.clone(),
+                        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                            directrix.clone(),
+                        )),
+                        source_object: Some(SourceObjectAssociation {
+                            format: cadmpeg_ir::CodecFormat::Creo,
+                            object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                                "FeatDefs:saved_spline#{}",
+                                suffix_key.as_str()
+                            ))
+                            .ok_or_else(|| {
+                                cadmpeg_core::CodecError::malformed(
+                                    "source object_id must not be empty",
+                                )
+                            })?,
+                            name: None,
+                            color: None,
+                            visible: None,
+                            layer: None,
+                            instance_path: Vec::new(),
+                        }),
+                    },
+                )?;
             }
             let surface_id = SurfaceId::compose(
                 &crate::identity::VISIBGEOM_SURFACE,
@@ -811,24 +836,29 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 Exactness::Derived,
             );
             ctx.charge_entities(1, "admit Creo model surfaces")?;
-            ir.model.surfaces.push(Surface {
-                id: surface_id.clone(),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
-                source_object: Some(SourceObjectAssociation {
-                    format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                        "VisibGeom:{native_surface_id}"
-                    ))
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                    })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                }),
-            });
+            source_carriers.admit_surface(
+                ir,
+                Surface {
+                    id: surface_id.clone(),
+                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
+                    source_object: Some(SourceObjectAssociation {
+                        format: cadmpeg_ir::CodecFormat::Creo,
+                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                            "VisibGeom:{native_surface_id}"
+                        ))
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "source object_id must not be empty",
+                            )
+                        })?,
+                        name: None,
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    }),
+                },
+            )?;
             let Some((&lower_knot, &upper_knot)) =
                 directrix.knots().first().zip(directrix.knots().last())
             else {
@@ -840,7 +870,8 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 );
                 continue;
             };
-            let _attached = ir.model.add_procedural_surface(
+            source_carriers.admit_procedural_surface(
+                ir,
                 surface_id,
                 cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
                     curve_id,
@@ -857,7 +888,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     )
                 })
                 .map_err(cadmpeg_core::CodecError::malformed)?,
-            );
+            )?;
             transferred += 1;
         }
     }

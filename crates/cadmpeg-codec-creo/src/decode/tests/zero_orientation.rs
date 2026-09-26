@@ -426,6 +426,56 @@ fn revolution_axis_uses_the_unique_complete_section_centerline() {
 }
 
 #[test]
+fn full_turn_axis_reads_source_carrier_after_millimeter_admission() {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 31,
+        kind: crate::surface::SurfaceKind::Cylinder,
+        feature_id: 7,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 31,
+    });
+    let mut ir = CadIr::empty();
+    let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::new(
+        cadmpeg_ir::scalar::PositiveReal::new(25.4),
+    );
+    source_carriers
+        .admit_surface(
+            &mut ir,
+            Surface {
+                id: SurfaceId::mint("creo:visibgeom:surface#31").expect("identity grammar"),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                        Point3::new(2.0, 3.0, 0.0),
+                        Vector3::new(0.0, 1.0, 0.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                        1.0,
+                    )
+                    .expect("source cylinder"),
+                )),
+                source_object: None,
+            },
+        )
+        .expect("millimeter admission");
+    let Some(SolvedSurfaceGeometry::Cylinder(admitted)) = ir.model.surfaces[0].geometry.solved()
+    else {
+        panic!("admitted cylinder changed family");
+    };
+    assert_eq!(admitted.origin().get().x, 50.8);
+    let full_turn = RevolveExtent::OneSided {
+        termination: AngularTermination::Angle {
+            angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU)
+                .expect("full turn"),
+        },
+    };
+    let axis = full_turn_revolution_carrier_axis(&scan, &ir, &source_carriers, 7, Some(&full_turn))
+        .expect("source carrier axis");
+    assert_eq!(axis.origin.get().x, 2.0);
+}
+
+#[test]
 fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     for (id, kind) in [
@@ -495,7 +545,13 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
     };
 
     assert_eq!(
-        full_turn_revolution_carrier_axis(&scan, &ir, 7, Some(&full_turn)),
+        full_turn_revolution_carrier_axis(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            7,
+            Some(&full_turn)
+        ),
         Some(RevolutionAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
                 .expect("finite point fixture"),
@@ -536,6 +592,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         revolution_axis_for_transfer(
             &scan,
             &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
             7,
             &carrier_only_definition,
             &transform,
@@ -554,7 +611,14 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
             angle: cadmpeg_ir::scalar::PositiveAngle::new(1.0).expect("valid test fixture"),
         },
     };
-    assert!(full_turn_revolution_carrier_axis(&scan, &ir, 7, Some(&partial)).is_none());
+    assert!(full_turn_revolution_carrier_axis(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        7,
+        Some(&partial)
+    )
+    .is_none());
     if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) =
         &mut ir.model.surfaces[1].geometry
     {
@@ -576,7 +640,14 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         )
         .expect("valid ConeSurface fixture");
     }
-    assert!(full_turn_revolution_carrier_axis(&scan, &ir, 7, Some(&full_turn)).is_none());
+    assert!(full_turn_revolution_carrier_axis(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        7,
+        Some(&full_turn)
+    )
+    .is_none());
     if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) =
         &mut ir.model.surfaces[1].geometry
     {
@@ -616,7 +687,14 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         radius,
     )
     .expect("valid SphereSurface fixture");
-    assert!(full_turn_revolution_carrier_axis(&scan, &ir, 7, Some(&full_turn)).is_none());
+    assert!(full_turn_revolution_carrier_axis(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        7,
+        Some(&full_turn)
+    )
+    .is_none());
 }
 
 #[test]
@@ -727,8 +805,14 @@ fn named_revolve_transfers_profile_axis() {
             construction,
             op: BooleanOp::NewBody,
         },
-    )) = named_feature_definition(&scan, &ir, 822, "Revolve")
-        .expect("a named revolve states no blank key")
+    )) = named_feature_definition(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        822,
+        "Revolve",
+    )
+    .expect("a named revolve states no blank key")
     else {
         panic!("named revolve axis");
     };
@@ -754,8 +838,14 @@ fn named_extrude_with_evaluated_body_is_new_body() {
 
     let Some(cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::Extrude { op, solid, .. },
-    )) = named_feature_definition(&scan, &ir, 822, "Extrude")
-        .expect("a named extrude states no blank key")
+    )) = named_feature_definition(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        822,
+        "Extrude",
+    )
+    .expect("a named extrude states no blank key")
     else {
         panic!("named extrude definition");
     };
@@ -778,8 +868,15 @@ fn schema_numbered_extrude_with_evaluated_body_is_new_body() {
     });
 
     let IrFeatureDefinition::Operation(IrFeatureOperation::Extrude { op, solid, .. }) =
-        schema_feature_definition(&scan, &ir, 822, None, "Extrude 822")
-            .expect("valid test fixture")
+        schema_feature_definition(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            822,
+            None,
+            "Extrude 822",
+        )
+        .expect("valid test fixture")
     else {
         panic!("schema numbered extrude definition");
     };
@@ -826,17 +923,27 @@ fn conflicting_section_sweep_names_remain_unresolved() {
         "Revolve 822",
     ] {
         assert!(
-            named_feature_definition(&scan, &ir, 822, kind)
-                .expect("a conflicting name states no blank key")
-                .is_none(),
+            named_feature_definition(
+                &scan,
+                &ir,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                822,
+                kind
+            )
+            .expect("a conflicting name states no blank key")
+            .is_none(),
             "conflicting section-sweep name projected: {kind}"
         );
     }
-    assert!(
-        named_or_referenced_feature_definition(&scan, &ir, 822, "Native Feature")
-            .expect("a native feature states no blank key")
-            .is_none()
-    );
+    assert!(named_or_referenced_feature_definition(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        822,
+        "Native Feature"
+    )
+    .expect("a native feature states no blank key")
+    .is_none());
 }
 
 #[test]
@@ -865,11 +972,15 @@ fn conflicting_display_states_do_not_select_reference_family() {
         });
     let ir = CadIr::empty();
 
-    assert!(
-        named_or_referenced_feature_definition(&scan, &ir, 822, "Native Feature")
-            .expect("a native feature states no blank key")
-            .is_none()
-    );
+    assert!(named_or_referenced_feature_definition(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        822,
+        "Native Feature"
+    )
+    .expect("a native feature states no blank key")
+    .is_none());
 }
 
 #[test]

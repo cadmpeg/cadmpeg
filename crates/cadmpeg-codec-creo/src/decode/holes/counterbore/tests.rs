@@ -101,7 +101,14 @@ fn boundary_circle_uses_native_plane_carrier_when_model_plane_is_absent() {
     ir.model.curves.push(boundary_circle());
 
     assert_eq!(
-        super::counterbore_source_boundary_circle(&scan, &ir, 42, &[2], 1.0),
+        super::counterbore_source_boundary_circle(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            42,
+            &[2],
+            1.0
+        ),
         Some((1, Point3::new(0.0, 0.0, 0.0), [0.0, 0.0, 1.0]))
     );
 }
@@ -115,7 +122,14 @@ fn boundary_circle_uses_model_plane_carrier_when_native_plane_is_absent() {
     ir.model.surfaces.push(model_plane([0.0, 0.0, 0.0]));
 
     assert_eq!(
-        super::counterbore_source_boundary_circle(&scan, &ir, 42, &[2], 1.0),
+        super::counterbore_source_boundary_circle(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            42,
+            &[2],
+            1.0
+        ),
         Some((1, Point3::new(0.0, 0.0, 0.0), [0.0, 0.0, 1.0]))
     );
 }
@@ -128,7 +142,14 @@ fn boundary_circle_rejects_conflicting_model_plane_carrier() {
     ir.model.surfaces.push(model_plane([0.0, 0.0, 0.5]));
 
     assert_eq!(
-        super::counterbore_source_boundary_circle(&scan, &ir, 42, &[2], 1.0),
+        super::counterbore_source_boundary_circle(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            42,
+            &[2],
+            1.0
+        ),
         None
     );
 }
@@ -142,7 +163,14 @@ fn boundary_circle_rejects_duplicate_model_curves() {
         .extend([boundary_circle(), boundary_circle()]);
 
     assert_eq!(
-        super::counterbore_source_boundary_circle(&scan, &ir, 42, &[2], 1.0),
+        super::counterbore_source_boundary_circle(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            42,
+            &[2],
+            1.0
+        ),
         None
     );
 }
@@ -156,7 +184,14 @@ fn boundary_circle_rejects_duplicate_surface_rows() {
     ir.model.curves.push(boundary_circle());
 
     assert_eq!(
-        super::counterbore_source_boundary_circle(&scan, &ir, 42, &[2], 1.0),
+        super::counterbore_source_boundary_circle(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            42,
+            &[2],
+            1.0
+        ),
         None
     );
 }

@@ -524,6 +524,7 @@ pub(in crate::decode) fn counterbore_axis_placement_from_sources(
 pub(in crate::decode) fn counterbore_directed_placement(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
 ) -> Option<(Option<u32>, Point3, Vector3, LinearTermination)> {
     let (bore_diameter, counterbore_diameter, counterbore_depth) =
@@ -533,7 +534,7 @@ pub(in crate::decode) fn counterbore_directed_placement(
         return None;
     };
     let boundary = |ids: &[u32], radius: f64| {
-        counterbore_source_boundary_circle(scan, ir, feature_id, ids, radius)
+        counterbore_source_boundary_circle(scan, ir, source_carriers, feature_id, ids, radius)
     };
     let bore_radius = 0.5 * bore_diameter;
     let counterbore_radius = 0.5 * counterbore_diameter;
@@ -808,6 +809,7 @@ pub(in crate::decode) fn counterbore_directed_span(
 fn counterbore_source_boundary_circle(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     cylinder_ids: &[u32],
     radius: f64,
@@ -833,7 +835,8 @@ fn counterbore_source_boundary_circle(
                 let curve = exactly_one(ir.model.curves.iter().filter(|curve| {
                     curve.id == CurveId::compose(&crate::identity::VISIBGEOM_CURVE, edge.id)
                 }))?;
-                let Some(SolvedCurveGeometry::Circle(circle_curve)) = curve.geometry.solved()
+                let Some(SolvedCurveGeometry::Circle(circle_curve)) =
+                    source_carriers.curve_geometry(curve).solved()
                 else {
                     return None;
                 };
@@ -841,7 +844,7 @@ fn counterbore_source_boundary_circle(
                 let candidate = circle_curve.radius().get();
                 ((candidate - radius).abs() <= EPS_COUNTERBORE_GEOMETRY).then_some(())?;
                 let axis = unit_length(*circle_curve.frame().axis());
-                let plane = reconciled_model_plane(&local_planes, ir, other)?;
+                let plane = reconciled_model_plane(&local_planes, ir, source_carriers, other)?;
                 let normal = normalize(plane.normal)?;
                 let alignment = axis
                     .iter()
