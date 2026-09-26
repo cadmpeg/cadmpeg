@@ -201,9 +201,9 @@ fn rse_unavailable_record_frame_refuses_issue_copy() {
     assert!(operations.contains(&"retain Inventor RSe frame issue"));
 }
 
-fn rse_retained_refusal_operations<'a>(
+fn rse_retained_refusal_operations(
     arena: &DecodeArena,
-    container: &InventorContainer<'a>,
+    container: &InventorContainer<'_>,
 ) -> Vec<&'static str> {
     let mut cap = 0;
     let mut operations = Vec::new();
@@ -212,8 +212,8 @@ fn rse_retained_refusal_operations<'a>(
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = cap;
         let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
-        match admit_rse_segment_projection(&ctx, &container) {
+            DecodeContext::from_root_bytes(&[], arena, &policy).expect("limited context");
+        match admit_rse_segment_projection(&ctx, container) {
             Err(CodecError::ResourceLimit(limit)) => {
                 assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
                 assert!(limit.used + limit.additional > cap);
