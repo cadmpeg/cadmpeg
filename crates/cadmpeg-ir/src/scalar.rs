@@ -127,6 +127,13 @@ impl From<FiniteBinary32> for f32 {
     }
 }
 
+impl From<FiniteBinary32> for FiniteReal {
+    /// Widen an admitted finite binary32 value without another admission.
+    fn from(value: FiniteBinary32) -> Self {
+        Self(f64::from(value.get()))
+    }
+}
+
 /// A finite binary32 fraction in the closed unit interval.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -507,6 +514,13 @@ impl Length {
 }
 
 impl PositiveLength {
+    /// Assign the length family to an admitted positive real in millimeters.
+    /// Both domains admit every finite positive value.
+    #[must_use]
+    pub const fn from_assigned_real(value: PositiveReal) -> Self {
+        Self(value.0)
+    }
+
     /// The length in canonical millimeters as a dimensionless real, for a
     /// quotient of lengths. A positive length is finite, so nothing is
     /// checked.
