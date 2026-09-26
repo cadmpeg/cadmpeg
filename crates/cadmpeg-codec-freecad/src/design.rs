@@ -3734,9 +3734,9 @@ fn part_construction_geometry_definition(
                         cadmpeg_ir::scalar::PositiveLength::from_assigned_real(scalar_named(
                             properties, "Radius",
                         )?)?,
-                        cadmpeg_ir::geometry::DirectedParameterRange::new([
-                            angle(if legacy_angles { "Angle0" } else { "Angle1" })?.get(),
-                            angle(if legacy_angles { "Angle1" } else { "Angle2" })?.get(),
+                        cadmpeg_ir::geometry::DirectedParameterRange::from_angle_endpoints([
+                            angle(if legacy_angles { "Angle0" } else { "Angle1" })?,
+                            angle(if legacy_angles { "Angle1" } else { "Angle2" })?,
                         ])
                         .ok()?,
                     ),
@@ -3759,9 +3759,9 @@ fn part_construction_geometry_definition(
                             "MinorRadius",
                         )?)?,
                     ],
-                    cadmpeg_ir::geometry::DirectedParameterRange::new([
-                        angle("Angle1")?.get(),
-                        angle("Angle2")?.get(),
+                    cadmpeg_ir::geometry::DirectedParameterRange::from_angle_endpoints([
+                        angle("Angle1")?,
+                        angle("Angle2")?,
                     ])
                     .ok()?,
                 )?,
@@ -4731,12 +4731,12 @@ fn chamfer_spec(properties: &[&PropertyRecord]) -> Option<ChamferSpec> {
     })?;
     let first = property(properties, "Size")
         .and_then(scalar_value)
-        .and_then(|value| cadmpeg_ir::scalar::PositiveLength::new(value.get()));
+        .and_then(cadmpeg_ir::scalar::PositiveLength::from_assigned_real);
     match (mode, first) {
         (0, Some(distance)) => Some(ChamferSpec::Distance { distance }),
         (1, Some(first)) => property(properties, "Size2")
             .and_then(scalar_value)
-            .and_then(|value| cadmpeg_ir::scalar::PositiveLength::new(value.get()))
+            .and_then(cadmpeg_ir::scalar::PositiveLength::from_assigned_real)
             .map(|second| ChamferSpec::TwoDistances { first, second }),
         (2, Some(distance)) => property(properties, "Angle")
             .and_then(scalar_value)
