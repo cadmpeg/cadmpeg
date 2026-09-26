@@ -1068,7 +1068,7 @@ impl<'a> Builder<'a> {
             loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
             name: None,
             color: None,
-            tolerance: positive_tolerance(tolerance),
+            tolerance: PositiveReal::from_finite(tolerance),
         });
         self.bind_topology(
             TextShapeKind::Face,
@@ -1174,7 +1174,7 @@ impl<'a> Builder<'a> {
                 .map_err(CodecError::malformed)?,
             start,
             end,
-            tolerance: positive_tolerance(tolerance),
+            tolerance: PositiveReal::from_finite(tolerance),
         });
         self.bind_topology(
             TextShapeKind::Edge,
@@ -1381,7 +1381,7 @@ impl<'a> Builder<'a> {
         ir.model.vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,
-            tolerance: positive_tolerance(tolerance * uniform_scale(transform)?.get()),
+            tolerance: positive_tolerance(tolerance.get() * uniform_scale(transform)?.get()),
         });
         self.bind_topology(
             TextShapeKind::Vertex,

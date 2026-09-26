@@ -30,12 +30,12 @@ fn translation(x: f64, y: f64, z: f64) -> Transform {
 fn geometry_for_kind(kind: TextShapeKind) -> TextTShapeGeometry {
     match kind {
         TextShapeKind::Vertex => TextTShapeGeometry::Vertex {
-            tolerance: 0.0,
+            tolerance: cadmpeg_ir::scalar::FiniteReal::ZERO,
             point: cadmpeg_ir::features::FinitePoint3::ZERO,
             representations: Vec::new(),
         },
         TextShapeKind::Edge => TextTShapeGeometry::Edge {
-            tolerance: 0.0,
+            tolerance: cadmpeg_ir::scalar::FiniteReal::ZERO,
             same_parameter: false,
             same_range: false,
             degenerated: false,
@@ -43,7 +43,7 @@ fn geometry_for_kind(kind: TextShapeKind) -> TextTShapeGeometry {
         },
         TextShapeKind::Face => TextTShapeGeometry::Face {
             natural_restriction: false,
-            tolerance: 0.0,
+            tolerance: cadmpeg_ir::scalar::FiniteReal::ZERO,
             surface: None,
             location: crate::brep::LocationRef::Identity,
             triangulation: None,
