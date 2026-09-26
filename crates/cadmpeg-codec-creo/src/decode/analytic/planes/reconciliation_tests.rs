@@ -915,8 +915,10 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
             center_stored: true,
             radius: cadmpeg_ir::scalar::PositiveLength::new(0.5).expect("positive radius"),
             axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
-            start: [2.5, 0.0, -3.0],
-            end: [2.0, 0.0, -2.5],
+            start: cadmpeg_ir::features::FinitePoint3::new([2.5, 0.0, -3.0].into())
+                .expect("finite start"),
+            end: cadmpeg_ir::features::FinitePoint3::new([2.0, 0.0, -2.5].into())
+                .expect("finite end"),
             offset: 50,
         },
         crate::reference::ReferenceCircle {
@@ -925,8 +927,10 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
             center_stored: true,
             radius: cadmpeg_ir::scalar::PositiveLength::new(0.5).expect("positive radius"),
             axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
-            start: [2.5, 38.0, -3.0],
-            end: [2.0, 38.0, -2.5],
+            start: cadmpeg_ir::features::FinitePoint3::new([2.5, 38.0, -3.0].into())
+                .expect("finite start"),
+            end: cadmpeg_ir::features::FinitePoint3::new([2.0, 38.0, -2.5].into())
+                .expect("finite end"),
             offset: 51,
         },
     ]);
@@ -1012,8 +1016,10 @@ fn fc05_model_witness_uses_a_unique_reference_when_tangency_improves() {
             center_stored: true,
             radius: cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("positive radius"),
             axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
-            start: [2.0, 0.0, 0.5],
-            end: [1.0, 0.0, 1.5],
+            start: cadmpeg_ir::features::FinitePoint3::new([2.0, 0.0, 0.5].into())
+                .expect("finite start"),
+            end: cadmpeg_ir::features::FinitePoint3::new([1.0, 0.0, 1.5].into())
+                .expect("finite end"),
             offset: 8,
         });
     scan.curves

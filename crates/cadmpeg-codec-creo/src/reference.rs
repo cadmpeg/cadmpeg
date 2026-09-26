@@ -68,9 +68,9 @@ pub(crate) struct ReferenceCircle {
     /// Unit circle-plane normal.
     pub(crate) axis: UnitVector3,
     /// First stored endpoint.
-    pub(crate) start: [f64; 3],
+    pub(crate) start: FinitePoint3,
     /// Second stored endpoint.
-    pub(crate) end: [f64; 3],
+    pub(crate) end: FinitePoint3,
     /// Byte offset of the positional row in its section.
     pub(crate) offset: usize,
 }
@@ -114,9 +114,9 @@ pub(crate) struct ReferenceConic {
     /// Stored orientation selector.
     pub(crate) flip: u32,
     /// First stored endpoint in model coordinates.
-    pub(crate) start: [f64; 3],
+    pub(crate) start: FinitePoint3,
     /// Second stored endpoint in model coordinates.
-    pub(crate) end: [f64; 3],
+    pub(crate) end: FinitePoint3,
     /// First stored conic parameter, when its scalar form is defined.
     pub(crate) parameter_start: Option<f64>,
     /// Second stored conic parameter, when its scalar form is defined.
@@ -178,10 +178,11 @@ pub(crate) fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllips
         };
         let first_frame: [f64; 3] = (*first_frame_unit.as_raw()).into();
         let second_frame: [f64; 3] = (*second_frame_unit.as_raw()).into();
+        let endpoints: [[f64; 3]; 2] = [conic.start.get().into(), conic.end.get().into()];
         let scale = center
             .iter()
-            .chain(conic.start.iter())
-            .chain(conic.end.iter())
+            .chain(endpoints[0].iter())
+            .chain(endpoints[1].iter())
             .map(|value| value.abs())
             .fold(1.0_f64, f64::max);
         if (first_length - 1.0).abs() > EPS_ELLIPSE_FRAME_ORTHONORMAL
@@ -206,7 +207,6 @@ pub(crate) fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllips
             (second_coefficient, first_coefficient)
         };
         let radii = [first_coefficient.get(), second_coefficient.get()];
-        let endpoints = [conic.start, conic.end];
         let endpoint_deltas =
             endpoints.map(|endpoint| std::array::from_fn(|index| endpoint[index] - center[index]));
         let antipodal_major_direction = (|| {
@@ -375,7 +375,7 @@ fn conic_point_at(
     label_offset: usize,
     end: usize,
     cache: &ScalarCache,
-) -> Option<([f64; 3], usize)> {
+) -> Option<(FinitePoint3, usize)> {
     let array_open = label_offset + CONIC_FIELD_HEADERS[3].len();
     (array_open < end && data.get(array_open) == Some(&crate::psb::token::ARRAY_OPEN))
         .then_some(())?;
@@ -388,10 +388,7 @@ fn conic_point_at(
         (cursor.pos() <= end).then_some(())?;
         *value = decoded;
     }
-    values
-        .iter()
-        .all(|value| value.is_finite())
-        .then_some((values, cursor.pos()))
+    Some((FinitePoint3::new(values.into())?, cursor.pos()))
 }
 
 /// One decoded run of conic local-frame slots: the axis marker `18 e5` emits
@@ -738,10 +735,10 @@ fn positional_conic_body(
     cursor = next;
     let (coefficient_2, local_start) = coordinate(body, cursor, cache)?;
     let (local_end, local_system) = positional_conic_local_system(body, local_start, cache)?;
-    endpoints
+    let start = FinitePoint3::new(endpoints[0].into())?;
+    let end = FinitePoint3::new(endpoints[1].into())?;
+    parameter_start
         .iter()
-        .flatten()
-        .chain(parameter_start.iter())
         .chain(parameter_end.iter())
         .chain([&coefficient_1, &coefficient_2])
         .all(|value| value.is_finite())
@@ -750,8 +747,8 @@ fn positional_conic_body(
         entity_id,
         type_id: ConicType::from(type_id),
         flip,
-        start: endpoints[0],
-        end: endpoints[1],
+        start,
+        end,
         parameter_start,
         parameter_end,
         coefficient_1,
@@ -1037,11 +1034,7 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<Refe
             let normal_length = normal
                 .iter()
                 .fold(0.0_f64, |norm, value| norm.hypot(*value));
-            (center
-                .iter()
-                .chain(first.iter())
-                .chain(second.iter())
-                .all(|value| value.is_finite())
+            (center.iter().all(|value| value.is_finite())
                 && first_distance.is_finite()
                 && second_distance.is_finite()
                 && (first_distance - radius).abs() <= EPS_RADIUS_AGREEMENT * scale
@@ -1049,8 +1042,13 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<Refe
                 && normal_length.is_finite()
                 && normal_length > EPS_CIRCLE_NORMAL_NONZERO * scale * scale)
                 .then_some(())
-                .and_then(|()| UnitVector3::normalized_with_length(Vector3::from(normal)))
-                .map(|(direction, _)| direction)
+                .and_then(|()| {
+                    let first = FinitePoint3::new(first.into())?;
+                    let second = FinitePoint3::new(second.into())?;
+                    let (direction, _) =
+                        UnitVector3::normalized_with_length(Vector3::from(normal))?;
+                    Some((direction, first, second))
+                })
         };
     let explicit = (0..body.len()).filter_map(|start| {
         let values = scalar_run::<10>(body, start, cache)?;
@@ -1058,7 +1056,7 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<Refe
         let radius = PositiveLength::new(values[3].abs())?;
         let first = [values[4], values[5], values[6]];
         let second = [values[7], values[8], values[9]];
-        let axis = explicit_axis(center, radius, first, second)?;
+        let (axis, first, second) = explicit_axis(center, radius, first, second)?;
         Some(ReferenceCircle {
             entity_id,
             center,
@@ -1079,20 +1077,22 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<Refe
         let delta = std::array::from_fn::<_, 3, _>(|axis| second[axis] - first[axis]);
         let diameter = delta.iter().fold(0.0_f64, |norm, value| norm.hypot(*value));
         let scale = radius.get().max(diameter).max(1.0);
-        (diameter.is_finite()
-            && values.iter().all(|value| value.is_finite())
-            && delta[2].abs() <= EPS_DIAMETER_PLANAR * scale
+        diameter.is_finite().then_some(())?;
+        let first = FinitePoint3::new(first.into())?;
+        let second = FinitePoint3::new(second.into())?;
+        (delta[2].abs() <= EPS_DIAMETER_PLANAR * scale
             && (diameter - 2.0 * radius.get()).abs() <= EPS_RADIUS_AGREEMENT * scale)
-            .then_some(ReferenceCircle {
-                entity_id,
-                center,
-                center_stored: false,
-                radius,
-                axis: UnitVector3::Z_AXIS,
-                start: first,
-                end: second,
-                offset: start,
-            })
+            .then_some(())?;
+        Some(ReferenceCircle {
+            entity_id,
+            center,
+            center_stored: false,
+            radius,
+            axis: UnitVector3::Z_AXIS,
+            start: first,
+            end: second,
+            offset: start,
+        })
     });
     let mut candidates = explicit.chain(diametric);
     let circle = candidates.next()?;

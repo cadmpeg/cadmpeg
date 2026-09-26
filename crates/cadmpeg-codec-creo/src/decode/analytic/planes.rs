@@ -952,15 +952,17 @@ fn fc05_reference_circle_frame(
     }
     let radius = circle.radius.get();
     let axis = crate::vecmath::unit_length(circle.axis);
-    let radial = std::array::from_fn(|index| circle.start[index] - circle.center[index]);
-    let end_radial = std::array::from_fn(|index| circle.end[index] - circle.center[index]);
+    let start: [f64; 3] = circle.start.get().into();
+    let end: [f64; 3] = circle.end.get().into();
+    let radial = std::array::from_fn(|index| start[index] - circle.center[index]);
+    let end_radial = std::array::from_fn(|index| end[index] - circle.center[index]);
     let radial_length = dot(radial, radial).sqrt();
     let end_radial_length = dot(end_radial, end_radial).sqrt();
     let scale = circle
         .center
         .into_iter()
-        .chain(circle.start)
-        .chain(circle.end)
+        .chain(start)
+        .chain(end)
         .map(f64::abs)
         .fold(radius.max(1.0), f64::max);
     if !radial_length.is_finite()

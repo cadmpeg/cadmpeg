@@ -572,7 +572,7 @@ pub(super) fn reference_circle_records(scan: &ContainerScan) -> Vec<CreoReferenc
             },
             radius: circle.radius.get(),
             axis: (*circle.axis.as_raw()).into(),
-            endpoints: [circle.start, circle.end],
+            endpoints: [circle.start.get().into(), circle.end.get().into()],
             offset: circle.offset,
         })
         .collect()
@@ -587,7 +587,7 @@ pub(super) fn reference_conic_records(scan: &ContainerScan) -> Vec<CreoReference
             entity_id: conic.entity_id,
             type_id: conic.type_id,
             flip: conic.flip,
-            endpoints: [conic.start, conic.end],
+            endpoints: [conic.start.get().into(), conic.end.get().into()],
             parameter_interval: [conic.parameter_start, conic.parameter_end],
             coefficients: [conic.coefficient_1, conic.coefficient_2],
             local_system: conic.local_system.map(cadmpeg_ir::units::FiniteVector::get),
