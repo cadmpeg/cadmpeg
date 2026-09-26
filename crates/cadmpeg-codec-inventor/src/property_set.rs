@@ -785,9 +785,7 @@ fn decode_code_page(
         ));
     }
     let page = code_page.unwrap_or(1252);
-    let encoding = if let Some(encoding) = encoding_for_code_page(page) {
-        encoding
-    } else {
+    let Some(encoding) = encoding_for_code_page(page) else {
         let message = format_args!("OLE code page {page} is not implemented");
         crate::record_issue::admit_formatted(
             ctx,

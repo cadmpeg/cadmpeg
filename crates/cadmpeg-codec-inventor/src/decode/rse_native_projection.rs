@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Native records projected from RSe segment inventory.
+//! Native records projected from `RSe` segment inventory.
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
