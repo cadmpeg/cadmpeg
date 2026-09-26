@@ -838,13 +838,13 @@ fn parse_attributes(
                 ));
             }
             let equation = [plane.f64()?, plane.f64()?, plane.f64()?, plane.f64()?];
-            let [Some(a), Some(b), Some(c), Some(_)] = equation.map(FiniteReal::new) else {
+            let [Some(a), Some(b), Some(c), Some(source_d)] = equation.map(FiniteReal::new) else {
                 return Err(FramingError::structural(
                     plane.position() - 32,
                     "clipping equation is invalid",
                 ));
             };
-            let d = scaled_coordinate(equation[3], scale).ok_or_else(|| {
+            let d = scaled_coordinate(source_d.get(), scale).ok_or_else(|| {
                 FramingError::structural(plane.position() - 8, "clipping equation is invalid")
             })?;
             let equation = [a, b, c, d];
