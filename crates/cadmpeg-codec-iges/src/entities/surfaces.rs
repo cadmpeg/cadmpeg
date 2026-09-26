@@ -17,7 +17,6 @@ use cadmpeg_ir::geometry::nurbs::bezier::{
     boundaries_within_resolution, homogeneous_spans, positive_controls, HomogeneousBezierSpan,
 };
 use cadmpeg_ir::geometry::{
-    derive_reference_direction,
     nurbs::{
         KnotVector, NurbsCurve, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes,
         SurfaceParameterAxis,
@@ -31,7 +30,7 @@ use cadmpeg_ir::scalar::{
     FiniteReal, NonNegativeLength, NonZeroLength, NonZeroReal, PositiveLength, PositiveReal,
 };
 use cadmpeg_ir::topology::IncreasingParameterInterval;
-use cadmpeg_ir::units::UnitVector3;
+use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1111,12 +1110,12 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "plane normal is degenerate"));
             continue;
         }
-        let Some(local_normal_unit) = unit_vector(local_normal) else {
+        let Some(local_normal_unit) = UnitVector3::normalized_by_reciprocal(local_normal) else {
             losses.push(entity_loss(entry, "plane normal cannot be normalized"));
             continue;
         };
-        let local_u = derive_reference_direction(local_normal_unit);
-        let local_v = local_normal_unit.cross(local_u);
+        let local_u = local_normal_unit.derived_reference();
+        let local_v = local_normal_unit.as_raw().cross(*local_u.as_raw());
         let local_origin = Point3::new(
             a * d / normal_squared * factor,
             b * d / normal_squared * factor,
@@ -1138,8 +1137,8 @@ pub(super) fn project(
             }
         };
         let Some(u_axis) = transform
-            .apply_vector(local_u)
-            .and_then(|axis| unit_vector(axis.get()))
+            .apply_vector(*local_u.as_raw())
+            .and_then(|axis| UnitVector3::normalized_by_reciprocal(axis.get()))
         else {
             losses.push(entity_loss(
                 entry,
@@ -1149,7 +1148,7 @@ pub(super) fn project(
         };
         let Some(v_axis) = transform
             .apply_vector(local_v)
-            .and_then(|axis| unit_vector(axis.get()))
+            .and_then(|axis| UnitVector3::normalized_by_reciprocal(axis.get()))
         else {
             losses.push(entity_loss(
                 entry,
@@ -1157,10 +1156,18 @@ pub(super) fn project(
             ));
             continue;
         };
-        let Some(normal) = unit_vector(u_axis.cross(v_axis)) else {
+        let Some(normal) =
+            UnitVector3::normalized_by_reciprocal(u_axis.as_raw().cross(*v_axis.as_raw()))
+        else {
             losses.push(entity_loss(entry, "plane placement collapses its normal"));
             continue;
         };
+        let origin = transform
+            .apply_point(local_origin)
+            .ok_or_else(|| CodecError::malformed("plane placement produces a non-finite origin"))?;
+        let frame = OrthonormalFrame3::from_units(normal, u_axis).ok_or_else(|| {
+            CodecError::malformed("PlaneSurface.normal/u_axis must form an orthonormal frame")
+        })?;
         sequences.record_surface(
             &crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             entry.sequence,
@@ -1168,17 +1175,7 @@ pub(super) fn project(
         ir.model.surfaces.push(Surface {
             id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    transform
-                        .apply_point(local_origin)
-                        .ok_or_else(|| {
-                            CodecError::malformed("plane placement produces a non-finite origin")
-                        })?
-                        .get(),
-                    normal,
-                    u_axis,
-                )
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+                cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, frame),
             )),
             source_object: Some(source_object(entry)?),
         });

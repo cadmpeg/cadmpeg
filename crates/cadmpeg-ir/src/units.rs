@@ -309,6 +309,16 @@ impl UnitVector3 {
         y: 0.0,
         z: 1.0,
     });
+    /// The stable in-plane reference of this admitted axis.
+    ///
+    /// The least-aligned basis has a projection of length at least about
+    /// `sqrt(2/3)`. Normalizing it produces finite components with unit
+    /// length to rounding. The returned bits are those of
+    /// [`crate::geometry::derive_reference_direction`].
+    #[must_use]
+    pub fn derived_reference(self) -> Self {
+        Self(crate::geometry::derive_reference_direction(self.0))
+    }
     /// Admit a unit direction.
     pub fn new(value: Vector3) -> Option<Self> {
         ((value.norm() - 1.0).abs() <= EPS_UNIT_FRAME).then_some(Self(value))
@@ -1174,6 +1184,24 @@ mod tests {
             OrthonormalFrame3::new(Vector3::new(1.0, 0.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
             Some(OrthonormalFrame3::X_AXIS_Y_REFERENCE)
         );
+    }
+
+    #[test]
+    fn derived_reference_keeps_the_existing_bits_and_unit_measure() {
+        for axis in [
+            UnitVector3::X_AXIS,
+            UnitVector3::Y_AXIS,
+            UnitVector3::Z_AXIS,
+            UnitVector3::new(Vector3::new(0.6, 0.8, 0.0)).expect("unit axis"),
+        ] {
+            let expected = crate::geometry::derive_reference_direction(*axis.as_raw());
+            let actual = axis.derived_reference();
+            assert_eq!(
+                [actual.as_raw().x, actual.as_raw().y, actual.as_raw().z].map(f64::to_bits),
+                [expected.x, expected.y, expected.z].map(f64::to_bits)
+            );
+            assert_eq!(UnitVector3::new(expected), Some(actual));
+        }
     }
 
     #[test]
