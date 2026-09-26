@@ -126,42 +126,89 @@ fn incidence_components_order_by_endpoint_branch_width() {
 
 #[test]
 fn incidence_components_order_prerequisites_without_joining_domains() {
+    catia_test_context!(ctx);
     let choices = vec![vec![[0, 0], [1, 1]], vec![[2, 2], [3, 3]], vec![[4, 4]]];
     let mut components = vec![vec![0], vec![1], vec![2]];
     let dependencies = [Vec::new(), vec![0], Vec::new()];
 
     crate::solve::incidence::order_incidence_components_by_constraints(
+        &ctx,
         &mut components,
         &choices,
         AssignmentOrder::new(None, Some(&dependencies)),
     )
+    .expect("service resource budget")
     .expect("acyclic component prerequisites");
 
     assert_eq!(components, vec![vec![2], vec![0], vec![1]]);
 }
 
 #[test]
+fn incidence_component_order_refuses_incoming_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let choices = vec![vec![[0, 0]], vec![[1, 1]]];
+    let dependencies = [Vec::new(), vec![0]];
+    let components = vec![vec![0], vec![1]];
+    catia_test_context!(service_ctx);
+    let mut service_components = components.clone();
+    assert!(
+        crate::solve::incidence::order_incidence_components_by_constraints(
+            &service_ctx,
+            &mut service_components,
+            &choices,
+            AssignmentOrder::new(None, Some(&dependencies)),
+        )
+        .expect("service budget")
+        .is_some()
+    );
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let mut limited_components = components;
+    let error = crate::solve::incidence::order_incidence_components_by_constraints(
+        &ctx,
+        &mut limited_components,
+        &choices,
+        AssignmentOrder::new(None, Some(&dependencies)),
+    )
+    .expect_err("incoming collection exceeds the limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_incidence_component_in"));
+}
+
+#[test]
 fn incidence_components_reject_prerequisite_cycles() {
+    catia_test_context!(ctx);
     let choices = vec![vec![[0, 0]], vec![[1, 1]]];
     let mut components = vec![vec![0], vec![1]];
     let predecessors = [Some(1), Some(0)];
 
     assert!(
         crate::solve::incidence::order_incidence_components_by_constraints(
+            &ctx,
             &mut components,
             &choices,
             AssignmentOrder::new(Some(&predecessors), None),
         )
+        .expect("service resource budget")
         .is_none()
     );
 
     let mut component = vec![vec![0, 1]];
     assert!(
         crate::solve::incidence::order_incidence_components_by_constraints(
+            &ctx,
             &mut component,
             &choices,
             AssignmentOrder::new(Some(&predecessors), None),
         )
+        .expect("service resource budget")
         .is_none()
     );
 }
