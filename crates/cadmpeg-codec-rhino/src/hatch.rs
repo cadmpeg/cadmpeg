@@ -15,7 +15,7 @@ use crate::curves::{DecodedCurve, DecodedGeometry, GeometryError};
 use crate::objects::{parse_class_wrapper, ClassUserdata, UserdataDescriptor};
 use crate::settings::{MillimeterScale, Plane};
 use crate::wire::{scaled_coordinate, ExactVec, Uuid};
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 
 pub(crate) const CLASS: Uuid = Uuid::from_canonical([
     0x05, 0x59, 0x73, 0x3b, 0x53, 0x32, 0x49, 0xd1, 0xa9, 0x36, 0x05, 0x32, 0xac, 0x76, 0xad, 0xe5,
@@ -103,8 +103,8 @@ pub(crate) struct Gradient {
 pub(crate) struct Hatch {
     pub(crate) source_range: Range<usize>,
     pub(crate) plane: Plane,
-    pub(crate) pattern_scale: f64,
-    pub(crate) pattern_rotation: f64,
+    pub(crate) pattern_scale: PositiveReal,
+    pub(crate) pattern_rotation: FiniteReal,
     pub(crate) pattern_index: i32,
     pub(crate) loops: Vec<HatchLoop>,
     pub(crate) basepoint: [FiniteReal; 2],
@@ -179,27 +179,16 @@ pub(crate) fn decode(
     }
     let plane = read_plane(&mut body)?;
     let scale_offset = body.position();
-    let pattern_scale = body.req_f64_le()?;
-    if !pattern_scale.is_finite() {
-        return Err(GeometryError::malformed(
-            scale_offset,
-            "hatch pattern scale is not finite",
-        ));
-    }
-    if pattern_scale <= 0.0 {
-        return Err(GeometryError::malformed(
-            scale_offset,
-            "hatch pattern scale is not positive",
-        ));
-    }
+    let pattern_scale = FiniteReal::new(body.req_f64_le()?).ok_or_else(|| {
+        GeometryError::malformed(scale_offset, "hatch pattern scale is not finite")
+    })?;
+    let pattern_scale = PositiveReal::from_finite(pattern_scale).ok_or_else(|| {
+        GeometryError::malformed(scale_offset, "hatch pattern scale is not positive")
+    })?;
     let rotation_offset = body.position();
-    let pattern_rotation = body.req_f64_le()?;
-    if !pattern_rotation.is_finite() {
-        return Err(GeometryError::malformed(
-            rotation_offset,
-            "hatch pattern rotation is not finite",
-        ));
-    }
+    let pattern_rotation = FiniteReal::new(body.req_f64_le()?).ok_or_else(|| {
+        GeometryError::malformed(rotation_offset, "hatch pattern rotation is not finite")
+    })?;
     let pattern_index = body.req_i32_le()?;
 
     let count_offset = body.position();
@@ -732,8 +721,8 @@ pub(crate) mod tests {
         })
         .expect("required invariant");
         assert_eq!(hatch.pattern_index, 7);
-        assert_eq!(hatch.pattern_scale, 2.5);
-        assert_eq!(hatch.pattern_rotation, 0.25);
+        assert_eq!(hatch.pattern_scale.get(), 2.5);
+        assert_eq!(hatch.pattern_rotation.get(), 0.25);
         assert_eq!(hatch.basepoint.map(FiniteReal::get), [30.0, 40.0]);
         assert_eq!(hatch.loops.len(), 1);
         assert_eq!(hatch.loops[0].kind, LoopKind::Outer);
