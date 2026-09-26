@@ -3,10 +3,8 @@
 //! The little-endian analytic surfaces (`e5` and `zero_entity`) stamp out the
 //! same cylinder/cone/torus field sequences at different base offsets. Each
 //! family positions a [`Cursor`] over its record payload and calls one of the
-//! readers here; the reader decodes the canonical field sequence, builds the
-//! [`SurfaceGeometry`] variant, and returns the magnitude-bearing scalars so
-//! the caller can apply its own validation guard (the guards differ per
-//! family and must stay at the call site).
+//! readers here; the reader decodes the canonical field sequence, admits its
+//! scalar restrictions, and builds the [`SurfaceGeometry`] variant.
 //!
 //! These readers are little-endian. The big-endian inline analytic block
 //! decoded by `crate::families::standard::records::decode_curved` has a different layout, endianness,
@@ -15,7 +13,7 @@
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::scalar::{
-    Angle, FiniteReal, NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal,
+    NonNegativeLength, NonZeroLength, PositiveAngle, PositiveLength, PositiveReal,
 };
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 
@@ -96,10 +94,11 @@ pub(crate) fn cylinder_uvr(
 /// follows the origin; a 24-byte block separates it from the axis. The stored
 /// angle is the complement of the half-angle: `half_angle = π/2 − stored`.
 ///
-/// Returns the built [`SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone)`] together with the radius and
-/// derived half-angle so callers can apply their own guard. Both are finite:
-/// the radius is read finite, and the cone admits only a finite half-angle.
-pub(crate) fn cone_ozra(c: &mut Cursor) -> Option<(SurfaceGeometry, FiniteReal, f64)> {
+/// Returns the built [`SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone)`]
+/// with the positive radius and acute positive half-angle admitted by both families.
+pub(crate) fn cone_ozra(
+    c: &mut Cursor,
+) -> Option<(SurfaceGeometry, PositiveLength, PositiveAngle)> {
     let origin = c.point3()?;
     let ref_direction = c.unit3()?;
     c.skip(24)?;
@@ -107,14 +106,20 @@ pub(crate) fn cone_ozra(c: &mut Cursor) -> Option<(SurfaceGeometry, FiniteReal, 
     let stored_angle = c.f64()?;
     let radius = c.f64()?;
     let half_angle = std::f64::consts::FRAC_PI_2 - stored_angle.get();
+    let frame = OrthonormalFrame3::from_units(axis, ref_direction)?;
+    let radius = PositiveLength::new(radius.get())?;
+    let half_angle = PositiveAngle::new(half_angle)?;
+    if half_angle.get() >= std::f64::consts::FRAC_PI_2 {
+        return None;
+    }
     Some((
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
             cadmpeg_ir::geometry::analytic::ConeSurface::new(
                 origin,
-                OrthonormalFrame3::from_units(axis, ref_direction)?,
-                NonNegativeLength::new(radius.get())?,
+                frame,
+                NonNegativeLength::from(radius),
                 PositiveReal::ONE,
-                Angle::new(half_angle)?,
+                half_angle.into(),
             ),
         )),
         radius,
@@ -130,24 +135,23 @@ pub(crate) fn cone_ozra(c: &mut Cursor) -> Option<(SurfaceGeometry, FiniteReal, 
 /// from the axis, and the two radii follow the axis.
 ///
 /// Returns the built [`SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus)`] together with the
-/// carrier's admitted radii, a positive major radius and a nonzero minor
-/// radius, so callers can apply their own guard.
+/// carrier's admitted positive radii.
 pub(crate) fn torus_ozrr(
     c: &mut Cursor,
-) -> Option<(SurfaceGeometry, PositiveLength, NonZeroLength)> {
+) -> Option<(SurfaceGeometry, PositiveLength, PositiveLength)> {
     let center = c.point3()?;
     let ref_direction = c.unit3()?;
     c.skip(24)?;
     let axis = c.unit3()?;
     let major_radius = PositiveLength::new(c.f64()?.get())?;
-    let minor_radius = NonZeroLength::new(c.f64()?.get())?;
+    let minor_radius = PositiveLength::new(c.f64()?.get())?;
     Some((
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
             cadmpeg_ir::geometry::analytic::TorusSurface::new(
                 center,
                 OrthonormalFrame3::from_units(axis, ref_direction)?,
                 major_radius,
-                minor_radius,
+                NonZeroLength::from(minor_radius),
             ),
         )),
         major_radius,

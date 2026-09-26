@@ -19,8 +19,10 @@ use version::JtVersionField;
 use cadmpeg_container::compression::{inflate_zlib_exact, inflate_zlib_probe};
 use cadmpeg_core::bytes::{assemble_f32_le, assemble_u32_le, assemble_u64_le};
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
+use cadmpeg_ir::units::UnitVector3;
 use cadmpeg_ir::{topology::Color, SourceObjectAssociation};
 
 use std::num::NonZeroU64;
@@ -4319,7 +4321,7 @@ fn display_jt_node_paths(
     )
 }
 
-fn transform_jt_point(matrix: [[f64; 4]; 4], point: [f32; 3]) -> Option<Point3> {
+fn transform_jt_point(matrix: [[f64; 4]; 4], point: [f32; 3]) -> Option<FinitePoint3> {
     let point = point.map(f64::from);
     let coordinate = |column| {
         (matrix[3][column]
@@ -4329,10 +4331,10 @@ fn transform_jt_point(matrix: [[f64; 4]; 4], point: [f32; 3]) -> Option<Point3> 
             * 1000.0
     };
     let point = Point3::new(coordinate(0), coordinate(1), coordinate(2));
-    point.is_finite().then_some(point)
+    FinitePoint3::new(point)
 }
 
-fn transform_jt_normal(matrix: [[f64; 4]; 4], normal: [f32; 3]) -> Option<Vector3> {
+fn transform_jt_normal(matrix: [[f64; 4]; 4], normal: [f32; 3]) -> Option<UnitVector3> {
     let a = matrix;
     let determinant = a[0][0] * (a[1][1] * a[2][2] - a[1][2] * a[2][1])
         - a[0][1] * (a[1][0] * a[2][2] - a[1][2] * a[2][0])
@@ -4363,14 +4365,7 @@ fn transform_jt_normal(matrix: [[f64; 4]; 4], normal: [f32; 3]) -> Option<Vector
         (0..3).map(|index| normal[index] * inverse[1][index]).sum(),
         (0..3).map(|index| normal[index] * inverse[2][index]).sum(),
     );
-    let length = transformed.norm();
-    (length.is_finite() && length > 0.0).then(|| {
-        Vector3::new(
-            transformed.x / length,
-            transformed.y / length,
-            transformed.z / length,
-        )
-    })
+    UnitVector3::normalized_by_norm(transformed)
 }
 
 /// Every Display-JT tessellation the shape graph states.
@@ -4585,7 +4580,9 @@ fn display_jt_tessellation_rows(
                             (normal_array, normal_vectors.as_mut())
                         {
                             let normal = normal_array.normals.get(attribute)?;
-                            normal_vectors.push(transform_jt_normal(transform, *normal)?);
+                            normal_vectors.push(FiniteVector3::from(transform_jt_normal(
+                                transform, *normal,
+                            )?));
                         }
                         if let Some(color_array) = color_array {
                             for component in color_array.colors.get(attribute)? {
@@ -4665,7 +4662,7 @@ fn display_jt_tessellation_rows(
             };
             tessellations.try_reserve(1).ok()?;
             tessellations.push((
-                Tessellation::new(
+                Tessellation::from_parts(
                     if path.node_path.len() == 1 {
                         format!(
                             "nx:display-jt:tessellation#{}-{}",
@@ -4677,7 +4674,7 @@ fn display_jt_tessellation_rows(
                             shape_element.source_offset, shape_element.object_id
                         )
                     },
-                    match cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
+                    match cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
                         vertices,
                         triangles,
                         normal_vectors,
@@ -4717,6 +4714,30 @@ fn display_jt_tessellation_rows(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn transformed_jt_geometry_holds_checked_points_and_normals() {
+        let identity = [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let point = super::transform_jt_point(identity, [1.0, -2.0, 3.0]).unwrap();
+        assert_eq!(
+            point.get(),
+            cadmpeg_ir::math::Point3::new(1000.0, -2000.0, 3000.0)
+        );
+        let normal = super::transform_jt_normal(identity, [3.0, 4.0, 0.0]).unwrap();
+        assert_eq!(
+            *normal.as_raw(),
+            cadmpeg_ir::math::Vector3::new(0.6, 0.8, 0.0)
+        );
+        assert!(super::transform_jt_normal(identity, [0.0, 0.0, 0.0]).is_none());
+        let mut overflow = identity;
+        overflow[3][0] = f64::MAX;
+        assert!(super::transform_jt_point(overflow, [1.0, 0.0, 0.0]).is_none());
+    }
+
     #[test]
     fn numerical_followup_jt_transform_accepts_extreme_finite_scales() {
         for scale in [1.0_f32, 1e20, 1e-30] {

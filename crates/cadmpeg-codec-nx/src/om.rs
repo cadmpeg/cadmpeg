@@ -44,6 +44,7 @@ use std::sync::Arc;
 
 use crate::printable_string::PrintableString;
 use cadmpeg_core::decode::{alloc_filled, View};
+use cadmpeg_ir::scalar::FiniteReal;
 
 pub(crate) mod compact;
 use compact::{CompactIndexAtom, LocatedCompactIndex, NullableCompactIndex};
@@ -102,8 +103,8 @@ use pattern::{PatternRow, PatternRows, PatternTerminal, PatternValue, PatternWid
 pub(crate) mod scalar;
 pub(crate) mod swp104_state;
 use scalar::{
-    shifted_ieee_f64, LocatedBinary64, PayloadScalarAtom, RepeatedScalar, ShiftedBinary32,
-    ShiftedBinary64, ShiftedScalar,
+    LocatedBinary64, PayloadScalarAtom, RepeatedScalar, ShiftedBinary32, ShiftedBinary64,
+    ShiftedScalar,
 };
 pub(crate) mod thru_curve_branches;
 pub(crate) mod thru_curve_controls;
@@ -528,7 +529,7 @@ pub(crate) struct NumericExpression<'a> {
 
 impl NumericExpression<'_> {
     /// Finite value when the expression is context-free arithmetic.
-    pub(crate) fn constant_value(&self) -> Option<f64> {
+    pub(crate) fn constant_value(&self) -> Option<FiniteReal> {
         evaluate_constant_expression(self.expression)
     }
 }
@@ -1267,7 +1268,7 @@ fn validated_operation_headers(bytes: &[u8], base_offset: usize) -> Vec<Operatio
         let Some(raw_scalar) = bytes.get(scalar_at..scalar_at + SCALAR_LEN) else {
             continue;
         };
-        if shifted_ieee_f64(raw_scalar).is_none()
+        if ShiftedBinary64::read(raw_scalar).is_none()
             || bytes.get(scalar_at + SCALAR_LEN..scalar_at + SCALAR_LEN + 2) != Some(&[0xff, 0xff])
         {
             continue;
@@ -3905,7 +3906,7 @@ fn numeric_expression_comment_is_valid(comment: &str) -> bool {
 
 /// Evaluate the context-free arithmetic subset of NX numeric formulas.
 /// Names and function calls fail; they need the parameter graph.
-pub(crate) fn evaluate_constant_expression(text: &str) -> Option<f64> {
+pub(crate) fn evaluate_constant_expression(text: &str) -> Option<FiniteReal> {
     // This is the expression grammar's explicit operator stack. Do not turn
     // nested parentheses or unary signs back into recursive descent: formula
     // text is untrusted input, and a valid bounded record must not consume the
@@ -3937,7 +3938,7 @@ pub(crate) fn evaluate_constant_expression(text: &str) -> Option<f64> {
     struct Parser<'a> {
         bytes: &'a [u8],
         at: usize,
-        values: Vec<f64>,
+        values: Vec<FiniteReal>,
         operators: Vec<Operator>,
         expect_operand: bool,
     }
@@ -3949,7 +3950,7 @@ pub(crate) fn evaluate_constant_expression(text: &str) -> Option<f64> {
             }
         }
 
-        fn number(&mut self) -> Option<f64> {
+        fn number(&mut self) -> Option<FiniteReal> {
             self.spaces();
             let start = self.at;
             while self
@@ -3983,7 +3984,7 @@ pub(crate) fn evaluate_constant_expression(text: &str) -> Option<f64> {
                 .ok()?
                 .parse()
                 .ok()?;
-            value.is_finite().then_some(value)
+            FiniteReal::new(value)
         }
 
         fn apply_top(&mut self) -> Option<()> {
@@ -3994,24 +3995,27 @@ pub(crate) fn evaluate_constant_expression(text: &str) -> Option<f64> {
                     let value = self.values.pop()?;
                     match operator {
                         b'+' => value,
-                        b'-' => -value,
+                        b'-' => value.negated(),
                         _ => return None,
                     }
                 }
                 Operator::Binary(operator) => {
                     let right = self.values.pop()?;
                     let left = self.values.pop()?;
-                    match operator {
+                    let (left, right) = (left.get(), right.get());
+                    let raw = match operator {
                         b'+' => left + right,
                         b'-' => left - right,
                         b'*' => left * right,
                         b'/' => left / right,
                         b'^' => left.powf(right),
                         _ => return None,
-                    }
+                    };
+                    FiniteReal::new(raw)?
                 }
             };
-            value.is_finite().then(|| self.values.push(value))
+            self.values.push(value);
+            Some(())
         }
 
         fn push_binary(&mut self, operator: u8) -> Option<()> {
@@ -4040,7 +4044,7 @@ pub(crate) fn evaluate_constant_expression(text: &str) -> Option<f64> {
             matches!(self.operators.pop(), Some(Operator::OpenParen)).then_some(())
         }
 
-        fn parse(mut self) -> Option<f64> {
+        fn parse(mut self) -> Option<FiniteReal> {
             while self.at < self.bytes.len() {
                 self.spaces();
                 if self.at == self.bytes.len() {

@@ -2907,7 +2907,7 @@ mod type_150_state_packet_tests {
         assert_eq!(packet.state.references(), [1, 3, 6_192, 6_193, 6_194]);
         assert_eq!(u8::from(packet.state.marker), 0x2b);
         assert_eq!(
-            *packet.state.values(),
+            packet.state.values(),
             [-0.025, -0.05, 0.25, 0.0, 1.0, 0.0, 0.0, -0.0, 1.0]
         );
         assert_eq!((packet.offset, packet.end), (0, bytes.len()));

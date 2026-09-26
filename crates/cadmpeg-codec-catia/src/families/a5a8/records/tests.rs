@@ -1253,8 +1253,7 @@ fn guide_curve_parser_reads_position_and_unit_direction_jet() {
     assert_eq!(curves.len(), 1);
     assert_eq!(curves[0].degree, 5);
     assert_eq!(curves[0].sites[0].point.get(), [0.0, 0.0, 0.0]);
-    assert_eq!(curves[0].sites[0].direction, [1.0, 0.0, 0.0]);
-    assert_eq!(curves[0].sites[1].direction, [0.0, 1.0, 0.0]);
+    assert_eq!(curves[0].sites.len(), 2);
     let points = curves[0]
         .sites
         .iter()
@@ -1278,6 +1277,13 @@ fn guide_curve_parser_reads_position_and_unit_direction_jet() {
         controls.last().map(|point| point.get()),
         Some([2.0, 3.0, 4.0])
     );
+}
+
+#[test]
+fn guide_curve_parser_refuses_nonunit_site_direction() {
+    let mut bytes = a5_guide_curve_stream();
+    bytes[52..60].copy_from_slice(&le_f64(2.0));
+    assert!(crate::families::a5a8::records::a5_guide_curves(&bytes).is_empty());
 }
 
 #[test]

@@ -169,7 +169,7 @@ impl From<FeatureSimpleHoleRepeatedScalarLane> for FeatureSimpleHoleRepeatedScal
             values: lane
                 .values
                 .iter()
-                .map(|token| token.scalar.value())
+                .map(|token| token.scalar.value().get())
                 .collect(),
             raw_values: lane.values.iter().map(|token| token.scalar.raw()).collect(),
             first_witness_offsets: lane

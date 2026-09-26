@@ -280,7 +280,7 @@ fn decode_replaces_partition_offset_surface_from_status_framed_deltas() {
     assert_eq!(
         crate::topology::offset_surfaces(&merged)
             .iter()
-            .map(|surface| surface.state.distance())
+            .map(|surface| surface.state.distance().get())
             .collect::<Vec<_>>(),
         [4.5]
     );
@@ -372,7 +372,8 @@ fn decode_replaces_partition_surface_curve_from_status_framed_deltas() {
     assert_eq!(
         crate::topology::surface_curves(&merged)[0]
             .state
-            .tolerance(),
+            .tolerance()
+            .get(),
         0.000_02
     );
     let result = NxCodec
