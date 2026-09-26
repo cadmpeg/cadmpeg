@@ -201,8 +201,11 @@ fn standard_f32_frames_canonicalize_to_orthonormal_ir() {
 
 #[test]
 fn standard_topology_recovers_a_quad_boundary_and_port_vertices() {
-    let topology = crate::families::standard::fbb::parse_standard(&standard_quad_topology_stream())
-        .expect("valid standard topology");
+    let topology = crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::fbb::parse_standard(ctx, &standard_quad_topology_stream())
+    })
+    .expect("service resource budget")
+    .expect("valid standard topology");
 
     assert_eq!(topology.face_count(), 1);
     assert_eq!(topology.edge_rows().len(), 4);
@@ -224,26 +227,38 @@ fn standard_topology_recovers_a_quad_boundary_and_port_vertices() {
 #[test]
 fn compact_standard_topology_recovers_a_triangle_boundary_and_vertices() {
     let bytes = compact_standard_triangle_topology_stream();
-    let topology = crate::families::standard::fbb::parse_standard(&bytes)
-        .expect("valid compact standard topology");
+    let topology = crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::fbb::parse_standard(ctx, &bytes)
+    })
+    .expect("service resource budget")
+    .expect("valid compact standard topology");
 
     assert_eq!(topology.face_count(), 1);
     assert_eq!(topology.edge_rows().len(), 3);
     assert_eq!(topology.vertex_points().len(), 3);
     assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 3);
     assert_eq!(
-        crate::families::standard::fbb::standard_edge_count(&bytes),
+        crate::test_support::with_service_context(|ctx| {
+            crate::families::standard::fbb::standard_edge_count(ctx, &bytes)
+        })
+        .expect("service resource budget"),
         Some(3)
     );
     assert_eq!(
-        crate::families::standard::fbb::standard_vertex_points(&bytes)
-            .expect("compact standard vertex table")
-            .len(),
+        crate::test_support::with_service_context(|ctx| {
+            crate::families::standard::fbb::standard_vertex_points(ctx, &bytes)
+        })
+        .expect("service resource budget")
+        .expect("compact standard vertex table")
+        .len(),
         3
     );
     assert_eq!(
-        crate::solve::missing_edge::standard_mesh_edge_ports(&bytes)
-            .expect("compact standard mesh port quotient"),
+        crate::test_support::with_service_context(|ctx| {
+            crate::solve::missing_edge::standard_mesh_edge_ports(ctx, &bytes)
+        })
+        .expect("service resource budget")
+        .expect("compact standard mesh port quotient"),
         vec![[0, 1], [1, 2], [2, 0]]
     );
 }
@@ -257,9 +272,12 @@ fn standard_counted_vertex_table_excludes_incidental_markers() {
     bytes.extend_from_slice(&le_f32(30.0));
 
     assert_eq!(
-        crate::families::standard::fbb::standard_vertex_points(&bytes)
-            .expect("required invariant")
-            .len(),
+        crate::test_support::with_service_context(|ctx| {
+            crate::families::standard::fbb::standard_vertex_points(ctx, &bytes)
+        })
+        .expect("service resource budget")
+        .expect("required invariant")
+        .len(),
         4
     );
 }
@@ -280,9 +298,16 @@ fn standard_topology_accepts_delimiters_between_counted_edge_tables() {
         ],
     );
 
-    let topology = crate::families::standard::fbb::parse_standard(&bytes).expect("two edge tables");
+    let topology = crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::fbb::parse_standard(ctx, &bytes)
+    })
+    .expect("service resource budget")
+    .expect("two edge tables");
     assert_eq!(
-        crate::families::standard::fbb::standard_edge_count(&bytes),
+        crate::test_support::with_service_context(|ctx| {
+            crate::families::standard::fbb::standard_edge_count(ctx, &bytes)
+        })
+        .expect("service resource budget"),
         Some(4)
     );
     assert_eq!(
@@ -294,11 +319,14 @@ fn standard_topology_accepts_delimiters_between_counted_edge_tables() {
         vec![1, 1, 2, 2]
     );
     assert_eq!(
-        crate::solve::missing_edge::standard_edge_rows(&bytes)
-            .expect("edge rows")
-            .iter()
-            .map(|row| row.kind)
-            .collect::<Vec<_>>(),
+        crate::test_support::with_service_context(|ctx| {
+            crate::solve::missing_edge::standard_edge_rows(ctx, &bytes)
+        })
+        .expect("service resource budget")
+        .expect("edge rows")
+        .iter()
+        .map(|row| row.kind)
+        .collect::<Vec<_>>(),
         vec![1, 1, 2, 2]
     );
 }
@@ -357,8 +385,11 @@ fn fbb_topology_reads_u24_mesh_and_edge_handles() {
         }
     }
 
-    let topology =
-        crate::families::standard::topology::parse_fbb(&bytes).expect("valid FBB topology");
+    let topology = crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::topology::parse_fbb(ctx, &bytes)
+    })
+    .expect("service resource budget")
+    .expect("valid FBB topology");
     assert_eq!(topology.edge_rows()[0].handles, vec![0x01_0010, 0x01_0011]);
     assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 8);
     assert_eq!(topology.logical_vertex_count(), 8);
@@ -382,9 +413,15 @@ fn fbb_topology_reads_u24_mesh_and_edge_handles() {
         [102, 103],
         [103, 100],
     ];
-    let quotient =
-        crate::families::standard::topology::parse_fbb_with_native_vertices(&bytes, &native_ports)
-            .expect("native endpoint quotient");
+    let quotient = crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::topology::parse_fbb_with_native_vertices(
+            ctx,
+            &bytes,
+            &native_ports,
+        )
+    })
+    .expect("service resource budget")
+    .expect("native endpoint quotient");
     assert_eq!(quotient.logical_vertex_count(), 4);
     assert_eq!(
         quotient
@@ -413,7 +450,11 @@ fn fbb_topology_reads_u24_mesh_and_edge_handles() {
             .expect("coordinate binding"),
         vec![0, 1, 2, 3]
     );
-    let runs = crate::solve::missing_edge::standard_mesh_edge_runs(&bytes).expect("u24 edge runs");
+    let runs = crate::test_support::with_service_context(|ctx| {
+        crate::solve::missing_edge::standard_mesh_edge_runs(ctx, &bytes)
+    })
+    .expect("service resource budget")
+    .expect("u24 edge runs");
     assert_eq!(runs.len(), 8);
     assert!(runs.iter().all(|run| run.segment_count == 1));
 }
@@ -435,20 +476,28 @@ fn fbb_only_topology_uses_complete_boundary_runs_and_scoped_ports() {
             .len(),
         4
     );
-    let topology =
-        crate::families::standard::topology::parse_fbb(&bytes).expect("valid FBB-only topology");
+    let topology = crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::topology::parse_fbb(ctx, &bytes)
+    })
+    .expect("service resource budget")
+    .expect("valid FBB-only topology");
     assert_eq!(topology.face_count(), 1);
     assert_eq!(topology.edge_rows().len(), 4);
     assert!(topology.edge_rows().iter().all(|row| {
         row.boundary_layout
             == crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun
     }));
-    let ports = crate::solve::missing_edge::standard_mesh_edge_ports(&bytes)
-        .expect("FBB-only mesh port quotient");
+    let ports = crate::test_support::with_service_context(|ctx| {
+        crate::solve::missing_edge::standard_mesh_edge_ports(ctx, &bytes)
+    })
+    .expect("service resource budget")
+    .expect("FBB-only mesh port quotient");
     assert_eq!(ports, vec![[0, 1], [1, 2], [2, 3], [3, 0]]);
-    let topology =
-        crate::families::standard::topology::parse_fbb_with_native_vertices(&bytes, &ports)
-            .expect("FBB-only native endpoint quotient");
+    let topology = crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::topology::parse_fbb_with_native_vertices(ctx, &bytes, &ports)
+    })
+    .expect("service resource budget")
+    .expect("FBB-only native endpoint quotient");
     assert_eq!(topology.logical_vertex_count(), 4);
     assert_eq!(
         topology
@@ -465,8 +514,11 @@ fn fbb_only_topology_uses_complete_boundary_runs_and_scoped_ports() {
 #[test]
 fn fbb_topology_recovers_unique_flanking_rows_without_reclassifying_complete_rows() {
     let bytes = fbb_mixed_boundary_topology_stream();
-    let topology = crate::families::standard::topology::parse_fbb(&bytes)
-        .expect("mixed FBB boundary topology");
+    let topology = crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::topology::parse_fbb(ctx, &bytes)
+    })
+    .expect("service resource budget")
+    .expect("mixed FBB boundary topology");
     assert_eq!(topology.face_count(), 1);
     assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 5);
     assert_eq!(
@@ -507,8 +559,11 @@ fn fbb_topology_reads_u16_mesh_and_edge_handles() {
         }
     }
 
-    let topology =
-        crate::families::standard::topology::parse_fbb(&bytes).expect("valid u16 FBB topology");
+    let topology = crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::topology::parse_fbb(ctx, &bytes)
+    })
+    .expect("service resource budget")
+    .expect("valid u16 FBB topology");
     assert_eq!(topology.edge_rows()[0].handles, vec![0x1010, 0x1011]);
     assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 4);
     assert_eq!(topology.vertex_points().len(), 4);
@@ -541,16 +596,22 @@ fn fbb_topology_reads_u8_mesh_and_edge_handles() {
         }
     }
 
-    let topology =
-        crate::families::standard::topology::parse_fbb(&bytes).expect("valid u8 FBB topology");
+    let topology = crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::topology::parse_fbb(ctx, &bytes)
+    })
+    .expect("service resource budget")
+    .expect("valid u8 FBB topology");
     assert_eq!(topology.edge_rows()[0].handles, vec![0x10, 0x11]);
     assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 4);
     assert_eq!(topology.vertex_points().len(), 4);
     assert_eq!(
-        crate::families::standard::fbb::standard_face_frame_vectors(&bytes, 1)
-            .into_iter()
-            .map(|vector| vector.map(cadmpeg_ir::units::FiniteVector::get))
-            .collect::<Vec<_>>(),
+        crate::test_support::with_service_context(|ctx| {
+            crate::families::standard::fbb::standard_face_frame_vectors(ctx, &bytes, 1)
+        })
+        .expect("service resource budget")
+        .into_iter()
+        .map(|vector| vector.map(cadmpeg_ir::units::FiniteVector::get))
+        .collect::<Vec<_>>(),
         [Some([0.0, 0.0, 1.0])]
     );
 }
@@ -573,10 +634,13 @@ fn fbb_frame_vectors_concatenate_unique_population_chains() {
     bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xd3, 0xd3, 0xd3, 0xd3]);
 
     assert_eq!(
-        crate::families::standard::fbb::standard_face_frame_vectors(&bytes, 2)
-            .into_iter()
-            .map(|vector| vector.map(cadmpeg_ir::units::FiniteVector::get))
-            .collect::<Vec<_>>(),
+        crate::test_support::with_service_context(|ctx| {
+            crate::families::standard::fbb::standard_face_frame_vectors(ctx, &bytes, 2)
+        })
+        .expect("service resource budget")
+        .into_iter()
+        .map(|vector| vector.map(cadmpeg_ir::units::FiniteVector::get))
+        .collect::<Vec<_>>(),
         [Some([0.0, 0.0, 1.0]), Some([0.0, 0.0, 1.0]),]
     );
 }
@@ -603,7 +667,11 @@ fn fbb_topology_requires_one_u16_delimiter_family() {
     }
     bytes.extend_from_slice(&[0x01, 0x06, 0]);
 
-    assert!(crate::families::standard::topology::parse_fbb(&bytes).is_none());
+    assert!(crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::topology::parse_fbb(ctx, &bytes)
+    })
+    .expect("service resource budget")
+    .is_none());
 }
 
 #[test]
@@ -649,8 +717,11 @@ fn standard_topology_matches_edge_interiors_and_collapses_endpoint_ports() {
         }
     }
 
-    let topology =
-        crate::families::standard::fbb::parse_standard(&bytes).expect("interior-run topology");
+    let topology = crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::fbb::parse_standard(ctx, &bytes)
+    })
+    .expect("service resource budget")
+    .expect("interior-run topology");
     let coedges = &topology.faces()[0].boundaries[0].coedges;
     assert_eq!(
         coedges.iter().map(|use_| use_.edge_row).collect::<Vec<_>>(),
@@ -690,8 +761,11 @@ fn standard_legacy_two_strip_packet_recovers_two_face_boundaries() {
         }
     }
 
-    let topology =
-        crate::families::standard::fbb::parse_standard(&bytes).expect("legacy B=2 packet");
+    let topology = crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::fbb::parse_standard(ctx, &bytes)
+    })
+    .expect("service resource budget")
+    .expect("legacy B=2 packet");
     assert_eq!(topology.faces()[0].boundaries.len(), 2);
     assert!(topology.faces()[0]
         .boundaries
@@ -810,8 +884,11 @@ fn topology_binds_logical_vertices_from_exact_edge_endpoint_pairs() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("topology fixture fits the service profile");
-    let topology = crate::families::standard::fbb::parse_standard(&standard_quad_topology_stream())
-        .expect("quad topology");
+    let topology = crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::fbb::parse_standard(ctx, &standard_quad_topology_stream())
+    })
+    .expect("service resource budget")
+    .expect("quad topology");
     let assignment = topology
         .bind_vertex_points(&ctx, &[[0, 1], [1, 2], [2, 3], [3, 0]])
         .expect("coordinate binding fits the service profile")

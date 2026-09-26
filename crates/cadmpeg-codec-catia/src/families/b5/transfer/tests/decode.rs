@@ -68,7 +68,12 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
     .expect("generated B5 topology");
     let file = object_main_catpart(&stream);
     assert_eq!(
-        crate::container::scan_bytes(file.clone()).variant,
+        crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(
+            ctx,
+            file.clone()
+        ))
+        .expect("service resource budget")
+        .variant,
         Variant::FloatPackedInnerNoFbb
     );
 

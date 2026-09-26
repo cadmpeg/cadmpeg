@@ -542,13 +542,21 @@ fn standard_face_population_ignores_shorter_fbb_marker_runs() {
     bytes.extend_from_slice(&row);
     bytes.extend_from_slice(&row);
 
-    assert_eq!(standard_face_count(&bytes), Some(3));
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| standard_face_count(ctx, &bytes))
+            .expect("service resource budget"),
+        Some(3)
+    );
 }
 
 #[test]
 fn standard_face_population_accepts_flagged_fbb_rows() {
     let row = [0xb0, 0x04, 0x04, 0xff, 0x99, 0x1f, 0x1a, 0xd1];
-    assert_eq!(standard_face_count(&row.repeat(6)), Some(6));
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| standard_face_count(ctx, &row.repeat(6)))
+            .expect("service resource budget"),
+        Some(6)
+    );
 }
 
 #[test]
@@ -558,7 +566,11 @@ fn standard_face_population_rejects_equal_largest_fbb_runs() {
     bytes.push(0);
     bytes.extend_from_slice(&row.repeat(2));
 
-    assert_eq!(standard_face_count(&bytes), None);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| standard_face_count(ctx, &bytes))
+            .expect("service resource budget"),
+        None
+    );
 }
 
 #[test]
@@ -566,7 +578,8 @@ fn standard_face_population_withholds_multiple_complete_fbb_groups() {
     let mut bytes = crate::test_support::test_topology::standard_quad_topology_stream();
     bytes.extend(crate::test_support::test_topology::standard_quad_topology_stream());
 
-    let groups = standard_fbb_groups(&bytes);
+    let groups = crate::test_support::with_service_context(|ctx| standard_fbb_groups(ctx, &bytes))
+        .expect("service resource budget");
     assert_eq!(groups.len(), 2);
     assert!(groups.iter().all(|group| {
         let layout = fbb_population_layouts(&bytes)
@@ -574,12 +587,23 @@ fn standard_face_population_withholds_multiple_complete_fbb_groups() {
             .find(|layout| layout.face_run == *group)
             .expect("matching population layout");
         let spine = population_spine(&bytes, &layout).expect("complete population spine");
-        let topology =
-            crate::families::standard::fbb::parse_standard(spine).expect("complete group topology");
+        let topology = crate::test_support::with_service_context(|ctx| {
+            crate::families::standard::fbb::parse_standard(ctx, spine)
+        })
+        .expect("service resource budget")
+        .expect("complete group topology");
         group.face_count() == 1 && topology.face_count() == 1 && topology.edge_rows().len() == 4
     }));
-    assert_eq!(standard_face_count(&bytes), None);
-    assert!(crate::families::standard::fbb::parse_standard(&bytes).is_none());
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| standard_face_count(ctx, &bytes))
+            .expect("service resource budget"),
+        None
+    );
+    assert!(crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::fbb::parse_standard(ctx, &bytes)
+    })
+    .expect("service resource budget")
+    .is_none());
 }
 
 #[test]
@@ -620,18 +644,32 @@ fn standard_helpers_share_the_source_closed_face_population() {
     bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xaa, 0xbb, 0xcc, 0xdd]);
     bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0x11, 0x22, 0x33, 0x44]);
 
-    assert_eq!(standard_face_count(&bytes), Some(1));
-    assert_eq!(standard_edge_count(&bytes), Some(4));
     assert_eq!(
-        crate::solve::missing_edge::standard_edge_rows(&bytes)
-            .expect("selected edge table")
-            .len(),
+        crate::test_support::with_service_context(|ctx| standard_face_count(ctx, &bytes))
+            .expect("service resource budget"),
+        Some(1)
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| standard_edge_count(ctx, &bytes))
+            .expect("service resource budget"),
+        Some(4)
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            crate::solve::missing_edge::standard_edge_rows(ctx, &bytes)
+        })
+        .expect("service resource budget")
+        .expect("selected edge table")
+        .len(),
         4
     );
     assert_eq!(
-        crate::families::standard::fbb::parse_standard(&bytes)
-            .expect("selected topology")
-            .face_count(),
+        crate::test_support::with_service_context(|ctx| {
+            crate::families::standard::fbb::parse_standard(ctx, &bytes)
+        })
+        .expect("service resource budget")
+        .expect("selected topology")
+        .face_count(),
         1
     );
 }

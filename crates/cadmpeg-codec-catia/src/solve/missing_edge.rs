@@ -32,23 +32,33 @@ fn charge_collection_items(
 /// Each row retains its table-kind byte, native handle width semantics, and
 /// complete handle sequence even when full topology reconstruction is not yet
 /// possible.
-#[must_use]
-pub(crate) fn standard_edge_rows(bytes: &[u8]) -> Option<Vec<EdgeRow>> {
-    let face_run = selected_standard_run(bytes)?;
+pub(crate) fn standard_edge_rows(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<Vec<EdgeRow>>, CodecError> {
+    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
+        return Ok(None);
+    };
     let after_faces = face_run.after_faces();
-    parse_edge_tables(bytes, after_faces).map(|(rows, _)| rows)
+    Ok(parse_edge_tables(bytes, after_faces).map(|(rows, _)| rows))
 }
 
 fn standard_edge_port_identities_with_namespace(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     global: bool,
-) -> Option<Vec<[u32; 2]>> {
-    let face_run = selected_standard_run(bytes)?;
+) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
+    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
+        return Ok(None);
+    };
     let after_faces = face_run.after_faces();
-    let (edge_rows, scopes, _, _) = parse_standard_edge_tables_scoped(bytes, after_faces)?;
+    let Some((edge_rows, scopes, _, _)) = parse_standard_edge_tables_scoped(bytes, after_faces)
+    else {
+        return Ok(None);
+    };
     let mut identity_by_handle = HashMap::new();
     let mut next_identity = 0u32;
-    edge_rows
+    Ok(edge_rows
         .iter()
         .zip(scopes)
         .map(|(row, scope)| {
@@ -76,7 +86,7 @@ fn standard_edge_port_identities_with_namespace(
             }
             Some(pair)
         })
-        .collect()
+        .collect())
 }
 
 fn fbb_edge_port_identities_with_namespace(bytes: &[u8], global: bool) -> Option<Vec<[u32; 2]>> {
@@ -269,16 +279,22 @@ fn compressed_visualization_point_bindings(
     (scalar == scalar_count && bindings.len() == terminal_handles.len()).then_some(bindings)
 }
 
-fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
-    standard_edge_port_identities_with_namespace(bytes, false)
+fn standard_edge_port_identities(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
+    standard_edge_port_identities_with_namespace(ctx, bytes, false)
 }
 
 fn fbb_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     fbb_edge_port_identities_with_namespace(bytes, false)
 }
 
-fn standard_global_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
-    standard_edge_port_identities_with_namespace(bytes, true)
+fn standard_global_edge_port_identities(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
+    standard_edge_port_identities_with_namespace(ctx, bytes, true)
 }
 
 pub(crate) fn fbb_global_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
@@ -286,21 +302,32 @@ pub(crate) fn fbb_global_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 
 }
 
 /// Select conservative endpoint identities for the bounded topology solver.
-pub(crate) fn edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
-    standard_edge_port_identities(bytes).or_else(|| fbb_edge_port_identities(bytes))
+pub(crate) fn edge_port_identities(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
+    Ok(standard_edge_port_identities(ctx, bytes)?.or_else(|| fbb_edge_port_identities(bytes)))
 }
 
 /// Select endpoint identities from every row's terminal handles in the
 /// file-global trim-handle namespace.
-fn global_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
-    standard_global_edge_port_identities(bytes).or_else(|| fbb_global_edge_port_identities(bytes))
+fn global_edge_port_identities(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
+    Ok(standard_global_edge_port_identities(ctx, bytes)?
+        .or_else(|| fbb_global_edge_port_identities(bytes)))
 }
 
-pub(super) fn solver_ports(bytes: &[u8], global: bool) -> Option<Vec<[u32; 2]>> {
+pub(super) fn solver_ports(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    global: bool,
+) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
     if global {
-        global_edge_port_identities(bytes)
+        global_edge_port_identities(ctx, bytes)
     } else {
-        edge_port_identities(bytes)
+        edge_port_identities(ctx, bytes)
     }
 }
 
@@ -342,11 +369,17 @@ pub(crate) fn expand_deferred_edge_port_components(
 /// Collapse physical edge endpoints through every exact trim-mesh occurrence.
 /// The returned component identifiers are compact and stable within this
 /// result; they are not coordinate-row indices.
-#[must_use]
-pub(crate) fn standard_mesh_edge_ports(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
-    let analysis = standard_mesh_analysis(bytes)?;
-    let local_ports = global_edge_port_identities(bytes)?;
-    mesh_edge_ports(&analysis, &local_ports)
+pub(crate) fn standard_mesh_edge_ports(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
+    let Some(analysis) = standard_mesh_analysis(ctx, bytes)? else {
+        return Ok(None);
+    };
+    let Some(local_ports) = global_edge_port_identities(ctx, bytes)? else {
+        return Ok(None);
+    };
+    Ok(mesh_edge_ports(&analysis, &local_ports))
 }
 
 fn mesh_edge_ports(
@@ -510,30 +543,45 @@ struct StandardMeshAnalysis {
     fixed_complete_row_spans: bool,
 }
 
-fn standard_mesh_analysis(bytes: &[u8]) -> Option<StandardMeshAnalysis> {
-    let face_run = selected_standard_run(bytes)?;
+fn standard_mesh_analysis(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<StandardMeshAnalysis>, CodecError> {
+    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
+        return Ok(None);
+    };
     let face_start = face_run.face_start();
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let (edge_rows, handle_width, fixed_complete_row_spans) =
+    let Some((edge_rows, handle_width, fixed_complete_row_spans)) =
         parse_standard_edge_tables_with_width(bytes, after_faces)
             .map(|(rows, _, width)| (rows, width, false))
             .or_else(|| {
                 parse_fbb_edge_tables(bytes, after_faces)
                     .map(|(rows, _, _, width)| (rows, width, true))
-            })?;
-    let trims = parse_trim_chain(bytes, face_start, face_count, handle_width)?;
-    let cycles = trims
+            })
+    else {
+        return Ok(None);
+    };
+    let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
+        return Ok(None);
+    };
+    let Some(cycles) = trims
         .iter()
         .map(|trim| boundary_cycles(trim.packet.triangles()))
-        .collect::<Option<Vec<_>>>()?;
-    let occurrences = mesh_edge_occurrences(&edge_rows, &cycles)?;
-    Some(StandardMeshAnalysis {
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Ok(None);
+    };
+    let Some(occurrences) = mesh_edge_occurrences(&edge_rows, &cycles) else {
+        return Ok(None);
+    };
+    Ok(Some(StandardMeshAnalysis {
         edge_rows,
         cycles,
         occurrences,
         fixed_complete_row_spans,
-    })
+    }))
 }
 
 /// Recover every exact physical-edge occurrence on the trim mesh.
@@ -542,10 +590,11 @@ fn standard_mesh_analysis(bytes: &[u8]) -> Option<StandardMeshAnalysis> {
 /// flanking boundary segments. FBB `u24be` rows match their complete handle
 /// sequence and cover one fewer segment than handles. A result exists only
 /// when exactly one trim-handle width parses the complete face chain.
-#[must_use]
-pub(crate) fn standard_mesh_edge_runs(bytes: &[u8]) -> Option<Vec<MeshEdgeRun>> {
-    let analysis = standard_mesh_analysis(bytes)?;
-    Some(mesh_edge_runs(&analysis))
+pub(crate) fn standard_mesh_edge_runs(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<Vec<MeshEdgeRun>>, CodecError> {
+    Ok(standard_mesh_analysis(ctx, bytes)?.map(|analysis| mesh_edge_runs(&analysis)))
 }
 
 fn mesh_edge_runs(analysis: &StandardMeshAnalysis) -> Vec<MeshEdgeRun> {
@@ -562,13 +611,12 @@ fn mesh_edge_runs(analysis: &StandardMeshAnalysis) -> Vec<MeshEdgeRun> {
 /// Complete repeated standard edge-face slots from exact trim-boundary
 /// occurrences. Rows without two distinct matched face occurrences retain
 /// their serialized slots for incidence closure.
-#[must_use]
 pub(crate) fn resolve_standard_edge_faces(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     serialized: &[[usize; 2]],
 ) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
-    let Some(runs) = standard_mesh_edge_runs(bytes) else {
+    let Some(runs) = standard_mesh_edge_runs(ctx, bytes)? else {
         charge_collection_items(
             ctx,
             serialized.len(),
@@ -651,7 +699,7 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
     bytes: &[u8],
     serialized: &[[usize; 2]],
 ) -> Result<Option<Vec<Vec<usize>>>, CodecError> {
-    let Some(face_run) = selected_standard_run(bytes) else {
+    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
         return Ok(None);
     };
     let face_start = face_run.face_start();
@@ -1302,7 +1350,7 @@ pub(crate) fn resolve_standard_duplicate_edge_faces(
     serialized: &[[usize; 2]],
     allowed_faces: &[Vec<usize>],
 ) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
-    let Some(face_run) = selected_standard_run(bytes) else {
+    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
         return Ok(None);
     };
     let face_count = face_run.face_count();
@@ -1411,7 +1459,7 @@ impl StandardMeshBoundaryContext {
         edge_faces: &[[usize; 2]],
         global_handle_ports: bool,
     ) -> Result<Option<Self>, CodecError> {
-        let Some(analysis) = standard_mesh_analysis(bytes) else {
+        let Some(analysis) = standard_mesh_analysis(ctx, bytes)? else {
             return Ok(None);
         };
         let analysis = Arc::new(analysis);
@@ -1421,7 +1469,7 @@ impl StandardMeshBoundaryContext {
         let Some(coverage) = mesh_face_coverage(ctx, &analysis, edge_faces)? else {
             return Ok(None);
         };
-        let Some(local_ports) = solver_ports(bytes, global_handle_ports) else {
+        let Some(local_ports) = solver_ports(ctx, bytes, global_handle_ports)? else {
             return Ok(None);
         };
         let Some(edge_ports) = mesh_edge_ports(&analysis, &local_ports) else {
@@ -1537,14 +1585,13 @@ pub(crate) struct MeshFaceBoundaryAssignment {
 /// Recover exact face-local mesh coverage without assigning unmatched edge rows
 /// to gaps. A result exists only for a unique trim-handle width and when every
 /// matched interior occurs on one of its two serialized incident faces.
-#[must_use]
 #[cfg(test)]
 fn standard_mesh_face_coverage(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
 ) -> Result<Option<Vec<MeshFaceCoverage>>, CodecError> {
-    let Some(analysis) = standard_mesh_analysis(bytes) else {
+    let Some(analysis) = standard_mesh_analysis(ctx, bytes)? else {
         return Ok(None);
     };
     mesh_face_coverage(ctx, &analysis, edge_faces)
@@ -2578,7 +2625,6 @@ fn standard_mesh_missing_edge_assignments(
 /// pair. Standard interior rows remain open-span until their sample chain is
 /// matched to the boundary.
 #[cfg(test)]
-#[must_use]
 fn standard_mesh_missing_edge_placements(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -2765,7 +2811,6 @@ pub(super) fn standard_mesh_boundary_domains_from_context(
 /// Materialize one complete face-assignment selection and one direction for
 /// each ordered edge use into its abstract logical-corner quotient.
 #[cfg(test)]
-#[must_use]
 fn parse_standard_mesh_selection(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -2773,7 +2818,7 @@ fn parse_standard_mesh_selection(
     selected_assignments: &[usize],
     edge_directions: &[Vec<Vec<bool>>],
 ) -> Result<Option<StandardTopology>, CodecError> {
-    let Some(face_run) = selected_standard_run(bytes) else {
+    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
         return Ok(None);
     };
     let face_count = face_run.face_count();
@@ -2948,7 +2993,6 @@ fn boundary_endpoint_support(
 /// Prune endpoint-pair domains through every ordered trim-boundary candidate.
 /// A pair survives only when each incident face retains a complete assignment
 /// whose ordered cycles admit a closed head-to-tail traversal using that pair.
-#[must_use]
 pub(crate) fn standard_mesh_prune_endpoint_candidates(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -2958,7 +3002,7 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
     if edge_faces.len() != edge_candidates.len() {
         return Ok(None);
     }
-    let Some(face_run) = selected_standard_run(bytes) else {
+    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
         return Ok(None);
     };
     let after_faces = face_run.after_faces();
@@ -3090,7 +3134,11 @@ fn standard_mesh_assignment_corner_points(
     CodecError,
 > {
     (|| -> Option<Result<_, CodecError>> {
-        let analysis = standard_mesh_analysis(bytes)?;
+        let analysis = match standard_mesh_analysis(ctx, bytes) {
+            Ok(Some(analysis)) => analysis,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let edge_rows = &analysis.edge_rows;
         if edge_rows.len() != edge_points.len() || edge_rows.len() != edge_faces.len() {
             return None;
@@ -3182,7 +3230,6 @@ fn standard_mesh_assignment_corner_points(
 /// Retain endpoint constraints on each placement inside each complete face
 /// assignment. Assignment and placement order are unchanged from the serialized
 /// face and edge order.
-#[must_use]
 fn standard_mesh_missing_edge_endpoint_assignments(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -3246,7 +3293,6 @@ fn standard_mesh_missing_edge_endpoint_assignments(
 /// Enforce resolved edge endpoint pairs and complete opposite-face placement
 /// domains across correlated face assignments. A face assignment is removed as
 /// a unit when any of its placements has no compatible endpoint pair.
-#[must_use]
 fn standard_mesh_pruned_missing_edge_endpoint_assignments(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -3352,14 +3398,13 @@ fn standard_mesh_pruned_missing_edge_endpoint_assignments(
 /// corners are both bound by exact matched edge runs. Input pairs are physical
 /// edge-row ordered; pair orientation is ignored in the returned domains
 /// because a missing placement has not yet selected its traversal direction.
-#[must_use]
 pub(crate) fn standard_mesh_placement_endpoint_pairs(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
 ) -> Result<Option<Vec<Vec<[usize; 2]>>>, CodecError> {
-    let Some(edge_rows) = standard_edge_rows(bytes) else {
+    let Some(edge_rows) = standard_edge_rows(ctx, bytes)? else {
         return Ok(None);
     };
     if edge_rows.len() != edge_points.len() || edge_rows.len() != edge_faces.len() {
@@ -3423,7 +3468,6 @@ fn bind_port_point(port_points: &mut HashMap<u32, usize>, port: u32, point: usiz
 /// Propagate byte-level endpoint ports through independently resolved physical
 /// edge endpoint pairs. The result is rejected atomically when any port mapping
 /// contradicts a resolved pair.
-#[must_use]
 pub(super) fn propagate_edge_port_points(
     ctx: &DecodeContext<'_>,
     edge_ports: &[[u32; 2]],
@@ -3440,7 +3484,6 @@ pub(super) fn propagate_edge_port_points(
 /// agree with an existing candidate when that candidate is present. Such a
 /// seed is the only valid way to orient a port component whose resolved rows
 /// all carry the same unordered pair.
-#[must_use]
 pub(crate) fn propagate_edge_port_points_with_ordered_seeds(
     ctx: &DecodeContext<'_>,
     edge_ports: &[[u32; 2]],
@@ -3589,7 +3632,6 @@ pub(crate) fn propagate_edge_port_points_with_ordered_seeds(
 /// an unresolved row to the joint topology solver. Independently ordered
 /// seeds remain usable, but unordered candidate rows in that component do not
 /// orient or constrain one another prematurely.
-#[must_use]
 pub(crate) fn propagate_edge_port_points_with_ordered_seeds_and_deferred(
     ctx: &DecodeContext<'_>,
     edge_ports: &[[u32; 2]],
@@ -3631,7 +3673,6 @@ pub(crate) fn propagate_edge_port_points_with_ordered_seeds_and_deferred(
 /// Propagate ordered endpoint seeds through the subset of rows with native
 /// port identities. Rows without a port pair retain their independent seed or
 /// candidate, but cannot participate in port propagation.
-#[must_use]
 pub(crate) fn propagate_partial_edge_port_points_with_ordered_seeds(
     ctx: &DecodeContext<'_>,
     edge_ports: &[Option<[u32; 2]>],
@@ -3855,7 +3896,6 @@ impl PortCandidateSearch<'_> {
 
 /// Bind native edge endpoint identities to coordinate rows while respecting
 /// every edge's geometrically admissible unordered endpoint pairs.
-#[must_use]
 pub(crate) fn bind_edge_port_candidates(
     ctx: &DecodeContext<'_>,
     ports: &[[u32; 2]],
@@ -3869,7 +3909,6 @@ pub(crate) fn bind_edge_port_candidates(
 /// may terminate at one coordinate row. The result is canonicalized as
 /// unordered endpoint pairs and is returned only when port equality admits
 /// exactly one such assignment.
-#[must_use]
 pub(crate) fn unique_mesh_edge_port_candidate_pairs(
     ctx: &DecodeContext<'_>,
     ports: &[[u32; 2]],
@@ -3888,7 +3927,6 @@ pub(crate) fn unique_mesh_edge_port_candidate_pairs(
 /// Resolve only settled mesh-port rows when repeated-face rows still carry
 /// an open face domain. Deferred rows contribute neither candidate support nor
 /// connectivity to this search and remain unresolved in the result.
-#[must_use]
 pub(crate) fn unique_mesh_edge_port_candidate_pairs_with_deferred(
     ctx: &DecodeContext<'_>,
     ports: &[[u32; 2]],

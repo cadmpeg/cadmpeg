@@ -438,7 +438,10 @@ fn e5_vertices_concatenate_a_complete_split_roster() {
 
 #[test]
 fn decode_e5_stream_transfers_circle_carrier() {
-    let scan = crate::container::scan_bytes(e5_catpart());
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, e5_catpart())
+    })
+    .expect("service resource budget");
     assert_eq!(scan.variant, Variant::E5Stream);
     let mut cur = Cursor::new(e5_catpart());
     let result = CatiaCodec
@@ -606,7 +609,12 @@ fn decode_e5_stream_transfers_reference_closed_torus_topology() {
         .expect("generated E5 topology");
     let file = object_main_catpart(&stream);
     assert_eq!(
-        crate::container::scan_bytes(file.clone()).variant,
+        crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(
+            ctx,
+            file.clone()
+        ))
+        .expect("service resource budget")
+        .variant,
         Variant::E5Stream
     );
 
@@ -685,7 +693,10 @@ fn decode_e5_stream_binds_file_level_vertex_run() {
     assert!(!record_range.contains(&vertex_file_start));
     assert!(crate::families::e5::records::e5_vertices(&file[record_range], 4).is_empty());
     assert_eq!(crate::families::e5::records::e5_vertices(&file, 4).len(), 4);
-    let scan = crate::container::scan_bytes(file.clone());
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.clone())
+    })
+    .expect("service resource budget");
     assert_eq!(scan.variant, Variant::E5Stream);
 
     let result = CatiaCodec

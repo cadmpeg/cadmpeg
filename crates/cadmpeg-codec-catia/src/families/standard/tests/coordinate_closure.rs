@@ -177,8 +177,11 @@ fn standard_edge_tables_use_the_fixed_u16_width_when_rows_are_empty() {
         }
     }
 
-    let points = crate::families::standard::fbb::standard_vertex_points(&bytes)
-        .expect("standard vertex table");
+    let points = crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::fbb::standard_vertex_points(ctx, &bytes)
+    })
+    .expect("service resource budget")
+    .expect("standard vertex table");
     assert_eq!(points.len(), 3);
 }
 

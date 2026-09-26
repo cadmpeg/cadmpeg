@@ -218,7 +218,6 @@ impl StandardTopology {
     /// Bind logical port/corner components to coordinate-row indices from one
     /// exact unordered endpoint pair per physical edge. A result is returned
     /// only when the induced bijection is unique.
-    #[must_use]
     pub(super) fn bind_vertex_points(
         &self,
         ctx: &DecodeContext<'_>,
@@ -255,7 +254,6 @@ impl StandardTopology {
     }
 
     /// Logical endpoint components in physical edge-row direction.
-    #[must_use]
     pub(crate) fn edge_vertices(
         &self,
         ctx: &DecodeContext<'_>,
@@ -1046,43 +1044,62 @@ pub(crate) fn incidence_cycles(
 /// Parses the FBB-only spine. Its edge rows and trim handles use one selected
 /// big-endian width; the
 /// following counted `05 08 01` table supplies vertex coordinates.
-#[must_use]
-pub(crate) fn parse_fbb(bytes: &[u8]) -> Option<StandardTopology> {
-    let face_run = largest_fbb_run(bytes)?;
+pub(crate) fn parse_fbb(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<StandardTopology>, CodecError> {
+    let Some(face_run) = largest_fbb_run(bytes) else {
+        return Ok(None);
+    };
     let face_start = face_run.face_start();
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let (mut edge_rows, _, vertex_header, handle_width) =
-        parse_fbb_edge_tables(bytes, after_faces)?;
-    let vertex_points = parse_vertex_table(bytes, vertex_header)?;
-    let trims = parse_trim_chain(bytes, face_start, face_count, handle_width)?;
-    classify_fbb_edge_layouts(&mut edge_rows, &trims)?;
-    reconstruct(edge_rows, vertex_points, &trims)
+    let Some((mut edge_rows, _, vertex_header, handle_width)) =
+        parse_fbb_edge_tables(bytes, after_faces)
+    else {
+        return Ok(None);
+    };
+    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+        return Ok(None);
+    };
+    let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
+        return Ok(None);
+    };
+    if classify_fbb_edge_layouts(&mut edge_rows, &trims).is_none() {
+        return Ok(None);
+    };
+    reconstruct(ctx, edge_rows, vertex_points, &trims)
 }
 
 /// Parse an FBB-only spine and apply its global native endpoint identities.
 /// This closes the cross-face quotient independently of face-local trim-handle
 /// names.
-#[must_use]
 pub(super) fn parse_fbb_with_native_vertices(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_ports: &[[u32; 2]],
-) -> Option<StandardTopology> {
-    parse_fbb(bytes)?.with_native_edge_vertices(edge_ports)
+) -> Result<Option<StandardTopology>, CodecError> {
+    Ok(parse_fbb(ctx, bytes)?.and_then(|topology| topology.with_native_edge_vertices(edge_ports)))
 }
 
 pub(super) fn reconstruct(
+    ctx: &DecodeContext<'_>,
     edge_rows: Vec<EdgeRow>,
     vertex_points: Vec<[f64; 3]>,
     trims: &[TrimRecord],
-) -> Option<StandardTopology> {
+) -> Result<Option<StandardTopology>, CodecError> {
     let mut union = UnionFind::new(edge_rows.len() * 2);
     let mut faces = Vec::with_capacity(trims.len());
     for trim in trims {
-        let cycles = boundary_cycles(trim.packet.triangles())?;
+        let Some(cycles) = boundary_cycles(trim.packet.triangles()) else {
+            return Ok(None);
+        };
         let mut boundaries = Vec::with_capacity(cycles.len());
         for cycle in cycles {
-            boundaries.push(cover_cycle(&cycle, &edge_rows, &mut union)?);
+            let Some(boundary) = cover_cycle(ctx, &cycle, &edge_rows, &mut union)? else {
+                return Ok(None);
+            };
+            boundaries.push(boundary);
         }
         faces.push(FaceTopology { boundaries });
     }
@@ -1102,12 +1119,12 @@ pub(super) fn reconstruct(
         }
     }
 
-    Some(StandardTopology {
+    Ok(Some(StandardTopology {
         faces,
         edge_rows,
         vertex_points,
         logical_vertex_count: roots.len(),
-    })
+    }))
 }
 
 pub(crate) fn reconstruct_mesh_selection(

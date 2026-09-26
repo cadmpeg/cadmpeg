@@ -1477,7 +1477,10 @@ fn standard_empty_vertex_population_creates_no_owner_or_annotations() {
 #[test]
 fn standard_surface_entity_limit_refuses_before_first_surface_append() {
     let bytes = crate::test_support::test_container::standard_catpart();
-    let scan = crate::container::scan_bytes(bytes.clone());
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, bytes.clone())
+    })
+    .expect("service resource budget");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_entities = 1;
@@ -1502,7 +1505,10 @@ fn standard_surface_entity_limit_refuses_before_first_surface_append() {
 #[test]
 fn standard_topology_entity_limit_propagates_before_fallback() {
     let bytes = crate::test_support::test_container::tetrahedron_topology_catpart();
-    let scan = crate::container::scan_bytes(bytes.clone());
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, bytes.clone())
+    })
+    .expect("service resource budget");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     // One retained carrier, four surfaces, four points, four vertices,
