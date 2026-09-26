@@ -3,6 +3,7 @@ use crate::families::standard::topology::EdgeBoundaryLayout;
 use crate::families::standard::topology::EdgeRow;
 use crate::families::standard::topology::StandardTopology;
 use crate::solve::mesh_quotient::deduplicate_mesh_quotient_assignments;
+use crate::solve::mesh_quotient::edge_class_search_constraint;
 use crate::solve::mesh_quotient::initial_mesh_quotient;
 use crate::solve::mesh_quotient::mesh_assignment_can_merge;
 use crate::solve::mesh_quotient::possible_face_choices;
@@ -22,6 +23,31 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
+
+#[test]
+fn edge_class_constraint_refuses_normalized_row_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    catia_test_context!(service_ctx);
+    let choices = [vec![[0usize, 1usize]]];
+    assert!(edge_class_search_constraint(&service_ctx, &[0], &choices)
+        .expect("service decode")
+        .is_some());
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let error = match edge_class_search_constraint(&ctx, &[0], &choices) {
+        Err(error) => error,
+        Ok(_) => panic!("the normalized row exceeds the collection limit"),
+    };
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_edge_class_normalized_rows"));
+}
 
 #[test]
 fn quotient_assignments_ignore_span_allocation_with_identical_edge_order() {
