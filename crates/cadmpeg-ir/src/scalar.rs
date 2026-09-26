@@ -284,6 +284,13 @@ impl NonNegativeLength {
 impl PositiveReal {
     /// Unit scalar value.
     pub const ONE: Self = Self(1.0);
+
+    /// Assign a positive length to a dimensionless positive value.
+    /// The caller supplies the quantity meaning; both domains admit the same bits.
+    #[must_use]
+    pub const fn from_assigned_length(value: PositiveLength) -> Self {
+        Self(value.0)
+    }
 }
 
 impl NonNegativeReal {

@@ -1,6 +1,6 @@
 use super::dimension_nominal;
+use super::length;
 use super::semantic_root;
-use crate::swift::length;
 use crate::swift::parse_unique_root;
 use crate::swift::pmi_id;
 use crate::swift::project;
