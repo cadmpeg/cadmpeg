@@ -4372,14 +4372,12 @@ fn fillet_definition(
     }
     let radius = if kind == "Part::Fillet" {
         let values = part_fillet_edge_values(properties, entries)?;
-        let radius = values.first()?.1;
-        let radius = values
+        let radius = cadmpeg_ir::scalar::PositiveLength::new(values.first()?.1)?;
+        values
             .iter()
-            .all(|(_, first, second)| {
-                *first == radius && *second == radius && radius.is_finite() && radius > 0.0
-            })
-            .then_some(radius)?;
-        cadmpeg_ir::scalar::PositiveLength::new(radius)?
+            .all(|(_, first, second)| *first == radius.get() && *second == radius.get())
+            .then_some(())?;
+        radius
     } else {
         cadmpeg_ir::scalar::PositiveLength::from_assigned_real(scalar_named(properties, "Radius")?)?
     };
@@ -4406,24 +4404,18 @@ fn chamfer_definition(
     }
     let spec = if kind == "Part::Chamfer" {
         let values = part_fillet_edge_values(properties, entries)?;
-        let (_, first, second) = *values.first()?;
-        if !first.is_finite() || first <= 0.0 || !second.is_finite() || second <= 0.0 {
-            return None;
-        }
+        let (_, first_raw, second_raw) = *values.first()?;
+        let first = cadmpeg_ir::scalar::PositiveLength::new(first_raw)?;
+        let second = cadmpeg_ir::scalar::PositiveLength::new(second_raw)?;
         if !values.iter().all(|(_, candidate_first, candidate_second)| {
-            *candidate_first == first && *candidate_second == second
+            *candidate_first == first.get() && *candidate_second == second.get()
         }) {
             return None;
         }
         if first == second {
-            ChamferSpec::Distance {
-                distance: cadmpeg_ir::scalar::PositiveLength::new(first)?,
-            }
+            ChamferSpec::Distance { distance: first }
         } else {
-            ChamferSpec::TwoDistances {
-                first: cadmpeg_ir::scalar::PositiveLength::new(first)?,
-                second: cadmpeg_ir::scalar::PositiveLength::new(second)?,
-            }
+            ChamferSpec::TwoDistances { first, second }
         }
     } else {
         chamfer_spec(properties)?
@@ -6045,7 +6037,7 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
                 axis_origin,
                 axis_dir: cadmpeg_ir::features::FeatureDirection3::from(axis_dir),
                 angle: cadmpeg_ir::scalar::PositiveAngle::new(
-                    (step * f64::from(count - 1)).to_radians(),
+                    (step.get() * f64::from(count - 1)).to_radians(),
                 )?,
                 count,
             })
@@ -6056,7 +6048,7 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
                 axis_dir,
                 angles: angles
                     .into_iter()
-                    .map(|angle| cadmpeg_ir::scalar::Angle::new(angle.to_radians()))
+                    .map(|angle| cadmpeg_ir::scalar::Angle::new(angle.get().to_radians()))
                     .collect::<Option<Vec<_>>>()?,
             })
             .ok()?
@@ -6089,7 +6081,7 @@ fn linear_pattern_axis(
         Some(
             PatternKind::new(PatternTransform::Linear {
                 direction,
-                spacing: cadmpeg_ir::scalar::PositiveLength::new(spacing)?,
+                spacing: cadmpeg_ir::scalar::PositiveLength::from_assigned_real(spacing)?,
                 count,
                 second: None,
             })
@@ -6099,10 +6091,7 @@ fn linear_pattern_axis(
         Some(
             PatternKind::new(PatternTransform::LinearOffsets {
                 direction,
-                offsets: offsets
-                    .into_iter()
-                    .map(Length::new)
-                    .collect::<Option<Vec<_>>>()?,
+                offsets: offsets.into_iter().map(Length::from).collect(),
             })
             .ok()?,
         )
@@ -6117,22 +6106,23 @@ fn pattern_locations(
     extent_base: &str,
     offset_base: &str,
     entries: &[EntryRecord],
-) -> Option<Vec<f64>> {
+) -> Option<Vec<FiniteReal>> {
     if count == 0 {
         return None;
     }
     if count == 1 {
-        return Some(vec![0.0]);
+        return Some(vec![FiniteReal::ZERO]);
     }
     let name = |base: &str| format!("{base}{suffix}");
     let intervals = match mode {
         0 => {
-            let interval =
-                scalar_named(properties, &name(extent_base))?.get() / f64::from(count - 1);
+            let interval = FiniteReal::new(
+                scalar_named(properties, &name(extent_base))?.get() / f64::from(count - 1),
+            )?;
             alloc_filled(count as usize - 1, interval, "freecad pattern intervals").ok()?
         }
         1 => {
-            let fallback = scalar_named(properties, &name(offset_base))?.get();
+            let fallback = scalar_named(properties, &name(offset_base))?;
             let spacings = property(properties, &name("Spacings")).map_or_else(
                 || Some(Vec::new()),
                 |property| numeric_list(property, entries),
@@ -6146,11 +6136,14 @@ fn pattern_locations(
             }
             (0..count as usize - 1)
                 .map(|index| {
-                    let explicit = spacings.get(index).copied().map_or(-1.0, FiniteReal::get);
-                    if explicit != -1.0 {
+                    let explicit = spacings
+                        .get(index)
+                        .copied()
+                        .filter(|value| value.get() != -1.0);
+                    if let Some(explicit) = explicit {
                         explicit
                     } else if pattern.len() > 1 {
-                        pattern[index % pattern.len()].get()
+                        pattern[index % pattern.len()]
                     } else {
                         fallback
                     }
@@ -6160,26 +6153,23 @@ fn pattern_locations(
         _ => return None,
     };
     let mut locations = Vec::with_capacity(count as usize);
-    locations.push(0.0);
-    let mut location = 0.0;
+    locations.push(FiniteReal::ZERO);
+    let mut location = FiniteReal::ZERO;
     for interval in intervals {
-        if !interval.is_finite() || interval <= 0.0 {
-            return None;
-        }
-        location += interval;
-        if !location.is_finite() {
-            return None;
-        }
+        let interval = cadmpeg_ir::scalar::PositiveReal::from_finite(interval)?;
+        location = FiniteReal::new(location.get() + interval.get())?;
         locations.push(location);
     }
     Some(locations)
 }
 
-fn uniform_step(locations: &[f64]) -> Option<f64> {
+fn uniform_step(locations: &[FiniteReal]) -> Option<FiniteReal> {
     let step = *locations.get(1)?;
     locations
         .windows(2)
-        .all(|pair| (pair[1] - pair[0] - step).abs() <= f64::EPSILON * step.abs())
+        .all(|pair| {
+            (pair[1].get() - pair[0].get() - step.get()).abs() <= f64::EPSILON * step.get().abs()
+        })
         .then_some(step)
 }
 
