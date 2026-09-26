@@ -8,7 +8,7 @@ use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader
 use crate::objects::{parse_class_wrapper, UserdataDescriptor};
 use crate::settings::{plane, utf16, MillimeterScale, Plane};
 use crate::wire::{scaled_coordinate, uuid, Uuid};
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 
 const ANONYMOUS: u32 = 0x4000_8000;
 pub(crate) const V5_DIM_EXTRA: Uuid = Uuid::from_canonical([
@@ -145,7 +145,7 @@ pub(crate) struct Dimension {
     flip_arrows: [bool; 2],
     arrow_position: i32,
     detail_measured: Uuid,
-    distance_scale: f64,
+    distance_scale: PositiveReal,
     definition: Definition,
     measurement: f64,
     pub(crate) override_present: bool,
@@ -893,7 +893,7 @@ fn decode_legacy(
         flip_arrows: [false, false],
         arrow_position: 0,
         detail_measured: Uuid::nil(),
-        distance_scale: 1.0,
+        distance_scale: PositiveReal::ONE,
         definition,
         measurement,
         override_present: false,
@@ -1041,7 +1041,7 @@ fn decode_v2(
         flip_arrows: [false, false],
         arrow_position: 0,
         detail_measured: Uuid::nil(),
-        distance_scale: 1.0,
+        distance_scale: PositiveReal::ONE,
         definition,
         measurement,
         override_present: false,
@@ -1110,13 +1110,9 @@ pub(crate) fn decode(
     let flip_arrows = [common.bool()?, common.bool()?];
     let arrow_position = read_arrow_position(&mut common, ArrowFitWire::Modern)?;
     let detail_measured = uuid(&mut common)?;
-    let distance_scale = common.f64()?;
-    if !distance_scale.is_finite() || distance_scale <= 0.0 {
-        return Err(FramingError::structural(
-            common.position() - 8,
-            "dimension distance scale is invalid",
-        ));
-    }
+    let distance_scale = PositiveReal::new(common.f64()?).ok_or_else(|| {
+        FramingError::structural(common.position() - 8, "dimension distance scale is invalid")
+    })?;
     if common_version >= 1 {
         common.i32()?;
     }
@@ -1242,7 +1238,7 @@ pub(crate) fn decode(
     let measurement = match &definition {
         Definition::Linear {
             definition_point, ..
-        } => definition_point[0].abs() * distance_scale,
+        } => definition_point[0].abs() * distance_scale.get(),
         Definition::Angular {
             first_direction,
             second_direction,
@@ -1254,7 +1250,7 @@ pub(crate) fn decode(
             ..
         } => {
             radius_point[0].hypot(radius_point[1])
-                * distance_scale
+                * distance_scale.get()
                 * if *diameter { 2.0 } else { 1.0 }
         }
         Definition::Ordinate {
@@ -1266,7 +1262,7 @@ pub(crate) fn decode(
                 definition_point[0].abs()
             } else {
                 definition_point[1].abs()
-            }) * distance_scale
+            }) * distance_scale.get()
         }
         Definition::CenterMark { .. } => 0.0,
     };
@@ -1378,12 +1374,9 @@ pub(crate) fn apply_userdata(
         }
     }
     let distance_scale = if minor >= 1 { reader.f64()? } else { 1.0 };
-    if !distance_scale.is_finite() || distance_scale <= 0.0 {
-        return Err(FramingError::structural(
-            reader.position() - 8,
-            "invalid V5 dimension distance scale",
-        ));
-    }
+    let distance_scale = PositiveReal::new(distance_scale).ok_or_else(|| {
+        FramingError::structural(reader.position() - 8, "invalid V5 dimension distance scale")
+    })?;
     let detail_measured = if minor >= 2 {
         uuid(&mut reader)?
     } else {
@@ -1398,7 +1391,7 @@ pub(crate) fn apply_userdata(
     if matches!(dimension.family, DimensionFamily::Legacy { .. })
         && !matches!(dimension.definition, Definition::Angular { .. })
     {
-        dimension.measurement *= distance_scale;
+        dimension.measurement *= distance_scale.get();
     }
     Ok(())
 }
@@ -1459,7 +1452,7 @@ pub(crate) fn project(
         ),
         (
             "distance_scale".to_string(),
-            dimension.distance_scale.to_string(),
+            dimension.distance_scale.get().to_string(),
         ),
         ("rich_text".to_string(), dimension.rich_text.clone()),
         ("user_text".to_string(), dimension.user_text.clone()),
@@ -2160,6 +2153,37 @@ pub(crate) mod tests {
         anonymous(0, &outer)
     }
 
+    #[test]
+    fn modern_distance_scale_refuses_zero_and_nonfinite_source_values() {
+        let family = [3.0_f64, 4.0, 8.0, 9.0]
+            .into_iter()
+            .flat_map(f64::to_le_bytes)
+            .collect::<Vec<_>>();
+        for refused in [0.0_f64, f64::INFINITY] {
+            let mut bytes = payload(3, &family);
+            let scale = 2.0_f64.to_le_bytes();
+            let offset = bytes
+                .windows(scale.len())
+                .enumerate()
+                .filter_map(|(index, window)| (window == scale).then_some(index))
+                .last()
+                .expect("distance scale in source bytes");
+            bytes[offset..offset + 8].copy_from_slice(&refused.to_le_bytes());
+            let result = decode(
+                &bytes,
+                RADIAL,
+                0..bytes.len(),
+                MillimeterScale::IDENTITY,
+                ArchiveVersion::V8,
+            );
+            assert!(matches!(
+                result,
+                Err(crate::chunks::FramingError::Structural { offset: failed, message })
+                    if failed == offset && message == "dimension distance scale is invalid"
+            ));
+        }
+    }
+
     fn legacy_annotation_payload(kind: i32, points: &[[f64; 2]]) -> Vec<u8> {
         let mut annotation = kind.to_le_bytes().to_vec();
         annotation.extend(0_i32.to_le_bytes());
@@ -2543,7 +2567,7 @@ pub(crate) mod tests {
         )
         .expect("required invariant");
         assert_eq!(radial.measurement, 200.0);
-        assert_eq!(radial.distance_scale, 2.0);
+        assert_eq!(radial.distance_scale.get(), 2.0);
         assert_eq!(radial.arrow_position, -1);
         assert_eq!(
             radial.detail_measured.to_string(),
@@ -2573,7 +2597,7 @@ pub(crate) mod tests {
         )
         .expect("wrong dimension item UUID is not a matching extension");
         assert_eq!(wrong_item_radial.arrow_position, 0);
-        assert_eq!(wrong_item_radial.distance_scale, 1.0);
+        assert_eq!(wrong_item_radial.distance_scale.get(), 1.0);
         assert!(wrong_item_radial.detail_measured.is_nil());
 
         let mut angular_extension =
