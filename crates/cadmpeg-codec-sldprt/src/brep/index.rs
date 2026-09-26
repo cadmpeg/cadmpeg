@@ -3,6 +3,7 @@ use super::{
     blend, intersection, offset, parse_carrier, spline, subset, sweep, Carrier, CurveCarrier,
     SurfaceCarrier,
 };
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::{HashMap, HashSet};
 
@@ -123,7 +124,10 @@ impl CarrierIndex {
 /// same identity. Cross-stream precedence is applied by [`CarrierIndex::merge_missing`]:
 /// the partition carrier remains authoritative and a deltas carrier fills only
 /// an absent identity.
-pub(super) fn scan_carriers(body: &[u8]) -> CarrierIndex {
+pub(super) fn scan_carriers(
+    ctx: Option<&DecodeContext<'_>>,
+    body: &[u8],
+) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
     let mut out = CarrierIndex::default();
     let mut i = 0usize;
     while i + 2 <= body.len() {
@@ -135,10 +139,10 @@ pub(super) fn scan_carriers(body: &[u8]) -> CarrierIndex {
         i += 1;
     }
     let mut lane_refusals = Vec::new();
-    for carrier in spline::scan_curve_carriers(body, &mut lane_refusals).into_values() {
+    for carrier in spline::scan_curve_carriers(ctx, body, &mut lane_refusals)?.into_values() {
         out.insert(Carrier::Curve(carrier));
     }
-    for carrier in spline::scan_surface_carriers(body, &mut lane_refusals).into_values() {
+    for carrier in spline::scan_surface_carriers(ctx, body, &mut lane_refusals)?.into_values() {
         out.insert(Carrier::Surface(carrier));
     }
     for carrier in subset::scan(body, &out) {
@@ -153,7 +157,7 @@ pub(super) fn scan_carriers(body: &[u8]) -> CarrierIndex {
         out.insert_intersection(intersection);
     }
     out.lane_refusals = lane_refusals;
-    out
+    Ok(out)
 }
 
 #[cfg(test)]
