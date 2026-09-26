@@ -117,8 +117,8 @@ pub(super) fn transfer_and_record_scanned_geometry(
         transfer_losses,
         source_carriers,
     )?;
-    transfer_fc05_cap_circles(ctx, scan, ir, annotations)?;
-    transfer_cap_pair_cylinders(ctx, scan, ir, annotations)?;
+    transfer_fc05_cap_circles(ctx, scan, ir, annotations, source_carriers)?;
+    transfer_cap_pair_cylinders(ctx, scan, ir, annotations, source_carriers)?;
     let saved_spline_curve_count =
         transfer_saved_spline_curves(ctx, scan, ir, annotations, transfer_losses, source_carriers)?;
     let sketch_segment_coverage = transfer_sketches(ctx, scan, ir, annotations, transfer_losses)?;
@@ -237,7 +237,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
         transfer_resolved_circular_extrusion_breps(ctx, scan, ir, annotations, transfer_losses)?;
     let feature_extrusion_brep_count =
         transfer_resolved_extrusion_breps(ctx, scan, ir, annotations, &mut brep_diagnostics)?;
-    retain_unresolved_surface_carriers(ctx, scan, ir, annotations)?;
+    retain_unresolved_surface_carriers(ctx, scan, ir, annotations, source_carriers)?;
     let transferred_part_product = transfer_part_product(ctx, scan, ir, annotations)?;
     let decoded_feature_skamp_count = scan
         .features

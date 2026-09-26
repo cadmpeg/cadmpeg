@@ -313,6 +313,7 @@ pub(super) fn transfer_fc05_cap_circles(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for circle in &scan.curves.fc05_circles {
         let topology = scan
@@ -411,25 +412,30 @@ pub(super) fn transfer_fc05_cap_circles(
                 Exactness::Derived,
             );
             ctx.charge_entities(1, "admit Creo model curves")?;
-            ir.model.curves.push(Curve {
-                id,
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
-                source_object: Some(SourceObjectAssociation {
-                    format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                        "VisibGeom:{}",
-                        circle.curve_id
-                    ))
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                    })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                }),
-            });
+            source_carriers.admit_curve(
+                ir,
+                Curve {
+                    id,
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
+                    source_object: Some(SourceObjectAssociation {
+                        format: cadmpeg_ir::CodecFormat::Creo,
+                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                            "VisibGeom:{}",
+                            circle.curve_id
+                        ))
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "source object_id must not be empty",
+                            )
+                        })?,
+                        name: None,
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    }),
+                },
+            )?;
         }
         let surface_id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, cylinder_id);
         if ir
@@ -457,24 +463,29 @@ pub(super) fn transfer_fc05_cap_circles(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
-        ir.model.surfaces.push(Surface {
-            id: surface_id,
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                    "VisibGeom:{cylinder_id}"
-                ))
-                .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                })?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
+        source_carriers.admit_surface(
+            ir,
+            Surface {
+                id: surface_id,
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                    cylinder_surface,
+                )),
+                source_object: Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        "VisibGeom:{cylinder_id}"
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            },
+        )?;
     }
     Ok(())
 }

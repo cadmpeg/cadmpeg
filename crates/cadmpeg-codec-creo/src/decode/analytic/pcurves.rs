@@ -1359,7 +1359,7 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
+    source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<BTreeSet<CurveId>, cadmpeg_core::CodecError> {
     let reconciled_endpoints = pcurve_edge_endpoints(scan, ir, source_carriers);
     let ignored_surface_ids =
@@ -1489,22 +1489,27 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model curves")?;
-        ir.model.curves.push(Curve {
-            id: id.clone(),
-            geometry: geometry.clone(),
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_core::text::NonBlankString::new(format!("VisibGeom:{curve_id}"))
+        source_carriers.admit_curve(
+            ir,
+            Curve {
+                id: id.clone(),
+                geometry: geometry.clone(),
+                source_object: Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        "VisibGeom:{curve_id}"
+                    ))
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            },
+        )?;
         transferred.insert(id);
     }
     Ok(transferred)
@@ -2447,7 +2452,7 @@ mod tests {
                 &scan,
                 &mut ir,
                 &mut annotations,
-                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
             )
         })
         .expect("valid source object identity");
@@ -2806,7 +2811,7 @@ mod tests {
                 &scan,
                 &mut ir,
                 &mut annotations,
-                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
             )
         })
         .expect("valid source object identity");
@@ -2825,7 +2830,7 @@ mod tests {
                 &scan,
                 &mut finite,
                 &mut annotations,
-                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
             )
         })
         .expect("valid source object identity");
@@ -2987,7 +2992,7 @@ mod tests {
                 &scan,
                 &mut ir,
                 &mut annotations,
-                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
             )
         })
         .expect("valid source object identity");
