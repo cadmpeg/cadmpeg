@@ -40,7 +40,7 @@ pub(super) fn decode(
         let scale = geometry.units.length([id]);
         if let Some(vertices) = coordinate_rows(record, scale, ctx)? {
             ctx.charge_collection_items(1, "step_tessellation_coordinate_lists")?;
-            coordinate_map_bytes.grow(bytes_for::<(u64, Vec<Point3>)>(
+            coordinate_map_bytes.grow(bytes_for::<(u64, Vec<FinitePoint3>)>(
                 1,
                 ctx,
                 "step_tessellation_coordinate_lists",
@@ -393,7 +393,7 @@ pub(super) fn decode(
                         })
                 })
                 .collect::<Result<BTreeMap<_, _>, _>>()?;
-            let local_vertex_bytes = temporary_collection::<Point3>(
+            let local_vertex_bytes = temporary_collection::<FinitePoint3>(
                 ctx,
                 coordinate_indices.len(),
                 "step_tessellation_local_vertices",
@@ -436,7 +436,7 @@ pub(super) fn decode(
                 )?;
                 continue;
             }
-            let local_vertex_bytes = temporary_collection::<Point3>(
+            let local_vertex_bytes = temporary_collection::<FinitePoint3>(
                 ctx,
                 pnindex.len(),
                 "step_tessellation_pn_vertices",
@@ -489,7 +489,7 @@ pub(super) fn decode(
             0 => None,
             1 => {
                 _replicated_normal_bytes = Some(ctx.reserve_scoped(
-                    bytes_for::<Vector3>(
+                    bytes_for::<FiniteVector3>(
                         local_vertices.len(),
                         ctx,
                         "step_tessellation_normal_replication",
@@ -507,7 +507,7 @@ pub(super) fn decode(
                 CoordinateAddressing::TriangleIndices(coordinate_indices)
                     if count == vertices.len() =>
                 {
-                    _projected_normal_bytes = Some(temporary_collection::<Vector3>(
+                    _projected_normal_bytes = Some(temporary_collection::<FiniteVector3>(
                         ctx,
                         coordinate_indices.len(),
                         "step_tessellation_projected_normals",
@@ -539,7 +539,7 @@ pub(super) fn decode(
             if let Some(placement) =
                 distinct_placement(item_placements.get(&id).map_or(&[], Vec::as_slice))
             {
-                _placed_vertex_bytes = Some(temporary_collection::<Point3>(
+                _placed_vertex_bytes = Some(temporary_collection::<FinitePoint3>(
                     ctx,
                     local_vertices.len(),
                     "step_tessellation_placed_vertices",
@@ -548,8 +548,7 @@ pub(super) fn decode(
                     .into_iter()
                     .map(|vertex| {
                         placement
-                            .apply_point(vertex)
-                            .map(cadmpeg_ir::features::FinitePoint3::get)
+                            .apply_point(vertex.get())
                     })
                     .collect::<Option<Vec<_>>>()
                     .ok_or_else(|| {
@@ -558,7 +557,7 @@ pub(super) fn decode(
                         ))
                     })?;
                 if let Some(source_normals) = normals.take() {
-                    _placed_normal_bytes = Some(temporary_collection::<Vector3>(
+                    _placed_normal_bytes = Some(temporary_collection::<FiniteVector3>(
                         ctx,
                         source_normals.len(),
                         "step_tessellation_placed_normals",
@@ -567,8 +566,8 @@ pub(super) fn decode(
                         .into_iter()
                         .map(|normal| {
                             placement
-                                .apply_normal(normal)
-                                .map(cadmpeg_ir::math::Vector3::from)
+                                .apply_normal(normal.get())
+                                .map(FiniteVector3::from)
                         })
                         .collect::<Option<Vec<_>>>()
                     {
@@ -607,7 +606,7 @@ pub(super) fn decode(
                 "step_tessellation_shaded_rows",
             )?;
             Some(ctx.reserve_scoped(
-                bytes_for::<ShadedVertex<Point3, Vector3>>(
+                bytes_for::<ShadedVertex<FinitePoint3, FiniteVector3>>(
                     vertex_count,
                     ctx,
                     "step_tessellation_shaded_rows",
@@ -617,7 +616,7 @@ pub(super) fn decode(
         } else {
             None
         };
-        let rows = match cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
+        let rows = match cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
             local_vertices,
             local_triangles,
             normals,
@@ -689,7 +688,7 @@ pub(super) fn decode(
             &mut pending_meshes,
             "step_tessellation_mesh_entity",
         )?;
-        let mesh = match Tessellation::new(admitted_mesh_id(id, ctx)?, rows, Vec::new()) {
+        let mesh = match Tessellation::from_parts(admitted_mesh_id(id, ctx)?, rows, Vec::new()) {
             Ok(mesh) => mesh,
             Err(error) => {
                 push_loss(
@@ -1590,15 +1589,18 @@ fn coordinate_rows<'a>(
     record: &RawRecord,
     scale: f64,
     ctx: &'a DecodeContext<'_>,
-) -> Result<Option<(Vec<Point3>, ScopedReservation<'a>)>, CodecError> {
+) -> Result<Option<(Vec<FinitePoint3>, ScopedReservation<'a>)>, CodecError> {
     for rows in record
         .partials
         .iter()
         .flat_map(|partial| partial.parameters.iter())
         .filter_map(ValueExt::list)
     {
-        let bytes =
-            temporary_collection::<Point3>(ctx, rows.len(), "step_tessellation_coordinate_rows")?;
+        let bytes = temporary_collection::<FinitePoint3>(
+            ctx,
+            rows.len(),
+            "step_tessellation_coordinate_rows",
+        )?;
         let vertices = rows
             .iter()
             .map(|row| {
@@ -1611,7 +1613,7 @@ fn coordinate_rows<'a>(
                     values[1].number()? * scale,
                     values[2].number()? * scale,
                 );
-                point.is_finite().then_some(point)
+                FinitePoint3::new(point)
             })
             .collect::<Option<Vec<_>>>()
             .filter(|vertices| !vertices.is_empty());
@@ -1741,11 +1743,12 @@ fn index_rows<'a>(
 fn normal_rows<'a>(
     value: Option<&Value>,
     ctx: &'a DecodeContext<'_>,
-) -> Result<Option<(Vec<Vector3>, ScopedReservation<'a>)>, CodecError> {
+) -> Result<Option<(Vec<FiniteVector3>, ScopedReservation<'a>)>, CodecError> {
     let Some(rows) = value.and_then(ValueExt::list) else {
         return Ok(None);
     };
-    let bytes = temporary_collection::<Vector3>(ctx, rows.len(), "step_tessellation_normal_rows")?;
+    let bytes =
+        temporary_collection::<FiniteVector3>(ctx, rows.len(), "step_tessellation_normal_rows")?;
     Ok(rows
         .iter()
         .map(|row| {
@@ -1758,7 +1761,7 @@ fn normal_rows<'a>(
                 values[1].number()?,
                 values[2].number()?,
             );
-            super::geometry::normalize(normal)
+            super::geometry::normalize(normal).and_then(FiniteVector3::new)
         })
         .collect::<Option<Vec<_>>>()
         .map(|normals| (normals, bytes)))

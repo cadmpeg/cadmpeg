@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::index_from_u32;
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::scalar::{Angle, Length};
+use cadmpeg_ir::scalar::{Angle, PositiveLength};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
 
 use super::super::feature_history::dimensions::{
@@ -24,7 +24,7 @@ use super::equations_scalar::{
 };
 use super::geometry::{
     resolved_section_segment_geometry_with_missing_line, saved_section_arc_carrier,
-    saved_section_circle_values,
+    saved_section_circle_values, SectionArcCarrier,
 };
 use super::skamp::{
     section_line_entity_fixed_coordinate_with_unique_rows, section_segment_rows,
@@ -83,14 +83,11 @@ pub(in crate::decode) fn resolved_section_radii(
         section_equation_radial_constraints(definition, &radial_coordinates, &ambiguous_point_ids)
     {
         if constraint.radius.0 == VariableType::Radius {
-            if let Some(value) = constraint
-                .radius_value
-                .filter(|value| value.is_finite() && *value > 0.0)
-            {
+            if let Some(value) = constraint.radius_value.filter(|value| value.get() > 0.0) {
                 candidates
                     .entry(constraint.radius.1)
                     .or_default()
-                    .push(value);
+                    .push(value.get());
             }
         }
     }
@@ -110,7 +107,7 @@ pub(in crate::decode) fn resolved_section_radii(
         candidates
             .entry(constraint.radius)
             .or_default()
-            .push(constraint.value);
+            .push(constraint.value.get());
     }
     for relation in definition
         .relations
@@ -139,10 +136,13 @@ pub(in crate::decode) fn resolved_section_radii(
                 4 => value / 2.0,
                 _ => value,
             };
+            let Some(radius) = PositiveLength::new(radius) else {
+                continue;
+            };
             candidates
                 .entry(relation.dimension_id)
                 .or_default()
-                .push(radius);
+                .push(radius.get());
         }
     }
     for ((_, radius_id), value) in section_relation_radius_scalar_values(definition) {
@@ -178,7 +178,9 @@ pub(in crate::decode) fn resolved_section_radii(
                 4 => value / 2.0,
                 _ => continue,
             };
-            candidates.entry(radius_id).or_default().push(radius);
+            if let Some(radius) = PositiveLength::new(radius) {
+                candidates.entry(radius_id).or_default().push(radius.get());
+            }
         }
     }
     let points = resolved_section_points(definition);
@@ -277,7 +279,7 @@ pub(in crate::decode) fn resolved_section_radii(
             }
             (SectionRadiusSource::Reference(reference), SectionRadiusSource::Value(value))
             | (SectionRadiusSource::Value(value), SectionRadiusSource::Reference(reference)) => {
-                candidates.entry(reference).or_default().push(value);
+                candidates.entry(reference).or_default().push(value.get());
             }
             (SectionRadiusSource::Value(_), SectionRadiusSource::Value(_)) => {}
         }
@@ -430,7 +432,7 @@ fn unique_section_radius_arc(
 #[derive(Clone, Copy)]
 enum SectionRadiusSource {
     Reference(u32),
-    Value(f64),
+    Value(PositiveLength),
 }
 
 fn section_skamp_radius_source(
@@ -457,14 +459,14 @@ fn section_skamp_radius_source(
         crate::feature::definitions::FeatureSavedEntity::Circle(circle) => circle.radius,
         _ => None,
     }?;
-    (radius.is_finite() && radius > 0.0).then_some(SectionRadiusSource::Value(radius))
+    PositiveLength::new(radius).map(SectionRadiusSource::Value)
 }
 
 pub(super) fn section_arc_carrier(
     radii: &BTreeMap<u32, f64>,
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
-) -> Option<([f64; 2], f64)> {
+) -> Option<SectionArcCarrier> {
     matches!(
         segment.kind,
         crate::feature::definitions::FeatureSegmentKind::Arc(_)
@@ -472,7 +474,7 @@ pub(super) fn section_arc_carrier(
     .then_some(())?;
     let center = *points.get(&segment.center_id?)?;
     let radius = *radii.get(&segment.radius_ref?)?;
-    Some((center, radius))
+    SectionArcCarrier::new(center, radius)
 }
 
 pub(in crate::decode) fn section_axis_line_carrier_with_points(
@@ -612,11 +614,11 @@ pub(in crate::decode) fn section_segment_intersection_carrier_with_missing_line(
     if let Some(geometry) = section_proven_axis_line_carrier(definition, variable_points, segment) {
         return Some(geometry);
     }
-    let ([center_u, center_v], radius) = section_arc_carrier(radii, points, segment)
+    let carrier = section_arc_carrier(radii, points, segment)
         .or_else(|| saved_section_arc_carrier(definition, segment))?;
-    SketchGeometry::try_from(SketchGeometryDefinition::Arc {
-        center: cadmpeg_ir::math::Point2::new(center_u, center_v),
-        radius: Length::new(radius)?,
+    SketchGeometry::from_parts(SketchGeometryDefinition::Arc {
+        center: carrier.center,
+        radius: carrier.radius,
         start_angle: Angle::ZERO,
         end_angle: Angle::FULL_TURN,
     })
@@ -682,9 +684,153 @@ mod tests {
     }
 
     use super::{
-        resolved_section_radii, section_proven_axis_line_carrier, section_skamp_radius_source,
-        trim_segment_id, SectionRadiusSource,
+        resolved_section_radii, section_arc_carrier, section_proven_axis_line_carrier,
+        section_skamp_radius_source, trim_segment_id, SectionRadiusSource,
     };
+
+    fn arc_carrier_segment() -> crate::feature::definitions::FeatureSegment {
+        crate::feature::definitions::FeatureSegment {
+            kind: crate::feature::definitions::FeatureSegmentKind::Arc([1, 2]),
+            directions: [None; 3],
+            center_id: Some(3),
+            arc_orientation: Some(0),
+            vertical_horizontal: None,
+            radius_ref: Some(4),
+            radius2_ref: None,
+            external_id: 5,
+            body: Vec::new(),
+            offset: 9,
+        }
+    }
+
+    #[test]
+    fn diameter_underflow_does_not_resolve_circle_radius() {
+        use crate::feature::definitions::{
+            DimensionValue, FeatureCircleSegment, FeatureDimension, FeatureDimensionTable,
+            FeatureSegmentTable,
+        };
+        let mut definition = arc_radius_definition([0.0, 0.0]);
+        definition.segments = Some(FeatureSegmentTable {
+            declared_count: 1,
+            has_elided_prototype: false,
+            entity_ref: None,
+            rows: vec![crate::feature::segment_rows::SegmentRow::Circle(
+                FeatureCircleSegment {
+                    center_id: 1,
+                    radius_ref: 0,
+                    external_id: 10,
+                    offset: 0,
+                },
+            )]
+            .into_iter()
+            .collect(),
+            offset: 0,
+        });
+        definition.dimensions = Some(FeatureDimensionTable {
+            declared_count: 1,
+            entity_ref: None,
+            rows: vec![FeatureDimension {
+                dimension_type: 4,
+                value: DimensionValue::Resolved(f64::from_bits(1)),
+                value_body: Vec::new(),
+                direction_byte: 0,
+                auxiliary_value: None,
+                auxiliary_body: Vec::new(),
+                external_id: 10,
+                references: None,
+                offset: 0,
+            }],
+            offset: 0,
+        });
+        assert!(resolved_section_radii(&definition).is_empty());
+    }
+
+    #[test]
+    fn relation_diameter_underflow_does_not_resolve_arc_radius() {
+        use crate::feature::definitions::{
+            DimensionValue, FeatureDimension, FeatureDimensionTable, FeatureRelation,
+            FeatureRelationTable,
+        };
+        let mut definition = arc_radius_definition([0.0, 0.0]);
+        let segment_table = definition.segments.as_mut().expect("arc segment table");
+        segment_table.declared_count = 1;
+        let mut segment = segment_table
+            .rows
+            .ordinary()
+            .next()
+            .expect("arc segment")
+            .clone();
+        segment.radius_ref = Some(0);
+        segment_table.rows =
+            std::iter::once(crate::feature::segment_rows::SegmentRow::Ordinary(segment)).collect();
+        definition.dimensions = Some(FeatureDimensionTable {
+            declared_count: 1,
+            entity_ref: None,
+            rows: vec![FeatureDimension {
+                dimension_type: 4,
+                value: DimensionValue::Resolved(f64::from_bits(1)),
+                value_body: Vec::new(),
+                direction_byte: 0,
+                auxiliary_value: None,
+                auxiliary_body: Vec::new(),
+                external_id: 1,
+                references: None,
+                offset: 0,
+            }],
+            offset: 0,
+        });
+        definition.relations = Some(FeatureRelationTable {
+            declared_count: 3,
+            entity_ref: None,
+            rows: vec![FeatureRelation {
+                relation_id: 1,
+                used: 0,
+                operands: Vec::new(),
+                operand_vectors: Some([
+                    [Some(2), Some(0), Some(3), Some(0)],
+                    [Some(1), Some(10), Some(0), Some(1)],
+                    [Some(16), Some(15), Some(0), Some(0)],
+                ]),
+                sign: 1,
+                dimension_id: 0,
+                relation_type: 5,
+                body: Vec::new(),
+                offset: 0,
+            }],
+            skamps: None,
+            triples: None,
+            offset: 0,
+        });
+        assert!(resolved_section_radii(&definition).is_empty());
+    }
+
+    #[test]
+    fn resolved_arc_nonfinite_radius_is_not_a_carrier() {
+        let points = std::collections::BTreeMap::from([(3, [0.0, 0.0])]);
+        let radii = std::collections::BTreeMap::from([(4, f64::INFINITY)]);
+        assert!(section_arc_carrier(&radii, &points, &arc_carrier_segment()).is_none());
+    }
+
+    #[test]
+    fn resolved_arc_zero_radius_is_not_a_carrier() {
+        let points = std::collections::BTreeMap::from([(3, [0.0, 0.0])]);
+        let radii = std::collections::BTreeMap::from([(4, 0.0)]);
+        assert!(section_arc_carrier(&radii, &points, &arc_carrier_segment()).is_none());
+    }
+
+    #[test]
+    fn resolved_arc_negative_radius_is_not_a_carrier() {
+        let points = std::collections::BTreeMap::from([(3, [0.0, 0.0])]);
+        let radii = std::collections::BTreeMap::from([(4, -2.0)]);
+        assert!(section_arc_carrier(&radii, &points, &arc_carrier_segment()).is_none());
+    }
+
+    #[test]
+    fn resolved_arc_nonfinite_center_is_not_a_carrier() {
+        let points = std::collections::BTreeMap::from([(3, [f64::NAN, 0.0])]);
+        let radii = std::collections::BTreeMap::from([(4, 2.0)]);
+        assert!(section_arc_carrier(&radii, &points, &arc_carrier_segment()).is_none());
+    }
 
     #[test]
     fn unique_incomplete_axis_row_supplies_unbounded_carrier() {

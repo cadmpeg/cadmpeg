@@ -10,9 +10,10 @@ use crate::decode::sketch::equations_scalar::{
     merge_scalar_value_candidate, propagate_section_equation_scalar_equality_values,
     resolved_section_scalar_values, section_equation_coordinate_equality_rows,
     section_equation_function_forty_three_axis_distance_values,
-    section_equation_function_sixteen_angle_difference_values, section_equation_scalar_equalities,
+    section_equation_function_sixteen_angle_difference_values,
+    section_equation_radial_constraint_rows, section_equation_scalar_equalities,
     section_equation_scalar_equality_components, section_equation_scalar_seed_values,
-    section_equation_scalar_values_from_coordinates,
+    section_equation_scalar_values_from_coordinates, section_relation_radius_scalar_values,
 };
 use crate::feature::definitions::ScalarLane;
 use std::collections::{BTreeMap, BTreeSet};
@@ -99,6 +100,77 @@ fn axis_distance_values(
         &resolved_section_coordinates(definition),
         &ambiguous_point_ids,
     )
+}
+
+#[test]
+fn radial_constraint_overflowing_derived_distance_is_not_admitted() {
+    let definition = definition(
+        &equation_body(&[(1, 0, &[0, 1, 2, 3, 4, 5])]),
+        vec![
+            row(1, 1, None),
+            row(2, 1, None),
+            row(1, 2, None),
+            row(2, 2, None),
+            row(3, 9, None),
+            row(6, 10, None),
+        ],
+    );
+    let coordinates = BTreeMap::from([
+        (1, [Some(-f64::MAX), Some(0.0)]),
+        (2, [Some(f64::MAX), Some(0.0)]),
+    ]);
+    assert!(
+        section_equation_radial_constraint_rows(&definition, &coordinates, &BTreeSet::new(),)
+            .is_empty()
+    );
+}
+
+#[test]
+fn relation_diameter_underflow_does_not_seed_radius() {
+    use crate::feature::definitions::{
+        DimensionValue, FeatureDimension, FeatureDimensionTable, FeatureRelation,
+        FeatureRelationTable,
+    };
+    let mut definition = definition(&[], Vec::new());
+    definition.dimensions = Some(FeatureDimensionTable {
+        declared_count: 1,
+        entity_ref: None,
+        rows: vec![FeatureDimension {
+            dimension_type: 4,
+            value: DimensionValue::Resolved(f64::from_bits(1)),
+            value_body: Vec::new(),
+            direction_byte: 0,
+            auxiliary_value: None,
+            auxiliary_body: Vec::new(),
+            external_id: 1,
+            references: None,
+            offset: 0,
+        }],
+        offset: 0,
+    });
+    definition.relations = Some(FeatureRelationTable {
+        declared_count: 3,
+        entity_ref: None,
+        rows: vec![FeatureRelation {
+            relation_id: 1,
+            used: 0,
+            operands: Vec::new(),
+            operand_vectors: Some([
+                [Some(6), Some(0), Some(0), Some(0)],
+                [Some(0); 4],
+                [Some(15), Some(0), Some(0), Some(0)],
+            ]),
+            sign: 1,
+            dimension_id: 0,
+            relation_type: 14,
+            body: Vec::new(),
+            offset: 0,
+        }],
+        skamps: None,
+        triples: None,
+        offset: 0,
+    });
+    assert!(section_relation_radius_scalar_values(&definition).is_empty());
 }
 
 #[test]
@@ -538,7 +610,7 @@ fn radius_dimensions_accept_radius_values_proved_by_equality() {
     });
     let dimensions = section_equation_radius_dimensions(&radius_definition);
     assert_eq!(dimensions.len(), 1);
-    assert_eq!(dimensions[0].value, 5.0);
+    assert_eq!(dimensions[0].value.get(), 5.0);
 
     let mut dimension_driven = definition(
         &equation_body(&[(1, 2, &[0, 1])]),

@@ -304,14 +304,14 @@ impl<'a> Cursor<'a> {
         crate::reader::u32_array(&mut self.source, field)
     }
 
-    pub(crate) fn f64(&mut self, field: &str) -> Result<f64, CodecError> {
+    pub(crate) fn f64(
+        &mut self,
+        field: &str,
+    ) -> Result<cadmpeg_ir::scalar::FiniteReal, CodecError> {
         let value = self.source.req_f64_le()?;
-        if !value.is_finite() {
-            return Err(CodecError::malformed(format_args!(
-                "Inventor PmDc {field} is not finite"
-            )));
-        }
-        Ok(value)
+        cadmpeg_ir::scalar::FiniteReal::new(value).ok_or_else(|| {
+            CodecError::malformed(format_args!("Inventor PmDc {field} is not finite"))
+        })
     }
 
     pub(crate) fn utf16(

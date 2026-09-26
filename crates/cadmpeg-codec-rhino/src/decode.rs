@@ -5077,7 +5077,7 @@ fn c2_curve_to_nurbs_join(
             let mut children = children.into_iter().peekable();
             while let Some((start, child)) = children.next() {
                 let end = children.peek().map_or(end_parameter, |(start, _)| *start);
-                let target = [start.get(), end.get()];
+                let target = [start, end];
                 if target[0] >= target[1] {
                     return Err(crate::curves::error(
                         offset,

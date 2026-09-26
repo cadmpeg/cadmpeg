@@ -16,7 +16,8 @@ use cadmpeg_core::decode::{
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::scalar::FiniteBinary32;
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
 use sha1::{Digest, Sha1};
 
@@ -217,7 +218,7 @@ pub(crate) struct MeshDecodeOptions<'a> {
 
 #[derive(Default)]
 struct MeshChannels {
-    vertices: Vec<[f32; 3]>,
+    vertices: Vec<[FiniteBinary32; 3]>,
     /// The normal lane, absent when the archive carries no normal channel.
     normals: Option<Vec<FiniteVector3>>,
     channels: Vec<TessellationChannel>,
@@ -389,12 +390,14 @@ pub(crate) fn decode(
             if count == vertex_count {
                 if let Some(bytes) = bytes {
                     let values = parse_f64_points(&bytes)?;
-                    if values
+                    let finite = values
                         .iter()
-                        .all(|point| point.iter().all(|v| v.is_finite()))
-                        && synchronization_ok(&values, &decoded.vertices)
+                        .map(|point| FinitePoint3::new(Point3::new(point[0], point[1], point[2])))
+                        .collect::<Option<Vec<_>>>();
+                    if let Some(finite) =
+                        finite.filter(|_| synchronization_ok(&values, &decoded.vertices))
                     {
-                        double_vertices = Some(values);
+                        double_vertices = Some(finite);
                     } else {
                         decoded
                             .warnings
@@ -507,19 +510,24 @@ pub(crate) fn decode(
         face_sha1: native_face_sha1(&faces),
         vertex_sha1: native_vertex_sha1(&decoded.vertices),
     };
-    let source_vertices = double_vertices.unwrap_or_else(|| {
-        decoded
-            .vertices
-            .into_iter()
-            .map(|point| {
-                [
-                    f64::from(point[0]),
-                    f64::from(point[1]),
-                    f64::from(point[2]),
-                ]
-            })
-            .collect()
-    });
+    let source_vertices = double_vertices.map_or_else(
+        || {
+            decoded
+                .vertices
+                .into_iter()
+                .map(|point| point.map(|value| f64::from(value.get())))
+                .collect::<Vec<_>>()
+        },
+        |vertices| {
+            vertices
+                .into_iter()
+                .map(|point| {
+                    let point = point.get();
+                    [point.x, point.y, point.z]
+                })
+                .collect::<Vec<_>>()
+        },
+    );
     let vertices = source_vertices
         .into_iter()
         .map(|point| {
@@ -536,7 +544,7 @@ pub(crate) fn decode(
     Ok(DecodedMesh {
         tessellation: Tessellation::from_parts(
             id,
-            cadmpeg_ir::tessellation::TessellationMesh::from_admitted_list_lanes(
+            cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
                 vertices,
                 triangles,
                 decoded.normals,
@@ -613,11 +621,11 @@ fn native_face_sha1(faces: &[[u32; 4]]) -> [u8; 20] {
     digest.finalize().into()
 }
 
-fn native_vertex_sha1(vertices: &[[f32; 3]]) -> [u8; 20] {
+fn native_vertex_sha1(vertices: &[[FiniteBinary32; 3]]) -> [u8; 20] {
     let mut digest = Sha1::new();
     for vertex in vertices {
         for coordinate in vertex {
-            digest.update(coordinate.to_ne_bytes());
+            digest.update(coordinate.get().to_ne_bytes());
         }
     }
     digest.finalize().into()
@@ -743,7 +751,7 @@ fn face_index(raw: &[u8], offset: usize, width: FaceIndexWidth) -> Option<u32> {
 fn read_raw_channels(
     reader: &mut BoundedReader<'_>,
     vertices: usize,
-    points: &mut Vec<[f32; 3]>,
+    points: &mut Vec<[FiniteBinary32; 3]>,
     normals: &mut Option<Vec<FiniteVector3>>,
     channels: &mut Vec<TessellationChannel>,
     warnings: &mut Diagnostics,
@@ -1251,8 +1259,8 @@ fn read_v5_double_vertices(
     data: &[u8],
     extra: &ClassUserdata,
     archive: ArchiveVersion,
-    float_vertices: &[[f32; 3]],
-) -> Result<Option<Vec<[f64; 3]>>, GeometryError> {
+    float_vertices: &[[FiniteBinary32; 3]],
+) -> Result<Option<Vec<FinitePoint3>>, GeometryError> {
     let chunk = chunk_at(
         data,
         extra.payload_range.start,
@@ -1288,15 +1296,14 @@ fn read_v5_double_vertices(
         values.push([reader.f64()?, reader.f64()?, reader.f64()?]);
     }
     reader.skip_remaining()?;
-    if values.len() != float_vertices.len()
-        || values
-            .iter()
-            .any(|point| point.iter().any(|value| !value.is_finite()))
-        || !v5_synchronization_ok(&values, float_vertices)
-    {
+    if values.len() != float_vertices.len() {
         return Ok(None);
     }
-    Ok(Some(values))
+    let finite = values
+        .iter()
+        .map(|point| FinitePoint3::new(Point3::new(point[0], point[1], point[2])))
+        .collect::<Option<Vec<_>>>();
+    Ok(finite.filter(|_| v5_synchronization_ok(&values, float_vertices)))
 }
 
 /// Reads the V4/V5 legacy mesh n-gon userdata list.
@@ -1443,7 +1450,7 @@ fn consume_optional_chunk(
     Ok(())
 }
 
-fn parse_f32_points(bytes: &[u8]) -> Result<Vec<[f32; 3]>, GeometryError> {
+fn parse_f32_points(bytes: &[u8]) -> Result<Vec<[FiniteBinary32; 3]>, GeometryError> {
     if !bytes.len().is_multiple_of(12) {
         return Err(GeometryError::unpositioned(
             "invalid f32 point channel length",
@@ -1455,31 +1462,25 @@ fn parse_f32_points(bytes: &[u8]) -> Result<Vec<[f32; 3]>, GeometryError> {
             Some([view.f32_le()?, view.f32_le()?, view.f32_le()?])
         })
         .ok_or_else(|| GeometryError::unpositioned("invalid f32 point channel length"))?;
-    if points
-        .iter()
-        .any(|point| point.iter().any(|value| !value.is_finite()))
-    {
-        return Err(GeometryError::unpositioned(
-            "f32 point channel contains nonfinite values",
-        ));
-    }
-    Ok(points)
+    points
+        .into_iter()
+        .map(|point| {
+            let [x, y, z] = point.map(FiniteBinary32::new);
+            match (x, y, z) {
+                (Some(x), Some(y), Some(z)) => Ok([x, y, z]),
+                _ => Err(GeometryError::unpositioned(
+                    "f32 point channel contains nonfinite values",
+                )),
+            }
+        })
+        .collect()
 }
 
 fn parse_f32_vectors(bytes: &[u8]) -> Result<Vec<FiniteVector3>, GeometryError> {
-    parse_f32_points(bytes)?
+    Ok(parse_f32_points(bytes)?
         .into_iter()
-        .map(|point| {
-            FiniteVector3::new(Vector3::new(
-                f64::from(point[0]),
-                f64::from(point[1]),
-                f64::from(point[2]),
-            ))
-            .ok_or_else(|| {
-                GeometryError::unpositioned("f32 point channel contains nonfinite values")
-            })
-        })
-        .collect()
+        .map(|p| FiniteVector3::from_components(p[0].into(), p[1].into(), p[2].into()))
+        .collect())
 }
 
 fn parse_f64_points(bytes: &[u8]) -> Result<Vec<[f64; 3]>, GeometryError> {
@@ -1495,21 +1496,23 @@ fn parse_f64_points(bytes: &[u8]) -> Result<Vec<[f64; 3]>, GeometryError> {
     .ok_or_else(|| GeometryError::unpositioned("invalid f64 point channel length"))
 }
 
-fn synchronization_ok(double: &[[f64; 3]], float: &[[f32; 3]]) -> bool {
+fn synchronization_ok(double: &[[f64; 3]], float: &[[FiniteBinary32; 3]]) -> bool {
     double.iter().zip(float).all(|(a, b)| {
-        let scale = b.iter().copied().map(f32::abs).fold(0.0_f32, f32::max) as f64;
+        let scale = b
+            .iter()
+            .map(|value| value.get().abs())
+            .fold(0.0_f32, f32::max) as f64;
         a.iter().zip(b).all(|(left, right)| {
-            (*left - f64::from(*right)).abs() <= scale * EPS_MESH_SYNCHRONIZATION_OK_E6
+            (*left - f64::from(right.get())).abs() <= scale * EPS_MESH_SYNCHRONIZATION_OK_E6
         })
     })
 }
 
-fn v5_synchronization_ok(double: &[[f64; 3]], float: &[[f32; 3]]) -> bool {
+fn v5_synchronization_ok(double: &[[f64; 3]], float: &[[FiniteBinary32; 3]]) -> bool {
     double.iter().zip(float).all(|(double, float)| {
-        double
-            .iter()
-            .zip(float)
-            .all(|(double, float)| *double as f32 == *float)
+        double.iter().zip(float).all(|(double, float)| {
+            double.abs() <= f64::from(f32::MAX) && *double as f32 == float.get()
+        })
     })
 }
 
@@ -1579,6 +1582,7 @@ mod tests {
     use std::io::Write;
 
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    use cadmpeg_ir::scalar::FiniteBinary32;
     use flate2::write::ZlibEncoder;
     use flate2::Compression;
 
@@ -2446,14 +2450,17 @@ mod tests {
 
     #[test]
     fn synchronization_uses_relative_max_coordinate_tolerance() {
-        assert!(synchronization_ok(&[[0.0, 0.0, 0.0]], &[[0.0, 0.0, 0.0]]));
+        assert!(synchronization_ok(
+            &[[0.0, 0.0, 0.0]],
+            &[([0.0, 0.0, 0.0].map(|value| FiniteBinary32::new(value).expect("finite")))]
+        ));
         assert!(synchronization_ok(
             &[[1_000_000.0, 0.0, 0.0]],
-            &[[1_000_000.5, 0.0, 0.0]]
+            &[([1_000_000.5, 0.0, 0.0].map(|value| FiniteBinary32::new(value).expect("finite")))]
         ));
         assert!(!synchronization_ok(
             &[[1_000_000.0, 0.0, 0.0]],
-            &[[1_002.0, 0.0, 0.0]]
+            &[([1_002.0, 0.0, 0.0].map(|value| FiniteBinary32::new(value).expect("finite")))]
         ));
     }
 

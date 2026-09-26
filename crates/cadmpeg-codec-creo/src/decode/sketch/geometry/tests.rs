@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{saved_section_arc_carrier, section_arc_geometry, BTreeMap};
+use super::{saved_section_arc, saved_section_arc_carrier, section_arc_geometry, BTreeMap};
 use crate::feature::definitions::{FeatureSegment, FeatureSegmentKind};
 #[test]
 fn numerical_ranges_section_arc_radius_agreement_has_no_length_floor() {
@@ -118,4 +118,102 @@ fn numerical_ranges_saved_arc_entity_checks_endpoint_radii() {
             accepted
         );
     }
+}
+
+fn saved_arc_carrier_definition(
+    center: [Option<f64>; 3],
+    radius: Option<f64>,
+) -> (
+    crate::feature::definitions::FeatureDefinition,
+    FeatureSegment,
+) {
+    use crate::feature::definitions::{
+        DefinitionIdentity, FeatureDefinition, FeatureOrderRow, FeatureOrderTable, FeatureSavedArc,
+        FeatureSavedEntity, FeatureSavedSection,
+    };
+    let segment = FeatureSegment {
+        kind: FeatureSegmentKind::Arc([1, 2]),
+        directions: [None; 3],
+        center_id: Some(3),
+        arc_orientation: Some(0),
+        vertical_horizontal: None,
+        radius_ref: None,
+        radius2_ref: None,
+        external_id: 4,
+        body: Vec::new(),
+        offset: 9,
+    };
+    let definition = FeatureDefinition {
+        identity: DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(5),
+            owner_feature_id: Some(6),
+        },
+        body: Vec::new(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: None,
+        segments: None,
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: Some(FeatureOrderTable {
+            declared_count: 1,
+            has_prototype: false,
+            entity_ref: None,
+            rows: vec![FeatureOrderRow {
+                external_id: 4,
+                internal_id: 30,
+                bitmask: 0,
+                offset: 10,
+            }],
+            offset: 8,
+        }),
+        section_3d: None,
+        dimensions: None,
+        relations: None,
+        saved_section: Some(FeatureSavedSection {
+            entities: vec![FeatureSavedEntity::Arc(FeatureSavedArc {
+                entity_id: 30,
+                center,
+                radius,
+                endpoints: [
+                    [Some(1.0), Some(0.0), Some(0.0)],
+                    [Some(0.0), Some(1.0), Some(0.0)],
+                ],
+                parameters: [None; 2],
+                body: Vec::new(),
+                offset: 20,
+            })],
+            offset: 18,
+        }),
+        offset: 0,
+    };
+    (definition, segment)
+}
+
+#[test]
+fn saved_arc_nonfinite_stored_radius_is_not_a_carrier() {
+    let (definition, segment) = saved_arc_carrier_definition([Some(0.0); 3], Some(f64::INFINITY));
+    assert!(saved_section_arc_carrier(&definition, &segment).is_none());
+}
+
+#[test]
+fn saved_arc_nonfinite_stored_center_is_not_a_carrier() {
+    let (definition, segment) =
+        saved_arc_carrier_definition([Some(f64::NAN), Some(0.0), Some(0.0)], Some(2.0));
+    assert!(saved_section_arc_carrier(&definition, &segment).is_none());
+}
+
+#[test]
+fn saved_arc_overflowing_endpoint_radius_is_not_geometry() {
+    let (mut definition, segment) = saved_arc_carrier_definition([Some(0.0); 3], Some(2.0));
+    let Some(crate::feature::definitions::FeatureSavedEntity::Arc(arc)) = definition
+        .saved_section
+        .as_mut()
+        .and_then(|section| section.entities.first_mut())
+    else {
+        panic!("saved arc fixture");
+    };
+    arc.endpoints[0] = [Some(f64::MAX), Some(f64::MAX), Some(0.0)];
+    arc.endpoints[1] = [Some(0.0), Some(2.0), Some(0.0)];
+    assert!(saved_section_arc(&definition, &segment).is_none());
 }

@@ -21,6 +21,7 @@ use cadmpeg_ir::products::{
     CopyOnChange, CopyOnChangePolicy, ExternalDocument, LinkState, Occurrence, OccurrenceParent,
     ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Body;
 use cadmpeg_ir::transform::Transform;
 
@@ -80,13 +81,7 @@ pub(crate) fn transfer(
         let copy_on_change_group =
             linked_target(&owned, "LinkCopyOnChangeGroup", "App::PropertyLink", "Link")?;
         let copy_on_change_touched = bool_property(&owned, "LinkCopyOnChangeTouched")?;
-        let scale = scale_property(&owned)?
-            .map(|values| {
-                cadmpeg_ir::units::FiniteVector::new(values)
-                    .ok_or("scale vector components must be finite")
-            })
-            .transpose()
-            .map_err(malformed)?;
+        let scale = scale_property(&owned)?.map(cadmpeg_ir::units::FiniteVector::from);
         let element_visibility = bool_list(&owned, "VisibilityList")?;
         let element_objects = sole_named_property("product", &owned, "ElementList")?
             .map(|property| {
@@ -1038,7 +1033,7 @@ fn neutral_link_target(
     }))
 }
 
-fn scale_property(properties: &[&PropertyRecord]) -> Result<Option<[f64; 3]>, CodecError> {
+fn scale_property(properties: &[&PropertyRecord]) -> Result<Option<[FiniteReal; 3]>, CodecError> {
     if let Some(property) = sole_named_property("product", properties, "ScaleVector")? {
         return vector_property(property).map(Some);
     }
@@ -1056,7 +1051,7 @@ fn scale_property(properties: &[&PropertyRecord]) -> Result<Option<[f64; 3]>, Co
     Ok(Some([value; 3]))
 }
 
-fn vector_property(property: &PropertyRecord) -> Result<[f64; 3], CodecError> {
+fn vector_property(property: &PropertyRecord) -> Result<[FiniteReal; 3], CodecError> {
     let value = single_value(
         property,
         "App::PropertyVector",
@@ -1079,11 +1074,15 @@ fn vector_property(property: &PropertyRecord) -> Result<[f64; 3], CodecError> {
     ])
 }
 
-fn parse_finite(value: &str, property: &PropertyRecord, name: &str) -> Result<f64, CodecError> {
+fn parse_finite(
+    value: &str,
+    property: &PropertyRecord,
+    name: &str,
+) -> Result<FiniteReal, CodecError> {
     value
         .parse::<f64>()
         .ok()
-        .filter(|value| value.is_finite())
+        .and_then(FiniteReal::new)
         .ok_or_else(|| {
             malformed(format!(
                 "product property {} has an invalid finite value for {name}",

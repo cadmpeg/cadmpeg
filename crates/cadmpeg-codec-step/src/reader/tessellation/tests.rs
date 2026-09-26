@@ -13,6 +13,7 @@ use cadmpeg_core::decode::{
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::loss::StepLossCode;
@@ -689,7 +690,10 @@ fn tessellation_normal_rows_preserve_extreme_finite_directions() {
     assert_eq!(
         super::normal_rows(Some(&rows), &ctx)
             .expect("normal rows fit the service profile")
-            .map(|(normals, _bytes)| normals),
+            .map(|(normals, _bytes)| normals
+                .into_iter()
+                .map(FiniteVector3::get)
+                .collect::<Vec<_>>()),
         Some(vec![
             Vector3::new(1.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
