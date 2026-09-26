@@ -655,30 +655,21 @@ fn scale_decoded_curve(
         }
         DecodedCurve::Leaf { geometry, .. } => match geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-                let scaled = nurbs
-                    .control_points()
-                    .into_iter()
-                    .map(|point| {
-                        scale_ir_point(point.get(), scale).ok_or_else(|| {
-                            GeometryError::malformed(offset, "scaled plane-space curve is invalid")
-                        })
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                let mut scaled = scaled.into_iter();
                 nurbs
-                    .edit_control_points(|point| {
-                        if let Some(value) = scaled.next() {
-                            *point = value;
-                        }
-                        Ok(())
+                    .map_control_points(|point| {
+                        point.scaled(scale.positive()).ok_or_else(|| {
+                            cadmpeg_ir::geometry::nurbs::NurbsError::EditRefused(
+                                "scaled plane-space curve is invalid".to_string(),
+                            )
+                        })
                     })
                     .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-                let center = circle_curve.center().get();
                 let radius = circle_curve.radius().get();
-                let center = scale_ir_point(center, scale)
-                    .and_then(cadmpeg_ir::features::FinitePoint3::new)
+                let center = circle_curve
+                    .center()
+                    .scaled(scale.positive())
                     .ok_or_else(|| {
                         GeometryError::malformed(
                             offset,
@@ -699,10 +690,10 @@ fn scale_decoded_curve(
                 );
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-                let origin = line_curve.origin().get();
                 let direction = line_curve.direction();
-                let origin = scale_ir_point(origin, scale)
-                    .and_then(cadmpeg_ir::features::FinitePoint3::new)
+                let origin = line_curve
+                    .origin()
+                    .scaled(scale.positive())
                     .ok_or_else(|| {
                         GeometryError::malformed(
                             offset,
@@ -712,16 +703,16 @@ fn scale_decoded_curve(
                 *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction);
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
-                let point = degenerate_curve.point().get();
-                *degenerate_curve = cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(
-                    scale_ir_point(point, scale).ok_or_else(|| {
+                let point = degenerate_curve
+                    .point()
+                    .scaled(scale.positive())
+                    .ok_or_else(|| {
                         GeometryError::malformed(
                             offset,
                             "scaled plane-space curve point is invalid",
                         )
-                    })?,
-                )
-                .map_err(|message| GeometryError::malformed(offset, message))?;
+                    })?;
+                *degenerate_curve = cadmpeg_ir::geometry::analytic::DegenerateCurve::new(point);
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }) => {
                 return Err(GeometryError::malformed(
@@ -738,15 +729,6 @@ fn scale_decoded_curve(
         },
     }
     Ok(())
-}
-
-fn scale_ir_point(value: Point3, scale: MillimeterScale) -> Option<Point3> {
-    let point = Point3::new(
-        value.x * scale.value(),
-        value.y * scale.value(),
-        value.z * scale.value(),
-    );
-    (point.is_finite()).then_some(point)
 }
 
 /// Converts a decoded curve tree to one exact NURBS curve when possible.
@@ -1516,7 +1498,16 @@ fn read_polyline(
     let mut parameters = Vec::with_capacity(parameter_count);
     for _ in 0..parameter_count {
         let value = reader.f64()?;
-        if !value.is_finite() || parameters.last().is_some_and(|previous| value <= *previous) {
+        let Some(value) = FiniteReal::new(value) else {
+            return Err(error(
+                reader.position(),
+                "polyline parameters are not increasing",
+            ));
+        };
+        if parameters
+            .last()
+            .is_some_and(|previous: &FiniteReal| value.get() <= previous.get())
+        {
             return Err(error(
                 reader.position(),
                 "polyline parameters are not increasing",
@@ -1536,7 +1527,9 @@ fn read_polyline(
     knots.extend_from_slice(&parameters[1..point_count - 1]);
     knots.push(parameters[point_count - 1]);
     knots.push(parameters[point_count - 1]);
-    NurbsCurve::from_lanes(1, knots, points, None, false)
+    let knots = cadmpeg_ir::geometry::nurbs::KnotVector::from_finite_lanes(knots)
+        .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))?;
+    NurbsCurve::from_checked_lanes(1, knots, points, None, false)
         .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
 }
 
@@ -2016,9 +2009,12 @@ mod tests {
     use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
     use crate::loss::Diagnostics;
     use crate::settings::MillimeterScale;
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::geometry::analytic::{CircleCurve, DegenerateCurve, LineCurve};
     use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::scalar::FiniteReal;
+    use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
+    use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 
     const EPS_EXACT_ARC: f64 = 1.0e-12;
 
@@ -2297,6 +2293,29 @@ mod tests {
     }
 
     #[test]
+    fn bounded_polyline_refuses_nonfinite_and_decreasing_parameters_at_source() {
+        for (parameters, refused_offset) in [([f64::NAN, 12.0], 65), ([10.0, 9.0], 73)] {
+            let mut bytes = vec![0x10];
+            bytes.extend(2_i32.to_le_bytes());
+            for value in [0.0_f64, 0.0, 0.0, 1.0, 2.0, 0.0] {
+                bytes.extend(value.to_le_bytes());
+            }
+            bytes.extend(2_i32.to_le_bytes());
+            for value in parameters {
+                bytes.extend(value.to_le_bytes());
+            }
+            bytes.extend(3_i32.to_le_bytes());
+            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
+            let result = read_polyline(&mut reader, MillimeterScale::IDENTITY, None);
+            assert!(matches!(
+                result,
+                Err(GeometryError::Malformed(FramingError::Structural { offset, message }))
+                    if offset == refused_offset && message == "polyline parameters are not increasing"
+            ));
+        }
+    }
+
+    #[test]
     fn plane_space_nurbs_scaling_rejects_coordinate_overflow() {
         let curve = NurbsCurve::from_lanes(
             1,
@@ -2327,6 +2346,73 @@ mod tests {
             unreachable!("test retains the NURBS curve carrier");
         };
         assert_eq!(curve.control_points()[0], Point3::new(2.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn plane_space_circle_scaling_keeps_admitted_center_and_frame() {
+        let center = FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).expect("finite center");
+        let circle = CircleCurve::new(
+            center,
+            OrthonormalFrame3::IDENTITY,
+            PositiveLength::new(2.0).expect("positive radius"),
+        );
+        let mut decoded = DecodedCurve::leaf(
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)),
+            Diagnostics::new(),
+        );
+        scale_decoded_curve(&mut decoded, crate::test_support::millimeter_scale(2.0), 17)
+            .expect("scaled circle");
+        let DecodedCurve::Leaf {
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)),
+            ..
+        } = decoded
+        else {
+            panic!("circle remains solved");
+        };
+        assert_eq!(circle.center().get(), Point3::new(2.0, 4.0, 6.0));
+        assert_eq!(circle.radius().get(), 4.0);
+        assert_eq!(*circle.frame(), OrthonormalFrame3::IDENTITY);
+    }
+
+    #[test]
+    fn plane_space_line_scaling_keeps_admitted_origin_and_direction() {
+        let origin = FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).expect("finite origin");
+        let line = LineCurve::new(origin, UnitVector3::Z_AXIS);
+        let mut decoded = DecodedCurve::leaf(
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
+            Diagnostics::new(),
+        );
+        scale_decoded_curve(&mut decoded, crate::test_support::millimeter_scale(2.0), 17)
+            .expect("scaled line");
+        let DecodedCurve::Leaf {
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
+            ..
+        } = decoded
+        else {
+            panic!("line remains solved");
+        };
+        assert_eq!(line.origin().get(), Point3::new(2.0, 4.0, 6.0));
+        assert_eq!(line.direction(), UnitVector3::Z_AXIS);
+    }
+
+    #[test]
+    fn plane_space_degenerate_scaling_keeps_admitted_point() {
+        let point = FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).expect("finite point");
+        let curve = DegenerateCurve::new(point);
+        let mut decoded = DecodedCurve::leaf(
+            CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(curve)),
+            Diagnostics::new(),
+        );
+        scale_decoded_curve(&mut decoded, crate::test_support::millimeter_scale(2.0), 17)
+            .expect("scaled degenerate curve");
+        let DecodedCurve::Leaf {
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(curve)),
+            ..
+        } = decoded
+        else {
+            panic!("degenerate curve remains solved");
+        };
+        assert_eq!(curve.point().get(), Point3::new(2.0, 4.0, 6.0));
     }
 
     #[test]

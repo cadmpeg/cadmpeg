@@ -461,6 +461,11 @@ impl MillimeterScale {
         self.0.get()
     }
 
+    /// The admitted positive scale for typed geometry arithmetic.
+    pub(crate) const fn positive(self) -> PositiveReal {
+        self.0
+    }
+
     /// The factor as a finite real.
     pub(crate) fn real(self) -> FiniteReal {
         self.0.into()
