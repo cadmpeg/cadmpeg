@@ -598,7 +598,8 @@ fn plane_equation(
 }
 
 fn definition_local_plane_equation(definition: &FeatureDefinition) -> Option<SignedPlaneEquation> {
-    let [.., raw_normal, origin] = local_system_lanes(unique_complete_local_system(definition)?);
+    let [.., raw_normal, origin] =
+        local_system_lanes(unique_complete_local_system(definition)?.get());
     let normal = normalize(raw_normal)?;
     Some(SignedPlaneEquation {
         normal,
@@ -606,13 +607,14 @@ fn definition_local_plane_equation(definition: &FeatureDefinition) -> Option<Sig
     })
 }
 
-pub(crate) fn unique_complete_local_system(definition: &FeatureDefinition) -> Option<[f64; 12]> {
+pub(crate) fn unique_complete_local_system(
+    definition: &FeatureDefinition,
+) -> Option<cadmpeg_ir::units::FiniteVector<12>> {
     let mut frames = definition
         .parameter_frames
         .iter()
         .filter(|frame| frame.kind == FeatureParameterFrameKind::LocalSystem)
-        .filter_map(|frame| frame.decoded_values.as_ref())
-        .filter(|values| values.iter().all(|value| value.is_finite()));
+        .filter_map(|frame| frame.decoded_values.as_ref());
     let values = *frames.next()?;
     frames.next().is_none().then_some(values)
 }
@@ -669,7 +671,7 @@ fn definition_local_frame_transform(
 ) -> Option<FeatureSectionTransform> {
     let feature_id = definition.identity.owner_feature_id()?;
     let [stored_u_axis, _, stored_axis, origin] =
-        local_system_lanes(unique_complete_local_system(definition)?);
+        local_system_lanes(unique_complete_local_system(definition)?.get());
     let mut u_axis = normalize(stored_u_axis)?;
     let raw_normal = normalize(stored_axis)?;
     (dot(u_axis, raw_normal).abs() <= EPS_PLACEMENT_EXACT_GEOMETRY).then_some(())?;

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Container IR bootstrap and model-entity assembly.
 
-use crate::vecmath::normalize;
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::DecodeContext;
@@ -197,8 +196,10 @@ fn transfer_reference_lines(
                 counts
             });
     for line in &scan.references.lines {
-        let direction = std::array::from_fn(|axis| line.end[axis] - line.start[axis]);
-        let Some(direction) = normalize(direction) else {
+        let start: [f64; 3] = line.start.get().into();
+        let end: [f64; 3] = line.end.get().into();
+        let direction = std::array::from_fn(|axis| end[axis] - start[axis]);
+        let Some((direction, _)) = crate::vecmath::normalize_with_length(direction) else {
             continue;
         };
         let (family, native_identity, id) = match &line.kind {
@@ -243,11 +244,7 @@ fn transfer_reference_lines(
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    Point3::from(line.start),
-                    Vector3::from(direction),
-                )
-                .map_err(CodecError::malformed)?,
+                cadmpeg_ir::geometry::analytic::LineCurve::new(line.start, direction),
             )),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
@@ -284,7 +281,7 @@ fn transfer_reference_circles(
             });
     for circle in &scan.references.circles {
         let radial = std::array::from_fn(|axis| circle.start[axis] - circle.center[axis]);
-        let Some(reference) = normalize(radial) else {
+        let Some((reference, _)) = crate::vecmath::normalize_with_length(radial) else {
             continue;
         };
         let native_identity = if circle_id_counts.get(&circle.entity_id) == Some(&1) {
@@ -312,16 +309,18 @@ fn transfer_reference_circles(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model curves")?;
+        let frame = cadmpeg_ir::units::OrthonormalFrame3::from_units(circle.axis, reference)
+            .ok_or_else(|| {
+                CodecError::malformed(
+                    "CircleCurve.axis/ref_direction must form an orthonormal frame",
+                )
+            })?;
+        let center = cadmpeg_ir::features::FinitePoint3::new(Point3::from(circle.center))
+            .ok_or_else(|| CodecError::malformed("CircleCurve.center must be finite"))?;
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    Point3::from(circle.center),
-                    Vector3::from(circle.axis),
-                    Vector3::from(reference),
-                    circle.radius.get(),
-                )
-                .map_err(CodecError::malformed)?,
+                cadmpeg_ir::geometry::analytic::CircleCurve::new(center, frame, circle.radius),
             )),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
@@ -387,12 +386,19 @@ fn transfer_reference_ellipses(
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-                cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
-                    Point3::from(ellipse.center),
-                    Vector3::from(ellipse.axis),
-                    Vector3::from(ellipse.major_direction),
-                    ellipse.major_radius.get(),
-                    ellipse.minor_radius.get(),
+                cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
+                    ellipse.center,
+                    cadmpeg_ir::units::OrthonormalFrame3::from_units(
+                        ellipse.axis,
+                        ellipse.major_direction,
+                    )
+                    .ok_or_else(|| {
+                        CodecError::malformed(
+                            "EllipseCurve.axis/ref_direction must form an orthonormal frame",
+                        )
+                    })?,
+                    ellipse.major_radius,
+                    ellipse.minor_radius,
                 )
                 .map_err(CodecError::malformed)?,
             )),

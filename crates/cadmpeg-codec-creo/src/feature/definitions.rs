@@ -40,7 +40,7 @@ pub(crate) struct FeatureParameterFrame {
     /// Exact scalar-body bytes after `f9 04 03`.
     pub(crate) body: Vec<u8>,
     /// Twelve values when the body consists entirely of defined scalar tokens.
-    pub(crate) decoded_values: Option<[f64; 12]>,
+    pub(crate) decoded_values: Option<cadmpeg_ir::units::FiniteVector<12>>,
     /// Byte offset of the field label in the original stream.
     pub(crate) offset: usize,
 }

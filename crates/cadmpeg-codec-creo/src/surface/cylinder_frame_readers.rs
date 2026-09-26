@@ -872,6 +872,7 @@ fn decode_local_system_cylinder_frame(
                 body.get(start..radius_start)?,
                 cache,
             )
+            .map(cadmpeg_ir::units::FiniteVector::get)
         })
         .collect::<Vec<_>>();
     let [slots] = frames.as_slice() else {
@@ -1380,6 +1381,7 @@ pub(super) fn decode_local_system_suffix_cylinder_frame(
                 body.get(start..radius_start)?,
                 cache,
             )
+            .map(cadmpeg_ir::units::FiniteVector::get)
         })
         .filter(|slots| {
             let first = [slots[0], slots[1], slots[2]];
@@ -1429,7 +1431,8 @@ pub(super) fn decode_compound_local_system_cylinder_frame(
                     let slots = scalar::decode_positional_cylinder_local_system_slots(
                         body.get(start..*radius_start)?,
                         cache,
-                    )?;
+                    )?
+                    .get();
                     Some((slots, *radius))
                 })
         })

@@ -5,7 +5,10 @@ use cadmpeg_core::bytes::find_in;
 
 use crate::scalar::{self, ScalarCache};
 use crate::vecmath::{cross, dot, normalize_with_length};
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::PositiveLength;
+use cadmpeg_ir::units::UnitVector3;
 
 /// Bounds the stored lengths and the normalized dot product of a conic local system's two
 /// stored directions.
@@ -44,9 +47,9 @@ pub(crate) struct ReferenceLine {
     /// Native entity family.
     pub(crate) kind: ReferenceLineKind,
     /// First endpoint in model coordinates.
-    pub(crate) start: [f64; 3],
+    pub(crate) start: FinitePoint3,
     /// Second endpoint in model coordinates.
-    pub(crate) end: [f64; 3],
+    pub(crate) end: FinitePoint3,
     /// Byte offset of the positional row in its section.
     pub(crate) offset: usize,
 }
@@ -63,7 +66,7 @@ pub(crate) struct ReferenceCircle {
     /// Circle radius.
     pub(crate) radius: PositiveLength,
     /// Unit circle-plane normal.
-    pub(crate) axis: [f64; 3],
+    pub(crate) axis: UnitVector3,
     /// First stored endpoint.
     pub(crate) start: [f64; 3],
     /// Second stored endpoint.
@@ -123,7 +126,7 @@ pub(crate) struct ReferenceConic {
     /// Second stored conic coefficient.
     pub(crate) coefficient_2: f64,
     /// Twelve decoded local-system slots, when the body is complete.
-    pub(crate) local_system: Option<[f64; 12]>,
+    pub(crate) local_system: Option<cadmpeg_ir::units::FiniteVector<12>>,
     /// Exact bytes from the `id` value through the local-system body.
     pub(crate) body: Vec<u8>,
     /// Byte offset of the named conic list record.
@@ -136,11 +139,11 @@ pub(crate) struct ReferenceEllipse {
     /// Canonical identifier of the source conic entity.
     pub(crate) source_entity_id: u32,
     /// Ellipse center.
-    pub(crate) center: [f64; 3],
+    pub(crate) center: FinitePoint3,
     /// Unit normal of the ellipse plane.
-    pub(crate) axis: [f64; 3],
+    pub(crate) axis: UnitVector3,
     /// Unit direction of the semi-major axis.
-    pub(crate) major_direction: [f64; 3],
+    pub(crate) major_direction: UnitVector3,
     /// Semi-major radius.
     pub(crate) major_radius: PositiveLength,
     /// Semi-minor radius.
@@ -160,15 +163,21 @@ pub(crate) fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllips
         let Some(frame) = conic.local_system else {
             continue;
         };
+        let Some(center_checked) = frame.three_at(9).map(FinitePoint3::from) else {
+            continue;
+        };
+        let frame = frame.get();
         let center = [frame[9], frame[10], frame[11]];
         let first_frame = [frame[0], frame[1], frame[2]];
         let second_frame = [frame[3], frame[4], frame[5]];
-        let Some((first_frame, first_length)) = normalize_with_length(first_frame) else {
+        let Some((first_frame_unit, first_length)) = normalize_with_length(first_frame) else {
             continue;
         };
-        let Some((second_frame, second_length)) = normalize_with_length(second_frame) else {
+        let Some((second_frame_unit, second_length)) = normalize_with_length(second_frame) else {
             continue;
         };
+        let first_frame: [f64; 3] = (*first_frame_unit.as_raw()).into();
+        let second_frame: [f64; 3] = (*second_frame_unit.as_raw()).into();
         let scale = center
             .iter()
             .chain(conic.start.iter())
@@ -181,9 +190,10 @@ pub(crate) fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllips
         {
             continue;
         }
-        let Some((axis, _)) = normalize_with_length(cross(first_frame, second_frame)) else {
+        let Some((axis_unit, _)) = normalize_with_length(cross(first_frame, second_frame)) else {
             continue;
         };
+        let axis: [f64; 3] = (*axis_unit.as_raw()).into();
         let (Some(first_coefficient), Some(second_coefficient)) = (
             PositiveLength::new(conic.coefficient_1.abs()),
             PositiveLength::new(conic.coefficient_2.abs()),
@@ -201,11 +211,12 @@ pub(crate) fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllips
             endpoints.map(|endpoint| std::array::from_fn(|index| endpoint[index] - center[index]));
         let antipodal_major_direction = (|| {
             let (first_direction, first_radius) = normalize_with_length(endpoint_deltas[0])?;
+            let first_direction_raw: [f64; 3] = (*first_direction.as_raw()).into();
             let (_, second_radius) = normalize_with_length(endpoint_deltas[1])?;
             ((0..3).all(|index| {
                 (endpoint_deltas[0][index] + endpoint_deltas[1][index]).abs()
                     <= EPS_ENDPOINT_AGREEMENT * scale
-            }) && dot(first_direction, axis).abs() <= EPS_ENDPOINT_AGREEMENT
+            }) && dot(first_direction_raw, axis).abs() <= EPS_ENDPOINT_AGREEMENT
                 && (first_radius - second_radius).abs() <= EPS_RADIUS_AGREEMENT * scale)
                 .then_some(())?;
             let radius_scale = major_radius.get().max(1.0);
@@ -214,7 +225,8 @@ pub(crate) fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllips
             } else if (first_radius - minor_radius.get()).abs()
                 <= EPS_RADIUS_AGREEMENT * radius_scale
             {
-                normalize_with_length(cross(first_direction, axis)).map(|(direction, _)| direction)
+                normalize_with_length(cross(first_direction_raw, axis))
+                    .map(|(direction, _)| direction)
             } else {
                 None
             }
@@ -222,8 +234,8 @@ pub(crate) fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllips
         if let Some(major_direction) = antipodal_major_direction {
             result.push(ReferenceEllipse {
                 source_entity_id: conic.entity_id,
-                center,
-                axis,
+                center: center_checked,
+                axis: axis_unit,
                 major_direction,
                 major_radius,
                 minor_radius,
@@ -255,26 +267,26 @@ pub(crate) fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllips
             continue;
         };
         let mut major_direction = if first_radius >= second_radius {
-            first_frame
+            first_frame_unit
         } else {
-            second_frame
+            second_frame_unit
         };
         let orientation = endpoints
             .iter()
             .map(|endpoint| {
                 dot(
                     std::array::from_fn(|index| endpoint[index] - center[index]),
-                    major_direction,
+                    (*major_direction.as_raw()).into(),
                 )
             })
             .find(|projection| projection.abs() > EPS_ORIENTATION_NONZERO * scale);
         if orientation.is_some_and(f64::is_sign_negative) {
-            major_direction = major_direction.map(|value| -value);
+            major_direction = major_direction.reversed();
         }
         result.push(ReferenceEllipse {
             source_entity_id: conic.entity_id,
-            center,
-            axis,
+            center: center_checked,
+            axis: axis_unit,
             major_direction,
             major_radius,
             minor_radius,
@@ -439,7 +451,10 @@ fn conic_frame_run(
     Some((ConicFrameRun::single(value), next))
 }
 
-fn conic_local_system(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
+fn conic_local_system(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Option<cadmpeg_ir::units::FiniteVector<12>> {
     if let Some(slots) = scalar::decode_explicit_local_system_slots(body, cache) {
         return Some(slots);
     }
@@ -449,16 +464,13 @@ fn conic_local_system(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
         let run = cursor.take_with(|data, pos| conic_frame_run(data, pos, cache))?;
         values.extend_from_slice(run.as_slice());
     }
-    if cursor.pos() != body.len()
-        || values.len() != 12
-        || !values.iter().all(|value| value.is_finite())
-    {
+    if cursor.pos() != body.len() || values.len() != 12 {
         return None;
     }
     let [a0, a1, a2, b0, b1, b2, c0, c1, c2, x, y, z] = values.as_slice() else {
         return None;
     };
-    Some([*a0, *a1, *a2, *b0, *b1, *b2, *c0, *c1, *c2, *x, *y, *z])
+    cadmpeg_ir::units::FiniteVector::new([*a0, *a1, *a2, *b0, *b1, *b2, *c0, *c1, *c2, *x, *y, *z])
 }
 
 fn named_conic_local_system(
@@ -466,7 +478,7 @@ fn named_conic_local_system(
     start: usize,
     end: usize,
     cache: &ScalarCache,
-) -> Option<(usize, Option<[f64; 12]>)> {
+) -> Option<(usize, Option<cadmpeg_ir::units::FiniteVector<12>>)> {
     const TERMINATOR: &[u8] = &[0xf2, crate::psb::token::ENTITY_REF];
     const MAX_FRAME_BYTES: usize = 12 * 9;
     let mut marker_count = 0;
@@ -682,7 +694,7 @@ fn positional_conic_local_system(
     body: &[u8],
     local_start: usize,
     cache: &ScalarCache,
-) -> Option<(usize, [f64; 12])> {
+) -> Option<(usize, cadmpeg_ir::units::FiniteVector<12>)> {
     const MAX_FRAME_BYTES: usize = 12 * 9;
     let first_end = local_start.checked_add(1)?;
     let last_end = local_start.saturating_add(MAX_FRAME_BYTES).min(body.len());
@@ -860,10 +872,16 @@ pub(crate) fn lines(payload: &[u8]) -> Vec<ReferenceLine> {
             else {
                 continue;
             };
+            let (Some(first), Some(last)) = (
+                FinitePoint3::new([first_x, first_y, first_z].into()),
+                FinitePoint3::new([last_x, last_y, last_z].into()),
+            ) else {
+                continue;
+            };
             result.push(ReferenceLine {
                 kind: ReferenceLineKind::Line,
-                start: [first_x, first_y, first_z],
-                end: [last_x, last_y, last_z],
+                start: first,
+                end: last,
                 offset: start,
             });
         }
@@ -874,7 +892,10 @@ pub(crate) fn lines(payload: &[u8]) -> Vec<ReferenceLine> {
     result
 }
 
-fn line3d_fields(body: &[u8], cache: &ScalarCache) -> Option<([f64; 3], [f64; 3], PositiveLength)> {
+fn line3d_fields(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Option<(FinitePoint3, FinitePoint3, PositiveLength)> {
     let candidates = (0..body.len()).filter_map(|start| {
         let mut cursor = start;
         let mut values = [0.0; 7];
@@ -889,10 +910,12 @@ fn line3d_fields(body: &[u8], cache: &ScalarCache) -> Option<([f64; 3], [f64; 3]
         let distance = delta.iter().fold(0.0_f64, |norm, value| norm.hypot(*value));
         let stored_length = PositiveLength::new(values[6].abs())?;
         let scale = distance.max(stored_length.get()).max(1.0);
+        let first_checked = FinitePoint3::new(first.into())?;
+        let second_checked = FinitePoint3::new(second.into())?;
         (distance.is_finite()
             && distance > EPS_LINE_NONZERO
             && (distance - stored_length.get()).abs() <= EPS_ENDPOINT_AGREEMENT * scale)
-            .then_some((start, first, second, stored_length))
+            .then_some((start, first_checked, second_checked, stored_length))
     });
     let mut candidates = candidates;
     let (_, first, second, stored_length) = candidates.next()?;
@@ -1025,7 +1048,9 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<Refe
                 && (second_distance - radius).abs() <= EPS_RADIUS_AGREEMENT * scale
                 && normal_length.is_finite()
                 && normal_length > EPS_CIRCLE_NORMAL_NONZERO * scale * scale)
-                .then(|| normal.map(|value| value / normal_length))
+                .then_some(())
+                .and_then(|()| UnitVector3::normalized_with_length(Vector3::from(normal)))
+                .map(|(direction, _)| direction)
         };
     let explicit = (0..body.len()).filter_map(|start| {
         let values = scalar_run::<10>(body, start, cache)?;
@@ -1063,7 +1088,7 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<Refe
                 center,
                 center_stored: false,
                 radius,
-                axis: [0.0, 0.0, 1.0],
+                axis: UnitVector3::Z_AXIS,
                 start: first,
                 end: second,
                 offset: start,

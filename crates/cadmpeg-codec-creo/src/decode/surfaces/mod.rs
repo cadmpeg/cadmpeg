@@ -361,7 +361,7 @@ pub(super) fn transfer_fc05_cap_circles(
             .and_then(|pair| fc05_cap_pair_model_frame(scan, pair));
         let (reference, circle_axis_sign) = match circle.angle_parameter {
             crate::curve::Fc05AngleParameterRelation::Inconsistent => (
-                circle.sample_direction_row_frame,
+                circle.sample_direction_row_frame.get(),
                 Sign::of_component(cap.normal[axis_index.index()]),
             ),
             crate::curve::Fc05AngleParameterRelation::Consistent {

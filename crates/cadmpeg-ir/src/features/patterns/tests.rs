@@ -3,8 +3,8 @@ use crate::math::{Point3, Vector3};
 use crate::{
     features::{
         patterns::{
-            CompositePattern, LinearPatternDirection, PatternKind, PatternScaleCenter,
-            PatternStage, PatternTransform,
+            CompositePattern, LinearPatternDirection, PatternKind, PatternLengthField,
+            PatternScaleCenter, PatternStage, PatternTransform,
         },
         FaceSelection, FeatureDirection3, FinitePoint3,
     },
@@ -190,6 +190,46 @@ fn composite_pattern_admission_enforces_stage_structure_and_counts() {
         stage(linear(2)),
     ])
     .is_ok());
+}
+
+#[test]
+fn composite_length_mapping_carries_stage_counts_and_scale_factor() {
+    let stages = CompositePattern::new(vec![
+        stage(linear(4)),
+        stage(PatternTransform::Scale {
+            center: PatternScaleCenter::FirstSeedCentroid,
+            final_factor: factor(2.0),
+            count: 2,
+        }),
+    ])
+    .unwrap();
+    let original = PatternKind::new(PatternTransform::Composite { stages }).unwrap();
+    let mapped = original
+        .try_map_lengths(&mut |field| {
+            if let PatternLengthField::PositiveLength(spacing) = field {
+                *spacing = PositiveLength::new(spacing.get() * 2.0).unwrap();
+            }
+            Ok::<(), ()>(())
+        })
+        .unwrap();
+    let PatternTransform::Composite { stages } = mapped.definition() else {
+        panic!("the composite arm is carried");
+    };
+    assert!(matches!(
+        stages[0].pattern.definition(),
+        PatternTransform::Linear { spacing, count: 4, .. } if spacing.get() == 2.0
+    ));
+    assert!(matches!(
+        stages[1].pattern.definition(),
+        PatternTransform::Scale { final_factor, count: 2, .. } if final_factor.get() == 2.0
+    ));
+    let PatternTransform::Composite { stages } = original.definition() else {
+        panic!("the source composite is carried");
+    };
+    assert!(matches!(
+        stages[0].pattern.definition(),
+        PatternTransform::Linear { spacing, count: 4, .. } if spacing.get() == 1.0
+    ));
 }
 
 #[test]
