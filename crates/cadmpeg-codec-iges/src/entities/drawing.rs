@@ -7,19 +7,17 @@ use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
-fn finite_vector(record: &ParameterRecord, start: usize) -> Option<[f64; 3]> {
+fn finite_vector(record: &ParameterRecord, start: usize) -> Option<FiniteVector<3>> {
     let values = [
         record.number_or(start, 0.0)?,
         record.number_or(start + 1, 0.0)?,
         record.number_or(start + 2, 0.0)?,
     ];
-    values
-        .iter()
-        .all(|value| value.is_finite())
-        .then_some(values)
+    FiniteVector::new(values)
 }
 
 fn has_in_plane_component(normal: [f64; 3], up: [f64; 3]) -> bool {
@@ -115,7 +113,7 @@ fn clipping_plane_valid(entry: &DirectoryEntry, global_table: GlobalTable) -> bo
 #[derive(Debug, PartialEq)]
 pub(crate) enum DrawingPropertyValue {
     Name(Vec<u8>),
-    Size([f64; 2]),
+    Size(FiniteVector<2>),
     Units(i64, Vec<u8>),
 }
 
@@ -133,9 +131,7 @@ pub(crate) fn drawing_property_value(
                 return None;
             }
             let size = [record.number(2)?, record.number(3)?];
-            size.iter()
-                .all(|value| value.is_finite())
-                .then_some(DrawingPropertyValue::Size(size))
+            FiniteVector::new(size).map(DrawingPropertyValue::Size)
         }
         17 => {
             let units = record.integer(2).filter(|value| (1..=11).contains(value))?;
@@ -350,7 +346,7 @@ pub(super) fn project(
             let up = finite_vector(record, 12);
             let vectors_valid = normal
                 .zip(up)
-                .is_some_and(|(normal, up)| has_in_plane_component(normal, up));
+                .is_some_and(|(normal, up)| has_in_plane_component(normal.get(), up.get()));
             let window_valid = (15..=19)
                 .all(|index| record.number_or(index, 0.0).is_some_and(f64::is_finite))
                 && record
