@@ -7,7 +7,7 @@ use std::ops::Range;
 use serde::{Deserialize, Serialize};
 
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
-use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal};
+use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, NonZeroReal};
 use cadmpeg_ir::units::FiniteVector;
 
 use crate::cage::Cage;
@@ -94,7 +94,7 @@ pub(crate) struct Morph {
     pub(crate) control: Control,
     pub(crate) captive_ids: Vec<Uuid>,
     pub(crate) localizers: Vec<Localizer>,
-    pub(crate) tolerance: FiniteReal,
+    pub(crate) tolerance: NonNegativeReal,
     pub(crate) quick_preview: bool,
     pub(crate) preserve_structure: bool,
 }
@@ -340,7 +340,7 @@ pub(crate) fn decode(
             },
             captive_ids,
             localizers: Vec::new(),
-            tolerance: FiniteReal::ZERO,
+            tolerance: NonNegativeReal::ZERO,
             quick_preview: false,
             preserve_structure: false,
         });
@@ -406,13 +406,13 @@ pub(crate) fn decode(
     outer.skip(list_next - outer.position())?;
     let (tolerance, quick_preview, preserve_structure) = if minor >= 1 {
         let tolerance = scaled_coordinate(outer.f64()?, scale)
-            .filter(|value| value.get() >= 0.0)
+            .and_then(NonNegativeReal::from_finite)
             .ok_or_else(|| {
                 GeometryError::malformed(outer.position() - 8, "invalid morph tolerance")
             })?;
         (tolerance, outer.bool()?, outer.bool()?)
     } else {
-        (FiniteReal::ZERO, false, false)
+        (NonNegativeReal::ZERO, false, false)
     };
     outer.skip_remaining()?;
     Ok(Morph {

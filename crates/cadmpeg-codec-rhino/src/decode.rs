@@ -18,6 +18,7 @@ use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{IdentityKey, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::report::{loss::LossNote, Severity};
+use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Color, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -5538,19 +5539,13 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
                 endpoint.y - transformed_origin.y,
                 endpoint.z - transformed_origin.z,
             );
-            let norm = value.norm();
-            if !norm.is_finite() || norm == 0.0 {
-                return Err("instance line transform collapsed its direction".to_string());
-            }
+            let norm = PositiveReal::new(value.norm())
+                .ok_or("instance line transform collapsed its direction")?;
             CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::new(
                     transformed_origin,
-                    UnitVector3::new(cadmpeg_ir::math::Vector3::new(
-                        value.x / norm,
-                        value.y / norm,
-                        value.z / norm,
-                    ))
-                    .ok_or("LineCurve.direction must have unit length")?,
+                    UnitVector3::normalized_with_admitted_length(value, norm)
+                        .ok_or("LineCurve.direction must have unit length")?,
                 ),
             ))
         }
@@ -5625,20 +5620,14 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
                 projected.y - dot * normal.y,
                 projected.z - dot * normal.z,
             );
-            let length = value.norm();
-            if !length.is_finite() || length == 0.0 {
-                return Err("instance plane transform collapsed its frame".to_string());
-            }
+            let length = PositiveReal::new(value.norm())
+                .ok_or("instance plane transform collapsed its frame")?;
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::new(
                     origin,
-                    UnitVector3::new(cadmpeg_ir::math::Vector3::new(
-                        value.x / length,
-                        value.y / length,
-                        value.z / length,
-                    ))
-                    .and_then(|u_axis| OrthonormalFrame3::from_units(unit_normal, u_axis))
-                    .ok_or("PlaneSurface.normal/u_axis must form an orthonormal frame")?,
+                    UnitVector3::normalized_with_admitted_length(value, length)
+                        .and_then(|u_axis| OrthonormalFrame3::from_units(unit_normal, u_axis))
+                        .ok_or("PlaneSurface.normal/u_axis must form an orthonormal frame")?,
                 ),
             ))
         }

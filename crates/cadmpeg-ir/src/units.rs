@@ -388,12 +388,20 @@ impl UnitVector3 {
     #[must_use]
     pub fn normalized_with_length(value: Vector3) -> Option<(Self, PositiveReal)> {
         let length = PositiveReal::new(value.norm())?;
-        let direction = Self::new(Vector3::new(
+        let direction = Self::normalized_with_admitted_length(value, length)?;
+        Some((direction, length))
+    }
+
+    /// Normalize with a finite positive length already measured from `value`.
+    /// Component division and unit admission use the same arithmetic as
+    /// [`Self::normalized_with_length`].
+    #[must_use]
+    pub fn normalized_with_admitted_length(value: Vector3, length: PositiveReal) -> Option<Self> {
+        Self::new(Vector3::new(
             value.x / length.get(),
             value.y / length.get(),
             value.z / length.get(),
-        ))?;
-        Some((direction, length))
+        ))
     }
     /// Normalize by multiplying each component by the reciprocal of the
     /// Euclidean length. The length must be finite and nonzero, and the
@@ -1339,6 +1347,10 @@ mod tests {
         let input = Vector3::new(3.0, -4.0, 12.0);
         let (direction, length) = UnitVector3::normalized_with_length(input).unwrap();
         assert_eq!(length.get(), input.norm());
+        assert_eq!(
+            UnitVector3::normalized_with_admitted_length(input, length),
+            Some(direction)
+        );
         assert_eq!(
             [
                 direction.as_raw().x,
