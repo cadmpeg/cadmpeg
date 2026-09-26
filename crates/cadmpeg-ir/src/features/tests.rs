@@ -864,6 +864,16 @@ fn feature_lines_and_polylines_close_geometry_bounds_without_changing_wire_field
         (vec![first, second, first], false),
     ] {
         let chain = FeaturePolyline::new(points.clone(), closed).unwrap();
+        let admitted = points
+            .iter()
+            .copied()
+            .map(crate::features::FinitePoint3::new)
+            .collect::<Option<Vec<_>>>()
+            .unwrap();
+        assert_eq!(
+            FeaturePolyline::from_parts(admitted, closed),
+            Some(chain.clone())
+        );
         let wire = serde_json::json!({"definition":"polyline", "chain":{"points":points, "closed":closed}});
         let definition = FeatureDefinition::Operation(FeatureOperation::Polyline { chain });
         assert_eq!(serde_json::to_value(&definition).unwrap(), wire);

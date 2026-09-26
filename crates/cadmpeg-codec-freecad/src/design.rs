@@ -3665,7 +3665,7 @@ fn vector_list_property(
     properties: &[&PropertyRecord],
     name: &str,
     entries: &[EntryRecord],
-) -> Option<Vec<Point3>> {
+) -> Option<Vec<cadmpeg_ir::features::FinitePoint3>> {
     let property = property(properties, name)?;
     if property.type_name != "App::PropertyVectorList" {
         return None;
@@ -3692,10 +3692,13 @@ fn vector_list_property(
     let values = view.read_counted(count as u64, 24, |view| {
         Some(Point3::new(view.f64_le()?, view.f64_le()?, view.f64_le()?))
     })?;
-    if !view.is_empty() || values.iter().any(|point| !point.is_finite()) {
+    if !view.is_empty() {
         return None;
     }
-    Some(values)
+    values
+        .into_iter()
+        .map(cadmpeg_ir::features::FinitePoint3::new)
+        .collect()
 }
 
 fn part_construction_geometry_definition(
@@ -3775,7 +3778,7 @@ fn part_construction_geometry_definition(
             let points = vector_list_property(properties, "Nodes", entries)?;
             let closed = bool_property(properties, "Close").unwrap_or(false);
             Some(FeatureDefinition::Operation(FeatureOperation::Polyline {
-                chain: cadmpeg_ir::features::FeaturePolyline::new(points, closed)?,
+                chain: cadmpeg_ir::features::FeaturePolyline::from_parts(points, closed)?,
             }))
         }
         "Part::RegularPolygon" => Some(FeatureDefinition::Operation(
@@ -6100,11 +6103,15 @@ fn pattern_locations(
             }
             (0..count as usize - 1)
                 .map(|index| {
-                    let explicit = spacings.get(index).copied().unwrap_or(-1.0);
+                    let explicit = spacings
+                        .get(index)
+                        .copied()
+                        .map(FiniteReal::get)
+                        .unwrap_or(-1.0);
                     if explicit != -1.0 {
                         explicit
                     } else if pattern.len() > 1 {
-                        pattern[index % pattern.len()]
+                        pattern[index % pattern.len()].get()
                     } else {
                         fallback
                     }
@@ -6333,7 +6340,7 @@ fn integer_constraint_selector(
     u64::try_from(value).ok()
 }
 
-fn numeric_list(property: &PropertyRecord, entries: &[EntryRecord]) -> Option<Vec<f64>> {
+fn numeric_list(property: &PropertyRecord, entries: &[EntryRecord]) -> Option<Vec<FiniteReal>> {
     if property.type_name != "App::PropertyFloatList" {
         return None;
     }
@@ -6357,10 +6364,10 @@ fn numeric_list(property: &PropertyRecord, entries: &[EntryRecord]) -> Option<Ve
         return None;
     }
     let values = view.read_counted(count as u64, 8, View::f64_le)?;
-    if !view.is_empty() || values.iter().any(|value| !value.is_finite()) {
+    if !view.is_empty() {
         return None;
     }
-    Some(values)
+    values.into_iter().map(FiniteReal::new).collect()
 }
 
 fn operation_boolean(kind: &str) -> BooleanOp {

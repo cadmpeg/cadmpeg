@@ -656,16 +656,24 @@ struct FeaturePolylineWire {
 impl FeaturePolyline {
     /// Admit a finite chain with at least two points, or three when closed.
     pub fn new(points: Vec<Point3>, closed: bool) -> Option<Self> {
-        if points.len() < 2
-            || (closed && points.len() < 3)
-            || points.windows(2).any(|pair| pair[0] == pair[1])
-        {
+        if points.len() < 2 || (closed && points.len() < 3) {
             return None;
         }
         let points = points
             .into_iter()
             .map(FinitePoint3::new)
             .collect::<Option<Vec<_>>>()?;
+        Self::from_parts(points, closed)
+    }
+
+    /// Build a polyline from finite points if its chain is admissible.
+    pub fn from_parts(points: Vec<FinitePoint3>, closed: bool) -> Option<Self> {
+        if points.len() < 2
+            || (closed && points.len() < 3)
+            || points.windows(2).any(|pair| pair[0] == pair[1])
+        {
+            return None;
+        }
         Some(Self { points, closed })
     }
 
