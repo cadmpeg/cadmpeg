@@ -17,11 +17,12 @@ use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, FaceId, PointId, SurfaceId, Verte
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveReal};
+use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveLength, PositiveReal};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Edge, IncreasingParameterInterval, Point, Region, Shell, Vertex,
 };
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::{CadIr, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1438,9 +1439,7 @@ pub(crate) fn project_geometry(
             ));
             continue;
         }
-        let Some(center) = transform
-            .apply_point(Point3::new(values[1], values[2], values[0]))
-            .map(cadmpeg_ir::features::FinitePoint3::get)
+        let Some(center) = transform.apply_point(Point3::new(values[1], values[2], values[0]))
         else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
@@ -1454,18 +1453,20 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
         };
-        let start_delta = start.vector_from(center);
-        let end_delta = end.vector_from(center);
+        let start_delta = start.vector_from(center.get());
+        let end_delta = end.vector_from(center.get());
         let radius = start_delta.norm();
         let end_radius = end_delta.norm();
-        let Some(ref_direction) = ({
+        let Some(ref_raw) = ({
             let n = start_delta.norm();
             (n.is_finite() && n > 0.0).then(|| start_delta.scale(1.0 / n))
         }) else {
             losses.push(entity_loss(entry, "arc start point equals its center"));
             continue;
         };
-        let Some(axis) = ({
+        let ref_direction = UnitVector3::normalized_by_reciprocal(start_delta);
+        let ref_raw = ref_direction.map_or(ref_raw, |direction| *direction.as_raw());
+        let Some(axis_raw) = ({
             let v = basis_x.cross(basis_y);
             let n = v.norm();
             (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
@@ -1473,6 +1474,8 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "arc placement collapses its plane"));
             continue;
         };
+        let axis = UnitVector3::normalized_by_reciprocal(basis_x.cross(basis_y));
+        let axis_raw = axis.map_or(axis_raw, |direction| *direction.as_raw());
         let radius_tolerance = global
             .minimum_resolution_mm()
             .max(radius.max(end_radius).max(1.0) * COMPUTATION_TOLERANCE);
@@ -1483,16 +1486,18 @@ pub(crate) fn project_geometry(
             ));
             continue;
         }
-        let Some(end_direction) = ({
+        let Some(end_raw) = ({
             let n = end_delta.norm();
             (n.is_finite() && n > 0.0).then(|| end_delta.scale(1.0 / n))
         }) else {
             losses.push(entity_loss(entry, "arc terminate point equals its center"));
             continue;
         };
-        let mut angle = axis
-            .dot(ref_direction.cross(end_direction))
-            .atan2(ref_direction.dot(end_direction))
+        let end_direction = UnitVector3::normalized_by_reciprocal(end_delta);
+        let end_raw = end_direction.map_or(end_raw, |direction| *direction.as_raw());
+        let mut angle = axis_raw
+            .dot(ref_raw.cross(end_raw))
+            .atan2(ref_raw.dot(end_raw))
             .rem_euclid(std::f64::consts::TAU);
         if angularly_equal(angle, 0.0) {
             angle = std::f64::consts::TAU;
@@ -1526,13 +1531,21 @@ pub(crate) fn project_geometry(
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                cadmpeg_ir::geometry::analytic::CircleCurve::new(
                     center,
-                    axis,
-                    ref_direction,
-                    radius,
-                )
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+                    axis.and_then(|axis| {
+                        ref_direction
+                            .and_then(|reference| OrthonormalFrame3::from_units(axis, reference))
+                    })
+                    .ok_or_else(|| {
+                        CodecError::malformed(
+                            "CircleCurve.axis/ref_direction must form an orthonormal frame",
+                        )
+                    })?,
+                    PositiveLength::new(radius).ok_or_else(|| {
+                        CodecError::malformed("CircleCurve.radius must be positive and finite")
+                    })?,
+                ),
             )),
             source_object: Some(source_object(entry)?),
         });
@@ -1761,17 +1774,15 @@ pub(crate) fn project_geometry(
             ));
             continue;
         }
+        let direction = UnitVector3::normalized_by_component_division(delta)
+            .ok_or_else(|| CodecError::malformed("LineCurve.direction must have unit length"))?;
         let stem = crate::ids::Stem::directory(entry.sequence);
         let curve = crate::ids::curve(&stem);
         sequences.record_curve(&curve, entry.sequence);
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    start.get(),
-                    Vector3::new(delta.x / length, delta.y / length, delta.z / length),
-                )
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+                cadmpeg_ir::geometry::analytic::LineCurve::new(start, direction),
             )),
             source_object: Some(source_object(entry)?),
         });

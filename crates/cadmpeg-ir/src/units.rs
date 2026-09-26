@@ -354,6 +354,21 @@ impl UnitVector3 {
         }
         Self::new(value.scale(1.0 / length))
     }
+    /// Normalize by dividing each component by the Euclidean length. The
+    /// finite nonzero length gate and component divisions are the arithmetic
+    /// used by IGES Type 110 line projection.
+    #[must_use]
+    pub fn normalized_by_component_division(value: Vector3) -> Option<Self> {
+        let length = value.norm();
+        if !length.is_finite() || length <= 0.0 {
+            return None;
+        }
+        Self::new(Vector3::new(
+            value.x / length,
+            value.y / length,
+            value.z / length,
+        ))
+    }
     /// The unit direction of `value`: each component divided by the largest
     /// component magnitude, then by the `hypot` length of the quotients. The
     /// direction is absent when a component is not finite or every component
@@ -1466,6 +1481,24 @@ mod tests {
         ] {
             assert_eq!(UnitVector3::normalized_by_reciprocal(value), None);
         }
+    }
+
+    #[test]
+    fn component_division_normalization_preserves_subnormal_line_directions() {
+        for value in [
+            Vector3::new(3.0, 4.0, 0.0),
+            Vector3::new(1.0e-320, 0.0, 0.0),
+        ] {
+            let length = value.norm();
+            let expected = Vector3::new(value.x / length, value.y / length, value.z / length);
+            let unit = UnitVector3::normalized_by_component_division(value)
+                .expect("finite nonzero direction");
+            assert_eq!(*unit.as_raw(), expected);
+        }
+        assert_eq!(
+            UnitVector3::normalized_by_component_division(Vector3::new(0.0, 0.0, 0.0)),
+            None
+        );
     }
 
     #[test]
