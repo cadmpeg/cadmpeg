@@ -77,7 +77,7 @@ fn decode_over_routes(
     let matched = crate::dialect::classify(&scan);
 
     if ctx.container_only() {
-        let (ir, annotations, unknowns) = build_metadata_fallback(&scan);
+        let (ir, annotations, unknowns) = build_metadata_fallback(ctx, &scan)?;
         let report = build_container_report(&scan);
         return decode_result(&scan, &matched, ir, report, annotations, unknowns);
     }
@@ -89,7 +89,8 @@ fn decode_over_routes(
     let mut fell_through = Vec::new();
     for (index, route) in applicable.iter().enumerate() {
         let stated = refusal.note_count();
-        if let Some(out) = (route.decode)(ctx, &scan, refusal) {
+        let output = (route.decode)(ctx, &scan, refusal)?;
+        if let Some(out) = output {
             return finish_decode(
                 ctx,
                 &scan,
@@ -98,6 +99,7 @@ fn decode_over_routes(
                 out.report,
                 out.annotations,
                 out.unknowns,
+                out.admitted_model_entities,
                 route.standard_face_population,
                 &fell_through,
                 refusal,
@@ -116,7 +118,7 @@ fn decode_over_routes(
         }
     }
 
-    let (ir, annotations, unknowns) = build_metadata_fallback(&scan);
+    let (ir, annotations, unknowns) = build_metadata_fallback(ctx, &scan)?;
     let report = build_container_report(&scan);
     finish_decode(
         ctx,
@@ -126,6 +128,7 @@ fn decode_over_routes(
         report,
         annotations,
         unknowns,
+        0,
         false,
         &fell_through,
         refusal,
@@ -190,6 +193,7 @@ fn finish_decode(
     mut report: DecodeBody,
     mut annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
+    mut admitted_model_entities: u64,
     standard_face_population: bool,
     fell_through: &[String],
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -206,23 +210,21 @@ fn finish_decode(
             .push(CatiaLossCode::SourceRouteFellThrough.note(statement.clone()));
     }
     report.losses.extend(refusal.take_notes());
-    // Retained unknown records are source entities even when a route transfers
-    // no neutral model entity (for example, an unrecognized storage variant).
-    ctx.charge_entities(unknowns.len() as u64, "admit CATIA retained source records")?;
-    // Charge route-built entities before native decode and transfer work so
-    // max_entities refuses that work rather than only reporting afterward.
-    let mut admitted_entities = 0_u64;
     ctx.admit_entities(
-        ir.model.entity_count() as u64,
-        &mut admitted_entities,
+        u64::try_from(ir.model.entity_count()).map_err(|_| {
+            ctx.refuse_codec_limit("count CATIA route entities", u64::MAX, u64::MAX)
+        })?,
+        &mut admitted_model_entities,
         "admit CATIA route entities",
     )?;
     let consolidated_record_sources = container::consolidated_record_sources(scan);
-    let native =
-        CatiaNative::decode_with_record_sources(&scan.data, &consolidated_record_sources, refusal);
-    // The native decode is the second and last producer of lane refusals, and
-    // it cannot fail; drain it here, before the transfers below can answer
-    // `Err`.
+    let native = CatiaNative::decode_with_record_sources(
+        ctx,
+        &scan.data,
+        &consolidated_record_sources,
+        refusal,
+    )?;
+    // Drain lane refusals from a successful native decode before transfers run.
     report.losses.extend(refusal.take_notes());
     let modeling_graph_scope = modeling_graph_scope(
         !scan.outer_container_declarations.is_empty(),
@@ -235,42 +237,52 @@ fn finish_decode(
         .flat_map(|graph| graph.records.iter().map(|record| record.id.clone()))
         .collect::<HashSet<_>>();
     let design_feature_transfer =
-        design_feature::transfer_design_features(&mut ir, &native, &modeling_graph_scope)?;
+        design_feature::transfer_design_features(ctx, &mut ir, &native, &modeling_graph_scope)?;
     let transferred_native_sketch_entity_records = sketch::transfer_native_sketch_entities(
+        ctx,
         &mut ir,
         &native,
         &design_feature_transfer,
         &modeling_graph_scope,
-    );
+    )?;
     let transferred_native_sketch_constraint_records = sketch::transfer_native_sketch_constraints(
+        ctx,
         &mut ir,
         &native,
         &design_feature_transfer,
         &modeling_graph_scope,
-    );
+    )?;
     let transferred_constraint_range_records = sketch::transfer_constraint_ranges(
+        ctx,
         &mut ir,
         &native,
         &design_feature_transfer,
         &modeling_graph_scope,
     )?;
     let transferred_pmi_dimension_count = pmi::transfer_dimensions(
+        ctx,
         &mut ir,
         &native,
         &modeling_graph_scope,
         &transferred_constraint_range_records,
-    );
-    let formula_transfer =
-        formula::transfer_parameters(&mut ir, &native, &mut annotations, &modeling_graph_scope)?;
+    )?;
+    let formula_transfer = formula::transfer_parameters(
+        ctx,
+        &mut ir,
+        &native,
+        &mut annotations,
+        &modeling_graph_scope,
+    )?;
     design_feature_transfer.assign_parameter_owners(&mut ir, &native);
     let appearance_transfer = crate::appearance::transfer(
+        ctx,
         &mut ir,
         &native,
         &modeling_graph_scope,
         standard_face_population
             .then_some(scan.main_data_stream.as_deref().or(scan.brep.as_deref()))
             .flatten(),
-    );
+    )?;
     let object_record_count: usize = native
         .object_graphs
         .iter()
@@ -3566,11 +3578,6 @@ fn finish_decode(
         )));
     }
     native.store_owned(ir.native.namespace_mut("catia"))?;
-    ctx.admit_entities(
-        ir.model.entity_count() as u64,
-        &mut admitted_entities,
-        "admit CATIA entities",
-    )?;
     decode_result(scan, matched, ir, report, annotations, unknowns)
 }
 

@@ -67,42 +67,46 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
         faces: [0, 1],
         geometry: StandardCurveGeometry::Bspline,
     };
-    let (id, range) = build_standard_edge_curve(
-        &mut ir,
-        &mut annotations,
-        &[
-            (
-                SurfaceId::mint("catia:test:surface#surface-0".to_string())
-                    .expect("identity grammar"),
-                false,
-                0,
-            ),
-            (
-                SurfaceId::mint("catia:test:surface#surface-1".to_string())
-                    .expect("identity grammar"),
-                false,
-                1,
-            ),
-        ],
-        &HashMap::from([
-            (
-                SurfaceId::mint("catia:test:surface#surface-0".to_string())
-                    .expect("identity grammar"),
-                0,
-            ),
-            (
-                SurfaceId::mint("catia:test:surface#surface-1".to_string())
-                    .expect("identity grammar"),
-                1,
-            ),
-        ]),
-        &[],
-        &support,
-        [0, 1],
-        None,
-        None,
-        &mut crate::nurbs::LaneRefusals::new(),
-    )
+    let (id, range) = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        build_standard_edge_curve(
+            &mut ir,
+            &mut annotations,
+            &[
+                (
+                    SurfaceId::mint("catia:test:surface#surface-0".to_string())
+                        .expect("identity grammar"),
+                    false,
+                    0,
+                ),
+                (
+                    SurfaceId::mint("catia:test:surface#surface-1".to_string())
+                        .expect("identity grammar"),
+                    false,
+                    1,
+                ),
+            ],
+            &HashMap::from([
+                (
+                    SurfaceId::mint("catia:test:surface#surface-0".to_string())
+                        .expect("identity grammar"),
+                    0,
+                ),
+                (
+                    SurfaceId::mint("catia:test:surface#surface-1".to_string())
+                        .expect("identity grammar"),
+                    1,
+                ),
+            ]),
+            &[],
+            &support,
+            [0, 1],
+            None,
+            None,
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut admission,
+        )
+    })
     .expect("valid source object identity");
     let id = id.expect("spline support identifies a curve carrier");
     assert_eq!(range, Some([0.0, 3.0]));
@@ -193,18 +197,22 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
         faces: [0, 1],
         geometry: StandardCurveGeometry::Bspline,
     };
-    let (id, range) = build_standard_edge_curve(
-        &mut ir,
-        &mut annotations,
-        &[(sphere_id.clone(), false, 0), (plane_id.clone(), false, 1)],
-        &HashMap::from([(sphere_id, 0), (plane_id, 1)]),
-        &[],
-        &support,
-        [0, 1],
-        None,
-        None,
-        &mut crate::nurbs::LaneRefusals::new(),
-    )
+    let (id, range) = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        build_standard_edge_curve(
+            &mut ir,
+            &mut annotations,
+            &[(sphere_id.clone(), false, 0), (plane_id.clone(), false, 1)],
+            &HashMap::from([(sphere_id, 0), (plane_id, 1)]),
+            &[],
+            &support,
+            [0, 1],
+            None,
+            None,
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut admission,
+        )
+    })
     .expect("valid source object identity");
     let id = id.expect("spline support identifies a curve carrier");
     assert_eq!(range, None);
@@ -280,21 +288,25 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
         faces: [0, 1],
         geometry: StandardCurveGeometry::Bspline,
     };
-    let (id, range) = build_standard_edge_curve(
-        &mut ir,
-        &mut annotations,
-        &[
-            (cylinder_id.clone(), false, 0),
-            (plane_id.clone(), false, 1),
-        ],
-        &HashMap::from([(cylinder_id, 0), (plane_id, 1)]),
-        &[],
-        &support,
-        [0, 1],
-        None,
-        None,
-        &mut crate::nurbs::LaneRefusals::new(),
-    )
+    let (id, range) = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        build_standard_edge_curve(
+            &mut ir,
+            &mut annotations,
+            &[
+                (cylinder_id.clone(), false, 0),
+                (plane_id.clone(), false, 1),
+            ],
+            &HashMap::from([(cylinder_id, 0), (plane_id, 1)]),
+            &[],
+            &support,
+            [0, 1],
+            None,
+            None,
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut admission,
+        )
+    })
     .expect("valid source object identity");
     let id = id.expect("spline support identifies a curve carrier");
     assert_eq!(range, None);
@@ -380,18 +392,22 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
         faces: [0, 1],
         geometry: StandardCurveGeometry::Bspline,
     };
-    let (id, range) = build_standard_edge_curve(
-        &mut ir,
-        &mut annotations,
-        &[(first_id.clone(), false, 0), (second_id.clone(), false, 1)],
-        &HashMap::from([(first_id, 0), (second_id, 1)]),
-        &[],
-        &support,
-        [0, 1],
-        None,
-        None,
-        &mut crate::nurbs::LaneRefusals::new(),
-    )
+    let (id, range) = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        build_standard_edge_curve(
+            &mut ir,
+            &mut annotations,
+            &[(first_id.clone(), false, 0), (second_id.clone(), false, 1)],
+            &HashMap::from([(first_id, 0), (second_id, 1)]),
+            &[],
+            &support,
+            [0, 1],
+            None,
+            None,
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut admission,
+        )
+    })
     .expect("valid source object identity");
     let id = id.expect("spline support identifies a curve carrier");
     assert_eq!(range, None);
@@ -505,18 +521,22 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
         pcurves: [pcurve.clone(), pcurve],
         parameter_range: [2.0, 5.0],
     };
-    let (curve, _) = build_standard_edge_curve(
-        &mut ir,
-        &mut AnnotationBuilder::new(),
-        &[],
-        &HashMap::new(),
-        &[],
-        &support,
-        [0, 1],
-        Some(&native),
-        None,
-        &mut crate::nurbs::LaneRefusals::new(),
-    )
+    let (curve, _) = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        build_standard_edge_curve(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &[],
+            &HashMap::new(),
+            &[],
+            &support,
+            [0, 1],
+            Some(&native),
+            None,
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut admission,
+        )
+    })
     .expect("valid source object identity");
     let curve = curve.expect("procedural support identifies the curve");
     assert_eq!(ir.model.surfaces.len(), 2);
@@ -535,6 +555,83 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
         .procedural_curves
         .iter()
         .any(|construction| ir.model.procedural_curve_owner(&construction.id) == Some(&curve)));
+}
+
+#[test]
+fn standard_intersection_entity_limit_refuses_before_procedural_curve_creation() {
+    let mut ir = CadIr::empty();
+    ir.model.points.extend(
+        [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)]
+            .into_iter()
+            .enumerate()
+            .map(|(index, position)| {
+                Point::new(
+                    PointId::mint(format!("catia:test:point#point-{index}"))
+                        .expect("identity grammar"),
+                    cadmpeg_ir::features::FinitePoint3::new(position)
+                        .expect("a finite position is a point"),
+                    None,
+                )
+            }),
+    );
+    let support = StandardCurveSupport {
+        pos: 12,
+        tag: 40,
+        faces: [0, 0],
+        geometry: StandardCurveGeometry::Bspline,
+    };
+    let pcurve = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+        )
+        .expect("valid LinePcurve fixture"),
+    );
+    let carrier = |height| {
+        crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(SurfaceGeometry::Solved(
+            SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, height),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            ),
+        ))
+    };
+    let native = StandardEdgeSupport {
+        surface_object_ids: [20, 21],
+        carriers: [carrier(0.0), carrier(1.0)],
+        pcurves: [pcurve.clone(), pcurve],
+        parameter_range: [2.0, 5.0],
+    };
+    crate::test_support::with_entity_limit(3, |ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = build_standard_edge_curve(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &[],
+            &HashMap::new(),
+            &[],
+            &support,
+            [0, 1],
+            Some(&native),
+            None,
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut admission,
+        ) else {
+            panic!("intersection construction must exceed the three-entity limit");
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::Entities
+        );
+        assert_eq!(limit.used, 3);
+        assert_eq!(limit.operation, "admit CATIA family model entity");
+    });
+    assert_eq!(ir.model.curves.len(), 1);
+    assert_eq!(ir.model.surfaces.len(), 2);
+    assert!(ir.model.procedural_curves.is_empty());
 }
 
 #[test]

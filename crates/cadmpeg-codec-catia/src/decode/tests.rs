@@ -16,6 +16,24 @@ use crate::test_support::test_formula::standard_catpart_with_two_selector_value;
 use crate::test_support::test_object_graph::outer_container_object_graph_catpart;
 use crate::CatiaCodec;
 
+#[test]
+fn standard_alias_route_propagates_entity_candidate_limit() {
+    let bytes = standard_catpart_with_two_selector_value("Range", "CstAttr_Dimension", &[0xfe]);
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let options = DecodeOptions {
+        policy,
+        ..DecodeOptions::default()
+    };
+    let error = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &options)
+        .expect_err("7C05 identity candidate exceeds zero collection items");
+    assert!(matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "admit CATIA 7C05 identity candidate"));
+}
+
 fn graph(id: &str, stream_name: &str, class_name: &str) -> CatiaObjectGraph {
     CatiaObjectGraph {
         id: id.to_string(),
@@ -276,32 +294,37 @@ fn a_route_that_exits_after_a_refusal_still_delivers_both_notes() {
 #[test]
 fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
     fn refusing_route(
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         _scan: &crate::container::ContainerScan,
         refusal: &mut crate::nurbs::LaneRefusals,
-    ) -> Option<crate::families::FamilyOutput> {
-        crate::nurbs::note_refusal(
-            cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![
-                    cadmpeg_ir::math::Point2::new(0.0, 0.0),
-                    cadmpeg_ir::math::Point2::new(1.0, 0.0),
-                ],
-                Some(vec![1.0]),
-                false,
-            ),
-            refusal,
-            "e5 NURBS pcurve record at byte 96",
-        )?;
-        Some(crate::families::FamilyOutput {
-            ir: cadmpeg_ir::CadIr::empty(),
-            report: cadmpeg_ir::codec::DecodeBody::new(
-                cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
-            ),
-            annotations: cadmpeg_ir::Annotations::default(),
-            unknowns: Vec::new(),
-        })
+    ) -> Result<Option<crate::families::FamilyOutput>, cadmpeg_core::CodecError> {
+        ctx.charge_collection_items(7, "build test NURBS lanes")?;
+        let output = (|| {
+            crate::nurbs::note_refusal(
+                cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![
+                        cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                        cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                    ],
+                    Some(vec![1.0]),
+                    false,
+                ),
+                refusal,
+                "e5 NURBS pcurve record at byte 96",
+            )?;
+            Some(crate::families::FamilyOutput {
+                ir: cadmpeg_ir::CadIr::empty(),
+                report: cadmpeg_ir::codec::DecodeBody::new(
+                    cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+                ),
+                annotations: cadmpeg_ir::Annotations::default(),
+                unknowns: Vec::new(),
+                admitted_model_entities: 0,
+            })
+        })();
+        Ok(output)
     }
 
     const ROUTES: &[crate::families::Route] = &[crate::families::Route {

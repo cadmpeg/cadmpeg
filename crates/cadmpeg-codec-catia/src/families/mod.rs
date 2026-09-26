@@ -1,6 +1,7 @@
 //! Per-family CATIA record decoders.
 
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{Annotations, CadIr};
@@ -23,14 +24,38 @@ pub(crate) struct FamilyOutput {
     pub(crate) report: DecodeBody,
     pub(crate) annotations: Annotations,
     pub(crate) unknowns: Vec<UnknownRecord>,
+    pub(crate) admitted_model_entities: u64,
+}
+
+pub(crate) struct FamilyEntityAdmission<'a, 'b> {
+    ctx: &'a DecodeContext<'b>,
+    admitted: u64,
+}
+
+impl<'a, 'b> FamilyEntityAdmission<'a, 'b> {
+    pub(crate) fn new(ctx: &'a DecodeContext<'b>) -> Self {
+        Self { ctx, admitted: 0 }
+    }
+
+    pub(crate) fn charge(&mut self) -> Result<(), CodecError> {
+        self.ctx
+            .charge_entities(1, "admit CATIA family model entity")?;
+        self.admitted += 1;
+        Ok(())
+    }
+
+    pub(crate) fn admitted(&self) -> u64 {
+        self.admitted
+    }
 }
 
 /// One entry in the ordered decode route table.
 ///
 /// `applicable` gates the route on the identified container [`Variant`].
-/// `decode` returns `None` when the stream does not yield a transferable model;
+/// `decode` returns `Ok(None)` when the stream does not yield a transferable model;
 /// any carrier refusal it read is already in the caller's lane-refusal sink, so
-/// the fall-through to the next route does not lose it.
+/// the fall-through to the next route does not lose it. A resource refusal
+/// returns `Err` and stops routing.
 pub(crate) struct Route {
     /// Name the decode report states when this route falls through.
     pub(crate) name: &'static str,
@@ -39,7 +64,7 @@ pub(crate) struct Route {
         &DecodeContext<'_>,
         &ContainerScan,
         &mut crate::nurbs::LaneRefusals,
-    ) -> Option<FamilyOutput>,
+    ) -> Result<Option<FamilyOutput>, CodecError>,
     /// The route emits the standard FBB face population.
     pub(crate) standard_face_population: bool,
 }

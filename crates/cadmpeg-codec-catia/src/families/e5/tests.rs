@@ -482,6 +482,72 @@ fn decode_e5_stream_transfers_standalone_d8_carrier() {
 }
 
 #[test]
+fn e5_route_propagates_station_collection_refusal() {
+    let mut stream = e5_d8_rolling_ball_stream();
+    for id in 100..109 {
+        append_e5_record(&mut stream, 0xfe, id, &[]);
+    }
+    let file = object_main_catpart(&stream);
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 13;
+    let options = DecodeOptions {
+        policy,
+        ..DecodeOptions::default()
+    };
+    let error = CatiaCodec
+        .decode(&mut Cursor::new(file), &options)
+        .expect_err("two E5 stations need 14 collection items");
+    assert!(matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "decode CATIA E5 rolling-ball stations"));
+}
+
+#[test]
+fn e5_route_refuses_model_entity_before_first_point_append() {
+    let file = object_main_catpart(&e5_torus_topology_stream());
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_entities = 1;
+    let error = CatiaCodec
+        .decode(
+            &mut Cursor::new(file),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        )
+        .expect_err("raw preservation leaves no entity allowance for an E5 point");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                && limit.operation == "admit CATIA family model entity"
+    ));
+}
+
+#[test]
+fn e5_topology_refuses_entity_before_boundary_curve_append() {
+    let file = object_main_catpart(&e5_torus_topology_stream());
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_entities = 10;
+    let error = CatiaCodec
+        .decode(
+            &mut Cursor::new(file),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        )
+        .expect_err("one raw record, four points, four vertices and one surface fill the allowance");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                && limit.operation == "admit CATIA family model entity"
+    ));
+}
+
+#[test]
 fn decode_e5_stream_transfers_reference_closed_torus_topology() {
     let stream = e5_torus_topology_stream();
     crate::families::e5::graph::parse_topology(&stream).expect("generated E5 topology");

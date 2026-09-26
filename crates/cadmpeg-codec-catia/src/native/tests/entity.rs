@@ -1011,12 +1011,15 @@ fn typed_definition_chain_values_transfer_as_parameters() {
         ),
     );
     let mut relation_ir = CadIr::empty();
-    let relation_transfer = crate::formula::transfer_parameters(
-        &mut relation_ir,
-        &native,
-        &mut Annotations::default(),
-        &crate::decode::ModelingGraphScope::Unscoped,
-    )
+    let relation_transfer = crate::test_support::with_service_context(|ctx| {
+        crate::formula::transfer_parameters(
+            ctx,
+            &mut relation_ir,
+            &native,
+            &mut Annotations::default(),
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
     .expect("valid exactness fields");
     assert_eq!(relation_transfer.definition_chain_parameter_count, 1);
     assert_eq!(relation_transfer.relation_program_parameter_count, 1);

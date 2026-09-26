@@ -762,7 +762,16 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
         forward: true,
     }];
 
-    let associated = associate_standard_freeform_e5_rolling_ball_jets(&records, &stream);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &stream,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("synthetic E5 stream fits the service profile");
+    let jets = crate::families::e5::records::e5_rolling_ball_jets(&ctx, &stream)
+        .expect("two E5 stations fit the collection limit");
+    let associated = associate_standard_freeform_e5_rolling_ball_jets(&records, &stream, &jets);
     assert!(matches!(
         associated.get(&7),
         Some(StandardSurfaceProcedure::RollingBall {
@@ -779,7 +788,8 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
     };
     *forward = false;
     assert!(
-        associate_standard_freeform_e5_rolling_ball_jets(&opposite_records, &stream).is_empty()
+        associate_standard_freeform_e5_rolling_ball_jets(&opposite_records, &stream, &jets)
+            .is_empty()
     );
 
     let mut reverse_stream = stream.clone();
@@ -793,14 +803,18 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
     assert_eq!(Some(sense_offset), encoded_sense_offset);
     reverse_stream[sense_offset..sense_offset + std::mem::size_of::<i32>()]
         .copy_from_slice(&1_i32.to_le_bytes());
+    let reverse_jets = crate::families::e5::records::e5_rolling_ball_jets(&ctx, &reverse_stream)
+        .expect("reverse stream has two admitted stations");
     assert_eq!(
-        crate::families::e5::records::e5_rolling_ball_jets(&reverse_stream)[0].sense,
+        reverse_jets[0].sense,
         crate::families::e5::graph::Sign::Positive
     );
-    assert!(
-        associate_standard_freeform_e5_rolling_ball_jets(&opposite_records, &reverse_stream,)
-            .contains_key(&7)
-    );
+    assert!(associate_standard_freeform_e5_rolling_ball_jets(
+        &opposite_records,
+        &reverse_stream,
+        &reverse_jets
+    )
+    .contains_key(&7));
 }
 
 #[test]
@@ -1001,21 +1015,25 @@ fn standard_emission_reverses_only_face_pcurve_use_range() {
             logical_vertex_count: 2,
         };
         let mut annotations = AnnotationBuilder::new();
-        emit_standard_topology(
-            &mut ir,
-            &mut annotations,
-            &bindings,
-            &[],
-            &surface_indices,
-            &supports,
-            &[[0, 1]],
-            &[0, 1],
-            &topology,
-            &[None],
-            &[None],
-            &[],
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
+        crate::test_support::with_service_context(|ctx| {
+            let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+            emit_standard_topology(
+                &mut ir,
+                &mut annotations,
+                &bindings,
+                &[],
+                &surface_indices,
+                &supports,
+                &[[0, 1]],
+                &[0, 1],
+                &topology,
+                &[None],
+                &[None],
+                &[],
+                &mut crate::nurbs::LaneRefusals::new(),
+                &mut admission,
+            )
+        })
         .expect("valid source object identity");
 
         let [loop_] = ir.model.loops.as_slice() else {
@@ -1225,18 +1243,22 @@ fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
             radius: 2.0,
         },
     };
-    let (curve, range) = build_standard_edge_curve(
-        &mut ir,
-        &mut AnnotationBuilder::new(),
-        &[(surface_id.clone(), false, 0)],
-        &HashMap::from([(surface_id, 0)]),
-        &[],
-        &support,
-        [0, 0],
-        None,
-        None,
-        &mut crate::nurbs::LaneRefusals::new(),
-    )
+    let (curve, range) = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        build_standard_edge_curve(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &[(surface_id.clone(), false, 0)],
+            &HashMap::from([(surface_id, 0)]),
+            &[],
+            &support,
+            [0, 0],
+            None,
+            None,
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut admission,
+        )
+    })
     .expect("valid source object identity");
     assert_eq!(range, Some([0.0, std::f64::consts::TAU]));
     let curve = curve.expect("closed circle support identifies a curve");

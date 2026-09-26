@@ -711,6 +711,7 @@ pub(super) fn emit_pcurves(
     annotations: &mut AnnotationBuilder,
     graph: &B5Graph,
     plan: &TransferPlan,
+    admission: &mut crate::families::FamilyEntityAdmission<'_, '_>,
 ) -> Result<PcurveUses, cadmpeg_core::CodecError> {
     let pcurve_plan = &plan.pcurve_plan;
     let mut occurrence_groups =
@@ -781,6 +782,7 @@ pub(super) fn emit_pcurves(
             for occurrence in occurrences {
                 pcurve_uses.insert(occurrence, (id.clone(), parameter_range));
             }
+            admission.charge()?;
             ir.model.pcurves.push(Pcurve {
                 id,
                 geometry: geometry.clone(),
