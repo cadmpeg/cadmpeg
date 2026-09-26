@@ -257,7 +257,7 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<EdgeUse> {
         }
     }
 
-    let magic_end = (p + 16).min(buf.len().saturating_sub(MAGIC.len()));
+    let magic_end = (p + 16).min(buf.len().checked_sub(MAGIC.len()).map_or(0, |end| end));
     for magic in p + 9..=magic_end {
         if buf.get(magic..magic + MAGIC.len()) != Some(MAGIC.as_slice()) {
             continue;
@@ -351,7 +351,8 @@ fn parse_vertex_use(buf: &[u8], off: usize) -> Option<VertexUse> {
     let refs = if buf.get(p + 16..p + 24) == Some(MAGIC.as_slice()) {
         refs_be::<5>(buf, p + 6)?
     } else {
-        let magic = (p + 21..=(p + 32).min(buf.len().saturating_sub(MAGIC.len())))
+        let magic = (p + 21
+            ..=(p + 32).min(buf.len().checked_sub(MAGIC.len()).map_or(0, |end| end)))
             .find(|at| buf.get(*at..*at + MAGIC.len()) == Some(MAGIC.as_slice()))?;
         let count = (magic.checked_sub(p + 6)?) / 3;
         if count < 5 || p + 6 + count * 3 != magic {

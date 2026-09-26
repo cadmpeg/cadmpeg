@@ -115,9 +115,11 @@ fn definition_candidates(
         let Some(data) = p.checked_add(6) else {
             continue;
         };
-        let Some(len) =
-            cadmpeg_core::decode::bounded_len(u64::from(len), 1, buf.len().saturating_sub(data))
-        else {
+        let Some(len) = cadmpeg_core::decode::bounded_len(
+            u64::from(len),
+            1,
+            buf.len().checked_sub(data).map_or(0, |len| len),
+        ) else {
             continue;
         };
         let Some(end) = data.checked_add(len) else {
@@ -245,9 +247,11 @@ fn integer_lists(
         let Some(data) = p.checked_add(6) else {
             continue;
         };
-        let Some(count) =
-            cadmpeg_core::decode::bounded_len(u64::from(count), 4, buf.len().saturating_sub(data))
-        else {
+        let Some(count) = cadmpeg_core::decode::bounded_len(
+            u64::from(count),
+            4,
+            buf.len().checked_sub(data).map_or(0, |len| len),
+        ) else {
             continue;
         };
         if count != 1 && !ATOM_WIDTHS.contains(&count) {
