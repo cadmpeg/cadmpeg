@@ -128,8 +128,10 @@ fn metadata_attribute_refuses_collection_limit_before_insert() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let mut projection = MetadataProjection::default();
-    projection.title = Some("Drawing".into());
+    let projection = MetadataProjection {
+        title: Some("Drawing".into()),
+        ..MetadataProjection::default()
+    };
     let mut attributes = std::collections::BTreeMap::new();
     assert!(matches!(
         projection.apply_attributes(&ctx, &mut attributes),

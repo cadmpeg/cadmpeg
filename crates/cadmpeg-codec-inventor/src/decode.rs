@@ -66,7 +66,7 @@ fn decode_container<'a>(
     // recomputes the other.
     let recovery = DialectRecovery::of(ctx, container)?;
     let matched = recovery.classify(ctx)?;
-    let dialects = crate::dialect::layers(matched.clone(), &container.rse.active_carrier)?;
+    let dialects = crate::dialect::layers(ctx, &matched, &container.rse.active_carrier)?;
     // The kernel layer, classified from the carrier's own header. Non-primary:
     // its format is `acis`, the embedded layer `cadmpeg-asm` owns.
     let kernel_match = dialects
@@ -1303,7 +1303,9 @@ fn decode_container<'a>(
         )));
     }
     losses.extend(dialect_loss(ctx, &matched, &recovery)?);
-    losses.extend(kernel_match.as_ref().and_then(kernel_dialect_loss));
+    if let Some(kernel) = kernel_match.as_ref() {
+        losses.extend(kernel_dialect_loss(ctx, kernel)?);
+    }
     if !ctx.container_only()
         && !matches!(document_kind, DocumentKind::Assembly)
         && !geometry_transferred
