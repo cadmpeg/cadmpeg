@@ -3,7 +3,7 @@
 
 use crate::families::standard::fbb::EdgeTableForm;
 use crate::families::standard::records::AnalyticSurfaceKind;
-use cadmpeg_core::decode::{alloc_filled, DecodeContext, WorkBudget};
+use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_ir::document::{CadIr, EntityRewrite, Model};
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
@@ -4193,8 +4193,9 @@ fn attach_standard_topology(
     else {
         return Err(StandardTopologyFailure::EdgeFaceAssignment.into());
     };
-    let mut deferred_port_edges = alloc_filled(supports.len(), false, "catia_deferred_port_edges")
-        .map_err(|_| StandardTopologyFailure::TopologySearchExhausted)?;
+    let mut deferred_port_edges = ctx
+        .alloc_filled(supports.len(), false, "catia_deferred_port_edges")
+        .map_err(StandardTopologyError::Resource)?;
     let mut open_face_domains = None;
     let mut endpoint_face_assignments = None;
     apply_standard_native_edge_faces(&mut edge_faces, &supports, records, native_edge_faces);
@@ -4210,12 +4211,13 @@ fn attach_standard_topology(
         .collect::<HashMap<_, _>>();
     let face_bounds = (face_bounds.len() == face_count).then_some(face_bounds);
     let face_point_membership =
-        standard_face_point_membership(ir, bindings, &surface_indices, face_bounds);
+        standard_face_point_membership(ctx, ir, bindings, &surface_indices, face_bounds)
+            .map_err(StandardTopologyError::Resource)?;
     let limit_curve_bindings =
         standard_limit_curve_bindings(ir, bindings, &surface_indices, &supports, limit_curves);
-    let mut ordered_endpoint_pairs =
-        alloc_filled(supports.len(), None, "catia_ordered_endpoint_pairs")
-            .map_err(|_| StandardTopologyFailure::TopologySearchExhausted)?;
+    let mut ordered_endpoint_pairs = ctx
+        .alloc_filled(supports.len(), None, "catia_ordered_endpoint_pairs")
+        .map_err(StandardTopologyError::Resource)?;
     let point_coordinates = ir
         .model
         .points
@@ -6640,31 +6642,31 @@ fn face_surface<'a>(
 /// Cache the exact face-membership predicate used by endpoint search.
 ///
 /// Face geometry and standard face bounds are immutable while a topology
-/// candidate is searched. The cache changes only lookup cost; allocation
-/// failure returns `None`, and callers retain the original predicate.
+/// candidate is searched. The cache changes only lookup cost.
 fn standard_face_point_membership(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
     face_bounds: Option<&[Option<crate::families::standard::records::StandardFaceBounds>]>,
-) -> Option<Vec<Vec<bool>>> {
-    bindings
-        .iter()
-        .enumerate()
-        .map(|(face, _)| {
-            let surface = face_surface(ir, bindings, surface_indices, face)?;
-            let bounds = face_bounds
-                .and_then(|bounds| bounds.get(face).copied())
-                .flatten();
-            let mut membership =
-                alloc_filled(ir.model.points.len(), false, "catia_face_point_membership").ok()?;
-            for (point, candidate) in ir.model.points.iter().enumerate() {
-                membership[point] =
-                    point_on_standard_face(candidate.position().get(), &surface.geometry, bounds);
-            }
-            Some(membership)
-        })
-        .collect()
+) -> Result<Option<Vec<Vec<bool>>>, cadmpeg_core::CodecError> {
+    let mut memberships =
+        ctx.alloc_filled(bindings.len(), Vec::new(), "catia_face_membership_rows")?;
+    for (face, membership) in memberships.iter_mut().enumerate() {
+        let Some(surface) = face_surface(ir, bindings, surface_indices, face) else {
+            return Ok(None);
+        };
+        let bounds = face_bounds
+            .and_then(|bounds| bounds.get(face).copied())
+            .flatten();
+        *membership =
+            ctx.alloc_filled(ir.model.points.len(), false, "catia_face_point_membership")?;
+        for (point, candidate) in ir.model.points.iter().enumerate() {
+            membership[point] =
+                point_on_standard_face(candidate.position().get(), &surface.geometry, bounds);
+        }
+    }
+    Ok(Some(memberships))
 }
 
 fn point_on_standard_face(

@@ -199,8 +199,11 @@ fn owner_face_bounds_are_not_a_witness_for_other_fixed_nine_dialects() {
 fn owner_face_swaps_bind_when_every_complete_matching_has_one_carrier() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[0], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).expect("binding fixture fits the service profile");
+        &[0],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("binding fixture fits the service profile");
     let domains = vec![
         vec![(0, vec![7]), (1, vec![7]), (2, vec![7])],
         vec![(0, vec![7]), (1, vec![7])],
@@ -217,8 +220,11 @@ fn owner_face_swaps_bind_when_every_complete_matching_has_one_carrier() {
 fn owner_face_matching_withholds_carrier_labels_that_change_under_a_swap() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[0], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).expect("binding fixture fits the service profile");
+        &[0],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("binding fixture fits the service profile");
     let domains = vec![
         vec![(0, vec![7]), (1, vec![9])],
         vec![(0, vec![9]), (1, vec![7])],
@@ -235,8 +241,11 @@ fn owner_face_matching_withholds_carrier_labels_that_change_under_a_swap() {
 fn owner_face_matching_removes_labels_outside_every_complete_matching() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[0], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).expect("binding fixture fits the service profile");
+        &[0],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("binding fixture fits the service profile");
     let domains = vec![vec![(0, vec![7]), (1, vec![99])], vec![(1, vec![11])]];
 
     assert_eq!(
@@ -250,8 +259,11 @@ fn owner_face_matching_removes_labels_outside_every_complete_matching() {
 fn owner_face_matching_requires_every_face_to_have_a_distinct_owner() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[0], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).expect("binding fixture fits the service profile");
+        &[0],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("binding fixture fits the service profile");
     let domains = vec![vec![(0, vec![7])], Vec::new()];
 
     assert_eq!(
@@ -843,6 +855,13 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
 
 #[test]
 fn cached_face_point_membership_matches_the_source_predicate() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[0],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("service decode context");
     let mut ir = CadIr::empty();
     ir.model.points.extend([
         Point::new(
@@ -873,7 +892,8 @@ fn cached_face_point_membership_matches_the_source_predicate() {
     });
     let bindings = [(surface_id.clone(), false, 0)];
     let surface_indices = HashMap::from([(surface_id, 0)]);
-    let membership = standard_face_point_membership(&ir, &bindings, &surface_indices, None)
+    let membership = standard_face_point_membership(&ctx, &ir, &bindings, &surface_indices, None)
+        .expect("service decode")
         .expect("complete face membership");
 
     assert!(membership[0][0]);
@@ -886,6 +906,40 @@ fn cached_face_point_membership_matches_the_source_predicate() {
                 None,
             )
     }));
+}
+
+#[test]
+fn standard_face_membership_refuses_point_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut ir = CadIr::empty();
+    for index in 0..2 {
+        ir.model.points.push(Point::new(
+            PointId::mint(format!("catia:test:point#point-{index}")).expect("identity grammar"),
+            FinitePoint3::new(Point3::new(index as f64, 0.0, 0.0)).expect("finite position"),
+            None,
+        ));
+    }
+    let surface_id = SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar");
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+        source_object: None,
+    });
+    let bindings = [(surface_id.clone(), false, 0)];
+    let surface_indices = HashMap::from([(surface_id, 0)]);
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let error = standard_face_point_membership(&ctx, &ir, &bindings, &surface_indices, None)
+        .expect_err("two point memberships exceed the remaining collection allowance");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_face_point_membership"));
 }
 
 #[test]
