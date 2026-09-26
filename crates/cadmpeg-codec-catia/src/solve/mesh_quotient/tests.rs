@@ -82,4 +82,5 @@ fn a_face_the_work_counter_cannot_estimate_exhausts_the_search() {
     assert!(!outcome_for(2));
 }
 
+mod face_equation_cache;
 mod quotient_search;
