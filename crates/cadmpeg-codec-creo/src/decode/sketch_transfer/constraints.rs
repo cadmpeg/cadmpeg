@@ -800,7 +800,7 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
                 return Vec::new();
             };
             if dimension.dimension_type != 3
-                || !approximately_equal(dimension_value, equation.value)
+                || !approximately_equal(dimension_value, equation.value.get())
             {
                 return Vec::new();
             }
@@ -926,7 +926,7 @@ fn section_equation_radius_dimension_parameters(
         if dimension.dimension_type != 3
             || !dimension_value.is_finite()
             || dimension_value <= 0.0
-            || !approximately_equal(dimension_value, equation.value)
+            || !approximately_equal(dimension_value, equation.value.get())
         {
             continue;
         }
@@ -1226,20 +1226,17 @@ pub(in super::super) fn section_equation_polar_distance_constraints(
         .into_iter()
         .filter_map(|equation| {
             let distance = equation.radius_value?;
-            if !distance.is_finite() || distance < 0.0 {
-                return None;
-            }
-            let angle = if distance <= EPS_POLAR_ZERO {
+            let angle = if distance.get() <= EPS_POLAR_ZERO {
                 None
             } else {
-                Some(Angle::new(equation.angle_value?)?)
+                Some(equation.angle_value?)
             };
             let first = section_point_locus(definition, sketch, equation.first)?;
             let second = section_point_locus(definition, sketch, equation.second)?;
             let distance_parameter = section_equation_dimension_parameter(
                 &dimension_parameters,
                 equation.radius,
-                distance,
+                distance.get(),
             );
             Some((
                 SketchConstraint {
@@ -1252,7 +1249,7 @@ pub(in super::super) fn section_equation_polar_distance_constraints(
                         SketchConstraintDefinitionInput::PolarDistance {
                             first,
                             second,
-                            distance: Length::new(distance)?,
+                            distance: distance.into(),
                             angle,
                             distance_parameter,
                         },
