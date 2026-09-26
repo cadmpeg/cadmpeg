@@ -7,7 +7,7 @@ use cadmpeg_core::container::{ContainerRole, EntryStorage, VerbatimLabel};
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::{CodecError, ContainerEntry};
@@ -286,6 +286,7 @@ fn acquire(root: View<'_>) -> &[u8] {
 
 fn framing_error(error: FramingError) -> CodecError {
     match error {
+        FramingError::Resource(limit) => CodecError::ResourceLimit(limit),
         FramingError::Truncated { offset, .. } => CodecError::truncated(
             cadmpeg_core::decode::SourceLocation {
                 space: cadmpeg_core::decode::SpaceId::ROOT,
@@ -304,6 +305,7 @@ fn checksum_children_warning(typecode: u32, offset: usize, error: &FramingError)
 }
 
 fn checksum_warning(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     typecode: u32,
     offset: usize,
@@ -334,12 +336,35 @@ fn checksum_warning(
         typecode,
         TCODE_NAMED_PLANES | TCODE_NAMED_VIEWS | TCODE_VIEWS
     ) {
-        let children = match list_checksum_children(data, &chunk, archive) {
+        let mut reservation = ctx.reserve_scoped(0, "Rhino view checksum ranges")?;
+        let children = match list_checksum_children(ctx, data, &chunk, archive, &mut reservation) {
             Ok(children) => children,
+            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
         };
+        let extra_ranges = children
+            .len()
+            .checked_mul(2)
+            .and_then(|count| count.checked_add(1))
+            .ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "Rhino view checksum range count exceeds address space".to_string(),
+                )
+            })?;
+        let extra_bytes = extra_ranges
+            .checked_mul(std::mem::size_of::<std::ops::Range<usize>>())
+            .ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "Rhino view checksum range bytes exceed address space".to_string(),
+                )
+            })?;
+        reservation.grow(u64::try_from(extra_bytes).map_err(|_| {
+            CodecError::NotImplemented(
+                "Rhino view checksum range bytes exceed address space".to_string(),
+            )
+        })?)?;
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if matches!(
@@ -741,9 +766,11 @@ fn user_table_uuid_checksum_children(
 /// complete child chunks. A malformed child has no recoverable checksum range;
 /// the owning view parser reports that framing failure separately.
 fn list_checksum_children(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     chunk: &crate::chunks::Chunk,
     archive: ArchiveVersion,
+    reservation: &mut ScopedReservation<'_>,
 ) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
     let count = View::i32_le_at(data, chunk.body().start).ok_or(FramingError::Truncated {
         offset: chunk.body().start,
@@ -765,7 +792,49 @@ fn list_checksum_children(
             needed: offset - chunk.body().end,
         });
     }
+    let first_child_offset = offset;
+    for _ in 0..child_count {
+        let child = chunk_at(data, offset, chunk.body().end, archive, false)?;
+        offset = child.next_offset();
+    }
+    ctx.charge_work(
+        u64::try_from(child_count).map_err(|_| FramingError::Overflow {
+            offset: first_child_offset,
+        })?,
+        "Rhino view checksum child ranges",
+    )
+    .map_err(|error| match error {
+        CodecError::ResourceLimit(limit) => FramingError::Resource(limit),
+        other => FramingError::structural(first_child_offset, other.to_string()),
+    })?;
+    let range_bytes =
+        u64::try_from(std::mem::size_of::<std::ops::Range<usize>>()).map_err(|_| {
+            FramingError::Overflow {
+                offset: first_child_offset,
+            }
+        })?;
+    let total_bytes = u64::try_from(child_count)
+        .ok()
+        .and_then(|count| count.checked_mul(range_bytes))
+        .ok_or(FramingError::Overflow {
+            offset: first_child_offset,
+        })?;
+    reservation.grow(total_bytes).map_err(|error| match error {
+        CodecError::ResourceLimit(limit) => FramingError::Resource(limit),
+        other => FramingError::structural(first_child_offset, other.to_string()),
+    })?;
     let mut children = Vec::new();
+    children.try_reserve_exact(child_count).map_err(|_| {
+        FramingError::Resource(cadmpeg_core::decode::ResourceLimit {
+            dimension: cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
+            limit: u64::MAX,
+            used: 0,
+            additional: total_bytes,
+            operation: "Rhino view checksum ranges",
+        })
+    })?;
+    offset = first_child_offset;
     for _ in 0..child_count {
         let child = chunk_at(data, offset, chunk.body().end, archive, false)?;
         children.push(child.range());
@@ -937,11 +1006,15 @@ fn known_record(record: u32) -> bool {
 }
 
 /// Scan a V3/V4 or V5–V8 Rhino container.
-pub(crate) fn scan(data: &[u8]) -> Result<Scan<'_>, CodecError> {
-    scan_with_record_limit(data, TABLE_RECORD_CAP)
+pub(crate) fn scan<'a>(ctx: &DecodeContext<'_>, data: &'a [u8]) -> Result<Scan<'a>, CodecError> {
+    scan_with_record_limit(ctx, data, TABLE_RECORD_CAP)
 }
 
-fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, CodecError> {
+fn scan_with_record_limit<'a>(
+    ctx: &DecodeContext<'_>,
+    data: &'a [u8],
+    record_limit: usize,
+) -> Result<Scan<'a>, CodecError> {
     let header = parse_header(data).map_err(framing_error)?;
     let archive = header.archive_version;
     let archive_start = header.start_offset;
@@ -955,9 +1028,14 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
         ));
     }
     let mut warnings = Diagnostics::new();
-    if let Some(note) =
-        checksum_warning(data, comment.typecode, comment_offset, data.len(), archive)?
-    {
+    if let Some(note) = checksum_warning(
+        ctx,
+        data,
+        comment.typecode,
+        comment_offset,
+        data.len(),
+        archive,
+    )? {
         warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
     }
     let mut tables = Vec::new();
@@ -982,7 +1060,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
             }
             validate_eof(data, offset, archive).map_err(framing_error)?;
             let mut metadata =
-                crate::settings::parse_metadata(data, archive, &tables, &mut warnings);
+                crate::settings::parse_metadata(ctx, data, archive, &tables, &mut warnings)?;
             let all_objects = resolve_identities(all_objects, &metadata, &mut warnings);
             opaque_records.extend(std::mem::take(&mut metadata.opaque_records));
             return Ok(Scan {
@@ -1095,6 +1173,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
                 ));
             }
             if let Some(note) = checksum_warning(
+                ctx,
                 data,
                 record.typecode,
                 child_offset,
@@ -1142,9 +1221,14 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
                 chunk.typecode
             ));
         }
-        if let Some(note) =
-            checksum_warning(data, chunk.typecode, offset, chunk.next_offset(), archive)?
-        {
+        if let Some(note) = checksum_warning(
+            ctx,
+            data,
+            chunk.typecode,
+            offset,
+            chunk.next_offset(),
+            archive,
+        )? {
             warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
         }
         if table_base(chunk.typecode) == TCODE_INSTANCE_DEFINITION {
@@ -1188,7 +1272,14 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
 /// Test-only: leak `data` so the borrowed [`Scan`] is `'static`.
 #[cfg(test)]
 pub(crate) fn scan_owned(data: Vec<u8>) -> Result<Scan<'static>, CodecError> {
-    scan_with_record_limit(Box::leak(data.into_boxed_slice()), TABLE_RECORD_CAP)
+    let data = Box::leak(data.into_boxed_slice());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(
+        data,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::desktop(),
+    )?;
+    scan_with_record_limit(&ctx, data, TABLE_RECORD_CAP)
 }
 
 #[cfg(test)]
@@ -1196,7 +1287,14 @@ fn scan_with_test_record_limit(
     data: Vec<u8>,
     record_limit: usize,
 ) -> Result<Scan<'static>, CodecError> {
-    scan_with_record_limit(Box::leak(data.into_boxed_slice()), record_limit)
+    let data = Box::leak(data.into_boxed_slice());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(
+        data,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::desktop(),
+    )?;
+    scan_with_record_limit(&ctx, data, record_limit)
 }
 
 /// Build the format-neutral container summary.
@@ -1386,7 +1484,10 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> Decoded {
 }
 
 /// Inspect a Rhino stream, applying the version-specific scan depth.
-pub(crate) fn inspect(root: View<'_>) -> Result<ContainerSummary, CodecError> {
+pub(crate) fn inspect(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
+) -> Result<ContainerSummary, CodecError> {
     let data = acquire(root);
     let header = parse_header(data).map_err(framing_error)?;
     if !header.archive_version.is_chunked() {
@@ -1407,7 +1508,7 @@ pub(crate) fn inspect(root: View<'_>) -> Result<ContainerSummary, CodecError> {
             )],
         ));
     }
-    Ok(summarize(&scan(data)?))
+    Ok(summarize(&scan(ctx, data)?))
 }
 
 /// Decode a Rhino stream according to the supported container depth.
@@ -1415,9 +1516,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     let data = acquire(root);
     let header = parse_header(data).map_err(framing_error)?;
     if header.archive_version == ArchiveVersion::V1 {
-        return crate::legacy::decode_v1(data);
+        return crate::legacy::decode_v1(ctx, data);
     }
-    let scan = scan(data)?;
+    let scan = scan(ctx, data)?;
     if ctx.container_only() && scan.archive.is_chunked() {
         return Ok(container_only_result(&scan));
     }

@@ -38,6 +38,18 @@ impl KnotVector {
         &self.0
     }
 
+    /// Copy an admitted knot vector with a fallible allocation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an allocation error when the copy cannot reserve its storage.
+    pub fn try_clone(&self) -> Result<Self, std::collections::TryReserveError> {
+        let mut knots = Vec::new();
+        knots.try_reserve_exact(self.0.len())?;
+        knots.extend_from_slice(&self.0);
+        Ok(Self(knots))
+    }
+
     /// Reverse the order and negate every value, the knots of the reversed
     /// parameterization. Negation turns a non-decreasing sequence into a
     /// non-increasing one, and the reversal restores the order, so the

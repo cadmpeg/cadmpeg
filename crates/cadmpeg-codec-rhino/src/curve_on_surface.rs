@@ -2,6 +2,7 @@
 //! Curve-on-surface construction decoding.
 
 use crate::loss::Diagnostics;
+use cadmpeg_core::decode::DecodeContext;
 use std::ops::Range;
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader};
@@ -38,6 +39,7 @@ fn class(
 }
 
 pub(crate) fn decode(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
     scale: MillimeterScale,
@@ -47,8 +49,14 @@ pub(crate) fn decode(
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let mut warnings = Diagnostics::new();
     let c2 = class(data, &mut reader, archive, &mut warnings)?;
-    let decoded =
-        crate::curves::decode_inner_2d(data, c2.class_uuid, c2.class_data_range, archive, depth)?;
+    let decoded = crate::curves::decode_inner_2d(
+        ctx,
+        data,
+        c2.class_uuid,
+        c2.class_data_range,
+        archive,
+        depth,
+    )?;
     let DecodedGeometry::Curve {
         curve: parameter_curve,
     } = decoded
@@ -77,6 +85,7 @@ pub(crate) fn decode(
             ));
         }
         let decoded = crate::curves::decode_inner(
+            ctx,
             data,
             c3.class_uuid,
             c3.class_data_range,
@@ -102,6 +111,7 @@ pub(crate) fn decode(
         ));
     }
     let surface = crate::surfaces::decode(
+        ctx,
         data,
         support.class_uuid,
         support.class_data_range,
@@ -121,13 +131,26 @@ pub(crate) fn decode(
 
 #[cfg(test)]
 mod tests {
-    use super::decode;
     use crate::chunks::ArchiveVersion;
     use crate::surfaces::DecodedSurface;
     use crate::test_support::test_archive::{
         class_wrapper, line_payload, polyline_payload, LINE_CLASS, POLYLINE_CLASS,
     };
     use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
+
+    fn decode(
+        data: &[u8],
+        range: std::ops::Range<usize>,
+        scale: crate::settings::MillimeterScale,
+        archive: ArchiveVersion,
+        depth: usize,
+    ) -> Result<super::CurveOnSurface, crate::curves::GeometryError> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+            .expect("test input fits service profile");
+        super::decode(&ctx, data, range, scale, archive, depth)
+    }
 
     const PLANE_SURFACE: [u8; 16] = [
         0xdf, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22,

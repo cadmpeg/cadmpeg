@@ -328,7 +328,11 @@ impl<'a> Cursor<'a> {
         let len = units.checked_mul(2).ok_or_else(|| {
             CodecError::malformed(format_args!("Inventor PmDc {field} length overflows"))
         })?;
-        ctx.charge_retained(len as u64, "retain Inventor PmDc string")?;
+        let utf8_bytes = crate::reader::utf16_utf8_len(self.source, units).ok_or_else(|| {
+            CodecError::malformed(format_args!("Inventor PmDc {field} is not UTF-16"))
+        })?;
+        let _units = ctx.reserve_scoped(len as u64, "decode Inventor PmDc UTF-16 units")?;
+        ctx.charge_retained(utf8_bytes as u64, "retain Inventor PmDc string")?;
         self.source.utf16_le(units).ok_or_else(|| {
             CodecError::malformed(format_args!("Inventor PmDc {field} is not UTF-16"))
         })
@@ -518,8 +522,51 @@ impl<V> TryFrom<PmDcPairedMapWire<V>> for PmDcPairedMap<V> {
 mod tests {
     use super::{content_header, reference_list, Cursor};
     use crate::test_support::truncation::displayed_truncation;
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     use cadmpeg_core::decode::{DecodeContext, View};
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn pmdc_utf16_refuses_exact_utf8_retained_limit_before_decode() {
+        let bytes = [1_u8, 0, 0, 0, 0xac, 0x20];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 2;
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("PmDc string fits input cap");
+        assert!(matches!(
+            Cursor::new(root).utf16(&ctx, "name"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor PmDc string"
+        ));
+
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("PmDc string fits service policy");
+        assert_eq!(
+            Cursor::new(root)
+                .utf16(&ctx, "name")
+                .expect("valid PmDc string"),
+            "€"
+        );
+    }
+
+    #[test]
+    fn pmdc_utf16_refuses_materialized_limit_before_code_units() {
+        let bytes = [1_u8, 0, 0, 0, b'A', 0];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 1;
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("PmDc string fits input cap");
+        assert!(matches!(
+            Cursor::new(root).utf16(&ctx, "name"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::MaterializedBytes
+                    && limit.operation == "decode Inventor PmDc UTF-16 units"
+        ));
+    }
 
     #[test]
     fn truncated_scalar_reads_name_the_field() {

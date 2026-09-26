@@ -189,7 +189,8 @@ fn definition_catalog_uses_page_boundaries_when_payload_contains_a_start_marker(
     lp_ascii(&mut logical, "");
 
     let paged = super::page_logical(&logical).expect("page catalog record");
-    let frames = cadmpeg_protein::framing::record_frames(&paged).expect("frame catalog pages");
+    let frames =
+        cadmpeg_protein::framing::record_frames_for_edit(&paged).expect("frame catalog pages");
     let [frame] = frames.as_slice() else {
         panic!("marker-shaped length prefix must remain inside one logical record")
     };
@@ -675,12 +676,9 @@ fn appearance_connected_to(texture_guid: &str) -> cadmpeg_protein::DecodedRecord
 fn equivalent_duplicate_texture_guids_bind_once() {
     let guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
     let texture = texture_record(guid, "textures/albedo.png");
-    let (appearances, untyped_count) = super::appearances_from_schema_records(&[
-        appearance_connected_to(guid),
-        texture.clone(),
-        texture,
-    ])
-    .expect("equivalent texture records deduplicate");
+    let (appearances, untyped_count) =
+        schema_appearances(&[appearance_connected_to(guid), texture.clone(), texture])
+            .expect("equivalent texture records deduplicate");
 
     assert_eq!(untyped_count, 0);
     assert_eq!(appearances.len(), 1);
@@ -694,7 +692,7 @@ fn conflicting_duplicate_texture_guids_reject_in_both_orders() {
     let first = texture_record(guid, "textures/first.png");
     let second = texture_record(guid, "textures/second.png");
     for textures in [[first.clone(), second.clone()], [second, first]] {
-        let error = super::appearances_from_schema_records(&[
+        let error = schema_appearances(&[
             appearance_connected_to(guid),
             textures[0].clone(),
             textures[1].clone(),
@@ -724,11 +722,23 @@ fn unknown_texture_distance_unit_omits_typed_texture_and_counts_loss() {
     );
 
     let (appearances, untyped_count) =
-        super::appearances_from_schema_records(&[appearance_connected_to(guid), texture])
+        schema_appearances(&[appearance_connected_to(guid), texture])
             .expect("unknown unit is retained as a typed-projection loss");
 
     assert_eq!(untyped_count, 1);
     assert!(appearances[0].textures.is_empty());
+}
+
+fn schema_appearances(
+    records: &[cadmpeg_protein::DecodedRecord],
+) -> Result<(Vec<cadmpeg_ir::appearance::Appearance>, usize), cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    super::appearances_from_schema_records(&ctx, records)
 }
 
 #[test]
