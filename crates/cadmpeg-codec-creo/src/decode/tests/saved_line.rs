@@ -1676,13 +1676,17 @@ fn saved_arc_joins_through_order_table() {
             crate::feature::definitions::FeatureTrimVertex {
                 vertex_id: 1,
                 entities: vec![42, 43],
-                section_coordinates: Some([0.0, -2.0]),
+                section_coordinates: cadmpeg_ir::units::FinitePoint2::new(
+                    cadmpeg_ir::math::Point2::new(0.0, -2.0),
+                ),
                 offset: 31,
             },
             crate::feature::definitions::FeatureTrimVertex {
                 vertex_id: 1,
                 entities: vec![42, 44],
-                section_coordinates: Some([9.0, 9.0]),
+                section_coordinates: cadmpeg_ir::units::FinitePoint2::new(
+                    cadmpeg_ir::math::Point2::new(9.0, 9.0),
+                ),
                 offset: 32,
             },
         ],

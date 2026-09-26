@@ -472,6 +472,7 @@ pub(in crate::decode) fn solve_topological_vertices(
     ir: &CadIr,
     carriers: &BTreeMap<u32, CarrierEquation>,
     nurbs_endpoint_witnesses: &BTreeSet<CurveId>,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> SolvedTopologicalVertices {
     let mut diagnostics = TopologicalVertexSolveDiagnostics {
         topological_vertices: scan.topology.vertices.len(),
@@ -541,7 +542,7 @@ pub(in crate::decode) fn solve_topological_vertices(
         crate::topology::edge_start_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
     let mut fixed_points = carrier_points;
     let (endpoint_evidence, pcurve_diagnostics) =
-        pcurve_edge_endpoint_evidence_with_carriers(scan, ir, carriers);
+        pcurve_edge_endpoint_evidence_with_carriers(scan, ir, carriers, source_carriers);
     diagnostics.pcurve = pcurve_diagnostics;
     let edge_endpoints = endpoint_evidence
         .into_iter()
@@ -627,7 +628,9 @@ pub(in crate::decode) fn solve_topological_vertices(
         let Some(geometry) = unique_model_curve(ir, &id) else {
             continue;
         };
-        let Some(points) = nonperiodic_nurbs_endpoint_points(&geometry.geometry) else {
+        let Some(points) =
+            nonperiodic_nurbs_endpoint_points(source_carriers.curve_geometry(geometry))
+        else {
             continue;
         };
         diagnostics.nurbs_endpoint_constraints += 1;
@@ -640,7 +643,7 @@ pub(in crate::decode) fn solve_topological_vertices(
         .into_iter()
         .filter_map(|row| {
             let id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, row.id);
-            let geometry = &unique_model_curve(ir, &id)?.geometry;
+            let geometry = source_carriers.curve_geometry(unique_model_curve(ir, &id)?);
             let evaluable = matches!(
                 geometry,
                 CurveGeometry::Solved(
@@ -694,8 +697,16 @@ pub(in crate::decode) fn solved_topological_vertices(
     ir: &CadIr,
     carriers: &BTreeMap<u32, CarrierEquation>,
     nurbs_endpoint_witnesses: &BTreeSet<CurveId>,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> BTreeMap<u32, [f64; 3]> {
-    solve_topological_vertices(scan, ir, carriers, nurbs_endpoint_witnesses).points
+    solve_topological_vertices(
+        scan,
+        ir,
+        carriers,
+        nurbs_endpoint_witnesses,
+        source_carriers,
+    )
+    .points
 }
 
 #[cfg(test)]

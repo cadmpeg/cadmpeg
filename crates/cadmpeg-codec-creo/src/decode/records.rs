@@ -564,7 +564,7 @@ pub(super) fn reference_circle_records(scan: &ContainerScan) -> Vec<CreoReferenc
         .map(|circle| CreoReferenceCircleRecord {
             id: format!("creo:mdl_ref_info:arc_z_record#{}", circle.offset),
             entity_id: circle.entity_id,
-            center: circle.center,
+            center: circle.center.get().into(),
             center_source: if circle.center_stored {
                 "stored"
             } else {
@@ -588,8 +588,13 @@ pub(super) fn reference_conic_records(scan: &ContainerScan) -> Vec<CreoReference
             type_id: conic.type_id,
             flip: conic.flip,
             endpoints: [conic.start.get().into(), conic.end.get().into()],
-            parameter_interval: [conic.parameter_start, conic.parameter_end],
-            coefficients: [conic.coefficient_1, conic.coefficient_2],
+            parameter_interval: [
+                conic
+                    .parameter_start
+                    .map(cadmpeg_ir::scalar::FiniteReal::get),
+                conic.parameter_end.map(cadmpeg_ir::scalar::FiniteReal::get),
+            ],
+            coefficients: [conic.coefficient_1.get(), conic.coefficient_2.get()],
             local_system: conic.local_system.map(cadmpeg_ir::units::FiniteVector::get),
             body: conic.body.clone(),
             offset: conic.offset,
@@ -2513,7 +2518,10 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                 .map(|vertex| CreoSketchTrimVertex {
                     vertex_id: vertex.vertex_id,
                     entities: vertex.entities.clone(),
-                    section_coordinates: vertex.section_coordinates,
+                    section_coordinates: vertex.section_coordinates.map(|point| {
+                        let point = point.get();
+                        [point.u, point.v]
+                    }),
                     offset: vertex.offset,
                 })
                 .collect(),
