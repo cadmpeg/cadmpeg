@@ -31,6 +31,25 @@ fn sketch_ellipse_serialization_keeps_its_wire_fields() {
 }
 
 #[test]
+fn sketch_ellipse_rejects_unknown_and_duplicate_wire_fields() {
+    for (wire, expected) in [
+        (
+            r#"{"kind":"ellipse","center":{"u":1.0,"v":2.0},"major_angle":0.5,"major_radius":3.0,"minor_radius":2.0,"zz_bogus":1}"#,
+            "zz_bogus",
+        ),
+        (
+            r#"{"kind":"ellipse","center":{"u":1.0,"v":2.0},"major_angle":0.5,"major_radius":3.0,"major_radius":4.0,"minor_radius":2.0}"#,
+            "duplicate field `major_radius`",
+        ),
+    ] {
+        let error = serde_json::from_str::<SketchGeometry>(wire)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains(expected), "{error}");
+    }
+}
+
+#[test]
 fn a_sketch_geometry_holds_its_admitted_definition_and_takes_admitted_parts() {
     let ellipse = SketchGeometryDefinition::Ellipse {
         center: Point2::new(1.0, 2.0),
