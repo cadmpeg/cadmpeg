@@ -3807,29 +3807,32 @@ struct EdgeClassSearchConstraint {
 }
 
 fn edge_class_search_constraint(
+    ctx: &DecodeContext<'_>,
     edge_classes: &[usize],
     choices: &[Vec<[usize; 2]>],
-) -> Option<EdgeClassSearchConstraint> {
+) -> Result<Option<EdgeClassSearchConstraint>, CodecError> {
     if edge_classes.len() != choices.len() {
-        return None;
+        return Ok(None);
     }
-    let normalized = choices
-        .iter()
-        .map(|pairs| {
-            let mut pairs = pairs
-                .iter()
-                .copied()
-                .map(|mut pair| {
-                    pair.sort_unstable();
-                    pair
-                })
-                .collect::<Vec<_>>();
-            pairs.sort_unstable();
-            pairs.dedup();
-            pairs
-        })
-        .collect::<Vec<_>>();
-    let mut active = alloc_filled(choices.len(), false, "catia_edge_class_active").ok()?;
+    let mut normalized = ctx.alloc_filled(
+        choices.len(),
+        Vec::new(),
+        "catia_edge_class_normalized_rows",
+    )?;
+    for (row, pairs) in normalized.iter_mut().zip(choices) {
+        *row = ctx.alloc_filled(
+            pairs.len(),
+            [0usize; 2],
+            "catia_edge_class_normalized_pairs",
+        )?;
+        for (normalized_pair, pair) in row.iter_mut().zip(pairs) {
+            *normalized_pair = *pair;
+            normalized_pair.sort_unstable();
+        }
+        row.sort_unstable();
+        row.dedup();
+    }
+    let mut active = ctx.alloc_filled(choices.len(), false, "catia_edge_class_active")?;
     let mut ordered = Vec::new();
     for left in 0..choices.len() {
         for right in left + 1..choices.len() {
@@ -3841,10 +3844,11 @@ fn edge_class_search_constraint(
             }
             active[left] = true;
             active[right] = true;
+            ctx.charge_collection_items(1, "catia_edge_class_ordered_pairs")?;
             ordered.push((left, right));
         }
     }
-    Some(EdgeClassSearchConstraint { active, ordered })
+    Ok(Some(EdgeClassSearchConstraint { active, ordered }))
 }
 
 fn changed_quotient_edges(left: &MeshQuotient, right: &MeshQuotient) -> HashSet<usize> {
@@ -8796,7 +8800,7 @@ where
         )));
     };
     let Some(class_constraint) =
-        edge_class_search_constraint(edge_classes, &completed_edge_candidates)
+        edge_class_search_constraint(ctx, edge_classes, &completed_edge_candidates)?
     else {
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(
             MeshCandidateRejection::EdgeClassConstraint,
