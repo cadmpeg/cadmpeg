@@ -110,7 +110,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
                     .then_some(())?;
                 let id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, half_edge.curve_id);
                 let curve = exactly_one(ir.model.curves.iter().filter(|curve| curve.id == id))?;
-                Some(&curve.geometry)
+                Some(source_carriers.curve_geometry(curve))
             })
             .collect::<Vec<_>>();
         let curve_planes = boundary_curves

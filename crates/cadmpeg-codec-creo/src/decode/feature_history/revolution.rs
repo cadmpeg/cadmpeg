@@ -84,6 +84,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
         let Some(axis) = revolution_axis_for_transfer(
             scan,
             ir,
+            source_carriers,
             feature_id,
             definition,
             transform,
@@ -496,6 +497,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
         let Some(axis) = revolution_axis_for_transfer(
             scan,
             ir,
+            source_carriers,
             feature_id,
             definition,
             transform,

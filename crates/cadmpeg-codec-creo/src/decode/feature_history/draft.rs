@@ -586,7 +586,13 @@ pub(in super::super) fn schema_feature_definition(
     {
         let extent = feature_revolution_extent(scan, feature_id);
         let profile = unique_feature_profile_ref(scan, ir, feature_id);
-        let axis = feature_revolution_axis_for_transfer(scan, ir, feature_id, extent.as_ref());
+        let axis = feature_revolution_axis_for_transfer(
+            scan,
+            ir,
+            source_carriers,
+            feature_id,
+            extent.as_ref(),
+        );
         let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
         let profile = profile.and_then(|profile| profile.planar().cloned());
         let solid = sweep_solid(output_kind);
