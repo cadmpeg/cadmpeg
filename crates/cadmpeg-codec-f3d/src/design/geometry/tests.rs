@@ -276,8 +276,10 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
         SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
             center: Point2::new(30.0, 30.0),
             major_angle: Angle::new(0.0).unwrap(),
-            major_radius: Length::new(2.0).unwrap(),
-            minor_radius: Length::new(1.0).unwrap(),
+            radii: cadmpeg_ir::sketches::EllipseRadii {
+                major_radius: Length::new(2.0).unwrap(),
+                minor_radius: Length::new(1.0).unwrap(),
+            },
             bounds: None,
         })
         .unwrap(),
@@ -919,8 +921,10 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
             center: Point2::new(1.0, -1.0),
             major_angle: cadmpeg_ir::scalar::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
-            major_radius: Length::new(4.0).unwrap(),
-            minor_radius: Length::new(2.0).unwrap(),
+            radii: cadmpeg_ir::sketches::EllipseRadii {
+                major_radius: Length::new(4.0).unwrap(),
+                minor_radius: Length::new(2.0).unwrap(),
+            },
             bounds: Some([
                 cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
                 cadmpeg_ir::scalar::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),

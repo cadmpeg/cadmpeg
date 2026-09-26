@@ -990,10 +990,11 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
         SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
-            major_radius,
-            minor_radius,
+            radii,
             bounds,
         } => {
+            let major_radius = radii.major();
+            let minor_radius = radii.minor();
             let cosine = major_angle.get().cos();
             let sine = major_angle.get().sin();
             let du = point.u - center.u;
@@ -1253,18 +1254,15 @@ fn equal_geometry_size(first: &SketchEntity, second: &SketchEntity) -> bool {
         ) => same_dimension_length(first_radius.get(), second_radius.get()),
         (
             SketchGeometryDefinition::Ellipse {
-                major_radius: first_major,
-                minor_radius: first_minor,
-                ..
+                radii: first_radii, ..
             },
             SketchGeometryDefinition::Ellipse {
-                major_radius: second_major,
-                minor_radius: second_minor,
+                radii: second_radii,
                 ..
             },
         ) => {
-            same_dimension_length(first_major.get(), second_major.get())
-                && same_dimension_length(first_minor.get(), second_minor.get())
+            same_dimension_length(first_radii.major().get(), second_radii.major().get())
+                && same_dimension_length(first_radii.minor().get(), second_radii.minor().get())
         }
         _ => false,
     }
@@ -1275,8 +1273,7 @@ fn tangent_geometry(first: &SketchEntity, second: &SketchEntity) -> bool {
         if let SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
-            major_radius,
-            minor_radius,
+            radii,
             ..
         } = circle.geometry.definition()
         {
@@ -1286,9 +1283,9 @@ fn tangent_geometry(first: &SketchEntity, second: &SketchEntity) -> bool {
             let normal = [-dv / length, du / length];
             let major = [major_angle.get().cos(), major_angle.get().sin()];
             let minor = [-major[1], major[0]];
-            let support = ((major_radius.get() * (normal[0] * major[0] + normal[1] * major[1]))
+            let support = ((radii.major().get() * (normal[0] * major[0] + normal[1] * major[1]))
                 .powi(2)
-                + (minor_radius.get() * (normal[0] * minor[0] + normal[1] * minor[1])).powi(2))
+                + (radii.minor().get() * (normal[0] * minor[0] + normal[1] * minor[1])).powi(2))
             .sqrt();
             return point_line_distance_value(center.get(), line)
                 .is_some_and(|distance| same_dimension_length(distance, support));

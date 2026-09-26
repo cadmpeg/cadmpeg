@@ -2928,8 +2928,10 @@ fn sketch_geometry(
                         SketchGeometryDefinition::Ellipse {
                             center: Point2::new(x, y),
                             major_angle: cadmpeg_ir::scalar::Angle::new(angle)?,
-                            major_radius: Length::new(major)?,
-                            minor_radius: Length::new(minor)?,
+                            radii: cadmpeg_ir::sketches::EllipseRadii {
+                                major_radius: Length::new(major)?,
+                                minor_radius: Length::new(minor)?,
+                            },
                             bounds: match bounds {
                                 Some([start, end]) => Some([
                                     cadmpeg_ir::scalar::Angle::new(start)?,
@@ -3386,8 +3388,7 @@ fn endpoints(entity: &SketchEntity) -> Option<(Point2, Point2)> {
         SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
-            major_radius,
-            minor_radius,
+            radii,
             bounds: Some([start, end]),
         } => {
             let major = Point2::new(major_angle.get().cos(), major_angle.get().sin());
@@ -3396,11 +3397,11 @@ fn endpoints(entity: &SketchEntity) -> Option<(Point2, Point2)> {
                 let (along_major, along_minor) = (parameter.cos(), parameter.sin());
                 Point2::new(
                     center.u
-                        + major_radius.get() * along_major * major.u
-                        + minor_radius.get() * along_minor * minor.u,
+                        + radii.major().get() * along_major * major.u
+                        + radii.minor().get() * along_minor * minor.u,
                     center.v
-                        + major_radius.get() * along_major * major.v
-                        + minor_radius.get() * along_minor * minor.v,
+                        + radii.major().get() * along_major * major.v
+                        + radii.minor().get() * along_minor * minor.v,
                 )
             };
             Some((point(start.get()), point(end.get())))

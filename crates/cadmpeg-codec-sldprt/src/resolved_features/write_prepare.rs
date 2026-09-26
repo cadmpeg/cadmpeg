@@ -1221,18 +1221,15 @@ fn equal_sketch_size(first: &SketchGeometry, second: &SketchGeometry) -> Option<
         ) => close(first.get(), second.get()),
         (
             SketchGeometryDefinition::Ellipse {
-                major_radius: first_major,
-                minor_radius: first_minor,
-                ..
+                radii: first_radii, ..
             },
             SketchGeometryDefinition::Ellipse {
-                major_radius: second_major,
-                minor_radius: second_minor,
+                radii: second_radii,
                 ..
             },
         ) => {
-            close(first_major.get(), second_major.get())
-                && close(first_minor.get(), second_minor.get())
+            close(first_radii.major().get(), second_radii.major().get())
+                && close(first_radii.minor().get(), second_radii.minor().get())
         }
         _ => return None,
     })
