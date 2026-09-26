@@ -1203,12 +1203,18 @@ fn profile_roster_construction_axis(
             Some([*start, *end])
         });
     let native_endpoints = match (axes.next(), axes.next()) {
-        (Some(endpoints), None) => Some([endpoints[0].coordinates_m?, endpoints[1].coordinates_m?]),
+        (Some(endpoints), None) => Some([
+            endpoints[0].coordinates_m?.get(),
+            endpoints[1].coordinates_m?.get(),
+        ]),
         (None, None) => {
             if let Some(endpoints) =
                 profile_roster_implicit_axis_endpoints(lane, profile_native, &markers)
             {
-                Some([endpoints[0].coordinates_m?, endpoints[1].coordinates_m?])
+                Some([
+                    endpoints[0].coordinates_m?.get(),
+                    endpoints[1].coordinates_m?.get(),
+                ])
             } else {
                 profile_roster_origin_axis_endpoints(lane, profile_native, &markers).or_else(|| {
                     profile_roster_principal_axis_endpoints(lane, profile_native, &markers)
@@ -1319,7 +1325,7 @@ fn profile_generated_surface_axis(
         if !endpoint_ids.insert(endpoint.id()) {
             continue;
         }
-        let [u, v] = endpoint.coordinates_m?;
+        let [u, v] = endpoint.coordinates_m?.get();
         let point = transform.apply(quantize(
             Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR),
             QUANTUM,
@@ -1443,7 +1449,7 @@ fn profile_roster_origin_axis_endpoints(
     let [origin] = unreferenced_points.as_slice() else {
         return None;
     };
-    let [origin_u, origin_v] = origin.coordinates_m?;
+    let [origin_u, origin_v] = origin.coordinates_m?.get();
     if origin_u.abs() > EPS_AXES_PROFILE_ROSTER_ORIGIN_AXIS_ENDPOINTS_E9
         || origin_v.abs() > EPS_AXES_PROFILE_ROSTER_ORIGIN_AXIS_ENDPOINTS_E9
     {
@@ -1454,7 +1460,7 @@ fn profile_roster_origin_axis_endpoints(
         .copied()
         .filter(|marker| marker.object_index().is_some() && curve_endpoints.contains(marker.id()))
         .filter_map(|marker| {
-            let end = marker.coordinates_m?;
+            let end = marker.coordinates_m?.get();
             let endpoints = [[origin_u, origin_v], end];
             bounded_profile_axis_coordinates(profile_native, markers, &curve_endpoints, endpoints)
                 .then_some(endpoints)
@@ -1486,7 +1492,11 @@ fn profile_roster_origin_axis_endpoints(
             .filter(|marker| {
                 marker.object_index().is_some() && curve_endpoints.contains(marker.id())
             })
-            .filter_map(|marker| marker.coordinates_m)
+            .filter_map(|marker| {
+                marker
+                    .coordinates_m
+                    .map(cadmpeg_ir::units::FiniteVector::get)
+            })
             .filter(|[u, v]| {
                 let relative_u = u - origin_u;
                 let relative_v = v - origin_v;
@@ -1526,7 +1536,11 @@ fn profile_roster_principal_axis_endpoints(
         markers
             .iter()
             .filter(|marker| curve_endpoints.contains(marker.id()))
-            .filter_map(|marker| marker.coordinates_m)
+            .filter_map(|marker| {
+                marker
+                    .coordinates_m
+                    .map(cadmpeg_ir::units::FiniteVector::get)
+            })
             .filter(|[u, v]| {
                 (u * axis_v - v * axis_u).abs()
                     <= EPS_AXES_PROFILE_ROSTER_PRINCIPAL_AXIS_ENDPOINTS_E9
@@ -1692,7 +1706,11 @@ fn bounded_profile_axis_endpoints(
     curve_endpoints: &HashSet<&str>,
     endpoints: [&SketchInputEntity; 2],
 ) -> bool {
-    let [Some(start), Some(end)] = endpoints.map(|endpoint| endpoint.coordinates_m) else {
+    let [Some(start), Some(end)] = endpoints.map(|endpoint| {
+        endpoint
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get)
+    }) else {
         return false;
     };
     bounded_profile_axis_coordinates(profile_native, markers, curve_endpoints, [start, end])
@@ -1726,7 +1744,11 @@ fn bounded_profile_axis_coordinates(
             )
             && marker.object_index().is_some()
             && curve_endpoints.contains(marker.id()))
-        .then_some(marker.coordinates_m)
+        .then_some(
+            marker
+                .coordinates_m
+                .map(cadmpeg_ir::units::FiniteVector::get),
+        )
         .flatten()
     }) {
         let relative_u = u - start_u;

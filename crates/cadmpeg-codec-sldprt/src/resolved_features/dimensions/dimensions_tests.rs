@@ -35,7 +35,7 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
         entity_index: 0,
         entity_ref: Some("wrong".into()),
     };
-    let marker = |id: &str, offset, object_index, local_id, coordinates_m| {
+    let marker = |id: &str, offset, object_index, local_id, coordinates_m: Option<[f64; 2]>| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
         let mut constructed_marker = SketchInputEntity::new(
@@ -48,7 +48,8 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, local_id);
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -208,7 +209,7 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, local_id);
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = Some(coordinates_m);
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new(coordinates_m);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -324,7 +325,7 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
         constructed_marker =
             constructed_marker.with_test_identity(Some(object_index), Some(local_id));
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = Some(coordinates_m);
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new(coordinates_m);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -476,7 +477,7 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
         constructed_marker =
             constructed_marker.with_test_identity(Some(object_index), Some(local_id));
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = Some(coordinates_m);
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new(coordinates_m);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -614,21 +615,7 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
         )
         .is_none());
 
-        let mut nonfinite_lane = lane.clone();
-        nonfinite_lane.sketch_entities[0].coordinates_m = Some([f64::NAN, 0.020]);
-        let nonfinite_markers = nonfinite_lane
-            .sketch_entities
-            .iter()
-            .map(|marker| (marker.id(), marker))
-            .collect::<HashMap<_, _>>();
-        assert!(dimensioned_relation_carrier(
-            std::slice::from_ref(&nonfinite_lane),
-            &nonfinite_markers,
-            "feature",
-            &operand,
-            5.0,
-        )
-        .is_none());
+        assert!(cadmpeg_ir::units::FiniteVector::new([f64::NAN, 0.020]).is_none());
 
         let mut second_lane = lane.clone();
         second_lane.id = "lane-2".into();
@@ -700,23 +687,25 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
         payload[offset + 4..offset + 8].fill(0xff);
         payload[offset + 8..offset + 12].fill(0);
     }
-    let marker = |id: &str, offset, kind, object_index, local_id, coordinates_m| {
-        let marker_id: String = id.into();
-        let marker_parent: String = "lane".into();
-        let mut constructed_marker = SketchInputEntity::new(
-            marker_id,
-            marker_parent,
-            u32::try_from(offset).unwrap(),
-            offset,
-            kind,
-        );
-        constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker = constructed_marker.with_test_identity(object_index, local_id);
-        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
-        constructed_marker.links = None;
-        constructed_marker
-    };
+    let marker =
+        |id: &str, offset, kind, object_index, local_id, coordinates_m: Option<[f64; 2]>| {
+            let marker_id: String = id.into();
+            let marker_parent: String = "lane".into();
+            let mut constructed_marker = SketchInputEntity::new(
+                marker_id,
+                marker_parent,
+                u32::try_from(offset).unwrap(),
+                offset,
+                kind,
+            );
+            constructed_marker.feature_ref = Some("feature".into());
+            constructed_marker = constructed_marker.with_test_identity(object_index, local_id);
+            constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+            constructed_marker.coordinates_m =
+                coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+            constructed_marker.links = None;
+            constructed_marker
+        };
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
@@ -935,7 +924,7 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(Some(11), None);
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = Some([0.01, 0.02]);
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.01, 0.02]);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -997,7 +986,7 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
             SketchInputEntity::new(marker_id, marker_parent, 1, 1000, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = Some([0.03, 0.04]);
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.03, 0.04]);
         constructed_marker.links = None;
         constructed_marker
     });
@@ -1040,7 +1029,7 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker.state_value = None;
-        constructed_marker.coordinates_m = Some(coordinates_m);
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new(coordinates_m);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -1184,7 +1173,7 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker.state_value = None;
-        constructed_marker.coordinates_m = Some(coordinates_m);
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new(coordinates_m);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -1304,7 +1293,8 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
     .is_none());
 
     let mut mismatched_declared = lane;
-    mismatched_declared.sketch_entities[1].coordinates_m = Some([0.004, 0.0]);
+    mismatched_declared.sketch_entities[1].coordinates_m =
+        cadmpeg_ir::units::FiniteVector::new([0.004, 0.0]);
     let mismatched_markers = mismatched_declared
         .sketch_entities
         .iter()
@@ -1454,14 +1444,15 @@ fn native_radial_role_propagates_omitted_circle_construction_state() {
         payload[104..].copy_from_slice(LEGACY_SKETCH_MARKER);
         payload
     };
-    let marker = |id: &str, offset, kind, coordinates_m| {
+    let marker = |id: &str, offset, kind, coordinates_m: Option<[f64; 2]>| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, offset as u32, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker.state_value = None;
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -1592,7 +1583,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
             constructed_marker.feature_ref = Some(feature_ref.into());
             constructed_marker = constructed_marker.with_test_identity(Some(0), Some(0));
             constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-            constructed_marker.coordinates_m = Some([0.001, 0.002]);
+            constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.001, 0.002]);
             constructed_marker.links = None;
             constructed_marker
         }],
@@ -1700,7 +1691,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
             constructed_marker.feature_ref = Some(feature_ref.into());
             constructed_marker = constructed_marker.with_test_identity(Some(1), Some(0));
             constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-            constructed_marker.coordinates_m = Some([0.0, 0.0]);
+            constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]);
             constructed_marker.links = None;
             constructed_marker
         },
@@ -1741,7 +1732,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
             constructed_marker.feature_ref = Some(feature_ref.into());
             constructed_marker = constructed_marker.with_test_identity(Some(2), None);
             constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-            constructed_marker.coordinates_m = Some([0.002, 0.0]);
+            constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.002, 0.0]);
             constructed_marker.links = None;
             constructed_marker
         },

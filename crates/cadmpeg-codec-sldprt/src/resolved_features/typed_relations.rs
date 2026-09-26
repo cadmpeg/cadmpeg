@@ -1998,7 +1998,7 @@ fn coordinate_profile_line_endpoints<'a>(
         }
     }
     let point = point?;
-    (curve.coordinates_m? != point.coordinates_m?).then_some([curve, point])
+    (curve.coordinates_m?.get() != point.coordinates_m?.get()).then_some([curve, point])
 }
 
 pub(super) fn extended_direct_object_line_endpoints<'a>(
@@ -2472,8 +2472,8 @@ fn coordinate_centered_line_endpoints<'a>(
     let [first, second, ..] = coordinates.as_slice() else {
         return None;
     };
-    let [first_u, first_v] = first.coordinates_m?;
-    let [second_u, second_v] = second.coordinates_m?;
+    let [first_u, first_v] = first.coordinates_m?.get();
+    let [second_u, second_v] = second.coordinates_m?.get();
     let centered = same_dimension_length((first_u + second_u) * 0.5, center_u)
         && same_dimension_length((first_v + second_v) * 0.5, center_v);
     (centered && (first_u != second_u || first_v != second_v)).then_some([first, second])

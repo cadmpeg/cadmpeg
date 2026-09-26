@@ -150,7 +150,12 @@ fn shifted_geometry_locus_coordinates_require_the_record_trailer() {
         panic!("expected one sketch marker");
     };
     assert_eq!(entity.kind(), SketchInputKind::LineOrCircle);
-    assert_eq!(entity.coordinates_m, Some([0.022_224_980_75, 0.0]));
+    assert_eq!(
+        entity
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.022_224_980_75, 0.0])
+    );
     assert_eq!(entity.object_index(), Some(11));
     assert_eq!(entity.local_id(), Some(7));
 
@@ -200,7 +205,12 @@ fn shifted_geometry_handle_children_are_points() {
             panic!("expected one sketch marker");
         };
         assert_eq!(entity.kind(), SketchInputKind::Point);
-        assert_eq!(entity.coordinates_m, Some([1.25, -2.5]));
+        assert_eq!(
+            entity
+                .coordinates_m
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some([1.25, -2.5])
+        );
 
         payload[offset + sentinel] = 0;
         assert_eq!(shifted_geometry_handle_coordinates(&payload, offset), None);
@@ -1090,7 +1100,12 @@ fn extended_four_link_profile_point_decodes_coordinates() {
     assert_eq!(marker_coordinates(&payload, 0), Some([0.125, -0.25]));
     let entity = &sketch_input_entities(&payload, "lane")[0];
     assert_eq!(entity.kind(), SketchInputKind::Point);
-    assert_eq!(entity.coordinates_m, Some([0.125, -0.25]));
+    assert_eq!(
+        entity
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.125, -0.25])
+    );
 
     payload[76..78].copy_from_slice(&3u16.to_le_bytes());
     assert_eq!(
@@ -1180,7 +1195,12 @@ fn compact_legacy_code_two_profile_point_and_embedded_geometry_have_distinct_lay
     );
     let entity = &sketch_input_entities(&point, "lane")[0];
     assert_eq!(entity.kind(), SketchInputKind::Point);
-    assert_eq!(entity.coordinates_m, Some([0.03, 0.005]));
+    assert_eq!(
+        entity
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.03, 0.005])
+    );
     assert_eq!(entity.local_id(), Some(10));
     assert_eq!(entity.state_value, None);
 
@@ -1400,7 +1420,12 @@ fn extended_scaled_incidence_profile_point_decodes_coordinates() {
     );
     let entity = &sketch_input_entities(&payload, "lane")[0];
     assert_eq!(entity.kind(), SketchInputKind::Point);
-    assert_eq!(entity.coordinates_m, Some([0.052, -0.01]));
+    assert_eq!(
+        entity
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.052, -0.01])
+    );
 
     payload[76..78].copy_from_slice(&8u16.to_le_bytes());
     payload[134..136].copy_from_slice(&4u16.to_le_bytes());
@@ -1692,7 +1717,12 @@ fn current_geometry_locus_profile_vertex_decodes_as_a_point() {
     assert!(current_geometry_locus_profile_vertex(&payload, 0));
     let entity = &sketch_input_entities(&payload, "lane")[0];
     assert_eq!(entity.kind(), SketchInputKind::Point);
-    assert_eq!(entity.coordinates_m, Some([-1.125, 0.542]));
+    assert_eq!(
+        entity
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([-1.125, 0.542])
+    );
     payload[132..136].fill(0);
     assert!(!current_geometry_locus_profile_vertex(&payload, 0));
 }
@@ -1720,7 +1750,12 @@ fn extended_geometry_locus_single_link_record_decodes_as_a_point() {
     assert!(extended_geometry_locus_single_link_point(&payload, 0));
     let entity = &sketch_input_entities(&payload, "lane")[0];
     assert_eq!(entity.kind(), SketchInputKind::Point);
-    assert_eq!(entity.coordinates_m, Some([0.0, 0.019]));
+    assert_eq!(
+        entity
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.0, 0.019])
+    );
 
     payload[128..132].copy_from_slice(&1u32.to_le_bytes());
     assert!(!extended_geometry_locus_single_link_point(&payload, 0));
@@ -1754,7 +1789,12 @@ fn current_compact_geometry_locus_profile_point_decodes_inline_coordinates() {
     );
     let entity = &sketch_input_entities(&payload, "lane")[0];
     assert_eq!(entity.kind(), SketchInputKind::Point);
-    assert_eq!(entity.coordinates_m, Some([-1.125, 0.542]));
+    assert_eq!(
+        entity
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([-1.125, 0.542])
+    );
     payload[82..84].fill(0);
     assert_eq!(compact_geometry_locus_point_coordinates(&payload, 0), None);
 }
@@ -1784,7 +1824,12 @@ fn legacy_compact_geometry_locus_point_decodes_inline_coordinates() {
     );
     let entity = &sketch_input_entities(&payload, "lane")[0];
     assert_eq!(entity.kind(), SketchInputKind::Point);
-    assert_eq!(entity.coordinates_m, Some([-1.125, 0.542]));
+    assert_eq!(
+        entity
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([-1.125, 0.542])
+    );
     payload[130..134].fill(0);
     assert_eq!(compact_geometry_locus_point_coordinates(&payload, 0), None);
 }
@@ -1812,7 +1857,12 @@ fn legacy_geometry_locus_value_two_point_decodes_inline_coordinates() {
     assert_eq!(marker_coordinates(&payload, 0), Some([-1.125, 0.542]));
     let entity = &sketch_input_entities(&payload, "lane")[0];
     assert_eq!(entity.kind(), SketchInputKind::Point);
-    assert_eq!(entity.coordinates_m, Some([-1.125, 0.542]));
+    assert_eq!(
+        entity
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([-1.125, 0.542])
+    );
     payload[74..78].fill(0);
     assert!(!geometry_locus_profile_vertex(&payload, 0));
 }
@@ -1838,7 +1888,12 @@ fn geometry_locus_profile_vertex_decodes_compact_marker_bands() {
     assert!(geometry_locus_profile_vertex(&payload, 0));
     let entity = &sketch_input_entities(&payload, "lane")[0];
     assert_eq!(entity.kind(), SketchInputKind::Point);
-    assert_eq!(entity.coordinates_m, Some([-0.04, 0.0045]));
+    assert_eq!(
+        entity
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([-0.04, 0.0045])
+    );
     payload[17..21].copy_from_slice(&2u32.to_le_bytes());
     assert!(geometry_locus_profile_vertex(&payload, 0));
     assert_eq!(

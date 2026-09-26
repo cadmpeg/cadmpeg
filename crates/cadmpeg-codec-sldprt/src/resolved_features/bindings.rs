@@ -1527,7 +1527,10 @@ pub(super) fn normalize_indexed_curve_entities(lane: &mut FeatureInputLane) {
             continue;
         };
         if marker.coordinates_m.is_none() {
-            marker.coordinates_m = linked_endpoint_coordinates.get(&marker.offset()).copied();
+            marker.coordinates_m = linked_endpoint_coordinates
+                .get(&marker.offset())
+                .copied()
+                .and_then(cadmpeg_ir::units::FiniteVector::new);
         }
         if (endpoints.contains(&key) || linked_endpoint_coordinates.contains_key(&marker.offset()))
             && marker.coordinates_m.is_some()

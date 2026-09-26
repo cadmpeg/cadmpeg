@@ -906,7 +906,15 @@ pub(super) fn admit_sketch_input_entities(
                 ))
             })?;
             entity.state_value = marker_state_value(payload, offset);
-            entity.coordinates_m = coordinates_m;
+            entity.coordinates_m = coordinates_m
+                .map(|coordinates| {
+                    cadmpeg_ir::units::FiniteVector::new(coordinates).ok_or_else(|| {
+                        cadmpeg_core::CodecError::Malformed(
+                            "feature-input marker coordinates must be finite".into(),
+                        )
+                    })
+                })
+                .transpose()?;
             Ok(entity)
         })
         .collect()
