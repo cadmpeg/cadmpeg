@@ -86,11 +86,16 @@ impl KernelHeader {
     }
 }
 
+pub(crate) struct HeaderRegion {
+    pub(crate) strings: [Option<String>; 3],
+    pub(crate) doubles: [Option<f64>; 3],
+}
+
 pub(crate) fn read_string_region(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
-) -> Result<([Option<String>; 3], [Option<f64>; 3], usize), CodecError> {
+) -> Result<HeaderRegion, CodecError> {
     let mut cur = start;
     let mut strings = [None, None, None];
     for slot in &mut strings {
@@ -120,7 +125,7 @@ pub(crate) fn read_string_region(
             None => break,
         }
     }
-    Ok((strings, doubles, cur))
+    Ok(HeaderRegion { strings, doubles })
 }
 
 /// Locate tagged header values without materializing a second copy.

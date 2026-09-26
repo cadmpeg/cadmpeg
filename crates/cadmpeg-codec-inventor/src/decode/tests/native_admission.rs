@@ -11,14 +11,13 @@ use crate::container::InventorContainer;
 use crate::decode::rse_native_projection;
 use crate::decode::{
     admit_assembly_placement, admit_coverage_entries, admit_kernel_annotation,
-    admit_kernel_unknown_fidelity, admit_native_record_items, admit_untransferred_carrier,
-    admitted_kernel_attribute, admitted_loss, clone_product_body_ids, collect_body_ids,
-    decode_container, index_asm_face_keys, index_face_colors, index_projected_colors,
-    insert_source_attribute, project_preview_asset, project_property_set_issue,
-    project_protein_records, project_protein_state, project_root_product,
-    project_ufrx_embedded_reference, project_ufrx_external_reference, project_ufrx_model_state,
-    project_ufrx_occurrence, project_ufrx_representation, project_ufrx_state, property_set_name,
-    structural_issue,
+    admit_kernel_unknown_fidelity, admit_untransferred_carrier, admitted_kernel_attribute,
+    admitted_loss, clone_product_body_ids, collect_body_ids, decode_container, index_asm_face_keys,
+    index_face_colors, index_projected_colors, insert_source_attribute, project_preview_asset,
+    project_property_set_issue, project_protein_records, project_protein_state,
+    project_root_product, project_ufrx_embedded_reference, project_ufrx_external_reference,
+    project_ufrx_model_state, project_ufrx_occurrence, project_ufrx_representation,
+    project_ufrx_state, property_set_name, structural_issue,
 };
 
 use crate::assembly::{AssemblyInventory, AssemblyOccurrence, AssemblyPlacement};
@@ -327,9 +326,18 @@ fn assembly_occurrence_native_record_refuses_before_id_creation() {
         .expect("service context");
     AssemblyOccurrenceRecord::from_occurrence(&ctx, &inventory.occurrences[0])
         .expect("admitted occurrence");
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_entities = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    assert!(matches!(
+        AssemblyOccurrenceRecord::from_occurrence(&ctx, &inventory.occurrences[0]),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::Entities
+                && limit.operation == "admit Inventor native assembly occurrence"
+    ));
     inventory.occurrences[0].related_references.push(42);
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
         AssemblyOccurrenceRecord::from_occurrence(&ctx, &inventory.occurrences[0]),
@@ -387,6 +395,23 @@ fn assembly_placement_native_record_refuses_id_and_digest_before_creation() {
         .expect("service context");
     AssemblyPlacementRecordWire::from_placement(&ctx, &inventory.placements[0])
         .expect("admitted placement");
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_entities = 0;
+    let (limited, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    let wire = AssemblyPlacementRecordWire::from_placement(&limited, &inventory.placements[0])
+        .expect("placement wire");
+    assert!(matches!(
+        admit_assembly_placement(&limited, wire, &mut Vec::new()),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::Entities
+                && limit.operation == "admit Inventor native assembly placement"
+    ));
+    let wire = AssemblyPlacementRecordWire::from_placement(&ctx, &inventory.placements[0])
+        .expect("service placement wire");
+    assert!(admit_assembly_placement(&ctx, wire, &mut Vec::new())
+        .expect("service placement admission")
+        .is_some());
 }
 
 #[test]
@@ -727,6 +752,23 @@ fn protein_state_refuses_retained_limit_before_id_creation() {
     ));
 }
 
+#[test]
+fn protein_state_refuses_collection_limit_before_native_record() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        project_protein_state(&limited, &ProteinState::Absent),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "retain Inventor native structural records"
+    ));
+    let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    assert!(project_protein_state(&service, &ProteinState::Absent).is_ok());
+}
+
 fn protein_asset_instance() -> Vec<ProteinInstanceRecords> {
     vec![ProteinInstanceRecords {
         entry_name: "AssetData/InstanceProperties.bin".into(),
@@ -786,6 +828,29 @@ fn protein_asset_id_refuses_retained_limit_before_record_creation() {
 }
 
 #[test]
+fn protein_asset_refuses_collection_limit_before_output_push() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        project_protein_records(&limited, protein_asset_instance()),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "retain Inventor native structural records"
+    ));
+    let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    assert_eq!(
+        project_protein_records(&service, protein_asset_instance())
+            .expect("service projection")
+            .assets
+            .len(),
+        1
+    );
+}
+
+#[test]
 fn protein_rejection_id_refuses_retained_limit_before_record_creation() {
     let arena = DecodeArena::new();
     let id_len = "inventor:protein:rejection#".len() + 64 + "-1".len();
@@ -826,6 +891,23 @@ fn ufrx_state_id_refuses_retained_limit_before_record_creation() {
         project_ufrx_state(&ctx, &UfrxState::Absent, &mut Vec::new()).expect("admitted state"),
         UfrxRecord::Absent { id: actual } if actual == id
     ));
+}
+
+#[test]
+fn ufrx_state_refuses_collection_limit_before_native_record() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        project_ufrx_state(&limited, &UfrxState::Absent, &mut Vec::new()),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "retain Inventor native structural records"
+    ));
+    let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    assert!(project_ufrx_state(&service, &UfrxState::Absent, &mut Vec::new()).is_ok());
 }
 
 #[test]
@@ -1325,7 +1407,7 @@ fn asm_face_key_index_refuses_before_face_id_copy() {
 }
 
 #[test]
-fn native_structural_records_refuse_aggregate_limit_before_materialization() {
+fn native_rse_projection_refuses_collection_limit_at_record_creation() {
     let bytes = primary_envelope_fixture();
     let arena = DecodeArena::new();
     let (setup_ctx, root) =
@@ -1333,72 +1415,39 @@ fn native_structural_records_refuse_aggregate_limit_before_materialization() {
             .expect("fixture fits service policy");
     let container = InventorContainer::open(&setup_ctx, root).expect("fixture container");
     assert_eq!(container.rse.databases.len(), 1);
-    let assembly =
-        crate::assembly::inventory(&setup_ctx, &container.rse).expect("assembly inventory");
-    let presentation =
-        crate::presentation::inventory(&setup_ctx, &container.rse).expect("presentation inventory");
-    let design = crate::design::inventory(&setup_ctx, &container.rse).expect("design inventory");
-    let sketch = crate::sketch::inventory(&setup_ctx, &container.rse).expect("sketch inventory");
-    let feature = crate::feature::inventory(&setup_ctx, &container.rse).expect("feature inventory");
-
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
+    policy.limits.max_collection_items = 0;
     let (limited_ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("decode context");
     assert!(matches!(
-        admit_native_record_items(&limited_ctx, &container, &assembly, &presentation, &design, &sketch, &feature),
+        rse_native_projection::project(&limited_ctx, &container),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "retain Inventor native structural records"
     ));
-    assert!(admit_native_record_items(
-        &setup_ctx,
-        &container,
-        &assembly,
-        &presentation,
-        &design,
-        &sketch,
-        &feature
-    )
-    .is_ok());
+    assert!(rse_native_projection::project(&setup_ctx, &container).is_ok());
     assert!(decode_container(&setup_ctx, &container).is_ok());
 }
 
 #[test]
-fn native_structural_entities_refuse_before_model_projection() {
+fn native_rse_projection_refuses_entity_limit_at_record_creation() {
     let bytes = primary_envelope_fixture();
     let arena = DecodeArena::new();
     let (setup_ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
             .expect("fixture fits service policy");
     let container = InventorContainer::open(&setup_ctx, root).expect("fixture container");
-    let assembly =
-        crate::assembly::inventory(&setup_ctx, &container.rse).expect("assembly inventory");
-    let presentation =
-        crate::presentation::inventory(&setup_ctx, &container.rse).expect("presentation inventory");
-    let design = crate::design::inventory(&setup_ctx, &container.rse).expect("design inventory");
-    let sketch = crate::sketch::inventory(&setup_ctx, &container.rse).expect("sketch inventory");
-    let feature = crate::feature::inventory(&setup_ctx, &container.rse).expect("feature inventory");
     let mut policy = DecodePolicy::service();
     policy.limits.max_entities = 0;
     let (limited_ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("decode context");
     assert!(matches!(
-        admit_native_record_items(&limited_ctx, &container, &assembly, &presentation, &design, &sketch, &feature),
+        rse_native_projection::project(&limited_ctx, &container),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::Entities
                 && limit.operation == "admit Inventor native structural records"
     ));
-    assert!(admit_native_record_items(
-        &setup_ctx,
-        &container,
-        &assembly,
-        &presentation,
-        &design,
-        &sketch,
-        &feature
-    )
-    .is_ok());
+    assert!(rse_native_projection::project(&setup_ctx, &container).is_ok());
     assert!(decode_container(&setup_ctx, &container).is_ok());
 }
 

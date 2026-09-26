@@ -20,6 +20,37 @@ use crate::test_support::tessellation::display_list_payload;
 use crate::test_support::tessellation::sldprt_with_body_and_display_list;
 use crate::SldprtCodec;
 
+fn retained_refusal_at(
+    source: &[u8],
+    options: &mut DecodeOptions,
+    operation: &str,
+) -> cadmpeg_ir::DecodeFailure {
+    for _ in 0..256 {
+        let refused = SldprtCodec
+            .decode(&mut Cursor::new(source), options)
+            .expect_err("fixture must refuse retained bytes");
+        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            &refused
+        else {
+            panic!("expected retained refusal: {refused:?}");
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes
+        );
+        if limit.operation == operation {
+            options.policy.limits.max_retained_bytes = limit.used + limit.additional - 1;
+            return SldprtCodec
+                .decode(&mut Cursor::new(source), options)
+                .expect_err("one byte below the requested copy need refuses");
+        }
+        let next = limit.used + limit.additional;
+        assert!(next > options.policy.limits.max_retained_bytes);
+        options.policy.limits.max_retained_bytes = next;
+    }
+    panic!("target charge was not reached within fixture admissions");
+}
+
 #[test]
 fn direct_parasolid_stream_copy_refuses_retained_limit() {
     use cadmpeg_core::decode::ResourceDimension;
@@ -85,9 +116,7 @@ fn display_section_copy_refuses_retained_limit() {
     let source = sldprt_with_body_and_display_list(&body);
     let mut options = DecodeOptions::default();
     options.policy.limits.max_retained_bytes = (stream.len() + display.len()) as u64 - 1;
-    let error = SldprtCodec
-        .decode(&mut Cursor::new(source.clone()), &options)
-        .expect_err("display section copy must be admitted");
+    let error = retained_refusal_at(&source, &mut options, "retain SLDPRT display section");
     assert!(
         matches!(error,
         cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -136,9 +165,7 @@ fn whole_source_copy_refuses_retained_limit_before_unknown_record() {
         ..DecodeOptions::default()
     };
     options.policy.limits.max_retained_bytes = source.len() as u64 - 1;
-    let error = SldprtCodec
-        .decode(&mut Cursor::new(source.clone()), &options)
-        .expect_err("source-image retention must obey the session limit");
+    let error = retained_refusal_at(&source, &mut options, "retain SLDPRT source image");
     assert!(
         matches!(
             error,

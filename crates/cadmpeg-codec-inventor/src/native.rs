@@ -384,6 +384,8 @@ impl AssemblyOccurrenceRecord {
         ctx: &DecodeContext<'_>,
         occurrence: &crate::assembly::AssemblyOccurrence,
     ) -> Result<Self, CodecError> {
+        ctx.charge_collection_items(1, "collect Inventor native assembly occurrence")?;
+        ctx.charge_entities(1, "admit Inventor native assembly occurrence")?;
         let id = retained_format(
             ctx,
             format_args!(
@@ -1633,6 +1635,18 @@ pub(crate) struct SegmentBulkIssueRecord {
 }
 
 #[cfg(test)]
+pub(crate) fn test_ctx() -> cadmpeg_core::decode::DecodeContext<'static> {
+    let arena = Box::leak(Box::new(cadmpeg_core::decode::DecodeArena::new()));
+    cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty test input fits the service policy")
+    .0
+}
+
+#[cfg(test)]
 mod tests {
     use super::{
         ActiveCarrierRecord, PmAppRenderingStyleRecord, SegmentBulkFrame, SegmentBulkRecord,
@@ -1916,16 +1930,4 @@ mod tests {
         wire["transform_encoding"] = serde_json::json!([0, 0]);
         assert!(serde_json::from_value::<super::AssemblyPlacementRecord>(wire).is_ok());
     }
-}
-
-#[cfg(test)]
-pub(crate) fn test_ctx() -> cadmpeg_core::decode::DecodeContext<'static> {
-    let arena = Box::leak(Box::new(cadmpeg_core::decode::DecodeArena::new()));
-    cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .expect("empty test input fits the service policy")
-    .0
 }

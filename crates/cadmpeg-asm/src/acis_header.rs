@@ -10,7 +10,9 @@ use crate::kernel_header::RefWidth;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
-use crate::kernel_header::{read_string_region, scan_string_region, BinaryHeader, KernelHeader};
+use crate::kernel_header::{
+    read_string_region, scan_string_region, BinaryHeader, HeaderRegion, KernelHeader,
+};
 use crate::layout::acisheader_binaryfile4 as acis_bf4;
 
 /// Exact binary ACIS magic, without a width suffix.
@@ -38,8 +40,10 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Option<BinaryHeade
         linear: None,
         angular: None,
     };
-    let ([family, version, date], [scale, linear, angular], _) =
-        read_string_region(ctx, bytes, acis_bf4::LEN)?;
+    let HeaderRegion {
+        strings: [family, version, date],
+        doubles: [scale, linear, angular],
+    } = read_string_region(ctx, bytes, acis_bf4::LEN)?;
     header.product_family = family;
     header.product_version = version;
     header.save_date = date;

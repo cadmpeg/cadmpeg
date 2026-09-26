@@ -135,6 +135,24 @@ pub(crate) fn decode_instances(
     decode_instances_from(ctx, &package.archive, package.payload)
 }
 
+pub(crate) fn decode_instances_with_issue(
+    ctx: &DecodeContext<'_>,
+    package: &ProteinEnvelope<'_>,
+) -> Result<(Vec<ProteinInstanceRecords>, Option<String>), CodecError> {
+    match decode_instances(ctx, package) {
+        Ok(instances) => Ok((instances, None)),
+        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+        Err(error) => {
+            crate::record_issue::admit_issue_detail(
+                ctx,
+                &error,
+                "retain Inventor Protein semantic issue",
+            )?;
+            Ok((Vec::new(), Some(crate::issue_detail(error)?)))
+        }
+    }
+}
+
 fn decode_instances_from(
     ctx: &DecodeContext<'_>,
     archive: &ArchiveSnapshot<'_>,
@@ -206,7 +224,10 @@ mod tests {
     };
     use zip::write::SimpleFileOptions;
 
-    use super::{decode_instances_from, parse_stream, validate_entry_name, ParsedProtein};
+    use super::{
+        decode_instances_from, decode_instances_with_issue, parse_stream, validate_entry_name,
+        ParsedProtein, ProteinEnvelope,
+    };
     use cadmpeg_core::decode::DecodeContext;
 
     #[test]
@@ -396,6 +417,86 @@ mod tests {
                 "result collection must refuse at its own admission"
             );
         });
+    }
+
+    #[test]
+    fn protein_semantic_issue_refuses_retained_limit_before_copy() {
+        let schema = br#"<Schema><UID val="SimpleSchema"/><String id="comment"/></Schema>"#;
+        let zip = zip_entries(&[
+            ("Schemas/SimpleSchema.xml", schema),
+            ("AssetData/InstanceProperties.bin", b"bad"),
+        ]);
+        let mut bytes = (zip.len() as u32).to_le_bytes().to_vec();
+        bytes.extend_from_slice(&zip);
+        let arena = DecodeArena::new();
+        let (setup, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("package context");
+        let ParsedProtein::Package {
+            declared_len,
+            archive,
+            payload,
+        } = parse_stream(&setup, root).expect("ZIP package parses")
+        else {
+            panic!("package state");
+        };
+        let cfb = crate::test_support::test_fixtures::fixture(true);
+        let (cfb_ctx, cfb_root) =
+            DecodeContext::from_root_bytes(&cfb, &arena, &DecodePolicy::service())
+                .expect("compound context");
+        let snapshot = CompoundSnapshot::new(&cfb_ctx, cfb_root).expect("compound fixture");
+        let stream = snapshot
+            .stream("RSeStorage/RSeSegInfo")
+            .expect("fixture stream")
+            .id();
+        let package = ProteinEnvelope {
+            stream,
+            declared_len,
+            archive,
+            payload,
+        };
+        let (_, issue) = decode_instances_with_issue(&setup, &package)
+            .expect("service policy retains semantic issue");
+        assert!(issue.is_some());
+
+        let mut cap = 0;
+        let mut needed = None;
+        for _ in 0..128 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (limited, _) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+            match decode_instances_with_issue(&limited, &package) {
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::RetainedBytes =>
+                {
+                    let next = limit
+                        .used
+                        .checked_add(limit.additional)
+                        .expect("fixture charge fits u64");
+                    if limit.operation == "retain Inventor Protein semantic issue" {
+                        needed = Some(next);
+                        break;
+                    }
+                    assert!(next > cap, "fixture advances to its next retained charge");
+                    cap = next;
+                }
+                Ok(_) => panic!("expected Protein retained refusal"),
+                Err(error) => panic!("expected Protein retained refusal: {error:?}"),
+            }
+        }
+        let needed = needed.expect("semantic issue reached within fixture charges");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = needed - 1;
+        let (limited, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+        assert!(matches!(
+            decode_instances_with_issue(&limited, &package),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor Protein semantic issue"
+                    && limit.limit == needed - 1
+        ));
     }
 
     #[test]

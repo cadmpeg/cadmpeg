@@ -651,6 +651,7 @@ pub(crate) fn inventory<'a>(
                     return Err(error);
                 }
                 ctx.charge_collection_items(1, "admit Inventor presentation issue")?;
+                ctx.charge_entities(1, "admit Inventor presentation issue")?;
                 admit_issue_detail(ctx, &error, "retain Inventor presentation issue detail")?;
                 ctx.charge_retained(
                     segment.pair.token.as_str().len() as u64,
@@ -1483,6 +1484,30 @@ mod tests {
                     && limit.operation == "admit Inventor presentation issue"
                     && limit.used == 0
         ));
+    }
+
+    #[test]
+    fn presentation_parse_issue_refuses_entity_limit_before_push() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_entities = 0;
+        assert!(matches!(
+            inventory_with_record(SegmentKind::PmApp, DEFAULT_STYLE_TYPE, &[], policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::Entities
+                    && limit.operation == "admit Inventor presentation issue"
+        ));
+        assert_eq!(
+            inventory_with_record(
+                SegmentKind::PmApp,
+                DEFAULT_STYLE_TYPE,
+                &[],
+                DecodePolicy::service()
+            )
+            .expect("service issue")
+            .1
+            .len(),
+            1
+        );
     }
 
     #[test]

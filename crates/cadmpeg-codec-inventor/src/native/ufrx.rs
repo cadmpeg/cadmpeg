@@ -8,6 +8,61 @@ use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use serde::{de::Error as _, Deserialize, Serialize};
 use std::num::NonZeroU64;
 
+fn is_blank(value: &str) -> bool {
+    value.chars().all(char::is_whitespace)
+}
+
+pub(crate) fn model_state_issue(suffix_len: u64, name: &str) -> Option<&'static str> {
+    if suffix_len != 77 {
+        Some("suffix_len must be 77")
+    } else if is_blank(name) {
+        Some("name must not be empty")
+    } else {
+        None
+    }
+}
+
+pub(crate) fn external_reference_issue(path: &str, has_document_id: bool) -> Option<&'static str> {
+    (is_blank(path) && !has_document_id).then_some("path or a nonzero document_id is required")
+}
+
+pub(crate) fn byte_document_id_present(value: &[u8]) -> bool {
+    value.iter().any(|byte| *byte != 0)
+}
+
+fn text_document_id_present(value: &str) -> bool {
+    value.chars().any(|character| character != '0') && !is_blank(value)
+}
+
+pub(crate) fn embedded_reference_issue(record_len: u64) -> Option<&'static str> {
+    (record_len == 0).then_some("record_len must not be zero")
+}
+
+pub(crate) fn occurrence_issue(header_padding_words: u8, record_len: u64) -> Option<&'static str> {
+    if header_padding_words > 8 {
+        Some("header_padding_words must not exceed 8")
+    } else {
+        embedded_reference_issue(record_len)
+    }
+}
+
+pub(crate) fn representation_issue(
+    name: Option<&str>,
+    kind: Option<&str>,
+    active_model_state: &str,
+) -> Option<&'static str> {
+    match (name, kind) {
+        (Some(name), Some(_)) if is_blank(name) => Some("active_representation must not be empty"),
+        (Some(_), Some(kind)) if is_blank(kind) => {
+            Some("active_representation_kind must not be empty")
+        }
+        (None, None) | (Some(_), Some(_)) => {
+            is_blank(active_model_state).then_some("active_model_state must not be empty")
+        }
+        _ => Some("active_representation and active_representation_kind must be present together"),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 // One document state owns all child arenas; no extra box is needed for the singleton header.
 #[allow(clippy::large_enum_variant)]
@@ -93,6 +148,13 @@ impl From<UfrxRepresentationRecord> for UfrxRepresentationRecordWire {
 impl TryFrom<UfrxRepresentationRecordWire> for UfrxRepresentationRecord {
     type Error = String;
     fn try_from(wire: UfrxRepresentationRecordWire) -> Result<Self, Self::Error> {
+        if let Some(issue) = representation_issue(
+            wire.active_representation.as_deref(),
+            wire.active_representation_kind.as_deref(),
+            &wire.active_model_state,
+        ) {
+            return Err(issue.into());
+        }
         let active_representation =
             match (wire.active_representation, wire.active_representation_kind) {
                 (None, None) => None,
@@ -149,8 +211,8 @@ pub(crate) struct UfrxModelStateRecordWire {
 impl TryFrom<UfrxModelStateRecordWire> for UfrxModelStateRecord {
     type Error = String;
     fn try_from(wire: UfrxModelStateRecordWire) -> Result<Self, Self::Error> {
-        if wire.suffix_len != 77 {
-            return Err("suffix_len must be 77".into());
+        if let Some(issue) = model_state_issue(wire.suffix_len, &wire.name) {
+            return Err(issue.into());
         }
         Ok(Self {
             id: wire.id,
@@ -480,6 +542,14 @@ pub(crate) struct ExternalReferenceRecordWire {
 impl TryFrom<ExternalReferenceRecordWire> for ExternalReferenceRecord {
     type Error = String;
     fn try_from(wire: ExternalReferenceRecordWire) -> Result<Self, Self::Error> {
+        if let Some(issue) = external_reference_issue(
+            &wire.path,
+            wire.document_id
+                .as_deref()
+                .is_some_and(text_document_id_present),
+        ) {
+            return Err(issue.into());
+        }
         let document_id = wire
             .document_id
             .filter(|value| !value.chars().all(|character| character == '0'))
@@ -612,6 +682,9 @@ pub(crate) struct EmbeddedReferenceRecordWire {
 impl TryFrom<EmbeddedReferenceRecordWire> for EmbeddedReferenceRecord {
     type Error = String;
     fn try_from(wire: EmbeddedReferenceRecordWire) -> Result<Self, Self::Error> {
+        if let Some(issue) = embedded_reference_issue(wire.record_len) {
+            return Err(issue.into());
+        }
         Ok(Self {
             id: wire.id,
             ordinal: wire.ordinal,
@@ -690,8 +763,8 @@ pub(crate) struct UfrxOccurrenceRecordWire {
 impl TryFrom<UfrxOccurrenceRecordWire> for UfrxOccurrenceRecord {
     type Error = String;
     fn try_from(wire: UfrxOccurrenceRecordWire) -> Result<Self, Self::Error> {
-        if wire.header_padding_words > 8 {
-            return Err("header_padding_words must not exceed 8".into());
+        if let Some(issue) = occurrence_issue(wire.header_padding_words, wire.record_len) {
+            return Err(issue.into());
         }
         Ok(Self {
             id: wire.id,
@@ -796,12 +869,53 @@ impl UfrxRecord {
 #[cfg(test)]
 mod tests {
     use super::{
-        EmbeddedReferenceRecord, ExternalReferenceRecord, UfrxModelStateRecord,
-        UfrxModelStateRecordWire, UfrxOccurrenceRecord, UfrxRecord, UfrxRepresentationRecord,
+        byte_document_id_present, embedded_reference_issue, external_reference_issue,
+        model_state_issue, occurrence_issue, representation_issue, EmbeddedReferenceRecord,
+        ExternalReferenceRecord, UfrxModelStateRecord, UfrxModelStateRecordWire,
+        UfrxOccurrenceRecord, UfrxRecord, UfrxRepresentationRecord,
     };
     use crate::native::digest::Sha256Hex;
     use cadmpeg_ir::native::NativeNamespace;
     use cadmpeg_test_support::refusal::{refusal, states_the_key};
+
+    #[test]
+    fn ufrx_conversion_issues_preserve_wire_refusal_order() {
+        assert_eq!(model_state_issue(76, " "), Some("suffix_len must be 77"));
+        assert_eq!(model_state_issue(77, " "), Some("name must not be empty"));
+        assert_eq!(
+            embedded_reference_issue(0),
+            Some("record_len must not be zero")
+        );
+        assert_eq!(
+            occurrence_issue(9, 0),
+            Some("header_padding_words must not exceed 8")
+        );
+        assert_eq!(occurrence_issue(8, 0), Some("record_len must not be zero"));
+        assert_eq!(
+            representation_issue(Some(" "), Some(" "), " "),
+            Some("active_representation must not be empty")
+        );
+        assert_eq!(
+            representation_issue(Some("name"), Some(" "), " "),
+            Some("active_representation_kind must not be empty")
+        );
+        assert_eq!(
+            representation_issue(Some("name"), None, " "),
+            Some("active_representation and active_representation_kind must be present together")
+        );
+        assert_eq!(
+            representation_issue(None, None, " "),
+            Some("active_model_state must not be empty")
+        );
+        assert_eq!(
+            external_reference_issue(" ", byte_document_id_present(&[0; 16])),
+            Some("path or a nonzero document_id is required")
+        );
+        assert_eq!(
+            external_reference_issue(" ", byte_document_id_present(&[1; 16])),
+            None
+        );
+    }
 
     #[test]
     fn external_reference_requires_path_or_nonzero_document_id() {

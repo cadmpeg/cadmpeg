@@ -38,6 +38,8 @@ pub(super) fn project(
     };
     for style in &inventory.default_styles {
         let token = style.identity.segment_token.as_str();
+        ctx.charge_collection_items(1, "collect Inventor native default style")?;
+        ctx.charge_entities(1, "admit Inventor native default style")?;
         projection.default_styles.push(PmAppDefaultStyleRecord {
             id: retained_format(
                 ctx,
@@ -165,7 +167,11 @@ pub(super) fn project(
             )?;
         }
         match PmAppRenderingStyleRecord::try_from(wire) {
-            Ok(record) => projection.rendering_styles.push(record),
+            Ok(record) => {
+                ctx.charge_collection_items(1, "collect Inventor native rendering style")?;
+                ctx.charge_entities(1, "admit Inventor native rendering style")?;
+                projection.rendering_styles.push(record);
+            }
             Err(detail) => {
                 ctx.charge_collection_items(1, "collect Inventor rendering conversion issue")?;
                 ctx.charge_entities(1, "admit Inventor rendering conversion issue")?;
@@ -198,6 +204,8 @@ pub(super) fn project(
             face.edge_references.references().len(),
             "copy Inventor graphics face edge references",
         )?;
+        ctx.charge_collection_items(1, "collect Inventor native graphics face")?;
+        ctx.charge_entities(1, "admit Inventor native graphics face")?;
         projection.graphics_faces.push(PmGraphicsFaceRecord {
             id,
             segment_token,
@@ -237,6 +245,8 @@ pub(super) fn project(
             collection.style_references.references().len(),
             "copy Inventor graphics style references",
         )?;
+        ctx.charge_collection_items(1, "collect Inventor native graphics style collection")?;
+        ctx.charge_entities(1, "admit Inventor native graphics style collection")?;
         projection
             .graphics_style_collections
             .push(PmGraphicsStyleCollectionRecord {
@@ -249,6 +259,8 @@ pub(super) fn project(
     }
     for style in &inventory.graphics_primary_color_styles {
         let token = style.identity.segment_token.as_str();
+        ctx.charge_collection_items(1, "collect Inventor native primary color style")?;
+        ctx.charge_entities(1, "admit Inventor native primary color style")?;
         projection
             .graphics_primary_color_styles
             .push(PmGraphicsPrimaryColorStyleRecord {

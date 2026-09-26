@@ -198,7 +198,10 @@ impl Write for JsonByteCount {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
         self.0 = self
             .0
-            .checked_add(bytes.len() as u64)
+            .checked_add(
+                u64::try_from(bytes.len())
+                    .map_err(|_| std::io::Error::other("native record JSON length exceeds u64"))?,
+            )
             .ok_or_else(|| std::io::Error::other("native record JSON length exceeds u64"))?;
         Ok(bytes.len())
     }
@@ -491,7 +494,7 @@ impl NativeNamespace {
     pub fn set_arena<T: Serialize>(
         &mut self,
         ctx: &DecodeContext<'_>,
-        name: impl Into<String>,
+        name: impl AsRef<str>,
         records: &[T],
     ) -> Result<(), NativeConvertError> {
         self.set_arena_from(ctx, name, records.iter())
@@ -505,15 +508,28 @@ impl NativeNamespace {
     pub fn set_arena_from<T: Serialize, I: IntoIterator<Item = T>>(
         &mut self,
         ctx: &DecodeContext<'_>,
-        name: impl Into<String>,
+        name: impl AsRef<str>,
         records: I,
     ) -> Result<(), NativeConvertError> {
-        let name = name.into();
-        let converted = arena_from(ctx, records.into_iter().map(Ok::<T, NativeConvertError>))
-            .map_err(|source| NativeConvertError::Arena {
-                arena: name.clone(),
-                source: Box::new(source),
-            })?;
+        let name = name.as_ref();
+        ctx.charge_retained(
+            u64::try_from(name.len()).map_err(|_| {
+                ctx.refuse_codec_limit("native arena name length", u64::MAX - 1, u64::MAX)
+            })?,
+            "retain native arena name",
+        )?;
+        ctx.charge_collection_items(1, "store native arena")?;
+        let name = name.to_owned();
+        let converted = match arena_from(ctx, records.into_iter().map(Ok::<T, NativeConvertError>))
+        {
+            Ok(converted) => converted,
+            Err(source) => {
+                return Err(NativeConvertError::Arena {
+                    arena: name,
+                    source: Box::new(source),
+                });
+            }
+        };
         self.arenas.insert(name, converted);
         Ok(())
     }
