@@ -116,7 +116,13 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
         },
     ]);
     assert_eq!(
-        generated_nurbs_translation_extent(&scan, &ir, 7, None),
+        generated_nurbs_translation_extent(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            7,
+            None
+        ),
         Some(expected_extent())
     );
 
@@ -125,7 +131,13 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
         local_plane(33, [0.0, 0.0, 2.0], [0.0, 0.0, -1.0]),
     ]);
     assert_eq!(
-        generated_nurbs_translation_extent(&scan, &ir, 7, None),
+        generated_nurbs_translation_extent(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            7,
+            None
+        ),
         Some(expected_extent())
     );
 
@@ -144,10 +156,23 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
             .geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
     }
     assert_eq!(
-        generated_nurbs_translation_extent(&scan, &local_only, 7, None),
+        generated_nurbs_translation_extent(
+            &scan,
+            &local_only,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            7,
+            None
+        ),
         Some(expected_extent())
     );
 
     scan.planes.local_systems[1].slots[9..12].copy_from_slice(&[Some(0.0), Some(0.0), Some(3.0)]);
-    assert!(generated_nurbs_translation_extent(&scan, &ir, 7, None).is_none());
+    assert!(generated_nurbs_translation_extent(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        7,
+        None
+    )
+    .is_none());
 }

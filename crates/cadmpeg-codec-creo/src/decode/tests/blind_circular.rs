@@ -638,7 +638,13 @@ fn round_support_planes_define_radius_without_generated_surface_rows() {
     }
 
     assert_eq!(
-        round_constant_radius(&scan, &ir, 913).expect("round constant radius"),
+        round_constant_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            913
+        )
+        .expect("round constant radius"),
         Some(0.5)
     );
 }
@@ -746,7 +752,13 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
     }
 
     assert_eq!(
-        round_constant_radius(&scan, &ir, 913).expect("round constant radius"),
+        round_constant_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            913
+        )
+        .expect("round constant radius"),
         Some(0.5)
     );
 
@@ -769,7 +781,13 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
         .expect("valid CylinderSurface fixture");
     }
     assert_eq!(
-        round_constant_radius(&scan, &ir, 913).expect("round constant radius"),
+        round_constant_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            913
+        )
+        .expect("round constant radius"),
         None
     );
 }
@@ -810,7 +828,7 @@ fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
     }
 
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round").expect("valid test fixture"),
+        schema_feature_definition(&scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 5, Some(SchemaClass::Round), "Round").expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
             ref groups,
         }) if matches!(
@@ -936,13 +954,27 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
     }
 
     assert_eq!(round_observed_radii(&scan, 5), [15.0, 1.0]);
-    assert_eq!(round_support_radius(&scan, &ir, 5), Some(0.5));
     assert_eq!(
-        round_constant_radius(&scan, &ir, 5).expect("round constant radius"),
+        round_support_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5
+        ),
+        Some(0.5)
+    );
+    assert_eq!(
+        round_constant_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5
+        )
+        .expect("round constant radius"),
         None
     );
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round").expect("valid test fixture"),
+        schema_feature_definition(&scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 5, Some(SchemaClass::Round), "Round").expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
             groups,
         }) if matches!(
@@ -1014,14 +1046,36 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
         });
     }
 
-    assert_eq!(round_placed_cylinder_radii(&scan, &ir, 5), [15.0, 1.0]);
-    assert_eq!(round_support_radius(&scan, &ir, 5), Some(0.5));
     assert_eq!(
-        round_constant_radius(&scan, &ir, 5).expect("round constant radius"),
+        round_placed_cylinder_radii(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5
+        ),
+        [15.0, 1.0]
+    );
+    assert_eq!(
+        round_support_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5
+        ),
+        Some(0.5)
+    );
+    assert_eq!(
+        round_constant_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5
+        )
+        .expect("round constant radius"),
         None
     );
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round").expect("valid test fixture"),
+        schema_feature_definition(&scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 5, Some(SchemaClass::Round), "Round").expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
             groups,
         }) if matches!(
@@ -1097,14 +1151,36 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
         });
     }
 
-    assert_eq!(round_placed_cylinder_radii(&scan, &ir, 5), [15.0, 1.0]);
-    assert_eq!(round_support_radius(&scan, &ir, 5), Some(0.5));
     assert_eq!(
-        round_constant_radius(&scan, &ir, 5).expect("round constant radius"),
+        round_placed_cylinder_radii(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5
+        ),
+        [15.0, 1.0]
+    );
+    assert_eq!(
+        round_support_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5
+        ),
+        Some(0.5)
+    );
+    assert_eq!(
+        round_constant_radius(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5
+        )
+        .expect("round constant radius"),
         None
     );
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round").expect("valid test fixture"),
+        schema_feature_definition(&scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 5, Some(SchemaClass::Round), "Round").expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
             groups,
         }) if matches!(
@@ -1539,7 +1615,13 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         [0.0, -1.0, 0.0],
     ));
     assert_eq!(
-        generated_bounded_cylinder_extent(&scan, &ir, 7, None),
+        generated_bounded_cylinder_extent(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            7,
+            None
+        ),
         expected
     );
 
@@ -1550,11 +1632,23 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
         offset: 31,
     });
-    let conflicting_extent = generated_bounded_cylinder_extent(&scan, &ir, 7, None);
+    let conflicting_extent = generated_bounded_cylinder_extent(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        7,
+        None,
+    );
     assert!(conflicting_extent.is_none());
     scan.planes.outlines[0].origin[1] = 4.0;
     assert_eq!(
-        generated_bounded_cylinder_extent(&scan, &ir, 7, None),
+        generated_bounded_cylinder_extent(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            7,
+            None
+        ),
         expected
     );
 
@@ -1567,7 +1661,13 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         source_object: None,
     });
     assert_eq!(
-        generated_bounded_cylinder_extent(&scan, &ir, 7, None),
+        generated_bounded_cylinder_extent(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            7,
+            None
+        ),
         expected
     );
 
@@ -1580,7 +1680,13 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         source_object: None,
     });
     assert_eq!(
-        generated_bounded_cylinder_extent(&scan, &ir, 7, None),
+        generated_bounded_cylinder_extent(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            7,
+            None
+        ),
         expected
     );
     scan.surfaces.rows.truncate(3);
@@ -1592,8 +1698,20 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
             == SurfaceId::mint("creo:visibgeom:surface#33".to_string()).expect("identity grammar")
     });
     assert_eq!(
-        generated_bounded_cylinder_extent(&scan, &untransferred_caps, 7, None),
-        generated_bounded_cylinder_extent(&scan, &ir, 7, None)
+        generated_bounded_cylinder_extent(
+            &scan,
+            &untransferred_caps,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            7,
+            None
+        ),
+        generated_bounded_cylinder_extent(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            7,
+            None
+        )
     );
 
     let crate::surface::SurfaceParameterCarrier::Resolved(
@@ -1611,7 +1729,13 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     )
     .expect("valid positional cylinder frame");
     assert_eq!(
-        generated_bounded_cylinder_extent(&scan, &ir, 7, None),
+        generated_bounded_cylinder_extent(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            7,
+            None
+        ),
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -1625,7 +1749,14 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
             [0.0, -1.0, 0.0],
         ))
     );
-    assert!(generated_bounded_cylinder_extent(&scan, &untransferred_caps, 7, None).is_none());
+    assert!(generated_bounded_cylinder_extent(
+        &scan,
+        &untransferred_caps,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        7,
+        None
+    )
+    .is_none());
     let lengthless = scan.surfaces.parameters[0]
         .positional_cylinder_frame()
         .expect("cylinder frame");
@@ -1662,8 +1793,20 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     )
     .expect("valid section frame");
     assert_eq!(
-        generated_bounded_cylinder_extent(&scan, &untransferred_caps, 7, Some(&transform)),
-        generated_bounded_cylinder_extent(&scan, &ir, 7, None)
+        generated_bounded_cylinder_extent(
+            &scan,
+            &untransferred_caps,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            7,
+            Some(&transform)
+        ),
+        generated_bounded_cylinder_extent(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            7,
+            None
+        )
     );
     let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
@@ -1699,7 +1842,13 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         .cloned()
         .collect();
     assert_eq!(
-        resolved_feature_extrusion_span(&scan, &ir, &definition, &transform),
+        resolved_feature_extrusion_span(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &definition,
+            &transform
+        ),
         Some(ExtrusionSpan::new(0.0, 8.0).expect("valid span fixture"))
     );
     scan.surfaces.rows = surface_rows;
@@ -1713,10 +1862,14 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         transform.offset,
     )
     .expect("valid section frame");
-    assert!(
-        generated_bounded_cylinder_extent(&scan, &untransferred_caps, 7, Some(&displaced))
-            .is_none()
-    );
+    assert!(generated_bounded_cylinder_extent(
+        &scan,
+        &untransferred_caps,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        7,
+        Some(&displaced)
+    )
+    .is_none());
     let perpendicular = crate::placement::FeatureSectionTransform::new(
         transform.definition_id,
         transform.feature_id,
@@ -1726,10 +1879,14 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         transform.offset,
     )
     .expect("valid section frame");
-    assert!(
-        generated_bounded_cylinder_extent(&scan, &untransferred_caps, 7, Some(&perpendicular))
-            .is_none()
-    );
+    assert!(generated_bounded_cylinder_extent(
+        &scan,
+        &untransferred_caps,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        7,
+        Some(&perpendicular)
+    )
+    .is_none());
 
     let mut oblique = ir.clone();
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
@@ -1747,7 +1904,14 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     let u_axis = Vector3::new(1.0, 0.0, 0.0);
     *plane_surface = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(*origin, normal, u_axis)
         .expect("valid PlaneSurface fixture");
-    assert!(generated_bounded_cylinder_extent(&scan, &oblique, 7, None).is_none());
+    assert!(generated_bounded_cylinder_extent(
+        &scan,
+        &oblique,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        7,
+        None
+    )
+    .is_none());
 
     let crate::surface::SurfaceParameterCarrier::Resolved(
         crate::surface::InlineSurfaceCarrier::Cylinder { frame, .. },
@@ -1763,7 +1927,14 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         Some(7.0),
     )
     .expect("valid positional cylinder frame");
-    assert!(generated_bounded_cylinder_extent(&scan, &ir, 7, None).is_none());
+    assert!(generated_bounded_cylinder_extent(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        7,
+        None
+    )
+    .is_none());
     let crate::surface::SurfaceParameterCarrier::Resolved(
         crate::surface::InlineSurfaceCarrier::Cylinder { frame, .. },
     ) = &mut scan.surfaces.parameters[0].carrier
@@ -1780,16 +1951,37 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     .expect("valid positional cylinder frame");
 
     scan.surfaces.rows.push(scan.surfaces.rows[0].clone());
-    assert!(generated_bounded_cylinder_extent(&scan, &ir, 7, None).is_none());
+    assert!(generated_bounded_cylinder_extent(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        7,
+        None
+    )
+    .is_none());
     scan.surfaces.rows.pop();
 
     scan.surfaces
         .parameters
         .push(scan.surfaces.parameters[0].clone());
-    assert!(generated_bounded_cylinder_extent(&scan, &ir, 7, None).is_none());
+    assert!(generated_bounded_cylinder_extent(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        7,
+        None
+    )
+    .is_none());
     scan.surfaces.parameters.pop();
 
     let mut missing_transfer = ir.clone();
     missing_transfer.model.surfaces.pop();
-    assert!(generated_bounded_cylinder_extent(&scan, &missing_transfer, 7, None).is_none());
+    assert!(generated_bounded_cylinder_extent(
+        &scan,
+        &missing_transfer,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        7,
+        None
+    )
+    .is_none());
 }

@@ -713,7 +713,9 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 .then_some((surface_id, internal_id, spline))
             })
             .collect::<Vec<_>>();
-        let Some(span) = resolved_feature_extrusion_span(scan, ir, definition, transform) else {
+        let Some(span) =
+            resolved_feature_extrusion_span(scan, ir, source_carriers, definition, transform)
+        else {
             continue;
         };
         let lower_translation = transform.normal().map(|value| value * span.lower());

@@ -201,7 +201,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         let local_planes = placed_planes(scan);
         let Some(planes) = affected
             .iter()
-            .map(|id| reconciled_model_plane(&local_planes, ir, *id))
+            .map(|id| reconciled_model_plane(&local_planes, ir, source_carriers, *id))
             .collect::<Option<Vec<_>>>()
         else {
             continue;
@@ -485,7 +485,8 @@ pub(in super::super) fn transfer_split_outline_cylinders(
         else {
             continue;
         };
-        let Some(plane) = reconciled_model_plane(&local_planes, ir, plane_id) else {
+        let Some(plane) = reconciled_model_plane(&local_planes, ir, source_carriers, plane_id)
+        else {
             continue;
         };
         let normal = Vector3::from(plane.normal);
@@ -917,7 +918,7 @@ pub(in super::super) fn transfer_positional_cylinders(
         .collect::<BTreeSet<_>>();
     let mut constant_round_radii = BTreeMap::new();
     for feature_id in round_feature_ids {
-        if let Some(radius) = round_constant_radius(scan, ir, feature_id)? {
+        if let Some(radius) = round_constant_radius(scan, ir, source_carriers, feature_id)? {
             constant_round_radii.insert(feature_id, radius);
         }
     }
@@ -954,7 +955,9 @@ pub(in super::super) fn transfer_positional_cylinders(
                 surface_id,
                 plane_ids
                     .into_iter()
-                    .filter_map(|plane_id| reconciled_model_plane(&local_planes, ir, plane_id))
+                    .filter_map(|plane_id| {
+                        reconciled_model_plane(&local_planes, ir, source_carriers, plane_id)
+                    })
                     .collect::<Vec<_>>(),
             )
         })
@@ -994,7 +997,7 @@ pub(in super::super) fn transfer_positional_cylinders(
             .then(|| record.type24_scalar_frame_round_envelope())
             .flatten()
             .and_then(|envelope| {
-                round_support_envelope_cylinder(scan, ir, row.feature_id, envelope)
+                round_support_envelope_cylinder(scan, ir, source_carriers, row.feature_id, envelope)
             });
         let support_planes = round_edge_support_planes.get(&row.id);
         let support_tangent_frame = (!selector_corner_interval)

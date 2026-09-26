@@ -793,6 +793,7 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
         schema_feature_definition(
             &scan,
             &CadIr::empty(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
             9,
             Some(SchemaClass::Hole),
             "Hole"
@@ -839,7 +840,7 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
         .rows
         .push(surface_row(24, 9, crate::surface::SurfaceKind::Cylinder));
     assert!(matches!(
-        schema_feature_definition(&scan, &CadIr::empty(), 9, Some(SchemaClass::Hole), "Hole").expect("valid test fixture"), IrFeatureDefinition::Operation(IrFeatureOperation::Hole {
+        schema_feature_definition(&scan, &CadIr::empty(), &crate::decode::source_carriers::SourceUnitCarriers::default(), 9, Some(SchemaClass::Hole), "Hole").expect("valid test fixture"), IrFeatureDefinition::Operation(IrFeatureOperation::Hole {
             shape,
 
             extent: None,

@@ -87,6 +87,7 @@ pub(super) fn emit_model_features(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut regeneration_edges = Vec::new();
     let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan)?;
@@ -174,6 +175,7 @@ pub(super) fn emit_model_features(
                     schema_feature_definition(
                         scan,
                         ir,
+                        source_carriers,
                         feature_id,
                         Some(SchemaClass::Round),
                         "Fillet",
@@ -217,6 +219,7 @@ pub(super) fn emit_model_features(
                         schema_feature_definition(
                             scan,
                             ir,
+                            source_carriers,
                             operation.feature_id,
                             None,
                             operation.kind.as_str(),
@@ -227,6 +230,7 @@ pub(super) fn emit_model_features(
                             named_or_referenced_feature_definition(
                                 scan,
                                 ir,
+                                source_carriers,
                                 operation.feature_id,
                                 operation.kind.as_str(),
                             )
@@ -234,7 +238,13 @@ pub(super) fn emit_model_features(
                         })
                     })
                     .or_else(|| {
-                        unbounded_feature_plane_definition(scan, ir, operation.feature_id).map(Ok)
+                        unbounded_feature_plane_definition(
+                            scan,
+                            ir,
+                            source_carriers,
+                            operation.feature_id,
+                        )
+                        .map(Ok)
                     })
                     .unwrap_or_else(|| {
                         Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
@@ -252,6 +262,7 @@ pub(super) fn emit_model_features(
                 schema_feature_definition(
                     scan,
                     ir,
+                    source_carriers,
                     operation.feature_id,
                     Some(schema_class),
                     operation.kind.as_str(),
@@ -428,9 +439,9 @@ pub(super) fn emit_model_features(
         let parameters = feature_parameters(scan, feature_id);
         let mut source_properties = feature_source_properties(scan, feature_id);
         let definition = schema_class.map_or_else(
-            || match named_feature_definition(scan, ir, feature_id, kind)?
-                .or_else(|| unbounded_feature_plane_definition(scan, ir, feature_id))
-            {
+            || match named_feature_definition(scan, ir, source_carriers, feature_id, kind)?.or_else(
+                || unbounded_feature_plane_definition(scan, ir, source_carriers, feature_id),
+            ) {
                 Some(definition) => Ok(definition),
                 None => Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
                     kind: kind.into(),
@@ -441,7 +452,14 @@ pub(super) fn emit_model_features(
                 })),
             },
             |schema_class| {
-                schema_feature_definition(scan, ir, feature_id, Some(schema_class), kind)
+                schema_feature_definition(
+                    scan,
+                    ir,
+                    source_carriers,
+                    feature_id,
+                    Some(schema_class),
+                    kind,
+                )
             },
         )?;
         let row_schema_classes = row_feature_schema_classes(&scan.features.rows, feature_id);

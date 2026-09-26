@@ -390,6 +390,7 @@ pub(super) fn agreed_plane(candidates: &[PlaneEquation]) -> Option<PlaneEquation
 pub(in crate::decode) fn reconciled_model_plane(
     local_planes: &BTreeMap<u32, PlaneEquation>,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     surface_id: u32,
 ) -> Option<PlaneEquation> {
     let model_id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, surface_id);
@@ -401,7 +402,7 @@ pub(in crate::decode) fn reconciled_model_plane(
         .collect::<Vec<_>>();
     let model_plane = match model_surfaces.as_slice() {
         [] => None,
-        [surface] => match &surface.geometry {
+        [surface] => match source_carriers.surface_geometry(surface) {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
                 let origin = plane_surface.origin().get();
                 let normal = plane_surface.frame().axis().as_raw();

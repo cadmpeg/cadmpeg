@@ -175,7 +175,7 @@ pub(in super::super) fn transfer_positional_tori(
         .collect::<BTreeSet<_>>();
     let mut constant_round_feature_ids = BTreeSet::new();
     for feature_id in round_feature_ids {
-        if round_constant_radius(scan, ir, feature_id)?.is_some() {
+        if round_constant_radius(scan, ir, source_carriers, feature_id)?.is_some() {
             constant_round_feature_ids.insert(feature_id);
         }
     }
