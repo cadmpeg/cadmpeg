@@ -6,9 +6,10 @@ use std::ops::Range;
 
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::objects::{parse_class_wrapper, UserdataDescriptor};
-use crate::settings::{plane, utf16, MillimeterScale, Plane};
+use crate::settings::{plane, utf16, MillimeterScale, Plane, PlaneLane};
 use crate::wire::{scaled_coordinate, uuid, Uuid};
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+use cadmpeg_ir::units::FiniteVector;
 
 const ANONYMOUS: u32 = 0x4000_8000;
 pub(crate) const V5_DIM_EXTRA: Uuid = Uuid::from_canonical([
@@ -83,24 +84,24 @@ impl OrdinateAxis {
 #[derive(Debug, Clone, PartialEq)]
 enum Definition {
     Linear {
-        definition_point: [f64; 2],
-        dimension_line_point: [f64; 2],
+        definition_point: PlaneLane<2>,
+        dimension_line_point: PlaneLane<2>,
     },
     Angular {
-        first_direction: [f64; 2],
-        second_direction: [f64; 2],
+        first_direction: PlaneLane<2>,
+        second_direction: PlaneLane<2>,
         first_extension_offset: f64,
         second_extension_offset: f64,
-        dimension_line_point: [f64; 2],
+        dimension_line_point: PlaneLane<2>,
     },
     Radial {
-        radius_point: [f64; 2],
-        dimension_line_point: [f64; 2],
+        radius_point: PlaneLane<2>,
+        dimension_line_point: PlaneLane<2>,
         diameter: bool,
     },
     Ordinate {
-        definition_point: [f64; 2],
-        leader_point: [f64; 2],
+        definition_point: PlaneLane<2>,
+        leader_point: PlaneLane<2>,
         measured_direction: OrdinateAxis,
         kink_offsets: [f64; 2],
     },
@@ -122,7 +123,7 @@ enum DimensionFamily {
     /// V2 dimension with default text and definition points.
     V2 {
         default_text: String,
-        points: Vec<[f64; 2]>,
+        points: Vec<FiniteVector<2>>,
         angular_radius: Option<f64>,
     },
     /// Modern dimension referencing a dimstyle UUID.
@@ -138,10 +139,10 @@ pub(crate) struct Dimension {
     user_text: String,
     family: DimensionFamily,
     plane: Plane,
-    horizontal_direction: [f64; 2],
+    horizontal_direction: PlaneLane<2>,
     allow_text_scaling: bool,
     use_default_text_point: bool,
-    user_text_point: [f64; 2],
+    user_text_point: PlaneLane<2>,
     flip_arrows: [bool; 2],
     arrow_position: i32,
     detail_measured: Uuid,
@@ -161,7 +162,7 @@ pub(crate) struct Annotation {
     pub(crate) dimstyle_id: Uuid,
     pub(crate) plane: Plane,
     pub(crate) kind: i32,
-    pub(crate) horizontal_direction: [f64; 2],
+    pub(crate) horizontal_direction: PlaneLane<2>,
     pub(crate) allow_text_scaling: bool,
     override_present: bool,
 }
@@ -241,16 +242,11 @@ fn anonymous(
     Ok((reader, chunk.next_offset(), version))
 }
 
-fn point2(reader: &mut BoundedReader<'_>) -> Result<[f64; 2], FramingError> {
+fn point2(reader: &mut BoundedReader<'_>) -> Result<FiniteVector<2>, FramingError> {
     let value = [reader.f64()?, reader.f64()?];
-    if value.iter().all(|value| value.is_finite()) {
-        Ok(value)
-    } else {
-        Err(FramingError::structural(
-            reader.position() - 16,
-            "dimension point is not finite",
-        ))
-    }
+    FiniteVector::new(value).ok_or_else(|| {
+        FramingError::structural(reader.position() - 16, "dimension point is not finite")
+    })
 }
 
 fn text_content(
@@ -324,9 +320,9 @@ pub(crate) fn annotation(
         annotation.skip(override_next - annotation.position())?;
     }
     let horizontal_direction = if version >= 3 {
-        point2(&mut annotation)?
+        PlaneLane::Admitted(point2(&mut annotation)?)
     } else {
-        [1.0, 0.0]
+        PlaneLane::Admitted([FiniteReal::ONE, FiniteReal::ZERO].into())
     };
     let allow_text_scaling = version < 4 || annotation.bool()?;
     annotation.skip_remaining()?;
@@ -348,18 +344,17 @@ pub(crate) fn annotation(
 }
 
 fn scaled_point(
-    value: [f64; 2],
+    value: FiniteVector<2>,
     scale: MillimeterScale,
     offset: usize,
-) -> Result<[f64; 2], FramingError> {
+) -> Result<FiniteVector<2>, FramingError> {
     Ok([
         scaled_coordinate(value[0], scale)
-            .ok_or_else(|| FramingError::structural(offset, "scaled dimension point is invalid"))?
-            .get(),
+            .ok_or_else(|| FramingError::structural(offset, "scaled dimension point is invalid"))?,
         scaled_coordinate(value[1], scale)
-            .ok_or_else(|| FramingError::structural(offset, "scaled dimension point is invalid"))?
-            .get(),
-    ])
+            .ok_or_else(|| FramingError::structural(offset, "scaled dimension point is invalid"))?,
+    ]
+    .into())
 }
 
 fn angular_measurement(first: [f64; 2], second: [f64; 2]) -> f64 {
@@ -371,7 +366,7 @@ pub(crate) struct LegacyAnnotation {
     pub(crate) kind: i32,
     pub(crate) text_display_mode: i32,
     pub(crate) plane: Plane,
-    pub(crate) points: Vec<[f64; 2]>,
+    pub(crate) points: Vec<FiniteVector<2>>,
     pub(crate) rich_text: String,
     pub(crate) user_text: String,
     pub(crate) user_positioned_text: bool,
@@ -568,7 +563,7 @@ fn inferred_ordinate_direction(definition: [f64; 2], leader: [f64; 2]) -> Ordina
 pub(crate) struct V2Annotation {
     pub(crate) kind: i32,
     pub(crate) plane: Plane,
-    pub(crate) points: Vec<[f64; 2]>,
+    pub(crate) points: Vec<FiniteVector<2>>,
     pub(crate) user_text: String,
     pub(crate) default_text: String,
     pub(crate) user_positioned_text: bool,
@@ -770,19 +765,19 @@ fn decode_legacy(
                 ));
             }
             let origin = annotation.points[0];
-            let definition_point = difference(annotation.points[2], origin);
+            let definition_point = difference(annotation.points[2].get(), origin.get());
             let arrow_midpoint = [
                 (annotation.points[1][0] + annotation.points[3][0]) * 0.5,
                 (annotation.points[1][1] + annotation.points[3][1]) * 0.5,
             ];
-            let dimension_line_point = difference(arrow_midpoint, origin);
+            let dimension_line_point = difference(arrow_midpoint, origin.get());
             (
-                shifted_plane(annotation.plane, origin),
+                shifted_plane(annotation.plane, origin.get()),
                 Definition::Linear {
-                    definition_point,
-                    dimension_line_point,
+                    definition_point: PlaneLane::Derived(definition_point),
+                    dimension_line_point: PlaneLane::Derived(dimension_line_point),
                 },
-                difference(annotation.points[4], origin),
+                PlaneLane::Derived(difference(annotation.points[4].get(), origin.get())),
                 definition_point[0].abs(),
             )
         }
@@ -794,17 +789,17 @@ fn decode_legacy(
                 ));
             }
             let origin = annotation.points[0];
-            let radius_point = difference(annotation.points[1], origin);
-            let dimension_line_point = difference(annotation.points[2], origin);
+            let radius_point = difference(annotation.points[1].get(), origin.get());
+            let dimension_line_point = difference(annotation.points[2].get(), origin.get());
             let diameter = annotation.kind == 4;
             (
-                shifted_plane(annotation.plane, origin),
+                shifted_plane(annotation.plane, origin.get()),
                 Definition::Radial {
-                    radius_point,
-                    dimension_line_point,
+                    radius_point: PlaneLane::Derived(radius_point),
+                    dimension_line_point: PlaneLane::Derived(dimension_line_point),
                     diameter,
                 },
-                dimension_line_point,
+                PlaneLane::Derived(dimension_line_point),
                 radius_point[0].hypot(radius_point[1]) * if diameter { 2.0 } else { 1.0 },
             )
         }
@@ -821,15 +816,15 @@ fn decode_legacy(
             (
                 annotation.plane,
                 Definition::Angular {
-                    first_direction,
-                    second_direction,
+                    first_direction: PlaneLane::Derived(first_direction),
+                    second_direction: PlaneLane::Derived(second_direction),
                     // ON_OBSOLETE_V5_DimAngular returns -1 when its optional
                     // ON_AngularDimension2Extra userdata is absent.
                     first_extension_offset: -1.0,
                     second_extension_offset: -1.0,
-                    dimension_line_point,
+                    dimension_line_point: PlaneLane::Derived(dimension_line_point),
                 },
-                annotation.points[0],
+                PlaneLane::Admitted(annotation.points[0]),
                 angle,
             )
         }
@@ -846,9 +841,10 @@ fn decode_legacy(
             let definition_point = annotation.points[0];
             let leader_point = annotation.points[1];
             let measured_direction =
-                ordinate_direction(stored_direction, definition_point, leader_point).ok_or_else(
-                    || FramingError::structural(range.start, "invalid legacy ordinate direction"),
-                )?;
+                ordinate_direction(stored_direction, definition_point.get(), leader_point.get())
+                    .ok_or_else(|| {
+                        FramingError::structural(range.start, "invalid legacy ordinate direction")
+                    })?;
             let measurement = if measured_direction == OrdinateAxis::X {
                 definition_point[0].abs()
             } else {
@@ -857,12 +853,12 @@ fn decode_legacy(
             (
                 annotation.plane,
                 Definition::Ordinate {
-                    definition_point,
-                    leader_point,
+                    definition_point: PlaneLane::Admitted(definition_point),
+                    leader_point: PlaneLane::Admitted(leader_point),
                     measured_direction,
                     kink_offsets,
                 },
-                leader_point,
+                PlaneLane::Admitted(leader_point),
                 measurement,
             )
         }
@@ -873,7 +869,7 @@ fn decode_legacy(
             "legacy dimension measurement is invalid",
         ));
     }
-    let horizontal_direction = world_horizontal_in_plane(&plane);
+    let horizontal_direction = PlaneLane::Derived(world_horizontal_in_plane(&plane));
     Ok(Dimension {
         source_range: range,
         annotation_type: modern_annotation_type(annotation.kind),
@@ -921,7 +917,7 @@ fn decode_v2(
             ));
         }
         let origin = points[0];
-        let definition_point = difference(points[2], origin);
+        let definition_point = difference(points[2].get(), origin.get());
         let arrow_midpoint = [
             (points[1][0] + points[3][0]) * 0.5,
             (points[1][1] + points[3][1]) * 0.5,
@@ -929,14 +925,14 @@ fn decode_v2(
         let user_text_point = points
             .get(4)
             .copied()
-            .map_or([0.0, 0.0], |point| difference(point, origin));
+            .map_or([0.0, 0.0], |point| difference(point.get(), origin.get()));
         (
-            shifted_plane(annotation.plane, origin),
+            shifted_plane(annotation.plane, origin.get()),
             Definition::Linear {
-                definition_point,
-                dimension_line_point: difference(arrow_midpoint, origin),
+                definition_point: PlaneLane::Derived(definition_point),
+                dimension_line_point: PlaneLane::Derived(difference(arrow_midpoint, origin.get())),
             },
-            user_text_point,
+            PlaneLane::Derived(user_text_point),
             true,
             (points[1][0] - points[3][0]).hypot(points[1][1] - points[3][1]),
         )
@@ -948,21 +944,21 @@ fn decode_v2(
             ));
         }
         let origin = points[0];
-        let radius_point = difference(points[1], origin);
-        let dimension_line_point = difference(points[2], origin);
+        let radius_point = difference(points[1].get(), origin.get());
+        let dimension_line_point = difference(points[2].get(), origin.get());
         let diameter = kind == 4;
         let user_text_point = points
             .get(3)
             .copied()
-            .map_or([0.0, 0.0], |point| difference(point, origin));
+            .map_or([0.0, 0.0], |point| difference(point.get(), origin.get()));
         (
-            shifted_plane(annotation.plane, origin),
+            shifted_plane(annotation.plane, origin.get()),
             Definition::Radial {
-                radius_point,
-                dimension_line_point,
+                radius_point: PlaneLane::Derived(radius_point),
+                dimension_line_point: PlaneLane::Derived(dimension_line_point),
                 diameter,
             },
-            user_text_point,
+            PlaneLane::Derived(user_text_point),
             !annotation.user_positioned_text,
             radius_point[0].hypot(radius_point[1]) * if diameter { 2.0 } else { 1.0 },
         )
@@ -993,20 +989,23 @@ fn decode_v2(
             ));
         }
         angular_radius = Some(radius);
-        let user_text_point = points.get(2).copied().unwrap_or([0.0, 0.0]);
+        let user_text_point = points
+            .get(2)
+            .copied()
+            .unwrap_or_else(|| [FiniteReal::ZERO, FiniteReal::ZERO].into());
         (
             annotation.plane,
             Definition::Angular {
-                first_direction: points[0],
-                second_direction: points[1],
+                first_direction: PlaneLane::Admitted(points[0]),
+                second_direction: PlaneLane::Admitted(points[1]),
                 first_extension_offset: -1.0,
                 second_extension_offset: -1.0,
-                dimension_line_point: [
+                dimension_line_point: PlaneLane::Derived([
                     radius.get() * (0.5 * angle).cos(),
                     radius.get() * (0.5 * angle).sin(),
-                ],
+                ]),
             },
-            user_text_point,
+            PlaneLane::Admitted(user_text_point),
             !annotation.user_positioned_text,
             angle,
         )
@@ -1034,7 +1033,7 @@ fn decode_v2(
             angular_radius: angular_radius.map(FiniteReal::get),
         },
         plane,
-        horizontal_direction: world_horizontal_in_plane(&plane),
+        horizontal_direction: PlaneLane::Derived(world_horizontal_in_plane(&plane)),
         allow_text_scaling: false,
         use_default_text_point,
         user_text_point,
@@ -1130,8 +1129,8 @@ pub(crate) fn decode(
         let offset = outer.position();
         let dimension_line_point = scaled_point(point2(&mut outer)?, scale, offset)?;
         Definition::Linear {
-            definition_point,
-            dimension_line_point,
+            definition_point: PlaneLane::Admitted(definition_point),
+            dimension_line_point: PlaneLane::Admitted(dimension_line_point),
         }
     } else if class == ANGULAR {
         if !matches!(annotation.kind, 2 | 11) {
@@ -1152,11 +1151,11 @@ pub(crate) fn decode(
         let line = point2(&mut outer)?;
         let dimension_line_point = scaled_point(line, scale, offset)?;
         Definition::Angular {
-            first_direction: first,
-            second_direction: second,
+            first_direction: PlaneLane::Admitted(first),
+            second_direction: PlaneLane::Admitted(second),
             first_extension_offset: first_extension_offset.get(),
             second_extension_offset: second_extension_offset.get(),
-            dimension_line_point,
+            dimension_line_point: PlaneLane::Admitted(dimension_line_point),
         }
     } else if class == RADIAL {
         if !matches!(annotation.kind, 3 | 4) {
@@ -1170,8 +1169,8 @@ pub(crate) fn decode(
         let offset = outer.position();
         let dimension_line_point = scaled_point(point2(&mut outer)?, scale, offset)?;
         Definition::Radial {
-            radius_point,
-            dimension_line_point,
+            radius_point: PlaneLane::Admitted(radius_point),
+            dimension_line_point: PlaneLane::Admitted(dimension_line_point),
             diameter: annotation.kind == 3,
         }
     } else if class == ORDINATE {
@@ -1193,7 +1192,7 @@ pub(crate) fn decode(
         let offset = outer.position();
         let leader_point = scaled_point(point2(&mut outer)?, scale, offset)?;
         let measured_direction = if stored_direction == 0 {
-            inferred_ordinate_direction(definition_point, leader_point)
+            inferred_ordinate_direction(definition_point.get(), leader_point.get())
         } else if stored_direction == 1 {
             OrdinateAxis::X
         } else {
@@ -1208,8 +1207,8 @@ pub(crate) fn decode(
             })?,
         ];
         Definition::Ordinate {
-            definition_point,
-            leader_point,
+            definition_point: PlaneLane::Admitted(definition_point),
+            leader_point: PlaneLane::Admitted(leader_point),
             measured_direction,
             kink_offsets: kink_offsets.map(FiniteReal::get),
         }
@@ -1243,7 +1242,7 @@ pub(crate) fn decode(
             first_direction,
             second_direction,
             ..
-        } => angular_measurement(*first_direction, *second_direction),
+        } => angular_measurement(first_direction.get(), second_direction.get()),
         Definition::Radial {
             radius_point,
             diameter,
@@ -1284,7 +1283,7 @@ pub(crate) fn decode(
         horizontal_direction: annotation.horizontal_direction,
         allow_text_scaling: annotation.allow_text_scaling,
         use_default_text_point,
-        user_text_point,
+        user_text_point: PlaneLane::Admitted(user_text_point),
         flip_arrows,
         arrow_position,
         detail_measured,
@@ -1673,7 +1672,7 @@ pub(crate) fn project(
     // Model-space text point via the dimension plane (stored UV, not world xyz).
     let position = (!dimension.use_default_text_point)
         .then(|| {
-            let [u, v] = dimension.user_text_point;
+            let [u, v] = dimension.user_text_point.get();
             let origin = dimension.plane.origin.get();
             let x_axis = dimension.plane.xaxis.get();
             let y_axis = dimension.plane.yaxis.get();
@@ -1762,6 +1761,24 @@ pub(crate) fn semantic_json(dimension: &Dimension) -> Result<String, cadmpeg_cor
 
 #[cfg(test)]
 pub(crate) mod tests {
+
+    #[test]
+    fn dimension_point_reader_holds_finite_lanes_and_preserves_refusal_offset() {
+        let mut bytes = vec![0xa5, 0xa5, 0xa5];
+        for value in [2.0_f64, -3.0] {
+            bytes.extend(value.to_le_bytes());
+        }
+        let mut reader = BoundedReader::new(&bytes, 3, bytes.len()).expect("point reader");
+        let point = super::point2(&mut reader).expect("finite dimension point");
+        assert_eq!(point.get(), [2.0, -3.0]);
+
+        bytes[11..19].copy_from_slice(&f64::NAN.to_le_bytes());
+        let mut reader = BoundedReader::new(&bytes, 3, bytes.len()).expect("point reader");
+        assert_eq!(
+            super::point2(&mut reader).expect_err("nonfinite point"),
+            crate::chunks::FramingError::structural(3, "dimension point is not finite")
+        );
+    }
 
     #[test]
     fn shifted_plane_keeps_computed_overflow_outside_source_admission() {
@@ -2017,7 +2034,7 @@ pub(crate) mod tests {
         assert_eq!(angular_radius.map(|_| angular.measurement), Some(1.25));
         assert_eq!(angular_radius, Some(19.0));
         assert!(!angular.use_default_text_point);
-        assert_eq!(angular.user_text_point, [4.0, 6.0]);
+        assert_eq!(angular.user_text_point.get(), [4.0, 6.0]);
     }
 
     #[test]
@@ -2250,7 +2267,7 @@ pub(crate) mod tests {
         )
         .expect("required invariant");
         assert_eq!(linear.measurement, 60.0);
-        assert_eq!(linear.horizontal_direction, [1.0, 0.0]);
+        assert_eq!(linear.horizontal_direction.get(), [1.0, 0.0]);
         let semantic: serde_json::Value =
             serde_json::from_str(&semantic_json(&linear).expect("required invariant"))
                 .expect("required invariant");
@@ -2329,11 +2346,12 @@ pub(crate) mod tests {
         assert!(matches!(
             ordinate.definition,
             Definition::Ordinate {
-                definition_point: [-30.0, 80.0],
-                leader_point: [20.0, 120.0],
+                definition_point,
+                leader_point,
                 measured_direction: OrdinateAxis::X,
                 kink_offsets: [15.0, 7.5]
-            }
+            } if definition_point.get() == [-30.0, 80.0]
+                && leader_point.get() == [20.0, 120.0]
         ));
     }
 
@@ -2440,9 +2458,10 @@ pub(crate) mod tests {
         assert!(matches!(
             linear.definition,
             Definition::Linear {
-                definition_point: [30.0, 0.0],
-                dimension_line_point: [15.0, 50.0]
-            }
+                definition_point,
+                dimension_line_point
+            } if definition_point.get() == [30.0, 0.0]
+                && dimension_line_point.get() == [15.0, 50.0]
         ));
 
         let radial_bytes =
@@ -2460,10 +2479,11 @@ pub(crate) mod tests {
         assert!(matches!(
             radial.definition,
             Definition::Radial {
-                radius_point: [30.0, 40.0],
-                dimension_line_point: [60.0, 60.0],
+                radius_point,
+                dimension_line_point,
                 diameter: true
-            }
+            } if radius_point.get() == [30.0, 40.0]
+                && dimension_line_point.get() == [60.0, 60.0]
         ));
 
         let angular_bytes = legacy_payload(
@@ -2490,7 +2510,7 @@ pub(crate) mod tests {
         else {
             panic!("expected angular definition");
         };
-        assert_eq!(first_direction, [1.0, 0.0]);
+        assert_eq!(first_direction.get(), [1.0, 0.0]);
         assert!((second_direction[0]).abs() < 1.0e-12);
         assert!((second_direction[1] - 1.0).abs() < 1.0e-12);
         assert!((dimension_line_point[0] - 50.0 / 2.0_f64.sqrt()).abs() < 1.0e-12);
@@ -2531,11 +2551,12 @@ pub(crate) mod tests {
         assert!(matches!(
             ordinate.definition,
             Definition::Ordinate {
-                definition_point: [40.0, -70.0],
-                leader_point: [40.0, 20.0],
+                definition_point,
+                leader_point,
                 measured_direction: OrdinateAxis::X,
                 kink_offsets: [12.5, 5.0]
-            }
+            } if definition_point.get() == [40.0, -70.0]
+                && leader_point.get() == [40.0, 20.0]
         ));
 
         let mut extension = [0_u8; 16].to_vec();

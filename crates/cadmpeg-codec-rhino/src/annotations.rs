@@ -12,7 +12,7 @@ use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::Scan;
 use crate::loss::RhinoLossCode;
 use crate::objects::{ClassUserdata, UserdataDescriptor};
-use crate::settings::{utf16, MillimeterScale, Plane, UnitBinding};
+use crate::settings::{utf16, MillimeterScale, Plane, PlaneLane, UnitBinding};
 use crate::wire::{scaled_coordinate, uuid, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
@@ -95,7 +95,7 @@ struct AnnotationRecord {
     horizontal_alignment: i32,
     vertical_alignment: i32,
     wrapped: bool,
-    horizontal_direction: [f64; 2],
+    horizontal_direction: PlaneLane<2>,
     allow_text_scaling: bool,
     legacy_text_display_mode: Option<i32>,
     legacy_user_text: Option<String>,
@@ -109,7 +109,7 @@ struct AnnotationRecord {
     v2_text: Option<V2Text>,
     #[serde(skip_serializing_if = "Option::is_none")]
     v5_text_extra: Option<V5TextExtraRecord>,
-    leader_points: Vec<[f64; 2]>,
+    leader_points: Vec<[FiniteReal; 2]>,
     links: Vec<String>,
 }
 
@@ -327,13 +327,19 @@ fn scaled_plane(
     Ok(plane)
 }
 
+fn plane_horizontal_direction(plane: Plane) -> PlaneLane<2> {
+    let x = plane.xaxis.finite_components();
+    let y = plane.yaxis.finite_components();
+    PlaneLane::Admitted([x[0], y[0]].into())
+}
+
 fn decode_annotation(
     data: &[u8],
     range: std::ops::Range<usize>,
     archive: ArchiveVersion,
     scale: MillimeterScale,
     leader: bool,
-) -> Result<(crate::dimensions::Annotation, Vec<[f64; 2]>), FramingError> {
+) -> Result<(crate::dimensions::Annotation, Vec<[FiniteReal; 2]>), FramingError> {
     let mut outer = anonymous(data, range.clone(), archive, i32::from(leader))?;
     let mut annotation = crate::dimensions::annotation(data, &mut outer, archive)?;
     annotation.plane = scaled_plane(annotation.plane, scale, range.start)?;
@@ -353,29 +359,19 @@ fn decode_annotation(
         )?;
         for _ in 0..bytes / 16 {
             let point = [outer.f64()?, outer.f64()?];
-            if !point.iter().all(|value| value.is_finite()) {
-                return Err(FramingError::structural(
-                    outer.position() - 16,
-                    "leader point is not finite",
-                ));
-            }
+            let point = cadmpeg_ir::units::FiniteVector::new(point).ok_or_else(|| {
+                FramingError::structural(outer.position() - 16, "leader point is not finite")
+            })?;
             points.push([
-                scaled_coordinate(point[0], scale)
-                    .ok_or_else(|| {
-                        FramingError::structural(
-                            outer.position() - 16,
-                            "scaled leader point is invalid",
-                        )
-                    })?
-                    .get(),
-                scaled_coordinate(point[1], scale)
-                    .ok_or_else(|| {
-                        FramingError::structural(
-                            outer.position() - 8,
-                            "scaled leader point is invalid",
-                        )
-                    })?
-                    .get(),
+                scaled_coordinate(point[0], scale).ok_or_else(|| {
+                    FramingError::structural(
+                        outer.position() - 16,
+                        "scaled leader point is invalid",
+                    )
+                })?,
+                scaled_coordinate(point[1], scale).ok_or_else(|| {
+                    FramingError::structural(outer.position() - 8, "scaled leader point is invalid")
+                })?,
             ]);
         }
     }
@@ -766,7 +762,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
                     horizontal_alignment: 0,
                     vertical_alignment: 0,
                     wrapped: false,
-                    horizontal_direction: [value.plane.xaxis[0], value.plane.yaxis[0]],
+                    horizontal_direction: plane_horizontal_direction(value.plane),
                     allow_text_scaling: value.allow_text_scaling,
                     legacy_text_display_mode: Some(value.text_display_mode),
                     legacy_user_text: Some(value.user_text),
@@ -777,7 +773,11 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
                     v2_default_text: None,
                     v2_text: None,
                     v5_text_extra,
-                    leader_points: value.points,
+                    leader_points: value
+                        .points
+                        .into_iter()
+                        .map(cadmpeg_ir::units::FiniteVector::finite_components)
+                        .collect(),
                     links: vec![link],
                 });
             }
@@ -815,7 +815,12 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
                 };
                 let rich_text = crate::dimensions::v2_effective_text(&value.base);
                 let leader_points = if is_leader {
-                    value.base.points
+                    value
+                        .base
+                        .points
+                        .into_iter()
+                        .map(cadmpeg_ir::units::FiniteVector::finite_components)
+                        .collect()
                 } else {
                     Vec::new()
                 };
@@ -837,7 +842,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
                     horizontal_alignment: 0,
                     vertical_alignment: 0,
                     wrapped: false,
-                    horizontal_direction: [value.base.plane.xaxis[0], value.base.plane.yaxis[0]],
+                    horizontal_direction: plane_horizontal_direction(value.base.plane),
                     allow_text_scaling: false,
                     legacy_text_display_mode: None,
                     legacy_user_text: Some(value.base.user_text),
@@ -932,6 +937,7 @@ mod tests {
     };
     use crate::wire::Uuid;
     use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::scalar::FiniteReal;
     use cadmpeg_test_support::{wire, EditableDecodeResult};
 
     fn anonymous(minor: i32, suffix: &[u8]) -> Vec<u8> {
@@ -1608,7 +1614,13 @@ mod tests {
         )
         .expect("modern leader class-data suffix is bounded");
         assert_eq!(leader.rich_text, "rich");
-        assert_eq!(points, [[1.0, 2.0], [3.0, 4.0]]);
+        assert_eq!(
+            points
+                .into_iter()
+                .map(|point| point.map(FiniteReal::get))
+                .collect::<Vec<_>>(),
+            [[1.0, 2.0], [3.0, 4.0]]
+        );
     }
 
     #[test]
