@@ -1503,7 +1503,8 @@ fn numerical_followup_similarity_and_normalization_are_scale_independent() {
             Transform::affine([[a, 0., 0., 0.], [0., a, 0., 0.], [0., 0., a, 0.]]).unwrap();
         assert_eq!(super::uniform_scale(similarity).unwrap().get(), a);
         assert_eq!(
-            super::transform_normalized_vector(similarity, Vector3::new(1., 0., 0.)),
+            super::transform_normalized_vector(similarity, Vector3::new(1., 0., 0.))
+                .map(cadmpeg_ir::features::FiniteVector3::get),
             Some(Vector3::new(1., 0., 0.))
         );
         assert_eq!(

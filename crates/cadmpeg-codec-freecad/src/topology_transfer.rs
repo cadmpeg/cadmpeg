@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::{alloc_filled, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::geometry::pcurve::PcurveMetadata;
 use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
@@ -26,6 +27,7 @@ use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::transform::{Transform, Transform2};
+use cadmpeg_ir::units::UnitVector3;
 use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::brep::{
@@ -373,9 +375,9 @@ impl<'a> Builder<'a> {
                 continue;
             }
             ir.model.tessellations.push(
-                Tessellation::new(
+                Tessellation::from_parts(
                     crate::native::model_id("tessellation", &self.payload.id, index.to_string()),
-                    cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
+                    cadmpeg_ir::tessellation::TessellationMesh::from_admitted_list_lanes(
                         triangulation.nodes().to_vec(),
                         triangulation.triangles().to_vec(),
                         triangulation.normals().map(<[_]>::to_vec),
@@ -861,8 +863,7 @@ impl<'a> Builder<'a> {
                     .iter()
                     .map(|point| {
                         face_transform
-                            .apply_point(*point)
-                            .map(cadmpeg_ir::features::FinitePoint3::get)
+                            .apply_point(point.get())
                             .ok_or_else(|| {
                             CodecError::malformed(format_args!(
                                 "placed triangulation node for face {} contains a non-finite coordinate",
@@ -894,7 +895,7 @@ impl<'a> Builder<'a> {
                 ir.model.surfaces.push(Surface {
                     id: id.clone(),
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(
-                        PolygonalSurface::from_scaled_deflection(
+                        PolygonalSurface::from_admitted_scaled_deflection(
                             vertices.clone(),
                             triangles.clone(),
                             triangulation.deflection,
@@ -920,7 +921,7 @@ impl<'a> Builder<'a> {
                     normals
                         .iter()
                         .map(|normal| {
-                            transform_normalized_vector(face_transform, *normal).ok_or_else(|| {
+                            transform_normalized_vector(face_transform, normal.get()).ok_or_else(|| {
                                 CodecError::malformed(format_args!(
                                     "placed triangulation normal for face {face_key} contains a non-finite component"
                                 ))
@@ -930,13 +931,13 @@ impl<'a> Builder<'a> {
                 })
                 .transpose()?;
             ir.model.tessellations.push(
-                Tessellation::new(
+                Tessellation::from_parts(
                     crate::native::model_id(
                         "tessellation",
                         &self.payload.id,
                         format!("{index}@{face_key}"),
                     ),
-                    cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
+                    cadmpeg_ir::tessellation::TessellationMesh::from_admitted_list_lanes(
                         vertices, triangles, normals,
                     )?,
                     Vec::new(),
@@ -1278,7 +1279,7 @@ impl<'a> Builder<'a> {
                 usize::try_from(*node)
                     .ok()
                     .and_then(|node| node.checked_sub(1))
-                    .and_then(|node| triangulation.nodes().get(node).copied())
+                    .and_then(|node| triangulation.nodes().get(node).map(|point| point.get()))
                     .ok_or_else(|| {
                         CodecError::Malformed(
                             "polygon-on-triangulation node is out of bounds".into(),
@@ -1910,8 +1911,8 @@ fn place_polyline_samples(
         .map_err(|error| CodecError::malformed(error.to_string()))
 }
 
-fn transform_normalized_vector(transform: Transform, vector: Vector3) -> Option<Vector3> {
-    transform.apply_vector(vector)?.unit_nonzero()
+fn transform_normalized_vector(transform: Transform, vector: Vector3) -> Option<FiniteVector3> {
+    UnitVector3::normalized_finite_nonzero(transform.apply_vector(vector)?).map(FiniteVector3::from)
 }
 
 fn occurrence_label(shape: usize, transform: Transform) -> String {
