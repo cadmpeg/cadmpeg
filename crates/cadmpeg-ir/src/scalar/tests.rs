@@ -294,7 +294,9 @@ fn a_positive_real_assigns_to_positive_length_with_identical_bits() {
     for value in [f64::from_bits(1), 2.5, f64::MAX] {
         let real = PositiveReal::new(value).expect("positive real");
         assert_eq!(
-            PositiveLength::from_assigned_real(real).get().to_bits(),
+            PositiveLength::from_assigned_positive_real(real)
+                .get()
+                .to_bits(),
             value.to_bits()
         );
     }
@@ -678,5 +680,16 @@ fn finite_binary32_preserves_source_precision_and_rejects_nonfinite_values() {
             F32Deserializer::<Error>::new(source)
         )
         .is_err());
+    }
+}
+
+#[test]
+fn finite_binary32_widens_exactly_to_finite_real() {
+    use crate::scalar::{FiniteBinary32, FiniteReal};
+
+    for source in [0.1_f32, -0.0_f32, f32::MIN_POSITIVE, f32::MAX] {
+        let admitted = FiniteBinary32::new(source).unwrap();
+        let widened: FiniteReal = admitted.into();
+        assert_eq!(widened.get().to_bits(), f64::from(source).to_bits());
     }
 }

@@ -251,7 +251,11 @@ mod tests {
         let mut ir = crate::CadIr::empty();
         ir.native
             .namespace_mut("synthetic")
-            .set_arena("unknowns", std::slice::from_ref(&record))
+            .set_arena(
+                &crate::native::test_ctx(),
+                "unknowns",
+                std::slice::from_ref(&record),
+            )
             .unwrap();
         let parsed = crate::CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
         assert_eq!(parsed, ir);

@@ -406,7 +406,11 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
     corrupted
         .native
         .namespace_mut("fcstd")
-        .set_arena("design_census", &stale_census)
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "design_census",
+            &stale_census,
+        )
         .expect("replace design census");
     let corrupted_findings = crate::validate_native(&corrupted);
     assert!(
@@ -1326,9 +1330,13 @@ fn transfers_progressive_scale_and_ordered_multi_transform_stages() {
 
 #[test]
 fn audit_regression_distinct_tiny_pattern_steps_stay_explicit() {
-    assert_eq!(crate::design::uniform_step(&[0., 1e-16, 3e-16]), None);
+    let finite = |value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap();
     assert_eq!(
-        crate::design::uniform_step(&[0., 1e-16, 2e-16]),
-        Some(1e-16)
+        crate::design::uniform_step(&[finite(0.), finite(1e-16), finite(3e-16)]),
+        None
+    );
+    assert_eq!(
+        crate::design::uniform_step(&[finite(0.), finite(1e-16), finite(2e-16)]),
+        Some(finite(1e-16))
     );
 }

@@ -4243,7 +4243,11 @@ fn retain_unbound_presentation_record(
     });
 }
 
-pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<NativeInstall, CodecError> {
+pub(crate) fn install(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &Scan<'_>,
+    ir: &mut CadIr,
+) -> Result<NativeInstall, CodecError> {
     let binding = UnitBinding::from_units(scan.metadata.settings.units.as_ref());
     let physical_scale = binding.neutral_scale();
     let mut groups = Vec::new();
@@ -4750,18 +4754,18 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<NativeInstall, 
         group.links.sort();
     }
     let namespace = ir.native.namespace_mut("rhino");
-    namespace.set_arena("groups", &groups)?;
-    namespace.set_arena("materials", &materials)?;
-    namespace.set_arena("lights", &lights)?;
-    namespace.set_arena("linetypes", &linetypes)?;
-    namespace.set_arena("hatch_patterns", &hatch_patterns)?;
-    namespace.set_arena("dimension_styles", &dimension_styles)?;
-    namespace.set_arena("embedded_images", &images)?;
-    namespace.set_arena("windows_bitmaps", &windows_bitmaps)?;
-    namespace.set_arena("texture_mappings", &texture_mappings)?;
-    namespace.set_arena("text_styles", &text_styles)?;
-    namespace.set_arena("layers", &layers)?;
-    namespace.set_arena("object_presentation", &object_presentation)?;
+    namespace.set_arena(ctx, "groups", &groups)?;
+    namespace.set_arena(ctx, "materials", &materials)?;
+    namespace.set_arena(ctx, "lights", &lights)?;
+    namespace.set_arena(ctx, "linetypes", &linetypes)?;
+    namespace.set_arena(ctx, "hatch_patterns", &hatch_patterns)?;
+    namespace.set_arena(ctx, "dimension_styles", &dimension_styles)?;
+    namespace.set_arena(ctx, "embedded_images", &images)?;
+    namespace.set_arena(ctx, "windows_bitmaps", &windows_bitmaps)?;
+    namespace.set_arena(ctx, "texture_mappings", &texture_mappings)?;
+    namespace.set_arena(ctx, "text_styles", &text_styles)?;
+    namespace.set_arena(ctx, "layers", &layers)?;
+    namespace.set_arena(ctx, "object_presentation", &object_presentation)?;
     Ok(NativeInstall {
         losses,
         opaque_records,

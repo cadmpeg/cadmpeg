@@ -4449,12 +4449,12 @@ fn decode_pcurve_geometry(
                     let (center, x_axis, y_axis) = placements.get(&placement).copied()?;
                     let radius = named_parameter(record, "CIRCLE", 2).and_then(Value::number)?;
                     records.insert(placement);
-                    PcurveGeometry::Circle(
-                        cadmpeg_ir::geometry::pcurve::CirclePcurve::try_from_parts(
-                            center, x_axis, y_axis, radius,
-                        )
-                        .ok()?,
-                    )
+                    PcurveGeometry::Circle(cadmpeg_ir::geometry::pcurve::CirclePcurve::from_parts(
+                        cadmpeg_ir::units::FinitePoint2::new(center)?,
+                        cadmpeg_ir::units::FinitePoint2::from(x_axis),
+                        cadmpeg_ir::units::FinitePoint2::from(y_axis),
+                        cadmpeg_ir::scalar::PositiveReal::new(radius)?,
+                    )?)
                 }
                 "ELLIPSE" => {
                     let placement = named_parameter(record, "ELLIPSE", 1)?.reference()?;
@@ -4465,14 +4465,13 @@ fn decode_pcurve_geometry(
                         named_parameter(record, "ELLIPSE", 3).and_then(Value::number)?;
                     records.insert(placement);
                     PcurveGeometry::Ellipse(
-                        cadmpeg_ir::geometry::pcurve::EllipsePcurve::try_from_parts(
-                            center,
-                            x_axis,
-                            y_axis,
-                            major_radius,
-                            minor_radius,
-                        )
-                        .ok()?,
+                        cadmpeg_ir::geometry::pcurve::EllipsePcurve::from_parts(
+                            cadmpeg_ir::units::FinitePoint2::new(center)?,
+                            cadmpeg_ir::units::FinitePoint2::from(x_axis),
+                            cadmpeg_ir::units::FinitePoint2::from(y_axis),
+                            cadmpeg_ir::scalar::PositiveReal::new(major_radius)?,
+                            cadmpeg_ir::scalar::PositiveReal::new(minor_radius)?,
+                        )?,
                     )
                 }
                 "PARABOLA" => {
@@ -4482,13 +4481,12 @@ fn decode_pcurve_geometry(
                         named_parameter(record, "PARABOLA", 2).and_then(Value::number)?;
                     records.insert(placement);
                     PcurveGeometry::Parabola(
-                        cadmpeg_ir::geometry::pcurve::ParabolaPcurve::try_from_parts(
-                            vertex,
-                            x_axis,
-                            y_axis,
-                            focal_distance,
-                        )
-                        .ok()?,
+                        cadmpeg_ir::geometry::pcurve::ParabolaPcurve::from_parts(
+                            cadmpeg_ir::units::FinitePoint2::new(vertex)?,
+                            cadmpeg_ir::units::FinitePoint2::from(x_axis),
+                            cadmpeg_ir::units::FinitePoint2::from(y_axis),
+                            cadmpeg_ir::scalar::PositiveReal::new(focal_distance)?,
+                        )?,
                     )
                 }
                 "HYPERBOLA" => {
@@ -4500,14 +4498,13 @@ fn decode_pcurve_geometry(
                         named_parameter(record, "HYPERBOLA", 3).and_then(Value::number)?;
                     records.insert(placement);
                     PcurveGeometry::Hyperbola(
-                        cadmpeg_ir::geometry::pcurve::HyperbolaPcurve::try_from_parts(
-                            center,
-                            x_axis,
-                            y_axis,
-                            major_radius,
-                            minor_radius,
-                        )
-                        .ok()?,
+                        cadmpeg_ir::geometry::pcurve::HyperbolaPcurve::from_parts(
+                            cadmpeg_ir::units::FinitePoint2::new(center)?,
+                            cadmpeg_ir::units::FinitePoint2::from(x_axis),
+                            cadmpeg_ir::units::FinitePoint2::from(y_axis),
+                            cadmpeg_ir::scalar::PositiveReal::new(major_radius)?,
+                            cadmpeg_ir::scalar::PositiveReal::new(minor_radius)?,
+                        )?,
                     )
                 }
                 "POLYLINE" => polyline_pcurve(id, record, points, losses)?,
@@ -4598,7 +4595,7 @@ fn decode_pcurve_geometry(
                     )?;
                     records.extend(basis_records);
                     PcurveGeometry::Offset(
-                        cadmpeg_ir::geometry::pcurve::OffsetPcurve::from_parts(
+                        cadmpeg_ir::geometry::pcurve::OffsetPcurve::from_finite_parts(
                             distance,
                             Box::new(basis),
                         )

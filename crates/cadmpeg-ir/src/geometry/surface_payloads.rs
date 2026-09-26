@@ -402,6 +402,16 @@ pub fn admit_revolution_axis(
     ))
 }
 
+/// Admit a revolution axis from a source point and direction whose
+/// coordinates are already finite. Only unit length remains to check.
+pub fn admit_revolution_axis_from_parts(
+    origin: FinitePoint3,
+    direction: FiniteVector3,
+) -> Result<(FinitePoint3, UnitVector3), ProceduralGeometryError> {
+    let direction = UnitVector3::new(direction.get()).ok_or(INVALID_REVOLUTION_AXIS)?;
+    Ok((origin, direction))
+}
+
 fn admit_revolution_interval(
     range: [f64; 2],
     message: &'static str,

@@ -488,8 +488,10 @@ fn ellipse_membership_rejects_nonfinite_intermediates() {
             SketchGeometryDefinition::Ellipse {
                 center,
                 major_angle: Angle::new(0.).unwrap(),
-                major_radius: Length::new(1.).unwrap(),
-                minor_radius: Length::new(0.5).unwrap(),
+                radii: cadmpeg_ir::sketches::EllipseRadii {
+                    major_radius: Length::new(1.).unwrap(),
+                    minor_radius: Length::new(0.5).unwrap(),
+                },
                 bounds: None,
             }
             .try_into()

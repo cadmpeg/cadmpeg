@@ -60,7 +60,10 @@ impl std::ops::DerefMut for F3dNativeMut<'_> {
 impl Drop for F3dNativeMut<'_> {
     fn drop(&mut self) {
         self.native
-            .store(self.ir.native.namespace_mut("f3d"))
+            .store(
+                &cadmpeg_test_support::service_decode_context(),
+                self.ir.native.namespace_mut("f3d"),
+            )
             .unwrap();
     }
 }

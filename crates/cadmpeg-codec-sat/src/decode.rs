@@ -21,7 +21,7 @@ use crate::loss::SatLossCode;
 use crate::FORMAT;
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecError> {
-    match classify(bytes) {
+    match classify(ctx, bytes)? {
         Some(StreamKind::AsmBinary(header)) => decode_asm_binary(ctx, bytes, &header),
         Some(StreamKind::Text) => decode_text(ctx, bytes),
         Some(StreamKind::AcisBinary(header)) => decode_acis_binary(ctx, bytes, &header),

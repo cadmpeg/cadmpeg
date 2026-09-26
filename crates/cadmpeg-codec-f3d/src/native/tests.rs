@@ -57,7 +57,10 @@ use cadmpeg_ir::geometry::SolvedCurveGeometry;
 fn native_load_refuses_orphan_history_row_with_child_and_parent() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     crate::native::F3dNative::default()
-        .store(&mut namespace)
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut namespace,
+        )
         .unwrap();
     let board = crate::history_records::AsmBulletinBoard {
         id: "f3d:native:bulletin#1".into(),
@@ -69,7 +72,11 @@ fn native_load_refuses_orphan_history_row_with_child_and_parent() {
     };
     namespace.arenas_mut().insert(
         "asm_bulletin_boards".into(),
-        cadmpeg_ir::native::arena_from([Ok::<_, cadmpeg_ir::NativeConvertError>(board)]).unwrap(),
+        cadmpeg_ir::native::arena_from(
+            &cadmpeg_test_support::service_decode_context(),
+            [Ok::<_, cadmpeg_ir::NativeConvertError>(board)],
+        )
+        .unwrap(),
     );
     let error = crate::native::F3dNative::load(&namespace).unwrap_err();
     let message = error.to_string();
@@ -100,7 +107,12 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     let original = decoded.ir().native.namespace("f3d").unwrap();
     let typed = crate::native::F3dNative::load(original).unwrap();
     let mut round_trip = cadmpeg_ir::NativeNamespace::default();
-    typed.store(&mut round_trip).unwrap();
+    typed
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut round_trip,
+        )
+        .unwrap();
     assert_eq!(typed, crate::native::F3dNative::load(&round_trip).unwrap());
     for name in crate::native::F3D_ARENA_NAMES {
         assert_eq!(
@@ -134,7 +146,10 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
 fn store_emits_every_pinned_arena_name() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     crate::native::F3dNative::default()
-        .store(&mut namespace)
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut namespace,
+        )
         .unwrap();
     assert_eq!(
         namespace

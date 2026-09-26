@@ -67,6 +67,14 @@ pub(crate) fn write_semantic(
     writer: &mut dyn Write,
     notes: &mut Vec<String>,
 ) -> Result<(), CodecError> {
+    // Semantic patching reserializes native records under the same desktop
+    // decode policy used for the source-image salvage decode below.
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (encode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        source_image,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::desktop(),
+    )?;
     let target_native = f3d_native(target)?;
     if let Some(native) = target_native.as_ref() {
         validate_configuration_projection(target, native)?;
@@ -399,7 +407,7 @@ pub(crate) fn write_semantic(
         supported
             .wire_topologies
             .clone_from(&target_native.wire_topologies);
-        supported.store(supported_target.native.namespace_mut("f3d"))?;
+        supported.store(&encode_ctx, supported_target.native.namespace_mut("f3d"))?;
     }
     if decode::document_local_sha256(&supported_target)? != decode::document_local_sha256(target)? {
         return Err(CodecError::NotImplemented(

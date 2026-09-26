@@ -491,7 +491,7 @@ pub fn decode_with_purpose(
     format: IdFormat,
     purpose: DecodePurpose,
 ) -> Result<AsmBrep, cadmpeg_core::CodecError> {
-    let header = asm_header::parse(bytes).map(|header| header.metadata);
+    let header = asm_header::parse(ctx, bytes)?.map(|header| header.metadata);
     decode_with_header(ctx, records, bytes, header, stream, format, purpose)
 }
 

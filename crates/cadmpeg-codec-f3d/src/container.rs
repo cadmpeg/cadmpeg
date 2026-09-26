@@ -411,12 +411,12 @@ pub(crate) fn scan<'a>(
         let buf = view.window();
         if is_brep {
             let kernel = if asm_header::has_asm_magic(buf) {
-                asm_header::parse(buf).map(|header| KernelFraming::Asm {
+                asm_header::parse(ctx, buf)?.map(|header| KernelFraming::Asm {
                     solved_record_limit: asm_header::solved_record_limit_with_header(buf, &header),
                     header,
                 })
             } else {
-                acis_header::parse(buf).map(KernelFraming::Acis)
+                acis_header::parse(ctx, buf)?.map(KernelFraming::Acis)
             };
             let solved_record_limit = kernel.as_ref().and_then(KernelFraming::solved_record_limit);
             let sha = Sha256Digest::digest(buf);

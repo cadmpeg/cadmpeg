@@ -382,6 +382,7 @@ pub(crate) fn inventory(
                     return Err(error);
                 }
                 ctx.charge_collection_items(1, "admit Inventor PmDc design issue")?;
+                ctx.charge_entities(1, "admit Inventor PmDc design issue")?;
                 let mut detail_len = ByteCounter::default();
                 write!(&mut detail_len, "{error}").map_err(|_| {
                     ctx.refuse_codec_limit(
@@ -1403,6 +1404,25 @@ mod tests {
                     && limit.operation == "admit Inventor PmDc design issue"
                     && limit.used == 0
         ));
+    }
+
+    #[test]
+    fn pmdc_design_issue_refuses_entity_limit_before_push() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_entities = 0;
+        assert!(matches!(
+            inventory_with_record(EXPRESSION_REFERENCE_TYPE, &[], policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::Entities
+                    && limit.operation == "admit Inventor PmDc design issue"
+        ));
+        assert_eq!(
+            inventory_with_record(EXPRESSION_REFERENCE_TYPE, &[], DecodePolicy::service())
+                .expect("service issue")
+                .issues
+                .len(),
+            1
+        );
     }
 
     #[test]

@@ -10,6 +10,7 @@ use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve, pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry,
 };
 use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, SketchId};
 
 const EPS_ENDPOINT_AGREEMENT: f64 = 1.0e-9;
@@ -55,6 +56,7 @@ fn sketch_geometry_endpoints(geometry: &SketchGeometry) -> Option<([f64; 2], [f6
 
 pub(in super::super) fn connected_sketch_profile_vertices(
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     sketch_id: &SketchId,
 ) -> Vec<(usize, Vec<[f64; 2]>)> {
     let Some(sketch) = exactly_one(
@@ -77,7 +79,7 @@ pub(in super::super) fn connected_sketch_profile_vertices(
                     let geometry = exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
                         entity.sketch == *sketch_id && entity.id() == &entity_use.entity
                     }))
-                    .map(|entity| &entity.geometry)?;
+                    .map(|entity| source_carriers.sketch_geometry(entity))?;
                     let (mut start, mut end) = sketch_geometry_endpoints(geometry)?;
                     if entity_use.reversed {
                         std::mem::swap(&mut start, &mut end);
@@ -312,7 +314,9 @@ pub(in super::super) fn extrusion_side_uvs(
     ]
 }
 
-pub(in super::super) fn extrusion_profile_signed_area(profile: &[ProfileEntity]) -> Option<f64> {
+pub(in super::super) fn extrusion_profile_signed_area(
+    profile: &[ProfileEntity],
+) -> Option<FiniteReal> {
     let mut area_twice = 0.0;
     for ProfileEntity {
         geometry,
@@ -362,7 +366,9 @@ pub(in super::super) fn extrusion_profile_signed_area(profile: &[ProfileEntity])
         .flat_map(|ProfileEntity { start, end, .. }| start.iter().chain(end))
         .map(|value| value.abs())
         .fold(1.0, f64::max);
-    (area_twice.abs() > EPS_AREA * scale * scale).then_some(0.5 * area_twice)
+    (area_twice.abs() > EPS_AREA * scale * scale)
+        .then_some(0.5 * area_twice)
+        .and_then(FiniteReal::new)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -473,7 +479,7 @@ impl ProfileEntity {
 #[derive(Debug, Clone, PartialEq)]
 pub(in super::super) struct ValidatedProfile {
     entities: ExtrusionProfile,
-    area: f64,
+    area: FiniteReal,
 }
 
 impl ValidatedProfile {
@@ -486,7 +492,7 @@ impl ValidatedProfile {
         &self.entities
     }
     pub(in super::super) fn area(&self) -> f64 {
-        self.area
+        self.area.get()
     }
 }
 
@@ -494,6 +500,7 @@ pub(in super::super) type ExtrusionProfile = Vec<ProfileEntity>;
 
 pub(in super::super) fn resolved_sketch_profiles(
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     sketch_id: &SketchId,
     minimum_entity_count: usize,
 ) -> Option<Vec<ExtrusionProfile>> {
@@ -512,7 +519,7 @@ pub(in super::super) fn resolved_sketch_profiles(
                 entity.sketch == *sketch_id && entity.id() == &entity_use.entity
             }))?;
             geometries.push(ProfileEntity::new(
-                entity.geometry.clone(),
+                source_carriers.sketch_geometry(entity).clone(),
                 entity_use.reversed,
             )?);
         }

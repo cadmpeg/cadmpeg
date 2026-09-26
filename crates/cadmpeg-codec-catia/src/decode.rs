@@ -3577,7 +3577,7 @@ fn finish_decode(
             appearance_transfer.transferred_packets(),
         )));
     }
-    native.store_owned(ir.native.namespace_mut("catia"))?;
+    native.store_owned(ctx, ir.native.namespace_mut("catia"))?;
     decode_result(scan, matched, ir, report, annotations, unknowns)
 }
 

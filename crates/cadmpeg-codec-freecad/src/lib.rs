@@ -873,8 +873,8 @@ impl CodecBackend for FcstdCodec {
             )?;
         }
         let namespace = ir.native.namespace_mut("fcstd");
-        namespace.set_arena("document", std::slice::from_ref(&scan.document))?;
-        namespace.set_arena("physical_ledger", &scan.ledger)?;
+        namespace.set_arena(ctx, "document", std::slice::from_ref(&scan.document))?;
+        namespace.set_arena(ctx, "physical_ledger", &scan.ledger)?;
         #[allow(clippy::if_not_else)]
         if !ctx.container_only() {
             let document_bytes = scan
@@ -933,20 +933,24 @@ impl CodecBackend for FcstdCodec {
                 &graph.properties,
                 &entry_records,
             )?;
-            namespace.set_arena("objects", &graph.objects)?;
-            namespace.set_arena("extensions", &graph.extensions)?;
-            namespace.set_arena("properties", &graph.properties)?;
-            namespace.set_arena("entries", &entry_records)?;
-            namespace.set_arena("shape_payloads", &shape_payloads)?;
-            namespace.set_arena("carrier_census", &brep::carrier_census(&shape_payloads))?;
-            namespace.set_arena("string_tables", string_tables.as_slice())?;
+            namespace.set_arena(ctx, "objects", &graph.objects)?;
+            namespace.set_arena(ctx, "extensions", &graph.extensions)?;
+            namespace.set_arena(ctx, "properties", &graph.properties)?;
+            namespace.set_arena(ctx, "entries", &entry_records)?;
+            namespace.set_arena(ctx, "shape_payloads", &shape_payloads)?;
+            namespace.set_arena(
+                ctx,
+                "carrier_census",
+                &brep::carrier_census(&shape_payloads),
+            )?;
+            namespace.set_arena(ctx, "string_tables", string_tables.as_slice())?;
             let product_nodes = product::transfer(&graph.objects, &graph.properties, &scan.data)?;
-            namespace.set_arena("product_nodes", &product_nodes)?;
+            namespace.set_arena(ctx, "product_nodes", &product_nodes)?;
             let joint_records = joint::transfer(&graph.objects, &graph.properties)?;
-            namespace.set_arena("joints", &joint_records)?;
+            namespace.set_arena(ctx, "joints", &joint_records)?;
             let drawings = drawing::transfer(&graph.objects, &graph.properties)?;
             drawing::transfer_neutral(&mut ir.model, &drawings, &graph.properties)?;
-            namespace.set_arena("drawings", &drawings)?;
+            namespace.set_arena(ctx, "drawings", &drawings)?;
             let annotations = annotation::transfer(&graph.objects, &graph.properties);
             annotation::transfer_neutral(
                 &mut ir.model,
@@ -954,10 +958,16 @@ impl CodecBackend for FcstdCodec {
                 &graph.properties,
                 &drawings,
             )?;
-            namespace.set_arena("annotations", &annotations)?;
-            application::install(namespace, &graph.objects, &graph.properties, &entry_records)?;
+            namespace.set_arena(ctx, "annotations", &annotations)?;
+            application::install(
+                ctx,
+                namespace,
+                &graph.objects,
+                &graph.properties,
+                &entry_records,
+            )?;
             let attachments = attachment::transfer(&graph.objects, &graph.properties)?;
-            namespace.set_arena("attachments", &attachments)?;
+            namespace.set_arena(ctx, "attachments", &attachments)?;
             let mut curve_transfer =
                 brep::transfer_text_curves(&shape_payloads, &graph.properties)?;
             let surface_transfer = brep::transfer_text_surfaces(
@@ -1018,7 +1028,7 @@ impl CodecBackend for FcstdCodec {
             let design_census = design::census(&graph.objects, &ir.model.features)?;
             ir.native
                 .namespace_mut("fcstd")
-                .set_arena("design_census", &design_census)?;
+                .set_arena(ctx, "design_census", &design_census)?;
             element_map::bind_topology(&mut element_maps, &topology_occurrences);
             let gui_graph = if let Some(gui_view) = scan.data.get("GuiDocument.xml") {
                 gui::transfer(
@@ -1074,16 +1084,22 @@ impl CodecBackend for FcstdCodec {
             }
             ir.native
                 .namespace_mut("fcstd")
-                .set_arena("entries", &entry_records)?;
-            ir.native
-                .namespace_mut("fcstd")
-                .set_arena("gui_documents", &gui_graph.documents)?;
-            ir.native
-                .namespace_mut("fcstd")
-                .set_arena("gui_view_providers", &gui_graph.providers)?;
-            ir.native
-                .namespace_mut("fcstd")
-                .set_arena("gui_properties", &gui_graph.properties)?;
+                .set_arena(ctx, "entries", &entry_records)?;
+            ir.native.namespace_mut("fcstd").set_arena(
+                ctx,
+                "gui_documents",
+                &gui_graph.documents,
+            )?;
+            ir.native.namespace_mut("fcstd").set_arena(
+                ctx,
+                "gui_view_providers",
+                &gui_graph.providers,
+            )?;
+            ir.native.namespace_mut("fcstd").set_arena(
+                ctx,
+                "gui_properties",
+                &gui_graph.properties,
+            )?;
             let logical_ledger = container::logical_ledger(
                 &entry_records,
                 &graph.properties,
@@ -1094,7 +1110,7 @@ impl CodecBackend for FcstdCodec {
             )?;
             ir.native
                 .namespace_mut("fcstd")
-                .set_arena("logical_ledger", &logical_ledger)?;
+                .set_arena(ctx, "logical_ledger", &logical_ledger)?;
             let physical_byte_len = scan.ledger.last().map_or(0, |span| span.span.end());
             let coverage = container::byte_coverage(
                 &scan.ledger,
@@ -1102,18 +1118,22 @@ impl CodecBackend for FcstdCodec {
                 &logical_ledger,
                 physical_byte_len,
             );
+            ir.native.namespace_mut("fcstd").set_arena(
+                ctx,
+                "byte_coverage",
+                std::slice::from_ref(&coverage),
+            )?;
             ir.native
                 .namespace_mut("fcstd")
-                .set_arena("byte_coverage", std::slice::from_ref(&coverage))?;
-            ir.native
-                .namespace_mut("fcstd")
-                .set_arena("element_maps", &element_maps)?;
+                .set_arena(ctx, "element_maps", &element_maps)?;
         } else {
             let physical_byte_len = scan.ledger.last().map_or(0, |span| span.span.end());
             let coverage = container::byte_coverage(&scan.ledger, &[], &[], physical_byte_len);
-            ir.native
-                .namespace_mut("fcstd")
-                .set_arena("byte_coverage", std::slice::from_ref(&coverage))?;
+            ir.native.namespace_mut("fcstd").set_arena(
+                ctx,
+                "byte_coverage",
+                std::slice::from_ref(&coverage),
+            )?;
         }
         let mut losses = if ctx.container_only() {
             Vec::new()

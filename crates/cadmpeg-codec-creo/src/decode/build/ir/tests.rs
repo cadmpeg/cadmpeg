@@ -60,11 +60,6 @@ fn display_tessellation_vertices_are_in_millimeters_at_ir_admission() {
         scan.primitives.triangle_strips[0].positions[0],
         [1.0, 0.0, 0.0]
     );
-    super::super::units::normalize_model_lengths(
-        &mut ir,
-        PositiveReal::new(25.4).expect("unit scale"),
-    )
-    .expect("remaining unit normalization");
     assert_eq!(
         ir.model.tessellations[0].vertices()[0].get(),
         Point3::new(25.4, 0.0, 0.0)
@@ -188,8 +183,6 @@ fn placed_plane_origin_is_in_millimeters_at_ir_admission() {
         panic!("placed plane was lost before native topology transfer");
     };
     assert_eq!(source_plane.origin, [1.0, 0.0, 0.0]);
-    super::super::units::normalize_model_lengths(&mut ir, scale)
-        .expect("remaining unit normalization");
     let Some(cadmpeg_ir::geometry::SurfaceGeometry::Solved(
         cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(plane),
     )) = ir.model.surfaces.first().map(|surface| &surface.geometry)
@@ -324,8 +317,6 @@ fn datum_plane_origin_is_in_millimeters_at_ir_admission() {
         panic!("source datum plane changed family");
     };
     assert_eq!(source_plane.origin().get(), Point3::new(1.0, 0.0, 0.0));
-    super::super::units::normalize_model_lengths(&mut ir, scale)
-        .expect("remaining unit normalization");
     let cadmpeg_ir::geometry::SurfaceGeometry::Solved(
         cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(plane),
     ) = &ir.model.surfaces[0].geometry
@@ -389,11 +380,6 @@ fn reference_line_origin_is_in_millimeters_at_ir_admission() {
         panic!("source reference line changed family");
     };
     assert_eq!(source_line.origin().get(), Point3::new(1.0, 0.0, 0.0));
-    super::super::units::normalize_model_lengths(
-        &mut ir,
-        PositiveReal::new(25.4).expect("inch scale"),
-    )
-    .expect("remaining unit normalization");
     let CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) = &ir.model.curves[0].geometry
     else {
         panic!("reference line changed family");
