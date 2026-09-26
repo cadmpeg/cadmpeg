@@ -83,11 +83,11 @@ struct AnnotationRecord {
     source_uuid: String,
     kind: AnnotationKind,
     rich_text: String,
-    plane_origin: [f64; 3],
-    plane_x_axis: [f64; 3],
-    plane_y_axis: [f64; 3],
-    plane_z_axis: [f64; 3],
-    plane_equation: [f64; 4],
+    plane_origin: crate::settings::PlaneLane<3>,
+    plane_x_axis: cadmpeg_ir::units::FiniteVector<3>,
+    plane_y_axis: cadmpeg_ir::units::FiniteVector<3>,
+    plane_z_axis: cadmpeg_ir::units::FiniteVector<3>,
+    plane_equation: crate::settings::PlaneLane<4>,
     dimstyle_uuid: Option<String>,
     annotation_type: i32,
     text_rectangle_width: f64,
@@ -119,7 +119,7 @@ struct V5TextExtraRecord {
     draw_mask: bool,
     mask_color_source: i32,
     mask_color: [u8; 4],
-    border_offset_factor: f64,
+    border_offset_factor: FiniteReal,
 }
 
 #[derive(Debug, Serialize)]
@@ -292,13 +292,12 @@ fn parse_v5_text_extra(
     let draw_mask = reader.bool()?;
     let mask_color_source = reader.i32()?;
     let mask_color = reader.array()?;
-    let border_offset_factor = reader.f64()?;
-    if !border_offset_factor.is_finite() {
-        return Err(FramingError::structural(
+    let border_offset_factor = FiniteReal::new(reader.f64()?).ok_or_else(|| {
+        FramingError::structural(
             reader.position() - 8,
             "V5 text mask border offset is not finite",
-        ));
-    }
+        )
+    })?;
     reader.skip_remaining()?;
     Ok(V5TextExtraRecord {
         parent_text_uuid: (!parent_text_uuid.is_nil()).then(|| parent_text_uuid.to_string()),
@@ -699,11 +698,11 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
                         AnnotationKind::Text
                     },
                     rich_text: value.rich_text,
-                    plane_origin: value.plane.origin.get(),
-                    plane_x_axis: value.plane.xaxis.get(),
-                    plane_y_axis: value.plane.yaxis.get(),
-                    plane_z_axis: value.plane.zaxis.get(),
-                    plane_equation: value.plane.equation.get(),
+                    plane_origin: value.plane.origin,
+                    plane_x_axis: value.plane.xaxis,
+                    plane_y_axis: value.plane.yaxis,
+                    plane_z_axis: value.plane.zaxis,
+                    plane_equation: value.plane.equation,
                     dimstyle_uuid: (!value.dimstyle_id.is_nil())
                         .then(|| value.dimstyle_id.to_string()),
                     annotation_type: value.kind,
@@ -756,11 +755,11 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
                         AnnotationKind::Text
                     },
                     rich_text: value.rich_text,
-                    plane_origin: value.plane.origin.get(),
-                    plane_x_axis: value.plane.xaxis.get(),
-                    plane_y_axis: value.plane.yaxis.get(),
-                    plane_z_axis: value.plane.zaxis.get(),
-                    plane_equation: value.plane.equation.get(),
+                    plane_origin: value.plane.origin,
+                    plane_x_axis: value.plane.xaxis,
+                    plane_y_axis: value.plane.yaxis,
+                    plane_z_axis: value.plane.zaxis,
+                    plane_equation: value.plane.equation,
                     dimstyle_uuid: None,
                     annotation_type: value.kind,
                     text_rectangle_width: 0.0,
@@ -827,11 +826,11 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
                     source_uuid,
                     kind,
                     rich_text,
-                    plane_origin: value.base.plane.origin.get(),
-                    plane_x_axis: value.base.plane.xaxis.get(),
-                    plane_y_axis: value.base.plane.yaxis.get(),
-                    plane_z_axis: value.base.plane.zaxis.get(),
-                    plane_equation: value.base.plane.equation.get(),
+                    plane_origin: value.base.plane.origin,
+                    plane_x_axis: value.base.plane.xaxis,
+                    plane_y_axis: value.base.plane.yaxis,
+                    plane_z_axis: value.base.plane.zaxis,
+                    plane_equation: value.base.plane.equation,
                     dimstyle_uuid: None,
                     annotation_type: value.base.kind,
                     text_rectangle_width: 0.0,
@@ -1708,6 +1707,6 @@ mod tests {
         assert!(value.draw_mask);
         assert_eq!(value.mask_color_source, 1);
         assert_eq!(value.mask_color, [0x11, 0x22, 0x33, 0x44]);
-        assert_eq!(value.border_offset_factor, 0.375);
+        assert_eq!(value.border_offset_factor.get(), 0.375);
     }
 }

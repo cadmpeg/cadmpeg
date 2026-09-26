@@ -126,11 +126,11 @@ struct ViewportUserdataScan {
 
 #[derive(Debug, Serialize)]
 struct ConstructionPlane {
-    plane_origin_mm: [f64; 3],
-    plane_x_axis: [f64; 3],
-    plane_y_axis: [f64; 3],
-    plane_z_axis: [f64; 3],
-    plane_equation_mm: [f64; 4],
+    plane_origin_mm: crate::settings::PlaneLane<3>,
+    plane_x_axis: cadmpeg_ir::units::FiniteVector<3>,
+    plane_y_axis: cadmpeg_ir::units::FiniteVector<3>,
+    plane_z_axis: cadmpeg_ir::units::FiniteVector<3>,
+    plane_equation_mm: crate::settings::PlaneLane<4>,
     grid_spacing_mm: FiniteReal,
     snap_spacing_mm: FiniteReal,
     grid_line_count: i32,
@@ -201,9 +201,9 @@ struct TraceImage {
     legacy_file_path: String,
     width_mm: FiniteReal,
     height_mm: FiniteReal,
-    plane_origin_mm: [f64; 3],
-    plane_x_axis: [f64; 3],
-    plane_y_axis: [f64; 3],
+    plane_origin_mm: crate::settings::PlaneLane<3>,
+    plane_x_axis: cadmpeg_ir::units::FiniteVector<3>,
+    plane_y_axis: cadmpeg_ir::units::FiniteVector<3>,
     grayscale: bool,
     hidden: bool,
     filtered: bool,
@@ -239,8 +239,8 @@ struct ClippingPlane {
 #[derive(Debug, Serialize)]
 struct ViewAttributes {
     view_type: i32,
-    width: f64,
-    height: f64,
+    width: FiniteReal,
+    height: FiniteReal,
     display: Option<String>,
     version: [u8; 2],
     page_settings: Option<PageSettings>,
@@ -367,9 +367,9 @@ fn parse_trace_image(
             legacy_file_path,
             width_mm,
             height_mm,
-            plane_origin_mm: plane.origin.get(),
-            plane_x_axis: plane.xaxis.get(),
-            plane_y_axis: plane.yaxis.get(),
+            plane_origin_mm: plane.origin,
+            plane_x_axis: plane.xaxis,
+            plane_y_axis: plane.yaxis,
             grayscale,
             hidden,
             filtered,
@@ -506,11 +506,11 @@ fn parse_cplane(
     let depth_buffer = packed & 0x0f < 1 || reader.bool()?;
     reader.skip_remaining()?;
     Ok(ConstructionPlane {
-        plane_origin_mm: value.origin.get(),
-        plane_x_axis: value.xaxis.get(),
-        plane_y_axis: value.yaxis.get(),
-        plane_z_axis: value.zaxis.get(),
-        plane_equation_mm: value.equation.get(),
+        plane_origin_mm: value.origin,
+        plane_x_axis: value.xaxis,
+        plane_y_axis: value.yaxis,
+        plane_z_axis: value.zaxis,
+        plane_equation_mm: value.equation,
         grid_spacing_mm,
         snap_spacing_mm,
         grid_line_count,
@@ -725,12 +725,12 @@ fn parse_attributes(
     let view_type = reader.i32()?;
     let width = reader.f64()?;
     let height = reader.f64()?;
-    if !width.is_finite() || !height.is_finite() {
+    let [Some(width), Some(height)] = [width, height].map(FiniteReal::new) else {
         return Err(FramingError::structural(
             reader.position() - 16,
             "view page size is not finite",
         ));
-    }
+    };
     let _obsolete_parent = uuid(&mut reader)?;
     for _ in 0..6 {
         if !reader.f64()?.is_finite() {
@@ -1618,11 +1618,11 @@ mod tests {
         )
         .expect("construction plane");
 
-        assert_eq!(value.plane_origin_mm, [2.0, -4.0, 6.0]);
-        assert_eq!(value.plane_x_axis, [1.0, 0.0, 0.0]);
+        assert_eq!(value.plane_origin_mm.get(), [2.0, -4.0, 6.0]);
+        assert_eq!(value.plane_x_axis.get(), [1.0, 0.0, 0.0]);
         assert_eq!(value.plane_y_axis, [0.0, 0.0, 1.0]);
         assert_eq!(value.plane_z_axis, [0.0, -1.0, 0.0]);
-        assert_eq!(value.plane_equation_mm, [0.0, -1.0, 0.0, -4.0]);
+        assert_eq!(value.plane_equation_mm.get(), [0.0, -1.0, 0.0, -4.0]);
         assert_eq!(value.grid_spacing_mm, crate::test_support::finite(5.0));
         assert_eq!(value.snap_spacing_mm, crate::test_support::finite(1.5));
         assert_eq!(value.grid_line_count, 42);
@@ -1993,6 +1993,8 @@ mod tests {
             crate::settings::MillimeterScale::IDENTITY,
         )
         .expect("view attributes");
+        assert_eq!(value.width.get(), 100.0);
+        assert_eq!(value.height.get(), 200.0);
         assert_eq!(value.clipping_planes.len(), 1);
         assert_eq!(
             value.clipping_planes[0].depth_mm,
@@ -2409,8 +2411,8 @@ mod tests {
     fn sample_attributes() -> ViewAttributes {
         ViewAttributes {
             view_type: 1,
-            width: 210.0,
-            height: 297.0,
+            width: crate::test_support::finite(210.0),
+            height: crate::test_support::finite(297.0),
             display: Some("display-uuid".to_string()),
             version: [1, 2],
             page_settings: None,

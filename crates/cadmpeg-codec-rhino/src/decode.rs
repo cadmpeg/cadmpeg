@@ -1262,7 +1262,7 @@ impl<'a> DecodeContext<'a> {
                         ),
                         (
                             cadmpeg_core::nonblank_literal!("page_per_model_ratio"),
-                            detail.page_per_model_ratio.to_string(),
+                            detail.page_per_model_ratio.get().to_string(),
                         ),
                     ]),
                 }),
