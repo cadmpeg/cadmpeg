@@ -428,6 +428,10 @@ fn transfer_display_tessellations(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
+    let length_scale = scan
+        .framing
+        .principal_unit
+        .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm);
     for strip in &scan.primitives.triangle_strips {
         let id = format!("creo:solid_primdata:tessellation#{}", strip.offset);
         annotate(
@@ -439,11 +443,40 @@ fn transfer_display_tessellations(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model tessellations")?;
+        let positions = strip
+            .positions
+            .iter()
+            .copied()
+            .map(|position| {
+                let position = Point3::from(position);
+                let Some(scale) = length_scale else {
+                    return Ok(position);
+                };
+                if !position.is_finite() {
+                    return Err(CodecError::malformed(format_args!(
+                        "SolidPrimdata display triangle strip at byte {}: vertices contain a non-finite coordinate",
+                        strip.offset
+                    )));
+                }
+                let position = Point3::new(
+                    position.x * scale.get(),
+                    position.y * scale.get(),
+                    position.z * scale.get(),
+                );
+                if !position.is_finite() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SolidPrimdata display triangle strip at byte {} has a vertex that cannot be represented in millimeters",
+                        strip.offset
+                    )));
+                }
+                Ok(position)
+            })
+            .collect::<Result<Vec<_>, CodecError>>()?;
         ir.model.tessellations.push(
             Tessellation::new(
                 id,
                 cadmpeg_ir::tessellation::TessellationMesh::from_strip_lanes(
-                    strip.positions.iter().copied().map(Point3::from).collect(),
+                    positions,
                     // A primitive that carries only `mv_p_xyz` states an
                     // unshaded strip set: the normal lane is absent, never
                     // empty.
@@ -649,3 +682,6 @@ pub(in super::super) fn build_ir(
         transfer_losses,
     })
 }
+
+#[cfg(test)]
+mod tests;
