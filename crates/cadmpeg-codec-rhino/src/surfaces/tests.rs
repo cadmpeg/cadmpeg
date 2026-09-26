@@ -45,7 +45,13 @@ fn read_poles(
     rational: bool,
     dimension: i32,
     scale: MillimeterScale,
-) -> Result<(Vec<Point3>, Option<Vec<f64>>), GeometryError> {
+) -> Result<
+    (
+        Vec<cadmpeg_ir::features::FinitePoint3>,
+        Option<Vec<cadmpeg_ir::scalar::NonZeroReal>>,
+    ),
+    GeometryError,
+> {
     with_test_context(|ctx| super::read_poles(ctx, reader, count, rational, dimension, scale))
 }
 
@@ -1517,7 +1523,13 @@ fn audit_regression_homogeneous_poles_apply_units_before_range_loss() {
     )
     .unwrap();
     assert!((poles[0].x / 1e303 - 1.).abs() <= 8. * f64::EPSILON);
-    assert_eq!(weights, Some(vec![1e-10]));
+    assert_eq!(
+        weights.map(|values| values
+            .into_iter()
+            .map(cadmpeg_ir::scalar::NonZeroReal::get)
+            .collect::<Vec<_>>()),
+        Some(vec![1e-10])
+    );
 }
 
 #[test]
