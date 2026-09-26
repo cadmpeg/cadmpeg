@@ -65,8 +65,17 @@ impl<'a> IntoIterator for &'a KnotVector {
     }
 }
 
+mod knot_value_sealed {
+    pub trait Sealed {}
+
+    impl Sealed for Vec<f64> {}
+    impl Sealed for super::KnotVector {}
+}
+
 /// A raw or admitted knot lane passed into a NURBS constructor.
-pub trait KnotValue {
+///
+/// Only a raw vector or an admitted [`KnotVector`] can supply this lane.
+pub trait KnotValue: knot_value_sealed::Sealed {
     /// Number of knots before cardinality validation.
     fn knot_count(&self) -> usize;
     /// Admit raw knots or keep an admitted knot vector.
@@ -912,13 +921,6 @@ impl<P, W> NurbsSurfaceLanes<P, W> {
     }
 }
 
-impl<P> NurbsSurfaceLanes<P, NonZeroReal> {
-    /// Pair each admitted weight with its pole before surface cardinality validation.
-    pub fn into_poles(self) -> Result<NurbsPoleGrid<P>, NurbsError> {
-        NurbsPoleGrid::from_checked_lanes(self.control_points, self.weights)
-    }
-}
-
 impl NurbsSurface {
     /// Build a tensor-product NURBS surface with consistent cardinalities.
     ///
@@ -1058,7 +1060,11 @@ impl NurbsSurface {
         lanes: NurbsSurfaceLanes<P, NonZeroReal>,
         normal_reversed: bool,
     ) -> Result<Self, NurbsError> {
-        let poles = lanes.into_poles()?;
+        let NurbsSurfaceLanes {
+            control_points,
+            weights,
+        } = lanes;
+        let poles = NurbsPoleGrid::from_checked_lanes(control_points, weights)?;
         Self::new(u, v, poles, normal_reversed)
     }
 
