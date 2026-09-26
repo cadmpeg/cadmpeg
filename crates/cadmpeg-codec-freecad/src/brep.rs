@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{bounded_len, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
     Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
@@ -20,6 +20,7 @@ use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::units::FinitePoint2;
 use cadmpeg_ir::SourceObjectAssociation;
 use serde::{Deserialize, Serialize};
 
@@ -176,26 +177,62 @@ impl ShapePayload {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ShapeSet {
     /// Ordered location table with resolved transforms.
-    pub(crate) locations: Vec<TextLocation>,
+    locations: Vec<TextLocation>,
     /// Ordered parameter-space curve table.
-    pub(crate) curve2ds: Vec<TextCurve2d>,
+    curve2ds: Vec<TextCurve2d>,
     /// Ordered 3D curve table.
-    pub(crate) curves: Vec<TextCurve>,
+    curves: Vec<TextCurve>,
     /// Ordered standalone 3D polygons.
-    pub(crate) polygons3d: Vec<TextPolygon3d>,
+    polygons3d: Vec<TextPolygon3d>,
     /// Ordered polygons indexing triangulation nodes.
-    pub(crate) polygons_on_triangulations: Vec<TextPolygonOnTriangulation>,
+    polygons_on_triangulations: Vec<TextPolygonOnTriangulation>,
     /// Ordered exact surface table.
-    pub(crate) surfaces: Vec<TextSurface>,
+    surfaces: Vec<TextSurface>,
     /// Ordered display triangulation table.
-    pub(crate) triangulations: Vec<TextTriangulation>,
+    triangulations: Vec<TextTriangulation>,
     /// Ordered subshape-first topology records.
-    pub(crate) tshapes: TextTShapes,
+    tshapes: TextTShapes,
     /// Root shape uses stored after the shape set.
-    pub(crate) roots: Vec<TextShapeUse>,
+    roots: Vec<TextShapeUse>,
 }
 
 impl ShapeSet {
+    pub(crate) fn locations(&self) -> &[TextLocation] {
+        &self.locations
+    }
+
+    pub(crate) fn curve2ds(&self) -> &[TextCurve2d] {
+        &self.curve2ds
+    }
+
+    pub(crate) fn curves(&self) -> &[TextCurve] {
+        &self.curves
+    }
+
+    pub(crate) fn polygons3d(&self) -> &[TextPolygon3d] {
+        &self.polygons3d
+    }
+
+    pub(crate) fn polygons_on_triangulations(&self) -> &[TextPolygonOnTriangulation] {
+        &self.polygons_on_triangulations
+    }
+
+    pub(crate) fn surfaces(&self) -> &[TextSurface] {
+        &self.surfaces
+    }
+
+    pub(crate) fn triangulations(&self) -> &[TextTriangulation] {
+        &self.triangulations
+    }
+
+    pub(crate) fn tshapes(&self) -> &TextTShapes {
+        &self.tshapes
+    }
+
+    pub(crate) fn roots(&self) -> &[TextShapeUse] {
+        &self.roots
+    }
+
     fn section_counts(&self) -> BTreeMap<String, usize> {
         [
             ("Locations", self.locations.len()),
@@ -1750,11 +1787,11 @@ impl TryFrom<TextTShapeWire> for TextTShape {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct TextPolygon3d {
     /// Chordal deflection.
-    pub(crate) deflection: f64,
+    pub(crate) deflection: FiniteReal,
     /// Ordered model-space nodes.
-    pub(crate) nodes: Vec<Point3>,
+    pub(crate) nodes: Vec<FinitePoint3>,
     /// Optional per-node curve parameters.
-    pub(crate) parameters: Option<Vec<f64>>,
+    pub(crate) parameters: Option<Vec<FiniteReal>>,
 }
 
 /// One polygon whose indices address a triangulation node table.
@@ -1763,9 +1800,9 @@ pub(crate) struct TextPolygonOnTriangulation {
     /// One-based source node indices.
     pub(crate) nodes: Vec<u32>,
     /// Chordal deflection.
-    pub(crate) deflection: f64,
+    pub(crate) deflection: FiniteReal,
     /// Optional per-node curve parameters.
-    pub(crate) parameters: Option<Vec<f64>>,
+    pub(crate) parameters: Option<Vec<FiniteReal>>,
 }
 
 /// A rational or non-rational 2D B-spline curve.
@@ -2689,14 +2726,14 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion)
     for _ in 0..polygon_count {
         let node_count = cursor.count("binary 3D polygon node count")?;
         let has_parameters = cursor.bool("binary 3D polygon parameter flag")?;
-        let deflection = cursor.f64("binary 3D polygon deflection")?;
+        let deflection = cursor.finite_f64("binary 3D polygon deflection")?;
         let nodes = (0..node_count)
-            .map(|_| cursor.point3("binary 3D polygon node"))
+            .map(|_| cursor.finite_point3("binary 3D polygon node"))
             .collect::<Result<Vec<_>, _>>()?;
         let parameters = has_parameters
             .then(|| {
                 (0..node_count)
-                    .map(|_| cursor.f64("binary 3D polygon parameter"))
+                    .map(|_| cursor.finite_f64("binary 3D polygon parameter"))
                     .collect::<Result<Vec<_>, _>>()
             })
             .transpose()?;
@@ -2728,12 +2765,12 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion)
                 "binary indexed polygon node indices are one-based".into(),
             ));
         }
-        let deflection = cursor.f64("binary indexed polygon deflection")?;
+        let deflection = cursor.finite_f64("binary indexed polygon deflection")?;
         let has_parameters = cursor.bool("binary indexed polygon parameter flag")?;
         let parameters = has_parameters
             .then(|| {
                 (0..node_count)
-                    .map(|_| cursor.f64("binary indexed polygon parameter"))
+                    .map(|_| cursor.finite_f64("binary indexed polygon parameter"))
                     .collect::<Result<Vec<_>, _>>()
             })
             .transpose()?;
@@ -2758,14 +2795,14 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion)
         let triangle_count = cursor.count("binary triangulation triangle count")?;
         let has_uv = cursor.bool("binary triangulation UV flag")?;
         let has_normals = version >= 4 && cursor.bool("binary triangulation normal flag")?;
-        let deflection = cursor.f64("binary triangulation deflection")?;
+        let deflection = cursor.finite_f64("binary triangulation deflection")?;
         let nodes = (0..node_count)
-            .map(|_| cursor.point3("binary triangulation node"))
+            .map(|_| cursor.finite_point3("binary triangulation node"))
             .collect::<Result<Vec<_>, _>>()?;
         let uv_nodes = has_uv
             .then(|| {
                 (0..node_count)
-                    .map(|_| cursor.point2("binary triangulation UV node"))
+                    .map(|_| cursor.finite_point2("binary triangulation UV node"))
                     .collect::<Result<Vec<_>, _>>()
             })
             .transpose()?;
@@ -2784,7 +2821,7 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion)
         let normals = has_normals
             .then(|| {
                 (0..node_count)
-                    .map(|_| cursor.vector3_f32("binary triangulation normal"))
+                    .map(|_| cursor.finite_vector3_f32("binary triangulation normal"))
                     .collect::<Result<Vec<_>, _>>()
             })
             .transpose()?;
@@ -3908,6 +3945,13 @@ impl<'a> BinaryCursor<'a> {
         ))
     }
 
+    fn finite_point2(&mut self, label: &str) -> Result<FinitePoint2, CodecError> {
+        Ok(FinitePoint2::from_coordinates(
+            self.finite_f64(label)?,
+            self.finite_f64(label)?,
+        ))
+    }
+
     fn vector3(&mut self, label: &str) -> Result<Vector3, CodecError> {
         Ok(Vector3::new(
             self.f64(label)?,
@@ -3916,11 +3960,18 @@ impl<'a> BinaryCursor<'a> {
         ))
     }
 
-    fn vector3_f32(&mut self, label: &str) -> Result<Vector3, CodecError> {
-        Ok(Vector3::new(
-            f64::from(self.f32(label)?),
-            f64::from(self.f32(label)?),
-            f64::from(self.f32(label)?),
+    fn finite_vector3_f32(&mut self, label: &str) -> Result<FiniteVector3, CodecError> {
+        let x = self.f32(label)?;
+        let y = self.f32(label)?;
+        let z = self.f32(label)?;
+        let finite = |value| {
+            FiniteReal::new(f64::from(value))
+                .ok_or_else(|| CodecError::malformed(format_args!("non-finite {label}")))
+        };
+        Ok(FiniteVector3::from_components(
+            finite(x)?,
+            finite(y)?,
+            finite(z)?,
         ))
     }
 
@@ -4229,18 +4280,18 @@ fn parse_polygons3d(
     for _ in 0..count {
         let node_count = cursor.count("3D polygon node count", 1_000_000)?;
         let has_parameters = cursor.boolean("3D polygon parameter flag")?;
-        let deflection = cursor.real("3D polygon deflection")?;
+        let deflection = cursor.finite_real("3D polygon deflection")?;
         // Each node consumes its three point tokens.
         let mut nodes = Vec::with_capacity(cursor.bounded(node_count, 3, "3D polygon node")?);
         for _ in 0..node_count {
-            nodes.push(cursor.point("3D polygon node")?);
+            nodes.push(cursor.finite_point("3D polygon node")?);
         }
         let parameters = if has_parameters {
             // Each parameter consumes its one token.
             let mut parameters =
                 Vec::with_capacity(cursor.bounded(node_count, 1, "3D polygon parameter")?);
             for _ in 0..node_count {
-                parameters.push(cursor.real("3D polygon parameter")?);
+                parameters.push(cursor.finite_real("3D polygon parameter")?);
             }
             Some(parameters)
         } else {
@@ -4287,7 +4338,7 @@ fn parse_polygons_on_triangulations(
                 "polygon-on-triangulation has no parameter marker".into(),
             ));
         }
-        let deflection = cursor.real("polygon-on-triangulation deflection")?;
+        let deflection = cursor.finite_real("polygon-on-triangulation deflection")?;
         let has_parameters = cursor.boolean("polygon-on-triangulation parameter flag")?;
         let parameters = if has_parameters {
             // Each parameter consumes its one token.
@@ -4297,7 +4348,7 @@ fn parse_polygons_on_triangulations(
                 "polygon-on-triangulation parameter",
             )?);
             for _ in 0..node_count {
-                parameters.push(cursor.real("polygon-on-triangulation parameter")?);
+                parameters.push(cursor.finite_real("polygon-on-triangulation parameter")?);
             }
             Some(parameters)
         } else {
@@ -4327,18 +4378,18 @@ fn parse_triangulations(
         let triangle_count = cursor.count("triangulation triangle count", 1_000_000)?;
         let has_uv = cursor.boolean("triangulation UV flag")?;
         let has_normals = topology_version >= 3 && cursor.boolean("triangulation normal flag")?;
-        let deflection = cursor.real("triangulation deflection")?;
+        let deflection = cursor.finite_real("triangulation deflection")?;
         // Each node consumes its three point tokens.
         let mut nodes = Vec::with_capacity(cursor.bounded(node_count, 3, "triangulation node")?);
         for _ in 0..node_count {
-            nodes.push(cursor.point("triangulation node")?);
+            nodes.push(cursor.finite_point("triangulation node")?);
         }
         let uv_nodes = if has_uv {
             // Each UV node consumes its two point2 tokens.
             let mut uv_nodes =
                 Vec::with_capacity(cursor.bounded(node_count, 2, "triangulation UV node")?);
             for _ in 0..node_count {
-                uv_nodes.push(cursor.point2("triangulation UV node")?);
+                uv_nodes.push(cursor.finite_point2("triangulation UV node")?);
             }
             Some(uv_nodes)
         } else {
@@ -4365,7 +4416,7 @@ fn parse_triangulations(
             let mut normals =
                 Vec::with_capacity(cursor.bounded(node_count, 3, "triangulation normal")?);
             for _ in 0..node_count {
-                normals.push(cursor.vector("triangulation normal")?);
+                normals.push(cursor.finite_vector("triangulation normal")?);
             }
             Some(normals)
         } else {
@@ -5514,6 +5565,21 @@ impl<'a> TokenCursor<'a> {
         ))
     }
 
+    fn finite_point2(&mut self, label: &str) -> Result<FinitePoint2, CodecError> {
+        Ok(FinitePoint2::from_coordinates(
+            self.finite_real(label)?,
+            self.finite_real(label)?,
+        ))
+    }
+
+    fn finite_vector(&mut self, label: &str) -> Result<FiniteVector3, CodecError> {
+        Ok(FiniteVector3::from_components(
+            self.finite_real(label)?,
+            self.finite_real(label)?,
+            self.finite_real(label)?,
+        ))
+    }
+
     fn point(&mut self, label: &str) -> Result<Point3, CodecError> {
         Ok(Point3::new(
             self.real(label)?,
@@ -6093,6 +6159,33 @@ pub(crate) mod tests {
     use crate::FcstdCodec;
     use cadmpeg_ir::{Codec, DecodeOptions};
     use std::io::Cursor;
+
+    #[test]
+    fn indexed_polygon_admits_only_aligned_parameters() {
+        let node = cadmpeg_ir::features::FinitePoint3::ZERO;
+        let mut facts = super::ShapeSet {
+            locations: Vec::new(),
+            curve2ds: Vec::new(),
+            curves: Vec::new(),
+            polygons3d: vec![super::TextPolygon3d {
+                deflection: cadmpeg_ir::scalar::FiniteReal::ZERO,
+                nodes: vec![node],
+                parameters: Some(vec![]),
+            }],
+            polygons_on_triangulations: Vec::new(),
+            surfaces: Vec::new(),
+            triangulations: Vec::new(),
+            tshapes: Vec::new().into(),
+            roots: Vec::new(),
+        };
+        assert!(facts.validate().is_err());
+        facts.polygons3d[0].parameters = Some(vec![
+            cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite")
+        ]);
+        assert!(facts.validate().is_ok());
+        facts.polygons3d[0].parameters = None;
+        assert!(facts.validate().is_ok());
+    }
 
     #[test]
     fn tshape_collection_checks_indices_at_direct_wire_admission() {
@@ -6800,7 +6893,12 @@ pub(crate) mod tests {
         assert_eq!(facts.polygons3d[0].nodes.len(), 2);
         assert_eq!(
             facts.polygons3d[0].parameters.as_deref(),
-            Some(&[0.0, 1.0][..])
+            Some(
+                &[
+                    cadmpeg_ir::scalar::FiniteReal::ZERO,
+                    cadmpeg_ir::scalar::FiniteReal::ONE
+                ][..]
+            )
         );
         assert_eq!(facts.polygons_on_triangulations[0].nodes, [1, 2]);
         assert!(matches!(facts.surfaces[0], TextSurface::Plane { .. }));
@@ -6857,7 +6955,12 @@ pub(crate) mod tests {
         assert_eq!(facts.polygons3d[0].nodes.len(), 2);
         assert_eq!(
             facts.polygons3d[0].parameters.as_deref(),
-            Some(&[0.0, 1.0][..])
+            Some(
+                &[
+                    cadmpeg_ir::scalar::FiniteReal::ZERO,
+                    cadmpeg_ir::scalar::FiniteReal::ONE
+                ][..]
+            )
         );
         assert_eq!(facts.polygons_on_triangulations[0].nodes, [1, 2]);
         let triangulation = &facts.triangulations[0];
