@@ -39,7 +39,9 @@ fn om_numeric_expression_evaluates_constant_arithmetic_formula() {
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].expression, "(193.94 - 6) / 2 + 1.5e1");
     assert_eq!(
-        expressions[0].constant_value().map(|value| value.get()),
+        expressions[0]
+            .constant_value()
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(108.97)
     );
 }
@@ -64,7 +66,9 @@ fn om_numeric_expression_accepts_inches_and_terminal_comments() {
     assert_eq!(expressions[0].unit, ExpressionUnit::Inch);
     assert_eq!(expressions[0].expression, "0.5");
     assert_eq!(
-        expressions[0].constant_value().map(|value| value.get()),
+        expressions[0]
+            .constant_value()
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(0.5)
     );
     assert_eq!(expressions[1].expression, "p1 * 2");
@@ -74,7 +78,9 @@ fn om_numeric_expression_accepts_inches_and_terminal_comments() {
         ExpressionUnit::Native("custom/unit".into())
     );
     assert_eq!(
-        expressions[2].constant_value().map(|value| value.get()),
+        expressions[2]
+            .constant_value()
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(4.0)
     );
 }
@@ -88,7 +94,7 @@ fn om_numeric_expression_applies_power_before_unary_sign() {
         ("2^3^2", 512.0),
     ] {
         assert_eq!(
-            evaluate_constant_expression(formula).map(|value| value.get()),
+            evaluate_constant_expression(formula).map(cadmpeg_ir::scalar::FiniteReal::get),
             Some(expected),
             "{formula}"
         );
@@ -101,13 +107,13 @@ fn om_numeric_expression_parser_handles_deep_nesting_without_recursion() {
 
     let nested = format!("{}1{}", "(".repeat(DEPTH), ")".repeat(DEPTH));
     assert_eq!(
-        evaluate_constant_expression(&nested).map(|value| value.get()),
+        evaluate_constant_expression(&nested).map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(1.0)
     );
 
     let unary = format!("{}1", "+".repeat(DEPTH));
     assert_eq!(
-        evaluate_constant_expression(&unary).map(|value| value.get()),
+        evaluate_constant_expression(&unary).map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(1.0)
     );
 
@@ -196,7 +202,9 @@ fn om_numeric_expression_table_is_independent_of_entity_indexing() {
         Some("CircularPattern_pattern_Circular_Dir_offset_angle")
     );
     assert_eq!(
-        expressions[0].constant_value().map(|value| value.get()),
+        expressions[0]
+            .constant_value()
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(120.0)
     );
 }
