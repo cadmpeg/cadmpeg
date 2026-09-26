@@ -448,16 +448,16 @@ fn scan_decodes_plane_local_system_support_frame() {
     assert_eq!(frame.surface_id, 7);
     assert_eq!(frame.slots.len(), 12);
     assert_eq!(frame.frame().origin, Some([3.0, 0.0, 1.0]));
-    assert_eq!(frame.frame().u_axis, Some([0.0, 1.0, 0.0]));
-    assert_eq!(frame.frame().normal, Some([0.0, 0.0, -1.0]));
+    assert_eq!(frame.frame().u_axis(), Some([0.0, 1.0, 0.0]));
+    assert_eq!(frame.frame().normal(), Some([0.0, 0.0, -1.0]));
     assert_eq!(
         frame.classification,
         crate::surface::LocalSystemClassification::Simple
     );
     assert_eq!(scan.planes.outlines.len(), 1);
     assert_eq!(scan.planes.outlines[0].origin, [0.0, 0.0, 1.0]);
-    assert_eq!(scan.planes.outlines[0].normal, [0.0, 0.0, -1.0]);
-    assert_eq!(scan.planes.outlines[0].u_axis, [0.0, 1.0, 0.0]);
+    assert_eq!(scan.planes.outlines[0].normal(), [0.0, 0.0, -1.0]);
+    assert_eq!(scan.planes.outlines[0].u_axis(), [0.0, 1.0, 0.0]);
 }
 
 #[test]
@@ -526,7 +526,7 @@ fn scan_derives_named_surface_plane_from_outline_corners() {
     assert_eq!(scan.planes.outlines.len(), 1);
     assert_eq!(scan.planes.outlines[0].surface_id, 5);
     assert_eq!(scan.planes.outlines[0].origin, [0.0, 0.0, 0.0]);
-    assert_eq!(scan.planes.outlines[0].normal, [0.0, 1.0, 0.0]);
+    assert_eq!(scan.planes.outlines[0].normal(), [0.0, 1.0, 0.0]);
 }
 
 #[test]

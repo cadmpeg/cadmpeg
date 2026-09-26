@@ -2306,9 +2306,21 @@ fn append_legacy_brep(
                     ))?,
                 );
                 let pcurve_domain = curve_domain(&trim.pcurve)?;
-                let mut pcurve_knots =
-                    v1_values::<f64>(ctx, trim.pcurve.knots().len(), "Rhino V1 pcurve knots")?;
-                pcurve_knots.extend_from_slice(trim.pcurve.knots());
+                let pcurve_knot_bytes = admit_v1_values::<f64>(
+                    ctx,
+                    trim.pcurve.knots().len(),
+                    "Rhino V1 pcurve knots",
+                )?;
+                let pcurve_knots = trim.pcurve.knots().try_clone().map_err(|_| {
+                    CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
+                        dimension: cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                        reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
+                        limit: ctx.policy().limits.max_retained_bytes,
+                        used: 0,
+                        additional: pcurve_knot_bytes,
+                        operation: "Rhino V1 pcurve knots",
+                    })
+                })?;
                 let mut pcurve_points = v1_values::<cadmpeg_ir::units::FinitePoint2>(
                     ctx,
                     trim.pcurve.pole_count(),

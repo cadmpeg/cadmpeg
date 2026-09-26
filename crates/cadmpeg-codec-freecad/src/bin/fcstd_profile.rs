@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use cadmpeg_codec_freecad::{
     FcstdCodec, FcstdDocumentBuilder, FcstdPropertyOwner, FcstdPropertyValue,
 };
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
@@ -177,7 +178,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let canonical = first.ir().to_canonical_json()?;
         let deterministic = canonical == second.ir().to_canonical_json()?;
         let neutral = cadmpeg_ir::validate_neutral(first.ir(), Vec::new());
-        let native = FcstdCodec.validate_native(first.ir());
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())?;
+        let native = FcstdCodec.validate_native(&ctx, first.ir())?;
         let namespace = first
             .ir()
             .native
@@ -806,10 +809,12 @@ fn source_less_profile() -> Result<SourceLessWriteProfile, Box<dyn std::error::E
             TargetRequest::Explicit("fcstd:schema-3"),
         )
         .is_err();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())?;
     Ok(SourceLessWriteProfile {
         generated: true,
         deterministic: first == second,
-        decodes_cleanly: FcstdCodec.validate_native(decoded.ir()).is_empty(),
+        decodes_cleanly: FcstdCodec.validate_native(&ctx, decoded.ir())?.is_empty(),
         object_type,
         typed_parameters,
         unsupported_target_rejected,

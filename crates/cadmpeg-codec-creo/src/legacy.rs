@@ -35,7 +35,7 @@ const LEGACY_INCH_TO_MM: f64 = 25.4;
 const LEGACY_LENGTH_UNIT_TYPE: i32 = 0;
 
 /// Active coordinate-unit system selected by a model-level persistence field.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum PrincipalUnitSystem {
     /// Millimeter, Newton, second.
     MillimeterNewtonSecond,
@@ -44,7 +44,7 @@ pub(crate) enum PrincipalUnitSystem {
     /// Inch, pound mass, second.
     InchPoundMassSecond,
     /// A complete legacy `unit_arr` length record with a source-specific scale.
-    LegacyLengthScale(u64),
+    LegacyLengthScale(cadmpeg_ir::scalar::PositiveReal),
     /// A binary selector whose unit definition is not known.
     UnknownBinarySelector(u8),
 }
@@ -56,19 +56,21 @@ impl PrincipalUnitSystem {
             Self::MillimeterNewtonSecond => "mmNs".to_string(),
             Self::MillimeterKilogramSecond => "mmKs".to_string(),
             Self::InchPoundMassSecond => "inLbmS".to_string(),
-            Self::LegacyLengthScale(bits) => {
-                format!("legacy_length_scale_mm:{:.17}", f64::from_bits(bits))
+            Self::LegacyLengthScale(scale) => {
+                format!("legacy_length_scale_mm:{:.17}", scale.get())
             }
             Self::UnknownBinarySelector(value) => format!("unknown:{value}"),
         }
     }
 
     /// Scale from stored coordinate lengths to canonical millimeters.
-    pub(crate) const fn length_scale_mm(self) -> Option<f64> {
+    pub(crate) fn length_scale_mm(self) -> Option<cadmpeg_ir::scalar::PositiveReal> {
         match self {
-            Self::MillimeterNewtonSecond | Self::MillimeterKilogramSecond => Some(1.0),
-            Self::InchPoundMassSecond => Some(LEGACY_INCH_TO_MM),
-            Self::LegacyLengthScale(bits) => Some(f64::from_bits(bits)),
+            Self::MillimeterNewtonSecond | Self::MillimeterKilogramSecond => {
+                Some(cadmpeg_ir::scalar::PositiveReal::ONE)
+            }
+            Self::InchPoundMassSecond => cadmpeg_ir::scalar::PositiveReal::new(LEGACY_INCH_TO_MM),
+            Self::LegacyLengthScale(scale) => Some(scale),
             Self::UnknownBinarySelector(_) => None,
         }
     }
@@ -756,8 +758,7 @@ impl Persistence {
         }
         let factor = self.unique_real_scalar(first.offset, "factor")?;
         let scale_mm = factor * LEGACY_INCH_TO_MM;
-        (scale_mm.is_finite() && scale_mm > 0.0)
-            .then_some(PrincipalUnitSystem::LegacyLengthScale(scale_mm.to_bits()))
+        cadmpeg_ir::scalar::PositiveReal::new(scale_mm).map(PrincipalUnitSystem::LegacyLengthScale)
     }
 
     fn unique_integer_scalar(&self, parent: usize, name: &str) -> Option<i32> {

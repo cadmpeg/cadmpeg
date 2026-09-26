@@ -104,24 +104,49 @@ pub(crate) enum PropertyValue<'a> {
 }
 
 impl PropertyValue<'_> {
-    pub(crate) fn scalar_text(&self) -> Option<String> {
-        match self {
-            Self::Signed { value, .. } => Some(value.to_string()),
-            Self::Unsigned { value, .. } => Some(value.to_string()),
-            Self::Float { value, .. } if value.is_finite() => Some(value.to_string()),
-            Self::Bool { value, .. } => Some(value.to_string()),
-            Self::Filetime { value, .. } => Some(value.to_string()),
-            Self::String { value, .. } => Some(value.clone()),
-            Self::Guid { value, .. } => Some(hex(value)),
+    pub(crate) fn scalar_text(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<String>, CodecError> {
+        let text = match self {
+            Self::Signed { value, .. } => retained_scalar(ctx, format_args!("{value}"))?,
+            Self::Unsigned { value, .. } => retained_scalar(ctx, format_args!("{value}"))?,
+            Self::Float { value, .. } if value.is_finite() => {
+                retained_scalar(ctx, format_args!("{value}"))?
+            }
+            Self::Bool { value, .. } => retained_scalar(ctx, format_args!("{value}"))?,
+            Self::Filetime { value, .. } => retained_scalar(ctx, format_args!("{value}"))?,
+            Self::String { value, .. } => {
+                ctx.charge_retained(
+                    u64::try_from(value.len()).map_err(|_| {
+                        ctx.refuse_codec_limit("OLE scalar length", u64::MAX - 1, u64::MAX)
+                    })?,
+                    "retain OLE scalar text",
+                )?;
+                value.clone()
+            }
+            Self::Guid { value, .. } => {
+                ctx.charge_retained(32, "retain OLE scalar text")?;
+                hex(value)
+            }
             Self::Empty { .. }
             | Self::Float { .. }
             | Self::Binary { .. }
             | Self::Clipboard { .. }
             | Self::Vector { .. }
             | Self::Dictionary
-            | Self::Unknown { .. } => None,
-        }
+            | Self::Unknown { .. } => return Ok(None),
+        };
+        Ok(Some(text))
     }
+}
+
+fn retained_scalar(
+    ctx: &DecodeContext<'_>,
+    value: std::fmt::Arguments<'_>,
+) -> Result<String, CodecError> {
+    crate::record_issue::admit_formatted(ctx, value, "retain OLE scalar text")?;
+    Ok(value.to_string())
 }
 
 fn has_property_set_header(bytes: &[u8]) -> bool {
@@ -902,7 +927,7 @@ impl<'a> Cursor<'a> {
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
 
     use crate::test_support::truncation::located_truncation;
 
@@ -912,6 +937,42 @@ mod tests {
     };
     use cadmpeg_core::decode::{DecodeContext, View};
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn scalar_text_refuses_retained_limit_before_copy_or_format() {
+        let text = PropertyValue::String {
+            type_code: 30,
+            value: "scalar".into(),
+        };
+        let number = PropertyValue::Signed {
+            type_code: 3,
+            value: -42,
+        };
+        let arena = DecodeArena::new();
+        let bytes = b"fixture";
+        let (service, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
+            .expect("service context");
+        assert_eq!(
+            text.scalar_text(&service).expect("text admitted"),
+            Some("scalar".into())
+        );
+        assert_eq!(
+            number.scalar_text(&service).expect("number admitted"),
+            Some("-42".into())
+        );
+        for (value, cap) in [(&text, 5), (&number, 2)] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (limited, _) =
+                DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("limited context");
+            assert!(matches!(
+                value.scalar_text(&limited),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::RetainedBytes
+                        && limit.operation == "retain OLE scalar text"
+            ));
+        }
+    }
 
     #[test]
     fn property_set_parses_unicode_metadata_and_preview_blob() {

@@ -683,15 +683,22 @@ fn e5_nurbs_surface(
     view.is_empty()
         .then(|| {
             crate::nurbs::note_refusal(
-                NurbsSurface::from_checked_lanes(
-                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
-                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
-                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
-                        control_points.chunks(row_len).map(<[_]>::to_vec).collect(),
-                        weights.map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
-                    ),
-                    false,
-                ),
+                cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_checked_lanes(
+                    control_points.chunks(row_len).map(<[_]>::to_vec).collect(),
+                    weights.map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
+                )
+                .and_then(|poles| {
+                    NurbsSurface::new(
+                        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                            u_degree, u_knots, false,
+                        ),
+                        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                            v_degree, v_knots, false,
+                        ),
+                        poles,
+                        false,
+                    )
+                }),
                 refusal,
                 format_args!("e5 NURBS surface record at byte {}", record.pos),
             )

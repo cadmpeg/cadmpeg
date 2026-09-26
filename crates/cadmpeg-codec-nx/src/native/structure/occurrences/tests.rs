@@ -1,10 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::CodecBackend;
 use cadmpeg_ir::native::NativeNamespace;
 use serde_json::{json, Value};
 
 use super::{FastLoadComponentOccurrenceWire, FastLoadOccurrences};
+
+fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::check::Finding> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("validation context");
+    crate::NxCodec::validate_native(&ctx, ir).expect("validation fits service policy")
+}
 
 fn rows(form: u8) -> Value {
     json!([
@@ -58,7 +66,7 @@ fn roster_rejects_disagreeing_locally_valid_lane_forms_before_hoisting() {
             .contains("occurrence_lane_form"));
         let mut ir = cadmpeg_ir::CadIr::empty();
         ir.native.0.insert("nx".into(), namespace);
-        let findings = crate::NxCodec::validate_native(&ir);
+        let findings = validate_native(&ir);
         assert_eq!(findings.len(), 1);
         assert!(findings[0].message.contains("occurrence_lane_form"));
     }
