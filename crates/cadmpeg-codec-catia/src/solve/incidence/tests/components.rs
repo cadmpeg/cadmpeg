@@ -458,9 +458,10 @@ fn deferred_boundary_enforces_anchored_gap_capacities() {
     let valid = [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [0, 5]];
     let overfilled_first_gap = [[0, 1], [1, 2], [2, 3], [4, 5], [3, 4], [0, 5]];
 
-    assert!(crate::solve::incidence::deferred_boundary_closes(
-        &domain, &valid
-    ));
+    assert!(
+        crate::solve::incidence::deferred_boundary_closes(&ctx, &domain, &valid)
+            .expect("service resource budget")
+    );
     let assignment = crate::solve::incidence::deferred_boundary_assignment(&ctx, &domain, &valid)
         .expect("service resource budget")
         .expect("materialized deferred boundary");
@@ -479,9 +480,11 @@ fn deferred_boundary_enforces_anchored_gap_capacities() {
         ]
     );
     assert!(!crate::solve::incidence::deferred_boundary_closes(
+        &ctx,
         &domain,
         &overfilled_first_gap
-    ));
+    )
+    .expect("service resource budget"));
 }
 
 #[test]
@@ -550,6 +553,47 @@ fn deferred_boundary_materialization_refuses_match_collection_limits() {
         "catia_deferred_visit",
         "catia_deferred_boundaries",
     ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
+fn deferred_boundary_closure_refuses_matching_collection_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let domain = crate::solve::missing_edge::MeshDeferredFaceBoundary {
+        cycles: vec![crate::solve::missing_edge::MeshDeferredBoundaryCycle {
+            length: 4,
+            exact_uses: Vec::new(),
+        }],
+        missing_edges: vec![0, 1],
+    };
+    let pairs = [[0, 1], [0, 1]];
+    catia_test_context!(service_ctx);
+    assert!(
+        crate::solve::incidence::deferred_boundary_closes(&service_ctx, &domain, &pairs)
+            .expect("service resource budget")
+    );
+
+    let mut refused = HashSet::new();
+    for limit in 0..128 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match crate::solve::incidence::deferred_boundary_closes(&ctx, &domain, &pairs) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                refused.insert(error.operation.to_owned());
+            }
+            Ok(true) => break,
+            Ok(false) => panic!("closed deferred boundary must match"),
+            Err(error) => panic!("unexpected refusal: {error}"),
+        }
+    }
+    for operation in ["catia_deferred_close_match", "catia_deferred_close_visit"] {
         assert!(refused.contains(operation), "no refusal at {operation}");
     }
 }
@@ -832,19 +876,25 @@ fn unordered_components_close_cycles_in_the_abstract_quotient() {
 
 #[test]
 fn compact_unordered_boundary_rejects_partial_subtours() {
+    catia_test_context!(ctx);
     let domain = MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2, 3, 4]);
 
     assert!(!compact_boundary_domain_viable(
+        &ctx,
         &domain,
         &[Some([0, 1]), Some([1, 2]), Some([2, 0]), None, None],
         None,
-    ));
+    )
+    .expect("service resource budget"));
     assert!(compact_boundary_domain_viable(
+        &ctx,
         &domain,
         &[Some([0, 1]), Some([1, 2]), Some([2, 3]), None, None],
         None,
-    ));
+    )
+    .expect("service resource budget"));
     assert!(compact_boundary_domain_viable(
+        &ctx,
         &domain,
         &[
             Some([0, 1]),
@@ -854,15 +904,95 @@ fn compact_unordered_boundary_rejects_partial_subtours() {
             Some([4, 0]),
         ],
         None,
-    ));
+    )
+    .expect("service resource budget"));
 }
 
 #[test]
 fn compact_unordered_boundary_refuses_degree_overflow() {
+    catia_test_context!(ctx);
     let domain = MeshFaceBoundaryDomain::UnorderedFullCycle((0..129).collect());
     let mut assignment = vec![Some([0, 0]); 128];
     assignment.push(None);
-    assert!(!compact_boundary_domain_viable(&domain, &assignment, None));
+    assert!(
+        !compact_boundary_domain_viable(&ctx, &domain, &assignment, None)
+            .expect("service resource budget")
+    );
+}
+
+#[test]
+fn compact_boundary_viability_refuses_labeled_edge_point_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let domain = MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2]);
+    let assignment = [Some([0, 1]), Some([1, 2]), Some([2, 0])];
+    catia_test_context!(service_ctx);
+    assert!(
+        compact_boundary_domain_viable(&service_ctx, &domain, &assignment, None)
+            .expect("service resource budget")
+    );
+
+    let mut refused = HashSet::new();
+    for limit in 0..128 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match compact_boundary_domain_viable(&ctx, &domain, &assignment, None) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                refused.insert(error.operation.to_owned());
+            }
+            Ok(true) => break,
+            Ok(false) => panic!("closed cycle must remain viable"),
+            Err(error) => panic!("unexpected refusal: {error}"),
+        }
+    }
+    assert!(refused.contains("catia labeled edge points"));
+}
+
+#[test]
+fn component_face_viability_refuses_edge_point_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let faces = HashSet::from([0]);
+    let assignment = [Some([0, 1]), Some([1, 2]), Some([2, 0])];
+    let choices = vec![vec![[0, 1]], vec![[1, 2]], vec![[2, 0]]];
+    let face_edges = vec![vec![0, 1, 2]];
+    let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2])];
+    catia_test_context!(service_ctx);
+    assert!(crate::solve::incidence::component_incidence_faces_viable(
+        &service_ctx,
+        &faces,
+        &assignment,
+        &choices,
+        &face_edges,
+        Some(&domains),
+        3,
+    )
+    .expect("service resource budget"));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let error = crate::solve::incidence::component_incidence_faces_viable(
+        &ctx,
+        &faces,
+        &assignment,
+        &choices,
+        &face_edges,
+        Some(&domains),
+        3,
+    )
+    .expect_err("edge point array exceeds the collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia component incidence edge points"));
 }
 
 #[test]

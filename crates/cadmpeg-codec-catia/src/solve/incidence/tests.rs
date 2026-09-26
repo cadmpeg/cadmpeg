@@ -319,8 +319,12 @@ fn incidence_component_rejects_a_choice_that_strands_a_degree_one_vertex() {
         state: IncidenceSearchState::Open,
     };
 
-    assert!(!search.candidate_fits(0, [0, 1]));
-    assert!(search.candidate_fits(0, [0, 2]));
+    assert!(!search
+        .candidate_fits(0, [0, 1])
+        .expect("service resource budget"));
+    assert!(search
+        .candidate_fits(0, [0, 2])
+        .expect("service resource budget"));
 }
 
 #[test]
@@ -367,10 +371,14 @@ fn incidence_component_indexes_and_revalidates_frontier_support() {
         state: IncidenceSearchState::Open,
     };
 
-    assert!(search.candidate_fits(0, [0, 1]));
+    assert!(search
+        .candidate_fits(0, [0, 1])
+        .expect("service resource budget"));
     assert!(!budget.exhausted());
     search.assignment[1] = Some([0, 1]);
-    assert!(!search.candidate_fits(0, [0, 1]));
+    assert!(!search
+        .candidate_fits(0, [0, 1])
+        .expect("service resource budget"));
 }
 
 #[test]
@@ -416,7 +424,9 @@ fn incidence_component_caches_implicit_frontier_support() {
         state: IncidenceSearchState::Open,
     };
 
-    assert!(search.candidate_fits(0, [0, 1]));
+    assert!(search
+        .candidate_fits(0, [0, 1])
+        .expect("service resource budget"));
     assert_eq!(
         *search.degree_support_witnesses.borrow(),
         HashMap::from([((0, 0), vec![(1, [0, 1])]), ((0, 1), vec![(1, [0, 1])]),])
@@ -460,7 +470,9 @@ fn incidence_degree_support_budget_exhaustion_keeps_candidate_unknown() {
         state: IncidenceSearchState::Open,
     };
 
-    assert!(search.candidate_fits(0, [0, 1]));
+    assert!(search
+        .candidate_fits(0, [0, 1])
+        .expect("service resource budget"));
     assert!(!budget.exhausted());
     assert!(degree_budget.exhausted());
     search.search().expect("service resource budget");
@@ -503,7 +515,9 @@ fn incidence_component_requires_degree_support_to_fit_every_incident_face() {
         state: IncidenceSearchState::Open,
     };
 
-    assert!(!search.candidate_fits(0, [0, 1]));
+    assert!(!search
+        .candidate_fits(0, [0, 1])
+        .expect("service resource budget"));
 }
 
 #[test]
@@ -560,7 +574,9 @@ fn incidence_candidate_checks_ordered_faces_with_implicit_edge_domains() {
         state: IncidenceSearchState::Open,
     };
 
-    assert!(!search.candidate_fits(0, [0, 0]));
+    assert!(!search
+        .candidate_fits(0, [0, 0])
+        .expect("service resource budget"));
     assert!(!propagation_budget.exhausted());
 }
 
@@ -600,7 +616,12 @@ fn incidence_branch_reuses_candidate_viability_across_incident_face_frontiers() 
         state: IncidenceSearchState::Open,
     };
 
-    assert_eq!(search.branch_options(None), Some(vec![(0, [0, 2])]));
+    assert_eq!(
+        search
+            .branch_options(None)
+            .expect("service resource budget"),
+        Some(vec![(0, [0, 2])])
+    );
     assert!(!budget.exhausted());
 }
 
@@ -640,7 +661,12 @@ fn incidence_branch_stops_ranking_at_a_singleton_domain() {
         state: IncidenceSearchState::Open,
     };
 
-    assert_eq!(search.branch_options(None), Some(vec![(0, [0, 2])]));
+    assert_eq!(
+        search
+            .branch_options(None)
+            .expect("service resource budget"),
+        Some(vec![(0, [0, 2])])
+    );
     assert!(!budget.exhausted());
 }
 
@@ -658,7 +684,7 @@ fn incidence_component_uses_operation_budget_for_a_wide_rejected_frontier() {
         .flat_map(|face| [(face, face * 2), (face, face * 2 + 1)])
         .collect::<Vec<_>>();
     let solution_filter =
-        |solution: &[(usize, [usize; 2])]| solution.iter().all(|(_, pair)| pair[0] % 2 == 0);
+        |solution: &[(usize, [usize; 2])]| Ok(solution.iter().all(|(_, pair)| pair[0] % 2 == 0));
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
@@ -693,6 +719,68 @@ fn incidence_component_uses_operation_budget_for_a_wide_rejected_frontier() {
 
     assert_ne!(search.state, IncidenceSearchState::Exhausted);
     assert_eq!(search.solutions.len(), 1);
+}
+
+#[test]
+fn incidence_solution_filter_propagates_collection_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let run = |ctx: &DecodeContext<'_>| {
+        let choices = vec![vec![[0, 0]]];
+        let edge_faces = [[0, 0]];
+        let face_edges = vec![vec![0]];
+        let edges = [0];
+        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        let filter = |_: &[(usize, [usize; 2])]| -> Result<bool, CodecError> {
+            ctx.alloc_filled(1, true, "catia incidence solution filter probe")?;
+            Ok(true)
+        };
+        let mut search = crate::solve::incidence::IncidenceComponentSearch {
+            ctx,
+            choices: &choices,
+            explicit_point_supports: Vec::new(),
+            point_support_edges: Vec::new(),
+            degree_support_witnesses: RefCell::new(HashMap::new()),
+            edge_faces: &edge_faces,
+            face_edges: &face_edges,
+            mesh_assignments: None,
+            face_configuration_domains: None,
+            coordinate_domains: None,
+            active: vec![true],
+            edges: &edges,
+            constraints: Vec::new(),
+            assignment: vec![None],
+            degrees: vec![BTreeMap::new()],
+            solutions: Vec::new(),
+            solution_filter: Some(&filter),
+            solution_visitor: None,
+            partial_solution_filter: None,
+            dead_states: HashSet::new(),
+            budget: &budget,
+            degree_support_budget: &budget,
+            coordinate_propagation_budget: &budget,
+            boundary_propagation_budget: &budget,
+            state: IncidenceSearchState::Open,
+        };
+        search.search()?;
+        Ok::<_, CodecError>(search.solutions)
+    };
+
+    catia_test_context!(service_ctx);
+    assert_eq!(
+        run(&service_ctx).expect("service resource budget"),
+        vec![vec![(0, [0, 0])]]
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let error = run(&ctx).expect_err("filter allocation exceeds the collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia incidence solution filter probe"));
 }
 
 #[test]
@@ -741,7 +829,9 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
     };
 
     assert_eq!(
-        search.branch_options(None),
+        search
+            .branch_options(None)
+            .expect("service resource budget"),
         Some(vec![(1, [3, 4]), (1, [3, 5]), (1, [4, 5])])
     );
 }
@@ -795,7 +885,9 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
     };
 
     assert_eq!(
-        search.branch_options(None),
+        search
+            .branch_options(None)
+            .expect("service resource budget"),
         Some(vec![(0, [0, 1]), (0, [0, 2])])
     );
 
@@ -805,7 +897,12 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
         edges: &[2],
         ..search
     };
-    assert_eq!(independent.branch_options(None), Some(Vec::new()));
+    assert_eq!(
+        independent
+            .branch_options(None)
+            .expect("service resource budget"),
+        Some(Vec::new())
+    );
 }
 
 #[test]
@@ -1720,7 +1817,9 @@ fn incidence_candidate_uses_a_separate_global_quotient_validation_budget() {
         state: IncidenceSearchState::Open,
     };
 
-    assert!(search.candidate_fits(0, [0, 0]));
+    assert!(search
+        .candidate_fits(0, [0, 0])
+        .expect("service resource budget"));
     assert!(!budget.exhausted());
     search.adjust(0, [0, 0]);
     search.assignment[0] = Some([0, 0]);

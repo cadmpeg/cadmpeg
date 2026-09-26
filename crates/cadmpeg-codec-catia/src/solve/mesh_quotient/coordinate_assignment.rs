@@ -1076,38 +1076,51 @@ pub(super) fn close_coordinate_roots_with_incidence(
                         .into_iter()
                         .all(|((face, _), degree)| !incidence.closed_faces[face] || degree == 2)
                 });
-                let boundaries_close = incidence.is_none_or(|incidence| {
-                    let closed_face_count = incidence
-                        .closed_faces
-                        .iter()
-                        .filter(|closed| **closed)
-                        .count();
-                    if budget.is_some_and(|budget| {
-                        !budget.charge_by(edge_ids.len().saturating_add(closed_face_count))
-                    }) {
-                        return false;
-                    }
-                    let mut selected = vec![None; edge_candidates.len()];
-                    for (local_edge, &edge) in edge_ids.iter().enumerate() {
-                        let [left, right] = edges[local_edge].map(|root| solution[root]);
-                        selected[edge] = Some([left, right]);
-                    }
-                    incidence
-                        .closed_faces
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, closed)| **closed)
-                        .all(|(face, _)| match &incidence.boundary_domains[face] {
-                            MeshFaceBoundaryDomain::Ordered(assignments) => {
-                                assignments.iter().any(|assignment| {
-                                    complete_ordered_assignment_viable(
-                                        assignment, &selected, budget,
-                                    )
-                                })
+                let boundaries_close =
+                    incidence.map_or(Ok(true), |incidence| -> Result<bool, CodecError> {
+                        let closed_face_count = incidence
+                            .closed_faces
+                            .iter()
+                            .filter(|closed| **closed)
+                            .count();
+                        if budget.is_some_and(|budget| {
+                            !budget.charge_by(edge_ids.len().saturating_add(closed_face_count))
+                        }) {
+                            return Ok(false);
+                        }
+                        let mut selected = ctx.alloc_filled(
+                            edge_candidates.len(),
+                            None,
+                            "catia coordinate closure selected edges",
+                        )?;
+                        for (local_edge, &edge) in edge_ids.iter().enumerate() {
+                            let [left, right] = edges[local_edge].map(|root| solution[root]);
+                            selected[edge] = Some([left, right]);
+                        }
+                        for (face, _) in incidence
+                            .closed_faces
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, closed)| **closed)
+                        {
+                            let viable = match &incidence.boundary_domains[face] {
+                                MeshFaceBoundaryDomain::Ordered(assignments) => {
+                                    assignments.iter().any(|assignment| {
+                                        complete_ordered_assignment_viable(
+                                            assignment, &selected, budget,
+                                        )
+                                    })
+                                }
+                                domain => {
+                                    compact_boundary_domain_viable(ctx, domain, &selected, None)?
+                                }
+                            };
+                            if !viable {
+                                return Ok(false);
                             }
-                            domain => compact_boundary_domain_viable(domain, &selected, None),
-                        })
-                });
+                        }
+                        Ok(true)
+                    })?;
                 if budget.is_some_and(WorkBudget::exhausted) {
                     *exhausted = true;
                 }

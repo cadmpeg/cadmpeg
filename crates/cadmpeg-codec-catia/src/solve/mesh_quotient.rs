@@ -2428,8 +2428,7 @@ impl MeshQuotient {
                 return Ok(());
             }
             if budget.is_some_and(|budget| !budget.charge()) {
-                ctx.charge_work(0, "catia point assignment")?;
-                return Err(ctx.refuse_codec_limit("catia point assignment", 0, 1));
+                return Ok(());
             }
             let values_for = |root: usize, assigned: &[Option<usize>], used: &HashSet<usize>| {
                 domains[root]
@@ -3742,7 +3741,8 @@ pub(super) fn propagate_common_boundary_components(
 type MeshFaceSelection = Option<(usize, Vec<Vec<bool>>)>;
 type MeshFaceDirectionOptions = Vec<Vec<Vec<bool>>>;
 pub(super) type MeshEndpointPair = (usize, [usize; 2]);
-pub(super) type MeshEndpointSolutionFilter<'a> = &'a dyn Fn(&[MeshEndpointPair]) -> bool;
+pub(super) type MeshEndpointSolutionFilter<'a> =
+    &'a dyn Fn(&[MeshEndpointPair]) -> Result<bool, CodecError>;
 type MeshPartialEndpointSolutionFilter<'a> = &'a dyn Fn(&[Option<[usize; 2]>]) -> bool;
 
 /// Evaluation-order constraints on mesh endpoint assignment.
@@ -10035,6 +10035,75 @@ fn coordinate_root_closure_rejects_a_refused_incidence_check() {
         .expect("service resource budget");
     assert!(matches!(complete, MeshSolve::Solved(_)));
     assert!(!complete_budget.exhausted());
+}
+
+#[test]
+fn coordinate_root_closure_refuses_selected_edge_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let edge_candidates = vec![vec![[0, 1]], vec![[0, 1]]];
+    let edge_faces = [[0, 1], [0, 1]];
+    let boundary = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![
+            MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 0,
+                reversed: None,
+            },
+            MeshBoundaryEdgeCandidate {
+                edge: 1,
+                start: 0,
+                end: 0,
+                reversed: None,
+            },
+        ]],
+    };
+    let boundary_domains = vec![
+        MeshFaceBoundaryDomain::Ordered(vec![boundary.clone()]),
+        MeshFaceBoundaryDomain::Ordered(vec![boundary]),
+    ];
+    let run = |ctx: &DecodeContext<'_>| {
+        let mut quotient = MeshQuotient::new(
+            (0..4)
+                .map(|node| Arc::new(HashSet::from([usize::from(node % 2 != 0)])))
+                .collect(),
+        );
+        quotient.merge(0, 2).expect("shared left endpoint");
+        quotient.merge(1, 3).expect("shared right endpoint");
+        let budget = WorkBudget::new(1_000);
+        quotient.coordinate_root_closure_outcome(
+            ctx,
+            2,
+            &edge_candidates,
+            Some((&edge_faces, &boundary_domains)),
+            Some(&budget),
+        )
+    };
+    catia_test_context!(service_ctx);
+    assert!(matches!(
+        run(&service_ctx).expect("service resource budget"),
+        MeshSolve::Solved(_)
+    ));
+    let mut refused = HashSet::new();
+    for limit in 0..512 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match run(&ctx) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                refused.insert(error.operation.to_owned());
+            }
+            Ok(MeshSolve::Solved(_)) => break,
+            Ok(_) => panic!("closed incidence must solve"),
+            Err(error) => panic!("unexpected refusal: {error}"),
+        }
+    }
+    assert!(refused.contains("catia coordinate closure selected edges"));
 }
 
 #[test]
