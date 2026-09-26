@@ -20,6 +20,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, VertexId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Loop, Region, Sense, Shell};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
@@ -2008,35 +2009,50 @@ pub(crate) fn placement_affine(
     let translation_component = |index| {
         record
             .number_or(index, 0.0)
-            .filter(|value| value.is_finite())
+            .and_then(FiniteReal::new)
             .ok_or(())
     };
     let scale_component = |index, default| {
         record
             .number_or(index, default)
-            .filter(|value| value.is_finite() && *value > 0.0)
+            .and_then(PositiveReal::new)
             .ok_or(())
     };
     let x_scale = scale_component(5, 1.0)?;
     let scales = if instance.entity_type == 420 {
         [
             x_scale,
-            scale_component(6, x_scale)?,
-            scale_component(7, x_scale)?,
+            scale_component(6, x_scale.get())?,
+            scale_component(7, x_scale.get())?,
         ]
     } else {
         [x_scale; 3]
     };
     let translation = Transform::affine([
-        [1.0, 0.0, 0.0, translation_component(2)? * length_factor],
-        [0.0, 1.0, 0.0, translation_component(3)? * length_factor],
-        [0.0, 0.0, 1.0, translation_component(4)? * length_factor],
+        [
+            1.0,
+            0.0,
+            0.0,
+            translation_component(2)?.get() * length_factor,
+        ],
+        [
+            0.0,
+            1.0,
+            0.0,
+            translation_component(3)?.get() * length_factor,
+        ],
+        [
+            0.0,
+            0.0,
+            1.0,
+            translation_component(4)?.get() * length_factor,
+        ],
     ])
     .ok_or(())?;
     let scale = Transform::affine([
-        [scales[0], 0.0, 0.0, 0.0],
-        [0.0, scales[1], 0.0, 0.0],
-        [0.0, 0.0, scales[2], 0.0],
+        [scales[0].get(), 0.0, 0.0, 0.0],
+        [0.0, scales[1].get(), 0.0, 0.0],
+        [0.0, 0.0, scales[2].get(), 0.0],
     ])
     .ok_or(())?;
     let directory = if instance.transform == 0 {
