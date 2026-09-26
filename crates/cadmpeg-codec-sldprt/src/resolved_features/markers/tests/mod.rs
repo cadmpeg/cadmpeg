@@ -31,9 +31,7 @@ fn raw_pairs<const N: usize>(value: Option<[FiniteVector<2>; N]>) -> Option<[[f6
     value.map(|coordinates| coordinates.map(FiniteVector::get))
 }
 
-fn raw_link(
-    value: Option<(FiniteVector<2>, [(u16, u16); 2])>,
-) -> Option<([f64; 2], [(u16, u16); 2])> {
+fn raw_link<T>(value: Option<(FiniteVector<2>, T)>) -> Option<([f64; 2], T)> {
     value.map(|(coordinates, links)| (coordinates.get(), links))
 }
 

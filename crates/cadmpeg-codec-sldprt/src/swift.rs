@@ -869,10 +869,7 @@ fn project_dimension(
         definition: PmiDefinition::Dimension(
             cadmpeg_ir::pmi::PmiDimension::new(
                 dimension,
-                match nominal {
-                    Some(value) => Some(PmiValue::from_parts(value, quantity)),
-                    None => None,
-                },
+                nominal.map(|value| PmiValue::from_parts(value, quantity)),
                 tolerance,
             )
             .ok()?,
@@ -963,7 +960,8 @@ fn directional_distance(
     }
     let direction_entity = &unique_related(annotation, "DirectionVector")?.entity;
     let direction = vector(direction_entity, ["I", "J", "K"])?;
-    if !approximately_equal(direction[0].hypot(direction[1]).hypot(direction[2]), 1.0) {
+    let [direction_i, direction_j, direction_k] = direction.get();
+    if !approximately_equal(direction_i.hypot(direction_j).hypot(direction_k), 1.0) {
         return None;
     }
     if let Some(length) =
@@ -1021,55 +1019,39 @@ fn closed_slot_feature_size_distance(
     if length <= width || !diameters_equivalent(radius.get() * 2.0, width.get()) {
         return None;
     }
-    let slot_normal = vector(slot_geometry, ["I", "J", "K"])?;
-    let longitude = vector(slot_geometry, ["LongitudeI", "LongitudeJ", "LongitudeK"])?;
-    let slot_point = vector(slot_geometry, ["X", "Y", "Z"])?;
-    let cylinder_axis = vector(cylinder_geometry, ["I", "J", "K"])?;
-    let cylinder_point = vector(cylinder_geometry, ["X", "Y", "Z"])?;
-    if !approximately_equal(
-        slot_normal[0].hypot(slot_normal[1]).hypot(slot_normal[2]),
-        1.0,
-    ) || !approximately_equal(longitude[0].hypot(longitude[1]).hypot(longitude[2]), 1.0)
+    let [slot_normal_i, slot_normal_j, slot_normal_k] =
+        vector(slot_geometry, ["I", "J", "K"])?.get();
+    let [longitude_i, longitude_j, longitude_k] =
+        vector(slot_geometry, ["LongitudeI", "LongitudeJ", "LongitudeK"])?.get();
+    let [slot_x, slot_y, slot_z] = vector(slot_geometry, ["X", "Y", "Z"])?.get();
+    let [axis_i, axis_j, axis_k] = vector(cylinder_geometry, ["I", "J", "K"])?.get();
+    let [cylinder_x, cylinder_y, cylinder_z] = vector(cylinder_geometry, ["X", "Y", "Z"])?.get();
+    let [direction_i, direction_j, direction_k] = direction;
+    if !approximately_equal(slot_normal_i.hypot(slot_normal_j).hypot(slot_normal_k), 1.0)
+        || !approximately_equal(longitude_i.hypot(longitude_j).hypot(longitude_k), 1.0)
+        || !approximately_equal(axis_i.hypot(axis_j).hypot(axis_k), 1.0)
         || !approximately_equal(
-            cylinder_axis[0]
-                .hypot(cylinder_axis[1])
-                .hypot(cylinder_axis[2]),
+            (slot_normal_i * axis_i + slot_normal_j * axis_j + slot_normal_k * axis_k).abs(),
             1.0,
         )
         || !approximately_equal(
-            (slot_normal[0] * cylinder_axis[0]
-                + slot_normal[1] * cylinder_axis[1]
-                + slot_normal[2] * cylinder_axis[2])
-                .abs(),
-            1.0,
-        )
-        || !approximately_equal(
-            slot_normal[0] * longitude[0]
-                + slot_normal[1] * longitude[1]
-                + slot_normal[2] * longitude[2],
+            slot_normal_i * longitude_i + slot_normal_j * longitude_j + slot_normal_k * longitude_k,
             0.0,
         )
         || !approximately_equal(
-            (longitude[0] * direction[0]
-                + longitude[1] * direction[1]
-                + longitude[2] * direction[2])
+            (longitude_i * direction_i + longitude_j * direction_j + longitude_k * direction_k)
                 .abs(),
             1.0,
         )
     {
         return None;
     }
-    let displacement = [
-        cylinder_point[0] - slot_point[0],
-        cylinder_point[1] - slot_point[1],
-        cylinder_point[2] - slot_point[2],
-    ];
-    let displacement_norm = displacement[0]
-        .hypot(displacement[1])
-        .hypot(displacement[2]);
-    let longitudinal = displacement[0] * longitude[0]
-        + displacement[1] * longitude[1]
-        + displacement[2] * longitude[2];
+    let displacement_x = cylinder_x - slot_x;
+    let displacement_y = cylinder_y - slot_y;
+    let displacement_z = cylinder_z - slot_z;
+    let displacement_norm = displacement_x.hypot(displacement_y).hypot(displacement_z);
+    let longitudinal =
+        displacement_x * longitude_i + displacement_y * longitude_j + displacement_z * longitude_k;
     (approximately_equal(displacement_norm, longitudinal.abs())
         && approximately_equal(longitudinal.abs(), (length.get() - width.get()) / 2.0))
     .then_some(length)
@@ -1155,37 +1137,34 @@ fn location_projection(
 
 fn plane_projection(feature: &Entity, direction: [f64; 3]) -> Option<FiniteReal> {
     let plane = &unique_related(feature, "NomPlane")?.entity;
-    let normal = vector(plane, ["I", "J", "K"])?;
-    let point = vector(plane, ["X", "Y", "Z"])?;
-    if !approximately_equal(normal[0].hypot(normal[1]).hypot(normal[2]), 1.0)
+    let [normal_i, normal_j, normal_k] = vector(plane, ["I", "J", "K"])?.get();
+    let [point_x, point_y, point_z] = vector(plane, ["X", "Y", "Z"])?.get();
+    let [direction_i, direction_j, direction_k] = direction;
+    if !approximately_equal(normal_i.hypot(normal_j).hypot(normal_k), 1.0)
         || !approximately_equal(
-            (normal[0] * direction[0] + normal[1] * direction[1] + normal[2] * direction[2]).abs(),
+            (normal_i * direction_i + normal_j * direction_j + normal_k * direction_k).abs(),
             1.0,
         )
     {
         return None;
     }
-    FiniteReal::new(point[0] * direction[0] + point[1] * direction[1] + point[2] * direction[2])
+    FiniteReal::new(point_x * direction_i + point_y * direction_j + point_z * direction_k)
 }
 
 fn axis_projection(feature: &Entity, geometry: &str, direction: [f64; 3]) -> Option<FiniteReal> {
     let axis = &unique_related(feature, geometry)?.entity;
-    let axis_direction = vector(axis, ["I", "J", "K"])?;
-    let point = vector(axis, ["X", "Y", "Z"])?;
-    if !approximately_equal(
-        axis_direction[0]
-            .hypot(axis_direction[1])
-            .hypot(axis_direction[2]),
-        1.0,
-    ) || !approximately_equal(
-        axis_direction[0] * direction[0]
-            + axis_direction[1] * direction[1]
-            + axis_direction[2] * direction[2],
-        0.0,
-    ) {
+    let [axis_i, axis_j, axis_k] = vector(axis, ["I", "J", "K"])?.get();
+    let [point_x, point_y, point_z] = vector(axis, ["X", "Y", "Z"])?.get();
+    let [direction_i, direction_j, direction_k] = direction;
+    if !approximately_equal(axis_i.hypot(axis_j).hypot(axis_k), 1.0)
+        || !approximately_equal(
+            axis_i * direction_i + axis_j * direction_j + axis_k * direction_k,
+            0.0,
+        )
+    {
         return None;
     }
-    FiniteReal::new(point[0] * direction[0] + point[1] * direction[1] + point[2] * direction[2])
+    FiniteReal::new(point_x * direction_i + point_y * direction_j + point_z * direction_k)
 }
 
 fn collect_rotational_projections(

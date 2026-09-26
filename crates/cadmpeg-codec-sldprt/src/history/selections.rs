@@ -65,8 +65,7 @@ fn offset_plane_support_origin(
     let origin = source_properties
         .get("Origin")
         .and_then(|value| parse_point3_mm(value))
-        .map(cadmpeg_ir::features::FinitePoint3::get)
-        .unwrap_or(fallback_origin);
+        .map_or(fallback_origin, cadmpeg_ir::features::FinitePoint3::get);
     if native.is_some_and(|native| native.starts_with(SURFACE_COMPONENT_SELECTION_PREFIX)) {
         return Point3::new(
             origin.x + normal.x * distance.get(),

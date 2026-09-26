@@ -258,6 +258,37 @@ pub(super) fn project_native_axis_helix(feature: &Feature) -> Option<FeatureDefi
     ))
 }
 
+pub(super) fn project_wrap(
+    feature: &Feature,
+    native_by_source: &HashMap<String, &str>,
+) -> Option<FeatureDefinition> {
+    let profile = feature.properties.get("Profile")?;
+    let profile = native_by_source
+        .get(profile.as_str())
+        .map_or_else(|| profile.clone(), |id| (*id).to_string());
+    let face = FaceSelection::Native(feature.properties.get("Face")?.clone());
+    let mode = match feature
+        .properties
+        .get("Mode")?
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "emboss" => WrapMode::Emboss {
+            depth: parse_positive_length_mm(feature.parameters.get("Depth")?)?,
+        },
+        "deboss" => WrapMode::Deboss {
+            depth: parse_positive_length_mm(feature.parameters.get("Depth")?)?,
+        },
+        "scribe" => WrapMode::Scribe,
+        _ => return None,
+    };
+    Some(FeatureDefinition::Operation(FeatureOperation::Wrap {
+        profile: PlanarProfileRef::Native(profile),
+        face,
+        mode,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{project_helix, project_native_axis_helix};
@@ -312,35 +343,4 @@ mod tests {
         parameter(&mut feature, "D5", "0");
         assert!(project_native_axis_helix(&feature).is_none());
     }
-}
-
-pub(super) fn project_wrap(
-    feature: &Feature,
-    native_by_source: &HashMap<String, &str>,
-) -> Option<FeatureDefinition> {
-    let profile = feature.properties.get("Profile")?;
-    let profile = native_by_source
-        .get(profile.as_str())
-        .map_or_else(|| profile.clone(), |id| (*id).to_string());
-    let face = FaceSelection::Native(feature.properties.get("Face")?.clone());
-    let mode = match feature
-        .properties
-        .get("Mode")?
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "emboss" => WrapMode::Emboss {
-            depth: parse_positive_length_mm(feature.parameters.get("Depth")?)?,
-        },
-        "deboss" => WrapMode::Deboss {
-            depth: parse_positive_length_mm(feature.parameters.get("Depth")?)?,
-        },
-        "scribe" => WrapMode::Scribe,
-        _ => return None,
-    };
-    Some(FeatureDefinition::Operation(FeatureOperation::Wrap {
-        profile: PlanarProfileRef::Native(profile),
-        face,
-        mode,
-    }))
 }

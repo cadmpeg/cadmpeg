@@ -180,24 +180,6 @@ pub(super) fn parse_valid_direction(
         .and_then(cadmpeg_ir::features::FeatureDirection3::new)
 }
 
-#[cfg(test)]
-mod direction_tests {
-    use super::parse_valid_direction;
-    use cadmpeg_ir::math::Vector3;
-
-    #[test]
-    fn parsed_direction_retains_codec_threshold_and_components() {
-        assert_eq!(
-            parse_valid_direction("2,0,-3").map(|direction| direction.get()),
-            Some(Vector3::new(2.0, 0.0, -3.0))
-        );
-        assert!(parse_valid_direction("0,0,0").is_none());
-        assert!(parse_valid_direction("NaN,0,0").is_none());
-        assert!(parse_valid_direction(&format!("{},0,0", f64::EPSILON)).is_none());
-        assert!(parse_valid_direction(&format!("{},0,0", f64::EPSILON * 2.0)).is_some());
-    }
-}
-
 pub(super) fn parse_boolean_op(value: &str) -> Option<BooleanOp> {
     match value.to_ascii_lowercase().as_str() {
         "join" => Some(BooleanOp::Join),
@@ -363,5 +345,23 @@ pub(super) fn format_parameter_value(value: &ParameterValue) -> String {
         ParameterValue::Integer(value) => value.to_string(),
         ParameterValue::Boolean(value) => value.to_string(),
         ParameterValue::String(value) => value.clone(),
+    }
+}
+
+#[cfg(test)]
+mod direction_tests {
+    use super::parse_valid_direction;
+    use cadmpeg_ir::math::Vector3;
+
+    #[test]
+    fn parsed_direction_retains_codec_threshold_and_components() {
+        assert_eq!(
+            parse_valid_direction("2,0,-3").map(cadmpeg_ir::features::FeatureDirection3::get),
+            Some(Vector3::new(2.0, 0.0, -3.0))
+        );
+        assert!(parse_valid_direction("0,0,0").is_none());
+        assert!(parse_valid_direction("NaN,0,0").is_none());
+        assert!(parse_valid_direction(&format!("{},0,0", f64::EPSILON)).is_none());
+        assert!(parse_valid_direction(&format!("{},0,0", f64::EPSILON * 2.0)).is_some());
     }
 }

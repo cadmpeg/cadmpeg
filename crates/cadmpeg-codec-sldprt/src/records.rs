@@ -1190,11 +1190,7 @@ pub(crate) struct SketchInputEntity {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) state_value: Option<cadmpeg_ir::scalar::FiniteReal>,
     /// Two little-endian coordinate fields stored by geometry-handle marker families, in metres.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        serialize_with = "serialize_coordinates_m"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) coordinates_m: Option<cadmpeg_ir::units::FiniteVector<2>>,
     /// Resolved links and their selector from the reference-bearing layout.
     #[serde(flatten, with = "sketch_input_links_wire")]
@@ -2552,14 +2548,4 @@ fn deserialize_checked_coordinates_m<'de, D: serde::Deserializer<'de>>(
             })
         })
         .transpose()
-}
-
-fn serialize_coordinates_m<S: serde::Serializer>(
-    coordinates: &Option<cadmpeg_ir::units::FiniteVector<2>>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    serde::Serialize::serialize(
-        &coordinates.map(cadmpeg_ir::units::FiniteVector::get),
-        serializer,
-    )
 }

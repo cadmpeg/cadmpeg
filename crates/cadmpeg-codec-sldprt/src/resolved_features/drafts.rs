@@ -375,7 +375,8 @@ mod tests {
     use std::collections::BTreeMap;
 
     fn unique_draft_direction(payload: &[u8], start: usize, end: usize) -> Option<Vector3> {
-        typed_unique_draft_direction(payload, start, end).map(|direction| direction.get())
+        typed_unique_draft_direction(payload, start, end)
+            .map(cadmpeg_ir::features::FeatureDirection3::get)
     }
 
     fn component(instance: u16, source: u32, identity: u32, local_id: u32) -> Vec<u8> {
