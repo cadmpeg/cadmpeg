@@ -2315,14 +2315,8 @@ fn parse_constraints(
             orientation: node
                 .attribute("Orientation")
                 .and_then(|value| value.parse().ok()),
-            label_distance: finite_attr(node, "LabelDistance")
-                .map(cadmpeg_ir::sketches::SketchLabelValue::try_from)
-                .transpose()
-                .map_err(cadmpeg_core::CodecError::malformed)?,
-            label_position: finite_attr(node, "LabelPosition")
-                .map(cadmpeg_ir::sketches::SketchLabelValue::try_from)
-                .transpose()
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+            label_distance: label_attr(node, "LabelDistance"),
+            label_position: label_attr(node, "LabelPosition"),
             metadata: nonempty_attr(node, "MetaData"),
             native_ref: Some(property.id.clone()),
         });
@@ -2380,10 +2374,13 @@ fn bool_attr(node: roxmltree::Node<'_, '_>, name: &str) -> Option<bool> {
     }
 }
 
-fn finite_attr(node: roxmltree::Node<'_, '_>, name: &str) -> Option<f64> {
+fn label_attr(
+    node: roxmltree::Node<'_, '_>,
+    name: &str,
+) -> Option<cadmpeg_ir::sketches::SketchLabelValue> {
     node.attribute(name)
         .and_then(|value| value.parse::<f64>().ok())
-        .filter(|value| value.is_finite())
+        .and_then(|value| cadmpeg_ir::sketches::SketchLabelValue::try_from(value).ok())
 }
 
 fn nonempty_attr(node: roxmltree::Node<'_, '_>, name: &str) -> Option<String> {
