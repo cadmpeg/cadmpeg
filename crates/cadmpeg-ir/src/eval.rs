@@ -6014,8 +6014,7 @@ fn model_surface_point_inner(
             .and_then(admit_point)
         }
         ProceduralSurfaceDefinition::VariableBlend(definition_payload) => {
-            cacheless_variable_blend_point(&index, definition_payload.construction(), u, v)
-                .and_then(admit_point)
+            cacheless_variable_blend_point(&index, definition_payload, u, v).and_then(admit_point)
         }
         ProceduralSurfaceDefinition::Blend(definition_payload) => {
             let (native, native_ranges) = definition_payload
@@ -7161,14 +7160,11 @@ fn variable_blend_contact_track(
 }
 
 fn cacheless_variable_blend_domain_contains(
-    construction: &crate::geometry::VariableBlendConstruction<
-        FiniteReal,
-        FiniteVector3,
-        FinitePoint3,
-    >,
+    payload: &crate::geometry::surface_payloads::VariableBlendSurfacePayload,
     u: FiniteReal,
     v: FiniteReal,
 ) -> bool {
+    let construction = payload.construction();
     let exact_construction = matches!(
         construction.cache,
         crate::geometry::VariableBlendCache::Parameterization { .. }
@@ -7176,7 +7172,7 @@ fn cacheless_variable_blend_domain_contains(
     );
     exact_construction
         && (0.0..=1.0).contains(&u.get())
-        && sweep_tail_interval_contains(construction.slice_range, v)
+        && sweep_tail_interval_contains(payload.slice_range().endpoints(), v)
         && construction.cache.parameterization().is_none_or(|tail| {
             sweep_tail_interval_contains(tail.u_interval, u)
                 && sweep_tail_interval_contains(tail.v_interval, v)
@@ -7253,14 +7249,11 @@ fn variable_blend_is_zero_radius(
 /// value.
 fn cacheless_ruled_variable_blend_tracks(
     index: &crate::index::ModelIndex<'_>,
-    construction: &crate::geometry::VariableBlendConstruction<
-        FiniteReal,
-        FiniteVector3,
-        FinitePoint3,
-    >,
+    payload: &crate::geometry::surface_payloads::VariableBlendSurfacePayload,
     u: f64,
     v: f64,
 ) -> Result<[ContactTrack; 2], EvaluationFailure<()>> {
+    let construction = payload.construction();
     let no_value = EvaluationFailure::NoValue;
     let Some(crate::geometry::VariableBlendCrossSection::RoundedChamfer { radius }) =
         construction.cross_section.as_ref()
@@ -7268,7 +7261,7 @@ fn cacheless_ruled_variable_blend_tracks(
         return Err(no_value);
     };
     let (finite_u, finite_v) = blend_parameters(u, v)?;
-    if !cacheless_variable_blend_domain_contains(construction, finite_u, finite_v)
+    if !cacheless_variable_blend_domain_contains(payload, finite_u, finite_v)
         || radius
             .as_deref()
             .is_some_and(|radius| !variable_blend_is_zero_radius(radius))
@@ -7285,15 +7278,11 @@ fn cacheless_ruled_variable_blend_tracks(
 /// contact points at fraction `u`. It reads the contact points only.
 fn cacheless_ruled_variable_blend_point(
     index: &crate::index::ModelIndex<'_>,
-    construction: &crate::geometry::VariableBlendConstruction<
-        FiniteReal,
-        FiniteVector3,
-        FinitePoint3,
-    >,
+    payload: &crate::geometry::surface_payloads::VariableBlendSurfacePayload,
     u: f64,
     v: f64,
 ) -> Result<Point3, EvaluationFailure<()>> {
-    let [first, second] = cacheless_ruled_variable_blend_tracks(index, construction, u, v)?;
+    let [first, second] = cacheless_ruled_variable_blend_tracks(index, payload, u, v)?;
     Ok(offset(
         first.point(),
         &[(u, point_displacement(second.point(), first.point()))],
@@ -7304,15 +7293,11 @@ fn cacheless_ruled_variable_blend_point(
 /// partials reading the track tangents, or why its point has none.
 fn cacheless_ruled_variable_blend_first_order(
     index: &crate::index::ModelIndex<'_>,
-    construction: &crate::geometry::VariableBlendConstruction<
-        FiniteReal,
-        FiniteVector3,
-        FinitePoint3,
-    >,
+    payload: &crate::geometry::surface_payloads::VariableBlendSurfacePayload,
     u: f64,
     v: f64,
 ) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
-    let [first, second] = cacheless_ruled_variable_blend_tracks(index, construction, u, v)
+    let [first, second] = cacheless_ruled_variable_blend_tracks(index, payload, u, v)
         .map_err(|failure| failure.map(|()| UNREACHED_POINT))?;
     let chord = point_displacement(second.point(), first.point());
     let point = admit_point(offset(first.point(), &[(u, chord)]))?;
@@ -7438,15 +7423,12 @@ fn minor_circular_arc_point(
 /// Whether a variable blend takes the circular cross section with a single
 /// radius over its domain at `(u, v)`.
 fn circular_variable_blend_applies(
-    construction: &crate::geometry::VariableBlendConstruction<
-        FiniteReal,
-        FiniteVector3,
-        FinitePoint3,
-    >,
+    payload: &crate::geometry::surface_payloads::VariableBlendSurfacePayload,
     u: FiniteReal,
     v: FiniteReal,
 ) -> bool {
-    cacheless_variable_blend_domain_contains(construction, u, v)
+    let construction = payload.construction();
+    cacheless_variable_blend_domain_contains(payload, u, v)
         && construction.radii.is_single()
         && matches!(
             construction.cross_section,
@@ -7458,16 +7440,13 @@ fn circular_variable_blend_applies(
 /// there are none: a blend outside that form or its domain has no value.
 fn circular_variable_blend_tracks(
     index: &crate::index::ModelIndex<'_>,
-    construction: &crate::geometry::VariableBlendConstruction<
-        FiniteReal,
-        FiniteVector3,
-        FinitePoint3,
-    >,
+    payload: &crate::geometry::surface_payloads::VariableBlendSurfacePayload,
     u: f64,
     v: f64,
 ) -> Result<[ContactTrack; 2], EvaluationFailure<()>> {
+    let construction = payload.construction();
     let (finite_u, finite_v) = blend_parameters(u, v)?;
-    if !circular_variable_blend_applies(construction, finite_u, finite_v) {
+    if !circular_variable_blend_applies(payload, finite_u, finite_v) {
         return Err(EvaluationFailure::NoValue);
     }
     Ok([
@@ -7478,22 +7457,19 @@ fn circular_variable_blend_tracks(
 
 fn cacheless_circular_variable_blend_point(
     index: &crate::index::ModelIndex<'_>,
-    construction: &crate::geometry::VariableBlendConstruction<
-        FiniteReal,
-        FiniteVector3,
-        FinitePoint3,
-    >,
+    payload: &crate::geometry::surface_payloads::VariableBlendSurfacePayload,
     u: f64,
     v: f64,
 ) -> Result<Point3, EvaluationFailure<()>> {
-    let tracks = circular_variable_blend_tracks(index, construction, u, v)?;
+    let tracks = circular_variable_blend_tracks(index, payload, u, v)?;
     if u == 0.0 {
         return Ok(tracks[0].point());
     }
     if u == 1.0 {
         return Ok(tracks[1].point());
     }
-    let section = cacheless_circular_variable_blend_section(index, construction, v, tracks)?;
+    let section =
+        cacheless_circular_variable_blend_section(index, payload.construction(), v, tracks)?;
     minor_circular_arc_point(
         section.center,
         section.first.point(),
@@ -7733,18 +7709,15 @@ fn cacheless_constant_rolling_ball_section(
 /// tangents of both tracks, or why its point has none.
 fn cacheless_circular_variable_blend_first_order(
     index: &crate::index::ModelIndex<'_>,
-    construction: &crate::geometry::VariableBlendConstruction<
-        FiniteReal,
-        FiniteVector3,
-        FinitePoint3,
-    >,
+    payload: &crate::geometry::surface_payloads::VariableBlendSurfacePayload,
     u: f64,
     v: f64,
 ) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
     let unreached = |failure: EvaluationFailure<()>| failure.map(|()| UNREACHED_POINT);
-    let tracks = circular_variable_blend_tracks(index, construction, u, v).map_err(unreached)?;
-    let section = cacheless_circular_variable_blend_section(index, construction, v, tracks)
-        .map_err(unreached)?;
+    let tracks = circular_variable_blend_tracks(index, payload, u, v).map_err(unreached)?;
+    let section =
+        cacheless_circular_variable_blend_section(index, payload.construction(), v, tracks)
+            .map_err(unreached)?;
     let center_tangent = (|| {
         let radius_derivative = section.radius_derivative?;
         let center_tangent = |track: &ContactTrack, sign: f64, normal: Vector3| {
@@ -7902,20 +7875,16 @@ fn circular_arc_first_order(
 /// circular section's.
 fn cacheless_variable_blend_point(
     index: &crate::index::ModelIndex<'_>,
-    construction: &crate::geometry::VariableBlendConstruction<
-        FiniteReal,
-        FiniteVector3,
-        FinitePoint3,
-    >,
+    payload: &crate::geometry::surface_payloads::VariableBlendSurfacePayload,
     u: f64,
     v: f64,
 ) -> Result<Point3, EvaluationFailure<Point3>> {
-    match cacheless_ruled_variable_blend_point(index, construction, u, v) {
+    match cacheless_ruled_variable_blend_point(index, payload, u, v) {
         Ok(point) => Ok(point),
         // The routes need different cross sections, so at most one reaches
         // past its structure: its failure outside the finite range is the
         // evaluation's.
-        Err(ruled) => cacheless_circular_variable_blend_point(index, construction, u, v)
+        Err(ruled) => cacheless_circular_variable_blend_point(index, payload, u, v)
             .map_err(|circular| match ruled {
                 EvaluationFailure::NonFinite(()) => ruled,
                 EvaluationFailure::NoValue => circular,
@@ -7928,24 +7897,21 @@ fn cacheless_variable_blend_point(
 /// chamfer's, or the circular section's.
 fn cacheless_variable_blend_first_order(
     index: &crate::index::ModelIndex<'_>,
-    construction: &crate::geometry::VariableBlendConstruction<
-        FiniteReal,
-        FiniteVector3,
-        FinitePoint3,
-    >,
+    payload: &crate::geometry::surface_payloads::VariableBlendSurfacePayload,
     u: f64,
     v: f64,
 ) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
-    match cacheless_ruled_variable_blend_first_order(index, construction, u, v) {
+    match cacheless_ruled_variable_blend_first_order(index, payload, u, v) {
         Ok(order) => Ok(order),
         // The routes need different cross sections, so at most one reaches
         // past its structure: its failure outside the finite range is the
         // evaluation's.
-        Err(ruled) => cacheless_circular_variable_blend_first_order(index, construction, u, v)
-            .map_err(|circular| match ruled {
+        Err(ruled) => cacheless_circular_variable_blend_first_order(index, payload, u, v).map_err(
+            |circular| match ruled {
                 EvaluationFailure::NonFinite(_) => ruled,
                 EvaluationFailure::NoValue => circular,
-            }),
+            },
+        ),
     }
 }
 
@@ -8402,7 +8368,7 @@ fn model_surface_point_by_id_inner(
             Some(ProceduralSurfaceDefinition::VariableBlend(definition_payload)) => {
                 let construction = definition_payload.construction();
 
-                match cacheless_variable_blend_point(index, construction, u, v) {
+                match cacheless_variable_blend_point(index, definition_payload, u, v) {
                     Ok(point) => Some(SurfaceEvaluation {
                         point: evaluated(point),
                         oriented_normal: Err(EvaluationFailure::NoValue),
@@ -8661,7 +8627,7 @@ fn model_surface_first_order_by_id(
         Some(ProceduralSurfaceDefinition::VariableBlend(definition_payload)) => {
             let construction = definition_payload.construction();
             Some((
-                cacheless_variable_blend_first_order(index, construction, u, v),
+                cacheless_variable_blend_first_order(index, definition_payload, u, v),
                 variable_blend_has_current_cache(construction),
             ))
         }
