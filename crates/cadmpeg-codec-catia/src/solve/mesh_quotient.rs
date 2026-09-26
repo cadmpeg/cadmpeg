@@ -7766,7 +7766,7 @@ impl MeshSelectionSearch<'_, '_> {
                     break 'candidate None;
                 }
                 if use_counts.iter().all(|count| *count == 2)
-                    && orient_face_cycles(&mut topology.faces).is_none()
+                    && orient_face_cycles(self.ctx, &mut topology.faces)?.is_none()
                 {
                     break 'candidate None;
                 }
