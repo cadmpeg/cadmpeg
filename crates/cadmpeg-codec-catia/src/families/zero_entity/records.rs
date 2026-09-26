@@ -2134,17 +2134,14 @@ fn zero_entity_cylinder(payload: &[u8]) -> Option<SurfaceGeometry> {
 
 fn zero_entity_cone(payload: &[u8]) -> Option<SurfaceGeometry> {
     let mut c = crate::wire::cursor::Cursor::new_at(payload, 8)?;
-    let (geometry, radius, half_angle) = crate::analytic::cone_ozra(&mut c)?;
-    if !(radius.get() > 0.0 && half_angle > 0.0 && half_angle < std::f64::consts::FRAC_PI_2) {
-        return None;
-    }
+    let (geometry, _, _) = crate::analytic::cone_ozra(&mut c)?;
     Some(geometry)
 }
 
 fn zero_entity_torus(payload: &[u8]) -> Option<SurfaceGeometry> {
     let mut c = crate::wire::cursor::Cursor::new_at(payload, 8)?;
-    let (geometry, _, minor_radius) = crate::analytic::torus_ozrr(&mut c)?;
-    (minor_radius.get() > 0.0).then_some(geometry)
+    let (geometry, _, _) = crate::analytic::torus_ozrr(&mut c)?;
+    Some(geometry)
 }
 
 fn u32_tokens(bytes: &[u8], at: usize, count: usize) -> Option<(Vec<u32>, usize)> {

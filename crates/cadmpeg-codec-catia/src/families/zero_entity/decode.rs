@@ -102,12 +102,6 @@ fn closed_wire_loop_members<'a>(
         })
         .collect::<Option<Vec<_>>>();
     let members = members?;
-    if members.iter().any(|member| {
-        let [start, end] = member.endpoints;
-        !start.is_finite() || !end.is_finite()
-    }) {
-        return None;
-    }
     members
         .iter()
         .enumerate()

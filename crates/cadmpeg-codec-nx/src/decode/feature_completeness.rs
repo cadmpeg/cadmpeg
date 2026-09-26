@@ -281,6 +281,7 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
                 _ => None,
             };
             if let Some(native_value) = value {
+                let native_value = native_value.get();
                 let canonical_value = unit.map_or(Some(native_value), |unit| {
                     crate::native::om::canonical_expression_value(unit, native_value)
                 });

@@ -42,6 +42,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::curve_point;
 use cadmpeg_ir::eval::pcurve_uv;
 use cadmpeg_ir::eval::surface_point;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::NurbsSurface;
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
 use cadmpeg_ir::geometry::Curve;
@@ -1080,7 +1081,7 @@ fn standard_plane_circle_pcurve_preserves_contained_carrier() {
         pos: 0,
         tag: 1,
         faces: [0, 1],
-        geometry: StandardCurveGeometry::Circle { center, radius },
+        geometry: super::checked_circle(center, radius),
     };
     let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -1128,7 +1129,7 @@ fn standard_plane_full_circle_pcurve_preserves_closed_carrier() {
         pos: 0,
         tag: 1,
         faces: [0, 1],
-        geometry: StandardCurveGeometry::Circle { center, radius },
+        geometry: super::checked_circle(center, radius),
     };
     let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -1184,10 +1185,7 @@ fn spherical_section_endpoint_pair_survives_topology_admission_without_pcurve() 
         pos: 0,
         tag: 1,
         faces: [0, 1],
-        geometry: StandardCurveGeometry::Circle {
-            center: Point3::new(0.0, 2.0, 0.0),
-            radius: section_radius,
-        },
+        geometry: super::checked_circle(Point3::new(0.0, 2.0, 0.0), section_radius),
     };
     let start = Point3::new(section_radius, 2.0, 0.0);
     let end = Point3::new(0.0, 2.0, section_radius);
@@ -1238,10 +1236,7 @@ fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
         pos: 0,
         tag: 1,
         faces: [0, 0],
-        geometry: StandardCurveGeometry::Circle {
-            center: Point3::new(0.0, 0.0, 0.0),
-            radius: 2.0,
-        },
+        geometry: super::checked_circle(Point3::new(0.0, 0.0, 0.0), 2.0),
     };
     let (curve, range) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
@@ -1295,7 +1290,7 @@ fn standard_plane_circle_pcurve_rejects_carrier_outside_face_plane() {
         pos: 0,
         tag: 1,
         faces: [0, 1],
-        geometry: StandardCurveGeometry::Circle { center, radius },
+        geometry: super::checked_circle(center, radius),
     };
     let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -1334,7 +1329,7 @@ fn standard_plane_circle_pcurve_rejects_tilted_carrier() {
         pos: 0,
         tag: 1,
         faces: [0, 1],
-        geometry: StandardCurveGeometry::Circle { center, radius },
+        geometry: super::checked_circle(center, radius),
     };
     let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -1501,10 +1496,7 @@ fn standard_cone_latitude_inverts_to_isoparametric_line() {
         pos: 0,
         tag: 1,
         faces: [0, 1],
-        geometry: StandardCurveGeometry::Circle {
-            center: Point3::new(0.0, 0.0, 2.0),
-            radius,
-        },
+        geometry: super::checked_circle(Point3::new(0.0, 0.0, 2.0), radius),
     };
     let (geometry, range) = standard_pcurve_geometry(
         &surface,
@@ -1544,17 +1536,14 @@ fn standard_cylinder_witness_selects_complementary_arc() {
         pos: 0,
         tag: 1,
         faces: [0, 1],
-        geometry: StandardCurveGeometry::Circle {
-            center: Point3::new(0.0, 0.0, 3.0),
-            radius: 2.0,
-        },
+        geometry: super::checked_circle(Point3::new(0.0, 0.0, 3.0), 2.0),
     };
     let (geometry, _) = standard_pcurve_geometry(
         &surface,
         &support,
         Point3::new(2.0, 0.0, 3.0),
         Point3::new(0.0, 2.0, 3.0),
-        Some(Point3::new(-2.0, 0.0, 3.0)),
+        Some(FinitePoint3::new(Point3::new(-2.0, 0.0, 3.0)).expect("finite witness")),
         None,
         &mut crate::nurbs::LaneRefusals::new(),
     )
@@ -1586,17 +1575,14 @@ fn standard_cylinder_endpoint_witness_preserves_geometric_arc() {
         pos: 0,
         tag: 1,
         faces: [0, 1],
-        geometry: StandardCurveGeometry::Circle {
-            center: Point3::new(0.0, 0.0, 3.0),
-            radius: 2.0,
-        },
+        geometry: super::checked_circle(Point3::new(0.0, 0.0, 3.0), 2.0),
     };
     let (geometry, _) = standard_pcurve_geometry(
         &surface,
         &support,
         Point3::new(-2.0, 0.0, 3.0),
         Point3::new(0.0, -2.0, 3.0),
-        Some(Point3::new(-1.0, 0.0, 4.0)),
+        Some(FinitePoint3::new(Point3::new(-1.0, 0.0, 4.0)).expect("finite witness")),
         None,
         &mut crate::nurbs::LaneRefusals::new(),
     )
@@ -1629,17 +1615,14 @@ fn standard_torus_witness_selects_complementary_latitude_arc() {
         pos: 0,
         tag: 1,
         faces: [0, 1],
-        geometry: StandardCurveGeometry::Circle {
-            center: Point3::new(0.0, 0.0, 0.0),
-            radius: 7.0,
-        },
+        geometry: super::checked_circle(Point3::new(0.0, 0.0, 0.0), 7.0),
     };
     let (geometry, _) = standard_pcurve_geometry(
         &surface,
         &support,
         Point3::new(7.0, 0.0, 0.0),
         Point3::new(0.0, 7.0, 0.0),
-        Some(Point3::new(-7.0, 0.0, 0.0)),
+        Some(FinitePoint3::new(Point3::new(-7.0, 0.0, 0.0)).expect("finite witness")),
         None,
         &mut crate::nurbs::LaneRefusals::new(),
     )
@@ -1685,10 +1668,7 @@ fn standard_torus_witness_selects_complementary_meridian_arc() {
         pos: 0,
         tag: 1,
         faces: [0, 1],
-        geometry: StandardCurveGeometry::Circle {
-            center: Point3::new(5.0, 0.0, 0.0),
-            radius: 2.0,
-        },
+        geometry: super::checked_circle(Point3::new(5.0, 0.0, 0.0), 2.0),
     };
     let start = Point3::new(7.0, 0.0, 0.0);
     let end = Point3::new(5.0, 0.0, 2.0);
@@ -1698,7 +1678,7 @@ fn standard_torus_witness_selects_complementary_meridian_arc() {
         &support,
         start,
         end,
-        Some(witness),
+        Some(FinitePoint3::new(witness).expect("finite witness")),
         None,
         &mut crate::nurbs::LaneRefusals::new(),
     )
@@ -1752,10 +1732,7 @@ fn standard_sphere_latitude_inverts_to_isoparametric_line() {
         pos: 0,
         tag: 1,
         faces: [0, 1],
-        geometry: StandardCurveGeometry::Circle {
-            center: Point3::new(0.0, 0.0, height),
-            radius: ring,
-        },
+        geometry: super::checked_circle(Point3::new(0.0, 0.0, height), ring),
     };
     let (geometry, _) = standard_pcurve_geometry(
         &surface,

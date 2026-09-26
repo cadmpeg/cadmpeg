@@ -431,7 +431,7 @@ impl From<FeaturePatternTransformLane> for FeaturePatternTransformLaneWire {
                     };
                     wire.push_scalar(
                         encoding,
-                        row.values.scalar.value(),
+                        row.values.scalar.value().get(),
                         row.values.scalar.raw(),
                         row.values.offset,
                     );
@@ -443,7 +443,7 @@ impl From<FeaturePatternTransformLane> for FeaturePatternTransformLaneWire {
                     for value in row.values.first {
                         wire.push_scalar(
                             PatternScalarEncoding::Binary64,
-                            value.scalar.value(),
+                            value.scalar.value().get(),
                             value.scalar.as_bytes(),
                             value.offset,
                         );
@@ -451,7 +451,7 @@ impl From<FeaturePatternTransformLane> for FeaturePatternTransformLaneWire {
                     let terminal = row.values.terminal;
                     wire.push_scalar(
                         terminal.scalar.encoding(),
-                        terminal.scalar.value(),
+                        terminal.scalar.value().get(),
                         terminal.scalar.raw(),
                         terminal.offset,
                     );
@@ -480,7 +480,7 @@ impl PatternScalarWire {
         };
         if self.encoding != encoding
             || self.raw.len() != scalar.raw().len()
-            || self.value.to_bits() != scalar.value().to_bits()
+            || self.value.to_bits() != scalar.value().get().to_bits()
         {
             return Err("encodings and values must match each exact raw_values atom".into());
         }
@@ -514,7 +514,7 @@ impl PatternScalarWire {
             .ok_or("raw_values wide-row terminal must contain exact one or binary32")?;
         if self.encoding != scalar.encoding()
             || self.raw.len() != scalar.raw().len()
-            || self.value.to_bits() != scalar.value().to_bits()
+            || self.value.to_bits() != scalar.value().get().to_bits()
         {
             return Err(
                 "encodings and values must match the exact raw_values terminal atom".into(),

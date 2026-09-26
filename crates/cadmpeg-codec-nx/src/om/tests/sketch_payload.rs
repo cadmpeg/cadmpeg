@@ -117,7 +117,7 @@ fn sketch_mixed_pair_parser_requires_scaled_shifted_binary64_then_binary32() {
 
     let pairs = sketch_payload_mixed_pairs(&bytes);
     assert!((pairs[0].scalars.fixed.value() - 0.5).abs() < EPS_SKETCH_FIXED_ATOM);
-    assert!((pairs[0].scalars.binary32.value() - 3.25).abs() < EPS_SKETCH_FIXED_ATOM);
+    assert!((pairs[0].scalars.binary32.value().get() - 3.25).abs() < EPS_SKETCH_FIXED_ATOM);
 
     let mut malformed = bytes;
     malformed[discriminator.len() + 8] = 1;
@@ -146,7 +146,7 @@ fn sketch_scalar_lane_parser_reads_mixed_nonzero_scalar_atoms() {
     assert_eq!(
         lanes[0]
             .iter()
-            .map(|(_, scalar, ())| scalar.value())
+            .map(|(_, scalar, ())| scalar.value().get())
             .collect::<Vec<_>>(),
         [1.5, 3.25]
     );
@@ -181,7 +181,7 @@ fn sketch_scalar_lane_parser_reads_mixed_nonzero_scalar_atoms() {
     assert_eq!(
         long_lanes[0]
             .iter()
-            .map(|(_, scalar, ())| scalar.value())
+            .map(|(_, scalar, ())| scalar.value().get())
             .collect::<Vec<_>>(),
         [1.5, 3.25]
     );

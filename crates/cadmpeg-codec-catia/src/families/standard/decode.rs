@@ -762,9 +762,9 @@ fn refine_consolidated_analytic_surfaces(
             .sqrt()
             .copysign(stored[2]);
         unit_vector(Vector3::new(f64::from(x), f64::from(y), z)).is_some_and(|reconstructed| {
-            axis.x.to_bits() == reconstructed.x.to_bits()
-                && axis.y.to_bits() == reconstructed.y.to_bits()
-                && axis.z.to_bits() == reconstructed.z.to_bits()
+            axis.x.to_bits() == reconstructed.as_raw().x.to_bits()
+                && axis.y.to_bits() == reconstructed.as_raw().y.to_bits()
+                && axis.z.to_bits() == reconstructed.as_raw().z.to_bits()
         })
     };
     let mut refined = HashMap::new();
@@ -4247,8 +4247,8 @@ fn attach_standard_topology(
                 radius,
             } => standard_circle_endpoint_candidates(
                 &ir.model.points,
-                *center,
-                *radius,
+                center.get(),
+                radius.get(),
                 Some([
                     (
                         &surface0.geometry,
@@ -5918,6 +5918,8 @@ fn resolve_standard_endpoint_pairs(
         else {
             continue;
         };
+        let center = center.get();
+        let radius = radius.get();
         let count = candidates[edge].len();
         if count < 2 {
             continue;
@@ -6114,7 +6116,7 @@ fn standard_curve_edge_classes(
                             left_center.x.to_bits() == right_center.x.to_bits()
                                 && left_center.y.to_bits() == right_center.y.to_bits()
                                 && left_center.z.to_bits() == right_center.z.to_bits()
-                                && left_radius.to_bits() == right_radius.to_bits()
+                                && left_radius.get().to_bits() == right_radius.get().to_bits()
                         }
                         (
                             crate::families::standard::records::StandardCurveGeometry::Line,
@@ -6143,7 +6145,7 @@ fn standard_curve_geometry_gauge_keys(
                 radius,
             } => MeshEdgeGeometry::Circle {
                 center: [center.x.to_bits(), center.y.to_bits(), center.z.to_bits()],
-                radius: radius.to_bits(),
+                radius: radius.get().to_bits(),
             },
             crate::families::standard::records::StandardCurveGeometry::Bspline => {
                 MeshEdgeGeometry::Bspline
@@ -7549,7 +7551,7 @@ fn standard_endpoint_pair_supports_topology(
     support: &crate::families::standard::records::StandardCurveSupport,
     start: Point3,
     end: Point3,
-    witness: Option<Point3>,
+    witness: Option<FinitePoint3>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> bool {
     let endpoint_is_supported = |point| match surface {
@@ -7577,8 +7579,8 @@ fn standard_endpoint_pair_supports_topology(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)),
         crate::families::standard::records::StandardCurveGeometry::Circle { center, radius },
     ) if {
-        (start.distance(*center) - *radius).abs() <= SPHERE_SECTION_ENDPOINT_TOLERANCE
-            && (end.distance(*center) - *radius).abs() <= SPHERE_SECTION_ENDPOINT_TOLERANCE
+        (start.distance(center.get()) - radius.get()).abs() <= SPHERE_SECTION_ENDPOINT_TOLERANCE
+            && (end.distance(center.get()) - radius.get()).abs() <= SPHERE_SECTION_ENDPOINT_TOLERANCE
     })
 }
 
@@ -7587,7 +7589,7 @@ fn standard_pcurve_geometry(
     support: &crate::families::standard::records::StandardCurveSupport,
     start: Point3,
     end: Point3,
-    witness: Option<Point3>,
+    witness: Option<FinitePoint3>,
     edge_curve: Option<&CurveGeometry>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<(PcurveGeometry, [f64; 2])> {
@@ -7635,7 +7637,9 @@ fn standard_pcurve_geometry(
         Some(witness),
     ) = (&support.geometry, witness)
     {
-        if let Some(end) = witnessed_surface_circle_end(surface, *center, *radius, uv, witness) {
+        if let Some(end) =
+            witnessed_surface_circle_end(surface, center.get(), radius.get(), uv, witness.get())
+        {
             uv[1] = end;
         }
     }
@@ -7646,23 +7650,26 @@ fn standard_pcurve_geometry(
     ) = (surface, &support.geometry)
     {
         const CIRCLE_TOLERANCE: f64 = 2e-3;
+
+        let center = center.get();
+        let radius = radius.get();
         let normal = plane_surface.frame().axis().as_raw();
-        let contained_carrier = point_on_surface(*center, surface)
-            && (start.distance(*center) - *radius).abs() <= CIRCLE_TOLERANCE
-            && (end.distance(*center) - *radius).abs() <= CIRCLE_TOLERANCE
+        let contained_carrier = point_on_surface(center, surface)
+            && (start.distance(center) - radius).abs() <= CIRCLE_TOLERANCE
+            && (end.distance(center) - radius).abs() <= CIRCLE_TOLERANCE
             && edge_curve.is_none_or(|curve| {
                 matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
                                 if {
                                     let axis = circle_curve.frame().axis().as_raw();
                 let curve_radius = circle_curve.radius().get();
                                     axis.cross(*normal).norm() <= CIRCLE_TOLERANCE
-                                        && (curve_radius - *radius).abs() <= CIRCLE_TOLERANCE
+                                    && (curve_radius - radius).abs() <= CIRCLE_TOLERANCE
                                 })
             });
         if !contained_carrier {
             return None;
         }
-        let center_uv = analytic_surface_uv(surface, *center)?;
+        let center_uv = analytic_surface_uv(surface, center)?;
         let range = if start == end {
             let angle = (uv[0].v - center_uv.v).atan2(uv[0].u - center_uv.u);
             [angle, angle + std::f64::consts::TAU]
@@ -7672,7 +7679,7 @@ fn standard_pcurve_geometry(
         };
         let geometry = rational_pcurve_arc(
             [center_uv.u, center_uv.v],
-            *radius,
+            radius,
             range,
             refusal,
             "standard arc pcurve derived from its support",
@@ -7694,7 +7701,7 @@ fn standard_pcurve_geometry(
                 <= STANDARD_FACE_BOUNDS_TOLERANCE
         }
         crate::families::standard::records::StandardCurveGeometry::Circle { center, radius } => {
-            (midpoint.distance_squared(*center).sqrt() - radius).abs() <= 2e-3
+            (midpoint.distance_squared(center.get()).sqrt() - radius.get()).abs() <= 2e-3
         }
         crate::families::standard::records::StandardCurveGeometry::Bspline => match edge_curve {
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))) => {
@@ -8252,9 +8259,9 @@ fn standard_spline_perpendicular_cylinders(
     let minor_direction = unit_vector(first_axis.cross(second_axis))?;
     let radius = (first_radius + second_radius) * 0.5;
     let major_radius = radius * 2.0_f64.sqrt();
-    if !radius.is_finite() || !major_radius.is_finite() || major_radius <= 0.0 {
-        return None;
-    }
+    let radius = cadmpeg_ir::scalar::PositiveLength::new(radius)?;
+    let major_radius = cadmpeg_ir::scalar::PositiveLength::new(major_radius)?;
+    let center = FinitePoint3::new(center)?;
     let branches = [
         (first_axis - second_axis, first_axis + second_axis),
         (first_axis + second_axis, first_axis - second_axis),
@@ -8264,20 +8271,20 @@ fn standard_spline_perpendicular_cylinders(
         let axis = unit_vector(axis)?;
         let major_direction = unit_vector(major_direction)?;
         let endpoint_is_on_branch = |point: Point3| {
-            let offset = point.vector_from(center);
-            let major = offset.dot(major_direction) / major_radius;
-            let minor = offset.dot(minor_direction) / radius;
+            let offset = point.vector_from(center.get());
+            let major = offset.dot(*major_direction.as_raw()) / major_radius.get();
+            let minor = offset.dot(*minor_direction.as_raw()) / radius.get();
             let equation = major * major + minor * minor;
-            offset.dot(axis).abs() <= PERPENDICULAR_CYLINDER_CONIC_TOLERANCE
+            offset.dot(*axis.as_raw()).abs() <= PERPENDICULAR_CYLINDER_CONIC_TOLERANCE
                 && equation.is_finite()
                 && (equation - 1.0).abs() <= PERPENDICULAR_CYLINDER_CONIC_TOLERANCE
         };
+        let frame = OrthonormalFrame3::from_units(axis, major_direction)?;
         (endpoint_is_on_branch(start) && endpoint_is_on_branch(end)).then_some(
             CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-                cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
+                cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
                     center,
-                    axis,
-                    major_direction,
+                    frame,
                     major_radius,
                     radius,
                 )
@@ -8490,14 +8497,18 @@ fn build_standard_edge_curve(
             )
         }
         crate::families::standard::records::StandardCurveGeometry::Circle { center, radius } => {
+            let admitted_center = *center;
+            let admitted_radius = *radius;
+            let center = admitted_center.get();
+            let radius = admitted_radius.get();
             let start = ir.model.points[points[0]].position().get();
             let end = ir.model.points[points[1]].position().get();
-            let mut axes: Vec<Vector3> = support
+            let mut axes: Vec<UnitVector3> = support
                 .faces
                 .iter()
                 .filter_map(|face| face_surface(ir, bindings, surface_indices, *face))
                 .filter_map(|surface| {
-                    standard_circle_axis_from_carrier(*center, *radius, &surface.geometry)
+                    standard_circle_axis_from_carrier(center, radius, &surface.geometry)
                 })
                 .collect();
             axes.extend(native_support.into_iter().flat_map(|native| {
@@ -8507,32 +8518,28 @@ fn build_standard_edge_curve(
                     else {
                         return None;
                     };
-                    standard_circle_axis_from_carrier(*center, *radius, surface)
+                    standard_circle_axis_from_carrier(center, radius, surface)
                 })
             }));
             if axes.is_empty() {
-                axes.extend(circle_axis_from_endpoints(*center, *radius, start, end));
+                axes.extend(circle_axis_from_endpoints(center, radius, start, end));
             }
             let axis = axes.first().copied();
             let conflicting_axes = axis.is_some_and(|axis| {
                 axes.iter()
                     .skip(1)
-                    .any(|other| axis.dot(*other).abs() < 0.9999)
+                    .any(|other| axis.as_raw().dot(*other.as_raw()).abs() < 0.9999)
             });
             match axis.filter(|_| !conflicting_axes) {
                 Some(axis) if points[0] == points[1] => {
-                    match full_circle_frame(*center, *radius, axis, start) {
-                        Some((axis, ref_direction)) => (
+                    match full_circle_frame(center, radius, axis, start) {
+                        Some(frame) => (
                             CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                                match cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                                    *center,
-                                    axis,
-                                    ref_direction,
-                                    *radius,
-                                ) {
-                                    Ok(payload) => payload,
-                                    Err(_) => return Ok((None, None)),
-                                },
+                                cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                                    admitted_center,
+                                    frame,
+                                    admitted_radius,
+                                ),
                             )),
                             Some([0.0, std::f64::consts::TAU]),
                         ),
@@ -8548,20 +8555,20 @@ fn build_standard_edge_curve(
                     }
                 }
                 Some(axis) => {
-                    let candidates = [axis, axis.scale(-1.0)]
+                    let candidates = [axis, axis.reversed()]
                         .into_iter()
                         .filter_map(|axis| {
                             let ref_direction =
-                                cadmpeg_ir::geometry::derive_reference_direction(axis);
+                                cadmpeg_ir::geometry::derive_reference_direction(*axis.as_raw());
                             let range = standard_circle_param_range(
                                 ir,
                                 bindings,
                                 surface_indices,
                                 brep,
                                 support,
-                                *center,
-                                *radius,
-                                axis,
+                                center,
+                                radius,
+                                *axis.as_raw(),
                                 ref_direction,
                                 start,
                                 end,
@@ -8571,9 +8578,9 @@ fn build_standard_edge_curve(
                                 native_support.and_then(|native| {
                                     native_support_circle_param_range(
                                         native,
-                                        *center,
-                                        *radius,
-                                        axis,
+                                        center,
+                                        radius,
+                                        *axis.as_raw(),
                                         ref_direction,
                                         start,
                                         end,
@@ -8591,21 +8598,23 @@ fn build_standard_edge_curve(
                         [(axis, reference, range)] => (*axis, *reference, Some(*range)),
                         _ => (
                             axis,
-                            cadmpeg_ir::geometry::derive_reference_direction(axis),
+                            cadmpeg_ir::geometry::derive_reference_direction(*axis.as_raw()),
                             None,
                         ),
                     };
+                    let Some(ref_direction) = UnitVector3::new(ref_direction) else {
+                        return Ok((None, None));
+                    };
+                    let Some(frame) = OrthonormalFrame3::from_units(axis, ref_direction) else {
+                        return Ok((None, None));
+                    };
                     (
                         CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                            match cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                                *center,
-                                axis,
-                                ref_direction,
-                                *radius,
-                            ) {
-                                Ok(payload) => payload,
-                                Err(_) => return Ok((None, None)),
-                            },
+                            cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                                admitted_center,
+                                frame,
+                                admitted_radius,
+                            ),
                         )),
                         param_range,
                     )
@@ -8996,6 +9005,8 @@ fn standard_circle_pair_solution_is_simple(
         else {
             continue;
         };
+        let center = center.get();
+        let radius = radius.get();
         let Some(start) = ir
             .model
             .points
@@ -9017,19 +9028,22 @@ fn standard_circle_pair_solution_is_simple(
             .iter()
             .filter_map(|face| face_surface(ir, bindings, surface_indices, *face))
             .filter_map(|surface| {
-                standard_circle_axis_from_carrier(*center, *radius, &surface.geometry)
+                standard_circle_axis_from_carrier(center, radius, &surface.geometry)
             })
             .collect::<Vec<_>>();
-        let Some(axis) = axes.first().copied().and_then(canonical_unoriented_axis) else {
+        let Some(axis) = axes
+            .first()
+            .and_then(|axis| canonical_unoriented_axis(*axis.as_raw()))
+        else {
             continue;
         };
         if axes.iter().skip(1).any(|other| {
-            canonical_unoriented_axis(*other).is_none_or(|other| axis.dot(other).abs() < 0.9999)
+            canonical_unoriented_axis(*other.as_raw())
+                .is_none_or(|other| axis.as_raw().dot(*other.as_raw()).abs() < 0.9999)
         }) {
             return false;
         }
-        let Some(choices) = circle_endpoint_range_choices(*center, *radius, axis, start, end)
-        else {
+        let Some(choices) = circle_endpoint_range_choices(center, radius, axis, start, end) else {
             continue;
         };
         for &face in &support.faces {
@@ -9388,7 +9402,7 @@ fn standard_line_pair_solution_is_simple_cached(
 fn circle_endpoint_range_choices(
     center: Point3,
     radius: f64,
-    axis: Vector3,
+    axis: UnitVector3,
     start: Point3,
     end: Point3,
 ) -> Option<Vec<[f64; 2]>> {
@@ -9404,9 +9418,9 @@ fn circle_endpoint_range_choices(
     if start.distance(end) <= ENDPOINT_TOLERANCE {
         return Some(vec![[0.0, std::f64::consts::TAU]]);
     }
-    let axis = unit_vector(axis)?;
-    let reference = cadmpeg_ir::geometry::derive_reference_direction(axis);
-    let tangent = axis.cross(reference);
+    let axis = axis.recharted_by_largest_component();
+    let reference = cadmpeg_ir::geometry::derive_reference_direction(*axis.as_raw());
+    let tangent = axis.as_raw().cross(reference);
     let angle = |point: Point3| {
         let offset = point.vector_from(center);
         offset
@@ -9582,7 +9596,7 @@ fn native_support_circle_param_range(
                 return None;
             };
             let carrier_axis = standard_circle_axis_from_carrier(center, radius, surface)?;
-            (carrier_axis.dot(axis) >= 0.9999).then_some(())?;
+            (carrier_axis.as_raw().dot(axis) >= 0.9999).then_some(())?;
             // A non-finite lift is measured as a finite one is.
             Some(parameters.map(|parameter| {
                 let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter).ok()?;
@@ -9640,7 +9654,11 @@ fn attach_standard_circles(
         else {
             continue;
         };
-        let axes: Vec<Vector3> = support
+        let admitted_center = center;
+        let admitted_radius = radius;
+        let center = center.get();
+        let radius = radius.get();
+        let axes: Vec<UnitVector3> = support
             .faces
             .iter()
             .filter_map(|face| bindings.get(*face))
@@ -9660,7 +9678,7 @@ fn attach_standard_circles(
         if axes
             .iter()
             .skip(1)
-            .any(|other| axis.dot(*other).abs() < 0.9999)
+            .any(|other| axis.as_raw().dot(*other.as_raw()).abs() < 0.9999)
         {
             continue;
         }
@@ -9669,14 +9687,19 @@ fn attach_standard_circles(
             &cadmpeg_ir::identity_namespace!("catia", "standard", "circle"),
             index,
         );
-        let Ok(payload) = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-            center,
-            axis,
-            cadmpeg_ir::geometry::derive_reference_direction(axis),
-            radius,
+        let Some(ref_direction) = UnitVector3::new(
+            cadmpeg_ir::geometry::derive_reference_direction(*axis.as_raw()),
         ) else {
             continue;
         };
+        let Some(frame) = OrthonormalFrame3::from_units(axis, ref_direction) else {
+            continue;
+        };
+        let payload = cadmpeg_ir::geometry::analytic::CircleCurve::new(
+            admitted_center,
+            frame,
+            admitted_radius,
+        );
         annotate(
             annotations,
             &id,
@@ -9703,7 +9726,7 @@ fn circle_axis_from_endpoints(
     radius: f64,
     start: Point3,
     end: Point3,
-) -> Option<Vector3> {
+) -> Option<UnitVector3> {
     let start_radius = start.vector_from(center);
     let end_radius = end.vector_from(center);
     let start_length = start_radius.norm();
@@ -9720,31 +9743,33 @@ fn circle_axis_from_endpoints(
 fn full_circle_frame(
     center: Point3,
     radius: f64,
-    axis: Vector3,
+    axis: UnitVector3,
     start: Point3,
-) -> Option<(Vector3, Vector3)> {
+) -> Option<OrthonormalFrame3> {
     const TOLERANCE: f64 = 2e-3;
 
     if !radius.is_finite() || radius <= 0.0 {
         return None;
     }
-    let axis = unit_vector(axis)?;
+    let axis = axis.recharted_by_largest_component();
     let radial = start.vector_from(center);
     let radial_length = radial.norm();
     if !radial_length.is_finite() || (radial_length - radius).abs() > TOLERANCE {
         return None;
     }
     let ref_direction = unit_vector(radial)?;
-    (axis.dot(ref_direction).abs() <= TOLERANCE).then_some((axis, ref_direction))
+    (axis.as_raw().dot(*ref_direction.as_raw()).abs() <= TOLERANCE)
+        .then(|| OrthonormalFrame3::from_units(axis, ref_direction))
+        .flatten()
 }
 
-fn canonical_unoriented_axis(axis: Vector3) -> Option<Vector3> {
+fn canonical_unoriented_axis(axis: Vector3) -> Option<UnitVector3> {
     let axis = unit_vector(axis)?;
-    let value = [axis.x, axis.y, axis.z]
+    let value = [axis.as_raw().x, axis.as_raw().y, axis.as_raw().z]
         .into_iter()
         .max_by(|left, right| left.abs().total_cmp(&right.abs()))?;
     Some(if value.is_sign_negative() {
-        axis.scale(-1.0)
+        axis.reversed()
     } else {
         axis
     })
@@ -9754,7 +9779,7 @@ fn standard_circle_axis_from_carrier(
     center: Point3,
     circle_radius: f64,
     surface: &SurfaceGeometry,
-) -> Option<Vector3> {
+) -> Option<UnitVector3> {
     if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) = surface {
         let sphere_center = sphere_surface.center();
         let sphere_radius = sphere_surface.radius().get();
@@ -9772,12 +9797,13 @@ fn circle_axis_from_carrier(
     center: Point3,
     circle_radius: f64,
     surface: &SurfaceGeometry,
-) -> Option<Vector3> {
+) -> Option<UnitVector3> {
     match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin().get();
             let normal = plane_surface.frame().axis().as_raw();
-            close_length(center.vector_from(origin).dot(*normal), 0.0).then_some(*normal)
+            close_length(center.vector_from(origin).dot(*normal), 0.0)
+                .then_some(*plane_surface.frame().axis())
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin().get();
@@ -9787,7 +9813,7 @@ fn circle_axis_from_carrier(
             let axial = offset.dot(*axis);
             let radial = offset - (*axis).scale(axial);
             (close_length(radial.norm(), 0.0) && close_length(circle_radius, radius))
-                .then_some(*axis)
+                .then_some(*cylinder_surface.frame().axis())
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
             let origin = cone_surface.origin().get();
@@ -9799,7 +9825,7 @@ fn circle_axis_from_carrier(
             let radial = offset - (*axis).scale(axial);
             let section_radius = (radius + axial * half_angle.tan()).abs();
             (close_length(radial.norm(), 0.0) && close_length(circle_radius, section_radius))
-                .then_some(*axis)
+                .then_some(*cone_surface.frame().axis())
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
             let sphere_center = sphere_surface.center();
@@ -9809,7 +9835,7 @@ fn circle_axis_from_carrier(
                 (distance.is_finite()
                     && distance != 0.0
                     && close_squared_lengths(distance.hypot(circle_radius), sphere_radius))
-                .then(|| offset.unit_nonzero())
+                .then(|| UnitVector3::normalized_nonzero(offset))
                 .flatten()
             })
         }
@@ -9830,7 +9856,7 @@ fn circle_axis_from_carrier(
             } else if close_length(radial_distance, 0.0)
                 && close_squared_lengths((circle_radius - major_radius).hypot(axial), minor_radius)
             {
-                Some(*axis)
+                Some(*torus_surface.frame().axis())
             } else {
                 None
             }
@@ -9977,6 +10003,11 @@ mod circle_axis_tests {
     use super::{circle_axis_from_carrier, standard_circle_axis_from_carrier};
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::units::UnitVector3;
+
+    fn unit(value: Vector3) -> UnitVector3 {
+        UnitVector3::new(value).expect("unit fixture")
+    }
 
     fn x() -> Vector3 {
         Vector3::new(1.0, 0.0, 0.0)
@@ -10000,7 +10031,10 @@ mod circle_axis_tests {
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin(), z(), x())
                 .expect("valid PlaneSurface fixture"),
         ));
-        assert_eq!(circle_axis_from_carrier(origin(), 2.0, &plane), Some(z()));
+        assert_eq!(
+            circle_axis_from_carrier(origin(), 2.0, &plane),
+            Some(unit(z()))
+        );
 
         let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(origin(), z(), x(), 2.0)
@@ -10008,7 +10042,7 @@ mod circle_axis_tests {
         ));
         assert_eq!(
             circle_axis_from_carrier(origin(), 2.0, &cylinder),
-            Some(z())
+            Some(unit(z()))
         );
         assert_eq!(circle_axis_from_carrier(origin(), 3.0, &cylinder), None);
 
@@ -10018,7 +10052,7 @@ mod circle_axis_tests {
         ));
         assert_eq!(
             circle_axis_from_carrier(Point3::new(0.0, 0.0, 3.0), 4.0, &sphere),
-            Some(z())
+            Some(unit(z()))
         );
         assert_eq!(circle_axis_from_carrier(origin(), 5.0, &sphere), None);
 
@@ -10029,7 +10063,7 @@ mod circle_axis_tests {
         ));
         assert_eq!(
             circle_axis_from_carrier(Point3::new(tiny, 0.0, 0.0), 1.0, &unit_sphere),
-            Some(x())
+            Some(unit(x()))
         );
 
         let torus = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
@@ -10038,11 +10072,11 @@ mod circle_axis_tests {
         ));
         assert_eq!(
             circle_axis_from_carrier(Point3::new(10.0, 0.0, 0.0), 2.0, &torus),
-            Some(y())
+            Some(unit(y()))
         );
         assert_eq!(
             circle_axis_from_carrier(Point3::new(0.0, 0.0, 2.0), 10.0, &torus),
-            Some(z())
+            Some(unit(z()))
         );
     }
 
@@ -10069,7 +10103,7 @@ mod circle_axis_tests {
         );
         assert_eq!(
             standard_circle_axis_from_carrier(center, 3.175, &cylinder),
-            Some(y())
+            Some(unit(y()))
         );
     }
 
@@ -10077,13 +10111,14 @@ mod circle_axis_tests {
     fn unoriented_circle_axes_use_one_parameter_frame() {
         const AXIS_COMPONENT_TOLERANCE: f64 = 1e-12;
 
-        assert_eq!(super::canonical_unoriented_axis(z()), Some(z()));
+        assert_eq!(super::canonical_unoriented_axis(z()), Some(unit(z())));
         assert_eq!(
             super::canonical_unoriented_axis(Vector3::new(0.0, 0.0, -1.0)),
-            Some(z())
+            Some(unit(z()))
         );
         let axis =
             super::canonical_unoriented_axis(Vector3::new(-2.0, 1.0, 0.0)).expect("finite axis");
+        let axis = axis.as_raw();
         let length = 5.0_f64.sqrt();
         assert!((axis.x - 2.0 / length).abs() < AXIS_COMPONENT_TOLERANCE);
         assert!((axis.y + 1.0 / length).abs() < AXIS_COMPONENT_TOLERANCE);

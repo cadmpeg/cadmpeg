@@ -11,7 +11,7 @@ use census::{walk, Census};
 
 pub(crate) mod record_family;
 pub(crate) mod record_kind;
-use record_family::RecordFamily;
+use record_family::{FixedPosition, RecordFamily};
 mod attdef_state;
 pub(crate) mod inline_schema_fields;
 mod precision_state;
@@ -2063,10 +2063,7 @@ fn fixed_layout(
             }
             Token::Position => {
                 let xyz = vec3_be_at(stream, at)?;
-                if kind != 29 {
-                    xyz.iter().all(|value| value.is_finite()).then_some(())?;
-                }
-                position = Some(xyz);
+                position = Some(FixedPosition::new(kind, xyz)?);
                 canonical_bytes.extend_from_slice(stream.get(at..at + 24)?);
                 at += 24;
             }
@@ -2084,7 +2081,7 @@ fn fixed_layout(
         }
     }
     Some(Record {
-        family: RecordFamily::from_fixed(kind, node_id, position, references)?,
+        family: RecordFamily::from_fixed_admitted(kind, node_id, position, references)?,
         xmt,
         canonical_bytes,
         offset,
@@ -2907,7 +2904,7 @@ mod type_150_state_packet_tests {
         assert_eq!(packet.state.references(), [1, 3, 6_192, 6_193, 6_194]);
         assert_eq!(u8::from(packet.state.marker), 0x2b);
         assert_eq!(
-            *packet.state.values(),
+            packet.state.values(),
             [-0.025, -0.05, 0.25, 0.0, 1.0, 0.0, 0.0, -0.0, 1.0]
         );
         assert_eq!((packet.offset, packet.end), (0, bytes.len()));

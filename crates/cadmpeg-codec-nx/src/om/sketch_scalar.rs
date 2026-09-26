@@ -56,7 +56,7 @@ impl From<SketchMixedScalars> for MixedWire {
     fn from(scalars: SketchMixedScalars) -> Self {
         Self {
             fixed_value: scalars.fixed.value(),
-            binary32_value: scalars.binary32.value(),
+            binary32_value: scalars.binary32.value().get(),
             fixed_raw_value: scalars.fixed.raw(),
             binary32_raw_value: scalars.binary32.raw(),
         }
@@ -70,7 +70,7 @@ impl TryFrom<MixedWire> for SketchMixedScalars {
         Ok(Self {
             fixed: SketchScaledAtom::from_wire(wire.fixed_value, wire.fixed_raw_value)
                 .map_err(|error| format!("fixed_value/fixed_raw_value: {error}"))?,
-            binary32: ShiftedBinary32::from_wire(wire.binary32_value, &wire.binary32_raw_value)
+            binary32: ShiftedBinary32::from_wire(wire.binary32_value, wire.binary32_raw_value)
                 .map_err(|error| format!("binary32_value/binary32_raw_value: {error}"))?,
         })
     }

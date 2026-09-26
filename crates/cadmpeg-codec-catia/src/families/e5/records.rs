@@ -14,7 +14,7 @@ use cadmpeg_ir::geometry::{
     SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveLength};
+use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveAngle, PositiveLength};
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 
 use crate::families::e5::graph::Sign;
@@ -333,7 +333,10 @@ pub(in crate::families) fn e5_surfaces(
         let pos = record.pos;
         let decoded = match record.class {
             0xc9 => e5_cylinder(data, pos).and_then(|(geometry, radius)| {
-                Some((geometry, [FiniteReal::new(1.0 / radius)?, FiniteReal::ONE]))
+                Some((
+                    geometry,
+                    [FiniteReal::new(1.0 / radius.get())?, FiniteReal::ONE],
+                ))
             }),
             0xca => e5_cone(data, pos).and_then(|(geometry, half_angle)| {
                 let u_scale = f64_le(data, pos + 158)?.get();
@@ -345,7 +348,7 @@ pub(in crate::families) fn e5_surfaces(
                     geometry,
                     [
                         FiniteReal::new(1.0 / u_scale)?,
-                        FiniteReal::new(half_angle.cos() / v_scale)?,
+                        FiniteReal::new(half_angle.get().cos() / v_scale)?,
                     ],
                 ))
             }),
@@ -353,8 +356,8 @@ pub(in crate::families) fn e5_surfaces(
                 Some((
                     geometry,
                     [
-                        FiniteReal::new(1.0 / major_radius)?,
-                        FiniteReal::new(1.0 / minor_radius)?,
+                        FiniteReal::new(1.0 / major_radius.get())?,
+                        FiniteReal::new(1.0 / minor_radius.get())?,
                     ],
                 ))
             }),
@@ -756,30 +759,23 @@ fn expand_nurbs_axis(
     (expanded.len() == total).then_some((expanded, control_count))
 }
 
-fn e5_cylinder(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, f64)> {
+fn e5_cylinder(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, PositiveLength)> {
     let mut c = crate::wire::cursor::Cursor::new_at(data, pos + 14)?;
     let origin = c.point3()?;
     let (geometry, radius) = crate::analytic::cylinder_uvr(&mut c, origin)?;
-    Some((geometry, radius.get()))
+    Some((geometry, radius))
 }
 
-fn e5_cone(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, f64)> {
+fn e5_cone(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, PositiveAngle)> {
     let mut c = crate::wire::cursor::Cursor::new_at(data, pos + 14)?;
-    let (geometry, radius, half_angle) = crate::analytic::cone_ozra(&mut c)?;
-    if !(radius.get() > 0.0 && half_angle > 0.0 && half_angle < std::f64::consts::FRAC_PI_2) {
-        return None;
-    }
+    let (geometry, _, half_angle) = crate::analytic::cone_ozra(&mut c)?;
     Some((geometry, half_angle))
 }
 
-fn e5_torus(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, f64, f64)> {
+fn e5_torus(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, PositiveLength, PositiveLength)> {
     let mut c = crate::wire::cursor::Cursor::new_at(data, pos + 14)?;
     let (geometry, major_radius, minor_radius) = crate::analytic::torus_ozrr(&mut c)?;
-    let minor_radius = minor_radius.get();
-    if minor_radius <= 0.0 {
-        return None;
-    }
-    Some((geometry, major_radius.get(), minor_radius))
+    Some((geometry, major_radius, minor_radius))
 }
 
 fn e5_ref(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
@@ -800,10 +796,63 @@ mod tests {
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    use super::{e5_ref, e5_rolling_ball_jets, e5_surface_wrappers, e5_surfaces};
+    use super::{
+        e5_cone, e5_ref, e5_rolling_ball_jets, e5_surface_wrappers, e5_surfaces, e5_torus,
+    };
     use crate::test_support::test_e5::append_e5_record;
 
     const TEST_F64_TOLERANCE: f64 = 1e-12;
+
+    fn cone_record() -> Vec<u8> {
+        let mut bytes = crate::test_support::test_e5::e5_torus_stream();
+        bytes[3] = 0xca;
+        bytes[110..118].copy_from_slice(&std::f64::consts::FRAC_PI_4.to_le_bytes());
+        bytes[118..126].copy_from_slice(&2.0_f64.to_le_bytes());
+        bytes
+    }
+
+    #[test]
+    fn e5_cone_admits_positive_radius_and_acute_half_angle() {
+        let bytes = cone_record();
+        assert!(
+            matches!(e5_cone(&bytes, 0), Some((_, angle)) if angle.get() == std::f64::consts::FRAC_PI_4)
+        );
+    }
+
+    #[test]
+    fn e5_cone_refuses_zero_radius() {
+        let mut bytes = cone_record();
+        bytes[118..126].copy_from_slice(&0.0_f64.to_le_bytes());
+        assert!(e5_cone(&bytes, 0).is_none());
+    }
+
+    #[test]
+    fn e5_cone_refuses_nonpositive_half_angle() {
+        let mut bytes = cone_record();
+        bytes[110..118].copy_from_slice(&std::f64::consts::FRAC_PI_2.to_le_bytes());
+        assert!(e5_cone(&bytes, 0).is_none());
+    }
+
+    #[test]
+    fn e5_cone_refuses_half_angle_at_or_above_half_pi() {
+        let mut bytes = cone_record();
+        bytes[110..118].copy_from_slice(&0.0_f64.to_le_bytes());
+        assert!(e5_cone(&bytes, 0).is_none());
+    }
+
+    #[test]
+    fn e5_torus_refuses_zero_minor_radius() {
+        let mut bytes = crate::test_support::test_e5::e5_torus_stream();
+        bytes[118..126].copy_from_slice(&0.0_f64.to_le_bytes());
+        assert!(e5_torus(&bytes, 0).is_none());
+    }
+
+    #[test]
+    fn e5_torus_refuses_negative_minor_radius() {
+        let mut bytes = crate::test_support::test_e5::e5_torus_stream();
+        bytes[118..126].copy_from_slice(&(-2.0_f64).to_le_bytes());
+        assert!(e5_torus(&bytes, 0).is_none());
+    }
 
     fn decoded_jets(bytes: &[u8]) -> Result<Vec<super::E5RollingBallJet>, CodecError> {
         let arena = DecodeArena::new();

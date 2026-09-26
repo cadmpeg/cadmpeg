@@ -146,10 +146,7 @@ fn repeated_circle_face_domain_prefers_a_distinct_carrier_before_bounds() {
         plane(Point3::new(0.0, 1.0, 0.0)),
         plane(Point3::new(0.0, 0.0, 0.0)),
     ];
-    let edge_geometries = [StandardCurveGeometry::Circle {
-        center: Point3::new(0.0, 0.0, 0.0),
-        radius: 1.0,
-    }];
+    let edge_geometries = [super::checked_circle(Point3::new(0.0, 0.0, 0.0), 1.0)];
     let mut allowed_faces = vec![vec![1, 2]];
 
     refine_repeated_face_domains_by_geometry_and_bounds(
@@ -498,7 +495,7 @@ fn non_collinear_circle_endpoints_determine_the_carrier_plane() {
         Point3::new(1.0, 4.0, 3.0),
     )
     .expect("non-collinear radii determine an axis");
-    assert_eq!(axis, Vector3::new(0.0, 0.0, 1.0));
+    assert_eq!(*axis.as_raw(), Vector3::new(0.0, 0.0, 1.0));
     assert!(circle_axis_from_endpoints(
         Point3::new(1.0, 2.0, 3.0),
         2.0,
@@ -1318,10 +1315,7 @@ fn witnessed_cylinder_circle_edge_uses_complementary_angular_range() {
         pos: 0,
         tag: 1,
         faces: [0, 1],
-        geometry: StandardCurveGeometry::Circle {
-            center: Point3::new(0.0, 0.0, 3.0),
-            radius: 2.0,
-        },
+        geometry: super::checked_circle(Point3::new(0.0, 0.0, 3.0), 2.0),
     };
     let mut brep = vec![0; 39];
     brep[..3].copy_from_slice(&[0x00, 0x33, 0x33]);
@@ -1429,10 +1423,7 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
         pos: 12,
         tag: 7,
         faces: [0, 0],
-        geometry: StandardCurveGeometry::Circle {
-            center: Point3::new(0.0, 0.0, 0.0),
-            radius: 1.0,
-        },
+        geometry: super::checked_circle(Point3::new(0.0, 0.0, 0.0), 1.0),
     };
     let (_, range) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
@@ -1761,10 +1752,7 @@ fn standard_antipodal_circle_candidates_admit_full_circle_seams() {
         pos: 0,
         tag: 1,
         faces: [0, 1],
-        geometry: StandardCurveGeometry::Circle {
-            center: Point3::new(0.0, 0.0, 0.0),
-            radius: 5.0,
-        },
+        geometry: super::checked_circle(Point3::new(0.0, 0.0, 0.0), 5.0),
     };
 
     let choices =

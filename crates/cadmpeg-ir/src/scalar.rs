@@ -78,6 +78,99 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// A finite IEEE-754 binary32 value in its source precision.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct FiniteBinary32(f32);
+
+impl FiniteBinary32 {
+    /// Zero in source precision.
+    pub const ZERO: Self = Self(0.0);
+    /// One in source precision.
+    pub const ONE: Self = Self(1.0);
+
+    /// Admit a finite binary32 value.
+    #[must_use]
+    pub fn new(value: f32) -> Option<Self> {
+        value.is_finite().then_some(Self(value))
+    }
+
+    /// Return the admitted value in its source precision.
+    #[must_use]
+    pub const fn get(self) -> f32 {
+        self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for FiniteBinary32 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Self::new(f32::deserialize(deserializer)?)
+            .ok_or_else(|| serde::de::Error::custom("FiniteBinary32 must be finite"))
+    }
+}
+
+impl TryFrom<f32> for FiniteBinary32 {
+    type Error = &'static str;
+
+    fn try_from(value: f32) -> Result<Self, Self::Error> {
+        Self::new(value).ok_or("FiniteBinary32 must be finite")
+    }
+}
+
+impl From<FiniteBinary32> for f32 {
+    fn from(value: FiniteBinary32) -> Self {
+        value.get()
+    }
+}
+
+/// A finite binary32 fraction in the closed unit interval.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct UnitBinary32(f32);
+
+impl UnitBinary32 {
+    /// Admit a binary32 fraction in the closed unit interval.
+    #[must_use]
+    pub fn new(value: f32) -> Option<Self> {
+        (0.0..=1.0).contains(&value).then_some(Self(value))
+    }
+
+    /// Return the admitted value in its source precision.
+    #[must_use]
+    pub const fn get(self) -> f32 {
+        self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for UnitBinary32 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Self::new(f32::deserialize(deserializer)?)
+            .ok_or_else(|| serde::de::Error::custom("UnitBinary32 must be in [0, 1]"))
+    }
+}
+
+impl TryFrom<f32> for UnitBinary32 {
+    type Error = &'static str;
+
+    fn try_from(value: f32) -> Result<Self, Self::Error> {
+        Self::new(value).ok_or("UnitBinary32 must be in [0, 1]")
+    }
+}
+
+impl From<UnitBinary32> for f32 {
+    fn from(value: UnitBinary32) -> Self {
+        value.get()
+    }
+}
+
 /// A positive value in a native signed 64-bit integer lane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -318,6 +411,14 @@ impl PositiveAngle {
     pub const HALF_TURN: Self = Self(std::f64::consts::PI);
     /// Three quarter turns in radians.
     pub const THREE_QUARTER_TURN: Self = Self(3.0 * std::f64::consts::FRAC_PI_2);
+}
+
+impl NonZeroAngle {
+    /// The positive magnitude of a finite nonzero angle.
+    #[must_use]
+    pub const fn abs(self) -> PositiveAngle {
+        PositiveAngle(self.0.abs())
+    }
 }
 
 /// State one subset edge inside a quantity family.
