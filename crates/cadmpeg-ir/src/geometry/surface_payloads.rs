@@ -991,6 +991,17 @@ impl TryFrom<ParallelOffsetSurfaceConstructionWire> for ParallelOffsetSurfaceCon
     }
 }
 
+/// A finite sweep vector whose norm exceeds machine epsilon.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+struct SweepDirectionAboveEpsilon(FiniteVector3);
+
+impl SweepDirectionAboveEpsilon {
+    fn new(direction: Vector3) -> Option<Self> {
+        let direction = FiniteVector3::new(direction)?;
+        (direction.as_raw().norm() > f64::EPSILON).then_some(Self(direction))
+    }
+}
+
 /// Admitted unbounded linear sweep parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1003,7 +1014,7 @@ pub struct LinearSweepSurfaceConstruction {
     /// Curve swept along `direction`.
     directrix: CurveId,
     /// Length-bearing sweep vector.
-    direction: FiniteVector3,
+    direction: SweepDirectionAboveEpsilon,
 }
 
 #[derive(Deserialize)]
@@ -1022,14 +1033,9 @@ impl LinearSweepSurfaceConstruction {
         directrix: CurveId,
         direction: Vector3,
     ) -> Result<Self, ProceduralGeometryError> {
-        let direction = FiniteVector3::new(direction).ok_or(ProceduralGeometryError::Payload(
-            "invalid linear-sweep direction",
-        ))?;
-        if direction.as_raw().norm() <= f64::EPSILON {
-            return Err(ProceduralGeometryError::Payload(
-                "invalid linear-sweep direction",
-            ));
-        }
+        let direction = SweepDirectionAboveEpsilon::new(direction).ok_or(
+            ProceduralGeometryError::Payload("invalid linear-sweep direction"),
+        )?;
         Ok(Self {
             directrix,
             direction,
@@ -1041,7 +1047,7 @@ impl LinearSweepSurfaceConstruction {
     }
     /// Return the direction.
     pub fn direction(&self) -> &FiniteVector3 {
-        &self.direction
+        &self.direction.0
     }
 }
 
