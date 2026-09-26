@@ -117,7 +117,7 @@ enum DimensionFamily {
     Legacy {
         dimstyle_index: i32,
         text_display_mode: i32,
-        text_height: FiniteReal,
+        text_height: NonNegativeReal,
         justification: i32,
     },
     /// V2 dimension with default text and definition points.
@@ -372,7 +372,7 @@ pub(crate) struct LegacyAnnotation {
     pub(crate) user_positioned_text: bool,
     pub(crate) dimstyle_index: i32,
     pub(crate) allow_text_scaling: bool,
-    pub(crate) text_height: FiniteReal,
+    pub(crate) text_height: NonNegativeReal,
     pub(crate) justification: i32,
 }
 
@@ -446,12 +446,12 @@ fn legacy_annotation_fields(
     let text_height = scaled_coordinate(annotation.f64()?, scale).ok_or_else(|| {
         FramingError::structural(annotation.position() - 8, "invalid legacy text height")
     })?;
-    if text_height.get() < 0.0 {
-        return Err(FramingError::structural(
+    let text_height = NonNegativeReal::from_finite(text_height).ok_or_else(|| {
+        FramingError::structural(
             annotation.position() - 8,
             "invalid legacy annotation text height",
-        ));
-    }
+        )
+    })?;
     let justification = if direct_legacy { 0 } else { annotation.i32()? };
     let stored_text_scaling = (!direct_legacy && minor >= 1)
         .then(|| annotation.bool())
