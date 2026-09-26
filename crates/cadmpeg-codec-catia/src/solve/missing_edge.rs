@@ -3235,26 +3235,31 @@ fn standard_mesh_pruned_missing_edge_endpoint_assignments(
 /// because a missing placement has not yet selected its traversal direction.
 #[must_use]
 pub(crate) fn standard_mesh_placement_endpoint_pairs(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
-) -> Option<Vec<Vec<[usize; 2]>>> {
-    let edge_rows = standard_edge_rows(bytes)?;
+) -> Result<Option<Vec<Vec<[usize; 2]>>>, CodecError> {
+    let Some(edge_rows) = standard_edge_rows(bytes) else {
+        return Ok(None);
+    };
     if edge_rows.len() != edge_points.len() || edge_rows.len() != edge_faces.len() {
-        return None;
+        return Ok(None);
     }
-    let assignments =
-        standard_mesh_pruned_missing_edge_endpoint_assignments(bytes, edge_faces, edge_points)?;
-    let mut domains = alloc_filled(
+    let Some(assignments) =
+        standard_mesh_pruned_missing_edge_endpoint_assignments(bytes, edge_faces, edge_points)
+    else {
+        return Ok(None);
+    };
+    let mut domains = ctx.alloc_filled(
         edge_rows.len(),
         Vec::new(),
         "catia_placement_endpoint_domains",
-    )
-    .ok()?;
+    )?;
     let mut placement_counts =
-        alloc_filled(edge_rows.len(), 0usize, "catia_placement_counts").ok()?;
+        ctx.alloc_filled(edge_rows.len(), 0usize, "catia_placement_counts")?;
     let mut bound_counts =
-        alloc_filled(edge_rows.len(), 0usize, "catia_placement_bound_counts").ok()?;
+        ctx.alloc_filled(edge_rows.len(), 0usize, "catia_placement_bound_counts")?;
     for face in assignments {
         let mut placements = face.into_iter().flatten().collect::<Vec<_>>();
         placements.sort_unstable_by_key(|candidate| candidate.placement);
@@ -3279,7 +3284,7 @@ pub(crate) fn standard_mesh_placement_endpoint_pairs(
             domain.clear();
         }
     }
-    Some(domains)
+    Ok(Some(domains))
 }
 
 fn bind_port_point(port_points: &mut HashMap<u32, usize>, port: u32, point: usize) -> bool {
