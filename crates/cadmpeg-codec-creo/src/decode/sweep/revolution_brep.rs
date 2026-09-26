@@ -9,7 +9,7 @@ use super::super::uniqueness::{
 };
 use super::pcurves::{
     add_extrusion_pcurve, revolution_face_sense, revolution_profile_boundary_pcurve,
-    revolved_brep_surface, RevolutionBoundary,
+    revolved_brep_surface, PcurveAdmission, RevolutionBoundary,
 };
 use super::profiles::{extrusion_profile_signed_area, resolved_sketch_profiles};
 use super::surfaces::revolved_section_circle;
@@ -283,11 +283,14 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             ctx.charge_entities(1, "admit Creo model points")?;
             source_carriers.admit_point(ir, Point::new(point_id.clone(), finite_position, None))?;
             ctx.charge_entities(1, "admit Creo model vertices")?;
-            ir.model.vertices.push(Vertex {
-                id: vertex_id.clone(),
-                point: point_id,
-                tolerance: None,
-            });
+            source_carriers.admit_vertex(
+                ir,
+                Vertex {
+                    id: vertex_id.clone(),
+                    point: point_id,
+                    tolerance: None,
+                },
+            )?;
             ctx.charge_entities(1, "admit Creo model edges")?;
             source_carriers.admit_edge(
                 ir,
@@ -362,9 +365,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     ctx,
                     ir,
                     annotations,
-                    source_carriers,
-                    &surface_id,
-                    None,
+                    PcurveAdmission::Existing(source_carriers, &surface_id),
                     revolution_id!(
                         PcurveId,
                         cadmpeg_ir::identity_key!("pcurve").colon(index).colon(
@@ -385,40 +386,46 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     ),
                 });
                 ctx.charge_entities(1, "admit Creo model coedges")?;
-                ir.model.coedges.push(Coedge {
-                    id: coedge_id.clone(),
-                    owner_loop: loop_id.clone(),
-                    edge: edge_id,
-                    radial_next: revolution_id!(
-                        CoedgeId,
-                        cadmpeg_ir::identity_key!("coedge")
-                            .colon(radial_index)
-                            .colon(
-                                IdentityKey::try_new(radial_boundary)
-                                    .map_err(cadmpeg_core::CodecError::malformed,)?
-                            )
-                    ),
-                    sense,
-                    pcurves: vec![PcurveUse {
-                        pcurve,
-                        isoparametric: None,
-                        parameter_range: None,
-                    }],
-                    use_curve: None,
-                });
+                source_carriers.admit_coedge(
+                    ir,
+                    Coedge {
+                        id: coedge_id.clone(),
+                        owner_loop: loop_id.clone(),
+                        edge: edge_id,
+                        radial_next: revolution_id!(
+                            CoedgeId,
+                            cadmpeg_ir::identity_key!("coedge")
+                                .colon(radial_index)
+                                .colon(
+                                    IdentityKey::try_new(radial_boundary)
+                                        .map_err(cadmpeg_core::CodecError::malformed,)?
+                                )
+                        ),
+                        sense,
+                        pcurves: vec![PcurveUse {
+                            pcurve,
+                            isoparametric: None,
+                            parameter_range: None,
+                        }],
+                        use_curve: None,
+                    },
+                )?;
                 loops.push(loop_id);
             }
             ctx.charge_entities(1, "admit Creo model faces")?;
-            ir.model.faces.push(Face {
-                id: face_id.clone(),
-                shell: shell_id.clone(),
-                surface: surface_id,
-                sense: face_sense,
-                loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
-                name: None,
-                color: None,
-                tolerance: None,
-            });
+            source_carriers.admit_face(
+                ir,
+                Face {
+                    id: face_id.clone(),
+                    shell: shell_id.clone(),
+                    surface: surface_id,
+                    sense: face_sense,
+                    loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
+                    name: None,
+                    color: None,
+                    tolerance: None,
+                },
+            )?;
             faces.push(face_id);
         }
         ctx.charge_entities(1, "admit Creo model shells")?;

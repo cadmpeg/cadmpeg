@@ -6,135 +6,25 @@
 //! transfer; this module converts remaining model fields from source units.
 //! Unit directions, angles, ratios, and source-native arenas are not scaled.
 
-use std::collections::BTreeMap;
-
-use crate::decode::source_carriers::SourceUnitCarriers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     FeatureDefinition, FeatureOperation, FiniteVector3, ParameterValue, WrapMode,
 };
 use cadmpeg_ir::geometry::scaling::ScaleRefusal;
-use cadmpeg_ir::geometry::{
-    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
-};
-use cadmpeg_ir::ids::PcurveId;
+use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{Length, PositiveReal};
 use cadmpeg_ir::sketches::{SketchGeometry, SpatialSketchGeometry};
-use cadmpeg_ir::topology::EdgeCarrier;
 use cadmpeg_ir::transform::Transform;
 
 /// Scale neutral model lengths not converted at transfer.
 pub(in crate::decode) fn normalize_model_lengths(
     ir: &mut CadIr,
     scale: PositiveReal,
-    source_carriers: &SourceUnitCarriers,
 ) -> Result<(), CodecError> {
     if scale.get() == 1.0 {
         return Ok(());
-    }
-
-    let pcurve_scales = pcurve_scales(ir, scale.get());
-    for pcurve in &mut ir.model.pcurves {
-        if source_carriers.contains_pcurve(&pcurve.id) {
-            continue;
-        }
-        if let Some(scales) = pcurve_scales.get(&pcurve.id) {
-            if pcurve.geometry.try_scale_coordinates(*scales).is_err() {
-                return Err(CodecError::NotImplemented(format!(
-                    "Creo pcurve cannot be represented after unit normalization with scales {scales:?}"
-                )));
-            }
-        }
-    }
-
-    for surface in &mut ir.model.surfaces {
-        if source_carriers.contains_surface(&surface.id) {
-            continue;
-        }
-        if let SurfaceGeometry::Solved(geometry) = &mut surface.geometry {
-            scale_surface_geometry(geometry, scale)?;
-        }
-    }
-    for curve in &mut ir.model.curves {
-        if source_carriers.contains_curve(&curve.id) {
-            continue;
-        }
-        if let CurveGeometry::Solved(geometry) = &mut curve.geometry {
-            scale_curve_geometry(geometry, scale)?;
-        }
-    }
-    for procedural in &mut ir.model.procedural_surfaces {
-        if source_carriers.contains_procedural_surface(&procedural.id) {
-            continue;
-        }
-        procedural
-            .edit_definition(|definition| definition.scale_lengths(scale))
-            .map_err(cadmpeg_core::CodecError::malformed)?;
-        procedural
-            .scale_cache_fit_tolerance(scale)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
-    }
-    for procedural in &mut ir.model.procedural_curves {
-        if source_carriers.contains_procedural_curve(&procedural.id) {
-            continue;
-        }
-        procedural
-            .edit_definition(|definition| definition.scale_lengths(scale))
-            .map_err(cadmpeg_core::CodecError::malformed)?;
-        procedural
-            .scale_cache_fit_tolerance(scale)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
-    }
-    for point in &mut ir.model.points {
-        if source_carriers.contains_point(&point.id) {
-            continue;
-        }
-        let position = point
-            .position()
-            .scaled(scale)
-            .ok_or_else(|| CodecError::malformed("Creo scaled model point must be finite"))?;
-        point.set_position(position);
-    }
-    for face in &mut ir.model.faces {
-        scale_tolerance(&mut face.tolerance, scale)?;
-    }
-    for vertex in &mut ir.model.vertices {
-        scale_tolerance(&mut vertex.tolerance, scale)?;
-    }
-
-    let curve_parameter_scales = ir
-        .model
-        .curves
-        .iter()
-        .filter_map(|curve| {
-            curve_parameter_scale(curve.geometry.solved()?, scale)
-                .map(|scale| (curve.id.clone(), scale))
-        })
-        .collect::<BTreeMap<_, _>>();
-    for edge in &mut ir.model.edges {
-        scale_tolerance(&mut edge.tolerance, scale)?;
-        if source_carriers.contains_edge(&edge.id) {
-            continue;
-        }
-        if let EdgeCarrier::Bounded(curve, interval) = &mut edge.carrier {
-            if let Some(scale) = curve_parameter_scales.get(curve) {
-                *interval = interval.scaled(*scale).ok_or_else(|| {
-                    CodecError::malformed("edge param_range must be finite and ordered")
-                })?;
-            }
-        }
-    }
-    for coedge in &mut ir.model.coedges {
-        if let Some(use_curve) = &mut coedge.use_curve {
-            if let Some(scale) = curve_parameter_scales.get(&use_curve.curve) {
-                use_curve.parameter_range =
-                    use_curve.parameter_range.scaled(*scale).ok_or_else(|| {
-                        CodecError::malformed("parameter_range must be finite and ordered")
-                    })?;
-            }
-        }
     }
 
     for body in &mut ir.model.bodies {
@@ -217,18 +107,6 @@ pub(in crate::decode) fn normalize_model_lengths(
                     )
                 }
             })?;
-    }
-    Ok(())
-}
-
-fn scale_tolerance(
-    value: &mut Option<cadmpeg_ir::scalar::PositiveReal>,
-    scale: PositiveReal,
-) -> Result<(), CodecError> {
-    if let Some(current) = value {
-        *current = cadmpeg_ir::scalar::PositiveReal::new(current.get() * scale.get()).ok_or_else(
-            || CodecError::malformed("scaled topology tolerance must be positive and finite"),
-        )?;
     }
     Ok(())
 }
@@ -1371,89 +1249,6 @@ pub(in crate::decode) fn surface_parameter_scales(
     }
 }
 
-fn pcurve_scales(ir: &CadIr, length_scale_mm: f64) -> BTreeMap<PcurveId, [f64; 2]> {
-    let mut candidates = BTreeMap::<PcurveId, Vec<[f64; 2]>>::new();
-    for coedge in &ir.model.coedges {
-        let Some(loop_record) = ir
-            .model
-            .loops
-            .iter()
-            .find(|item| item.id == coedge.owner_loop)
-        else {
-            continue;
-        };
-        let Some(face) = ir
-            .model
-            .faces
-            .iter()
-            .find(|item| item.id == loop_record.face)
-        else {
-            continue;
-        };
-        let Some(surface) = ir
-            .model
-            .surfaces
-            .iter()
-            .find(|item| item.id == face.surface)
-        else {
-            continue;
-        };
-        let Some(geometry) = surface.geometry.solved() else {
-            continue;
-        };
-        let scales = surface_parameter_scales(geometry, length_scale_mm);
-        for use_record in &coedge.pcurves {
-            observe_pcurve_scale(&mut candidates, &use_record.pcurve, scales);
-        }
-    }
-    for loop_record in &ir.model.loops {
-        let Some(face) = ir
-            .model
-            .faces
-            .iter()
-            .find(|item| item.id == loop_record.face)
-        else {
-            continue;
-        };
-        let Some(surface) = ir
-            .model
-            .surfaces
-            .iter()
-            .find(|item| item.id == face.surface)
-        else {
-            continue;
-        };
-        let Some(geometry) = surface.geometry.solved() else {
-            continue;
-        };
-        let scales = surface_parameter_scales(geometry, length_scale_mm);
-        for use_record in loop_record.vertex_pcurves() {
-            observe_pcurve_scale(&mut candidates, &use_record.pcurve, scales);
-        }
-    }
-    candidates
-        .into_iter()
-        .filter_map(|(id, values)| {
-            let first = *values.first()?;
-            values
-                .iter()
-                .all(|value| *value == first)
-                .then_some((id, first))
-        })
-        .collect()
-}
-
-fn observe_pcurve_scale(
-    candidates: &mut BTreeMap<PcurveId, Vec<[f64; 2]>>,
-    id: &PcurveId,
-    scales: [f64; 2],
-) {
-    let values = candidates.entry(id.clone()).or_default();
-    if !values.contains(&scales) {
-        values.push(scales);
-    }
-}
-
 fn scale_sketch_geometry(
     geometry: &mut SketchGeometry,
     scale: PositiveReal,
@@ -1580,13 +1375,9 @@ mod tests {
             link: None,
             native_ref: None,
         });
-        let error = normalize_model_lengths(
-            &mut ir,
-            positive(1000.0),
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        )
-        .expect_err("a non-finite translation has no transform")
-        .to_string();
+        let error = normalize_model_lengths(&mut ir, positive(1000.0))
+            .expect_err("a non-finite translation has no transform")
+            .to_string();
         assert!(error.contains("transform translation"), "{error}");
     }
 
@@ -1655,12 +1446,7 @@ mod tests {
                 pmi: None,
                 native_ref: None,
             });
-        normalize_model_lengths(
-            &mut ir,
-            positive(25.4),
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        )
-        .expect("valid unit scaling");
+        normalize_model_lengths(&mut ir, positive(25.4)).expect("valid unit scaling");
 
         let FeatureDefinition::Operation(FeatureOperation::Extrude { start, extent, .. }) =
             ir.model.features[0].evaluation.definition()
@@ -1692,38 +1478,33 @@ mod tests {
         assert_close(length.get(), 127.0);
     }
 
-    fn model_point_ir(position: Point3) -> CadIr {
+    fn model_point_ir(position: Point3) -> Result<CadIr, CodecError> {
         let mut ir = CadIr::empty();
-        ir.model.points.push(cadmpeg_ir::topology::Point::new(
-            cadmpeg_ir::ids::PointId::mint("test:model:entity#point").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(position).expect("finite point fixture"),
-            None,
-        ));
-        ir
+        crate::decode::source_carriers::SourceUnitCarriers::new(Some(positive(25.4))).admit_point(
+            &mut ir,
+            cadmpeg_ir::topology::Point::new(
+                cadmpeg_ir::ids::PointId::mint("test:model:entity#point")
+                    .expect("identity grammar"),
+                cadmpeg_ir::features::FinitePoint3::new(position).expect("finite point fixture"),
+                None,
+            ),
+        )?;
+        Ok(ir)
     }
 
     #[test]
     fn model_points_of_an_inch_model_are_converted_to_millimetres() {
-        let mut ir = model_point_ir(Point3::new(1.0, -2.0, 0.5));
-        normalize_model_lengths(
-            &mut ir,
-            positive(25.4),
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        )
-        .expect("valid unit scaling");
+        let mut ir =
+            model_point_ir(Point3::new(1.0, -2.0, 0.5)).expect("valid millimeter point admission");
+        normalize_model_lengths(&mut ir, positive(25.4)).expect("valid unit scaling");
         assert_point3(ir.model.points[0].position().get(), [25.4, -50.8, 12.7]);
     }
 
     #[test]
     fn a_model_point_that_overflows_in_millimetres_is_refused() {
-        let mut ir = model_point_ir(Point3::new(0.0, f64::MAX, 0.0));
-        let error = normalize_model_lengths(
-            &mut ir,
-            positive(25.4),
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        )
-        .expect_err("an overflowing point has no position")
-        .to_string();
+        let error = model_point_ir(Point3::new(0.0, f64::MAX, 0.0))
+            .expect_err("an overflowing point has no position")
+            .to_string();
         assert!(
             error.contains("scaled model point must be finite"),
             "{error}"
@@ -1743,23 +1524,18 @@ mod tests {
         )
         .expect("finite NURBS fixture");
         let mut ir = CadIr::empty();
-        ir.model.curves.push(cadmpeg_ir::geometry::Curve {
-            id: curve_id,
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-            source_object: None,
-        });
-
-        let error = normalize_model_lengths(
-            &mut ir,
-            positive(25.4),
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        )
-        .expect_err("overflow must refuse");
-        assert!(matches!(error, CodecError::Malformed(_)));
-        let Some(SolvedCurveGeometry::Nurbs(curve)) = ir.model.curves[0].geometry.solved() else {
-            panic!("test curve changed family");
-        };
-        assert_eq!(curve.control_points()[0], Point3::new(f64::MAX, 0.0, 0.0));
+        let error = crate::decode::source_carriers::SourceUnitCarriers::new(Some(positive(25.4)))
+            .admit_curve(
+                &mut ir,
+                cadmpeg_ir::geometry::Curve {
+                    id: curve_id,
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+                    source_object: None,
+                },
+            )
+            .expect_err("overflow must refuse");
+        assert!(matches!(error, CodecError::NotImplemented(_)));
+        assert!(ir.model.curves.is_empty());
     }
 
     #[test]
@@ -1868,15 +1644,22 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn scales_procedural_model_lengths_and_cache_tolerances() {
         let mut ir = CadIr::empty();
+        let mut source_carriers =
+            crate::decode::source_carriers::SourceUnitCarriers::new(Some(positive(25.4)));
         let surface_id = cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#surface")
             .expect("identity grammar");
-        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-            id: surface_id.clone(),
-            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
-                SolvedSurfaceGeometry::Unknown { record: None },
-            ),
-            source_object: None,
-        });
+        source_carriers
+            .admit_surface(
+                &mut ir,
+                cadmpeg_ir::geometry::Surface {
+                    id: surface_id.clone(),
+                    geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+                        SolvedSurfaceGeometry::Unknown { record: None },
+                    ),
+                    source_object: None,
+                },
+            )
+            .expect("surface admission");
         let mut surface_definition = cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(
             cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
                 cadmpeg_ir::ids::CurveId::mint("test:model:entity#directrix")
@@ -1902,18 +1685,23 @@ mod tests {
                     .unwrap(),
             ),
         );
-        ir.model
-            .add_procedural_surface(surface_id, surface)
-            .unwrap();
+        source_carriers
+            .admit_procedural_surface(&mut ir, surface_id, surface)
+            .expect("surface construction admission");
         let curve_id =
             cadmpeg_ir::ids::CurveId::mint("test:model:entity#curve").expect("identity grammar");
-        ir.model.curves.push(cadmpeg_ir::geometry::Curve {
-            id: curve_id.clone(),
-            geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                record: None,
-            }),
-            source_object: None,
-        });
+        source_carriers
+            .admit_curve(
+                &mut ir,
+                cadmpeg_ir::geometry::Curve {
+                    id: curve_id.clone(),
+                    geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(
+                        SolvedCurveGeometry::Unknown { record: None },
+                    ),
+                    source_object: None,
+                },
+            )
+            .expect("curve admission");
         let mut curve_definition = cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(
             cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
                 [0.0, 1.0],
@@ -1937,14 +1725,11 @@ mod tests {
                 .expect("identity grammar"),
             curve_definition,
         );
-        ir.model.add_procedural_curve(curve_id, curve).unwrap();
+        source_carriers
+            .admit_procedural_curve(&mut ir, curve_id, curve)
+            .expect("curve construction admission");
 
-        normalize_model_lengths(
-            &mut ir,
-            positive(25.4),
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        )
-        .expect("valid unit scaling");
+        normalize_model_lengths(&mut ir, positive(25.4)).expect("valid unit scaling");
 
         let surface = &ir.model.procedural_surfaces[0];
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload) =
@@ -2060,6 +1845,8 @@ mod tests {
         ];
         for (definition, refusal) in payloads {
             let mut ir = CadIr::empty();
+            let mut source_carriers =
+                crate::decode::source_carriers::SourceUnitCarriers::new(Some(positive(25.4)));
             let surface_id = cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#surface")
                 .expect("identity grammar");
             ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
@@ -2077,16 +1864,10 @@ mod tests {
                 definition,
                 None,
             );
-            ir.model
-                .add_procedural_surface(surface_id, surface)
-                .unwrap();
-            let error = normalize_model_lengths(
-                &mut ir,
-                positive(25.4),
-                &crate::decode::source_carriers::SourceUnitCarriers::default(),
-            )
-            .expect_err("an overflowing scaled vector has no payload")
-            .to_string();
+            let error = source_carriers
+                .admit_procedural_surface(&mut ir, surface_id, surface)
+                .expect_err("an overflowing scaled vector has no payload")
+                .to_string();
             assert!(error.contains(refusal), "{error}");
         }
     }
