@@ -1831,17 +1831,35 @@ enum CompactBoundaryAdvanceOutcome {
 }
 
 fn advance_compact_boundary_domains<'a>(
+    ctx: &DecodeContext<'_>,
     domains: impl IntoIterator<Item = &'a MeshFaceBoundaryDomain>,
     choices: &[Vec<[usize; 2]>],
     assignment: &[Option<[usize; 2]>],
     selected: Option<(usize, [usize; 2])>,
     mut states: Vec<MeshQuotientGaugeState>,
     budget: &WorkBudget<'_>,
-) -> CompactBoundaryAdvanceOutcome {
+) -> Result<CompactBoundaryAdvanceOutcome, CodecError> {
     const MAX_QUOTIENT_STATES: usize = 4_096;
 
     let mut ordered = Vec::<Vec<MeshFaceBoundaryAssignment>>::new();
     for domain in domains {
+        let edge_count = match domain {
+            MeshFaceBoundaryDomain::Ordered(assignments) => assignments
+                .iter()
+                .flat_map(|assignment| &assignment.boundaries)
+                .try_fold(0usize, |count, boundary| count.checked_add(boundary.len())),
+            MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => Some(edges.len()),
+            MeshFaceBoundaryDomain::DeferredValidation(domain) => domain
+                .cycles
+                .iter()
+                .try_fold(domain.missing_edges.len(), |count, cycle| {
+                    count.checked_add(cycle.exact_uses.len())
+                }),
+        }
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("catia compact boundary edges", u64::MAX, u64::MAX)
+        })?;
+        charge_collection_items(ctx, edge_count, "catia compact boundary edges")?;
         let edges = match domain {
             MeshFaceBoundaryDomain::Ordered(assignments) => assignments
                 .iter()
@@ -1860,6 +1878,7 @@ fn advance_compact_boundary_domains<'a>(
                 edges
             }
         };
+        charge_collection_items(ctx, edges.len(), "catia compact boundary selected edges")?;
         let Some(edge_points) = edges
             .iter()
             .map(|edge| {
@@ -1873,25 +1892,31 @@ fn advance_compact_boundary_domains<'a>(
         else {
             continue;
         };
-        let Ok(mut points) = alloc_filled(
+        let mut points = ctx.alloc_filled(
             assignment.len(),
             [0; 2],
             "catia compact boundary edge points",
-        ) else {
-            return CompactBoundaryAdvanceOutcome::Rejected;
-        };
+        )?;
         for (edge, pair) in edge_points {
             points[edge] = pair;
         }
         let alternatives = match domain {
-            MeshFaceBoundaryDomain::Ordered(assignments) => assignments.clone(),
+            MeshFaceBoundaryDomain::Ordered(assignments) => {
+                charge_collection_items(
+                    ctx,
+                    assignments.len(),
+                    "catia compact boundary alternatives",
+                )?;
+                assignments.clone()
+            }
             MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
                 let Some(cycles) = incidence_cycles(edges, &points) else {
-                    return CompactBoundaryAdvanceOutcome::Rejected;
+                    return Ok(CompactBoundaryAdvanceOutcome::Rejected);
                 };
                 let [cycle] = cycles.as_slice() else {
-                    return CompactBoundaryAdvanceOutcome::Rejected;
+                    return Ok(CompactBoundaryAdvanceOutcome::Rejected);
                 };
+                charge_collection_items(ctx, cycle.len(), "catia compact unordered boundary uses")?;
                 vec![MeshFaceBoundaryAssignment {
                     boundaries: vec![cycle
                         .into_iter()
@@ -1905,17 +1930,45 @@ fn advance_compact_boundary_domains<'a>(
                 }]
             }
             MeshFaceBoundaryDomain::DeferredValidation(domain) => {
-                let Some(materialized) = deferred_boundary_assignment(domain, &points) else {
-                    return CompactBoundaryAdvanceOutcome::Rejected;
+                let Some(materialized) = deferred_boundary_assignment(ctx, domain, &points)? else {
+                    return Ok(CompactBoundaryAdvanceOutcome::Rejected);
                 };
+                charge_collection_items(ctx, 1, "catia compact deferred alternative")?;
                 vec![materialized]
             }
         };
+        charge_collection_items(ctx, 1, "catia compact boundary domain rows")?;
         ordered.push(alternatives);
     }
     if ordered.is_empty() {
-        return CompactBoundaryAdvanceOutcome::Complete(states);
+        return Ok(CompactBoundaryAdvanceOutcome::Complete(states));
     }
+    charge_collection_items(
+        ctx,
+        assignment.len(),
+        "catia compact boundary candidate rows",
+    )?;
+    let candidate_count = assignment
+        .iter()
+        .enumerate()
+        .try_fold(0usize, |count, (edge, pair)| {
+            let options = if selected.is_some_and(|(selected_edge, _)| selected_edge == edge)
+                || pair.is_some()
+            {
+                1
+            } else {
+                choices[edge].len()
+            };
+            count.checked_add(options)
+        })
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("catia compact boundary candidate pairs", u64::MAX, u64::MAX)
+        })?;
+    charge_collection_items(
+        ctx,
+        candidate_count,
+        "catia compact boundary candidate pairs",
+    )?;
     let candidates = assignment
         .iter()
         .enumerate()
@@ -1946,7 +1999,7 @@ fn advance_compact_boundary_domains<'a>(
                             .signature_work()
                             .saturating_add(work_units(next_oriented.len())),
                     ) {
-                        return CompactBoundaryAdvanceOutcome::Exhausted;
+                        return Ok(CompactBoundaryAdvanceOutcome::Exhausted);
                     }
                     let mut oriented_signature = next_oriented.iter().copied().collect::<Vec<_>>();
                     oriented_signature.sort_unstable();
@@ -1966,36 +2019,38 @@ fn advance_compact_boundary_domains<'a>(
             }
         }
         if next.len() == MAX_QUOTIENT_STATES || budget.exhausted() {
-            return CompactBoundaryAdvanceOutcome::Exhausted;
+            return Ok(CompactBoundaryAdvanceOutcome::Exhausted);
         }
         if next.is_empty() {
-            return CompactBoundaryAdvanceOutcome::Rejected;
+            return Ok(CompactBoundaryAdvanceOutcome::Rejected);
         }
         states = next;
     }
-    CompactBoundaryAdvanceOutcome::Complete(states)
+    Ok(CompactBoundaryAdvanceOutcome::Complete(states))
 }
 
 #[cfg(test)]
 pub(super) fn compact_boundary_domains_jointly_viable<'a>(
+    ctx: &DecodeContext<'_>,
     domains: impl IntoIterator<Item = &'a MeshFaceBoundaryDomain>,
     choices: &[Vec<[usize; 2]>],
     assignment: &[Option<[usize; 2]>],
     selected: Option<(usize, [usize; 2])>,
     quotient: &MeshQuotient,
     budget: &WorkBudget<'_>,
-) -> bool {
-    matches!(
+) -> Result<bool, CodecError> {
+    Ok(matches!(
         advance_compact_boundary_domains(
+            ctx,
             domains,
             choices,
             assignment,
             selected,
             vec![(quotient.clone(), HashSet::new())],
             budget,
-        ),
+        )?,
         CompactBoundaryAdvanceOutcome::Complete(_)
-    )
+    ))
 }
 
 fn adjust_incidence_degrees(
@@ -2674,9 +2729,9 @@ impl IncidenceComponentSearch<'_, '_> {
         &mut self,
         faces: impl IntoIterator<Item = usize>,
         quotient_states: Vec<MeshQuotientGaugeState>,
-    ) -> Option<Vec<MeshQuotientGaugeState>> {
+    ) -> Result<Option<Vec<MeshQuotientGaugeState>>, CodecError> {
         let Some(mesh_assignments) = self.mesh_assignments else {
-            return Some(quotient_states);
+            return Ok(Some(quotient_states));
         };
         let mut faces = faces.into_iter().collect::<Vec<_>>();
         faces.sort_unstable();
@@ -2708,32 +2763,36 @@ impl IncidenceComponentSearch<'_, '_> {
                 })
         });
         if !viable {
-            return None;
+            return Ok(None);
         }
         if quotient_states.is_empty() {
-            Some(quotient_states)
+            Ok(Some(quotient_states))
         } else {
             match advance_compact_boundary_domains(
+                self.ctx,
                 faces.iter().filter_map(|face| mesh_assignments.get(*face)),
                 self.choices,
                 &self.assignment,
                 None,
                 quotient_states,
                 self.boundary_propagation_budget,
-            ) {
-                CompactBoundaryAdvanceOutcome::Complete(states) => Some(states),
-                CompactBoundaryAdvanceOutcome::Rejected => None,
+            )? {
+                CompactBoundaryAdvanceOutcome::Complete(states) => Ok(Some(states)),
+                CompactBoundaryAdvanceOutcome::Rejected => Ok(None),
                 CompactBoundaryAdvanceOutcome::Exhausted => {
                     self.state = IncidenceSearchState::Exhausted;
-                    None
+                    Ok(None)
                 }
             }
         }
     }
 
     #[cfg(test)]
-    fn ordered_faces_feasible(&mut self, faces: impl IntoIterator<Item = usize>) -> bool {
-        self.advance_ordered_faces(faces, Vec::new()).is_some()
+    fn ordered_faces_feasible(
+        &mut self,
+        faces: impl IntoIterator<Item = usize>,
+    ) -> Result<bool, CodecError> {
+        Ok(self.advance_ordered_faces(faces, Vec::new())?.is_some())
     }
 
     fn component_faces(&self) -> Vec<usize> {
@@ -2930,7 +2989,7 @@ impl IncidenceComponentSearch<'_, '_> {
         for option in options {
             if let Some(applied) = self.apply_face_configuration(option, coordinate_domains)? {
                 if let Some(next_states) =
-                    self.advance_ordered_faces(applied.affected_faces, quotient_states.to_vec())
+                    self.advance_ordered_faces(applied.affected_faces, quotient_states.to_vec())?
                 {
                     self.search_with_quotient(
                         &next_states,
@@ -3044,7 +3103,7 @@ impl IncidenceComponentSearch<'_, '_> {
         let mut domains = coordinate_domains.cloned();
         while let Some(applied) = self.apply_face_configuration(option, domains.as_ref())? {
             let applied_factor_checkpoint = applied.factor_checkpoint;
-            let Some(next_states) = self.advance_ordered_faces(applied.affected_faces, states)
+            let Some(next_states) = self.advance_ordered_faces(applied.affected_faces, states)?
             else {
                 self.rollback_face_configuration(applied.assigned);
                 if let Some(factors) = &mut self.face_configuration_domains {
@@ -3255,7 +3314,7 @@ impl IncidenceComponentSearch<'_, '_> {
                 .is_none_or(|constraint| (constraint.valid)(&self.assignment))
             {
                 if let Some(next_states) =
-                    self.advance_ordered_faces(faces, quotient_states.to_vec())
+                    self.advance_ordered_faces(faces, quotient_states.to_vec())?
                 {
                     self.search_with_quotient(
                         &next_states,
@@ -3425,9 +3484,20 @@ fn augment_cycle_matching(
 }
 
 pub(super) fn deferred_boundary_assignment(
+    ctx: &DecodeContext<'_>,
     domain: &MeshDeferredFaceBoundary,
     edge_points: &[[usize; 2]],
-) -> Option<MeshFaceBoundaryAssignment> {
+) -> Result<Option<MeshFaceBoundaryAssignment>, CodecError> {
+    let incident_count = domain
+        .cycles
+        .iter()
+        .try_fold(domain.missing_edges.len(), |count, cycle| {
+            count.checked_add(cycle.exact_uses.len())
+        })
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("catia deferred incident edges", u64::MAX, u64::MAX)
+        })?;
+    charge_collection_items(ctx, incident_count, "catia deferred incident edges")?;
     let mut incident = domain.missing_edges.clone();
     incident.extend(
         domain
@@ -3437,11 +3507,35 @@ pub(super) fn deferred_boundary_assignment(
     );
     incident.sort_unstable();
     incident.dedup();
-    let incidence = incidence_cycles(&incident, edge_points)?;
+    let Some(incidence) = incidence_cycles(&incident, edge_points) else {
+        return Ok(None);
+    };
     if incidence.len() != domain.cycles.len() {
-        return None;
+        return Ok(None);
     }
+    charge_collection_items(
+        ctx,
+        domain.missing_edges.len(),
+        "catia deferred missing edges",
+    )?;
     let missing = domain.missing_edges.iter().copied().collect::<HashSet<_>>();
+    let compatibility_count = domain
+        .cycles
+        .len()
+        .checked_mul(incidence.len())
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("catia deferred compatibility cells", u64::MAX, u64::MAX)
+        })?;
+    charge_collection_items(
+        ctx,
+        domain.cycles.len(),
+        "catia deferred compatibility rows",
+    )?;
+    charge_collection_items(
+        ctx,
+        compatibility_count,
+        "catia deferred compatibility cells",
+    )?;
     let compatible = domain
         .cycles
         .iter()
@@ -3452,26 +3546,36 @@ pub(super) fn deferred_boundary_assignment(
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
+    charge_collection_items(ctx, domain.cycles.len(), "catia deferred matching rows")?;
+    charge_collection_items(ctx, compatibility_count, "catia deferred matching cells")?;
     let boolean_compatible = compatible
         .iter()
         .map(|cycles| cycles.iter().map(Option::is_some).collect::<Vec<_>>())
         .collect::<Vec<_>>();
-    let mut matched_mesh = alloc_filled(incidence.len(), None, "catia_deferred_match").ok()?;
+    let mut matched_mesh = ctx.alloc_filled(incidence.len(), None, "catia_deferred_match")?;
     for mesh in 0..domain.cycles.len() {
-        let mut visited = alloc_filled(incidence.len(), false, "catia_deferred_visit").ok()?;
+        let mut visited = ctx.alloc_filled(incidence.len(), false, "catia_deferred_visit")?;
         if !augment_cycle_matching(mesh, &boolean_compatible, &mut visited, &mut matched_mesh) {
-            return None;
+            return Ok(None);
         }
     }
     let mut boundaries =
-        alloc_filled(domain.cycles.len(), None, "catia_deferred_boundaries").ok()?;
+        ctx.alloc_filled(domain.cycles.len(), None, "catia_deferred_boundaries")?;
     for (incidence, mesh) in matched_mesh.into_iter().enumerate() {
-        let mesh = mesh?;
+        let Some(mesh) = mesh else {
+            return Ok(None);
+        };
+        charge_collection_items(
+            ctx,
+            compatible[mesh][incidence].as_ref().map_or(0, Vec::len),
+            "catia deferred copied boundary uses",
+        )?;
         boundaries[mesh].clone_from(&compatible[mesh][incidence]);
     }
-    Some(MeshFaceBoundaryAssignment {
-        boundaries: boundaries.into_iter().collect::<Option<Vec<_>>>()?,
-    })
+    Ok(boundaries
+        .into_iter()
+        .collect::<Option<Vec<_>>>()
+        .map(|boundaries| MeshFaceBoundaryAssignment { boundaries }))
 }
 
 fn deferred_boundary_closes(domain: &MeshDeferredFaceBoundary, edge_points: &[[usize; 2]]) -> bool {
