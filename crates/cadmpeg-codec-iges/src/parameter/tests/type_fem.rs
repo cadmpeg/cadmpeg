@@ -197,7 +197,7 @@ fn malformed_fem_counted_spans_do_not_enable_generic_recovery() {
                 TokenValue::Integer(1),
                 TokenValue::Integer(0),
                 TokenValue::Integer(1),
-                TokenValue::Real(2.0),
+                TokenValue::real(2.0),
                 TokenValue::Integer(1),
                 TokenValue::Integer(1),
                 TokenValue::Integer(0),
@@ -230,7 +230,7 @@ fn malformed_fem_counted_spans_do_not_enable_generic_recovery() {
             0,
             vec![
                 TokenValue::Integer(418),
-                TokenValue::Real(1.0),
+                TokenValue::real(1.0),
                 TokenValue::Integer(1),
                 TokenValue::Integer(1),
                 TokenValue::Integer(1),

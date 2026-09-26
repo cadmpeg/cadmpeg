@@ -2837,7 +2837,7 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion)
         let normals = has_normals
             .then(|| {
                 (0..node_count)
-                    .map(|_| cursor.vector3_f32("binary triangulation normal"))
+                    .map(|_| cursor.finite_vector3_f32("binary triangulation normal"))
                     .collect::<Result<Vec<_>, _>>()
             })
             .transpose()?;
@@ -3968,7 +3968,7 @@ impl<'a> BinaryCursor<'a> {
         ))
     }
 
-    fn vector3_f32(&mut self, label: &str) -> Result<FiniteVector3, CodecError> {
+    fn finite_vector3_f32(&mut self, label: &str) -> Result<FiniteVector3, CodecError> {
         Ok(FiniteVector3::from_components(
             FiniteReal::from_finite_binary32(self.f32(label)?),
             FiniteReal::from_finite_binary32(self.f32(label)?),
@@ -6231,10 +6231,48 @@ pub(crate) mod tests {
     use std::io::Cursor;
 
     #[test]
+    fn indexed_polygon_admits_only_aligned_parameters() {
+        let node = cadmpeg_ir::features::FinitePoint3::ZERO;
+        let mut facts = super::ShapeSet {
+            locations: Vec::new(),
+            curve2ds: Vec::new(),
+            curves: Vec::new(),
+            polygons3d: vec![super::TextPolygon3d {
+                deflection: cadmpeg_ir::scalar::NonNegativeReal::ZERO,
+                nodes: vec![node],
+                parameters: Some(vec![]),
+            }],
+            polygons_on_triangulations: Vec::new(),
+            surfaces: Vec::new(),
+            triangulations: Vec::new(),
+            tshapes: Vec::new().into(),
+            roots: Vec::new(),
+        };
+        assert!(facts.validate().is_err());
+        facts.polygons3d[0].parameters = Some(vec![
+            cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite")
+        ]);
+        assert!(facts.validate().is_ok());
+        facts.polygons3d[0].parameters = None;
+        assert!(facts.validate().is_ok());
+    }
+
+    #[test]
     fn polygon_deflection_is_admitted_on_source_and_native_wire() {
         assert!(super::admit_polygon_deflection(FiniteReal::ZERO).is_ok());
         assert!(super::admit_polygon_deflection(FiniteReal::new(-1.0).unwrap()).is_err());
         assert!(FiniteReal::new(f64::INFINITY).is_none());
+
+        for (value, expected) in [
+            ("nan", "non-finite 3D polygon deflection"),
+            ("-1.0", "polygon deflection must be finite and non-negative"),
+        ] {
+            let text = format!(
+                "CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 1\n1 0 {value} 0 0 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*"
+            );
+            let error = super::parse_text(text.as_bytes()).expect_err("invalid source deflection");
+            assert!(error.to_string().contains(expected), "{error}");
+        }
 
         let polygon = serde_json::json!({
             "deflection": 0.5,
@@ -6999,14 +7037,13 @@ pub(crate) mod tests {
         assert!(matches!(facts.curves[1], TextCurve::Offset { .. }));
         assert_eq!(facts.polygons3d[0].nodes.len(), 2);
         assert_eq!(
-            facts.polygons3d[0]
-                .parameters
-                .as_deref()
-                .map(|parameters| parameters
-                    .iter()
-                    .map(|value| value.get())
-                    .collect::<Vec<_>>()),
-            Some(vec![0.0, 1.0])
+            facts.polygons3d[0].parameters.as_deref(),
+            Some(
+                &[
+                    cadmpeg_ir::scalar::FiniteReal::ZERO,
+                    cadmpeg_ir::scalar::FiniteReal::ONE
+                ][..]
+            )
         );
         assert_eq!(facts.polygons_on_triangulations[0].nodes, [1, 2]);
         assert!(matches!(facts.surfaces[0], TextSurface::Plane { .. }));
@@ -7081,14 +7118,13 @@ pub(crate) mod tests {
         let facts = parse_text(input.as_bytes()).expect("polygonal carriers").0;
         assert_eq!(facts.polygons3d[0].nodes.len(), 2);
         assert_eq!(
-            facts.polygons3d[0]
-                .parameters
-                .as_deref()
-                .map(|parameters| parameters
-                    .iter()
-                    .map(|value| value.get())
-                    .collect::<Vec<_>>()),
-            Some(vec![0.0, 1.0])
+            facts.polygons3d[0].parameters.as_deref(),
+            Some(
+                &[
+                    cadmpeg_ir::scalar::FiniteReal::ZERO,
+                    cadmpeg_ir::scalar::FiniteReal::ONE
+                ][..]
+            )
         );
         assert_eq!(facts.polygons_on_triangulations[0].nodes, [1, 2]);
         let triangulation = &facts.triangulations[0];

@@ -31,6 +31,7 @@ mod records;
 mod sketch;
 mod sketch_ids;
 mod sketch_transfer;
+mod source_carriers;
 mod surfaces;
 mod sweep;
 pub(crate) mod uniqueness;

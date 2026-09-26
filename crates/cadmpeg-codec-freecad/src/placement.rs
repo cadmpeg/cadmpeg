@@ -65,7 +65,7 @@ pub(crate) fn placement_matrix(
             ))
         })?;
         let axis = FiniteVector3::from_components(ox, oy, oz);
-        let unit = UnitVector3::normalized_finite_nonzero(axis).unwrap_or(UnitVector3::Z_AXIS);
+        let unit = UnitVector3::normalized_nonzero(axis).unwrap_or(UnitVector3::Z_AXIS);
         let unit = Vector3::from(unit);
         let (x, y, z) = (unit.x, unit.y, unit.z);
         let half_angle = angle.get() / 2.0;

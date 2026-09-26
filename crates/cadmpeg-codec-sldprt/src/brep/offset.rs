@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::scalar::FiniteReal;
 
 use super::LEN_TO_MM;
 
@@ -18,7 +19,7 @@ pub(super) struct OffsetCarrier {
     /// Attribute of the support-surface carrier.
     pub(super) support: u16,
     /// Signed offset distance in millimetres.
-    pub(super) distance: f64,
+    pub(super) distance: FiniteReal,
     /// Byte offset of the `00 3c` tag.
     pub(super) offset: usize,
 }
@@ -47,9 +48,9 @@ fn parse_payload(
         tail + (offset_surf::DISTANCE - offset_surf::DISCRIMINATOR)
     };
     let distance = View::f64_be_at(body, distance_at)? * LEN_TO_MM;
-    distance.is_finite().then_some(OffsetCarrier {
+    Some(OffsetCarrier {
         support,
-        distance,
+        distance: FiniteReal::new(distance)?,
         offset,
     })
 }
@@ -133,12 +134,12 @@ mod tests {
         let partition = scan(&partition(b'V', 1, 6, -0.0025));
         let carrier = partition.get(&12).expect("partition offset surface");
         assert_eq!(carrier.support, 6);
-        assert!((carrier.distance + 2.5).abs() < 1.0e-12);
+        assert!((carrier.distance.get() + 2.5).abs() < 1.0e-12);
 
         let deltas = scan(&deltas(0.0045));
         let carrier = deltas.get(&12).expect("deltas offset surface");
         assert_eq!(carrier.support, 6);
-        assert!((carrier.distance - 4.5).abs() < 1.0e-12);
+        assert!((carrier.distance.get() - 4.5).abs() < 1.0e-12);
     }
 
     #[test]

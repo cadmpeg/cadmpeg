@@ -305,6 +305,27 @@ impl FeatureDirection3 {
     pub fn reversed(self) -> Self {
         Self(Vector3::new(-self.0.x, -self.0.y, -self.0.z))
     }
+
+    /// Canonicalize a unit input by replacing components of magnitude at most
+    /// `1e-12` with positive zero. A unit vector has a component above one
+    /// half in magnitude, so the result keeps a finite nonzero squared norm.
+    #[must_use]
+    pub fn from_unit_without_small_components(direction: UnitVector3) -> Self {
+        const EPS_CANONICAL_COMPONENT: f64 = 1.0e-12;
+        let component = |value: f64| {
+            if value.abs() <= EPS_CANONICAL_COMPONENT {
+                0.0
+            } else {
+                value
+            }
+        };
+        let value = direction.as_raw();
+        Self(Vector3::new(
+            component(value.x),
+            component(value.y),
+            component(value.z),
+        ))
+    }
 }
 
 checked_feature_geometry!(
@@ -440,6 +461,13 @@ impl FeatureCoordinateFrame {
     pub fn new(origin: Point3, x_axis: Vector3, y_axis: Vector3, z_axis: Vector3) -> Option<Self> {
         let plane = FeatureUnitPlaneFrame::new(origin, x_axis, y_axis)?;
         let z_axis = UnitVector3::new(z_axis)?;
+        Self::from_parts(plane, z_axis)
+    }
+
+    /// Build a frame from admitted axes and an admitted plane origin.
+    pub fn from_parts(plane: FeatureUnitPlaneFrame, z_axis: UnitVector3) -> Option<Self> {
+        let x_axis = *plane.u_axis().as_raw();
+        let y_axis = *plane.v_axis().as_raw();
         let z = *z_axis.as_raw();
         (x_axis.dot(z).abs() <= EPS_FEATURE_UNIT_FRAME
             && y_axis.dot(z).abs() <= EPS_FEATURE_UNIT_FRAME
@@ -551,6 +579,10 @@ macro_rules! checked_feature_plane_frame {
                 let origin = FinitePoint3::new(origin)?;
                 let normal = FeatureDirection3::new(normal)?;
                 let u_axis = FeatureDirection3::new(u_axis)?;
+                Self::from_parts(origin, normal, u_axis)
+            }
+            /// Build a plane frame from admitted parts; only perpendicularity remains to check.
+            pub fn from_parts(origin: FinitePoint3, normal: FeatureDirection3, u_axis: FeatureDirection3) -> Option<Self> {
                 let $normal_length = normal.norm();
                 let $u_length = u_axis.norm();
                 if normal.dot(u_axis.get()).abs() > $bound { return None; }
@@ -625,7 +657,7 @@ impl FeatureLineSegment {
         Self::from_parts(start, end)
     }
 
-    /// Build a segment from finite endpoints if they are distinct.
+    /// Build a line from admitted endpoints, checking only that they differ.
     pub fn from_parts(start: FinitePoint3, end: FinitePoint3) -> Option<Self> {
         (start != end).then_some(Self { start, end })
     }

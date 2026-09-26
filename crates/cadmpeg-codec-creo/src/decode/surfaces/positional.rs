@@ -23,6 +23,7 @@ use super::super::native::annotate;
 use super::super::sweep::nurbs::{extruded_nurbs_surface, placed_tabulated_cylinder_directrix};
 use super::super::uniqueness::exactly_one;
 use crate::decode::sketch_transfer::recipe::feature_schema_class;
+use crate::decode::source_carriers::SourceUnitCarriers;
 use crate::vecmath::cross;
 
 use super::prototypes::{
@@ -34,6 +35,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     if scan.framing.layout != crate::container::Layout::Nd {
         return Ok(0);
@@ -120,26 +122,33 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
                 Exactness::Derived,
             );
             ctx.charge_entities(1, "admit Creo model surfaces")?;
-            ir.model.surfaces.push(Surface {
-                id,
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)),
-                source_object: Some(SourceObjectAssociation {
-                    format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                        "{}:{}",
-                        section.name(),
-                        row.id
-                    ))
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                    })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                }),
-            });
+            source_carriers.admit_surface(
+                ir,
+                Surface {
+                    id,
+                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+                        sphere_surface,
+                    )),
+                    source_object: Some(SourceObjectAssociation {
+                        format: cadmpeg_ir::CodecFormat::Creo,
+                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                            "{}:{}",
+                            section.name(),
+                            row.id
+                        ))
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "source object_id must not be empty",
+                            )
+                        })?,
+                        name: None,
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    }),
+                },
+            )?;
             transferred += 1;
         }
     }
@@ -154,6 +163,7 @@ pub(in super::super) fn transfer_positional_tori(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let round_feature_ids = scan
         .surfaces
@@ -165,7 +175,7 @@ pub(in super::super) fn transfer_positional_tori(
         .collect::<BTreeSet<_>>();
     let mut constant_round_feature_ids = BTreeSet::new();
     for feature_id in round_feature_ids {
-        if round_constant_radius(scan, ir, feature_id)?.is_some() {
+        if round_constant_radius(scan, ir, source_carriers, feature_id)?.is_some() {
             constant_round_feature_ids.insert(feature_id);
         }
     }
@@ -239,26 +249,29 @@ pub(in super::super) fn transfer_positional_tori(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
-        ir.model.surfaces.push(Surface {
-            id,
-            geometry,
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                    "{}:{}",
-                    section.name(),
-                    row.id
-                ))
-                .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                })?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
+        source_carriers.admit_surface(
+            ir,
+            Surface {
+                id,
+                geometry,
+                source_object: Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        "{}:{}",
+                        section.name(),
+                        row.id
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            },
+        )?;
         transferred += 1;
     }
     Ok(transferred)
@@ -269,6 +282,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let replay_bound_surfaces = scan
         .curves
@@ -356,46 +370,53 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model curves")?;
-        ir.model.curves.push(Curve {
-            id: curve_id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)),
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                    "VisibGeom:surface_directrix#{}",
-                    record.surface_id
-                ))
-                .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                })?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
+        source_carriers.admit_curve(
+            ir,
+            Curve {
+                id: curve_id.clone(),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)),
+                source_object: Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        "VisibGeom:surface_directrix#{}",
+                        record.surface_id
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            },
+        )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
-        ir.model.surfaces.push(Surface {
-            id: surface_id.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                    "VisibGeom:{}",
-                    record.surface_id
-                ))
-                .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                })?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
-        let _attached = ir.model.add_procedural_surface(
+        source_carriers.admit_surface(
+            ir,
+            Surface {
+                id: surface_id.clone(),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
+                source_object: Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        "VisibGeom:{}",
+                        record.surface_id
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            },
+        )?;
+        source_carriers.admit_procedural_surface(
+            ir,
             surface_id,
             cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
                 curve_id,
@@ -412,7 +433,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
                 )
             })
             .map_err(cadmpeg_core::CodecError::malformed)?,
-        );
+        )?;
         transferred += 1;
     }
     Ok(transferred)
@@ -467,6 +488,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut replay_counts = BTreeMap::<u32, usize>::new();
     for replay in &scan.curves.tabulated_cylinder_replays {
@@ -573,46 +595,53 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model curves")?;
-        ir.model.curves.push(Curve {
-            id: curve_id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)),
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                    "VisibGeom:curve#{}",
-                    replay.curve_id
-                ))
-                .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                })?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
+        source_carriers.admit_curve(
+            ir,
+            Curve {
+                id: curve_id.clone(),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)),
+                source_object: Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        "VisibGeom:curve#{}",
+                        replay.curve_id
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            },
+        )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
-        ir.model.surfaces.push(Surface {
-            id: surface_id.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                    "VisibGeom:{}",
-                    replay.surface_id
-                ))
-                .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                })?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
-        let _attached = ir.model.add_procedural_surface(
+        source_carriers.admit_surface(
+            ir,
+            Surface {
+                id: surface_id.clone(),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
+                source_object: Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        "VisibGeom:{}",
+                        replay.surface_id
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            },
+        )?;
+        source_carriers.admit_procedural_surface(
+            ir,
             surface_id,
             cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
                 curve_id,
@@ -629,7 +658,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
                 )
             })
             .map_err(cadmpeg_core::CodecError::malformed)?,
-        );
+        )?;
         transferred += 1;
     }
     Ok(transferred)

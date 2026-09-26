@@ -73,6 +73,7 @@ fn unresolved_round_type26_frames_are_not_admitted_as_constant_tori() {
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         ))
         .expect("valid source object identity"),
         0
@@ -111,6 +112,7 @@ fn transfers_an_exact_zero_major_inline_frame_as_a_sphere() {
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         ))
         .expect("valid source object identity"),
         1
@@ -122,6 +124,55 @@ fn transfers_an_exact_zero_major_inline_frame_as_a_sphere() {
     };
     let radius = sphere_surface.radius().get();
     assert_eq!(radius, 2.0);
+}
+
+#[test]
+fn positional_sphere_is_in_millimeters_at_ir_admission() {
+    let mut payload = b"srf_array\0\xf8\x01".to_vec();
+    payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0, 0xe3]);
+    payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+    let mut scan = crate::container::scan_bytes_ok(build_prt(
+        "inline-sphere",
+        &[("ND:0:VisibGeom:0", payload)],
+    ));
+    scan.surfaces.parameters[0].carrier = crate::surface::SurfaceParameterCarrier::Resolved(
+        crate::surface::InlineSurfaceCarrier::Torus(
+            crate::surface::PositionalTorusFrame::new(
+                [1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [1.0, 0.0, 0.0],
+                0.0,
+                2.0,
+            )
+            .expect("valid positional sphere frame"),
+        ),
+    );
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::new(
+        cadmpeg_ir::scalar::PositiveReal::new(25.4),
+    );
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::transfer_positional_tori(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &mut source_carriers,
+        )
+        .expect("positional sphere transfer");
+    });
+    let surface = ir.model.surfaces.first().expect("positional sphere");
+    let Some(SolvedSurfaceGeometry::Sphere(sphere)) = surface.geometry.solved() else {
+        panic!("positional sphere changed family");
+    };
+    assert_eq!(sphere.center().get(), [25.4, 0.0, 0.0].into());
+    assert_eq!(sphere.radius().get(), 50.8);
+    let cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(source)) =
+        source_carriers.surface_geometry(surface)
+    else {
+        panic!("source positional sphere changed family");
+    };
+    assert_eq!(source.radius().get(), 2.0);
 }
 
 #[test]

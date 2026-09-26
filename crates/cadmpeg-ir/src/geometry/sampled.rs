@@ -466,6 +466,44 @@ impl PolylineSamples<FiniteReal, FinitePoint3> {
 }
 
 impl PolylineCurve {
+    /// Build from admitted sample scalars and points, checking only the
+    /// sample count, computed deviation, and parameter order.
+    pub fn from_checked_samples(
+        samples: PolylineSamples<FiniteReal, FinitePoint3>,
+        chordal_deflection: f64,
+    ) -> Result<Self, GeometryLayoutError> {
+        Self::build_checked_samples(samples, || admit_chordal_deflection(chordal_deflection))
+    }
+
+    fn build_checked_samples(
+        samples: PolylineSamples<FiniteReal, FinitePoint3>,
+        deflection: impl FnOnce() -> Result<NonNegativeReal, GeometryLayoutError>,
+    ) -> Result<Self, GeometryLayoutError> {
+        if samples.count() < 2 {
+            return Err(geometry_layout_error(
+                "polyline must contain at least two points",
+            ));
+        }
+        let chordal_deflection = deflection()?;
+        if let PolylineSamples::Parameterized { vertices } = &samples {
+            if !vertices
+                .windows(2)
+                .all(|pair| pair[0].parameter < pair[1].parameter)
+                && !vertices
+                    .windows(2)
+                    .all(|pair| pair[0].parameter > pair[1].parameter)
+            {
+                return Err(geometry_layout_error(
+                    "parameters must be finite and strictly monotonic",
+                ));
+            }
+        }
+        Ok(Self {
+            samples,
+            chordal_deflection,
+        })
+    }
+
     /// Build a polyline from its sample rows.
     ///
     /// A parameterized sample carries its parameter in the row, so there is no
@@ -479,40 +517,14 @@ impl PolylineCurve {
 
     /// Build from admitted source deflection and placement scale.
     pub fn from_scaled_deflection(
-        samples: PolylineSamples,
-        chordal_deflection: NonNegativeReal,
-        scale: crate::scalar::PositiveReal,
-    ) -> Result<Self, GeometryLayoutError> {
-        Self::build(samples, || {
-            chordal_deflection.scaled(scale).ok_or_else(|| {
-                geometry_layout_error("chordal_deflection must be finite and non-negative")
-            })
-        })
-    }
-
-    /// Build from admitted source samples and deflection after placement.
-    /// Check only sample count, scaled deflection and parameter order.
-    pub fn from_admitted_scaled_deflection(
         samples: PolylineSamples<FiniteReal, FinitePoint3>,
         chordal_deflection: NonNegativeReal,
         scale: crate::scalar::PositiveReal,
     ) -> Result<Self, GeometryLayoutError> {
-        if samples.count() < 2 {
-            return Err(geometry_layout_error(
-                "polyline must contain at least two points",
-            ));
-        }
-        let chordal_deflection = chordal_deflection.scaled(scale).ok_or_else(|| {
-            geometry_layout_error("chordal_deflection must be finite and non-negative")
-        })?;
-        if !samples.has_strictly_monotonic_parameters() {
-            return Err(geometry_layout_error(
-                "parameters must be finite and strictly monotonic",
-            ));
-        }
-        Ok(Self {
-            samples,
-            chordal_deflection,
+        Self::build_checked_samples(samples, || {
+            chordal_deflection.scaled(scale).ok_or_else(|| {
+                geometry_layout_error("chordal_deflection must be finite and non-negative")
+            })
         })
     }
 

@@ -126,7 +126,12 @@ fn placed_carriers_reject_duplicate_model_surface_ids() {
         .surfaces
         .extend([cylinder_surface(7, 2.0), cylinder_surface(7, 3.0)]);
 
-    assert!(!placed_carriers(&scan, &ir).contains_key(&7));
+    assert!(!placed_carriers(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default()
+    )
+    .contains_key(&7));
 }
 
 #[test]
@@ -172,7 +177,11 @@ fn placed_carriers_prefers_unique_positional_cylinder_frame() {
         .expect("valid CylinderSurface fixture"),
     ));
 
-    let carriers = placed_carriers(&scan, &ir);
+    let carriers = placed_carriers(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+    );
     assert!(matches!(
         carriers.get(&7),
         Some(CarrierEquation::Cylinder(cylinder))
@@ -229,7 +238,11 @@ fn placed_carriers_keeps_non_inline_class913_model_carrier() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(cylinder_surface(7, 0.2));
 
-    let carriers = placed_carriers(&scan, &ir);
+    let carriers = placed_carriers(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+    );
     assert!(matches!(
         carriers.get(&7),
         Some(CarrierEquation::Cylinder(cylinder)) if cylinder.origin == [0.0, 0.0, 0.0]
@@ -279,7 +292,12 @@ fn duplicate_model_surface_ids_remove_native_carrier() {
         ),
     ]);
 
-    assert!(!placed_carriers(&scan, &ir).contains_key(&7));
+    assert!(!placed_carriers(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default()
+    )
+    .contains_key(&7));
 }
 
 #[test]
@@ -288,7 +306,11 @@ fn placed_carriers_admits_unique_rowless_model_surface() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(cylinder_surface(7, 2.0));
 
-    let carriers = placed_carriers(&scan, &ir);
+    let carriers = placed_carriers(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+    );
     assert!(matches!(
         carriers.get(&7),
         Some(CarrierEquation::Cylinder(cylinder)) if cylinder.radius == 2.0
@@ -303,7 +325,12 @@ fn placed_carriers_rejects_duplicate_rowless_model_surface_ids() {
         .surfaces
         .extend([cylinder_surface(7, 2.0), cylinder_surface(7, 3.0)]);
 
-    assert!(!placed_carriers(&scan, &ir).contains_key(&7));
+    assert!(!placed_carriers(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default()
+    )
+    .contains_key(&7));
 }
 
 #[test]
@@ -460,6 +487,7 @@ fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
             &std::collections::BTreeSet::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         ))
         .expect("valid source object identity"),
         0

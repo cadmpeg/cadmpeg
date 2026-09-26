@@ -27,12 +27,13 @@ use crate::records::{
     FeatureInputRelationBinding, FeatureInputScalar, SketchInputEntity, SketchInputKind,
 };
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, FinitePoint3};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::sketches::{
     SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
     SpatialSketchGeometryDefinition, SpatialSketchId,
 };
+use cadmpeg_ir::units::FiniteVector;
 use std::collections::{BTreeMap, HashMap};
 
 use crate::layout::compact_current_spatial_marker_point as compact_spatial;
@@ -194,11 +195,8 @@ pub(crate) fn spatial_sketches(
                     Some((
                         lines.0 + offsets[0],
                         None,
-                        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
-                            start: vertices[0],
-                            end: vertices[1],
-                        })
-                        .ok()?,
+                        SpatialSketchGeometry::try_line_from_parts(vertices[0], vertices[1])
+                            .ok()?,
                     ))
                 })
                 .collect::<Option<Vec<_>>>()
@@ -296,11 +294,7 @@ pub(crate) fn spatial_sketches(
                     SpatialSketchEntityId::mint(format!("{}:entity:{index}", sketch_id.as_str()))
                         .ok()?,
                     sketch_id.clone(),
-                    SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
-                        start: vertices[0],
-                        end: vertices[1],
-                    })
-                    .ok()?,
+                    SpatialSketchGeometry::try_line_from_parts(vertices[0], vertices[1]).ok()?,
                 ))
             })
             .collect::<Option<Vec<_>>>()
@@ -707,7 +701,7 @@ pub(super) fn spatial_relation_marker_coordinates(payload: &[u8], offset: usize)
     Some(Point3::new(coordinate(0)?, coordinate(8)?, coordinate(16)?))
 }
 
-pub(super) fn spatial_vertex_coordinates(payload: &[u8]) -> Vec<Point3> {
+pub(super) fn spatial_vertex_coordinates(payload: &[u8]) -> Vec<FinitePoint3> {
     spatial_vertex_offsets(payload)
         .into_iter()
         .filter_map(|offset| {
@@ -716,7 +710,7 @@ pub(super) fn spatial_vertex_coordinates(payload: &[u8]) -> Vec<Point3> {
                 View::f64_le_at(payload, offset + 53)?,
                 View::f64_le_at(payload, offset + 61)?,
             );
-            point.is_finite().then_some(point)
+            FinitePoint3::new(point)
         })
         .collect()
 }
@@ -1259,7 +1253,7 @@ fn marker_state_value(payload: &[u8], offset: usize) -> Option<cadmpeg_ir::scala
     cadmpeg_ir::scalar::FiniteReal::new(View::f64_le_at(payload, offset)?)
 }
 
-pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
+pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<FiniteVector<2>> {
     const GEOMETRY_PREFIX: [u8; 12] = [
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x80, 0xbf,
     ];
@@ -1369,13 +1363,16 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
     finite_coordinate_pair(payload, coordinate_offset)
 }
 
-pub(super) fn finite_coordinate_pair(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
+pub(super) fn finite_coordinate_pair(payload: &[u8], offset: usize) -> Option<FiniteVector<2>> {
     let first = View::f64_le_at(payload, offset)?;
     let second = View::f64_le_at(payload, offset + 8)?;
-    (first.is_finite() && second.is_finite()).then_some([first, second])
+    FiniteVector::new([first, second])
 }
 
-fn extended_four_link_profile_point_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
+fn extended_four_link_profile_point_coordinates(
+    payload: &[u8],
+    offset: usize,
+) -> Option<FiniteVector<2>> {
     let valid_trailer_marker = [146, 150, 162, 174].into_iter().any(|relative| {
         offset
             .checked_add(relative)
@@ -1424,7 +1421,7 @@ fn extended_four_link_profile_point_coordinates(payload: &[u8], offset: usize) -
 fn legacy_extended_linked_profile_point_coordinates(
     payload: &[u8],
     offset: usize,
-) -> Option<[f64; 2]> {
+) -> Option<FiniteVector<2>> {
     let marker = payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len());
     let coordinate_tag = payload.get(offset + 56..offset + 58);
     let valid_marker_and_coordinate_tag = match marker {
@@ -1547,7 +1544,7 @@ fn legacy_extended_linked_profile_point_coordinates(
 fn legacy_single_incidence_profile_point_coordinates(
     payload: &[u8],
     offset: usize,
-) -> Option<[f64; 2]> {
+) -> Option<FiniteVector<2>> {
     let code = marker_native_code(payload, offset)?;
     let link_state = View::u16_le_at(payload, offset + 76)?;
     if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
@@ -1596,7 +1593,10 @@ fn legacy_single_incidence_profile_point_coordinates(
     finite_coordinate_pair(payload, offset + 58)
 }
 
-fn legacy_144_profile_point_variant_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
+fn legacy_144_profile_point_variant_coordinates(
+    payload: &[u8],
+    offset: usize,
+) -> Option<FiniteVector<2>> {
     let code = marker_native_code(payload, offset)?;
     let link_state = View::u16_le_at(payload, offset + pt_144::LINK_STATE)?;
     if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
@@ -1646,7 +1646,7 @@ fn legacy_144_profile_point_variant_coordinates(payload: &[u8], offset: usize) -
 pub(super) fn legacy_140_profile_point_variant_coordinates(
     payload: &[u8],
     offset: usize,
-) -> Option<[f64; 2]> {
+) -> Option<FiniteVector<2>> {
     let code = marker_native_code(payload, offset)?;
     let link_state = View::u16_le_at(payload, offset + pt_140::LINK_STATE)?;
     if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
@@ -1703,7 +1703,7 @@ pub(super) fn legacy_140_profile_point_variant_coordinates(
 fn compact_legacy_linked_profile_point_coordinates(
     payload: &[u8],
     offset: usize,
-) -> Option<[f64; 2]> {
+) -> Option<FiniteVector<2>> {
     if !compact_legacy_marker_body(payload, offset)
         || marker_native_code(payload, offset) != Some(0)
         || payload.get(offset + 19..offset + 25) != Some(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00])
@@ -1746,7 +1746,7 @@ fn compact_legacy_linked_profile_point_coordinates(
 pub(super) fn compact_legacy_code_two_profile_point_coordinates(
     payload: &[u8],
     offset: usize,
-) -> Option<[f64; 2]> {
+) -> Option<FiniteVector<2>> {
     if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
         || payload.get(offset + code_two::NATIVE_KIND..offset + code_two::ZERO_PREFIX)
@@ -1803,7 +1803,7 @@ pub(super) fn compact_legacy_code_two_profile_point_coordinates(
 pub(super) fn compact_legacy_embedded_geometry_coordinates(
     payload: &[u8],
     offset: usize,
-) -> Option<[f64; 2]> {
+) -> Option<FiniteVector<2>> {
     if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
         || payload.get(offset + 13..offset + 17) != Some(&[0; 4])
@@ -1832,7 +1832,7 @@ pub(super) fn compact_legacy_embedded_geometry_coordinates(
 pub(super) fn compact_legacy_coordinate_roster_coordinates(
     payload: &[u8],
     offset: usize,
-) -> Option<[f64; 2]> {
+) -> Option<FiniteVector<2>> {
     compact_legacy_code_two_profile_point_coordinates(payload, offset)
         .or_else(|| compact_legacy_embedded_geometry_coordinates(payload, offset))
         .or_else(|| {
@@ -1845,7 +1845,7 @@ pub(super) fn compact_legacy_coordinate_roster_coordinates(
 fn packed_legacy_linked_profile_point_coordinates(
     payload: &[u8],
     offset: usize,
-) -> Option<[f64; 2]> {
+) -> Option<FiniteVector<2>> {
     if !packed_legacy_marker_body(payload, offset)
         || marker_native_code(payload, offset) != Some(0)
         || payload.get(offset + 19..offset + 23) != Some(&[0x04, 0x00, 0x02, 0x00])
@@ -1880,7 +1880,10 @@ fn packed_legacy_linked_profile_point_coordinates(
         .flatten()
 }
 
-fn terminal_extended_profile_point_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
+fn terminal_extended_profile_point_coordinates(
+    payload: &[u8],
+    offset: usize,
+) -> Option<FiniteVector<2>> {
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         != Some(LEGACY_EXTENDED_SKETCH_MARKER)
         || marker_native_code(payload, offset) != Some(2)
@@ -1911,10 +1914,10 @@ fn terminal_extended_profile_point_coordinates(payload: &[u8], offset: usize) ->
 }
 
 fn validated_inline_arc_coordinates(
-    center: [f64; 2],
-    start: [f64; 2],
-    end: [f64; 2],
-) -> Option<[[f64; 2]; 3]> {
+    center: FiniteVector<2>,
+    start: FiniteVector<2>,
+    end: FiniteVector<2>,
+) -> Option<[FiniteVector<2>; 3]> {
     let start_radius = (start[0] - center[0]).hypot(start[1] - center[1]);
     let end_radius = (end[0] - center[0]).hypot(end[1] - center[1]);
     (start != end && start_radius > 0.0 && same_dimension_length(start_radius, end_radius))
@@ -1922,13 +1925,21 @@ fn validated_inline_arc_coordinates(
 }
 
 fn opposite_corner_inline_arc_coordinates(
-    corner: [f64; 2],
-    start: [f64; 2],
-    end: [f64; 2],
-) -> Option<[[f64; 2]; 3]> {
+    corner: FiniteVector<2>,
+    start: FiniteVector<2>,
+    end: FiniteVector<2>,
+) -> Option<[FiniteVector<2>; 3]> {
+    let start_components = start.finite_components();
+    let end_components = end.finite_components();
     let candidates = [
-        ([start[0], end[1]], [end[0], start[1]]),
-        ([end[0], start[1]], [start[0], end[1]]),
+        (
+            [start[0], end[1]],
+            FiniteVector::from([end_components[0], start_components[1]]),
+        ),
+        (
+            [end[0], start[1]],
+            FiniteVector::from([start_components[0], end_components[1]]),
+        ),
     ];
     let mut centers = candidates
         .into_iter()
@@ -1947,7 +1958,7 @@ fn opposite_corner_inline_arc_coordinates(
 fn compact_legacy_142_profile_curve_coordinates(
     payload: &[u8],
     offset: usize,
-) -> Option<[[f64; 2]; 3]> {
+) -> Option<[FiniteVector<2>; 3]> {
     let end = offset.checked_add(legacy_142::LEN)?;
     let record = payload.get(offset..end)?;
     let next_marker = sketch_marker_prefix_at(payload, end)
@@ -1996,12 +2007,15 @@ fn compact_legacy_142_profile_curve_coordinates(
 pub(super) fn compact_legacy_142_profile_curve_endpoints(
     payload: &[u8],
     offset: usize,
-) -> Option<[[f64; 2]; 2]> {
+) -> Option<[FiniteVector<2>; 2]> {
     let [_, start, end] = compact_legacy_142_profile_curve_coordinates(payload, offset)?;
     Some([start, end])
 }
 
-pub(super) fn inline_arc_coordinates(payload: &[u8], offset: usize) -> Option<[[f64; 2]; 3]> {
+pub(super) fn inline_arc_coordinates(
+    payload: &[u8],
+    offset: usize,
+) -> Option<[FiniteVector<2>; 3]> {
     if packed_legacy_marker_body(payload, offset)
         && marker_native_code(payload, offset) == Some(2)
         && payload.get(offset + 19..offset + 23) == Some(&[0x04, 0x00, 0x02, 0x00])
@@ -2247,7 +2261,7 @@ fn legacy_geometry_locus_alternate_linked_point_tail(payload: &[u8], offset: usi
 fn legacy_geometry_locus_alternate_profile_point_coordinates(
     payload: &[u8],
     offset: usize,
-) -> Option<[f64; 2]> {
+) -> Option<FiniteVector<2>> {
     if let Some((coordinates, _)) =
         legacy_geometry_locus_alternate_linked_profile_point(payload, offset)
     {
@@ -2258,7 +2272,7 @@ fn legacy_geometry_locus_alternate_profile_point_coordinates(
     .then(|| finite_coordinate_pair(payload, offset + 58))?
 }
 
-fn legacy_declared_handle_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
+fn legacy_declared_handle_coordinates(payload: &[u8], offset: usize) -> Option<FiniteVector<2>> {
     let code = marker_native_code(payload, offset)?;
     let handle_state = View::u16_le_at(payload, offset + 76)?;
     let current_prefix = payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER);
@@ -2410,7 +2424,7 @@ fn legacy_declared_handle_coordinates(payload: &[u8], offset: usize) -> Option<[
     finite_coordinate_pair(payload, offset + 58)
 }
 
-fn extended_profile_point_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
+fn extended_profile_point_coordinates(payload: &[u8], offset: usize) -> Option<FiniteVector<2>> {
     #[derive(Clone, Copy)]
     enum HandleState {
         Two,
@@ -2534,7 +2548,7 @@ fn extended_profile_point_coordinates(payload: &[u8], offset: usize) -> Option<[
         .flatten()
 }
 
-fn legacy_linked_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
+fn legacy_linked_coordinates(payload: &[u8], offset: usize) -> Option<FiniteVector<2>> {
     if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
         || marker_native_code(payload, offset) != Some(0)
         || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
@@ -2696,7 +2710,10 @@ fn current_geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool 
         && sketch_marker_prefix_at(payload, offset.saturating_add(146))
 }
 
-fn compact_geometry_locus_point_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
+fn compact_geometry_locus_point_coordinates(
+    payload: &[u8],
+    offset: usize,
+) -> Option<FiniteVector<2>> {
     if !matches!(
         payload.get(offset..offset + SKETCH_MARKER.len()),
         Some(prefix) if prefix == SKETCH_MARKER || prefix == LEGACY_SKETCH_MARKER
@@ -2725,7 +2742,7 @@ fn compact_geometry_locus_point_coordinates(payload: &[u8], offset: usize) -> Op
     finite_coordinate_pair(payload, offset + 58)
 }
 
-fn shifted_geometry_locus_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
+fn shifted_geometry_locus_coordinates(payload: &[u8], offset: usize) -> Option<FiniteVector<2>> {
     // This compact geometry-locus family moves the coordinate tag and pair eight
     // bytes past the ordinary linked-point positions. The framed trailer is part
     // of the discriminator: unlocated handles share the header but carry no pair.
@@ -2761,7 +2778,7 @@ fn shifted_geometry_locus_coordinates(payload: &[u8], offset: usize) -> Option<[
     finite_coordinate_pair(payload, offset + 66)
 }
 
-fn shifted_geometry_handle_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
+fn shifted_geometry_handle_coordinates(payload: &[u8], offset: usize) -> Option<FiniteVector<2>> {
     let coordinates = shifted_geometry_locus_coordinates(payload, offset)?;
     let code = marker_native_code(payload, offset)?;
     let line_handle = code == 2
@@ -2935,7 +2952,7 @@ fn extended_geometry_locus_single_link_point(payload: &[u8], offset: usize) -> b
         && sketch_marker_prefix_at(payload, offset.saturating_add(138))
 }
 
-type LinkedProfilePoint = ([f64; 2], [(u16, u16); 2]);
+type LinkedProfilePoint = (FiniteVector<2>, [(u16, u16); 2]);
 
 pub(super) fn linked_profile_point(payload: &[u8], offset: usize) -> Option<LinkedProfilePoint> {
     let marker = payload.get(offset..offset + SKETCH_MARKER.len());
@@ -3066,7 +3083,10 @@ fn legacy_geometry_locus_alternate_linked_profile_point(
     ))
 }
 
-fn additional_linked_profile_point_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
+fn additional_linked_profile_point_coordinates(
+    payload: &[u8],
+    offset: usize,
+) -> Option<FiniteVector<2>> {
     let marker = payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())?;
     let locus_and_state = (
         payload.get(offset + 23..offset + 27)?,

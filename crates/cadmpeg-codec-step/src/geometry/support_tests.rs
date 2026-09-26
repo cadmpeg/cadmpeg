@@ -263,6 +263,11 @@ fn a_direction_whose_length_overflows_keeps_its_orientation() {
     assert_eq!(components[2], 0.0);
 }
 
+#[test]
+fn a_zero_vector_cannot_be_emitted_as_a_direction() {
+    assert!(cadmpeg_ir::units::DirectionAboveEpsilon::new(Vector3::new(0.0, 0.0, 0.0)).is_none());
+}
+
 /// The section written for one transformation operator over `rows`.
 fn operator_section(rows: [[f64; 4]; 3]) -> Result<Vec<String>, cadmpeg_core::CodecError> {
     let transform = Transform::affine(rows).expect("affine transform");

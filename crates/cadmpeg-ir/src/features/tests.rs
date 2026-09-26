@@ -4,6 +4,8 @@
 use crate::features::TrimCellSelection;
 use crate::math::{Point3, Vector3};
 
+mod unit_directions;
+
 #[test]
 fn native_feature_kind_preserves_the_source_spelling() {
     use crate::features::NativeFeatureKind;
@@ -1163,6 +1165,56 @@ fn feature_coordinate_frame_admission_preserves_wire_and_handedness_bound() {
 }
 
 #[test]
+fn checked_feature_frame_parts_preserve_wire_and_cross_field_refusal() {
+    use crate::features::{
+        FeatureCoordinateFrame, FeatureDatumPlaneFrame, FeatureDirection3,
+        FeatureSupportPlaneFrame, FeatureUnitPlaneFrame, FinitePoint3,
+    };
+    use crate::units::UnitVector3;
+
+    let origin = Point3::new(1.0, 2.0, 3.0);
+    let x = Vector3::new(1.0, 0.0, 0.0);
+    let y = Vector3::new(0.0, 1.0, 0.0);
+    let z = Vector3::new(0.0, 0.0, 1.0);
+    let admitted_origin = FinitePoint3::new(origin).unwrap();
+    let plane = FeatureUnitPlaneFrame::from_parts(
+        admitted_origin,
+        UnitVector3::new(x).unwrap(),
+        UnitVector3::new(y).unwrap(),
+    )
+    .unwrap();
+    let frame = FeatureCoordinateFrame::from_parts(plane, UnitVector3::new(z).unwrap()).unwrap();
+    assert_eq!(frame, FeatureCoordinateFrame::new(origin, x, y, z).unwrap());
+    assert!(FeatureCoordinateFrame::from_parts(plane, UnitVector3::new(x).unwrap()).is_none());
+
+    let normal = Vector3::new(0.0, 0.0, 2.0);
+    let u_axis = Vector3::new(-3.0, 0.0, 0.0);
+    let admitted_normal = FeatureDirection3::new(normal).unwrap();
+    let admitted_u_axis = FeatureDirection3::new(u_axis).unwrap();
+    let datum =
+        FeatureDatumPlaneFrame::from_parts(admitted_origin, admitted_normal, admitted_u_axis)
+            .unwrap();
+    let support =
+        FeatureSupportPlaneFrame::from_parts(admitted_origin, admitted_normal, admitted_u_axis)
+            .unwrap();
+    assert_eq!(
+        datum,
+        FeatureDatumPlaneFrame::new(origin, normal, u_axis).unwrap()
+    );
+    assert_eq!(
+        support,
+        FeatureSupportPlaneFrame::new(origin, normal, u_axis).unwrap()
+    );
+    let parallel = FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap();
+    assert!(
+        FeatureDatumPlaneFrame::from_parts(admitted_origin, admitted_normal, parallel).is_none()
+    );
+    assert!(
+        FeatureSupportPlaneFrame::from_parts(admitted_origin, admitted_normal, parallel).is_none()
+    );
+}
+
+#[test]
 fn feature_unit_plane_and_image_bounds_reject_degenerate_geometry() {
     use crate::features::{FeatureImageBounds, FeatureUnitPlaneFrame, EPS_FEATURE_UNIT_FRAME};
     use crate::math::{Point2, Point3, Vector3};
@@ -1843,98 +1895,6 @@ fn feature_geometry_constants_are_the_admitted_literals() {
         .map(f64::to_bits),
         [z_axis.x, z_axis.y, z_axis.z].map(f64::to_bits)
     );
-}
-
-#[test]
-fn unit_feature_directions_admit_only_unit_vectors_on_the_wire() {
-    use crate::features::{
-        BodySelection, BooleanOp, FaceSelection, FeatureOperation, FinitePoint3,
-        HelicalSweepConstruction, HelicalSweepLaw, HelicalSweepTravel, PathRef, PlanarProfileRef,
-        SurfaceProjectionMode, SweepOrientation,
-    };
-    use crate::scalar::{Angle, Length, NonNegativeLength, PositiveLength, PositiveReal};
-    use crate::units::UnitVector3;
-
-    fn refuses<T: serde::de::DeserializeOwned + std::fmt::Debug>(
-        wire: &serde_json::Value,
-        key: &str,
-    ) {
-        for refused in [
-            serde_json::json!({"x": 0.0, "y": 0.0, "z": 2.0}),
-            serde_json::json!({"x": 0.0, "y": 0.0, "z": 0.0}),
-            serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0 + 2.0e-9}),
-        ] {
-            let mut wire = wire.clone();
-            wire[key] = refused;
-            let error = serde_json::from_value::<T>(wire).unwrap_err().to_string();
-            assert!(error.contains("direction must have unit length"), "{error}");
-        }
-        let mut near_unit = wire.clone();
-        near_unit[key] = serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0 + 5.0e-10});
-        assert!(serde_json::from_value::<T>(near_unit).is_ok());
-    }
-
-    let operations = [
-        (
-            FeatureOperation::Torus {
-                center: FinitePoint3::ZERO,
-                axis: UnitVector3::Z_AXIS,
-                major_radius: PositiveLength::new(5.0).unwrap(),
-                minor_radius: PositiveLength::new(1.0).unwrap(),
-                op: BooleanOp::NewBody,
-            },
-            "axis",
-        ),
-        (
-            FeatureOperation::MirrorShape {
-                source: BodySelection::Native("mirror:source".into()),
-                plane_origin: FinitePoint3::ZERO,
-                plane_normal: UnitVector3::Z_AXIS,
-                plane_reference: None,
-            },
-            "plane_normal",
-        ),
-        (
-            FeatureOperation::ProjectOnSurface {
-                sources: PathRef::Native("project:sources".into()),
-                support_face: FaceSelection::Native("project:support".into()),
-                direction: UnitVector3::Z_AXIS,
-                mode: SurfaceProjectionMode::All,
-                height: NonNegativeLength::new(0.0).unwrap(),
-                offset: Length::ZERO,
-            },
-            "direction",
-        ),
-    ];
-    for (operation, key) in operations {
-        let wire = serde_json::to_value(&operation).unwrap();
-        let decoded: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
-        refuses::<FeatureOperation>(&wire, key);
-    }
-
-    let binormal = serde_json::to_value(SweepOrientation::Binormal {
-        direction: UnitVector3::Z_AXIS,
-    })
-    .unwrap();
-    refuses::<SweepOrientation>(&binormal, "direction");
-
-    let helical = serde_json::to_value(HelicalSweepConstruction {
-        profile: PlanarProfileRef::Native("helix:profile".into()),
-        axis_origin: FinitePoint3::ZERO,
-        axis_direction: UnitVector3::Z_AXIS,
-        law: HelicalSweepLaw::PitchTurnsAngle,
-        pitch: NonNegativeLength::new(2.0).unwrap(),
-        travel: HelicalSweepTravel::new(Length::new(10.0).unwrap(), Length::ZERO).unwrap(),
-        turns: PositiveReal::new(5.0).unwrap(),
-        cone_angle: Angle::ZERO,
-        left_handed: false,
-        reversed: false,
-        tolerance: None,
-        allow_multi_profile_faces: None,
-    })
-    .unwrap();
-    refuses::<HelicalSweepConstruction>(&helical, "axis_direction");
 }
 
 #[test]

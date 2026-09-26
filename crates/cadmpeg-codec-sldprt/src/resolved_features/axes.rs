@@ -22,41 +22,32 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::Sketch;
+use cadmpeg_ir::units::{SumSquaresUnitVector3, UnitVector3};
 use cadmpeg_ir::{
     features::{FeatureDefinition, FeatureOperation},
     scalar::PositiveLength,
 };
 use std::collections::{HashMap, HashSet};
 
-const TEMPORARY_AXIS_UNIT_DIRECTION_EPS: f64 = 1.0e-9;
-const EPS_AXES_LINE_REFERENCE_DIRECTION_E9: f64 = 1e-9;
-const EPS_AXES_DECLARED_LINE_REFERENCE_DIRECTIONS_E9: f64 = 1e-9;
-const EPS_AXES_CANONICAL_UNIT_DIRECTION_E12: f64 = 1e-12;
-const EPS_AXES_LINEAR_PATTERN_DISPLAY_DIRECTIONS_E9: f64 = 1e-9;
-const EPS_AXES_COMPACT_LINE_REFERENCE_DIRECTIONS_E9: f64 = 1e-9;
-const EPS_AXES_REVOLUTION_LINE_REFERENCE_INPUTS_E9: f64 = 1e-9;
 const EPS_AXES_BIND_PROFILE_REVOLUTION_AXES_E9: f64 = 1e-9;
 const EPS_AXES_PROFILE_ROSTER_CONSTRUCTION_AXIS_E9: f64 = 1e-9;
 const EPS_AXES_PROFILE_GENERATED_SURFACE_AXIS_E9: f64 = 1e-9;
 const EPS_AXES_PROFILE_ROSTER_ORIGIN_AXIS_ENDPOINTS_E9: f64 = 1e-9;
 const EPS_AXES_PROFILE_ROSTER_PRINCIPAL_AXIS_ENDPOINTS_E9: f64 = 1e-9;
 
-pub(super) fn line_reference_direction(payload: &[u8], class_offset: u64) -> Option<Vector3> {
+fn square_sum_unit_direction(values: [f64; 3]) -> Option<UnitVector3> {
+    let [x, y, z] = values;
+    SumSquaresUnitVector3::new(Vector3::new(x, y, z)).map(SumSquaresUnitVector3::normalized)
+}
+
+pub(super) fn line_reference_direction(payload: &[u8], class_offset: u64) -> Option<UnitVector3> {
     let class_offset = usize::try_from(class_offset).ok()?;
-    let scalar = |offset: usize| {
-        let value = View::f64_le_at(payload, offset)?;
-        value.is_finite().then_some(value)
-    };
     let direction_at = |offset: usize| {
-        let direction = Vector3::new(scalar(offset)?, scalar(offset + 8)?, scalar(offset + 16)?);
-        let norm =
-            (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
-                .sqrt();
-        ((norm - 1.0).abs() <= EPS_AXES_LINE_REFERENCE_DIRECTION_E9).then_some(Vector3::new(
-            direction.x / norm,
-            direction.y / norm,
-            direction.z / norm,
-        ))
+        square_sum_unit_direction([
+            View::f64_le_at(payload, offset)?,
+            View::f64_le_at(payload, offset + 8)?,
+            View::f64_le_at(payload, offset + 16)?,
+        ])
     };
     let mut directions = Vec::new();
     if payload.get(class_offset + 136..class_offset + 144)
@@ -90,7 +81,7 @@ pub(super) fn declared_line_reference_directions(
     payload: &[u8],
     class_offset: u64,
     object_end: usize,
-) -> Vec<Vector3> {
+) -> Vec<UnitVector3> {
     const HANDLES: [u8; 8] = [0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
 
     let Ok(class_offset) = usize::try_from(class_offset) else {
@@ -119,17 +110,11 @@ pub(super) fn declared_line_reference_directions(
             value.is_finite().then_some(value)
         };
         let direction_at = |relative: usize| {
-            let direction = Vector3::new(
-                scalar(relative)?,
-                scalar(relative + 8)?,
-                scalar(relative + 16)?,
-            );
-            let norm =
-                (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
-                    .sqrt();
-            ((norm - 1.0).abs() <= EPS_AXES_DECLARED_LINE_REFERENCE_DIRECTIONS_E9).then_some(
-                Vector3::new(direction.x / norm, direction.y / norm, direction.z / norm),
-            )
+            square_sum_unit_direction([
+                View::f64_le_at(payload, handle.checked_add(relative)?)?,
+                View::f64_le_at(payload, handle.checked_add(relative + 8)?)?,
+                View::f64_le_at(payload, handle.checked_add(relative + 16)?)?,
+            ])
         };
         let addressed = payload.get(handle + 8..handle + 12) == Some(&[0; 4])
             && View::u32_le_at(payload, handle + 12).is_some_and(|address| address != 0);
@@ -158,28 +143,13 @@ pub(super) fn declared_line_reference_directions(
     directions
 }
 
-pub(super) fn canonical_unit_direction(direction: Vector3) -> Vector3 {
-    let component = |value: f64| {
-        if value.abs() <= EPS_AXES_CANONICAL_UNIT_DIRECTION_E12 {
-            0.0
-        } else {
-            value
-        }
-    };
-    Vector3::new(
-        component(direction.x),
-        component(direction.y),
-        component(direction.z),
-    )
-}
-
 pub(super) fn linear_pattern_display_directions(
     payload: &[u8],
     object_start: usize,
     object_end: usize,
     names: &[FeatureInputName],
     expected_spacing_m: [Option<f64>; 2],
-) -> Vec<Vector3> {
+) -> Vec<UnitVector3> {
     const VALUE_OFFSET: usize = 32;
     const DIRECTION_OFFSET: usize = 161;
     const LENGTH_TOLERANCE_M: f64 = 1e-8;
@@ -215,18 +185,11 @@ pub(super) fn linear_pattern_display_directions(
             {
                 return None;
             }
-            let scalar = |relative: usize| {
-                let scalar_offset = direction_offset.checked_add(relative)?;
-                let value = View::f64_le_at(payload, scalar_offset)?;
-                value.is_finite().then_some(value)
-            };
-            let direction = Vector3::new(scalar(0)?, scalar(8)?, scalar(16)?);
-            let norm =
-                (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
-                    .sqrt();
-            ((norm - 1.0).abs() <= EPS_AXES_LINEAR_PATTERN_DISPLAY_DIRECTIONS_E9).then_some(
-                Vector3::new(direction.x / norm, direction.y / norm, direction.z / norm),
-            )
+            square_sum_unit_direction([
+                View::f64_le_at(payload, direction_offset)?,
+                View::f64_le_at(payload, direction_offset.checked_add(8)?)?,
+                View::f64_le_at(payload, direction_offset.checked_add(16)?)?,
+            ])
         })
         .collect()
 }
@@ -262,7 +225,7 @@ pub(super) fn typed_linear_pattern_dimensions(
     let spacing = crate::history::literals::parse_positive_dimension_length_mm(parameter(
         "ParallelPlaneDistanceDim_c",
     )?)?;
-    Some((PositiveLength::new(spacing)?, count))
+    Some((spacing, count))
 }
 
 #[cfg(test)]
@@ -271,7 +234,7 @@ pub(super) fn compact_line_reference_direction(
     object_start: usize,
     object_end: usize,
     excluded_handles: &[usize],
-) -> Option<Vector3> {
+) -> Option<UnitVector3> {
     let directions =
         compact_line_reference_directions(payload, object_start, object_end, excluded_handles);
     let [direction] = directions.as_slice() else {
@@ -285,7 +248,7 @@ pub(super) fn compact_line_reference_directions(
     object_start: usize,
     object_end: usize,
     excluded_handles: &[usize],
-) -> Vec<Vector3> {
+) -> Vec<UnitVector3> {
     const HANDLES: [u8; 8] = [0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
     let Some(end) = super::DeclaredEnd::of(object_end, payload.len()).map(super::DeclaredEnd::get)
     else {
@@ -307,19 +270,12 @@ pub(super) fn compact_line_reference_directions(
         if record[..8] != HANDLES || record[8..12] != [0; 4] {
             return Vec::new();
         }
-        let scalar = |offset: usize| {
-            let value = View::f64_le_at(record, offset)?;
-            value.is_finite().then_some(value)
-        };
         let direction_at = |offset: usize| {
-            let direction =
-                Vector3::new(scalar(offset)?, scalar(offset + 8)?, scalar(offset + 16)?);
-            let norm =
-                (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
-                    .sqrt();
-            ((norm - 1.0).abs() <= EPS_AXES_COMPACT_LINE_REFERENCE_DIRECTIONS_E9).then_some(
-                Vector3::new(direction.x / norm, direction.y / norm, direction.z / norm),
-            )
+            square_sum_unit_direction([
+                View::f64_le_at(record, offset)?,
+                View::f64_le_at(record, offset + 8)?,
+                View::f64_le_at(record, offset + 16)?,
+            ])
         };
         let mut directions = Vec::new();
         let tagged_token = |offset: usize| {
@@ -476,7 +432,7 @@ fn revolution_line_reference_inputs(
     object_start: usize,
     object_end: usize,
     profile_sources: &HashSet<u32>,
-) -> Option<(u32, Point3, Vector3)> {
+) -> Option<(u32, cadmpeg_ir::features::FinitePoint3, UnitVector3)> {
     const HANDLE: [u8; 4] = [0xc7, 0xcf, 0xff, 0xff];
     const NATIVE_TO_IR: f64 = 1000.0;
 
@@ -503,10 +459,13 @@ fn revolution_line_reference_inputs(
         let dx = scalar(direction_offset)?;
         let dy = scalar(direction_offset + 8)?;
         let dz = scalar(direction_offset + 16)?;
-        let norm = (dx * dx + dy * dy + dz * dz).sqrt();
-        ((norm - 1.0).abs() <= EPS_AXES_REVOLUTION_LINE_REFERENCE_INPUTS_E9).then_some((
-            Point3::new(x * NATIVE_TO_IR, y * NATIVE_TO_IR, z * NATIVE_TO_IR),
-            Vector3::new(dx / norm, dy / norm, dz / norm),
+        Some((
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                x * NATIVE_TO_IR,
+                y * NATIVE_TO_IR,
+                z * NATIVE_TO_IR,
+            ))?,
+            square_sum_unit_direction([dx, dy, dz])?,
         ))
     };
     let next_class_after_zeros = |record_end: usize, maximum_padding: usize| {
@@ -558,17 +517,15 @@ fn revolution_line_reference_inputs(
                 {
                     continue;
                 }
-                let norm = (dx * dx + dy * dy + dz * dz).sqrt();
-                if (norm - 1.0).abs() <= EPS_AXES_REVOLUTION_LINE_REFERENCE_INPUTS_E9 {
-                    candidates.push((
-                        handle_start,
-                        6,
-                        (
-                            source,
-                            Point3::new(x * NATIVE_TO_IR, y * NATIVE_TO_IR, z * NATIVE_TO_IR),
-                            Vector3::new(dx / norm, dy / norm, dz / norm),
-                        ),
-                    ));
+                if let (Some(origin), Some(direction)) = (
+                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                        x * NATIVE_TO_IR,
+                        y * NATIVE_TO_IR,
+                        z * NATIVE_TO_IR,
+                    )),
+                    square_sum_unit_direction([dx, dy, dz]),
+                ) {
+                    candidates.push((handle_start, 6, (source, origin, direction)));
                 }
             }
         }
@@ -757,15 +714,17 @@ fn revolution_line_reference_inputs(
                     {
                         continue;
                     }
-                    let norm = (dx * dx + dy * dy + dz * dz).sqrt();
-                    if (norm - 1.0).abs() > EPS_AXES_REVOLUTION_LINE_REFERENCE_INPUTS_E9 {
+                    let Some(direction) = square_sum_unit_direction([dx, dy, dz]) else {
                         continue;
-                    }
-                    let candidate = (
-                        *source,
-                        Point3::new(x * NATIVE_TO_IR, y * NATIVE_TO_IR, z * NATIVE_TO_IR),
-                        Vector3::new(dx / norm, dy / norm, dz / norm),
-                    );
+                    };
+                    let Some(origin) = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                        x * NATIVE_TO_IR,
+                        y * NATIVE_TO_IR,
+                        z * NATIVE_TO_IR,
+                    )) else {
+                        continue;
+                    };
+                    let candidate = (*source, origin, direction);
                     let ranked = (handle_start, scalar_count, candidate);
                     if !candidates.contains(&ranked) {
                         candidates.push(ranked);
@@ -797,9 +756,9 @@ fn revolution_line_reference_inputs(
                 origin.x.to_bits(),
                 origin.y.to_bits(),
                 origin.z.to_bits(),
-                direction.x.to_bits(),
-                direction.y.to_bits(),
-                direction.z.to_bits(),
+                direction.as_raw().x.to_bits(),
+                direction.as_raw().y.to_bits(),
+                direction.as_raw().z.to_bits(),
             ],
         )
     });
@@ -814,7 +773,7 @@ pub(super) fn temporary_axis_reference(
     payload: &[u8],
     object_start: usize,
     object_end: usize,
-) -> Option<(Point3, Vector3)> {
+) -> Option<(cadmpeg_ir::features::FinitePoint3, UnitVector3)> {
     const NATIVE_TO_IR: f64 = 1000.0;
 
     let end = super::DeclaredEnd::of(object_end, payload.len())?.get();
@@ -856,18 +815,12 @@ pub(super) fn temporary_axis_reference(
             }
             *scalar = value;
         }
-        let origin = Point3::new(
+        let origin = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
             frame[0] * NATIVE_TO_IR,
             frame[1] * NATIVE_TO_IR,
             frame[2] * NATIVE_TO_IR,
-        );
-        let direction = Vector3::new(frame[6], frame[7], frame[8]);
-        let norm =
-            (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
-                .sqrt();
-        if (norm - 1.0).abs() > TEMPORARY_AXIS_UNIT_DIRECTION_EPS {
-            return None;
-        }
+        ))?;
+        let direction = square_sum_unit_direction([frame[6], frame[7], frame[8]])?;
         let record_end = declaration + temporary_axis::NEXT_CLASS_MARKER;
         let last_next_class = end.checked_sub(temporary_axis::NEXT_CLASS_MARKER_VALUE.len())?;
         let search_end = record_end.checked_add(24)?.min(last_next_class);
@@ -878,10 +831,7 @@ pub(super) fn temporary_axis_reference(
                         == Some(&temporary_axis::NEXT_CLASS_MARKER_VALUE)
             })
         })?;
-        (next_class < end).then_some((
-            origin,
-            Vector3::new(direction.x / norm, direction.y / norm, direction.z / norm),
-        ))
+        (next_class < end).then_some((origin, direction))
     });
     let first = candidates.next()?;
     candidates
@@ -938,7 +888,8 @@ pub(crate) fn enrich_history_revolution_inputs(
         }
     }
     let mut profiles = HashMap::<String, Vec<Option<u32>>>::new();
-    let mut inputs = HashMap::<String, Vec<Option<(Point3, Vector3)>>>::new();
+    let mut inputs =
+        HashMap::<String, Vec<Option<(cadmpeg_ir::features::FinitePoint3, UnitVector3)>>>::new();
     for lane in lanes {
         for history in histories.iter() {
             let mut objects = history
@@ -1024,11 +975,21 @@ pub(crate) fn enrich_history_revolution_inputs(
         {
             feature.properties.insert(
                 cadmpeg_core::nonblank_literal!("AxisOrigin"),
-                format!("{}mm,{}mm,{}mm", first.0.x, first.0.y, first.0.z),
+                format!(
+                    "{}mm,{}mm,{}mm",
+                    first.0.get().x,
+                    first.0.get().y,
+                    first.0.get().z
+                ),
             );
             feature.properties.insert(
                 cadmpeg_core::nonblank_literal!("AxisDirection"),
-                format!("{},{},{}", first.1.x, first.1.y, first.1.z),
+                format!(
+                    "{},{},{}",
+                    first.1.as_raw().x,
+                    first.1.as_raw().y,
+                    first.1.as_raw().z
+                ),
             );
         }
     }
@@ -1203,12 +1164,18 @@ fn profile_roster_construction_axis(
             Some([*start, *end])
         });
     let native_endpoints = match (axes.next(), axes.next()) {
-        (Some(endpoints), None) => Some([endpoints[0].coordinates_m?, endpoints[1].coordinates_m?]),
+        (Some(endpoints), None) => Some([
+            endpoints[0].coordinates_m?.get(),
+            endpoints[1].coordinates_m?.get(),
+        ]),
         (None, None) => {
             if let Some(endpoints) =
                 profile_roster_implicit_axis_endpoints(lane, profile_native, &markers)
             {
-                Some([endpoints[0].coordinates_m?, endpoints[1].coordinates_m?])
+                Some([
+                    endpoints[0].coordinates_m?.get(),
+                    endpoints[1].coordinates_m?.get(),
+                ])
             } else {
                 profile_roster_origin_axis_endpoints(lane, profile_native, &markers).or_else(|| {
                     profile_roster_principal_axis_endpoints(lane, profile_native, &markers)
@@ -1255,11 +1222,9 @@ fn profile_roster_construction_axis(
     (length.is_finite() && length > EPS_AXES_PROFILE_ROSTER_CONSTRUCTION_AXIS_E9).then_some(
         cadmpeg_ir::features::RevolutionAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(start)?,
-            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                delta.x / length,
-                delta.y / length,
-                delta.z / length,
-            ))?,
+            direction: cadmpeg_ir::features::FeatureDirection3::from(
+                UnitVector3::normalized_by_square_sum_division(delta)?,
+            ),
             reference: None,
         },
     )
@@ -1319,7 +1284,7 @@ fn profile_generated_surface_axis(
         if !endpoint_ids.insert(endpoint.id()) {
             continue;
         }
-        let [u, v] = endpoint.coordinates_m?;
+        let [u, v] = endpoint.coordinates_m?.get();
         let point = transform.apply(quantize(
             Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR),
             QUANTUM,
@@ -1443,7 +1408,7 @@ fn profile_roster_origin_axis_endpoints(
     let [origin] = unreferenced_points.as_slice() else {
         return None;
     };
-    let [origin_u, origin_v] = origin.coordinates_m?;
+    let [origin_u, origin_v] = origin.coordinates_m?.get();
     if origin_u.abs() > EPS_AXES_PROFILE_ROSTER_ORIGIN_AXIS_ENDPOINTS_E9
         || origin_v.abs() > EPS_AXES_PROFILE_ROSTER_ORIGIN_AXIS_ENDPOINTS_E9
     {
@@ -1454,7 +1419,7 @@ fn profile_roster_origin_axis_endpoints(
         .copied()
         .filter(|marker| marker.object_index().is_some() && curve_endpoints.contains(marker.id()))
         .filter_map(|marker| {
-            let end = marker.coordinates_m?;
+            let end = marker.coordinates_m?.get();
             let endpoints = [[origin_u, origin_v], end];
             bounded_profile_axis_coordinates(profile_native, markers, &curve_endpoints, endpoints)
                 .then_some(endpoints)
@@ -1486,7 +1451,11 @@ fn profile_roster_origin_axis_endpoints(
             .filter(|marker| {
                 marker.object_index().is_some() && curve_endpoints.contains(marker.id())
             })
-            .filter_map(|marker| marker.coordinates_m)
+            .filter_map(|marker| {
+                marker
+                    .coordinates_m
+                    .map(cadmpeg_ir::units::FiniteVector::get)
+            })
             .filter(|[u, v]| {
                 let relative_u = u - origin_u;
                 let relative_v = v - origin_v;
@@ -1526,7 +1495,11 @@ fn profile_roster_principal_axis_endpoints(
         markers
             .iter()
             .filter(|marker| curve_endpoints.contains(marker.id()))
-            .filter_map(|marker| marker.coordinates_m)
+            .filter_map(|marker| {
+                marker
+                    .coordinates_m
+                    .map(cadmpeg_ir::units::FiniteVector::get)
+            })
             .filter(|[u, v]| {
                 (u * axis_v - v * axis_u).abs()
                     <= EPS_AXES_PROFILE_ROSTER_PRINCIPAL_AXIS_ENDPOINTS_E9
@@ -1692,7 +1665,11 @@ fn bounded_profile_axis_endpoints(
     curve_endpoints: &HashSet<&str>,
     endpoints: [&SketchInputEntity; 2],
 ) -> bool {
-    let [Some(start), Some(end)] = endpoints.map(|endpoint| endpoint.coordinates_m) else {
+    let [Some(start), Some(end)] = endpoints.map(|endpoint| {
+        endpoint
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get)
+    }) else {
         return false;
     };
     bounded_profile_axis_coordinates(profile_native, markers, curve_endpoints, [start, end])
@@ -1726,7 +1703,11 @@ fn bounded_profile_axis_coordinates(
             )
             && marker.object_index().is_some()
             && curve_endpoints.contains(marker.id()))
-        .then_some(marker.coordinates_m)
+        .then_some(
+            marker
+                .coordinates_m
+                .map(cadmpeg_ir::units::FiniteVector::get),
+        )
         .flatten()
     }) {
         let relative_u = u - start_u;

@@ -76,6 +76,7 @@ pub(in super::super) fn transfer_sketches(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<SketchSegmentTransferCoverage, cadmpeg_core::CodecError> {
     let mut coverage = SketchSegmentTransferCoverage::default();
     let mut available_parameter_ids = ir
@@ -509,6 +510,7 @@ pub(in super::super) fn transfer_sketches(
             profiles,
             &profile_entities,
             losses,
+            source_carriers,
         )?;
         let profiles = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles)
             .map_err(cadmpeg_core::CodecError::malformed)?;

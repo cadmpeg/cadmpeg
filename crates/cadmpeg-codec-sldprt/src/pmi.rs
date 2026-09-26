@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::Exactness;
 use rmp::Marker;
 
@@ -37,7 +38,7 @@ fn dimension_subtype(
         "Diameter" => PmiDimensionSubtype::Diameter,
         "Radial" => PmiDimensionSubtype::Radial,
         "Ordinate" => PmiDimensionSubtype::Ordinate,
-        "" if empty_subtype_is_count && exact_count(record.value).is_some() => {
+        "" if empty_subtype_is_count && exact_count(record.value.get()).is_some() => {
             PmiDimensionSubtype::Count
         }
         other => PmiDimensionSubtype::Native(other.to_string()),
@@ -76,7 +77,7 @@ fn equivalent_dimensions(left: &PmiDimension, right: &PmiDimension) -> bool {
     left.cad_text == right.cad_text
         && left.item_count == right.item_count
         && left.subtype == right.subtype
-        && left.value.to_bits() == right.value.to_bits()
+        && left.value.get().to_bits() == right.value.get().to_bits()
         && left.precision == right.precision
         && left.display_text() == right.display_text()
         && left.basic == right.basic
@@ -163,7 +164,7 @@ pub(crate) fn enrich_history_parameters_with_features(
         else {
             continue;
         };
-        let millimetres = record.value * 1000.0;
+        let millimetres = record.value.get() * 1000.0;
         let feature = &histories[*history_index].features[*feature_index];
         let empty_subtype_is_count = feature.parameters.get(name).is_some_and(|expression| {
             matches!(
@@ -181,17 +182,19 @@ pub(crate) fn enrich_history_parameters_with_features(
             | cadmpeg_ir::features::PmiDimensionSubtype::Ordinate => {
                 format!("{millimetres}mm")
             }
-            cadmpeg_ir::features::PmiDimensionSubtype::Angle => record.value.to_string(),
+            cadmpeg_ir::features::PmiDimensionSubtype::Angle => record.value.get().to_string(),
             cadmpeg_ir::features::PmiDimensionSubtype::Diameter => {
                 format!("<MOD-DIAM>{millimetres}mm")
             }
             cadmpeg_ir::features::PmiDimensionSubtype::Radial => {
                 format!("R{millimetres}mm")
             }
-            cadmpeg_ir::features::PmiDimensionSubtype::Count => match exact_count(record.value) {
-                Some(count) => count.to_string(),
-                None => continue,
-            },
+            cadmpeg_ir::features::PmiDimensionSubtype::Count => {
+                match exact_count(record.value.get()) {
+                    Some(count) => count.to_string(),
+                    None => continue,
+                }
+            }
             cadmpeg_ir::features::PmiDimensionSubtype::Native(_) => continue,
         };
         histories[*history_index].features[*feature_index]
@@ -373,7 +376,7 @@ pub(crate) fn apply_to_parameters(
             existing_parameter.and_then(|index| parameters[index].value.as_ref()),
         );
         let subtype = dimension_subtype(record, empty_subtype_is_count);
-        let millimetres = record.value * 1000.0;
+        let millimetres = record.value.get() * 1000.0;
         let (expression, display, value) = match subtype {
             PmiDimensionSubtype::Linear => (
                 format!("{millimetres}mm"),
@@ -387,14 +390,10 @@ pub(crate) fn apply_to_parameters(
                 )),
             ),
             PmiDimensionSubtype::Angle => (
-                record.value.to_string(),
+                record.value.get().to_string(),
                 None,
                 Some(ParameterValue::Angle(
-                    cadmpeg_ir::scalar::Angle::new(record.value).ok_or_else(|| {
-                        cadmpeg_core::CodecError::Malformed(
-                            "SolidWorks projected angle must be finite".into(),
-                        )
-                    })?,
+                    cadmpeg_ir::scalar::Angle::from_assigned_real(record.value),
                 )),
             ),
             PmiDimensionSubtype::Diameter => (
@@ -431,7 +430,7 @@ pub(crate) fn apply_to_parameters(
                 )),
             ),
             PmiDimensionSubtype::Count => {
-                let Some(count) = exact_count(record.value) else {
+                let Some(count) = exact_count(record.value.get()) else {
                     continue;
                 };
                 (
@@ -440,7 +439,7 @@ pub(crate) fn apply_to_parameters(
                     Some(ParameterValue::Integer(count)),
                 )
             }
-            PmiDimensionSubtype::Native(_) => (record.value.to_string(), None, None),
+            PmiDimensionSubtype::Native(_) => (record.value.get().to_string(), None, None),
         };
         let semantic = ParameterPmi {
             subtype,
@@ -1070,10 +1069,10 @@ fn int_from(value: &SpannedValue) -> Option<i64> {
     }
 }
 
-fn float_from(value: &SpannedValue) -> Option<f64> {
+fn float_from(value: &SpannedValue) -> Option<FiniteReal> {
     match value.kind {
-        ValueKind::Float(value) if value.is_finite() => Some(value),
-        ValueKind::Int(value) => Some(value as f64),
+        ValueKind::Float(value) => FiniteReal::new(value),
+        ValueKind::Int(value) => FiniteReal::new(value as f64),
         _ => None,
     }
 }

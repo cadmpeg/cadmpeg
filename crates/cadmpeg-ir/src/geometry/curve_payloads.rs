@@ -422,6 +422,33 @@ impl OffsetCurveConstruction {
             }
             OffsetSide::Direction { direction, .. } => direction.norm() > 0.0,
         });
+        Self::with_admitted_side(source, distance, side, range)
+    }
+
+    /// Build a plane-normal offset from a computed unit normal. The distance
+    /// and any variable distance law remain subject to construction admission.
+    pub fn with_unit_plane_normal(
+        source: CurveId,
+        distance: f64,
+        normal: crate::units::UnitVector3,
+        range: Option<CurveOffsetRange>,
+    ) -> Result<Self, ProceduralGeometryError> {
+        Self::with_admitted_side(
+            source,
+            distance,
+            Some(OffsetSide::PlaneNormal {
+                normal: FiniteVector3::from(normal),
+            }),
+            range,
+        )
+    }
+
+    fn with_admitted_side(
+        source: CurveId,
+        distance: f64,
+        side: Option<OffsetSide<FiniteVector3>>,
+        range: Option<CurveOffsetRange>,
+    ) -> Result<Self, ProceduralGeometryError> {
         let range = match range {
             None => Some(None),
             Some(range) => range

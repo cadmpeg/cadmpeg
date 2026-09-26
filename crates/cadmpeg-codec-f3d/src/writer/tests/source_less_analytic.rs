@@ -530,7 +530,9 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         [-1.0, -1.0]
     );
     assert_eq!(
-        f3d_native(round_trip.ir()).tolerant_coedge_parameters[0].parameter_range,
+        f3d_native(round_trip.ir()).tolerant_coedge_parameters[0]
+            .parameter_range
+            .get(),
         [0.25, 0.75]
     );
     let ownerships = f3d_native(round_trip.ir()).vertex_ownerships;

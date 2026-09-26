@@ -26,7 +26,8 @@ pub(in crate::resolved_features) fn marker(
         );
         constructed_marker.feature_ref = Some("feature-native".into());
         constructed_marker.state_value = None;
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     }
