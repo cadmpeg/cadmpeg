@@ -4,6 +4,7 @@
 
 use crate::brep::feature_source::FeatureSourceId;
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -965,7 +966,7 @@ pub(crate) struct FeatureInputScalar {
     /// Name record attached to this scalar.
     pub(crate) name: String,
     /// Scalar value in native SI units.
-    pub(crate) value: f64,
+    pub(crate) value: FiniteReal,
     /// Function of this scalar in the dimension record.
     pub(crate) role: FeatureInputScalarRole,
     /// Typed native operand cells attached to this scalar.

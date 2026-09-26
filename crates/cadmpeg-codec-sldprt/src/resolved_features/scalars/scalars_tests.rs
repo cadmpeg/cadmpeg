@@ -63,7 +63,7 @@ fn compact_scalar_header_ends_at_the_value() {
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
     };
-    assert_eq!(scalar.value, 0.0);
+    assert_eq!(scalar.value.get(), 0.0);
     assert_eq!(scalar.object_id, 115);
     assert_eq!(scalar.role, crate::records::FeatureInputScalarRole::Driving);
     assert!(scalar.entity_indices().is_empty());
@@ -105,7 +105,7 @@ fn value_only_scalar_header_ends_at_the_value() {
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
     };
-    assert_eq!(scalar.value, 0.0);
+    assert_eq!(scalar.value.get(), 0.0);
     assert_eq!(scalar.object_id, 132);
     assert_eq!(scalar.role, crate::records::FeatureInputScalarRole::Native);
     assert!(scalar.operands.is_empty());

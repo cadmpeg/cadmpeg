@@ -2748,10 +2748,10 @@ fn relation_parameter_matches_display_scalar(
     match family {
         FeatureInputRelationFamily::Angle => match parameter.value.as_ref() {
             Some(cadmpeg_ir::features::ParameterValue::Angle(value)) => {
-                same_dimension_angle(value.get(), scalar.value)
+                same_dimension_angle(value.get(), scalar.value.get())
             }
             Some(cadmpeg_ir::features::ParameterValue::Real(value)) => {
-                same_dimension_angle(value.get(), scalar.value)
+                same_dimension_angle(value.get(), scalar.value.get())
             }
             _ => false,
         },
@@ -2763,16 +2763,17 @@ fn relation_parameter_matches_display_scalar(
         | FeatureInputRelationFamily::PointPointVerticalDistance => {
             match parameter.value.as_ref() {
                 Some(cadmpeg_ir::features::ParameterValue::Length(value)) => {
-                    same_dimension_length(value.get(), scalar.value * 1000.0)
+                    same_dimension_length(value.get(), scalar.value.get() * 1000.0)
                 }
                 Some(cadmpeg_ir::features::ParameterValue::Integer(value)) => {
-                    crate::history::parameters::eval::exact_integer_f64(*value)
-                        .is_some_and(|value| same_dimension_length(value, scalar.value * 1000.0))
+                    crate::history::parameters::eval::exact_integer_f64(*value).is_some_and(
+                        |value| same_dimension_length(value, scalar.value.get() * 1000.0),
+                    )
                 }
                 // An untyped native real is still in the source scalar's SI
                 // units until relation typing applies the family unit.
                 Some(cadmpeg_ir::features::ParameterValue::Real(value)) => {
-                    same_dimension_length(value.get(), scalar.value)
+                    same_dimension_length(value.get(), scalar.value.get())
                 }
                 _ => false,
             }
@@ -2934,7 +2935,7 @@ mod relation_geometry_tests {
                 offset,
                 object_id: 0,
                 name: "distance".into(),
-                value,
+                value: cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite test scalar"),
                 role: FeatureInputScalarRole::Driving,
 
                 operands,
@@ -3193,7 +3194,7 @@ mod relation_geometry_tests {
                 offset: 30,
                 object_id: 0,
                 name: "distance".into(),
-                value: 0.005,
+                value: cadmpeg_ir::scalar::FiniteReal::new(0.005).expect("finite test scalar"),
                 role: FeatureInputScalarRole::Driving,
 
                 operands: relation.operands.clone(),
@@ -3491,7 +3492,7 @@ mod relation_geometry_tests {
             offset: 600,
             object_id: 0,
             name: "distance".into(),
-            value: 0.0065,
+            value: cadmpeg_ir::scalar::FiniteReal::new(0.0065).expect("finite test scalar"),
             role: FeatureInputScalarRole::Driving,
 
             operands: Vec::new(),

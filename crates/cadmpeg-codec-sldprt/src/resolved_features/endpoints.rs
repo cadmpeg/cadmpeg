@@ -1840,8 +1840,7 @@ pub(super) fn inferred_point_coordinates_by_index(
         };
         (scalar.feature_ref.as_deref() == Some(feature)
             && scalar.role == FeatureInputScalarRole::Driving
-            && scalar.value.is_finite()
-            && scalar.value >= 0.0
+            && scalar.value.get() >= 0.0
             && [first, second].iter().all(|operand| {
                 matches!(
                     operand.kind,
@@ -1855,7 +1854,7 @@ pub(super) fn inferred_point_coordinates_by_index(
             u32::from(first.entity_index),
             u32::from(second.entity_index),
         ];
-        constraints.push((endpoints, scalar.value));
+        constraints.push((endpoints, scalar.value.get()));
     }
 
     let mut indices = HashSet::new();

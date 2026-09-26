@@ -546,7 +546,7 @@ mod relation_records_tests {
             offset,
             object_id: 1,
             name: "dimension".into(),
-            value: 1.0,
+            value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
             role,
 
             operands,
@@ -567,7 +567,7 @@ mod relation_records_tests {
             offset,
             object_id: 1,
             name: name.into(),
-            value: 1.0,
+            value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
             role,
 
             operands: vec![FeatureInputOperand {
@@ -1270,7 +1270,7 @@ mod relation_records_tests {
         value: f64,
     ) -> FeatureInputScalar {
         let mut scalar = scalar(offset, FeatureInputScalarRole::Driving);
-        scalar.value = value;
+        scalar.value = cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite test scalar");
 
         scalar.operands = indices
             .iter()
@@ -2125,12 +2125,12 @@ pub(super) fn relation_uses_dynamic_operands(relation: &FeatureInputRelationInst
 fn relation_target_value(
     relation: &FeatureInputRelationInstance,
     lane: &FeatureInputLane,
-) -> Option<f64> {
+) -> Option<cadmpeg_ir::scalar::FiniteReal> {
     let scalar_id = relation
         .parameter_scalar_ref()
         .or(relation.display_scalar_ref())?;
     let scalar = lane.scalars.iter().find(|scalar| scalar.id == scalar_id)?;
-    scalar.value.is_finite().then_some(scalar.value)
+    Some(scalar.value)
 }
 
 fn feature_entities<'a>(
@@ -2589,14 +2589,14 @@ fn bind_relation_geometry_operands(
         if relation_uses_solver_points(relation) {
             continue;
         }
-        if !target.is_finite() || target < 0.0 {
+        if target.get() < 0.0 {
             if dynamic {
                 clear_relation_operands(relation);
             }
             continue;
         }
         let entities = feature_entities(lane, relation.feature_ref.as_str());
-        bind(relation, &entities, target);
+        bind(relation, &entities, target.get());
     }
 }
 

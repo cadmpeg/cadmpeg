@@ -377,7 +377,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 })
                 .filter_map(|relation| relation.parameter_scalar_ref())
                 .filter_map(|scalar| lane.scalars.iter().find(|record| record.id == scalar))
-                .map(|scalar| scalar.value * NATIVE_TO_IR)
+                .map(|scalar| scalar.value.get() * NATIVE_TO_IR)
                 .collect::<Vec<_>>();
             let dimensioned_rectangle = addresses
                 .is_none()

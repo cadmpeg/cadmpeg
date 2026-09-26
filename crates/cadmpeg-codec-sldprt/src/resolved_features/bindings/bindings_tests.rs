@@ -97,7 +97,7 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         offset,
         object_id: 20,
         name: name.into(),
-        value: 0.001,
+        value: cadmpeg_ir::scalar::FiniteReal::new(0.001).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
 
         operands: Vec::new(),
@@ -844,7 +844,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         offset: 300 + 20 * u64::from(index),
         object_id: index,
         name: format!("name-{index}"),
-        value,
+        value: cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
 
         operands: Vec::new(),

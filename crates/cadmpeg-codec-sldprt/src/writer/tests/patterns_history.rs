@@ -1387,7 +1387,7 @@ fn semantic_writer_accepts_matching_resolved_feature_edits() {
         update_sldprt_native(&mut ir_edit, |native| {
             native.feature_histories[0].part_name = Some("Edited".into());
             let scalar = &mut native.feature_input_lanes[0].scalars[0];
-            scalar.value = 0.05;
+            scalar.value = cadmpeg_ir::scalar::FiniteReal::new(0.05).expect("finite test scalar");
             let offset = usize::try_from(scalar.offset).unwrap();
             native.feature_input_lanes[0].native_payload[offset..offset + 8]
                 .copy_from_slice(&0.05f64.to_le_bytes());
@@ -1470,7 +1470,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
     );
     assert_eq!(lane.scalars.len(), 1);
     assert_eq!(lane.scalars[0].name, lane.names[2].id);
-    assert_eq!(lane.scalars[0].value, 0.025);
+    assert_eq!(lane.scalars[0].value.get(), 0.025);
     assert_eq!(lane.scalars[0].object_id, 1);
     assert_eq!(lane.scalars[0].entity_indices(), [0, 2]);
     assert_eq!(lane.references.len(), 2);
@@ -1691,7 +1691,8 @@ fn semantic_writer_rejects_edited_feature_input_scalar_index() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
-        native.feature_input_lanes[0].scalars[0].value = 0.050;
+        native.feature_input_lanes[0].scalars[0].value =
+            cadmpeg_ir::scalar::FiniteReal::new(0.050).expect("finite test scalar");
     });
     assert!(
         crate::resolved_features::validate::validate_native(decoded.ir())
@@ -1765,7 +1766,7 @@ fn semantic_writer_updates_linked_resolved_feature_scalar() {
         .flat_map(|lane| &lane.scalars)
         .find(|scalar| scalar.id == native_ref)
         .expect("regenerated scalar");
-    assert_eq!(scalar.value, 0.05);
+    assert_eq!(scalar.value.get(), 0.05);
 }
 
 #[test]
@@ -1830,7 +1831,9 @@ fn semantic_writer_updates_resolved_scalar_from_feature_edit() {
         }) if actual_length.get() == 50.0
     ));
     assert_eq!(
-        sldprt_native(regenerated.ir()).feature_input_lanes[0].scalars[0].value,
+        sldprt_native(regenerated.ir()).feature_input_lanes[0].scalars[0]
+            .value
+            .get(),
         0.05
     );
 }
@@ -1898,7 +1901,7 @@ fn semantic_writer_types_resolved_relation_scalar() {
         .flat_map(|lane| &lane.scalars)
         .find(|scalar| scalar.id == native_ref)
         .expect("regenerated scalar");
-    assert_eq!(scalar.value, 0.5);
+    assert_eq!(scalar.value.get(), 0.5);
 }
 
 #[test]

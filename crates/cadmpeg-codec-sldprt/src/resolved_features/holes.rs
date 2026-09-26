@@ -4277,15 +4277,14 @@ fn compact_position_relations(
             let scalar = relation
                 .parameter_scalar_ref()
                 .and_then(|id| scalars.get(id))?;
-            (scalar.role == FeatureInputScalarRole::Driving
-                && scalar.value.is_finite()
-                && scalar.value >= 0.0)
-                .then_some((
+            (scalar.role == FeatureInputScalarRole::Driving && scalar.value.get() >= 0.0).then_some(
+                (
                     relation.family,
                     first.entity_index,
                     second.entity_index,
-                    scalar.value * 1000.0,
-                ))
+                    scalar.value.get() * 1000.0,
+                ),
+            )
         })
         .collect()
 }

@@ -255,9 +255,9 @@ pub(crate) fn bind_parameter_scalars<'a>(
                             if length_scalars.contains(scalar.id.as_str())
                                 || angle_scalars.contains(scalar.id.as_str())
                             {
-                                same_dimension_length(scalar.value * 1000.0, expected)
+                                same_dimension_length(scalar.value.get() * 1000.0, expected)
                             } else {
-                                scalar.value == expected
+                                scalar.value.get() == expected
                             }
                         }
                         Some(cadmpeg_ir::features::ParameterValue::Boolean(expected)) => {
@@ -265,9 +265,9 @@ pub(crate) fn bind_parameter_scalars<'a>(
                             if length_scalars.contains(scalar.id.as_str())
                                 || angle_scalars.contains(scalar.id.as_str())
                             {
-                                same_dimension_length(scalar.value * 1000.0, expected)
+                                same_dimension_length(scalar.value.get() * 1000.0, expected)
                             } else {
-                                scalar.value == expected
+                                scalar.value.get() == expected
                             }
                         }
                         _ => true,
@@ -282,49 +282,39 @@ pub(crate) fn bind_parameter_scalars<'a>(
                     ) && !scalar_is_detached;
                     if scalar_is_detached && length_scalars.contains(scalar.id.as_str()) {
                         parameter.expression = crate::history::literals::format_length_mm(
-                            cadmpeg_ir::scalar::Length::new(scalar.value * 1000.0).ok_or_else(
-                                || {
+                            cadmpeg_ir::scalar::Length::new(scalar.value.get() * 1000.0)
+                                .ok_or_else(|| {
                                     cadmpeg_core::CodecError::Malformed(
                                         "SolidWorks projected length must be finite".into(),
                                     )
-                                },
-                            )?,
+                                })?,
                         );
                     } else if scalar_is_detached && angle_scalars.contains(scalar.id.as_str()) {
                         parameter.expression = crate::history::literals::format_angle_rad(
-                            cadmpeg_ir::scalar::Angle::new(scalar.value).ok_or_else(|| {
-                                cadmpeg_core::CodecError::Malformed(
-                                    "SolidWorks projected angle must be finite".into(),
-                                )
-                            })?,
+                            cadmpeg_ir::scalar::Angle::from_assigned_real(scalar.value),
                         );
                     }
                     let evaluated = if length_scalars.contains(scalar.id.as_str())
                         && !scalar_is_untyped_real
                     {
                         Some(cadmpeg_ir::features::ParameterValue::Length(
-                            cadmpeg_ir::scalar::Length::new(scalar.value * 1000.0).ok_or_else(
-                                || {
+                            cadmpeg_ir::scalar::Length::new(scalar.value.get() * 1000.0)
+                                .ok_or_else(|| {
                                     cadmpeg_core::CodecError::Malformed(
                                         "SolidWorks projected length must be finite".into(),
                                     )
-                                },
-                            )?,
+                                })?,
                         ))
                     } else if angle_scalars.contains(scalar.id.as_str()) && !scalar_is_untyped_real
                     {
                         Some(cadmpeg_ir::features::ParameterValue::Angle(
-                            cadmpeg_ir::scalar::Angle::new(scalar.value).ok_or_else(|| {
-                                cadmpeg_core::CodecError::Malformed(
-                                    "SolidWorks projected angle must be finite".into(),
-                                )
-                            })?,
+                            cadmpeg_ir::scalar::Angle::from_assigned_real(scalar.value),
                         ))
                     } else {
                         match parameter.value.as_ref() {
                             Some(cadmpeg_ir::features::ParameterValue::Length(_)) => {
                                 Some(cadmpeg_ir::features::ParameterValue::Length(
-                                    cadmpeg_ir::scalar::Length::new(scalar.value * 1000.0)
+                                    cadmpeg_ir::scalar::Length::new(scalar.value.get() * 1000.0)
                                         .ok_or_else(|| {
                                             cadmpeg_core::CodecError::Malformed(
                                                 "SolidWorks projected length must be finite".into(),
@@ -334,25 +324,11 @@ pub(crate) fn bind_parameter_scalars<'a>(
                             }
                             Some(cadmpeg_ir::features::ParameterValue::Angle(_)) => {
                                 Some(cadmpeg_ir::features::ParameterValue::Angle(
-                                    cadmpeg_ir::scalar::Angle::new(scalar.value).ok_or_else(
-                                        || {
-                                            cadmpeg_core::CodecError::Malformed(
-                                                "SolidWorks projected angle must be finite".into(),
-                                            )
-                                        },
-                                    )?,
+                                    cadmpeg_ir::scalar::Angle::from_assigned_real(scalar.value),
                                 ))
                             }
                             Some(cadmpeg_ir::features::ParameterValue::Real(_)) => {
-                                Some(cadmpeg_ir::features::ParameterValue::Real(
-                                    cadmpeg_ir::scalar::FiniteReal::new(scalar.value).ok_or_else(
-                                        || {
-                                            cadmpeg_core::CodecError::Malformed(
-                                                "SolidWorks projected real must be finite".into(),
-                                            )
-                                        },
-                                    )?,
-                                ))
+                                Some(cadmpeg_ir::features::ParameterValue::Real(scalar.value))
                             }
                             _ => None,
                         }
@@ -428,9 +404,6 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
             let Some(scalar) = relation_display_scalar_for_parameter(relation, lane) else {
                 continue;
             };
-            if !scalar.value.is_finite() {
-                continue;
-            }
             let Some(feature) = features_by_native_ref.get(relation.feature_ref.as_str()) else {
                 continue;
             };
@@ -444,7 +417,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                 continue;
             };
             let Some((value, display, expression)) =
-                relation_display_parameter_value(relation.family, scalar.value)
+                relation_display_parameter_value(relation.family, scalar.value.get())
             else {
                 continue;
             };
