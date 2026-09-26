@@ -769,31 +769,10 @@ impl JtVertexVersion {
     }
 }
 
-/// A finite fraction in the inclusive range zero through one.
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct JtUnitFraction(f32);
-
-impl TryFrom<f32> for JtUnitFraction {
-    type Error = &'static str;
-    fn try_from(value: f32) -> Result<Self, Self::Error> {
-        if value.is_finite() && (0.0..=1.0).contains(&value) {
-            Ok(Self(value))
-        } else {
-            Err("unit_fraction: expected a finite fraction in 0..=1")
-        }
-    }
-}
-
-impl From<JtUnitFraction> for f32 {
-    fn from(value: JtUnitFraction) -> Self {
-        value.0
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum JtMaterialVersion {
     One,
-    Two(JtUnitFraction),
+    Two(UnitBinary32),
 }
 
 impl TryFrom<(u16, Option<f32>)> for JtMaterialVersion {
@@ -801,7 +780,7 @@ impl TryFrom<(u16, Option<f32>)> for JtMaterialVersion {
     fn try_from((version, reflectivity): (u16, Option<f32>)) -> Result<Self, Self::Error> {
         match (version, reflectivity) {
             (1, None) => Ok(Self::One),
-            (2, Some(value)) => Ok(Self::Two(JtUnitFraction::try_from(value).map_err(|_| "reflectivity: expected a finite fraction in 0..=1")?)),
+            (2, Some(value)) => Ok(Self::Two(UnitBinary32::try_from(value).map_err(|_| "reflectivity: expected a finite fraction in 0..=1")?)),
             _ => Err("version/reflectivity: version 1 has no reflectivity and version 2 requires a finite fraction in 0..=1"),
         }
     }
@@ -1036,7 +1015,7 @@ pub(super) struct DisplayJtTriStripShapeNode {
     /// Expected in-memory byte size of the late-loaded LOD.
     memory_byte_len: u32,
     /// Qualitative compression level in the inclusive range zero through one.
-    compression_level: JtUnitFraction,
+    compression_level: UnitBinary32,
     /// Vertex-shape data version.
     vertex_version: JtVertexVersion,
     /// Packed vertex-channel binding mask.
@@ -1091,7 +1070,7 @@ impl TryFrom<DisplayJtTriStripShapeNodeWire> for DisplayJtTriStripShapeNode {
             node_count_range: wire.node_count_range,
             polygon_count_range: wire.polygon_count_range,
             memory_byte_len: wire.memory_byte_len,
-            compression_level: JtUnitFraction::try_from(wire.compression_level).map_err(|_| {
+            compression_level: UnitBinary32::try_from(wire.compression_level).map_err(|_| {
                 "DisplayJtTriStripShapeNode.compression_level: expected a finite fraction in 0..=1"
             })?,
             vertex_version,
@@ -1937,7 +1916,7 @@ struct ParsedJtTriStripShapeNode {
     node_count_range: [i32; 2],
     polygon_count_range: [i32; 2],
     memory_byte_len: u32,
-    compression_level: JtUnitFraction,
+    compression_level: UnitBinary32,
     vertex_version: JtVertexVersion,
     vertex_bindings: u64,
     vertex_quantization_bits: u8,
@@ -1971,7 +1950,7 @@ fn parse_jt9_tri_strip_shape_node_body(body: &[u8]) -> Option<ParsedJtTriStripSh
         (range[0] >= 0 && range[0] <= range[1]).then_some(range)
     };
     let compression_level =
-        JtUnitFraction::try_from(View::f32_le_at(family, jt_family::COMPRESSION_LEVEL)?).ok()?;
+        UnitBinary32::try_from(View::f32_le_at(family, jt_family::COMPRESSION_LEVEL)?).ok()?;
     let area = JtArea::new(View::f32_le_at(family, jt_family::AREA)?)?;
     let vertex_version = View::u16_le_at(family, jt_family::VERTEX_VERSION)?;
     if !matches!(vertex_version, 1 | 2) {
@@ -2264,7 +2243,7 @@ fn parse_jt9_material_body(body: &[u8]) -> Option<ParsedJt9Material> {
     let colors = [rgba(11)?, rgba(27)?, rgba(43)?, rgba(59)?];
     let shininess = JtShininess::new(View::f32_le_at(body, 75)?)?;
     let reflectivity = if version == 2 {
-        Some(JtUnitFraction::try_from(View::f32_le_at(body, 79)?).ok()?)
+        Some(UnitBinary32::try_from(View::f32_le_at(body, 79)?).ok()?)
     } else {
         None
     };
@@ -5727,7 +5706,7 @@ mod tests {
                 .contains("compression_level"));
         }
         for level in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
-            assert!(super::JtUnitFraction::try_from(level).is_err());
+            assert!(super::UnitBinary32::try_from(level).is_err());
         }
         for (version, bindings) in [(1, Some(4)), (2, None), (3, None)] {
             let mut wire = node_wire.clone();
