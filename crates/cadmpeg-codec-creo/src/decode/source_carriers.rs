@@ -190,27 +190,33 @@ impl SourceUnitCarriers {
     pub(super) fn admit_pcurve(
         &mut self,
         ir: &mut CadIr,
-        mut pcurve: Pcurve,
+        pcurve: Pcurve,
         surface_id: &SurfaceId,
     ) -> Result<(), CodecError> {
-        if let Some(scale) = self.length_scale_mm {
-            let surface = ir
-                .model
-                .surfaces
-                .iter()
-                .find(|surface| &surface.id == surface_id);
-            if let Some(scales) = surface
-                .and_then(|surface| self.surface_geometry(surface).solved())
-                .map(|geometry| {
-                    crate::decode::build::units::surface_parameter_scales(geometry, scale.get())
-                })
-            {
-                pcurve.geometry.try_scale_coordinates(scales).map_err(|_| {
-                    CodecError::NotImplemented(format!(
-                        "Creo pcurve cannot be represented after unit normalization with scales {scales:?}"
-                    ))
-                })?;
-            }
+        let surface = ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| &surface.id == surface_id)
+            .ok_or_else(|| CodecError::malformed("Creo pcurve has no owning surface"))?;
+        let source_geometry = self.surface_geometry(surface).clone();
+        self.admit_pcurve_with_source_surface(ir, pcurve, &source_geometry)
+    }
+
+    pub(super) fn admit_pcurve_with_source_surface(
+        &mut self,
+        ir: &mut CadIr,
+        mut pcurve: Pcurve,
+        source_surface: &SurfaceGeometry,
+    ) -> Result<(), CodecError> {
+        if let (Some(scale), Some(geometry)) = (self.length_scale_mm, source_surface.solved()) {
+            let scales =
+                crate::decode::build::units::surface_parameter_scales(geometry, scale.get());
+            pcurve.geometry.try_scale_coordinates(scales).map_err(|_| {
+                CodecError::NotImplemented(format!(
+                    "Creo pcurve cannot be represented after unit normalization with scales {scales:?}"
+                ))
+            })?;
         }
         self.pcurves.insert(pcurve.id.clone());
         ir.model.pcurves.push(pcurve);

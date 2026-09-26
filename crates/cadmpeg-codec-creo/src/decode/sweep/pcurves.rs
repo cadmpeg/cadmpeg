@@ -16,7 +16,7 @@ use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry},
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::PcurveId;
+use cadmpeg_ir::ids::{PcurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
 use cadmpeg_ir::topology::Sense;
@@ -43,6 +43,9 @@ pub(super) fn add_extrusion_pcurve(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
+    surface_id: &SurfaceId,
+    source_surface_before_admission: Option<&SurfaceGeometry>,
     id: PcurveId,
     source_offset: usize,
     geometry: PcurveGeometry,
@@ -69,7 +72,7 @@ pub(super) fn add_extrusion_pcurve(
         Exactness::Derived,
     );
     ctx.charge_entities(1, "admit Creo model pcurves")?;
-    ir.model.pcurves.push(Pcurve {
+    let pcurve = Pcurve {
         id: id.clone(),
         geometry,
         metadata: PcurveMetadata::general(
@@ -81,7 +84,13 @@ pub(super) fn add_extrusion_pcurve(
             ),
             None,
         ),
-    });
+    };
+    match source_surface_before_admission {
+        Some(source_surface) => {
+            source_carriers.admit_pcurve_with_source_surface(ir, pcurve, source_surface)?
+        }
+        None => source_carriers.admit_pcurve(ir, pcurve, surface_id)?,
+    }
     Ok(id)
 }
 
