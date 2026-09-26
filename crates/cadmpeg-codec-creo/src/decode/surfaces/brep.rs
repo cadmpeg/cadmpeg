@@ -761,7 +761,10 @@ fn curve_geometry_is_typed_nonlinear(geometry: &SolvedCurveGeometry) -> bool {
     }
 }
 
-fn model_typed_nonlinear_curve_ids(ir: &CadIr) -> BTreeSet<u32> {
+fn model_typed_nonlinear_curve_ids(
+    ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
+) -> BTreeSet<u32> {
     ir.model
         .curves
         .iter()
@@ -772,7 +775,8 @@ fn model_typed_nonlinear_curve_ids(ir: &CadIr) -> BTreeSet<u32> {
                 .strip_prefix("creo:visibgeom:curve#")?
                 .parse()
                 .ok()?;
-            curve_geometry_is_typed_nonlinear(curve.geometry.solved()?).then_some(id)
+            curve_geometry_is_typed_nonlinear(source_carriers.curve_geometry(curve).solved()?)
+                .then_some(id)
         })
         .collect()
 }
@@ -813,11 +817,13 @@ struct NativeCircleLoop {
 struct NativeCurveEvidence<'a> {
     typed_nonlinear_curve_ids: &'a BTreeSet<u32>,
     model_curves: &'a [Curve],
+    source_carriers: &'a crate::decode::source_carriers::SourceUnitCarriers,
 }
 
 fn native_circle_loop_geometry(
     lp: &crate::topology::Loop,
     model_curves: &[Curve],
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Option<NativeCircleLoop> {
     let [first, second] = lp.half_edges.as_slice() else {
         return None;
@@ -832,7 +838,10 @@ fn native_circle_loop_geometry(
     let (
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve_2)),
-    ) = (&first.geometry, &second.geometry)
+    ) = (
+        source_carriers.curve_geometry(first),
+        source_carriers.curve_geometry(second),
+    )
     else {
         return None;
     };
@@ -860,6 +869,7 @@ fn ordered_two_edge_circle_loops<'a>(
     polygons: &[Vec<[f64; 2]>],
     surface: &SurfaceGeometry,
     model_curves: &[Curve],
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Option<Vec<&'a crate::topology::Loop>> {
     if loops.len() < 2 || loops.len() != polygons.len() {
         return None;
@@ -871,7 +881,7 @@ fn ordered_two_edge_circle_loops<'a>(
     let normal = plane_surface.frame().axis().as_raw();
     let circle_loops = loops
         .iter()
-        .map(|lp| native_circle_loop_geometry(lp, model_curves))
+        .map(|lp| native_circle_loop_geometry(lp, model_curves, source_carriers))
         .collect::<Option<Vec<_>>>()?;
     let normal_length = normal.norm();
     if !normal_length.is_finite() || normal_length <= 0.0 {
@@ -1015,7 +1025,13 @@ fn ordered_native_parameter_face_loops<'a>(
         })
         .collect::<Option<Vec<_>>>()?;
     ordered_parameter_face_loops(loops.to_owned(), &polygons).or_else(|| {
-        ordered_two_edge_circle_loops(loops, &polygons, surface, curve_evidence.model_curves)
+        ordered_two_edge_circle_loops(
+            loops,
+            &polygons,
+            surface,
+            curve_evidence.model_curves,
+            curve_evidence.source_carriers,
+        )
     })
 }
 
@@ -1034,7 +1050,7 @@ pub(in super::super) fn transfer_native_brep(
     annotations: &mut AnnotationBuilder,
     curve_evidence: NativeBrepCurveEvidence<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
+    source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<NativeBrepTransferSummary, cadmpeg_core::CodecError> {
     let carriers = placed_carriers(scan, ir, source_carriers);
     let planes = carriers
@@ -1212,7 +1228,7 @@ pub(in super::super) fn transfer_native_brep(
             (*face_id, count)
         })
         .collect::<BTreeMap<_, _>>();
-    let typed_nonlinear_curve_ids = model_typed_nonlinear_curve_ids(ir);
+    let typed_nonlinear_curve_ids = model_typed_nonlinear_curve_ids(ir, source_carriers);
     let mut diagnostics = BrepTransferDiagnostics {
         candidate_face_count: candidate_face_ids.len(),
         legacy_nonvisible_face_reference_count,
@@ -1302,7 +1318,7 @@ pub(in super::super) fn transfer_native_brep(
                     native_parameter_loop_polygon(
                         lp,
                         face_id,
-                        &surface.geometry,
+                        source_carriers.surface_geometry(surface),
                         &incidence,
                         solved_vertices,
                         &native_pcurves,
@@ -1331,13 +1347,14 @@ pub(in super::super) fn transfer_native_brep(
             ordered_native_parameter_face_loops(
                 loops,
                 face_id,
-                &surface.geometry,
+                source_carriers.surface_geometry(surface),
                 &incidence,
                 solved_vertices,
                 &native_pcurves,
                 NativeCurveEvidence {
                     typed_nonlinear_curve_ids: &typed_nonlinear_curve_ids,
                     model_curves: &ir.model.curves,
+                    source_carriers,
                 },
             )
         });
@@ -1472,9 +1489,7 @@ pub(in super::super) fn transfer_native_brep(
         let position = cadmpeg_ir::features::FinitePoint3::new(Point3::from(*position))
             .ok_or(Point::NON_FINITE_POSITION)
             .map_err(cadmpeg_core::CodecError::malformed)?;
-        ir.model
-            .points
-            .push(Point::new(point_id, position, Some(source_object)));
+        source_carriers.admit_point(ir, Point::new(point_id, position, Some(source_object)))?;
     }
     diagnostics.body_count_mismatch =
         !body_components.is_empty() && selected_body_count != Some(body_components.len());
@@ -1537,71 +1552,58 @@ pub(in super::super) fn transfer_native_brep(
                     .any(|face_id| native_pcurves.contains_key(&(*curve_id, *face_id)))
             });
         let model_curve_count = model_curve_counts[curve_id];
-        let derived_line = curve_evidence.derived_intersections.contains(&curve)
-            && exactly_one(
-                ir.model
-                    .curves
-                    .iter()
-                    .filter(|candidate| candidate.id == curve),
-            )
-            .is_some_and(|candidate| {
-                matches!(
-                    candidate.geometry.solved(),
-                    Some(SolvedCurveGeometry::Line(_))
-                )
-            });
         let param_range = if model_curve_count == 0 {
             None
-        } else if derived_line {
-            exactly_one(
-                ir.model
-                    .curves
-                    .iter_mut()
-                    .filter(|candidate| candidate.id == curve),
-            )
-            .and_then(|candidate| orient_line_edge_carrier(&mut candidate.geometry, points))
         } else {
-            exactly_one(
+            let candidate = exactly_one(
                 ir.model
                     .curves
                     .iter_mut()
                     .filter(|candidate| candidate.id == curve),
-            )
-            .and_then(|candidate| {
-                orient_nonperiodic_nurbs_edge_carrier(&mut candidate.geometry, points).or_else(
-                    || {
-                        exact_line_edge_parameter_range(&candidate.geometry, points).or_else(|| {
-                            nonperiodic_conic_edge_parameter_range(&candidate.geometry, points)
+            );
+            if let Some(candidate) = candidate {
+                let mut geometry = source_carriers.curve_geometry(candidate).clone();
+                let derived_line = curve_evidence.derived_intersections.contains(&curve)
+                    && matches!(geometry.solved(), Some(SolvedCurveGeometry::Line(_)));
+                let range = if derived_line {
+                    orient_line_edge_carrier(&mut geometry, points)
+                } else {
+                    orient_nonperiodic_nurbs_edge_carrier(&mut geometry, points).or_else(|| {
+                        exact_line_edge_parameter_range(&geometry, points).or_else(|| {
+                            nonperiodic_conic_edge_parameter_range(&geometry, points)
                                 .or_else(|| {
                                     pcurve_backed_periodic_conic_parameter_range(
-                                        &candidate.geometry,
+                                        &geometry,
                                         *curve_id,
                                         *curve_faces.get(curve_id)?,
                                         &native_pcurves,
                                         &ir.model.surfaces,
                                         points,
+                                        source_carriers,
                                     )
                                 })
                                 .or_else(|| {
                                     unbacked_closed_edge.then_some(()).and_then(|()| {
                                         full_periodic_conic_edge_parameter_range(
-                                            &candidate.geometry,
-                                            points[0],
+                                            &geometry, points[0],
                                         )
                                     })
                                 })
                                 .or_else(|| {
                                     unbacked_closed_edge.then_some(()).and_then(|()| {
                                         full_periodic_nurbs_edge_parameter_range(
-                                            &candidate.geometry,
-                                            points[0],
+                                            &geometry, points[0],
                                         )
                                     })
                                 })
                         })
-                    },
-                )
-            })
+                    })
+                };
+                source_carriers.replace_curve_geometry(candidate, geometry)?;
+                range
+            } else {
+                None
+            }
         };
         let id = EdgeId::compose(&crate::identity::VISIBGEOM_EDGE, *curve_id);
         annotate(
@@ -1613,14 +1615,17 @@ pub(in super::super) fn transfer_native_brep(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model edges")?;
-        ir.model.edges.push(Edge {
-            id,
-            carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve.clone()), param_range)
-                .map_err(cadmpeg_core::CodecError::malformed)?,
-            start: VertexId::compose(&crate::identity::VISIBGEOM_VERTEX, start),
-            end: VertexId::compose(&crate::identity::VISIBGEOM_VERTEX, end),
-            tolerance: None,
-        });
+        source_carriers.admit_edge(
+            ir,
+            Edge {
+                id,
+                carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve.clone()), param_range)
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                start: VertexId::compose(&crate::identity::VISIBGEOM_VERTEX, start),
+                end: VertexId::compose(&crate::identity::VISIBGEOM_VERTEX, end),
+                tolerance: None,
+            },
+        )?;
         if !ir.model.curves.iter().any(|item| item.id == curve) {
             let offset = row_offsets.get(curve_id).copied().unwrap_or(0);
             annotate(
@@ -1632,26 +1637,31 @@ pub(in super::super) fn transfer_native_brep(
                 Exactness::Unknown,
             );
             ctx.charge_entities(1, "admit Creo model curves")?;
-            ir.model.curves.push(Curve {
-                id: curve,
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                    record: geometry_section_record(scan, offset),
-                }),
-                source_object: Some(SourceObjectAssociation {
-                    format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                        "VisibGeom:{curve_id}"
-                    ))
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                    })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                }),
-            });
+            source_carriers.admit_curve(
+                ir,
+                Curve {
+                    id: curve,
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+                        record: geometry_section_record(scan, offset),
+                    }),
+                    source_object: Some(SourceObjectAssociation {
+                        format: cadmpeg_ir::CodecFormat::Creo,
+                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                            "VisibGeom:{curve_id}"
+                        ))
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "source object_id must not be empty",
+                            )
+                        })?,
+                        name: None,
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    }),
+                },
+            )?;
         }
     }
 
@@ -1836,28 +1846,31 @@ pub(in super::super) fn transfer_native_brep(
                     Exactness::Unknown,
                 );
                 ctx.charge_entities(1, "admit Creo model surfaces")?;
-                ir.model.surfaces.push(Surface {
-                    id: surface.clone(),
-                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                        record: geometry_section_record(scan, face_offset),
-                    }),
-                    source_object: Some(SourceObjectAssociation {
-                        format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                            "VisibGeom:{face_id}"
-                        ))
-                        .ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed(
-                                "source object_id must not be empty",
-                            )
-                        })?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
-                        instance_path: Vec::new(),
-                    }),
-                });
+                source_carriers.admit_surface(
+                    ir,
+                    Surface {
+                        id: surface.clone(),
+                        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+                            record: geometry_section_record(scan, face_offset),
+                        }),
+                        source_object: Some(SourceObjectAssociation {
+                            format: cadmpeg_ir::CodecFormat::Creo,
+                            object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                                "VisibGeom:{face_id}"
+                            ))
+                            .ok_or_else(|| {
+                                cadmpeg_core::CodecError::malformed(
+                                    "source object_id must not be empty",
+                                )
+                            })?,
+                            name: None,
+                            color: None,
+                            visible: None,
+                            layer: None,
+                            instance_path: Vec::new(),
+                        }),
+                    },
+                )?;
             }
             let face_sense = if face_orientations[face_id] {
                 Sense::Reversed
@@ -1965,7 +1978,11 @@ pub(in super::super) fn transfer_native_brep(
                                     .iter()
                                     .filter(|candidate| candidate.id == surface_id),
                             )?;
-                            unique_oriented_native_pcurve(&surface.geometry, candidates, traversal)
+                            unique_oriented_native_pcurve(
+                                source_carriers.surface_geometry(surface),
+                                candidates,
+                                traversal,
+                            )
                         })
                         .and_then(|(endpoints, offset)| {
                             Some((
@@ -2005,8 +2022,8 @@ pub(in super::super) fn transfer_native_brep(
                                     .filter(|candidate| candidate.id == edge_id),
                             )?;
                             let (geometry, tag) = planar_curve_pcurve(
-                                &surface.geometry,
-                                &curve.geometry,
+                                source_carriers.surface_geometry(surface),
+                                source_carriers.curve_geometry(curve),
                                 &format!(
                                     "VisibGeom curve-topology row {} on face {face_id}",
                                     half_edge.curve_id
@@ -2016,22 +2033,28 @@ pub(in super::super) fn transfer_native_brep(
                             .map(|geometry| (geometry, "projected_planar_pcurve"))
                             .or_else(|| {
                                 surface_of_revolution_parallel_pcurve(
-                                    &surface.geometry,
-                                    &curve.geometry,
+                                    source_carriers.surface_geometry(surface),
+                                    source_carriers.curve_geometry(curve),
                                 )
                                 .map(|geometry| (geometry, "projected_parallel_conic_pcurve"))
                             })
                             .or_else(|| {
-                                meridian_circle_pcurve(&surface.geometry, &curve.geometry)
-                                    .map(|geometry| (geometry, "projected_meridian_pcurve"))
+                                meridian_circle_pcurve(
+                                    source_carriers.surface_geometry(surface),
+                                    source_carriers.curve_geometry(curve),
+                                )
+                                .map(|geometry| (geometry, "projected_meridian_pcurve"))
                             })
                             .or_else(|| {
-                                ruled_generator_line_pcurve(&surface.geometry, &curve.geometry)
-                                    .map(|geometry| (geometry, "projected_ruled_generator_pcurve"))
+                                ruled_generator_line_pcurve(
+                                    source_carriers.surface_geometry(surface),
+                                    source_carriers.curve_geometry(curve),
+                                )
+                                .map(|geometry| (geometry, "projected_ruled_generator_pcurve"))
                             })?;
                             Some((
                                 geometry,
-                                edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
+                                source_carriers.source_edge_parameter_range(edge),
                                 row_offsets.get(&half_edge.curve_id).copied().unwrap_or(0),
                                 tag,
                             ))
@@ -2081,11 +2104,15 @@ pub(in super::super) fn transfer_native_brep(
                                     Exactness::Derived,
                                 );
                                 ctx.charge_entities(1, "admit Creo model pcurves")?;
-                                ir.model.pcurves.push(Pcurve {
-                                    id: pcurve.clone(),
-                                    geometry,
-                                    metadata,
-                                });
+                                source_carriers.admit_pcurve(
+                                    ir,
+                                    Pcurve {
+                                        id: pcurve.clone(),
+                                        geometry,
+                                        metadata,
+                                    },
+                                    &native_surface_id(scan, *face_id),
+                                )?;
                             }
                             Ok(Some(PcurveUse {
                                 pcurve,

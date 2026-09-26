@@ -453,6 +453,7 @@ fn adjacent_face_pcurves_must_select_the_same_circle_arc() {
             &candidates,
             &surfaces,
             points,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
         ),
         Some([0.0, std::f64::consts::FRAC_PI_2])
     );
@@ -469,6 +470,7 @@ fn adjacent_face_pcurves_must_select_the_same_circle_arc() {
             &candidates,
             &surfaces,
             points,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
         ),
         None
     );

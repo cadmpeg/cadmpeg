@@ -37,6 +37,9 @@ pub(in crate::decode) fn normalize_model_lengths(
 
     let pcurve_scales = pcurve_scales(ir, scale.get());
     for pcurve in &mut ir.model.pcurves {
+        if source_carriers.contains_pcurve(&pcurve.id) {
+            continue;
+        }
         if let Some(scales) = pcurve_scales.get(&pcurve.id) {
             if pcurve.geometry.try_scale_coordinates(*scales).is_err() {
                 return Err(CodecError::NotImplemented(format!(
@@ -85,6 +88,9 @@ pub(in crate::decode) fn normalize_model_lengths(
             .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     for point in &mut ir.model.points {
+        if source_carriers.contains_point(&point.id) {
+            continue;
+        }
         let position = point
             .position()
             .scaled(scale)
@@ -109,6 +115,9 @@ pub(in crate::decode) fn normalize_model_lengths(
         .collect::<BTreeMap<_, _>>();
     for edge in &mut ir.model.edges {
         scale_tolerance(&mut edge.tolerance, scale)?;
+        if source_carriers.contains_edge(&edge.id) {
+            continue;
+        }
         if let EdgeCarrier::Bounded(curve, interval) = &mut edge.carrier {
             if let Some(scale) = curve_parameter_scales.get(curve) {
                 *interval = interval.scaled(*scale).ok_or_else(|| {
@@ -1322,7 +1331,7 @@ pub(in crate::decode) fn scale_procedural_curve(
 /// The scale of a curve's parameter under the unit scaling. A line is
 /// parameterized by length. A conic's parameter is dimensionless, so the
 /// scaling keeps it, and the other carriers state no parameter scale.
-fn curve_parameter_scale(
+pub(in crate::decode) fn curve_parameter_scale(
     geometry: &SolvedCurveGeometry,
     length_scale_mm: PositiveReal,
 ) -> Option<PositiveReal> {
@@ -1343,7 +1352,10 @@ fn curve_parameter_scale(
     }
 }
 
-fn surface_parameter_scales(geometry: &SolvedSurfaceGeometry, length_scale_mm: f64) -> [f64; 2] {
+pub(in crate::decode) fn surface_parameter_scales(
+    geometry: &SolvedSurfaceGeometry,
+    length_scale_mm: f64,
+) -> [f64; 2] {
     match geometry {
         SolvedSurfaceGeometry::Plane(_) => [length_scale_mm, length_scale_mm],
         SolvedSurfaceGeometry::Cylinder(_) => [1.0, length_scale_mm],

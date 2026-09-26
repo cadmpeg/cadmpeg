@@ -1721,11 +1721,12 @@ pub(in crate::decode) fn pcurve_backed_periodic_conic_parameter_range(
     candidates: &NativePcurveCandidates,
     surfaces: &[Surface],
     points: [[f64; 3]; 2],
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Option<[f64; 2]> {
     let mut selected = None;
     for face_id in faces {
-        let Some(surface) =
-            unique_model_surface(surfaces, face_id).map(|surface| &surface.geometry)
+        let Some(surface) = unique_model_surface(surfaces, face_id)
+            .map(|surface| source_carriers.surface_geometry(surface))
         else {
             continue;
         };
