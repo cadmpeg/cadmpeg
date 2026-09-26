@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    transfer_datum_plane_surfaces, transfer_placed_plane_surfaces_into_ir,
-    transfer_reference_circles, transfer_reference_ellipses, transfer_reference_lines, CadIr,
-    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    transfer_datum_plane_surfaces, transfer_display_tessellations,
+    transfer_placed_plane_surfaces_into_ir, transfer_reference_circles,
+    transfer_reference_ellipses, transfer_reference_lines, CadIr, CurveGeometry,
+    SolvedCurveGeometry, SolvedSurfaceGeometry,
 };
 use crate::container::scan_bytes_ok;
 use crate::legacy::PrincipalUnitSystem;
@@ -348,4 +349,72 @@ fn placed_plane_origin_is_in_millimeters_at_ir_admission() {
         panic!("expected a plane surface");
     };
     assert_eq!(plane.origin().get(), Point3::new(25.4, 0.0, 0.0));
+}
+
+#[test]
+fn display_tessellation_vertices_are_in_millimeters_at_ir_admission() {
+    let mut scan = scan_bytes_ok(crate::test_support::build_prt("strip", &[]));
+    scan.framing.principal_unit = Some(PrincipalUnitSystem::InchPoundMassSecond);
+    scan.primitives
+        .triangle_strips
+        .push(crate::primdata::PrimitiveTriangleStrip {
+            offset: 0,
+            positions: vec![[1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]],
+            normals: None,
+            strip_lengths: vec![3],
+        });
+    let mut ir = CadIr::empty();
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    crate::decode::with_test_decode_ctx(|ctx| {
+        transfer_display_tessellations(ctx, &scan, &mut ir, &mut annotations)
+            .expect("display tessellation transfer");
+    });
+    assert_eq!(
+        ir.model.tessellations[0].vertices()[0].get(),
+        Point3::new(25.4, 0.0, 0.0)
+    );
+    assert_eq!(
+        ir.model.tessellations[0].vertices()[1].get(),
+        Point3::new(0.0, 50.8, 0.0)
+    );
+    assert_eq!(
+        ir.model.tessellations[0].vertices()[2].get(),
+        Point3::new(0.0, 0.0, 101.6)
+    );
+    assert_eq!(
+        scan.primitives.triangle_strips[0].positions[0],
+        [1.0, 0.0, 0.0]
+    );
+    super::super::units::normalize_model_lengths(
+        &mut ir,
+        PositiveReal::new(25.4).expect("unit scale"),
+        &super::super::units::ConvertedGeometry::default(),
+    )
+    .expect("remaining unit normalization");
+    assert_eq!(
+        ir.model.tessellations[0].vertices()[0].get(),
+        Point3::new(25.4, 0.0, 0.0)
+    );
+}
+
+#[test]
+fn display_tessellation_vertex_overflow_refuses_unrepresentable_ir() {
+    let mut scan = scan_bytes_ok(crate::test_support::build_prt("strip", &[]));
+    scan.framing.principal_unit = Some(PrincipalUnitSystem::InchPoundMassSecond);
+    scan.primitives
+        .triangle_strips
+        .push(crate::primdata::PrimitiveTriangleStrip {
+            offset: 0,
+            positions: vec![[f64::MAX, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 3.0]],
+            normals: None,
+            strip_lengths: vec![3],
+        });
+    let mut ir = CadIr::empty();
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let error = transfer_display_tessellations(ctx, &scan, &mut ir, &mut annotations)
+            .expect_err("scaled display vertex overflows");
+        assert!(matches!(error, CodecError::NotImplemented(_)));
+        assert!(ir.model.tessellations.is_empty());
+    });
 }

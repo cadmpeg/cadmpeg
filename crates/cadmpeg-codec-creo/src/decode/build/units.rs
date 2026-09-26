@@ -137,21 +137,6 @@ pub(super) fn normalize_model_lengths(
             scale_transform_translation(transform, scale)?;
         }
     }
-    for tessellation in &mut ir.model.tessellations {
-        tessellation
-            .edit_vertices(|vertex| {
-                scale_point3(vertex, scale);
-                Ok(())
-            })
-            .map_err(|error| {
-                CodecError::malformed(format_args!("invalid scaled tessellation: {error}"))
-            })?;
-        tessellation
-            .scale_chordal_deflection(scale)
-            .map_err(|error| {
-                CodecError::malformed(format_args!("invalid scaled tessellation: {error}"))
-            })?;
-    }
     for feature in &mut ir.model.features {
         let mut definition = feature.evaluation.definition().clone();
         scale_feature_definition(&mut definition, scale)?;
