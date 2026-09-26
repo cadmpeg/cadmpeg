@@ -7,6 +7,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 mod native_admission;
+mod presentation_admission;
 
 use super::{built_in_property_name, known_property_set_fmtid, preview_bytes, MetadataProjection};
 use crate::loss::InventorLossCode;
