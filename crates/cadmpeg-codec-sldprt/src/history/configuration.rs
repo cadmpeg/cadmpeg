@@ -672,6 +672,7 @@ pub(crate) fn project_configuration_sketch_states(
             scoped_lanes,
         );
         crate::resolved_features::holes::project_profiled_hole_constructions(
+            ctx,
             &mut features,
             &ir.model.sketch_entities,
             histories,
