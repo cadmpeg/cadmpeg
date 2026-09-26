@@ -384,12 +384,21 @@ fn decode_carrier_values(
 
 /// Return the typed curve carried by one stream-local attribute.
 pub(crate) fn curve_by_attr(body: &[u8], attr: u16) -> Option<CurveGeometry> {
-    Some(scan_carriers(body).curve(attr)?.carrier().geometry.clone())
+    Some(
+        scan_carriers(None, body)
+            .ok()?
+            .curve(attr)?
+            .carrier()
+            .geometry
+            .clone(),
+    )
 }
 
 /// Replace the scalar run of one compact analytic carrier.
 pub(crate) fn patch_compact_values(body: &mut [u8], attr: u16, values: &[f64]) -> bool {
-    let carriers = scan_carriers(body);
+    let Ok(carriers) = scan_carriers(None, body) else {
+        return false;
+    };
     let Some(indexed) = carriers.curve(attr) else {
         return false;
     };
@@ -412,7 +421,9 @@ pub(crate) fn patch_nurbs_by_attr(
     attr: u16,
     new: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
 ) -> bool {
-    let carriers = scan_carriers(body);
+    let Ok(carriers) = scan_carriers(None, body) else {
+        return false;
+    };
     let Some(indexed) = carriers.curve(attr) else {
         return false;
     };
@@ -530,7 +541,7 @@ mod tests {
             &[1.0, 2.0, 3.0, 0.0, 0.0, 1.0],
         ));
 
-        let carriers = scan_carriers(&bytes);
+        let carriers = scan_carriers(None, &bytes).expect("carrier scan");
 
         assert!(carriers.curve(7).is_some());
         assert!(carriers.curve(8).is_some());
