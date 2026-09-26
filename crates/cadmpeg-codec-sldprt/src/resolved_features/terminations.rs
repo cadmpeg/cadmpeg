@@ -179,7 +179,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                         .is_some_and(|value| {
                             crate::history::literals::parse_dimension_length_mm(value).is_some_and(
                                 |value| {
-                                    (value - scalar.value * 1000.0).abs()
+                                    (value - scalar.value.get() * 1000.0).abs()
                                         <= EPS_TERMINATIONS_ENRICH_HISTORY_EXTRUSION_TERMINATIONS_E9
                                 },
                             )
@@ -290,7 +290,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                                     == usize::try_from(scalar.offset).ok()
                             })
                             .min_by_key(|(scalar, _)| scalar.offset)
-                            .map(|(scalar, _)| scalar.value);
+                            .map(|(scalar, _)| scalar.value.get());
                         return Some(TerminationVote::Blind { depth_m });
                     }
                     if compact_extrusion_mid_plane_at(&lane.native_payload, offset) {

@@ -73,7 +73,7 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         offset: 100,
         object_id: 1,
         name: "name".into(),
-        value: 1.0,
+        value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
 
         operands: vec![reference(143), reference(287)],
@@ -655,7 +655,7 @@ fn relation_binding_requires_family_operand_signature() {
         offset: 20,
         object_id: 1,
         name: "name".into(),
-        value: 1.0,
+        value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
 
         operands: vec![operand(kind, 0), operand(kind, 1)],
@@ -704,7 +704,7 @@ fn relation_binding_with_ambiguous_declarations_is_withheld() {
         offset: 30,
         object_id: 1,
         name: "name".into(),
-        value: 1.0,
+        value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
 
         operands: vec![operand(0), operand(1)],
@@ -742,7 +742,7 @@ fn scoped_relation_binding_does_not_cross_feature_interval() {
         offset: 120,
         object_id: 1,
         name: "name".into(),
-        value: 1.0,
+        value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
 
         operands: vec![operand(0), operand(1)],

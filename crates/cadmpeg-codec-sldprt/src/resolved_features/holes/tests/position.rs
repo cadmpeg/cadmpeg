@@ -1478,7 +1478,7 @@ fn source_intervals_supply_legacy_hole_profiles() {
         offset: 150,
         object_id: 1,
         name: "depth-name".into(),
-        value: 0.0068,
+        value: cadmpeg_ir::scalar::FiniteReal::new(0.0068).expect("finite test scalar"),
         role: FeatureInputScalarRole::Native,
 
         operands: Vec::new(),
@@ -1706,7 +1706,8 @@ fn parameter_class_supplies_an_operandless_scalar_unit() {
         offset: 150,
         object_id: 1,
         name: "angle-name".into(),
-        value: std::f64::consts::TAU,
+        value: cadmpeg_ir::scalar::FiniteReal::new(std::f64::consts::TAU)
+            .expect("finite test scalar"),
         role: FeatureInputScalarRole::Native,
 
         operands: Vec::new(),

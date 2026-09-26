@@ -1399,7 +1399,12 @@ fn bind_detached_spatial_relation_objects(
             .iter()
             .filter(|scalar| scalar.offset > start && scalar.offset < end)
             .filter(|scalar| scalar.role != crate::records::FeatureInputScalarRole::Display)
-            .filter_map(|scalar| Some((names.get(scalar.name.as_str()).copied()?, scalar.value)))
+            .filter_map(|scalar| {
+                Some((
+                    names.get(scalar.name.as_str()).copied()?,
+                    scalar.value.get(),
+                ))
+            })
             .filter(|(name, _)| is_dimension_name(name))
             .collect::<Vec<_>>();
         let scalar_names = scalars
