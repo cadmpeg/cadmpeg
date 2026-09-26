@@ -377,27 +377,47 @@ impl TessellationMesh {
         triangles: Vec<[u32; 3]>,
         normals: Option<Vec<Vector3>>,
     ) -> Result<Self, TessellationLaneError> {
-        let Some(normals) = normals else {
-            return Ok(Self::List {
-                vertices: positions,
-                triangles,
-            });
-        };
-        if normals.len() != positions.len() {
-            return Err(TessellationLaneError::VertexNormalLane {
-                vertices: positions.len(),
-                normals: normals.len(),
-            });
-        }
-        Ok(Self::ShadedList {
-            vertices: positions
-                .into_iter()
-                .zip(normals)
-                .map(|(position, normal)| ShadedVertex { position, normal })
-                .collect(),
-            triangles,
-        })
+        pair_list_lanes(positions, triangles, normals)
     }
+}
+
+impl TessellationMesh<FinitePoint3, FiniteVector3> {
+    /// Pair admitted position and normal lanes into triangle-list rows.
+    /// Only the lane lengths are checked.
+    pub fn from_admitted_list_lanes(
+        positions: Vec<FinitePoint3>,
+        triangles: Vec<[u32; 3]>,
+        normals: Option<Vec<FiniteVector3>>,
+    ) -> Result<Self, TessellationLaneError> {
+        pair_list_lanes(positions, triangles, normals)
+    }
+}
+
+fn pair_list_lanes<P, N>(
+    positions: Vec<P>,
+    triangles: Vec<[u32; 3]>,
+    normals: Option<Vec<N>>,
+) -> Result<TessellationMesh<P, N>, TessellationLaneError> {
+    let Some(normals) = normals else {
+        return Ok(TessellationMesh::List {
+            vertices: positions,
+            triangles,
+        });
+    };
+    if normals.len() != positions.len() {
+        return Err(TessellationLaneError::VertexNormalLane {
+            vertices: positions.len(),
+            normals: normals.len(),
+        });
+    }
+    Ok(TessellationMesh::ShadedList {
+        vertices: positions
+            .into_iter()
+            .zip(normals)
+            .map(|(position, normal)| ShadedVertex { position, normal })
+            .collect(),
+        triangles,
+    })
 }
 
 impl<P: Copy, N: Copy> TessellationMesh<P, N> {
