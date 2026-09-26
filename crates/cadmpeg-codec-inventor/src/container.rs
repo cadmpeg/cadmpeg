@@ -47,7 +47,7 @@ impl<'a> InventorContainer<'a> {
         })
     }
 
-    pub(crate) fn summary(&self) -> Result<ContainerSummary, CodecError> {
+    pub(crate) fn summary(&self, ctx: &DecodeContext<'_>) -> Result<ContainerSummary, CodecError> {
         let mut entries = self.snapshot.container_entries(classify);
         for segment in &self.rse.segments {
             let directory_id = segment.pair.metadata.directory_id().to_string();
@@ -120,10 +120,10 @@ impl<'a> InventorContainer<'a> {
                 }
             }
         }
-        let recovery = crate::dialect::DialectRecovery::of(self);
-        let matched = recovery.classify();
+        let recovery = crate::dialect::DialectRecovery::of(ctx, self)?;
+        let matched = recovery.classify(ctx)?;
         let mut losses = Vec::new();
-        losses.extend(crate::dialect::dialect_loss(&matched, &recovery));
+        losses.extend(crate::dialect::dialect_loss(ctx, &matched, &recovery)?);
         let dialects = crate::dialect::layers(matched, &self.rse.active_carrier)?;
         losses.extend(
             dialects
