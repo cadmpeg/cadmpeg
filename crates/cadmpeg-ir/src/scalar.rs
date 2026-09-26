@@ -667,12 +667,6 @@ impl FiniteReal {
     /// Two.
     pub(crate) const TWO: Self = Self(2.0);
 
-    /// Widen a finite binary32 scalar exactly to binary64.
-    #[must_use]
-    pub fn from_finite_binary32(value: FiniteBinary32) -> Self {
-        Self(f64::from(value.get()))
-    }
-
     /// Reverse the sign.
     #[must_use]
     pub const fn negated(self) -> Self {
