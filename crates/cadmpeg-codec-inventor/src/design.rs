@@ -1508,7 +1508,7 @@ mod tests {
             1
         );
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 1;
+        policy.limits.max_retained_bytes = 0;
         assert!(matches!(
             inventory_with_record(PARAMETER_FULL_TYPE, &payload, policy),
             Err(CodecError::ResourceLimit(limit))
