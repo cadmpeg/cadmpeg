@@ -178,8 +178,7 @@ pub(super) fn neutral_surface(
         } => revolution_surface(
             ctx,
             graph.profiles.get(&profile_curve),
-            axis_origin,
-            axis_direction,
+            (axis_origin, axis_direction),
             angular_scale,
             bounds,
             &format_args!("b5 revolution surface record #{surface_id}"),
@@ -207,13 +206,13 @@ pub(super) fn neutral_surface(
 pub(super) fn revolution_surface(
     ctx: &DecodeContext<'_>,
     profile: Option<&B5Profile>,
-    axis_origin: FinitePoint3,
-    axis_direction: UnitVector3,
+    axis: (FinitePoint3, UnitVector3),
     angular_scale: PositiveReal,
     bounds: [[f64; 2]; 2],
     record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<(NurbsSurface, RevolutionPlan)>, CodecError> {
+    let (axis_origin, axis_direction) = axis;
     let Some(profile) = profile else {
         return Ok(None);
     };
@@ -230,8 +229,7 @@ pub(super) fn revolution_surface(
         &directrix,
         coordinates(axis_origin),
         components(&axis_direction),
-        angular_interval,
-        native_angular_interval,
+        [angular_interval, native_angular_interval],
         record,
         refusal,
     )?;
@@ -372,11 +370,11 @@ pub(super) fn revolve_nurbs(
     profile: &NurbsCurve,
     axis_origin: [f64; 3],
     axis_direction: [f64; 3],
-    angular_interval: [f64; 2],
-    native_interval: [f64; 2],
+    intervals: [[f64; 2]; 2],
     record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<NurbsSurface>, CodecError> {
+    let [angular_interval, native_interval] = intervals;
     let admit_items = |count: usize, operation: &'static str| -> Result<(), CodecError> {
         let items = u64::try_from(count)
             .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
@@ -1020,8 +1018,7 @@ mod tests {
             &profile,
             [0.0; 3],
             [0.0, 0.0, 1.0],
-            [0.0, std::f64::consts::FRAC_PI_2],
-            [0.0, 1.0],
+            [[0.0, std::f64::consts::FRAC_PI_2], [0.0, 1.0]],
             &"test record",
             &mut crate::nurbs::LaneRefusals::new(),
         )

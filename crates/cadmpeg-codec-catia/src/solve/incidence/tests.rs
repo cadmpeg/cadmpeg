@@ -6,6 +6,7 @@ use crate::solve::incidence::prune_face_configuration_support;
 use crate::solve::incidence::prune_incidence_choices_with_deferred_support;
 use crate::solve::incidence::prune_ordered_face_endpoint_support;
 use crate::solve::incidence::reconstruct_incidence_candidates;
+use crate::solve::incidence::IncidenceEndpointDomains;
 use crate::solve::incidence::IncidenceSearchState;
 use crate::solve::mesh_quotient::AssignmentOrder;
 use crate::solve::mesh_quotient::MeshPartialEndpointConstraint;
@@ -64,8 +65,10 @@ fn endpoint_candidate_search_selects_a_face_closing_assignment() {
         &rows,
         &points,
         &edge_faces,
-        &candidates,
-        None,
+        IncidenceEndpointDomains {
+            candidates: &candidates,
+            ports: None,
+        },
         4,
         &budget,
     )
@@ -86,8 +89,10 @@ fn endpoint_candidate_search_selects_a_face_closing_assignment() {
         &rows,
         &points,
         &edge_faces,
-        &candidates,
-        Some(&ports),
+        IncidenceEndpointDomains {
+            candidates: &candidates,
+            ports: Some(&ports),
+        },
         4,
         &budget,
     )
@@ -134,8 +139,10 @@ fn endpoint_candidate_fallback_honors_caller_budget() {
         &rows,
         &points,
         &edge_faces,
-        &candidates,
-        None,
+        IncidenceEndpointDomains {
+            candidates: &candidates,
+            ports: None,
+        },
         4,
         &budget,
     )
@@ -630,7 +637,8 @@ fn incidence_branch_reuses_candidate_viability_across_incident_face_frontiers() 
 
     assert_eq!(
         search
-            .branch_options(None)
+            .branch(None)
+            .map(|options| options.map(Iterator::collect))
             .expect("service resource budget"),
         Some(vec![(0, [0, 2])])
     );
@@ -675,7 +683,8 @@ fn incidence_branch_stops_ranking_at_a_singleton_domain() {
 
     assert_eq!(
         search
-            .branch_options(None)
+            .branch(None)
+            .map(|options| options.map(Iterator::collect))
             .expect("service resource budget"),
         Some(vec![(0, [0, 2])])
     );
@@ -842,7 +851,8 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
 
     assert_eq!(
         search
-            .branch_options(None)
+            .branch(None)
+            .map(|options| options.map(Iterator::collect))
             .expect("service resource budget"),
         Some(vec![(1, [3, 4]), (1, [3, 5]), (1, [4, 5])])
     );
@@ -898,7 +908,8 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
 
     assert_eq!(
         search
-            .branch_options(None)
+            .branch(None)
+            .map(|options| options.map(Iterator::collect))
             .expect("service resource budget"),
         Some(vec![(0, [0, 1]), (0, [0, 2])])
     );
@@ -911,7 +922,8 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
     };
     assert_eq!(
         independent
-            .branch_options(None)
+            .branch(None)
+            .map(|options| options.map(Iterator::collect))
             .expect("service resource budget"),
         Some(Vec::new())
     );

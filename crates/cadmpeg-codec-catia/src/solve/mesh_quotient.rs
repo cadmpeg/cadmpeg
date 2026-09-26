@@ -424,6 +424,18 @@ pub(super) struct MeshCoordinateRootDomains {
     point_count: usize,
 }
 
+struct RefinedCoordinateDomains {
+    domains: Vec<Vec<usize>>,
+    coverage_matching: Vec<usize>,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct MeshIncidenceBoundary<'a> {
+    pub(super) edge_faces: &'a [[usize; 2]],
+    pub(super) face_count: usize,
+    pub(super) domains: &'a [MeshFaceBoundaryDomain],
+}
+
 pub(super) struct MeshImplicitEdgeCandidates {
     source: MeshImplicitEdgeCandidateSource,
 }
@@ -703,7 +715,7 @@ impl MeshCoordinateRootDomains {
         initial_edges: &[usize],
         mut propagate_all_different: bool,
         budget: Option<&WorkBudget<'_>>,
-    ) -> Result<Option<(Vec<Vec<usize>>, Vec<usize>)>, CodecError> {
+    ) -> Result<Option<RefinedCoordinateDomains>, CodecError> {
         let mut affected_edges = initial_edges.to_vec();
         let mut coverage_matching = self.coverage_matching.clone();
         let propagate_globally = propagate_all_different;
@@ -739,7 +751,10 @@ impl MeshCoordinateRootDomains {
             propagate_all_different |= repaired_matching != coverage_matching;
             coverage_matching = repaired_matching;
             if !propagate_all_different {
-                return Ok(Some((domains, coverage_matching)));
+                return Ok(Some(RefinedCoordinateDomains {
+                    domains,
+                    coverage_matching,
+                }));
             }
             let changed_roots = domains
                 .iter()
@@ -751,7 +766,10 @@ impl MeshCoordinateRootDomains {
                 (0..self.point_count).collect::<Vec<_>>()
             } else {
                 if changed_roots.is_empty() {
-                    return Ok(Some((domains, coverage_matching)));
+                    return Ok(Some(RefinedCoordinateDomains {
+                        domains,
+                        coverage_matching,
+                    }));
                 }
                 let mut reached_roots =
                     ctx.alloc_filled(domains.len(), false, "catia_quotient_reached_roots")?;
@@ -792,7 +810,10 @@ impl MeshCoordinateRootDomains {
             let support_count = affected_domains.iter().map(Vec::len).sum::<usize>();
             let propagation_work = support_count.saturating_mul(4);
             if budget.is_some_and(|budget| propagation_work > budget.remaining()) {
-                return Ok(Some((domains, coverage_matching)));
+                return Ok(Some(RefinedCoordinateDomains {
+                    domains,
+                    coverage_matching,
+                }));
             }
             let Some(_) = retain_distinct_matching_supports(
                 ctx,
@@ -819,7 +840,10 @@ impl MeshCoordinateRootDomains {
                 }
             }
             if affected_roots.is_empty() {
-                return Ok(Some((domains, coverage_matching)));
+                return Ok(Some(RefinedCoordinateDomains {
+                    domains,
+                    coverage_matching,
+                }));
             }
             affected_edges = affected_roots
                 .into_iter()
@@ -851,7 +875,10 @@ impl MeshCoordinateRootDomains {
         }
         let mut edge_candidates = self.edge_candidates.as_ref().clone();
         edge_candidates[edge] = vec![pair];
-        let Some((domains, coverage_matching)) = self.refine_domains(
+        let Some(RefinedCoordinateDomains {
+            domains,
+            coverage_matching,
+        }) = self.refine_domains(
             ctx,
             self.domains.clone(),
             &edge_candidates,
@@ -890,7 +917,10 @@ impl MeshCoordinateRootDomains {
         if changed.is_empty() {
             return Ok(Some(self.clone()));
         }
-        let Some((domains, coverage_matching)) = self.refine_domains(
+        let Some(RefinedCoordinateDomains {
+            domains,
+            coverage_matching,
+        }) = self.refine_domains(
             ctx,
             self.domains.clone(),
             edge_candidates,
@@ -1285,7 +1315,10 @@ impl MeshQuotient {
             coverage_matching,
             point_count,
         };
-        let Some((domains, coverage_matching)) = coordinate_domains.refine_domains(
+        let Some(RefinedCoordinateDomains {
+            domains,
+            coverage_matching,
+        }) = coordinate_domains.refine_domains(
             ctx,
             coordinate_domains.domains.clone(),
             &coordinate_domains.edge_candidates,
@@ -1481,11 +1514,14 @@ impl MeshQuotient {
         ctx: &DecodeContext<'_>,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
-        edge_faces: &[[usize; 2]],
-        face_count: usize,
-        boundary_domains: &[MeshFaceBoundaryDomain],
+        incidence: MeshIncidenceBoundary<'_>,
         budget: Option<&WorkBudget<'_>>,
     ) -> Result<Option<HashMap<usize, usize>>, CodecError> {
+        let MeshIncidenceBoundary {
+            edge_faces,
+            face_count,
+            domains: boundary_domains,
+        } = incidence;
         if !(edge_faces.len() == edge_candidates.len()
             && edge_faces.iter().flatten().all(|face| *face < face_count)
             && boundary_domains.len() == face_count)
@@ -1508,11 +1544,14 @@ impl MeshQuotient {
         ctx: &DecodeContext<'_>,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
-        edge_faces: &[[usize; 2]],
-        face_count: usize,
-        boundary_domains: &[MeshFaceBoundaryDomain],
+        incidence: MeshIncidenceBoundary<'_>,
         budget: Option<&WorkBudget<'_>>,
     ) -> Result<CoordinateRootClosure, CodecError> {
+        let MeshIncidenceBoundary {
+            edge_faces,
+            face_count,
+            domains: boundary_domains,
+        } = incidence;
         if edge_faces.len() != edge_candidates.len()
             || edge_faces.iter().flatten().any(|face| *face >= face_count)
             || boundary_domains.len() != face_count
@@ -4233,13 +4272,18 @@ pub(super) fn mesh_assignment_endpoint_cycles_viable_where(
     )
 }
 
+#[derive(Debug)]
+pub(super) struct MeshEndpointPairSupport {
+    pub(super) by_edge: HashMap<usize, HashSet<[usize; 2]>>,
+}
+
 pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
     ctx: &DecodeContext<'_>,
     assignment: &MeshFaceBoundaryAssignment,
     budget: Option<&WorkBudget<'_>>,
     candidates: impl Fn(usize) -> Option<MeshEndpointCandidates<'a>>,
     allowed: impl Fn(usize, [usize; 2]) -> bool + Copy,
-) -> Result<Option<HashMap<usize, HashSet<[usize; 2]>>>, CodecError> {
+) -> Result<Option<MeshEndpointPairSupport>, CodecError> {
     const MAX_LOCAL_ENDPOINT_STATES: usize = 65_536;
 
     type EndpointRelation = BTreeMap<usize, BTreeSet<usize>>;
@@ -4279,12 +4323,14 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
             .collect()
     }
 
-    (|| -> Option<Result<HashMap<usize, HashSet<[usize; 2]>>, CodecError>> {
+    (|| -> Option<Result<MeshEndpointPairSupport, CodecError>> {
         let charge = || budget.is_none_or(WorkBudget::charge);
         let mut assignment_support = HashMap::<usize, HashSet<[usize; 2]>>::new();
         for boundary in &assignment.boundaries {
             if boundary.is_empty() {
-                return Some(Ok(HashMap::new()));
+                return Some(Ok(MeshEndpointPairSupport {
+                    by_edge: HashMap::new(),
+                }));
             }
             let mut points = BTreeSet::new();
             let mut layers = Vec::<(usize, Vec<[usize; 2]>, EndpointRelation)>::new();
@@ -4324,7 +4370,9 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
                 retained.sort_unstable();
                 retained.dedup();
                 if retained.is_empty() {
-                    return Some(Ok(HashMap::new()));
+                    return Some(Ok(MeshEndpointPairSupport {
+                        by_edge: HashMap::new(),
+                    }));
                 }
                 layers.push((use_.edge, retained, relation));
             }
@@ -4391,7 +4439,9 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
                     .get(&use_.edge)
                     .is_none_or(HashSet::is_empty)
             }) {
-                return Some(Ok(HashMap::new()));
+                return Some(Ok(MeshEndpointPairSupport {
+                    by_edge: HashMap::new(),
+                }));
             }
             for (edge, supported) in boundary_support {
                 assignment_support
@@ -4400,10 +4450,14 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
                     .or_insert(supported);
             }
             if assignment_support.values().any(HashSet::is_empty) {
-                return Some(Ok(HashMap::new()));
+                return Some(Ok(MeshEndpointPairSupport {
+                    by_edge: HashMap::new(),
+                }));
             }
         }
-        Some(Ok(assignment_support))
+        Some(Ok(MeshEndpointPairSupport {
+            by_edge: assignment_support,
+        }))
     })()
     .transpose()
 }
@@ -5697,8 +5751,10 @@ fn resolve_endpoint_configuration_relation_streaming(
             if let Some(selected) = selected {
                 resolve_fixed_mesh_endpoint_pairs(
                     ctx,
-                    edge_rows,
-                    vertex_points,
+                    MeshEndpointGeometry {
+                        edge_rows,
+                        vertex_points,
+                    },
                     &candidates,
                     &selected,
                     port_identities,
@@ -5711,8 +5767,10 @@ fn resolve_endpoint_configuration_relation_streaming(
         } else {
             resolve_fixed_mesh_endpoint_assignment_domains(
                 ctx,
-                edge_rows,
-                vertex_points,
+                MeshEndpointGeometry {
+                    edge_rows,
+                    vertex_points,
+                },
                 &candidates,
                 &assignment_domains,
                 port_identities,
@@ -6180,16 +6238,25 @@ mod face_domain_support_tests {
     }
 }
 
+#[derive(Clone, Copy)]
+struct MeshEndpointGeometry<'a> {
+    edge_rows: &'a [EdgeRow],
+    vertex_points: &'a [[f64; 3]],
+}
+
 fn resolve_fixed_mesh_endpoint_pairs(
     ctx: &DecodeContext<'_>,
-    edge_rows: &[EdgeRow],
-    vertex_points: &[[f64; 3]],
+    geometry: MeshEndpointGeometry<'_>,
     edge_candidates: &[Vec<[usize; 2]>],
     selected: &[MeshFaceBoundaryAssignment],
     port_identities: &[[u32; 2]],
     budget: &WorkBudget<'_>,
     candidate_gauge: Option<MeshCandidateGauge<'_>>,
 ) -> Result<MeshEndpointResolve, CodecError> {
+    let MeshEndpointGeometry {
+        edge_rows,
+        vertex_points,
+    } = geometry;
     if selected.is_empty()
         || edge_candidates.len() != edge_rows.len()
         || port_identities.len() != edge_rows.len()
@@ -6419,14 +6486,17 @@ fn resolve_fixed_mesh_endpoint_pairs(
 #[allow(clippy::items_after_statements)]
 fn resolve_fixed_mesh_endpoint_assignment_domains(
     ctx: &DecodeContext<'_>,
-    edge_rows: &[EdgeRow],
-    vertex_points: &[[f64; 3]],
+    geometry: MeshEndpointGeometry<'_>,
     edge_candidates: &[Vec<[usize; 2]>],
     assignment_domains: &[Vec<MeshFaceBoundaryAssignment>],
     port_identities: &[[u32; 2]],
     budget: &WorkBudget<'_>,
     candidate_gauge: Option<MeshCandidateGauge<'_>>,
 ) -> Result<MeshEndpointResolve, CodecError> {
+    let MeshEndpointGeometry {
+        edge_rows,
+        vertex_points,
+    } = geometry;
     if assignment_domains.is_empty()
         || assignment_domains.iter().any(Vec::is_empty)
         || edge_candidates.len() != edge_rows.len()
@@ -6463,8 +6533,10 @@ fn resolve_fixed_mesh_endpoint_assignment_domains(
         if face == assignment_domains.len() {
             let resolved = resolve_fixed_mesh_endpoint_pairs(
                 ctx,
-                edge_rows,
-                vertex_points,
+                MeshEndpointGeometry {
+                    edge_rows,
+                    vertex_points,
+                },
                 edge_candidates,
                 selected,
                 port_identities,
@@ -10382,9 +10454,11 @@ fn coordinate_root_preparation_budgets_independent_components_separately() {
             &ctx,
             COMPONENT_COUNT * 3,
             &candidates,
-            &edge_faces,
-            COMPONENT_COUNT,
-            &boundary_domains,
+            MeshIncidenceBoundary {
+                edge_faces: &edge_faces,
+                face_count: COMPONENT_COUNT,
+                domains: &boundary_domains,
+            },
             Some(&shared_incidence_budget),
         )
         .expect("service resource budget")
@@ -10397,9 +10471,11 @@ fn coordinate_root_preparation_budgets_independent_components_separately() {
             &ctx,
             COMPONENT_COUNT * 3,
             &candidates,
-            &edge_faces,
-            COMPONENT_COUNT,
-            &boundary_domains,
+            MeshIncidenceBoundary {
+                edge_faces: &edge_faces,
+                face_count: COMPONENT_COUNT,
+                domains: &boundary_domains,
+            },
             Some(&preparation_budget),
         )
         .expect("service resource budget");
