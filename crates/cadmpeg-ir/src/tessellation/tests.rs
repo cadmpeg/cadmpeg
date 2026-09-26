@@ -407,6 +407,18 @@ fn deflection_admission_and_edits_require_finite_non_negative_values() {
 }
 
 #[test]
+fn admitted_tessellation_deflection_keeps_the_same_wire_value() {
+    let deflection = NonNegativeReal::new(0.5).unwrap();
+    let direct = mesh().with_admitted_chordal_deflection(Some(deflection));
+    let checked = mesh().with_chordal_deflection(Some(0.5)).unwrap();
+    assert_eq!(direct.chordal_deflection(), checked.chordal_deflection());
+    assert_eq!(
+        serde_json::to_value(direct).unwrap(),
+        serde_json::to_value(checked).unwrap()
+    );
+}
+
+#[test]
 fn absent_normals_reject_edit_without_calling_the_editor() {
     let mut value = mesh();
     let original = value.clone();
