@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{ElementMapGroup, ElementMapNode, ElementMapNodes, ElementMappedName};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::Codec;
 
 #[test]
@@ -59,7 +60,12 @@ fn child_map_reference_is_rejected_by_complete_cadir_admission() {
     let json = serde_json::to_string(&ir).expect("serialize mutated CADIR");
     let reparsed =
         cadmpeg_ir::CadIr::from_json(&json).expect("complete CADIR document remains parseable");
-    let findings = crate::FcstdCodec.validate_native(&reparsed);
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("validation context");
+    let findings = crate::FcstdCodec
+        .validate_native(&ctx, &reparsed)
+        .expect("validation fits service policy");
     assert!(
         findings.iter().any(|finding| {
             finding.message.contains("mapIndex")

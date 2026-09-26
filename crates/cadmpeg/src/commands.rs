@@ -18,7 +18,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use anyhow::{anyhow, Context, Result};
-use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, InspectOptions};
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
@@ -380,14 +380,19 @@ pub(crate) fn check_cmd(
     if let Some(report) = loaded.decode_report() {
         print_decode_report(&mut io::stderr(), report)?;
     }
+    let validation_arena = DecodeArena::new();
+    let (validation_ctx, _) =
+        DecodeContext::from_root_bytes(&[], &validation_arena, &args.options().policy)?;
     let report = validate_ir(
+        &validation_ctx,
         inputs,
         &loaded.ir,
         loaded.fidelity(),
         loaded
             .decode_report()
             .map_or_else(Vec::new, |report| report.losses.clone()),
-    );
+    )?;
+    validation_ctx.finish_session()?;
     let check_refusal = (!report.is_ok()).then(|| ConversionRefusal::CheckFailed {
         operation: crate::application::refusal::CheckOperation::Check,
         decode_report: loaded.decode_report().cloned(),
