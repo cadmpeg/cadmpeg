@@ -7,7 +7,8 @@ use crate::decode::analytic::edges::nurbs_intrinsic_parameter_range;
 use crate::decode::analytic::planes::valid_positive_nurbs_curve;
 use crate::vecmath::cross;
 use crate::vecmath::normalize;
-use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},
     pcurve::PcurveGeometry,
@@ -184,64 +185,102 @@ fn solve_vector_system(
 }
 
 fn interpolation_curve_data(
+    ctx: &DecodeContext<'_>,
     points: &[[f64; 3]],
     parameters: &[f64],
     endpoint_derivatives: [[f64; 3]; 2],
-) -> Option<(Vec<f64>, Vec<[f64; 3]>)> {
+) -> Result<Option<(Vec<f64>, Vec<[f64; 3]>)>, CodecError> {
     const DEGREE: usize = 3;
     let point_count = points.len();
-    (point_count >= 2 && parameters.len() == point_count).then_some(())?;
-    parameters
-        .windows(2)
-        .all(|pair| pair[0].is_finite() && pair[0] < pair[1])
-        .then_some(())?;
-    parameters.last()?.is_finite().then_some(())?;
-    let control_count = point_count + 2;
+    if point_count < 2
+        || parameters.len() != point_count
+        || !parameters
+            .windows(2)
+            .all(|pair| pair[0].is_finite() && pair[0] < pair[1])
+        || !parameters.last().is_some_and(|value| value.is_finite())
+    {
+        return Ok(None);
+    }
+    let Some(control_count) = point_count.checked_add(2) else {
+        return Ok(None);
+    };
     let mut knots =
-        alloc_filled(DEGREE + 1, parameters[0], "creo interpolation curve knots").ok()?;
+        ctx.alloc_filled(DEGREE + 1, parameters[0], "creo interpolation curve knots")?;
+    ctx.charge_collection_items(
+        (point_count - 2 + DEGREE + 1) as u64,
+        "creo interpolation curve knot tail",
+    )?;
     knots.extend_from_slice(&parameters[1..point_count - 1]);
     knots.extend(std::iter::repeat_n(parameters[point_count - 1], DEGREE + 1));
+    ctx.charge_collection_items(control_count as u64, "creo interpolation matrix rows")?;
     let mut matrix = Vec::with_capacity(control_count);
     for parameter in parameters {
-        matrix.push(
-            (0..control_count)
-                .map(|index| bspline_basis(index, DEGREE, *parameter, &knots, control_count))
-                .collect::<Option<Vec<_>>>()?,
-        );
+        ctx.charge_collection_items(control_count as u64, "creo interpolation matrix values")?;
+        let Some(row) = (0..control_count)
+            .map(|index| bspline_basis(index, DEGREE, *parameter, &knots, control_count))
+            .collect::<Option<Vec<_>>>()
+        else {
+            return Ok(None);
+        };
+        matrix.push(row);
     }
     for parameter in [parameters[0], parameters[point_count - 1]] {
-        matrix.push(
-            (0..control_count)
-                .map(|index| {
-                    bspline_basis_derivative(index, DEGREE, parameter, &knots, control_count)
-                })
-                .collect::<Option<Vec<_>>>()?,
-        );
+        ctx.charge_collection_items(control_count as u64, "creo interpolation matrix values")?;
+        let Some(row) = (0..control_count)
+            .map(|index| bspline_basis_derivative(index, DEGREE, parameter, &knots, control_count))
+            .collect::<Option<Vec<_>>>()
+        else {
+            return Ok(None);
+        };
+        matrix.push(row);
     }
+    ctx.charge_collection_items(control_count as u64, "creo interpolation input values")?;
     let mut values = points.to_vec();
     values.extend(endpoint_derivatives);
-    Some((knots, solve_vector_system(matrix, values)?))
+    Ok(solve_vector_system(matrix, values).map(|controls| (knots, controls)))
 }
 
 pub(in super::super) fn saved_spline_nurbs(
+    ctx: &DecodeContext<'_>,
     spline: &crate::feature::definitions::FeatureSavedSpline,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<NurbsCurve> {
-    (usize::try_from(spline.declared_point_count?).ok()? == spline.interpolation_points.len())
-        .then_some(())?;
-    let parameters = &spline.parameters.as_ref()?.value;
-    let tangents = spline.endpoint_tangents.as_ref()?.value;
-    let (knots, control_points) =
-        interpolation_curve_data(&spline.interpolation_points, parameters, tangents)?;
+) -> Result<Option<NurbsCurve>, CodecError> {
+    if !spline
+        .declared_point_count
+        .and_then(|count| usize::try_from(count).ok())
+        .is_some_and(|count| count == spline.interpolation_points.len())
+    {
+        return Ok(None);
+    }
+    let Some(parameters) = spline
+        .parameters
+        .as_ref()
+        .map(|parameters| &parameters.value)
+    else {
+        return Ok(None);
+    };
+    let Some(tangents) = spline
+        .endpoint_tangents
+        .as_ref()
+        .map(|tangents| tangents.value)
+    else {
+        return Ok(None);
+    };
+    let Some((knots, control_points)) =
+        interpolation_curve_data(ctx, &spline.interpolation_points, parameters, tangents)?
+    else {
+        return Ok(None);
+    };
+    ctx.charge_collection_items(control_points.len() as u64, "creo saved spline controls")?;
     let control_points = control_points.into_iter().map(Point3::from).collect();
     match NurbsCurve::from_lanes(3, knots, control_points, None, false) {
-        Ok(curve) => Some(curve),
+        Ok(curve) => Ok(Some(curve)),
         Err(error) => {
             refusal.note(
                 format!("{} NURBS record", saved_spline_record(spline)),
                 &error,
             );
-            None
+            Ok(None)
         }
     }
 }
@@ -275,17 +314,24 @@ fn saved_spline_off_plane_input(
 }
 
 pub(in super::super) fn saved_spline_sketch_geometry(
+    ctx: &DecodeContext<'_>,
     spline: &crate::feature::definitions::FeatureSavedSpline,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<SketchGeometry> {
+) -> Result<Option<SketchGeometry>, CodecError> {
     if let Some((subject, z)) = saved_spline_off_plane_input(spline) {
         refusal.note(
             format!("{} sketch geometry record", saved_spline_record(spline)),
             &format_args!("{subject} is not on the sketch plane: z states {z}"),
         );
-        return None;
+        return Ok(None);
     }
-    let nurbs = saved_spline_nurbs(spline, refusal)?;
+    let Some(nurbs) = saved_spline_nurbs(ctx, spline, refusal)? else {
+        return Ok(None);
+    };
+    ctx.charge_collection_items(
+        nurbs.control_points().len() as u64,
+        "creo saved spline sketch controls",
+    )?;
     match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
         nurbs.degree(),
         nurbs.knots().clone(),
@@ -300,22 +346,23 @@ pub(in super::super) fn saved_spline_sketch_geometry(
         nurbs.weights(),
         nurbs.periodic(),
     ) {
-        Ok(pcurve) => Some(SketchGeometry::nurbs(pcurve)),
+        Ok(pcurve) => Ok(Some(SketchGeometry::nurbs(pcurve))),
         Err(error) => {
             refusal.note(
                 format!("{} sketch geometry record", saved_spline_record(spline)),
                 &error,
             );
-            None
+            Ok(None)
         }
     }
 }
 
 pub(in super::super) fn interpolation_spline_surface(
+    ctx: &DecodeContext<'_>,
     grid: &crate::interpolation_grid::InterpolationGrid,
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<NurbsSurface> {
+) -> Result<Option<NurbsSurface>, CodecError> {
     let points = grid.points();
     let u_parameters = grid.u_parameters();
     let v_parameters = grid.v_parameters();
@@ -324,94 +371,132 @@ pub(in super::super) fn interpolation_spline_surface(
     let corner_mixed_derivatives = grid.mixed_derivatives();
     let u_sample_count = u_parameters.len();
     let v_sample_count = v_parameters.len();
-    let u_control_count = u_sample_count.checked_add(2)?;
-    let v_control_count = v_sample_count.checked_add(2)?;
-    let position_template = alloc_filled(
-        v_sample_count,
-        [0.0; 3],
-        "creo interpolation surface position row",
-    )
-    .ok()?;
-    let mut position_controls = alloc_filled(
+    let Some(u_control_count) = u_sample_count.checked_add(2) else {
+        return Ok(None);
+    };
+    let Some(v_control_count) = v_sample_count.checked_add(2) else {
+        return Ok(None);
+    };
+    let mut position_controls = ctx.alloc_filled(
         u_control_count,
-        position_template,
+        Vec::<[f64; 3]>::new(),
         "creo interpolation surface position controls",
-    )
-    .ok()?;
+    )?;
+    for row in &mut position_controls {
+        *row = ctx.alloc_filled(
+            v_sample_count,
+            [0.0; 3],
+            "creo interpolation surface position row",
+        )?;
+    }
     let mut u_knots = None;
     for v in 0..v_sample_count {
+        ctx.charge_collection_items(
+            u_sample_count as u64,
+            "creo interpolation surface position samples",
+        )?;
         let samples = (0..u_sample_count)
             .map(|u| points[u * v_sample_count + v])
             .collect::<Vec<_>>();
-        let (knots, controls) = interpolation_curve_data(
+        let Some((knots, controls)) = interpolation_curve_data(
+            ctx,
             &samples,
             u_parameters,
             [end_u_derivatives[v], end_u_derivatives[v_sample_count + v]],
-        )?;
+        )?
+        else {
+            return Ok(None);
+        };
         u_knots.get_or_insert(knots);
         for (u, control) in controls.into_iter().enumerate() {
             position_controls[u][v] = control;
         }
     }
 
-    let derivative_template = alloc_filled(
-        u_control_count,
-        [0.0; 3],
-        "creo interpolation surface derivative row",
-    )
-    .ok()?;
-    let mut v_derivative_controls = alloc_filled(
+    let mut v_derivative_controls = ctx.alloc_filled(
         2,
-        derivative_template,
+        Vec::<[f64; 3]>::new(),
         "creo interpolation surface derivative controls",
-    )
-    .ok()?;
+    )?;
+    for row in &mut v_derivative_controls {
+        *row = ctx.alloc_filled(
+            u_control_count,
+            [0.0; 3],
+            "creo interpolation surface derivative row",
+        )?;
+    }
     for v_boundary in 0..2 {
+        ctx.charge_collection_items(
+            u_sample_count as u64,
+            "creo interpolation surface derivative samples",
+        )?;
         let samples = (0..u_sample_count)
             .map(|u| end_v_derivatives[v_boundary * u_sample_count + u])
             .collect::<Vec<_>>();
-        let (_, controls) = interpolation_curve_data(
+        let Some((_, controls)) = interpolation_curve_data(
+            ctx,
             &samples,
             u_parameters,
             [
                 corner_mixed_derivatives[v_boundary * 2],
                 corner_mixed_derivatives[v_boundary * 2 + 1],
             ],
-        )?;
+        )?
+        else {
+            return Ok(None);
+        };
         v_derivative_controls[v_boundary] = controls;
     }
 
-    let mut control_points = Vec::with_capacity(u_control_count * v_control_count);
+    let Some(control_count) = u_control_count.checked_mul(v_control_count) else {
+        return Ok(None);
+    };
+    ctx.charge_collection_items(control_count as u64, "creo interpolation surface controls")?;
+    let mut control_points = Vec::with_capacity(control_count);
     let mut v_knots = None;
     for u in 0..u_control_count {
-        let (knots, controls) = interpolation_curve_data(
+        let Some((knots, controls)) = interpolation_curve_data(
+            ctx,
             &position_controls[u],
             v_parameters,
             [v_derivative_controls[0][u], v_derivative_controls[1][u]],
-        )?;
+        )?
+        else {
+            return Ok(None);
+        };
         v_knots.get_or_insert(knots);
         control_points.extend(controls.into_iter().map(Point3::from));
     }
 
+    let (Some(u_knots), Some(v_knots)) = (u_knots, v_knots) else {
+        return Ok(None);
+    };
+    if u32::try_from(v_control_count).is_err() {
+        return Ok(None);
+    }
+    ctx.charge_collection_items(
+        (control_points.len() + u_control_count) as u64,
+        "creo interpolation surface NURBS pole rows",
+    )?;
     match NurbsSurface::from_lanes(
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(3, u_knots?, false),
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(3, v_knots?, false),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(3, u_knots, false),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(3, v_knots, false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
             control_points
-                .chunks(u32::try_from(v_control_count).ok()? as usize)
+                .chunks(v_control_count)
                 .map(<[_]>::to_vec)
                 .collect(),
             None,
         ),
         false,
     ) {
-        Ok(surface) => Some(surface),
+        Ok(surface) => Ok(Some(surface)),
         Err(error) => {
             refusal.note(
                 format!("creo interpolation-spline surface record for {record}"),
                 &error,
             );
-            None
+            Ok(None)
         }
     }
 }
@@ -919,10 +1004,104 @@ mod tests {
         extruded_nurbs_surface, oriented_sketch_nurbs_curve, signed_unit_chart,
         translated_nurbs_curve,
     };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_ir::geometry::nurbs::NurbsCurve;
     use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
     use cadmpeg_ir::math::{Point2, Point3};
     use cadmpeg_ir::sketches::SketchGeometry;
+
+    fn with_collection_limit<T>(limit: u64, run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
+        run(&ctx)
+    }
+
+    fn interpolation_grid() -> crate::interpolation_grid::InterpolationGrid {
+        crate::interpolation_grid::InterpolationGrid::try_new(
+            vec![
+                [0.0, 0.0, 0.0],
+                [0.0, 1.0, 2.0],
+                [1.0, 0.0, 1.0],
+                [1.0, 1.0, 3.0],
+            ],
+            vec![0.0, 1.0],
+            vec![0.0, 1.0],
+            vec![[1.0, 0.0, 1.0]; 4],
+            vec![[0.0, 1.0, 2.0]; 4],
+            [[0.0; 3]; 4],
+        )
+        .expect("complete interpolation grid")
+    }
+
+    fn interpolation_surface_refusal(limit: u64) -> cadmpeg_core::CodecError {
+        let grid = interpolation_grid();
+        with_collection_limit(limit, |ctx| {
+            super::interpolation_spline_surface(
+                ctx,
+                &grid,
+                &"interpolation grid fixture",
+                &mut crate::lane_refusal::LaneRefusals::new(),
+            )
+        })
+        .expect_err("interpolation allocation exceeds the collection limit")
+    }
+
+    #[test]
+    fn interpolation_curve_knots_refuse_collection_limit() {
+        let error = with_collection_limit(3, |ctx| {
+            super::interpolation_curve_data(ctx, &[[0.0; 3], [1.0; 3]], &[0.0, 1.0], [[0.0; 3]; 2])
+        })
+        .expect_err("four curve knots exceed the collection limit");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "creo interpolation curve knots"
+        ));
+    }
+
+    #[test]
+    fn interpolation_position_controls_refuse_collection_limit() {
+        assert!(matches!(
+            interpolation_surface_refusal(3),
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "creo interpolation surface position controls"
+        ));
+    }
+
+    #[test]
+    fn interpolation_position_row_refuses_collection_limit() {
+        assert!(matches!(
+            interpolation_surface_refusal(5),
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "creo interpolation surface position row"
+        ));
+    }
+
+    #[test]
+    fn interpolation_derivative_controls_refuse_collection_limit() {
+        assert!(matches!(
+            interpolation_surface_refusal(81),
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "creo interpolation surface derivative controls"
+        ));
+    }
+
+    #[test]
+    fn interpolation_derivative_row_refuses_collection_limit() {
+        assert!(matches!(
+            interpolation_surface_refusal(85),
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "creo interpolation surface derivative row"
+        ));
+    }
 
     #[test]
     fn reversed_sketch_nurbs_keeps_finite_knots_when_endpoint_sum_overflows() {
@@ -989,8 +1168,13 @@ mod tests {
     fn a_planar_saved_spline_is_sketch_geometry_and_states_no_refusal() {
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
         assert!(
-            super::saved_spline_sketch_geometry(&planar_or_offset_spline(0.0), &mut refusal)
-                .is_some()
+            crate::decode::with_test_decode_ctx(|ctx| super::saved_spline_sketch_geometry(
+                ctx,
+                &planar_or_offset_spline(0.0),
+                &mut refusal
+            ))
+            .expect("test spline allocation")
+            .is_some()
         );
         assert!(refusal.take_records().is_empty());
     }
@@ -999,8 +1183,13 @@ mod tests {
     fn a_non_planar_saved_spline_states_the_interpolation_point_that_left_the_sketch_plane() {
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
         assert!(
-            super::saved_spline_sketch_geometry(&planar_or_offset_spline(2.0), &mut refusal)
-                .is_none()
+            crate::decode::with_test_decode_ctx(|ctx| super::saved_spline_sketch_geometry(
+                ctx,
+                &planar_or_offset_spline(2.0),
+                &mut refusal
+            ))
+            .expect("test spline allocation")
+            .is_none()
         );
         let records = refusal.take_records();
         assert_eq!(records.len(), 1);
@@ -1023,7 +1212,15 @@ mod tests {
             .value[1] = [1.0, 0.0, 3.0];
 
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-        assert!(super::saved_spline_sketch_geometry(&spline, &mut refusal).is_none());
+        assert!(
+            crate::decode::with_test_decode_ctx(|ctx| super::saved_spline_sketch_geometry(
+                ctx,
+                &spline,
+                &mut refusal
+            ))
+            .expect("test spline allocation")
+            .is_none()
+        );
         let records = refusal.take_records();
         assert_eq!(records.len(), 1);
         assert_eq!(

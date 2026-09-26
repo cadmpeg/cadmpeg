@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use crate::curve::curve_scalar_lane;
 use crate::curve::depdb_cross_section_rows;
 use crate::curve::expression_helix;
 use crate::curve::expression_records;
@@ -31,6 +32,7 @@ use crate::curve::Fc02ShortPcurveEndpoints;
 use crate::curve::Fc05Circle;
 use crate::curve::Fc05CylinderCapPair;
 use crate::curve::TopologySuffixCandidate;
+use crate::scalar;
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
@@ -462,7 +464,10 @@ fn retains_nonzero_reference_geometry_after_topology_references() {
         topology_rows_with_face_ids(&payload, Some(&face_ids))[0].faces,
         [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)]
     );
-    let parameters = parameter_records_with_face_ids(&payload, Some(&face_ids));
+    let parameters = crate::decode::with_test_decode_ctx(|ctx| {
+        parameter_records_with_face_ids(ctx, &payload, Some(&face_ids))
+    })
+    .expect("curve parameter records");
     assert_eq!(parameters.len(), 1);
     assert_eq!(parameters[0].body, [0xff]);
     assert_eq!(parameters[0].reference_geometry, [0, 68]);
@@ -513,7 +518,10 @@ fn face_namespace_resolves_ambiguous_reference_boundaries() {
         }]
     );
 
-    let parameters = parameter_records_with_face_ids(&payload, Some(&face_ids));
+    let parameters = crate::decode::with_test_decode_ctx(|ctx| {
+        parameter_records_with_face_ids(ctx, &payload, Some(&face_ids))
+    })
+    .expect("curve parameter records");
     assert_eq!(parameters.len(), 1);
     assert_eq!(parameters[0].curve_id, 144);
     assert_eq!(parameters[0].body, [0xff]);
@@ -615,7 +623,8 @@ fn final_curve_row_uses_the_next_array_boundary() {
 fn decodes_complete_depdb_one_sided_curve_array() {
     let payload = b"crv_array\0\xf2\xf8\x02crv_id\0\x06type\0\x08feat_id\0\x04topol_ref_data\0\x07\x08\x04\x01\xf6\xe4\xff\0\x09\x0a\0\xe1\xe0next_record\0";
 
-    let rows = depdb_cross_section_rows(payload);
+    let rows = crate::decode::with_test_decode_ctx(|ctx| depdb_cross_section_rows(ctx, payload))
+        .expect("DEPDB cross-section rows");
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].id, 7);
     assert_eq!(rows[0].type_byte, 8);
@@ -627,6 +636,25 @@ fn decodes_complete_depdb_one_sided_curve_array() {
     assert_eq!(rows[0].scalar_tokens[0].value, 1.0);
     assert_eq!(rows[0].opaque_spans.len(), 1);
     assert_eq!(rows[0].opaque_spans[0].raw, [0xff]);
+}
+
+#[test]
+fn curve_scalar_claims_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
+    let error = curve_scalar_lane(&ctx, &[0xff], 0, &scalar::ScalarCache::default())
+        .expect_err("one scalar claim exceeds the collection limit");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo curve scalar claims"
+    ));
 }
 
 #[test]

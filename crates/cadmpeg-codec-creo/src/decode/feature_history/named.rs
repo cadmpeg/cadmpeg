@@ -31,6 +31,7 @@ use cadmpeg_ir::topology::BodyKind;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(in super::super) fn named_feature_definition(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
@@ -38,7 +39,7 @@ pub(in super::super) fn named_feature_definition(
     kind: &str,
 ) -> Result<Option<IrFeatureDefinition>, CodecError> {
     if let Some(definition) =
-        name_only_feature_definition(scan, ir, source_carriers, feature_id, kind)
+        name_only_feature_definition(ctx, scan, ir, source_carriers, feature_id, kind)?
     {
         return Ok(Some(definition));
     }
@@ -51,6 +52,7 @@ pub(in super::super) fn named_feature_definition(
         _ => return Ok(None),
     };
     schema_feature_definition(
+        ctx,
         scan,
         ir,
         source_carriers,
@@ -67,36 +69,39 @@ pub(in super::super) fn named_feature_definition(
 /// Every answer here comes from the name and the scan, so the function has no
 /// failure of its own; `None` means the name establishes nothing.
 fn name_only_feature_definition(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     kind: &str,
-) -> Option<IrFeatureDefinition> {
+) -> Result<Option<IrFeatureDefinition>, CodecError> {
     if feature_section_sweep_semantics_conflict(scan, feature_id)
         && (matches!(kind, "Protrusion" | "Cut" | "Extrude" | "Revolve")
             || numbered_feature_name_has_family(kind, "Extrude")
             || numbered_feature_name_has_family(kind, "Revolve"))
     {
-        return None;
+        return Ok(None);
     }
     if numbered_feature_name_has_family(kind, "Fill") {
-        return Some(filled_surface_feature_definition(scan, ir, feature_id));
+        return Ok(Some(filled_surface_feature_definition(
+            scan, ir, feature_id,
+        )));
     }
     if numbered_feature_name_has_family(kind, "Thicken") {
-        return Some(thicken_feature_definition(scan, ir, feature_id));
+        return Ok(Some(thicken_feature_definition(scan, ir, feature_id)));
     }
     if numbered_feature_name_has_family(kind, "Merge") {
-        return Some(knit_surface_feature_definition(scan, feature_id));
+        return Ok(Some(knit_surface_feature_definition(scan, feature_id)));
     }
     if let Some(definition) = surface_intersect_feature_definition(scan, feature_id, kind) {
-        return Some(definition);
+        return Ok(Some(definition));
     }
     if let Some(definition) = reference_named_feature_definition(kind) {
-        return Some(definition);
+        return Ok(Some(definition));
     }
     if matches!(kind, "Protrusion" | "Cut") {
-        return Some(extrude_feature_definition_with_profile(
+        return Ok(Some(extrude_feature_definition_with_profile(
             scan,
             ir,
             source_carriers,
@@ -107,7 +112,7 @@ fn name_only_feature_definition(
                 false,
                 preceding_features_establish_body(ir),
             ),
-        ));
+        )));
     }
     let tree_node_role = match kind {
         "Annotation Feature" => Some(FeatureTreeNodeRole::Annotations),
@@ -127,20 +132,20 @@ fn name_only_feature_definition(
         _ => None,
     };
     if let Some(role) = tree_node_role {
-        return Some(IrFeatureDefinition::Operation(
+        return Ok(Some(IrFeatureDefinition::Operation(
             IrFeatureOperation::TreeNode {
                 role,
                 children: cadmpeg_ir::features::TreeChildren::default(),
             },
-        ));
+        )));
     }
     if kind == "Mirror" {
-        return Some(IrFeatureDefinition::Operation(
+        return Ok(Some(IrFeatureDefinition::Operation(
             IrFeatureOperation::Pattern {
                 seeds: Vec::new(),
                 pattern: PatternKind::UNRESOLVED_MIRROR,
             },
-        ));
+        )));
     }
     if kind == "Extrude" || numbered_feature_name_has_family(kind, "Extrude") {
         let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
@@ -150,13 +155,13 @@ fn name_only_feature_definition(
             output_kind.is_some(),
             preceding_features_establish_body(ir),
         );
-        return Some(extrude_feature_definition_with_profile(
+        return Ok(Some(extrude_feature_definition_with_profile(
             scan,
             ir,
             source_carriers,
             feature_id,
             op,
-        ));
+        )));
     }
     if kind == "Revolve" || numbered_feature_name_has_family(kind, "Revolve") {
         let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
@@ -166,25 +171,28 @@ fn name_only_feature_definition(
             output_kind.is_some(),
             preceding_features_establish_body(ir),
         );
-        return Some(revolve_feature_definition_with_profile(
+        return Ok(Some(revolve_feature_definition_with_profile(
+            ctx,
             scan,
             ir,
             source_carriers,
             feature_id,
             op,
-        ));
+        )?));
     }
-    None
+    Ok(None)
 }
 
 pub(in super::super) fn named_or_referenced_feature_definition(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     kind: &str,
 ) -> Result<Option<IrFeatureDefinition>, CodecError> {
-    if let Some(definition) = named_feature_definition(scan, ir, source_carriers, feature_id, kind)?
+    if let Some(definition) =
+        named_feature_definition(ctx, scan, ir, source_carriers, feature_id, kind)?
     {
         return Ok(Some(definition));
     }
@@ -199,7 +207,7 @@ pub(in super::super) fn named_or_referenced_feature_definition(
     else {
         return Ok(None);
     };
-    named_feature_definition(scan, ir, source_carriers, feature_id, &reference_name)
+    named_feature_definition(ctx, scan, ir, source_carriers, feature_id, &reference_name)
 }
 
 pub(super) fn extrude_feature_definition_with_profile(
@@ -254,70 +262,73 @@ pub(super) fn extrude_feature_definition_with_profile(
 }
 
 fn revolve_feature_definition_with_profile(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     op: BooleanOp,
-) -> IrFeatureDefinition {
+) -> Result<IrFeatureDefinition, CodecError> {
     let extent = feature_revolution_extent(scan, feature_id);
     let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
     let profile = unique_feature_profile_ref(scan, ir, feature_id)
         .and_then(|profile| profile.planar().cloned());
     let axis = feature_revolution_axis_for_transfer(
+        ctx,
         scan,
         ir,
         source_carriers,
         feature_id,
         extent.as_ref(),
-    );
+    )?;
     let solid = sweep_solid(output_kind);
-    IrFeatureDefinition::Operation(IrFeatureOperation::Revolve {
-        construction: match (profile, axis, extent) {
-            (None, axis, extent) => {
-                RevolveConstruction::Unresolved(PartialRevolveConstruction::Profile {
+    Ok(IrFeatureDefinition::Operation(
+        IrFeatureOperation::Revolve {
+            construction: match (profile, axis, extent) {
+                (None, axis, extent) => {
+                    RevolveConstruction::Unresolved(PartialRevolveConstruction::Profile {
+                        axis,
+                        extent,
+                        solid,
+                        face_maker: None,
+                        fuse_order: None,
+                        allow_multi_profile_faces: None,
+                    })
+                }
+                (Some(profile), None, extent) => {
+                    RevolveConstruction::Unresolved(PartialRevolveConstruction::Axis {
+                        profile,
+                        extent,
+                        solid,
+                        face_maker: None,
+                        fuse_order: None,
+                        allow_multi_profile_faces: None,
+                    })
+                }
+                (Some(profile), Some(axis), None) => {
+                    RevolveConstruction::Unresolved(PartialRevolveConstruction::Extent {
+                        profile,
+                        axis,
+                        solid,
+                        face_maker: None,
+                        fuse_order: None,
+                        allow_multi_profile_faces: None,
+                    })
+                }
+                (Some(profile), Some(axis), Some(extent)) => RevolveConstruction::Resolved {
+                    profile,
                     axis,
                     extent,
                     solid,
                     face_maker: None,
                     fuse_order: None,
                     allow_multi_profile_faces: None,
-                })
-            }
-            (Some(profile), None, extent) => {
-                RevolveConstruction::Unresolved(PartialRevolveConstruction::Axis {
-                    profile,
-                    extent,
-                    solid,
-                    face_maker: None,
-                    fuse_order: None,
-                    allow_multi_profile_faces: None,
-                })
-            }
-            (Some(profile), Some(axis), None) => {
-                RevolveConstruction::Unresolved(PartialRevolveConstruction::Extent {
-                    profile,
-                    axis,
-                    solid,
-                    face_maker: None,
-                    fuse_order: None,
-                    allow_multi_profile_faces: None,
-                })
-            }
-            (Some(profile), Some(axis), Some(extent)) => RevolveConstruction::Resolved {
-                profile,
-                axis,
-                extent,
-                solid,
-                face_maker: None,
-                fuse_order: None,
-                allow_multi_profile_faces: None,
+                },
             },
+            op,
         },
-        op,
-    })
+    ))
 }
-
 pub(super) fn unresolved_extrude_extent() -> ExtrudeExtent {
     ExtrudeExtent::OneSided {
         side: ExtrudeSide {

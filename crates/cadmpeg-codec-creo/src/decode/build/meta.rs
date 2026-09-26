@@ -15,6 +15,7 @@ use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_ir::document::SourceMeta;
 
 pub(super) fn source_meta(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     classification: &crate::dialect::DialectClassification,
 ) -> Result<(SourceMeta, cadmpeg_ir::report::decode::Coverage), cadmpeg_core::CodecError> {
@@ -693,45 +694,56 @@ pub(super) fn source_meta(
         .definitions
         .iter()
         .map(|definition| {
-            let resolved_coordinates = resolved_section_coordinates(definition);
-            let resolved_radii = resolved_section_radii(definition);
-            let resolved_scalars = resolved_section_scalar_values(definition);
-            definition
-                .variables
-                .iter()
-                .flat_map(|variables| &variables.rows)
-                .filter(|row| row.value == ScalarLane::DimensionDriven)
-                .fold(
-                    (0usize, 0usize, 0usize),
-                    |(all, coordinates, other), row| {
-                        let resolved = match row.variable_type {
-                            VariableType::U | VariableType::V => {
-                                resolved_coordinates.get(&row.key).and_then(|point| {
-                                    point[usize::from(row.variable_type == VariableType::V)]
-                                })
-                            }
-                            VariableType::Radius => resolved_radii.get(&row.key).copied(),
-                            _ => resolved_scalars.get(&(row.variable_type, row.key)).copied(),
-                        };
-                        (
-                            all + usize::from(resolved.is_some()),
-                            coordinates
-                                + usize::from(
-                                    matches!(row.variable_type, VariableType::U | VariableType::V)
-                                        && resolved.is_some(),
-                                ),
-                            other
-                                + usize::from(
-                                    !matches!(row.variable_type, VariableType::U | VariableType::V)
-                                        && resolved.is_some(),
-                                ),
-                        )
-                    },
-                )
+            let resolved_coordinates = resolved_section_coordinates(ctx, definition)?;
+            let resolved_radii = resolved_section_radii(ctx, definition)?;
+            let resolved_scalars = resolved_section_scalar_values(ctx, definition)?;
+            Ok::<_, cadmpeg_core::CodecError>(
+                definition
+                    .variables
+                    .iter()
+                    .flat_map(|variables| &variables.rows)
+                    .filter(|row| row.value == ScalarLane::DimensionDriven)
+                    .fold(
+                        (0usize, 0usize, 0usize),
+                        |(all, coordinates, other), row| {
+                            let resolved = match row.variable_type {
+                                VariableType::U | VariableType::V => {
+                                    resolved_coordinates.get(&row.key).and_then(|point| {
+                                        point[usize::from(row.variable_type == VariableType::V)]
+                                    })
+                                }
+                                VariableType::Radius => resolved_radii.get(&row.key).copied(),
+                                _ => resolved_scalars.get(&(row.variable_type, row.key)).copied(),
+                            };
+                            (
+                                all + usize::from(resolved.is_some()),
+                                coordinates
+                                    + usize::from(
+                                        matches!(
+                                            row.variable_type,
+                                            VariableType::U | VariableType::V
+                                        ) && resolved.is_some(),
+                                    ),
+                                other
+                                    + usize::from(
+                                        !matches!(
+                                            row.variable_type,
+                                            VariableType::U | VariableType::V
+                                        ) && resolved.is_some(),
+                                    ),
+                            )
+                        },
+                    ),
+            )
         })
-        .fold((0usize, 0usize, 0usize), |total, counts| {
-            (total.0 + counts.0, total.1 + counts.1, total.2 + counts.2)
-        });
+        .try_fold((0usize, 0usize, 0usize), |total, counts| {
+            let counts = counts?;
+            Ok::<_, cadmpeg_core::CodecError>((
+                total.0 + counts.0,
+                total.1 + counts.1,
+                total.2 + counts.2,
+            ))
+        })?;
     coverage.record(
         crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT,
         decoded_dimension_driven_variable_count,

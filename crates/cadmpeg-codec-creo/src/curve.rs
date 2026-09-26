@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
 use cadmpeg_core::bytes::{find_from as find, find_in};
-use cadmpeg_core::decode::{alloc_filled, bounded_len, index_from_u32};
+use cadmpeg_core::decode::{bounded_len, index_from_u32};
 
 use crate::psb::{self, compact_int, reference_id};
 use crate::scalar;
@@ -877,15 +877,20 @@ pub(crate) fn prototype_topology_rows(
 }
 
 /// Decode bounded curve-from-equation expression programs.
+#[cfg(test)]
 pub(crate) fn expression_records(payload: &[u8]) -> Vec<CurveExpressionRecord> {
-    expression_records_with_model_name(payload, None)
+    crate::decode::with_test_decode_ctx(|ctx| {
+        expression_records_with_model_name(ctx, payload, None)
+    })
+    .expect("test curve expression records")
 }
 
 /// Decode curve-expression programs with an unambiguous current-model name.
 pub(crate) fn expression_records_with_model_name(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     payload: &[u8],
     model_name: Option<&str>,
-) -> Vec<CurveExpressionRecord> {
+) -> Result<Vec<CurveExpressionRecord>, cadmpeg_core::CodecError> {
     const PRIMARY: &[u8] = b"entity(crv_fr_eqn)\0";
     const BACKUP: &[u8] = b"backup_ents(crv_fr_eqn)\0";
     const ID: &[u8] = b"\xe0\x01id\0";
@@ -969,10 +974,11 @@ pub(crate) fn expression_records_with_model_name(
             let prohibited_constructs = curve_equation_prohibited_constructs(&lines);
             let mut solve_program = curve_expression_solve_program(&lines);
             let mut evaluation = evaluate_expression_program_details(
+                ctx,
                 &lines,
                 model_name,
                 &ExternalRelationSymbols::default(),
-            );
+            )?;
             if !prohibited_constructs.is_empty() || solve_program.unresolved_control {
                 for assignment in &mut evaluation.assignments {
                     assignment.value = None;
@@ -998,17 +1004,18 @@ pub(crate) fn expression_records_with_model_name(
             });
         }
     }
-    records
+    Ok(records)
 }
 
 pub(crate) fn reevaluate_expression_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &mut [CurveExpressionRecord],
     model_name: Option<&str>,
     external_symbols: &ExternalRelationSymbols,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for record in records {
         let mut evaluation =
-            evaluate_expression_program_details(&record.lines, model_name, external_symbols);
+            evaluate_expression_program_details(ctx, &record.lines, model_name, external_symbols)?;
         if !record.prohibited_constructs.is_empty() || record.unresolved_solve_control {
             for assignment in &mut evaluation.assignments {
                 assignment.value = None;
@@ -1022,6 +1029,7 @@ pub(crate) fn reevaluate_expression_records(
         );
         record.assignments = evaluation.assignments;
     }
+    Ok(())
 }
 
 fn synchronize_solve_blocks(
@@ -1715,17 +1723,18 @@ struct CurveExpressionEvaluation {
 }
 
 fn evaluate_expression_program_details(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     lines: &[CurveExpressionLine],
     model_name: Option<&str>,
     external_symbols: &ExternalRelationSymbols,
-) -> CurveExpressionEvaluation {
+) -> Result<CurveExpressionEvaluation, cadmpeg_core::CodecError> {
     let solve_program = curve_expression_solve_program(lines);
     let solve_line_is_executable = |index: &usize| {
         !solve_program.line_indices.contains(index)
             || solve_program.executable_line_indices.contains(index)
     };
     if !expression_program_control_is_valid(lines) {
-        return CurveExpressionEvaluation {
+        return Ok(CurveExpressionEvaluation {
             assignments: lines
                 .iter()
                 .enumerate()
@@ -1738,7 +1747,7 @@ fn evaluate_expression_program_details(
                 })
                 .collect(),
             solve_solutions: BTreeMap::new(),
-        };
+        });
     }
 
     let mut existing_symbols = external_symbols
@@ -1831,26 +1840,33 @@ fn evaluate_expression_program_details(
             .iter()
             .find(|block| block.for_offset == line.offset)
         {
-            if let Some(solution) = solve_block_dimensions
-                .get(&block.offset)
-                .and_then(|dimensions| {
-                    infer_solve_variable_dimensions(block, &values, dimensions, context)
-                })
-                .and_then(|dimensions| {
-                    solve_affine_expression_block(block, &values, &dimensions, context)
-                })
-                .or_else(|| {
-                    let dimensions = solve_block_dimensions.get(&block.offset)?;
-                    let initial_values = solve_block_initial_values.get(&block.offset)?;
-                    solve_nonlinear_expression_block(
+            let affine_solution = match solve_block_dimensions.get(&block.offset) {
+                Some(dimensions) => {
+                    infer_solve_variable_dimensions(ctx, block, &values, dimensions, context)?
+                        .and_then(|dimensions| {
+                            solve_affine_expression_block(block, &values, &dimensions, context)
+                        })
+                }
+                None => None,
+            };
+            let solution = match affine_solution {
+                Some(solution) => Some(solution),
+                None => match (
+                    solve_block_dimensions.get(&block.offset),
+                    solve_block_initial_values.get(&block.offset),
+                ) {
+                    (Some(dimensions), Some(initial_values)) => solve_nonlinear_expression_block(
+                        ctx,
                         block,
                         &values,
                         dimensions,
                         initial_values,
                         context,
-                    )
-                })
-            {
+                    )?,
+                    _ => None,
+                },
+            };
+            if let Some(solution) = solution {
                 for (variable, value) in block
                     .unknowns
                     .iter()
@@ -1940,10 +1956,10 @@ fn evaluate_expression_program_details(
         }
         assignments.push(assignment);
     }
-    CurveExpressionEvaluation {
+    Ok(CurveExpressionEvaluation {
         assignments,
         solve_solutions,
-    }
+    })
 }
 
 #[derive(Clone, Copy, Default)]
@@ -4856,12 +4872,15 @@ fn apply_declared_relation_unit(
 }
 
 fn infer_solve_variable_dimensions(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     block: &CurveExpressionSolveBlock,
     values: &BTreeMap<String, CurveExpressionValue>,
     known_dimensions: &[Option<RelationDimension>],
     context: RelationEvaluationContext<'_>,
-) -> Option<Vec<RelationDimension>> {
-    (known_dimensions.len() == block.unknowns.len()).then_some(())?;
+) -> Result<Option<Vec<RelationDimension>>, cadmpeg_core::CodecError> {
+    if known_dimensions.len() != block.unknowns.len() {
+        return Ok(None);
+    }
     let variable_keys = block
         .unknowns
         .iter()
@@ -4869,7 +4888,9 @@ fn infer_solve_variable_dimensions(
         .map(|variable| expression_identifier_key(variable))
         .collect::<Vec<_>>();
     let unique_keys = variable_keys.iter().collect::<BTreeSet<_>>();
-    (unique_keys.len() == variable_keys.len()).then_some(())?;
+    if unique_keys.len() != variable_keys.len() {
+        return Ok(None);
+    }
 
     let mut probe_values = values
         .iter()
@@ -4891,16 +4912,20 @@ fn infer_solve_variable_dimensions(
 
     let mut constraints = Vec::new();
     for equation in &block.equations {
-        let left = parse_relation_expression::<DimensionProbeValue>(
+        let Some(left) = parse_relation_expression::<DimensionProbeValue>(
             &equation.left,
             &probe_values,
             context,
-        )?;
-        let right = parse_relation_expression::<DimensionProbeValue>(
+        ) else {
+            return Ok(None);
+        };
+        let Some(right) = parse_relation_expression::<DimensionProbeValue>(
             &equation.right,
             &probe_values,
             context,
-        )?;
+        ) else {
+            return Ok(None);
+        };
         constraints.extend(left.constraints.iter().cloned());
         constraints.extend(right.constraints.iter().cloned());
         constraints.push(DimensionEquality {
@@ -4919,9 +4944,12 @@ fn infer_solve_variable_dimensions(
     });
     for equality in constraints {
         for (axis, rows) in axis_rows.iter_mut().enumerate() {
-            let difference = equality.left.axes[axis]
+            let Some(difference) = equality.left.axes[axis]
                 .clone()
-                .combine(equality.right.axes[axis].clone(), true)?;
+                .combine(equality.right.axes[axis].clone(), true)
+            else {
+                return Ok(None);
+            };
             let coefficients = axis_variable_keys[axis]
                 .iter()
                 .map(|variable| {
@@ -4941,7 +4969,7 @@ fn infer_solve_variable_dimensions(
     }
 
     let axis_len = variable_keys.len();
-    let alloc_axis = || alloc_filled(axis_len, 0i8, "creo_solve_dimension_components").ok();
+    let alloc_axis = || ctx.alloc_filled(axis_len, 0i8, "creo_solve_dimension_components");
     let mut components: [Vec<i8>; 5] = [
         alloc_axis()?,
         alloc_axis()?,
@@ -4964,18 +4992,27 @@ fn infer_solve_variable_dimensions(
         .filter_map(|(index, dimension)| dimension.is_none().then_some(index))
         .collect::<BTreeSet<_>>();
     for (axis, rows) in axis_rows.iter_mut().enumerate() {
-        let solution = solve_dimension_axis(rows, variable_keys.len(), &required_columns)?;
+        let Some(solution) =
+            solve_dimension_axis(ctx, rows, variable_keys.len(), &required_columns)?
+        else {
+            return Ok(None);
+        };
         for (index, value) in solution.into_iter().enumerate() {
             if known_dimensions[index].is_some() {
                 continue;
             }
             let rounded = value.round();
-            (value.is_finite() && (value - rounded).abs() <= EPS_DIMENSION_SOLUTION)
-                .then_some(())?;
-            components[axis][index] = i8::try_from(rounded as i16).ok()?;
+            if !value.is_finite()
+                || (value - rounded).abs() > EPS_DIMENSION_SOLUTION
+                || rounded < f64::from(i8::MIN)
+                || rounded > f64::from(i8::MAX)
+            {
+                return Ok(None);
+            }
+            components[axis][index] = rounded as i8;
         }
     }
-    Some(
+    Ok(Some(
         (0..variable_keys.len())
             .map(|index| RelationDimension {
                 length: components[0][index],
@@ -4985,14 +5022,15 @@ fn infer_solve_variable_dimensions(
                 temperature: components[4][index],
             })
             .collect(),
-    )
+    ))
 }
 
 fn solve_dimension_axis(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     rows: &mut [AffineEquationRow],
     variable_count: usize,
     required_columns: &BTreeSet<usize>,
-) -> Option<Vec<f64>> {
+) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
     let mut pivot_row = 0;
     let mut pivot_rows = Vec::new();
     let coefficient_tolerance = EPS_LINEAR_SYSTEM_COEFFICIENT;
@@ -5036,24 +5074,26 @@ fn solve_dimension_axis(
     }
     let residual_tolerance =
         EPS_LINEAR_SYSTEM_RESIDUAL * rows.iter().map(|row| row.rhs.abs()).fold(1.0, f64::max);
-    rows.iter()
-        .all(|row| {
-            let has_coefficients = row
-                .coefficients
-                .iter()
-                .any(|coefficient| coefficient.abs() > coefficient_tolerance);
-            has_coefficients || row.rhs.abs() <= residual_tolerance
-        })
-        .then_some(())?;
-    required_columns
+    if !rows.iter().all(|row| {
+        let has_coefficients = row
+            .coefficients
+            .iter()
+            .any(|coefficient| coefficient.abs() > coefficient_tolerance);
+        has_coefficients || row.rhs.abs() <= residual_tolerance
+    }) {
+        return Ok(None);
+    }
+    if !required_columns
         .iter()
         .all(|required| pivot_rows.iter().any(|(column, _)| column == required))
-        .then_some(())?;
-    let mut solution = alloc_filled(variable_count, 0.0, "creo_solve_dimension_axis").ok()?;
+    {
+        return Ok(None);
+    }
+    let mut solution = ctx.alloc_filled(variable_count, 0.0, "creo_solve_dimension_axis")?;
     for (column, row) in pivot_rows {
         solution[column] = rows[row].rhs;
     }
-    Some(solution)
+    Ok(Some(solution))
 }
 
 fn solve_affine_expression_block(
@@ -5146,24 +5186,40 @@ struct SolveResidual {
 }
 
 fn solve_nonlinear_expression_block(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     block: &CurveExpressionSolveBlock,
     values: &BTreeMap<String, CurveExpressionValue>,
     known_dimensions: &[Option<RelationDimension>],
     initial_values: &[Option<CurveExpressionValue>],
     context: RelationEvaluationContext<'_>,
-) -> Option<Vec<CurveExpressionValue>> {
-    nonlinear_equations_are_smooth(block).then_some(())?;
-    let variable_dimensions =
-        infer_solve_variable_dimensions(block, values, known_dimensions, context)?;
+) -> Result<Option<Vec<CurveExpressionValue>>, cadmpeg_core::CodecError> {
+    if !nonlinear_equations_are_smooth(block) {
+        return Ok(None);
+    }
+    let Some(variable_dimensions) =
+        infer_solve_variable_dimensions(ctx, block, values, known_dimensions, context)?
+    else {
+        return Ok(None);
+    };
     let variable_count = block.unknowns.len();
-    (variable_count > 0
-        && variable_count <= MAX_NONLINEAR_SOLVE_VARIABLES
-        && block.equations.len() >= variable_count)
-        .then_some(())?;
-    let mut seeds = nonlinear_initial_guesses(initial_values, &variable_dimensions)?.into_iter();
-    let initial_seed = seeds.next()?;
-    let solution =
-        refine_nonlinear_solution(block, values, &variable_dimensions, &initial_seed, context)?;
+    if variable_count == 0
+        || variable_count > MAX_NONLINEAR_SOLVE_VARIABLES
+        || block.equations.len() < variable_count
+    {
+        return Ok(None);
+    }
+    let Some(seeds) = nonlinear_initial_guesses(ctx, initial_values, &variable_dimensions)? else {
+        return Ok(None);
+    };
+    let mut seeds = seeds.into_iter();
+    let Some(initial_seed) = seeds.next() else {
+        return Ok(None);
+    };
+    let Some(solution) =
+        refine_nonlinear_solution(block, values, &variable_dimensions, &initial_seed, context)
+    else {
+        return Ok(None);
+    };
     for seed in seeds {
         let Some(candidate) =
             refine_nonlinear_solution(block, values, &variable_dimensions, &seed, context)
@@ -5171,16 +5227,16 @@ fn solve_nonlinear_expression_block(
             continue;
         };
         if !nonlinear_solutions_close(&solution, &candidate) {
-            return None;
+            return Ok(None);
         }
     }
-    Some(
+    Ok(Some(
         solution
             .into_iter()
             .zip(variable_dimensions)
             .map(|(value, dimension)| quantity_value(value, dimension))
             .collect(),
-    )
+    ))
 }
 
 fn nonlinear_equations_are_smooth(block: &CurveExpressionSolveBlock) -> bool {
@@ -5243,9 +5299,10 @@ fn nonlinear_expression_is_smooth(expression: &str) -> bool {
 }
 
 fn nonlinear_initial_guesses(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     initial_values: &[Option<CurveExpressionValue>],
     variable_dimensions: &[RelationDimension],
-) -> Option<Vec<Vec<f64>>> {
+) -> Result<Option<Vec<Vec<f64>>>, cadmpeg_core::CodecError> {
     let variable_count = variable_dimensions.len();
     let mut seeds = Vec::new();
     let mut add_seed = |seed: Vec<f64>| {
@@ -5253,7 +5310,9 @@ fn nonlinear_initial_guesses(
             seeds.push(seed);
         }
     };
-    (initial_values.len() == variable_count).then_some(())?;
+    if initial_values.len() != variable_count {
+        return Ok(None);
+    }
     let initial = initial_values
         .iter()
         .zip(variable_dimensions)
@@ -5263,24 +5322,27 @@ fn nonlinear_initial_guesses(
                 (value_dimension == *dimension).then_some(value)
             })
         })
-        .collect::<Option<Vec<_>>>()?;
+        .collect::<Option<Vec<_>>>();
+    let Some(initial) = initial else {
+        return Ok(None);
+    };
     add_seed(initial);
-    add_seed(alloc_filled(variable_count, 0.0, "creo_solve_seed_zero").ok()?);
+    add_seed(ctx.alloc_filled(variable_count, 0.0, "creo_solve_seed_zero")?);
     for magnitude in [0.01, 0.1, 1.0, 10.0, 100.0] {
-        add_seed(alloc_filled(variable_count, magnitude, "creo_solve_seed_magnitude").ok()?);
-        add_seed(alloc_filled(variable_count, -magnitude, "creo_solve_seed_magnitude").ok()?);
+        add_seed(ctx.alloc_filled(variable_count, magnitude, "creo_solve_seed_magnitude")?);
+        add_seed(ctx.alloc_filled(variable_count, -magnitude, "creo_solve_seed_magnitude")?);
     }
     for index in 0..variable_count {
         for magnitude in [0.1, 1.0, 10.0] {
-            let mut positive = alloc_filled(variable_count, 0.0, "creo_solve_seed_axis").ok()?;
+            let mut positive = ctx.alloc_filled(variable_count, 0.0, "creo_solve_seed_axis")?;
             positive[index] = magnitude;
             add_seed(positive);
-            let mut negative = alloc_filled(variable_count, 0.0, "creo_solve_seed_axis").ok()?;
+            let mut negative = ctx.alloc_filled(variable_count, 0.0, "creo_solve_seed_axis")?;
             negative[index] = -magnitude;
             add_seed(negative);
         }
     }
-    Some(seeds)
+    Ok(Some(seeds))
 }
 
 fn refine_nonlinear_solution(
@@ -5669,26 +5731,29 @@ pub(crate) fn topology_rows_with_face_ids(
 /// Decode a complete DEPDB `crv_array\0 f2 f8 <count>` cross-section array.
 /// Any malformed row or count mismatch withholds the entire array.
 #[must_use]
-pub(crate) fn depdb_cross_section_rows(payload: &[u8]) -> Vec<DepdbCurveRow> {
+pub(crate) fn depdb_cross_section_rows(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<DepdbCurveRow>, cadmpeg_core::CodecError> {
     let Some(array) = find(payload, b"crv_array\0", 0) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let header = array + b"crv_array\0".len();
     if payload.get(header..header + 2) != Some(&[0xf2, psb::token::ARRAY_OPEN]) {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let (count, after_count) = compact_int(payload, header + 2);
     if after_count == header + 2 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let Ok(count) = usize::try_from(count) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if count == 0 || prototypes(payload).len() != 1 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let Some(topology) = find(payload, b"topol_ref_data\0", after_count) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let mut cursor = topology + b"topol_ref_data\0".len();
     let cache = scalar::ScalarCache::from_section(payload);
@@ -5701,6 +5766,7 @@ pub(crate) fn depdb_cross_section_rows(payload: &[u8]) -> Vec<DepdbCurveRow> {
         payload.len().saturating_sub(cursor),
     )
     .unwrap_or(0);
+    ctx.charge_collection_items(capacity as u64, "creo cross-section curve rows")?;
     let mut rows = Vec::with_capacity(capacity);
     let mut boundaries = Vec::new();
     for (marker, length) in [
@@ -5718,31 +5784,34 @@ pub(crate) fn depdb_cross_section_rows(payload: &[u8]) -> Vec<DepdbCurveRow> {
     boundaries.dedup();
     while rows.len() < positional_count {
         let first_candidate = boundaries.partition_point(|(end, _)| *end < cursor);
-        let Some((row, terminator, length)) = boundaries[first_candidate..]
-            .iter()
-            .copied()
-            .find_map(|(end, length)| {
-                let row = parse_depdb_curve_segment(&payload[cursor..end], cursor, &cache)?;
-                Some((row, end, length))
-            })
-        else {
-            return Vec::new();
+        let mut selected = None;
+        for (end, length) in boundaries[first_candidate..].iter().copied() {
+            if let Some(row) =
+                parse_depdb_curve_segment(ctx, &payload[cursor..end], cursor, &cache)?
+            {
+                selected = Some((row, end, length));
+                break;
+            }
+        }
+        let Some((row, terminator, length)) = selected else {
+            return Ok(Vec::new());
         };
         rows.push(row);
         cursor = terminator + length;
     }
     if rows.len() == positional_count {
-        rows
+        Ok(rows)
     } else {
-        Vec::new()
+        Ok(Vec::new())
     }
 }
 
 fn parse_depdb_curve_segment(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     segment: &[u8],
     absolute_offset: usize,
     cache: &scalar::ScalarCache,
-) -> Option<DepdbCurveRow> {
+) -> Result<Option<DepdbCurveRow>, cadmpeg_core::CodecError> {
     let suffixes = (4..=11)
         .filter_map(|suffix_length| {
             let start = segment.len().checked_sub(suffix_length)?;
@@ -5756,7 +5825,7 @@ fn parse_depdb_curve_segment(
         .filter(|(_, suffix)| suffix[0] == 0 && suffix[3] == 0)
         .collect::<Vec<_>>();
     let [(suffix_start, suffix)] = suffixes.as_slice() else {
-        return None;
+        return Ok(None);
     };
     let prefixes = (0..*suffix_start).filter_map(|start| {
         let prefix = topology_prefix_fields(segment, start)?;
@@ -5778,12 +5847,12 @@ fn parse_depdb_curve_segment(
         .into_values()
         .collect::<Vec<_>>();
     let [(row_start, prefix)] = prefixes.as_slice() else {
-        return None;
+        return Ok(None);
     };
-    let body = segment[prefix.end..*suffix_start].to_vec();
+    let body = ctx.copy_retained(&segment[prefix.end..*suffix_start], "creo curve row body")?;
     let (scalar_tokens, references, opaque_spans) =
-        curve_scalar_lane(&body, prefix.type_byte, cache)?;
-    Some(DepdbCurveRow {
+        curve_scalar_lane(ctx, &body, prefix.type_byte, cache)?;
+    Ok(Some(DepdbCurveRow {
         id: prefix.id,
         type_byte: prefix.type_byte,
         feature_id: prefix.feature_id,
@@ -5797,7 +5866,7 @@ fn parse_depdb_curve_segment(
         references,
         opaque_spans,
         offset: absolute_offset + row_start,
-    })
+    }))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -6039,17 +6108,21 @@ fn complete_curve_row_linkage(bytes: &[u8]) -> bool {
 }
 
 fn curve_scalar_lane(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     body: &[u8],
     type_byte: u8,
     cache: &scalar::ScalarCache,
-) -> Option<(
-    Vec<CurveParameterScalar>,
-    Vec<CurveParameterReference>,
-    Vec<CurveParameterOpaqueSpan>,
-)> {
+) -> Result<
+    (
+        Vec<CurveParameterScalar>,
+        Vec<CurveParameterReference>,
+        Vec<CurveParameterOpaqueSpan>,
+    ),
+    cadmpeg_core::CodecError,
+> {
     let mut scalars = Vec::new();
     let mut references = Vec::new();
-    let mut claimed = alloc_filled(body.len(), false, "creo curve scalar claims").ok()?;
+    let mut claimed = ctx.alloc_filled(body.len(), false, "creo curve scalar claims")?;
     let mut cursor = 0;
     while cursor < body.len() {
         if body[cursor] == psb::token::ENTITY_REF {
@@ -6111,7 +6184,7 @@ fn curve_scalar_lane(
             offset: start,
         });
     }
-    Some((scalars, references, opaque_spans))
+    Ok((scalars, references, opaque_spans))
 }
 
 /// Decode analytic bodies from positional curve rows with one valid terminal
@@ -6119,15 +6192,17 @@ fn curve_scalar_lane(
 /// `srf_array` identifiers are available.
 #[cfg(test)]
 fn parameter_records(payload: &[u8]) -> Vec<CurveParameterRecord> {
-    parameter_records_with_face_ids(payload, None)
+    crate::decode::with_test_decode_ctx(|ctx| parameter_records_with_face_ids(ctx, payload, None))
+        .expect("test curve parameter records")
 }
 
 /// Decode analytic bodies using the enclosing `srf_array` identifier set to
 /// resolve variable-width reference boundaries.
 pub(crate) fn parameter_records_with_face_ids(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     payload: &[u8],
     face_ids: Option<&BTreeSet<u32>>,
-) -> Vec<CurveParameterRecord> {
+) -> Result<Vec<CurveParameterRecord>, cadmpeg_core::CodecError> {
     let cache = scalar::ScalarCache::from_section(payload);
     let mut records = Vec::new();
     for framed in framed_rows_with_face_ids(payload, face_ids) {
@@ -6148,12 +6223,10 @@ pub(crate) fn parameter_records_with_face_ids(
         if suffix_start < body_start {
             continue;
         }
-        let body = row[body_start..suffix_start].to_vec();
-        let Some((scalar_tokens, references, opaque_spans)) =
-            curve_scalar_lane(&body, type_byte, &cache)
-        else {
-            continue;
-        };
+        let body =
+            ctx.copy_retained(&row[body_start..suffix_start], "creo curve parameter body")?;
+        let (scalar_tokens, references, opaque_spans) =
+            curve_scalar_lane(ctx, &body, type_byte, &cache)?;
         records.push(CurveParameterRecord {
             curve_id,
             type_byte,
@@ -6167,7 +6240,7 @@ pub(crate) fn parameter_records_with_face_ids(
             suffix_offset: framed.start + suffix_start,
         });
     }
-    records
+    Ok(records)
 }
 
 fn uniquely_bounded_parameter_records(

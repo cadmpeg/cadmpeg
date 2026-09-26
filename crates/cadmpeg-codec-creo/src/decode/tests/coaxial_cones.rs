@@ -51,8 +51,11 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
         origin: [10.0, 0.0, 0.0],
         normal: [1.0, 0.0, 1.0],
     });
-    let vertex = solve_carriers(&[first, second, tangent_plane])
-        .expect("unique coaxial-cone circle tangent");
+    let vertex = crate::decode::with_test_decode_ctx(|ctx| {
+        solve_carriers(ctx, &[first, second, tangent_plane])
+    })
+    .expect("test carrier solve")
+    .expect("unique coaxial-cone circle tangent");
     assert!((vertex[0] - 6.0).abs() < 1.0e-12);
     assert!(vertex[1].abs() < 1.0e-12);
     assert!((vertex[2] - 4.0).abs() < 1.0e-12);

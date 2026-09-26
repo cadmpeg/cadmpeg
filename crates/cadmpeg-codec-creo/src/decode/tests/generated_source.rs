@@ -872,14 +872,14 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
         });
 
     assert!(matches!(
-        schema_feature_definition(
+        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(ctx,
             &scan,
             &CadIr::empty(),
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             9,
             Some(SchemaClass::Hole),
             "Hole"
-        ).expect("valid test fixture"), IrFeatureDefinition::Operation(IrFeatureOperation::Hole {
+        )).expect("valid test fixture"), IrFeatureDefinition::Operation(IrFeatureOperation::Hole {
             shape,
 
             extent: Some(LinearTermination::Blind {
@@ -922,7 +922,7 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
         .rows
         .push(surface_row(24, 9, crate::surface::SurfaceKind::Cylinder));
     assert!(matches!(
-        schema_feature_definition(&scan, &CadIr::empty(), &crate::decode::source_carriers::SourceUnitCarriers::default(), 9, Some(SchemaClass::Hole), "Hole").expect("valid test fixture"), IrFeatureDefinition::Operation(IrFeatureOperation::Hole {
+        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(ctx, &scan, &CadIr::empty(), &crate::decode::source_carriers::SourceUnitCarriers::default(), 9, Some(SchemaClass::Hole), "Hole")).expect("valid test fixture"), IrFeatureDefinition::Operation(IrFeatureOperation::Hole {
             shape,
 
             extent: None,

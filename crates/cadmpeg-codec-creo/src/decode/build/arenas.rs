@@ -780,7 +780,7 @@ pub(super) fn emit_geometry_arenas(
         "feature_choice_field",
         Exactness::ByteExact,
     )?;
-    let sketches = sketch_records(scan);
+    let sketches = sketch_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,
