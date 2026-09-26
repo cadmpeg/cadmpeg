@@ -1184,7 +1184,7 @@ fn tolerant_edge_tail_admits_only_nonnegative_finite_source_tolerance() {
                 Token::False,
                 Token::False,
                 Token::Double(source_tolerance),
-                Token::Long(2250003),
+                Token::Long(2_250_003),
                 Token::Long(7),
             ]
             .into(),

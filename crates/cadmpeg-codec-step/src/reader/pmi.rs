@@ -1880,27 +1880,25 @@ fn measure_inner(
                 });
             let scale = match quantity {
                 PmiQuantity::Length => unit
-                .and_then(|unit| {
-                    super::geometry::unit_scale_mm(unit, exchange, &mut BTreeSet::new())
-                })
-                    .map(cadmpeg_ir::scalar::PositiveReal::get)
-                    .unwrap_or_else(|| {
+                    .and_then(|unit| {
+                        super::geometry::unit_scale_mm(unit, exchange, &mut BTreeSet::new())
+                    })
+                    .map_or_else(|| {
                         measurements.losses.push(StepLossCode::PmiLengthUnitUnresolved.note(format!(
                                 "PMI length measure #{id} unit scale did not resolve; the document length scale was used"
                             )));
                         measurements.length_scale
-                    }),
+                    }, cadmpeg_ir::scalar::PositiveReal::get),
                 PmiQuantity::Angle => unit
                     .and_then(|unit| {
-                    super::geometry::unit_scale_radians(unit, exchange, &mut BTreeSet::new())
-                })
-                    .map(cadmpeg_ir::scalar::PositiveReal::get)
-                    .unwrap_or_else(|| {
+                        super::geometry::unit_scale_radians(unit, exchange, &mut BTreeSet::new())
+                    })
+                    .map_or_else(|| {
                         measurements.losses.push(StepLossCode::PmiAngleUnitUnresolved.note(format!(
                                 "PMI angle measure #{id} unit scale did not resolve; the document plane-angle scale was used"
                             )));
                         measurements.angle_scale
-                    }),
+                    }, cadmpeg_ir::scalar::PositiveReal::get),
                 PmiQuantity::Ratio => 1.0,
             };
             let result = record
