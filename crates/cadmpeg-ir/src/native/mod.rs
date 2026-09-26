@@ -2,6 +2,7 @@
 //! Source-format namespaces retained outside the format-neutral model.
 #![deny(clippy::disallowed_methods)]
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::num::NonZeroUsize;
@@ -190,19 +191,55 @@ impl NativeConvertError {
     }
 }
 
-/// Counts JSON bytes without creating a second copy of the record.
-#[derive(Default)]
-struct JsonByteCount(u64);
+/// Holds one typed record's JSON and charges each write before its buffer grows.
+struct ChargingJsonWriter<'a, 'b> {
+    ctx: &'a DecodeContext<'b>,
+    bytes: Vec<u8>,
+    refusal: Option<cadmpeg_core::CodecError>,
+}
 
-impl Write for JsonByteCount {
+impl Write for ChargingJsonWriter<'_, '_> {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        self.0 = self
-            .0
-            .checked_add(
-                u64::try_from(bytes.len())
-                    .map_err(|_| std::io::Error::other("native record JSON length exceeds u64"))?,
-            )
-            .ok_or_else(|| std::io::Error::other("native record JSON length exceeds u64"))?;
+        let needed = self.bytes.len().checked_add(bytes.len()).ok_or_else(|| {
+            self.refusal = Some(self.ctx.refuse_codec_limit(
+                "serialize native record length",
+                u64::MAX - 1,
+                u64::MAX,
+            ));
+            std::io::Error::other("native record JSON length exceeds usize")
+        })?;
+        let current_capacity = self.bytes.capacity();
+        if needed > current_capacity {
+            let next_capacity = current_capacity
+                .checked_mul(2)
+                .map_or(needed, |double| needed.max(double));
+            let additional = next_capacity - current_capacity;
+            let amount = u64::try_from(additional).map_err(|_| {
+                self.refusal = Some(self.ctx.refuse_codec_limit(
+                    "serialize native record capacity",
+                    u64::MAX - 1,
+                    u64::MAX,
+                ));
+                std::io::Error::other("native record JSON capacity exceeds u64")
+            })?;
+            if let Err(error) = self.ctx.charge_retained(amount, "serialize native record") {
+                self.refusal = Some(error);
+                return Err(std::io::Error::other("native record resource limit"));
+            }
+            if self
+                .bytes
+                .try_reserve_exact(next_capacity - self.bytes.len())
+                .is_err()
+            {
+                self.refusal = Some(self.ctx.refuse_codec_limit(
+                    "serialize native record allocation",
+                    u64::MAX - 1,
+                    u64::MAX,
+                ));
+                return Err(std::io::Error::other("native record allocation failed"));
+            }
+        }
+        self.bytes.extend_from_slice(bytes);
         Ok(bytes.len())
     }
 
@@ -320,8 +357,15 @@ impl NativeRecord {
     /// keys must be distinct, and a `RawValue` payload is read through
     /// one-container replay rather than a recursion-limited parse.
     pub(crate) fn from_typed<T: Serialize>(record: &T) -> Result<Self, NativeConvertError> {
+        Self::from_typed_with_sink(record, None)
+    }
+
+    fn from_typed_with_sink<T: Serialize>(
+        record: &T,
+        sink: Option<&dyn canon::ByteSink>,
+    ) -> Result<Self, NativeConvertError> {
         let serialized = record
-            .serialize(canon::CanonValue::for_record())
+            .serialize(canon::CanonValue::for_record_with_sink(sink))
             .map_err(|error| match error {
                 canon::CanonError::NonFinite(steps) => NativeConvertError::NonFiniteNumber {
                     field: canon::CanonError::field_path(&steps),
@@ -429,7 +473,10 @@ impl JsonSchema for NativeRecord {
 /// The arena is returned rather than stored, so a caller that only needs the
 /// canonical records never has to read them back out of a namespace. Each
 /// record is converted before the next is read, and a record the source could
-/// not state stops the walk with that record's own error.
+/// not state stops the walk with that record's own error. Equal identities can
+/// occur before document validation, so ordering must preserve their input
+/// order. The stable sort's possible scratch is reserved against the caller's
+/// temporary-byte budget before sorting.
 pub fn arena_from<T, E, I>(ctx: &DecodeContext<'_>, records: I) -> Result<Vec<NativeRecord>, E>
 where
     T: Serialize,
@@ -441,21 +488,43 @@ where
         .enumerate()
         .map(|(ordinal, record)| {
             let record = record?;
-            let mut serialized_bytes = JsonByteCount::default();
-            serde_json::to_writer(&mut serialized_bytes, &record)
-                .map_err(|error| E::from(NativeConvertError::Serde(error)))?;
-            ctx.charge_retained(serialized_bytes.0, "serialize native record")
-                .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
             ctx.charge_collection_items(1, "store native record")
                 .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
-            NativeRecord::from_typed(&record).map_err(|source| {
-                E::from(NativeConvertError::WriteRecord {
-                    ordinal,
-                    source: Box::new(source),
-                })
-            })
+            let writer = RefCell::new(ChargingJsonWriter {
+                ctx,
+                bytes: Vec::new(),
+                refusal: None,
+            });
+            let sink = |bytes: &[u8]| writer.borrow_mut().write_all(bytes);
+            let result = NativeRecord::from_typed_with_sink(&record, Some(&sink));
+            let source = match result {
+                Ok(record) => return Ok(record),
+                Err(error) => writer
+                    .borrow_mut()
+                    .refusal
+                    .take()
+                    .map_or(error, NativeConvertError::Resource),
+            };
+            Err(E::from(NativeConvertError::WriteRecord {
+                ordinal,
+                source: Box::new(source),
+            }))
         })
         .collect::<Result<Vec<_>, E>>()?;
+    let scratch_bytes = converted
+        .len()
+        .checked_mul(std::mem::size_of::<NativeRecord>())
+        .and_then(|bytes| u64::try_from(bytes).ok())
+        .ok_or_else(|| {
+            E::from(NativeConvertError::Resource(ctx.refuse_codec_limit(
+                "sort native records scratch size",
+                u64::MAX - 1,
+                u64::MAX,
+            )))
+        })?;
+    let _sort_scratch = ctx
+        .reserve_scoped(scratch_bytes, "sort native records")
+        .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
     converted.sort_by(|left, right| left.id().cmp(right.id()));
     Ok(converted)
 }

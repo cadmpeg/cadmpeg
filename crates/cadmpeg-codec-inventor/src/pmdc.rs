@@ -60,10 +60,6 @@ impl PmDcReference {
     pub(crate) fn record_ordinal(self) -> Option<u32> {
         self.index.checked_sub(1)
     }
-
-    pub(crate) fn unzip(refs: &[Self]) -> (Vec<u32>, Vec<bool>) {
-        refs.iter().map(|r| (r.index, r.qualified)).unzip()
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

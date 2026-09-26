@@ -57,6 +57,70 @@ use crate::chunks::ArchiveVersion;
 use crate::objects::AttributeUserdata;
 use std::io::Write;
 
+fn assert_presentation_native_limit<T: serde::Serialize>(
+    payload: &T,
+    expected: &serde_json::Value,
+) {
+    #[derive(serde::Serialize)]
+    struct Record<'a, T> {
+        id: &'static str,
+        payload: &'a T,
+    }
+
+    let record = Record {
+        id: "rhino:presentation:record#1",
+        payload,
+    };
+    cadmpeg_test_support::native_serialization::assert_native_limit(
+        &record,
+        serde_json::json!({"id": record.id, "payload": expected}),
+    );
+}
+
+#[test]
+fn dimension_style_controls_stream_under_native_retained_limit() {
+    let controls = std::collections::BTreeMap::from([
+        ("v5_dimension_scale".to_owned(), serde_json::json!(2.0)),
+        ("text_height".to_owned(), serde_json::json!(4.0)),
+    ]);
+    let details = DimensionStyleDetails::Modern {
+        parent_style_uuid: Some("11111111-1111-1111-1111-111111111111".to_owned()),
+        controls,
+    };
+    assert_presentation_native_limit(
+        &details,
+        &serde_json::json!({
+            "parent_style_uuid": "11111111-1111-1111-1111-111111111111",
+            "controls": {"text_height": 4.0, "v5_dimension_scale": 2.0},
+        }),
+    );
+}
+
+#[test]
+fn per_viewport_uuid_streams_under_native_retained_limit() {
+    let viewport_id = Uuid::from_canonical([0x11; 16]);
+    let settings = settings::LayerPerViewportSettings {
+        viewport_id,
+        color: None,
+        plot_color: None,
+        plot_weight_mm: None,
+        visible: None,
+        persistent_visibility: None,
+    };
+    assert_presentation_native_limit(
+        &settings,
+        &serde_json::json!({
+            "viewport_uuid": viewport_id.to_string(),
+            "settings_mask": settings.settings_mask(),
+            "color": null,
+            "plot_color": null,
+            "plot_weight_mm": null,
+            "visible": null,
+            "persistent_visibility": null,
+        }),
+    );
+}
+
 fn anonymous(minor: i32, body: &[u8]) -> Vec<u8> {
     let mut payload = 1_i32.to_le_bytes().to_vec();
     payload.extend(minor.to_le_bytes());

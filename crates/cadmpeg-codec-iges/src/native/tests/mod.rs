@@ -20,6 +20,7 @@ mod counted_lists;
 mod fem;
 mod macros;
 mod occurrences;
+mod serialization_limits;
 
 fn codes_charged_to(report: &DecodeReport, sequence: u32) -> Vec<String> {
     let tag = format!("directory_entry:D{sequence}");
