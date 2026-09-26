@@ -57,6 +57,23 @@ const GRAPH_DOC: &str = r#"{
 }"#;
 
 #[test]
+fn graph_input_over_256_mib_is_refused_before_json_parse() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("oversized.json");
+    std::fs::File::create(&path)
+        .unwrap()
+        .set_len(256 * 1024 * 1024 + 1)
+        .unwrap();
+    cadmpeg()
+        .args(["query", "graph", path.to_str().unwrap(), "model.faces"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "exceeds the query input limit of 256 MiB",
+        ));
+}
+
+#[test]
 fn graph_help_mentions_hops_follow_and_reverse() {
     cadmpeg()
         .args(["query", "graph", "--help"])

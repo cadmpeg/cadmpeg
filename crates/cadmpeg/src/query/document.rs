@@ -15,7 +15,7 @@ use super::item::{ambiguous_message, miss_id_message, unknown_arena_message, Are
 use super::{read_input, sniff_kind, ArtifactKind};
 
 /// One addressable JSON-array arena and its records.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(in crate::query) struct Arena {
     pub(super) target: ArenaTarget,
     pub(super) records: Vec<Value>,
@@ -28,11 +28,11 @@ pub(super) struct RecordRef {
     rec: usize,
 }
 
-/// Indexed CADIR document: arenas, addressable names, and id lookup.
-#[derive(Debug, Clone)]
+/// CADIR document arenas and optional graph identity lookup.
+#[derive(Debug)]
 pub(super) struct CadirDocument {
     arenas: Vec<Arena>,
-    /// Exact ID to each record location that carries it.
+    /// Exact ID to each record location that carries it, populated for graph walks.
     by_id: BTreeMap<String, Vec<RecordRef>>,
 }
 
@@ -128,55 +128,60 @@ impl CadirDocument {
     pub(super) fn from_bytes(bytes: &[u8], path: &Path) -> Result<Self> {
         let root: Value = serde_json::from_slice(bytes)
             .with_context(|| format!("parsing the CADIR document {}", path.display()))?;
-        Ok(Self::from_value(&root))
+        Ok(Self::from_value(root))
     }
 
-    pub(super) fn from_value(root: &Value) -> Self {
+    pub(super) fn from_value(mut root: Value) -> Self {
         let mut arenas = Vec::new();
-        if let Some(model) = root.get("model").and_then(Value::as_object) {
+        if let Some(model) = root.get_mut("model").and_then(Value::as_object_mut) {
             for (name, value) in model {
-                if let Some(arr) = value.as_array() {
+                if let Some(arr) = value.as_array_mut() {
                     arenas.push(Arena {
                         target: ArenaTarget::Model {
                             arena: name.clone(),
                         },
-                        records: arr.clone(),
+                        records: std::mem::take(arr),
                     });
                 }
             }
         }
-        if let Some(native) = root.get("native").and_then(Value::as_object) {
+        if let Some(native) = root.get_mut("native").and_then(Value::as_object_mut) {
             for (codec, namespace) in native {
-                let Some(native_arenas) = namespace.as_object() else {
+                let Some(native_arenas) = namespace.as_object_mut() else {
                     continue;
                 };
                 for (name, value) in native_arenas {
-                    if let Some(arr) = value.as_array() {
+                    if let Some(arr) = value.as_array_mut() {
                         arenas.push(Arena {
                             target: ArenaTarget::Native {
                                 codec: codec.clone(),
                                 arena: name.clone(),
                             },
-                            records: arr.clone(),
+                            records: std::mem::take(arr),
                         });
                     }
                 }
             }
         }
 
-        let mut by_id: BTreeMap<String, Vec<RecordRef>> = BTreeMap::new();
-        for (ai, arena) in arenas.iter().enumerate() {
+        Self {
+            arenas,
+            by_id: BTreeMap::new(),
+        }
+    }
+
+    pub(super) fn index_ids(&mut self) {
+        self.by_id.clear();
+        for (ai, arena) in self.arenas.iter().enumerate() {
             for (ri, rec) in arena.records.iter().enumerate() {
                 if let Some(id) = record_id(rec) {
-                    by_id
+                    self.by_id
                         .entry(id.to_owned())
                         .or_default()
                         .push(RecordRef { arena: ai, rec: ri });
                 }
             }
         }
-
-        Self { arenas, by_id }
     }
 
     pub(super) fn arenas(&self) -> &[Arena] {
@@ -202,7 +207,9 @@ impl CadirDocument {
     }
 
     pub(super) fn all_ids(&self) -> std::collections::BTreeSet<String> {
-        self.by_id.keys().cloned().collect()
+        self.records()
+            .filter_map(|(_, record)| record_id(record).map(str::to_owned))
+            .collect()
     }
 
     /// Returns each record with its indexed location.
@@ -253,31 +260,33 @@ impl CadirDocument {
             RecordSelection::Ids(ids) => ids.as_slice(),
         };
 
-        let indexed: Vec<(Option<&str>, RecordRef)> = arena
+        let indexed = arena
             .records
             .iter()
             .enumerate()
-            .map(|(rec, value)| (record_id(value), RecordRef { arena: ai, rec }))
-            .collect();
-        let all_ids: Vec<String> = indexed
-            .iter()
-            .filter_map(|(id, _)| id.map(str::to_owned))
-            .collect();
+            .map(|(rec, value)| (record_id(value), RecordRef { arena: ai, rec }));
 
         let mut records = Vec::new();
         let mut errors = Vec::new();
+        let mut all_ids = None;
         for request in ids {
-            match resolve_one(request, indexed.iter().copied()) {
+            match resolve_one(request, indexed.clone()) {
                 Ok(record) => records.push(record),
                 Err(ResolveError::Ambiguous(matches)) => {
                     errors.push(ambiguous_message(request, &arena.target.dotted(), &matches));
                 }
                 Err(ResolveError::Missing) => {
+                    let all_ids = all_ids.get_or_insert_with(|| {
+                        indexed
+                            .clone()
+                            .filter_map(|(id, _)| id.map(str::to_owned))
+                            .collect::<Vec<_>>()
+                    });
                     errors.push(miss_id_message(
                         &arena.target.dotted(),
                         request,
                         arena.records.len() as u64,
-                        &all_ids,
+                        all_ids,
                     ));
                 }
             }
@@ -355,7 +364,7 @@ mod tests {
 
     #[test]
     fn indexes_model_and_native_arenas_and_skips_non_arrays() {
-        let doc = CadirDocument::from_value(&json!({
+        let mut doc = CadirDocument::from_value(json!({
             "ir_version": "4",
             "model": {
                 "faces": [{"id": "f1"}, {"id": "f2"}],
@@ -366,6 +375,7 @@ mod tests {
                 "rhino": {"unknowns": [{"id": "n1"}]}
             }
         }));
+        doc.index_ids();
         let names: Vec<String> = doc.arenas.iter().map(|a| a.target.dotted()).collect();
         assert!(names.contains(&"model.faces".to_owned()));
         assert!(names.contains(&"model.empty".to_owned()));
@@ -379,12 +389,13 @@ mod tests {
 
     #[test]
     fn id_collision_keeps_every_hit() {
-        let doc = CadirDocument::from_value(&json!({
+        let mut doc = CadirDocument::from_value(json!({
             "model": {
                 "a": [{"id": "dup"}],
                 "b": [{"id": "dup"}]
             }
         }));
+        doc.index_ids();
         assert_eq!(doc.by_id["dup"].len(), 2);
     }
 
@@ -396,7 +407,7 @@ mod tests {
 
     #[test]
     fn select_head_and_suffix_and_ambiguous() {
-        let doc = CadirDocument::from_value(&json!({
+        let doc = CadirDocument::from_value(json!({
             "model": {"faces": [
                 {"id": "other:face#1"},
                 {"id": "other:face#2"},
