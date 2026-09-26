@@ -34,6 +34,7 @@ use super::ir_geometry::transfer_and_record_scanned_geometry;
 use super::meta::source_meta;
 use super::passthrough::{emit_legacy_arenas, preserve_passthrough_sections};
 use crate::decode::analytic::planes::placed_plane_surfaces;
+use crate::decode::source_carriers::SourceUnitCarriers;
 
 pub(in super::super) struct BuiltIr {
     pub(in super::super) ir: CadIr,
@@ -558,6 +559,8 @@ fn transfer_placed_plane_surfaces_into_ir(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    source_carriers: &mut SourceUnitCarriers,
+    length_scale_mm: Option<cadmpeg_ir::scalar::PositiveReal>,
 ) -> Result<(), CodecError> {
     for frame in &scan.planes.local_systems {
         if frame.frame().cross_overflow {
@@ -598,7 +601,7 @@ fn transfer_placed_plane_surfaces_into_ir(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
-        ir.model.surfaces.push(Surface {
+        let mut surface = Surface {
             id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -622,7 +625,15 @@ fn transfer_placed_plane_surfaces_into_ir(
                 layer: None,
                 instance_path: Vec::new(),
             }),
-        });
+        };
+        let source_surface = surface.clone();
+        if let (Some(scale), SurfaceGeometry::Solved(geometry)) =
+            (length_scale_mm, &mut surface.geometry)
+        {
+            super::units::scale_surface_geometry(geometry, scale)?;
+        }
+        source_carriers.record_surface(&source_surface);
+        ir.model.surfaces.push(surface);
     }
     Ok(())
 }
@@ -636,8 +647,12 @@ pub(in super::super) fn build_ir(
     let (meta, mut coverage) = source_meta(scan, classification)?;
     let mut ir = CadIr::decoded(meta);
     let mut annotations = AnnotationBuilder::new();
-    let mut brep_diagnostics = BrepTransferDiagnostics::default();
     let mut transfer_losses = Vec::new();
+    let mut source_carriers = SourceUnitCarriers::default();
+    let length_scale_mm = scan
+        .framing
+        .principal_unit
+        .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm);
     emit_legacy_arenas(scan, &mut ir, &mut annotations)?;
     let unknowns = preserve_passthrough_sections(ctx, scan, &mut annotations)?;
     emit_reference_arenas(scan, &mut ir, &mut annotations)?;
@@ -646,15 +661,22 @@ pub(in super::super) fn build_ir(
     transfer_reference_ellipses(ctx, scan, &mut ir, &mut annotations)?;
     transfer_display_tessellations(ctx, scan, &mut ir, &mut annotations)?;
     transfer_datum_plane_surfaces(ctx, scan, &mut ir, &mut annotations)?;
-    transfer_placed_plane_surfaces_into_ir(ctx, scan, &mut ir, &mut annotations)?;
-    transfer_and_record_scanned_geometry(
+    transfer_placed_plane_surfaces_into_ir(
+        ctx,
+        scan,
+        &mut ir,
+        &mut annotations,
+        &mut source_carriers,
+        length_scale_mm,
+    )?;
+    let brep_diagnostics = transfer_and_record_scanned_geometry(
         ctx,
         scan,
         &mut ir,
         &mut annotations,
         &mut coverage,
-        &mut brep_diagnostics,
         &mut transfer_losses,
+        &mut source_carriers,
     )?;
     let geometry_generator_feature_count =
         emit_model_features(ctx, scan, &mut ir, &mut annotations)?;
@@ -662,12 +684,8 @@ pub(in super::super) fn build_ir(
         finish_feature_transfers(ctx, scan, &mut ir, &mut annotations, &mut coverage)?;
     attach_expanded_sections(scan, &mut ir, &mut annotations)?;
     emit_geometry_arenas(scan, &mut ir, &mut annotations, &brep_diagnostics)?;
-    if let Some(length_scale_mm) = scan
-        .framing
-        .principal_unit
-        .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm)
-    {
-        super::units::normalize_model_lengths(&mut ir, length_scale_mm)?;
+    if let Some(length_scale_mm) = length_scale_mm {
+        super::units::normalize_model_lengths(&mut ir, length_scale_mm, &source_carriers)?;
     }
     collect_feature_coverage(
         scan,

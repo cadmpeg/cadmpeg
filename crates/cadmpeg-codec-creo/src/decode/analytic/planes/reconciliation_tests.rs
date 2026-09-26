@@ -228,6 +228,7 @@ fn unique_native_conic_loop_places_its_plane_surface() {
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
             &std::collections::BTreeSet::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     })
     .expect("valid source object identity");
@@ -262,6 +263,7 @@ fn unique_native_conic_loop_places_its_plane_surface() {
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
             &std::collections::BTreeSet::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         ))
         .expect("valid source object identity"),
         0
@@ -334,6 +336,7 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
             &std::collections::BTreeSet::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         ))
         .expect("valid source object identity"),
         1

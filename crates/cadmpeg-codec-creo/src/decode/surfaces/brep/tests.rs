@@ -14,8 +14,8 @@ use super::{
     admitted_face_components, component_is_closed, is_neutral_face_reference,
     legacy_body_ownership_is_unambiguous, merge_body_components, native_parameter_loop_polygon,
     ordered_native_parameter_face_loops, split_neutral_component_shells, transfer_native_brep,
-    BrepTransferDiagnostics, FaceAdmissionDetail, FaceAdmissionRejection, NativeCurveEvidence,
-    NeutralShellSpec,
+    BrepTransferDiagnostics, FaceAdmissionDetail, FaceAdmissionRejection, NativeBrepCurveEvidence,
+    NativeCurveEvidence, NeutralShellSpec,
 };
 
 #[test]
@@ -779,9 +779,12 @@ fn native_brep_rejects_ambiguous_model_carriers() {
             &scan,
             &mut ir,
             &mut AnnotationBuilder::new(),
-            &BTreeSet::new(),
-            &BTreeSet::new(),
+            NativeBrepCurveEvidence {
+                derived_intersections: &BTreeSet::new(),
+                nurbs_endpoints: &BTreeSet::new(),
+            },
             &mut Vec::new(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     })
     .expect("valid source object identity");
@@ -869,9 +872,12 @@ fn native_brep_rejects_ambiguous_model_carriers() {
             &scan,
             &mut ir,
             &mut AnnotationBuilder::new(),
-            &BTreeSet::new(),
-            &BTreeSet::new(),
+            NativeBrepCurveEvidence {
+                derived_intersections: &BTreeSet::new(),
+                nurbs_endpoints: &BTreeSet::new(),
+            },
             &mut Vec::new(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     })
     .expect("valid source object identity");

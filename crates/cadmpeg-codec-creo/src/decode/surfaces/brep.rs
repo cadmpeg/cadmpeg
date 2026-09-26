@@ -53,6 +53,12 @@ use super::{fc05_cap_pair_model_frame, fc05_model_frame, native_surface_id};
 const EPS_PARAMETER_AGREE: f64 = 1.0e-9;
 const EPS_GEOMETRY_AGREE: f64 = 1.0e-9;
 const FACE_REJECTION_SAMPLE_LIMIT: usize = 4;
+
+#[derive(Clone, Copy)]
+pub(in crate::decode) struct NativeBrepCurveEvidence<'a> {
+    pub(in crate::decode) derived_intersections: &'a BTreeSet<CurveId>,
+    pub(in crate::decode) nurbs_endpoints: &'a BTreeSet<CurveId>,
+}
 const FACE_REJECTION_OPERAND_SAMPLE_LIMIT: usize = 8;
 
 /// The first admission predicate that rejected one native face candidate.
@@ -1026,11 +1032,11 @@ pub(in super::super) fn transfer_native_brep(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    derived_intersection_curves: &BTreeSet<CurveId>,
-    nurbs_endpoint_witnesses: &BTreeSet<CurveId>,
+    curve_evidence: NativeBrepCurveEvidence<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<NativeBrepTransferSummary, cadmpeg_core::CodecError> {
-    let carriers = placed_carriers(scan, ir);
+    let carriers = placed_carriers(scan, ir, source_carriers);
     let planes = carriers
         .iter()
         .filter_map(|(id, carrier)| match carrier {
@@ -1052,7 +1058,7 @@ pub(in super::super) fn transfer_native_brep(
         .map(|binding| (binding.half_edge, binding))
         .collect::<BTreeMap<_, _>>();
     let solved_vertex_result =
-        solve_topological_vertices(scan, ir, &carriers, nurbs_endpoint_witnesses);
+        solve_topological_vertices(scan, ir, &carriers, curve_evidence.nurbs_endpoints);
     let solved_vertices = &solved_vertex_result.points;
     let mut native_pcurves = NativePcurveCandidates::new();
     for (curve_id, faces, face_0_endpoints, face_1_endpoints, offset) in scan
@@ -1523,7 +1529,7 @@ pub(in super::super) fn transfer_native_brep(
                     .any(|face_id| native_pcurves.contains_key(&(*curve_id, *face_id)))
             });
         let model_curve_count = model_curve_counts[curve_id];
-        let derived_line = derived_intersection_curves.contains(&curve)
+        let derived_line = curve_evidence.derived_intersections.contains(&curve)
             && exactly_one(
                 ir.model
                     .curves
