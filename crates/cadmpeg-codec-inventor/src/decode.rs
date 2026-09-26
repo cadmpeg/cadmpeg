@@ -732,57 +732,18 @@ fn decode_container<'a>(
         )
         .collect::<Vec<_>>();
     let active_carrier = ActiveCarrierRecord::from_state(ctx, &container.rse.active_carrier)?;
-    admit_assembly_native_projection(ctx, &assembly_inventory)?;
     let assembly_occurrences = assembly_inventory
         .occurrences
         .iter()
-        .map(|occurrence| AssemblyOccurrenceRecord {
-            id: format!(
-                "inventor:assembly:occurrence#{}-{}",
-                occurrence.segment_token, occurrence.record_ordinal
-            ),
-            segment_token: occurrence.segment_token.clone(),
-            record_ordinal: occurrence.record_ordinal,
-            header_value: occurrence.header_value,
-            header_id: occurrence.header_id,
-            next_reference: occurrence.next_reference,
-            flags: occurrence.flags,
-            owner_reference: occurrence.owner_reference,
-            node_index: occurrence.node_index,
-            state: occurrence.state,
-            ordinal_key: occurrence.ordinal_key,
-            related_references: occurrence.related_references.clone(),
-            child_reference: occurrence.child_reference,
-            occurrence_id: occurrence.occurrence_id,
-        })
-        .collect::<Vec<_>>();
+        .map(|occurrence| AssemblyOccurrenceRecord::from_occurrence(ctx, occurrence))
+        .collect::<Result<Vec<_>, CodecError>>()?;
     let assembly_placements = assembly_inventory
         .placements
         .iter()
         .map(|placement| {
             admit_assembly_placement(
                 ctx,
-                AssemblyPlacementRecordWire {
-                    id: format!(
-                        "inventor:assembly:placement#{}-{}",
-                        placement.segment_token, placement.record_ordinal
-                    ),
-                    segment_token: placement.segment_token.clone(),
-                    record_ordinal: placement.record_ordinal,
-                    header_id: placement.header_id,
-                    owner_reference: placement.owner_reference,
-                    attribute_reference: placement.attribute_reference,
-                    state: placement.state,
-                    transform_prefix: placement.transform_prefix,
-                    transform: placement.transform,
-                    branch: placement.branch,
-                    graphics_state: placement.graphics_state,
-                    occurrence_id: placement.occurrence_id,
-                    graphics_index: placement.graphics_index,
-                    object_reference: placement.object_reference,
-                    suffix_len: placement.suffix.window().len() as u64,
-                    suffix_sha256: sha256_hex(placement.suffix.window()),
-                },
+                AssemblyPlacementRecordWire::from_placement(ctx, placement)?,
                 &mut assembly_inventory.issues,
             )
         })
@@ -2242,48 +2203,6 @@ fn admit_rse_segment_projection(
             ctx,
             token.as_str().len(),
             "retain Inventor unpaired bulk token",
-        )?;
-    }
-    Ok(())
-}
-
-fn admit_assembly_native_projection(
-    ctx: &DecodeContext<'_>,
-    inventory: &crate::assembly::AssemblyInventory<'_>,
-) -> Result<(), CodecError> {
-    for occurrence in &inventory.occurrences {
-        admit_native_format(
-            ctx,
-            format_args!(
-                "inventor:assembly:occurrence#{}-{}",
-                occurrence.segment_token, occurrence.record_ordinal
-            ),
-            "retain Inventor assembly occurrence id",
-        )?;
-        charge_retained_len(
-            ctx,
-            occurrence.segment_token.len(),
-            "retain Inventor assembly occurrence token",
-        )?;
-    }
-    for placement in &inventory.placements {
-        admit_native_format(
-            ctx,
-            format_args!(
-                "inventor:assembly:placement#{}-{}",
-                placement.segment_token, placement.record_ordinal
-            ),
-            "retain Inventor assembly placement id",
-        )?;
-        charge_retained_len(
-            ctx,
-            placement.segment_token.len(),
-            "retain Inventor assembly placement token",
-        )?;
-        admit_native_digest(
-            ctx,
-            placement.suffix.window(),
-            "retain Inventor assembly placement suffix digest",
         )?;
     }
     Ok(())

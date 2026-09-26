@@ -9,11 +9,11 @@ use cadmpeg_ir::topology::Color;
 
 use crate::container::InventorContainer;
 use crate::decode::{
-    admit_assembly_native_projection, admit_assembly_placement, admit_coverage_entries,
-    admit_kernel_annotation, admit_kernel_unknown_fidelity, admit_native_record_items,
-    admit_rse_segment_projection, admit_untransferred_carrier, admitted_kernel_attribute,
-    admitted_loss, clone_product_body_ids, collect_body_ids, decode_container, index_asm_face_keys,
-    index_face_colors, index_projected_colors, insert_source_attribute, project_preview_asset,
+    admit_assembly_placement, admit_coverage_entries, admit_kernel_annotation,
+    admit_kernel_unknown_fidelity, admit_native_record_items, admit_rse_segment_projection,
+    admit_untransferred_carrier, admitted_kernel_attribute, admitted_loss, clone_product_body_ids,
+    collect_body_ids, decode_container, index_asm_face_keys, index_face_colors,
+    index_projected_colors, insert_source_attribute, project_preview_asset,
     project_property_set_issue, project_protein_records, project_protein_state,
     project_root_product, project_ufrx_embedded_reference, project_ufrx_external_reference,
     project_ufrx_model_state, project_ufrx_occurrence, project_ufrx_representation,
@@ -29,7 +29,10 @@ use crate::external_reference::{
 use crate::kernel::ActiveCarrierState;
 use crate::loss::InventorLossCode;
 use crate::native::ufrx::UfrxRecord;
-use crate::native::{ActiveCarrierRecord, AssemblyPlacementRecordWire, StructuralIssueRecord};
+use crate::native::{
+    ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecordWire,
+    StructuralIssueRecord,
+};
 use crate::property_set::{Property, PropertySection, PropertyValue};
 use crate::protein::{ProteinInstanceRecords, ProteinState};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
@@ -289,7 +292,7 @@ fn selected_active_carrier_refuses_token_and_digest_before_native_copy() {
 
 #[test]
 fn assembly_occurrence_native_record_refuses_before_id_creation() {
-    let inventory = AssemblyInventory {
+    let mut inventory = AssemblyInventory {
         occurrences: vec![AssemblyOccurrence {
             segment_token: "segment".into(),
             record_ordinal: 1,
@@ -314,14 +317,25 @@ fn assembly_occurrence_native_record_refuses_before_id_creation() {
         u64::try_from("inventor:assembly:occurrence#segment-1".len() - 1).expect("id length fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
-        admit_assembly_native_projection(&ctx, &inventory),
+        AssemblyOccurrenceRecord::from_occurrence(&ctx, &inventory.occurrences[0]),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain Inventor assembly occurrence id"
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
-    admit_assembly_native_projection(&ctx, &inventory).expect("admitted occurrence");
+    AssemblyOccurrenceRecord::from_occurrence(&ctx, &inventory.occurrences[0])
+        .expect("admitted occurrence");
+    inventory.occurrences[0].related_references.push(42);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    assert!(matches!(
+        AssemblyOccurrenceRecord::from_occurrence(&ctx, &inventory.occurrences[0]),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "copy Inventor assembly related references"
+    ));
 }
 
 #[test]
@@ -354,7 +368,7 @@ fn assembly_placement_native_record_refuses_id_and_digest_before_creation() {
     policy.limits.max_retained_bytes = u64::try_from(id_len - 1).expect("id length fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
-        admit_assembly_native_projection(&ctx, &inventory),
+        AssemblyPlacementRecordWire::from_placement(&ctx, &inventory.placements[0]),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain Inventor assembly placement id"
@@ -363,14 +377,15 @@ fn assembly_placement_native_record_refuses_id_and_digest_before_creation() {
         u64::try_from(id_len + token_len + 63).expect("digest budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
-        admit_assembly_native_projection(&ctx, &inventory),
+        AssemblyPlacementRecordWire::from_placement(&ctx, &inventory.placements[0]),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain Inventor assembly placement suffix digest"
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
-    admit_assembly_native_projection(&ctx, &inventory).expect("admitted placement");
+    AssemblyPlacementRecordWire::from_placement(&ctx, &inventory.placements[0])
+        .expect("admitted placement");
 }
 
 #[test]

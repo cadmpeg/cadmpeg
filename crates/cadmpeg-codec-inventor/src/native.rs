@@ -41,6 +41,15 @@ fn retained_digest(
     Ok(cadmpeg_ir::hash::sha256_hex(bytes))
 }
 
+fn retained_format(
+    ctx: &DecodeContext<'_>,
+    value: std::fmt::Arguments<'_>,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    crate::record_issue::admit_formatted(ctx, value, operation)?;
+    Ok(value.to_string())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct VersionTupleRecord {
     pub(crate) revision: u8,
@@ -370,6 +379,49 @@ pub(crate) struct AssemblyOccurrenceRecord {
     pub(crate) occurrence_id: u32,
 }
 
+impl AssemblyOccurrenceRecord {
+    pub(crate) fn from_occurrence(
+        ctx: &DecodeContext<'_>,
+        occurrence: &crate::assembly::AssemblyOccurrence,
+    ) -> Result<Self, CodecError> {
+        let id = retained_format(
+            ctx,
+            format_args!(
+                "inventor:assembly:occurrence#{}-{}",
+                occurrence.segment_token, occurrence.record_ordinal
+            ),
+            "retain Inventor assembly occurrence id",
+        )?;
+        let segment_token = retained_copy(
+            ctx,
+            &occurrence.segment_token,
+            "retain Inventor assembly occurrence token",
+        )?;
+        ctx.charge_collection_items(
+            u64::try_from(occurrence.related_references.len()).map_err(|_| {
+                ctx.refuse_codec_limit("Inventor related-reference count", u64::MAX - 1, u64::MAX)
+            })?,
+            "copy Inventor assembly related references",
+        )?;
+        Ok(Self {
+            id,
+            segment_token,
+            record_ordinal: occurrence.record_ordinal,
+            header_value: occurrence.header_value,
+            header_id: occurrence.header_id,
+            next_reference: occurrence.next_reference,
+            flags: occurrence.flags,
+            owner_reference: occurrence.owner_reference,
+            node_index: occurrence.node_index,
+            state: occurrence.state,
+            ordinal_key: occurrence.ordinal_key,
+            related_references: occurrence.related_references.clone(),
+            child_reference: occurrence.child_reference,
+            occurrence_id: occurrence.occurrence_id,
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(
     try_from = "AssemblyPlacementRecordWire",
@@ -414,6 +466,49 @@ pub(crate) struct AssemblyPlacementRecordWire {
     pub(crate) object_reference: u32,
     pub(crate) suffix_len: u64,
     pub(crate) suffix_sha256: String,
+}
+
+impl AssemblyPlacementRecordWire {
+    pub(crate) fn from_placement(
+        ctx: &DecodeContext<'_>,
+        placement: &crate::assembly::AssemblyPlacement<'_>,
+    ) -> Result<Self, CodecError> {
+        Ok(Self {
+            id: retained_format(
+                ctx,
+                format_args!(
+                    "inventor:assembly:placement#{}-{}",
+                    placement.segment_token, placement.record_ordinal
+                ),
+                "retain Inventor assembly placement id",
+            )?,
+            segment_token: retained_copy(
+                ctx,
+                &placement.segment_token,
+                "retain Inventor assembly placement token",
+            )?,
+            record_ordinal: placement.record_ordinal,
+            header_id: placement.header_id,
+            owner_reference: placement.owner_reference,
+            attribute_reference: placement.attribute_reference,
+            state: placement.state,
+            transform_prefix: placement.transform_prefix,
+            transform: placement.transform,
+            branch: placement.branch,
+            graphics_state: placement.graphics_state,
+            occurrence_id: placement.occurrence_id,
+            graphics_index: placement.graphics_index,
+            object_reference: placement.object_reference,
+            suffix_len: u64::try_from(placement.suffix.window().len()).map_err(|_| {
+                ctx.refuse_codec_limit("Inventor placement suffix length", u64::MAX - 1, u64::MAX)
+            })?,
+            suffix_sha256: retained_digest(
+                ctx,
+                placement.suffix.window(),
+                "retain Inventor assembly placement suffix digest",
+            )?,
+        })
+    }
 }
 
 impl TryFrom<AssemblyPlacementRecordWire> for AssemblyPlacementRecord {
