@@ -10,7 +10,7 @@ use cadmpeg_ir::topology::Color;
 use crate::container::InventorContainer;
 use crate::decode::{
     admit_assembly_placement, admit_native_record_items, collect_body_ids, decode_container,
-    index_face_colors, index_projected_colors,
+    index_face_colors, index_projected_colors, project_preview_asset, project_property_set_issue,
 };
 use crate::external_reference::{
     InventorEmbeddedReference, InventorExternalReference, UfrxDocument, UfrxModelState,
@@ -23,6 +23,67 @@ use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
 use crate::test_support::test_fixtures::{fixture_with_ufrx, primary_envelope_fixture};
 use crate::test_support::test_fixtures::{push_u16, push_u32, push_utf16};
 use crate::InventorCodec;
+
+#[test]
+fn property_set_issue_refuses_retained_limit_before_record_creation() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    let id = "inventor:property:set-issue#7";
+    policy.limits.max_retained_bytes = u64::try_from(id.len() - 1).expect("id length fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        project_property_set_issue(&ctx, 7, "PropertySet", "malformed"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor property-set issue id"
+    ));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    let record =
+        project_property_set_issue(&ctx, 7, "PropertySet", "malformed").expect("admitted issue");
+    assert_eq!(record.id, id);
+    assert_eq!(record.path, "PropertySet");
+    assert_eq!(record.detail, "malformed");
+}
+
+#[test]
+fn preview_asset_refuses_collection_and_retained_limits_before_creation() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        project_preview_asset(&ctx, 0, "inventor:property:value#1-0-17", b"image", "image/png"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "collect Inventor preview asset"
+    ));
+
+    policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 7;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        project_preview_asset(&ctx, 0, "inventor:property:value#1-0-17", b"image", "image/png"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor preview identity key"
+    ));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    let asset = project_preview_asset(
+        &ctx,
+        0,
+        "inventor:property:value#1-0-17",
+        b"image",
+        "image/png",
+    )
+    .expect("admitted preview");
+    assert_eq!(asset.id.as_str(), "inventor:document:asset#preview-0");
+    assert_eq!(
+        asset.native_ref.as_deref(),
+        Some("inventor:property:value#1-0-17")
+    );
+}
 
 #[test]
 fn projected_body_ids_refuse_collection_and_retained_limits_before_copy() {
