@@ -1315,6 +1315,14 @@ impl OffsetPcurve {
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(distance: f64, basis: Box<PcurveGeometry>) -> Result<Self, &'static str> {
         let distance = FiniteReal::new(distance).ok_or("OffsetPcurve.distance must be finite")?;
+        Self::from_parts(distance, basis)
+    }
+
+    /// Build an offset from an admitted distance and a checked basis.
+    pub fn from_parts(
+        distance: FiniteReal,
+        basis: Box<PcurveGeometry>,
+    ) -> Result<Self, &'static str> {
         let depth = nesting_depth_over(&basis)
             .ok_or("OffsetPcurve.basis nests past the admitted inline basis depth")?;
         Ok(Self {
