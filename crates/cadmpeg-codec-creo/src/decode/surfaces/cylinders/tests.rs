@@ -1068,7 +1068,7 @@ fn round_envelope_rejects_an_extra_reference_circle() {
     let circle =
         |entity_id, axis, start: [f64; 3], end: [f64; 3]| crate::reference::ReferenceCircle {
             entity_id,
-            center: [0.0; 3],
+            center: cadmpeg_ir::features::FinitePoint3::ZERO,
             center_stored: true,
             radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
             axis: cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))

@@ -435,7 +435,8 @@ fn reference_circle_radius_is_in_millimeters_at_ir_admission() {
         .circles
         .push(crate::reference::ReferenceCircle {
             entity_id: 7,
-            center: [1.0, 0.0, 0.0],
+            center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                .expect("finite center"),
             center_stored: true,
             radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
             axis: cadmpeg_ir::units::UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"),

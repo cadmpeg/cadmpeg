@@ -240,7 +240,10 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
         .iter()
         .filter(|table| table.has_complete_bucket_frame())
         .flat_map(|table| &table.rows)
-        .filter_map(|vertex| Some((vertex.vertex_id, vertex.section_coordinates?)))
+        .filter_map(|vertex| {
+            let point = vertex.section_coordinates?.get();
+            Some((vertex.vertex_id, [point.u, point.v]))
+        })
         .collect::<Vec<_>>();
     for trim in definition
         .trim_entities
