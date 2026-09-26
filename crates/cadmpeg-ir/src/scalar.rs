@@ -438,6 +438,17 @@ impl PositiveAngle {
     pub const HALF_TURN: Self = Self(std::f64::consts::PI);
     /// Three quarter turns in radians.
     pub const THREE_QUARTER_TURN: Self = Self(3.0 * std::f64::consts::FRAC_PI_2);
+
+    /// Assign a finite scalar as an angle and require it to be positive.
+    /// Only the sign remains to check.
+    #[must_use]
+    pub const fn from_assigned_real(value: FiniteReal) -> Option<Self> {
+        if value.get() > 0.0 {
+            Some(Self(value.get()))
+        } else {
+            None
+        }
+    }
 }
 
 impl NonZeroAngle {

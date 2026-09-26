@@ -1250,15 +1250,15 @@ fn parse_units_reader(reader: &mut BoundedReader<'_>) -> Result<UnitsAndToleranc
     };
     let angular = finite(angular_offset, angular, "angular tolerance")?;
     let relative = finite(relative_offset, relative, "relative tolerance")?;
-    let absolute = PositiveReal::new(absolute.get()).ok_or_else(|| {
+    let absolute = PositiveReal::from_finite(absolute).ok_or_else(|| {
         FramingError::structural(reader.position(), "absolute tolerance must be positive")
     })?;
-    let angular = PositiveAngle::new(angular.get())
+    let angular = PositiveAngle::from_assigned_real(angular)
         .filter(|angular| angular.get() <= std::f64::consts::PI)
         .ok_or_else(|| {
             FramingError::structural(reader.position(), "angular tolerance must be in (0, pi]")
         })?;
-    let relative = PositiveReal::new(relative.get())
+    let relative = PositiveReal::from_finite(relative)
         .filter(|relative| relative.get() < 1.0)
         .ok_or_else(|| {
             FramingError::structural(reader.position(), "relative tolerance must be in (0, 1)")
