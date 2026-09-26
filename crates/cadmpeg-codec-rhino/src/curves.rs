@@ -10,7 +10,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveReal};
+use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveLength, PositiveReal};
+use cadmpeg_ir::units::OrthonormalFrame3;
 
 use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
 use crate::objects::parse_class_wrapper;
@@ -740,10 +741,10 @@ pub(crate) fn exact_nurbs(
         DecodedCurve::Leaf { geometry, .. } => match geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => Ok(nurbs.clone()),
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-                let center = circle_curve.center().get();
+                let center = circle_curve.center();
                 let axis = circle_curve.frame().axis().as_raw();
                 let ref_direction = circle_curve.frame().reference().as_raw();
-                let radius = circle_curve.radius().get();
+                let radius = circle_curve.radius();
                 let yaxis = axis.cross(*ref_direction);
                 let circle = Circle {
                     center,
@@ -1562,13 +1563,16 @@ fn read_arc(
     if !force_nurbs && canonical_circle(&circle, angle, domain, delta) {
         return Ok((
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                cadmpeg_ir::geometry::analytic::CircleCurve::new(
                     circle.center,
-                    circle.axis,
-                    circle.xaxis,
+                    OrthonormalFrame3::new(circle.axis, circle.xaxis).ok_or_else(|| {
+                        error(
+                            reader.position(),
+                            "CircleCurve.axis/ref_direction must form an orthonormal frame",
+                        )
+                    })?,
                     circle.radius,
-                )
-                .map_err(|message| error(reader.position(), message))?,
+                ),
             )),
             warnings,
         ));
@@ -1587,11 +1591,13 @@ fn read_arc(
 
 #[derive(Debug, Clone, Copy)]
 struct Circle {
-    center: Point3,
+    center: FinitePoint3,
+    // The source circle uses a stricter unit and orthogonality tolerance than
+    // the IR frame. These axes keep their source values until frame assembly.
     axis: Vector3,
     xaxis: Vector3,
     yaxis: Vector3,
-    radius: f64,
+    radius: PositiveLength,
 }
 
 fn read_circle(
@@ -1603,16 +1609,15 @@ fn read_circle(
     let zero = native_point(reader)?;
     let half_pi = native_point(reader)?;
     let at_pi = native_point(reader)?;
-    let scaled_radius = radius * scale.value();
-    if !radius.is_finite() || radius <= 0.0 || !scaled_radius.is_finite() || scaled_radius <= 0.0 {
-        return Err(error(reader.position(), "circle radius is invalid"));
-    }
+    let radius = PositiveReal::new(radius)
+        .ok_or_else(|| error(reader.position(), "circle radius is invalid"))?;
+    let scaled_radius = PositiveLength::new(radius.get() * scale.value())
+        .ok_or_else(|| error(reader.position(), "circle radius is invalid"))?;
     let xaxis = vector(native.xaxis.get());
     let yaxis = vector(native.yaxis.get());
     let axis = vector(native.zaxis.get());
     let center = crate::wire::scaled_point(native.origin.get(), scale)
-        .ok_or_else(|| error(reader.position(), "scaled circle center is invalid"))?
-        .get();
+        .ok_or_else(|| error(reader.position(), "scaled circle center is invalid"))?;
     let norm_x = xaxis.norm();
     let norm_y = yaxis.norm();
     let norm_axis = axis.norm();
@@ -1630,19 +1635,19 @@ fn read_circle(
             zero.0.get(),
             native.origin.get(),
             native.xaxis.get(),
-            radius,
+            radius.get(),
         )
         && close_native_point(
             half_pi.0.get(),
             native.origin.get(),
             native.yaxis.get(),
-            radius,
+            radius.get(),
         )
         && close_native_point(
             at_pi.0.get(),
             native.origin.get(),
             negate(native.xaxis.get()),
-            radius,
+            radius.get(),
         ))
     {
         return Err(error(reader.position(), "circle plane axes are invalid"));
@@ -1851,10 +1856,12 @@ fn circle_point_scaled(circle: &Circle, angle: f64, radial_scale: f64) -> Point3
         circle.xaxis.y * angle.cos() + circle.yaxis.y * angle.sin(),
         circle.xaxis.z * angle.cos() + circle.yaxis.z * angle.sin(),
     );
+    let center = circle.center.get();
+    let radius = circle.radius.get();
     Point3::new(
-        circle.center.x + radial.x * circle.radius * radial_scale,
-        circle.center.y + radial.y * circle.radius * radial_scale,
-        circle.center.z + radial.z * circle.radius * radial_scale,
+        center.x + radial.x * radius * radial_scale,
+        center.y + radial.y * radius * radial_scale,
+        center.z + radial.z * radius * radial_scale,
     )
 }
 
@@ -2189,12 +2196,42 @@ mod tests {
 
     fn unit_circle() -> Circle {
         Circle {
-            center: Point3::new(2.0, -1.0, 3.0),
+            center: FinitePoint3::new(Point3::new(2.0, -1.0, 3.0)).expect("finite center"),
             axis: Vector3::new(0.0, 0.0, 1.0),
             xaxis: Vector3::new(1.0, 0.0, 0.0),
             yaxis: Vector3::new(0.0, 1.0, 0.0),
-            radius: 4.0,
+            radius: PositiveLength::new(4.0).expect("positive radius"),
         }
+    }
+
+    #[test]
+    fn source_circle_keeps_checked_center_and_radius() {
+        let values = [
+            1.0_f64, 2.0, 3.0, // plane origin
+            1.0, 0.0, 0.0, // x axis
+            0.0, 1.0, 0.0, // y axis
+            0.0, 0.0, 1.0, // z axis
+            0.0, 0.0, 1.0, -3.0, // plane equation
+            2.0,  // radius
+            3.0, 2.0, 3.0, // zero angle
+            1.0, 4.0, 3.0, // quarter turn
+            -1.0, 2.0, 3.0, // half turn
+        ];
+        let mut bytes = values
+            .into_iter()
+            .flat_map(f64::to_le_bytes)
+            .collect::<Vec<_>>();
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("circle reader");
+        let circle = super::read_circle(&mut reader, crate::test_support::millimeter_scale(2.0))
+            .expect("valid circle");
+        assert_eq!(circle.center.get(), Point3::new(2.0, 4.0, 6.0));
+        assert_eq!(circle.radius.get(), 4.0);
+
+        bytes[128..136].copy_from_slice(&0.0_f64.to_le_bytes());
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("circle reader");
+        let error = super::read_circle(&mut reader, MillimeterScale::IDENTITY)
+            .expect_err("zero circle radius");
+        assert!(error.to_string().contains("circle radius is invalid"));
     }
 
     #[test]
@@ -2461,10 +2498,10 @@ mod tests {
         let decoded = DecodedCurve::leaf(
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    circle.center,
+                    circle.center.get(),
                     circle.axis,
                     circle.xaxis,
-                    circle.radius,
+                    circle.radius.get(),
                 )
                 .unwrap(),
             )),
