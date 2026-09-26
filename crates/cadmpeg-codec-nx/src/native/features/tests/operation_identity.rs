@@ -107,10 +107,12 @@ fn feature_label_identity_retains_the_complete_header_ordinal() {
     }
     payload.resize(32, 0);
     payload.extend_from_slice(&section);
-    let container = crate::container::scan_bytes(prt_with_named_payloads(&[(
-        "/Root/UG_PART/UG_PART",
-        payload,
-    )]))
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(
+            ctx,
+            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
+        )
+    })
     .expect("feature-history fixture");
 
     let labels = feature_operation_labels(&container);
@@ -149,15 +151,19 @@ fn operation_header_identity_survives_offset_store_insertion() {
             b"beta".as_slice(),
         ],
     );
-    let first = crate::container::scan_bytes(prt_with_named_payloads(&[(
-        "/Root/UG_PART/UG_PART",
-        first_payload,
-    )]))
+    let first = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(
+            ctx,
+            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", first_payload)]),
+        )
+    })
     .expect("first synthetic container");
-    let second = crate::container::scan_bytes(prt_with_named_payloads(&[(
-        "/Root/UG_PART/UG_PART",
-        second_payload,
-    )]))
+    let second = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(
+            ctx,
+            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", second_payload)]),
+        )
+    })
     .expect("second synthetic container");
 
     let first_labels = feature_operation_labels(&first);
@@ -198,10 +204,12 @@ fn operation_body_write_retains_identity_group_and_image() {
         0x12, 0x80, 0xa9, 0x97, 0x75, 0x01, 0x02, 0x10, 0x86, 0x94, 0xff,
     ];
     let payload = composed_feature_history_payload(&[(&[0xff; 4], "EXTRUDE", body_writes)], &[]);
-    let container = crate::container::scan_bytes(prt_with_named_payloads(&[(
-        "/Root/UG_PART/UG_PART",
-        payload,
-    )]))
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(
+            ctx,
+            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
+        )
+    })
     .expect("synthetic body-write container");
     let writes = feature_operation_body_writes(&container);
     let [first, second] = writes.as_slice() else {
@@ -228,10 +236,12 @@ fn operation_body_write_resolves_one_unique_image_block() {
     let store_records = (0..65).map(|_| b"\0".as_slice()).collect::<Vec<_>>();
     let payload =
         composed_feature_history_payload(&[(&[0xff; 4], "EXTRUDE", body_write)], &store_records);
-    let container = crate::container::scan_bytes(prt_with_named_payloads(&[(
-        "/Root/UG_PART/UG_PART",
-        payload,
-    )]))
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(
+            ctx,
+            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
+        )
+    })
     .expect("synthetic body-image store");
 
     let writes = feature_operation_body_writes(&container);
@@ -252,10 +262,12 @@ fn body_image_segment_use_requires_one_plain_alias() {
     let store_records = (0..65).map(|_| b"\0".as_slice()).collect::<Vec<_>>();
     let payload =
         composed_feature_history_payload(&[(&[0xff; 4], "EXTRUDE", body_write)], &store_records);
-    let container = crate::container::scan_bytes(prt_with_named_payloads(&[(
-        "/Root/UG_PART/UG_PART",
-        payload,
-    )]))
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(
+            ctx,
+            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
+        )
+    })
     .expect("synthetic body-image store");
     let writes = feature_operation_body_writes(&container);
     let binding = |id: &str, stream_kind: crate::parasolid::StreamKind| SegmentBodyBinding {
@@ -353,10 +365,12 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
     let store_records = (0..65).map(|_| b"\0".as_slice()).collect::<Vec<_>>();
     let payload =
         composed_feature_history_payload(&[(&[0xff; 4], "EXTRUDE", body_write)], &store_records);
-    let container = crate::container::scan_bytes(prt_with_named_payloads(&[(
-        "/Root/UG_PART/UG_PART",
-        payload,
-    )]))
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(
+            ctx,
+            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
+        )
+    })
     .expect("synthetic body-image store");
     let writes = feature_operation_body_writes(&container);
     let binding =

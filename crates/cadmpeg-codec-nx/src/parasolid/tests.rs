@@ -361,7 +361,9 @@ fn extraction_rejects_zlib_members_with_invalid_integrity_trailers() {
     let (ctx, root) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&indexed, &arena, &policy)
             .expect("bounded test input");
-    let container = container::scan_bytes(indexed.clone()).expect("test SPLMSSTR container");
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, indexed.clone()))
+            .expect("test SPLMSSTR container");
     assert!(parasolid::extract_streams(&ctx, root, &container).is_err());
 }
 
@@ -373,7 +375,9 @@ fn extraction_refuses_inflated_stream_copy_when_retained_budget_is_exhausted() {
     policy.limits.max_retained_bytes = 1;
     let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&file, &arena, &policy)
         .expect("bounded test input");
-    let container = container::scan_bytes(file.clone()).expect("test SPLMSSTR container");
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.clone()))
+            .expect("test SPLMSSTR container");
 
     assert!(matches!(
         parasolid::extract_streams(&ctx, root, &container),
