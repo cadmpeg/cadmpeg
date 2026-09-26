@@ -10,7 +10,7 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::{
     features::{DesignParameter, ParameterId, ParameterValue},
-    scalar::{Angle, Length},
+    scalar::{Angle, FiniteReal, Length},
 };
 use serde::{Deserialize, Serialize};
 
@@ -83,8 +83,8 @@ pub(crate) struct PmDcParameterPayload {
     pub(crate) name_value: u32,
     pub(crate) unit: PmDcReference,
     pub(crate) formula: PmDcReference,
-    pub(crate) nominal_value: f64,
-    pub(crate) model_value: f64,
+    pub(crate) nominal_value: cadmpeg_ir::scalar::FiniteReal,
+    pub(crate) model_value: cadmpeg_ir::scalar::FiniteReal,
     pub(crate) tolerance: u16,
     pub(crate) terminal_value: i16,
 }
@@ -102,7 +102,7 @@ pub(crate) struct PmDcExpressionPayload {
 #[serde(tag = "form", rename_all = "snake_case")]
 pub(crate) enum PmDcExpressionKind {
     Value {
-        value: f64,
+        value: FiniteReal,
         value_type: u16,
         state: u32,
     },
@@ -158,9 +158,9 @@ pub(crate) enum PmDcUnitKind {
     Base {
         dimension: PmDcUnitDimension,
         symbol: String,
-        scale_to_internal: f64,
-        magnitude: f64,
-        factor: f64,
+        scale_to_internal: FiniteReal,
+        magnitude: FiniteReal,
+        factor: FiniteReal,
     },
 }
 
@@ -178,9 +178,9 @@ enum PmDcUnitKindWire {
     Base {
         dimension: PmDcUnitDimension,
         symbol: String,
-        scale_to_internal: f64,
-        magnitude: f64,
-        factor: f64,
+        scale_to_internal: FiniteReal,
+        magnitude: FiniteReal,
+        factor: FiniteReal,
     },
 }
 
@@ -477,14 +477,12 @@ pub(crate) fn project_parameters(
         };
         let value = match unit.dimension {
             PmDcUnitDimension::Length => {
-                Length::new(parameter.model_value * 10.0).map(ParameterValue::Length)
+                Length::new(parameter.model_value.get() * 10.0).map(ParameterValue::Length)
             }
-            PmDcUnitDimension::Angle => {
-                Angle::new(parameter.model_value).map(ParameterValue::Angle)
-            }
-            PmDcUnitDimension::Dimensionless => {
-                cadmpeg_ir::scalar::FiniteReal::new(parameter.model_value).map(ParameterValue::Real)
-            }
+            PmDcUnitDimension::Angle => Some(ParameterValue::Angle(Angle::from_assigned_real(
+                parameter.model_value,
+            ))),
+            PmDcUnitDimension::Dimensionless => Some(ParameterValue::Real(parameter.model_value)),
         };
         let Some(value) = value else {
             unresolved += 1;
@@ -631,7 +629,7 @@ fn decimal_len(mut value: u32) -> usize {
 struct ResolvedUnit<'a> {
     dimension: PmDcUnitDimension,
     symbol: &'a str,
-    scale_to_internal: f64,
+    scale_to_internal: FiniteReal,
 }
 
 fn resolve_unit<'a>(
@@ -662,15 +660,12 @@ fn resolve_unit<'a>(
         dimension,
         symbol,
         scale_to_internal,
-        magnitude,
-        factor,
+        magnitude: _,
+        factor: _,
     } = &base.kind
     else {
         return None;
     };
-    if !magnitude.is_finite() || !factor.is_finite() {
-        return None;
-    }
     Some(ResolvedUnit {
         dimension: *dimension,
         symbol,
@@ -728,7 +723,7 @@ fn render_expression<'a>(
                 let unit = resolve_unit(token, expression.unit.index, units).ok_or_else(|| {
                     CodecError::Malformed("Inventor expression unit changed during render".into())
                 })?;
-                let scalar = value / unit.scale_to_internal;
+                let scalar = value.get() / unit.scale_to_internal.get();
                 if scalar == 0.0 {
                     text.push('0');
                 } else {
@@ -827,13 +822,10 @@ impl ExpressionRenderPlan<'_, '_> {
                 let Some(unit) = resolve_unit(self.token, expression.unit.index, self.units) else {
                     return Ok(None);
                 };
-                if !value.is_finite()
-                    || !unit.scale_to_internal.is_finite()
-                    || unit.scale_to_internal == 0.0
-                {
+                if unit.scale_to_internal.get() == 0.0 {
                     return Ok(None);
                 }
-                let scalar = value / unit.scale_to_internal;
+                let scalar = value.get() / unit.scale_to_internal.get();
                 if !scalar.is_finite() {
                     return Ok(None);
                 }
@@ -1118,7 +1110,9 @@ fn parse_base_unit(
         kind: PmDcUnitKind::Base {
             dimension,
             symbol: symbol.into(),
-            scale_to_internal,
+            scale_to_internal: FiniteReal::new(scale_to_internal).ok_or_else(|| {
+                CodecError::Malformed("Inventor PmDc base-unit scale is not finite".into())
+            })?,
             magnitude,
             factor,
         },
@@ -1242,11 +1236,15 @@ mod tests {
     use cadmpeg_core::decode::{DecodeContext, View};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
-    use cadmpeg_ir::scalar::Length;
+    use cadmpeg_ir::scalar::{FiniteReal, Length};
     use std::collections::HashMap;
 
     const fn reference(index: u32, qualified: bool) -> PmDcReference {
         PmDcReference { index, qualified }
+    }
+
+    fn real(value: f64) -> FiniteReal {
+        FiniteReal::new(value).expect("finite test scalar")
     }
 
     #[test]
@@ -1568,9 +1566,9 @@ mod tests {
                 kind: PmDcUnitKind::Base {
                     dimension: PmDcUnitDimension::Length,
                     symbol: "mm".into(),
-                    scale_to_internal: 1.0e-308,
-                    magnitude: 1.0,
-                    factor: 1.0,
+                    scale_to_internal: real(1.0e-308),
+                    magnitude: real(1.0),
+                    factor: real(1.0),
                 },
             },
             String::new(),
@@ -1584,7 +1582,7 @@ mod tests {
                 header_id: 0,
                 unit: reference(1, false),
                 kind: PmDcExpressionKind::Value {
-                    value: 1.0e308,
+                    value: real(1.0e308),
                     value_type: 0,
                     state: 0,
                 },
@@ -1661,7 +1659,7 @@ mod tests {
                 .expect("fixture view");
         let parameter = parse_parameter(&ctx, source, 22).expect("generated parameter parses");
         assert_eq!(parameter.name, "length");
-        assert_eq!(parameter.model_value, 60.96);
+        assert_eq!(parameter.model_value.get(), 60.96);
         assert_eq!(parameter.formula, reference(4, false));
     }
 
@@ -1686,10 +1684,10 @@ mod tests {
         assert!(matches!(
             parsed.kind,
             PmDcExpressionKind::Value {
-                value: 25.4,
+                value,
                 state: 0,
                 ..
-            }
+            } if value.get() == 25.4
         ));
 
         for operation in [
@@ -1786,9 +1784,9 @@ mod tests {
                 kind: PmDcUnitKind::Base {
                     dimension: PmDcUnitDimension::Length,
                     symbol: "in".into(),
-                    scale_to_internal: 2.54,
-                    magnitude: 1.0,
-                    factor: 1.0,
+                    scale_to_internal: real(2.54),
+                    magnitude: real(1.0),
+                    factor: real(1.0),
                 },
             },
             String::new(),
@@ -1823,7 +1821,7 @@ mod tests {
                 header_id: 0,
                 unit: reference(2, false),
                 kind: PmDcExpressionKind::Value {
-                    value: 60.96,
+                    value: real(60.96),
                     value_type: 0,
                     state: 0,
                 },
@@ -1847,8 +1845,8 @@ mod tests {
                 name_value: 0,
                 unit: reference(2, false),
                 formula: reference(3, false),
-                nominal_value: 60.96,
-                model_value: 60.96,
+                nominal_value: real(60.96),
+                model_value: real(60.96),
                 tolerance: 0,
                 terminal_value: -1,
             },
@@ -1885,8 +1883,8 @@ mod tests {
                 name_value: 0,
                 unit: reference(2, false),
                 formula: reference(5, false),
-                nominal_value: 60.96,
-                model_value: 60.96,
+                nominal_value: real(60.96),
+                model_value: real(60.96),
                 tolerance: 0,
                 terminal_value: -1,
             },
@@ -1943,9 +1941,9 @@ mod tests {
                 kind: PmDcUnitKind::Base {
                     dimension: PmDcUnitDimension::Dimensionless,
                     symbol: String::new(),
-                    scale_to_internal: 1.0,
-                    magnitude: 1.0,
-                    factor: 1.0,
+                    scale_to_internal: real(1.0),
+                    magnitude: real(1.0),
+                    factor: real(1.0),
                 },
             },
             String::new(),
@@ -1980,7 +1978,7 @@ mod tests {
                 header_id: 0,
                 unit: reference(2, false),
                 kind: PmDcExpressionKind::Value {
-                    value: 1.0,
+                    value: real(1.0),
                     value_type: 0,
                     state: 0,
                 },
@@ -2004,8 +2002,8 @@ mod tests {
                 name_value: 0,
                 unit: reference(2, false),
                 formula: reference(3, false),
-                nominal_value: 1.0,
-                model_value: 1.0,
+                nominal_value: real(1.0),
+                model_value: real(1.0),
                 tolerance: 0,
                 terminal_value: -1,
             },
@@ -2282,8 +2280,8 @@ mod tests {
                 name_value: 0,
                 unit: reference(0, false),
                 formula: reference(0, false),
-                nominal_value: 0.0,
-                model_value: 0.0,
+                nominal_value: real(0.0),
+                model_value: real(0.0),
                 tolerance: 0,
                 terminal_value: 0,
             },
