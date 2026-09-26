@@ -564,13 +564,19 @@ fn mesh_edge_runs(analysis: &StandardMeshAnalysis) -> Vec<MeshEdgeRun> {
 /// their serialized slots for incidence closure.
 #[must_use]
 pub(crate) fn resolve_standard_edge_faces(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     serialized: &[[usize; 2]],
-) -> Option<Vec<[usize; 2]>> {
+) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
     let Some(runs) = standard_mesh_edge_runs(bytes) else {
-        return Some(serialized.to_vec());
+        charge_collection_items(
+            ctx,
+            serialized.len(),
+            "catia standard serialized edge faces",
+        )?;
+        return Ok(Some(serialized.to_vec()));
     };
-    resolve_edge_faces_from_runs(serialized, &runs)
+    resolve_edge_faces_from_runs(ctx, serialized, &runs)
 }
 
 fn repeated_edge_face_handle_candidates_from_sets(
@@ -1310,17 +1316,22 @@ pub(crate) fn resolve_standard_duplicate_edge_faces(
 }
 
 pub(super) fn resolve_edge_faces_from_runs(
+    ctx: &DecodeContext<'_>,
     serialized: &[[usize; 2]],
     runs: &[MeshEdgeRun],
-) -> Option<Vec<[usize; 2]>> {
+) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
     let mut occurrence_faces =
-        alloc_filled(serialized.len(), Vec::new(), "catia_edge_run_faces").ok()?;
+        ctx.alloc_filled(serialized.len(), Vec::new(), "catia_edge_run_faces")?;
     for run in runs {
-        let faces = occurrence_faces.get_mut(run.edge)?;
+        let Some(faces) = occurrence_faces.get_mut(run.edge) else {
+            return Ok(None);
+        };
         if !faces.contains(&run.face) {
+            charge_collection_items(ctx, 1, "catia edge run occurrence faces")?;
             faces.push(run.face);
         }
     }
+    charge_collection_items(ctx, serialized.len(), "catia resolved edge faces")?;
     let mut resolved = serialized.to_vec();
     for (faces, occurrences) in resolved.iter_mut().zip(occurrence_faces) {
         if faces[0] != faces[1] || occurrences.len() < 2 {
@@ -1333,11 +1344,14 @@ pub(super) fn resolve_edge_faces_from_runs(
             continue;
         }
         if !occurrences.contains(&faces[0]) {
-            return None;
+            return Ok(None);
         }
-        faces[1] = *occurrences.iter().find(|face| **face != faces[0])?;
+        let Some(face) = occurrences.iter().find(|face| **face != faces[0]) else {
+            return Ok(None);
+        };
+        faces[1] = *face;
     }
-    Some(resolved)
+    Ok(Some(resolved))
 }
 
 /// One uncovered run in a trim-mesh boundary cycle.

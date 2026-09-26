@@ -4189,7 +4189,8 @@ fn attach_standard_topology(
         .map(|support| support.faces)
         .collect::<Vec<_>>();
     let Some(mut edge_faces) =
-        missing_edge::resolve_standard_edge_faces(spine, &serialized_edge_faces)
+        missing_edge::resolve_standard_edge_faces(ctx, spine, &serialized_edge_faces)
+            .map_err(StandardTopologyError::Resource)?
     else {
         return Err(StandardTopologyFailure::EdgeFaceAssignment.into());
     };

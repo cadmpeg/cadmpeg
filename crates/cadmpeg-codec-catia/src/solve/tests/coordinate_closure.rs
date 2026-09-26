@@ -1252,6 +1252,7 @@ fn one_admitted_alternate_does_not_force_a_second_face() {
 
 #[test]
 fn exact_mesh_occurrences_complete_duplicate_face_slot() {
+    catia_test_context!(ctx);
     let run = |edge, face| MeshEdgeRun {
         edge,
         face,
@@ -1261,9 +1262,11 @@ fn exact_mesh_occurrences_complete_duplicate_face_slot() {
         reversed: false,
     };
     let faces = resolve_edge_faces_from_runs(
+        &ctx,
         &[[1, 1], [2, 2], [3, 4]],
         &[run(0, 1), run(0, 5), run(1, 2), run(2, 3), run(2, 4)],
     )
+    .expect("service resource budget")
     .expect("consistent exact face occurrences");
 
     assert_eq!(faces, vec![[1, 5], [2, 2], [3, 4]]);
@@ -1271,6 +1274,7 @@ fn exact_mesh_occurrences_complete_duplicate_face_slot() {
 
 #[test]
 fn one_mesh_occurrence_keeps_duplicate_face_slot_unresolved() {
+    catia_test_context!(ctx);
     let run = MeshEdgeRun {
         edge: 0,
         face: 1,
@@ -1280,7 +1284,8 @@ fn one_mesh_occurrence_keeps_duplicate_face_slot_unresolved() {
         reversed: false,
     };
 
-    let faces = resolve_edge_faces_from_runs(&[[1, 1]], &[run])
+    let faces = resolve_edge_faces_from_runs(&ctx, &[[1, 1]], &[run])
+        .expect("service resource budget")
         .expect("a single occurrence does not conflict with the serialized wildcard");
 
     assert_eq!(faces, vec![[1, 1]]);
@@ -1288,6 +1293,7 @@ fn one_mesh_occurrence_keeps_duplicate_face_slot_unresolved() {
 
 #[test]
 fn ambiguous_mesh_occurrences_defer_duplicate_face_slot() {
+    catia_test_context!(ctx);
     let run = |face| MeshEdgeRun {
         edge: 0,
         face,
@@ -1297,7 +1303,8 @@ fn ambiguous_mesh_occurrences_defer_duplicate_face_slot() {
         reversed: false,
     };
 
-    let faces = resolve_edge_faces_from_runs(&[[1, 1]], &[run(1), run(5), run(6)])
+    let faces = resolve_edge_faces_from_runs(&ctx, &[[1, 1]], &[run(1), run(5), run(6)])
+        .expect("service resource budget")
         .expect("ambiguous occurrences remain a deferred face domain");
 
     assert_eq!(faces, vec![[1, 1]]);

@@ -1,8 +1,9 @@
 use super::{
     refine_repeated_edge_face_candidates, repeated_edge_face_handle_candidates_from_sets,
-    repeated_face_endpoint_closures, unique_duplicate_face_assignment,
-    visualization_endpoint_pairs, FaceOptions, StandardMeshBoundaryContext,
-    INDEXED_VISUALIZATION_POINT_HEADER_LEN, INDEXED_VISUALIZATION_POINT_MARKER,
+    repeated_face_endpoint_closures, resolve_edge_faces_from_runs,
+    unique_duplicate_face_assignment, visualization_endpoint_pairs, FaceOptions, MeshEdgeRun,
+    StandardMeshBoundaryContext, INDEXED_VISUALIZATION_POINT_HEADER_LEN,
+    INDEXED_VISUALIZATION_POINT_MARKER,
 };
 use crate::families::standard::topology::{EdgeBoundaryLayout, EdgeRow};
 use std::collections::HashSet;
@@ -18,6 +19,37 @@ fn row(handles: &[u32]) -> EdgeRow {
 
 fn handles(values: &[u32]) -> HashSet<u32> {
     values.iter().copied().collect()
+}
+
+#[test]
+fn edge_run_face_collection_refuses_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let run = MeshEdgeRun {
+        edge: 0,
+        face: 1,
+        cycle: 0,
+        start: 0,
+        segment_count: 1,
+        reversed: false,
+    };
+    catia_test_context!(service_ctx);
+    assert_eq!(
+        resolve_edge_faces_from_runs(&service_ctx, &[[1, 1]], &[run]).expect("service budget"),
+        Some(vec![[1, 1]])
+    );
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let error = resolve_edge_faces_from_runs(&ctx, &[[1, 1]], &[run])
+        .expect_err("edge run face collection exceeds the limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_edge_run_faces"));
 }
 
 fn raw_visualization_table(mode: u8, triples: &[[f32; 3]]) -> Vec<u8> {
