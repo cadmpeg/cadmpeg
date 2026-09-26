@@ -71,6 +71,15 @@ impl<const N: usize> FiniteVector<N> {
     }
 }
 
+impl FiniteVector<4> {
+    /// Replace the fourth admitted coordinate with an admitted scalar.
+    #[must_use]
+    pub fn with_fourth(mut self, value: crate::scalar::FiniteReal) -> Self {
+        self.0[3] = value.get();
+        self
+    }
+}
+
 impl<const N: usize> PartialEq<[f64; N]> for FiniteVector<N> {
     fn eq(&self, other: &[f64; N]) -> bool {
         self.0 == *other

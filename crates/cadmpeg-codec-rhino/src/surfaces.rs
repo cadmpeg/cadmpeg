@@ -1299,7 +1299,7 @@ fn read_plane_surface_with_parameterization(
     };
     let geometry = TypedSurface::Plane {
         plane: cadmpeg_ir::geometry::analytic::PlaneSurface::new(
-            crate::wire::scaled_point(native_plane.origin, scale)
+            crate::wire::scaled_point(native_plane.origin.get(), scale)
                 .ok_or_else(|| error(reader.position(), "scaled plane origin is invalid"))?,
             frame,
         ),
@@ -1578,14 +1578,10 @@ fn increasing_interval(
 }
 
 fn validate_plane(value: Plane, offset: usize) -> Result<OrthonormalFrame3, GeometryError> {
-    let x = vector(value.xaxis);
-    let y = vector(value.yaxis);
-    let z = vector(value.zaxis);
-    if ![value.origin[0], value.origin[1], value.origin[2]]
-        .into_iter()
-        .chain(value.equation)
-        .all(f64::is_finite)
-        || (x.norm() - 1.0).abs() > EPS_SURFACE_DEGENERATE
+    let x = vector(value.xaxis.get());
+    let y = vector(value.yaxis.get());
+    let z = vector(value.zaxis.get());
+    if (x.norm() - 1.0).abs() > EPS_SURFACE_DEGENERATE
         || (y.norm() - 1.0).abs() > EPS_SURFACE_DEGENERATE
         || (z.norm() - 1.0).abs() > EPS_SURFACE_DEGENERATE
         || x.dot(y).abs() > EPS_SURFACE_DEGENERATE

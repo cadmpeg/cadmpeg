@@ -77,22 +77,59 @@ pub(crate) struct Vector3(pub(crate) FiniteVector<3>);
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Interval(pub(crate) FiniteVector<2>);
 
+/// A plane lane admitted from source or derived by dimension arithmetic.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum PlaneLane<const N: usize> {
+    Admitted(FiniteVector<N>),
+    /// Dimension arithmetic preserves its result, including overflow.
+    Derived([f64; N]),
+}
+
+impl<const N: usize> PlaneLane<N> {
+    pub(crate) fn get(self) -> [f64; N] {
+        match self {
+            Self::Admitted(value) => value.get(),
+            Self::Derived(value) => value,
+        }
+    }
+}
+
+impl PlaneLane<4> {
+    pub(crate) fn with_fourth(self, value: FiniteReal) -> Self {
+        match self {
+            Self::Admitted(values) => Self::Admitted(values.with_fourth(value)),
+            Self::Derived(mut values) => {
+                values[3] = value.get();
+                Self::Derived(values)
+            }
+        }
+    }
+}
+
+impl<const N: usize> std::ops::Deref for PlaneLane<N> {
+    type Target = [f64; N];
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Admitted(value) => value.as_raw(),
+            Self::Derived(value) => value,
+        }
+    }
+}
+
 /// A plane and its equation.
-///
-/// The readers admit finite values. The dimension decoder shifts a plane
-/// along its axes without an admission, so the fields hold raw coordinates.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Plane {
     /// Origin.
-    pub(crate) origin: [f64; 3],
+    pub(crate) origin: PlaneLane<3>,
     /// X axis.
-    pub(crate) xaxis: [f64; 3],
+    pub(crate) xaxis: FiniteVector<3>,
     /// Y axis.
-    pub(crate) yaxis: [f64; 3],
+    pub(crate) yaxis: FiniteVector<3>,
     /// Z axis.
-    pub(crate) zaxis: [f64; 3],
+    pub(crate) zaxis: FiniteVector<3>,
     /// Plane equation.
-    pub(crate) equation: [f64; 4],
+    pub(crate) equation: PlaneLane<4>,
 }
 
 /// A serialized axis-aligned bounding box.
@@ -769,11 +806,11 @@ pub(crate) fn plane(reader: &mut BoundedReader<'_>) -> Result<Plane, FramingErro
     let equation_offset = reader.position();
     let equation = [reader.f64()?, reader.f64()?, reader.f64()?, reader.f64()?];
     Ok(Plane {
-        origin: origin.0.get(),
-        xaxis: xaxis.0.get(),
-        yaxis: yaxis.0.get(),
-        zaxis: zaxis.0.get(),
-        equation: finite_array(equation_offset, equation, "plane equation")?.get(),
+        origin: PlaneLane::Admitted(origin.0),
+        xaxis: xaxis.0,
+        yaxis: yaxis.0,
+        zaxis: zaxis.0,
+        equation: PlaneLane::Admitted(finite_array(equation_offset, equation, "plane equation")?),
     })
 }
 

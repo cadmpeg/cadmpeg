@@ -267,13 +267,6 @@ fn legacy_clipping_depth(value: f64) -> (f64, bool) {
     }
 }
 
-fn scale3(value: &mut [f64; 3], scale: MillimeterScale, offset: usize) -> Result<(), FramingError> {
-    for coordinate in value {
-        *coordinate = scaled3_coordinate(*coordinate, scale, offset)?.get();
-    }
-    Ok(())
-}
-
 fn scaled3(
     value: [f64; 3],
     scale: MillimeterScale,
@@ -300,10 +293,11 @@ fn scaled_plane(
     scale: MillimeterScale,
     offset: usize,
 ) -> Result<Plane, FramingError> {
-    scale3(&mut value.origin, scale, offset)?;
-    value.equation[3] = scaled_coordinate(value.equation[3], scale)
-        .ok_or_else(|| FramingError::structural(offset, "scaled plane equation is invalid"))?
-        .get();
+    value.origin =
+        crate::settings::PlaneLane::Admitted(scaled3(value.origin.get(), scale, offset)?.into());
+    let constant = scaled_coordinate(value.equation[3], scale)
+        .ok_or_else(|| FramingError::structural(offset, "scaled plane equation is invalid"))?;
+    value.equation = value.equation.with_fourth(constant);
     Ok(value)
 }
 
@@ -373,9 +367,9 @@ fn parse_trace_image(
             legacy_file_path,
             width_mm,
             height_mm,
-            plane_origin_mm: plane.origin,
-            plane_x_axis: plane.xaxis,
-            plane_y_axis: plane.yaxis,
+            plane_origin_mm: plane.origin.get(),
+            plane_x_axis: plane.xaxis.get(),
+            plane_y_axis: plane.yaxis.get(),
             grayscale,
             hidden,
             filtered,
@@ -512,11 +506,11 @@ fn parse_cplane(
     let depth_buffer = packed & 0x0f < 1 || reader.bool()?;
     reader.skip_remaining()?;
     Ok(ConstructionPlane {
-        plane_origin_mm: value.origin,
-        plane_x_axis: value.xaxis,
-        plane_y_axis: value.yaxis,
-        plane_z_axis: value.zaxis,
-        plane_equation_mm: value.equation,
+        plane_origin_mm: value.origin.get(),
+        plane_x_axis: value.xaxis.get(),
+        plane_y_axis: value.yaxis.get(),
+        plane_z_axis: value.zaxis.get(),
+        plane_equation_mm: value.equation.get(),
         grid_spacing_mm,
         snap_spacing_mm,
         grid_line_count,

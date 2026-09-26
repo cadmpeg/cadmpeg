@@ -5406,10 +5406,10 @@ fn hatch_plane_transform(
     scale: MillimeterScale,
     record: &str,
 ) -> Result<Transform, cadmpeg_core::CodecError> {
-    let origin = plane.origin;
-    let x = plane.xaxis;
-    let y = plane.yaxis;
-    let z = plane.zaxis;
+    let origin = plane.origin.get();
+    let x = plane.xaxis.get();
+    let y = plane.yaxis.get();
+    let z = plane.zaxis.get();
     let scale = scale.value();
     let rows = [
         [x[0] * scale, y[0] * scale, z[0] * scale, origin[0] * scale],
