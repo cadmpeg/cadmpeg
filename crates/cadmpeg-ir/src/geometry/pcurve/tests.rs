@@ -368,6 +368,64 @@ fn isotropic_conics_scale_lengths_and_carry_their_admitted_axes() {
 }
 
 #[test]
+fn finite_pcurve_parts_match_raw_analytic_admission() {
+    use crate::geometry::pcurve::{CirclePcurve, EllipsePcurve, HyperbolaPcurve, ParabolaPcurve};
+    use crate::scalar::PositiveReal;
+    use crate::units::FinitePoint2;
+
+    let center = Point2::new(1.0, -2.0);
+    let x_axis = Point2::new(1.0, 0.0);
+    let y_axis = Point2::new(0.0, 1.0);
+    let finite = |point| FinitePoint2::new(point).unwrap();
+    let positive = |value| PositiveReal::new(value).unwrap();
+    assert_eq!(
+        CirclePcurve::from_parts(
+            finite(center),
+            finite(x_axis),
+            finite(y_axis),
+            positive(3.0)
+        ),
+        CirclePcurve::try_new(center, x_axis, y_axis, 3.0).ok(),
+    );
+    assert_eq!(
+        EllipsePcurve::from_parts(
+            finite(center),
+            finite(x_axis),
+            finite(y_axis),
+            positive(3.0),
+            positive(2.0)
+        ),
+        EllipsePcurve::try_new(center, x_axis, y_axis, 3.0, 2.0).ok(),
+    );
+    assert_eq!(
+        ParabolaPcurve::from_parts(
+            finite(center),
+            finite(x_axis),
+            finite(y_axis),
+            positive(2.0)
+        ),
+        ParabolaPcurve::try_new(center, x_axis, y_axis, 2.0).ok(),
+    );
+    assert_eq!(
+        HyperbolaPcurve::from_parts(
+            finite(center),
+            finite(x_axis),
+            finite(y_axis),
+            positive(3.0),
+            positive(2.0)
+        ),
+        HyperbolaPcurve::try_new(center, x_axis, y_axis, 3.0, 2.0).ok(),
+    );
+    assert!(CirclePcurve::from_parts(
+        finite(center),
+        FinitePoint2::ZERO,
+        finite(y_axis),
+        positive(3.0)
+    )
+    .is_none());
+}
+
+#[test]
 fn a_line_pcurve_from_admitted_parts_matches_its_raw_admission() {
     use crate::units::{FinitePoint2, NonzeroPoint2};
 

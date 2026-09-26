@@ -1852,36 +1852,39 @@ const MAX_GEOMETRY_NESTING_DEPTH: usize = 64;
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum TextCurve2d {
     /// Infinite line.
-    Line { origin: Point2, direction: Point2 },
+    Line {
+        origin: FinitePoint2,
+        direction: FinitePoint2,
+    },
     /// Full circle with its oriented parameter frame.
     Circle {
-        center: Point2,
-        x_axis: Point2,
-        y_axis: Point2,
-        radius: f64,
+        center: FinitePoint2,
+        x_axis: FinitePoint2,
+        y_axis: FinitePoint2,
+        radius: FiniteReal,
     },
     /// Full ellipse.
     Ellipse {
-        center: Point2,
-        x_axis: Point2,
-        y_axis: Point2,
-        major_radius: f64,
-        minor_radius: f64,
+        center: FinitePoint2,
+        x_axis: FinitePoint2,
+        y_axis: FinitePoint2,
+        major_radius: FiniteReal,
+        minor_radius: FiniteReal,
     },
     /// Parabola.
     Parabola {
-        vertex: Point2,
-        x_axis: Point2,
-        y_axis: Point2,
-        focal_distance: f64,
+        vertex: FinitePoint2,
+        x_axis: FinitePoint2,
+        y_axis: FinitePoint2,
+        focal_distance: FiniteReal,
     },
     /// Hyperbola.
     Hyperbola {
-        center: Point2,
-        x_axis: Point2,
-        y_axis: Point2,
-        major_radius: f64,
-        minor_radius: f64,
+        center: FinitePoint2,
+        x_axis: FinitePoint2,
+        y_axis: FinitePoint2,
+        major_radius: FiniteReal,
+        minor_radius: FiniteReal,
     },
     /// Rational or non-rational B-spline.
     Nurbs(NurbsCurve2d),
@@ -3720,34 +3723,34 @@ fn parse_binary_curve2d(
     };
     Ok(match cursor.u8("binary parameter-curve kind")? {
         1 => TextCurve2d::Line {
-            origin: point(cursor, "binary line origin")?,
-            direction: point(cursor, "binary line direction")?,
+            origin: cursor.finite_point2("binary line origin")?,
+            direction: cursor.finite_point2("binary line direction")?,
         },
         2 => TextCurve2d::Circle {
-            center: point(cursor, "binary circle center")?,
-            x_axis: point(cursor, "binary circle x axis")?,
-            y_axis: point(cursor, "binary circle y axis")?,
-            radius: cursor.f64("binary circle radius")?,
+            center: cursor.finite_point2("binary circle center")?,
+            x_axis: cursor.finite_point2("binary circle x axis")?,
+            y_axis: cursor.finite_point2("binary circle y axis")?,
+            radius: cursor.finite_f64("binary circle radius")?,
         },
         3 => TextCurve2d::Ellipse {
-            center: point(cursor, "binary ellipse center")?,
-            x_axis: point(cursor, "binary ellipse x axis")?,
-            y_axis: point(cursor, "binary ellipse y axis")?,
-            major_radius: cursor.f64("binary ellipse major radius")?,
-            minor_radius: cursor.f64("binary ellipse minor radius")?,
+            center: cursor.finite_point2("binary ellipse center")?,
+            x_axis: cursor.finite_point2("binary ellipse x axis")?,
+            y_axis: cursor.finite_point2("binary ellipse y axis")?,
+            major_radius: cursor.finite_f64("binary ellipse major radius")?,
+            minor_radius: cursor.finite_f64("binary ellipse minor radius")?,
         },
         4 => TextCurve2d::Parabola {
-            vertex: point(cursor, "binary parabola vertex")?,
-            x_axis: point(cursor, "binary parabola x axis")?,
-            y_axis: point(cursor, "binary parabola y axis")?,
-            focal_distance: cursor.f64("binary parabola focal distance")?,
+            vertex: cursor.finite_point2("binary parabola vertex")?,
+            x_axis: cursor.finite_point2("binary parabola x axis")?,
+            y_axis: cursor.finite_point2("binary parabola y axis")?,
+            focal_distance: cursor.finite_f64("binary parabola focal distance")?,
         },
         5 => TextCurve2d::Hyperbola {
-            center: point(cursor, "binary hyperbola center")?,
-            x_axis: point(cursor, "binary hyperbola x axis")?,
-            y_axis: point(cursor, "binary hyperbola y axis")?,
-            major_radius: cursor.f64("binary hyperbola major radius")?,
-            minor_radius: cursor.f64("binary hyperbola minor radius")?,
+            center: cursor.finite_point2("binary hyperbola center")?,
+            x_axis: cursor.finite_point2("binary hyperbola x axis")?,
+            y_axis: cursor.finite_point2("binary hyperbola y axis")?,
+            major_radius: cursor.finite_f64("binary hyperbola major radius")?,
+            minor_radius: cursor.finite_f64("binary hyperbola minor radius")?,
         },
         6 => {
             let rational = cursor.bool("binary Bezier rational flag")?;
@@ -4140,34 +4143,34 @@ fn parse_curve2d(
     let kind = cursor.integer("2D curve type")?;
     Ok(match kind {
         1 => TextCurve2d::Line {
-            origin: cursor.point2("2D line origin")?,
-            direction: cursor.point2("2D line direction")?,
+            origin: cursor.finite_point2("2D line origin")?,
+            direction: cursor.finite_point2("2D line direction")?,
         },
         2 => TextCurve2d::Circle {
-            center: cursor.point2("2D circle center")?,
-            x_axis: cursor.point2("2D circle x axis")?,
-            y_axis: cursor.point2("2D circle y axis")?,
-            radius: cursor.real("2D circle radius")?,
+            center: cursor.finite_point2("2D circle center")?,
+            x_axis: cursor.finite_point2("2D circle x axis")?,
+            y_axis: cursor.finite_point2("2D circle y axis")?,
+            radius: cursor.finite_real("2D circle radius")?,
         },
         3 => TextCurve2d::Ellipse {
-            center: cursor.point2("2D ellipse center")?,
-            x_axis: cursor.point2("2D ellipse x axis")?,
-            y_axis: cursor.point2("2D ellipse y axis")?,
-            major_radius: cursor.real("2D ellipse major radius")?,
-            minor_radius: cursor.real("2D ellipse minor radius")?,
+            center: cursor.finite_point2("2D ellipse center")?,
+            x_axis: cursor.finite_point2("2D ellipse x axis")?,
+            y_axis: cursor.finite_point2("2D ellipse y axis")?,
+            major_radius: cursor.finite_real("2D ellipse major radius")?,
+            minor_radius: cursor.finite_real("2D ellipse minor radius")?,
         },
         4 => TextCurve2d::Parabola {
-            vertex: cursor.point2("2D parabola vertex")?,
-            x_axis: cursor.point2("2D parabola x axis")?,
-            y_axis: cursor.point2("2D parabola y axis")?,
-            focal_distance: cursor.real("2D parabola focal distance")?,
+            vertex: cursor.finite_point2("2D parabola vertex")?,
+            x_axis: cursor.finite_point2("2D parabola x axis")?,
+            y_axis: cursor.finite_point2("2D parabola y axis")?,
+            focal_distance: cursor.finite_real("2D parabola focal distance")?,
         },
         5 => TextCurve2d::Hyperbola {
-            center: cursor.point2("2D hyperbola center")?,
-            x_axis: cursor.point2("2D hyperbola x axis")?,
-            y_axis: cursor.point2("2D hyperbola y axis")?,
-            major_radius: cursor.real("2D hyperbola major radius")?,
-            minor_radius: cursor.real("2D hyperbola minor radius")?,
+            center: cursor.finite_point2("2D hyperbola center")?,
+            x_axis: cursor.finite_point2("2D hyperbola x axis")?,
+            y_axis: cursor.finite_point2("2D hyperbola y axis")?,
+            major_radius: cursor.finite_real("2D hyperbola major radius")?,
+            minor_radius: cursor.finite_real("2D hyperbola minor radius")?,
         },
         6 => TextCurve2d::Nurbs(parse_bezier_curve2d(cursor)?),
         7 => TextCurve2d::Nurbs(parse_nurbs_curve2d(cursor)?),
@@ -7195,10 +7198,19 @@ pub(crate) mod tests {
             basis: super::NestedCurve2d::try_new(crate::brep::TextCurve2d::Trimmed {
                 parameter_range: [0.0, std::f64::consts::PI],
                 basis: super::NestedCurve2d::try_new(crate::brep::TextCurve2d::Circle {
-                    center: cadmpeg_ir::math::Point2::new(1.0, 2.0),
-                    x_axis: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-                    y_axis: cadmpeg_ir::math::Point2::new(0.0, 1.0),
-                    radius: 3.0,
+                    center: cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
+                        1.0, 2.0,
+                    ))
+                    .unwrap(),
+                    x_axis: cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
+                        1.0, 0.0,
+                    ))
+                    .unwrap(),
+                    y_axis: cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
+                        0.0, 1.0,
+                    ))
+                    .unwrap(),
+                    radius: FiniteReal::new(3.0).unwrap(),
                 })
                 .expect("one inline basis is admitted"),
             })
@@ -7385,6 +7397,27 @@ pub(crate) mod tests {
                 let _: FinitePoint3 = origin;
                 let _: FiniteVector3 = direction;
             }
+        }
+    }
+
+    #[test]
+    fn native_parameter_curve_fields_remain_checked_through_transfer() {
+        let center = serde_json::json!({"u": 1.0, "v": 2.0});
+        let x_axis = serde_json::json!({"u": 1.0, "v": 0.0});
+        let y_axis = serde_json::json!({"u": 0.0, "v": 1.0});
+        let wires = [
+            serde_json::json!({"kind": "line", "origin": center, "direction": x_axis}),
+            serde_json::json!({"kind": "circle", "center": center, "x_axis": x_axis, "y_axis": y_axis, "radius": 3.0}),
+            serde_json::json!({"kind": "ellipse", "center": center, "x_axis": x_axis, "y_axis": y_axis, "major_radius": 3.0, "minor_radius": 2.0}),
+            serde_json::json!({"kind": "parabola", "vertex": center, "x_axis": x_axis, "y_axis": y_axis, "focal_distance": 2.0}),
+            serde_json::json!({"kind": "hyperbola", "center": center, "x_axis": x_axis, "y_axis": y_axis, "major_radius": 3.0, "minor_radius": 2.0}),
+        ];
+        for wire in wires {
+            let curve: TextCurve2d = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(&curve).unwrap(), wire);
+            assert!(crate::topology_transfer::pcurve_geometry(&curve)
+                .unwrap()
+                .is_some());
         }
     }
 

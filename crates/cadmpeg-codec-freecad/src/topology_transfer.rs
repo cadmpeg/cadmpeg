@@ -23,11 +23,13 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::transform::{Transform, Transform2};
+use cadmpeg_ir::units::NonzeroPoint2;
 use cadmpeg_ir::units::UnitVector3;
 use cadmpeg_ir::SourceObjectAssociation;
 
@@ -1720,64 +1722,72 @@ pub(crate) fn pcurve_geometry(
     curve: &TextCurve2d,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_ir::geometry::nurbs::NurbsError> {
     Ok(match curve {
-        TextCurve2d::Line { origin, direction } => {
-            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(*origin, *direction)
-                .ok()
-                .map(PcurveGeometry::Line)
-        }
+        TextCurve2d::Line { origin, direction } => NonzeroPoint2::new(direction.get())
+            .map(|direction| cadmpeg_ir::geometry::pcurve::LinePcurve::new(*origin, direction))
+            .map(PcurveGeometry::Line),
         TextCurve2d::Circle {
             center,
             x_axis,
             y_axis,
             radius,
-        } => {
-            cadmpeg_ir::geometry::pcurve::CirclePcurve::try_new(*center, *x_axis, *y_axis, *radius)
-                .ok()
-                .map(PcurveGeometry::Circle)
-        }
+        } => PositiveReal::from_finite(*radius)
+            .and_then(|radius| {
+                cadmpeg_ir::geometry::pcurve::CirclePcurve::from_parts(
+                    *center, *x_axis, *y_axis, radius,
+                )
+            })
+            .map(PcurveGeometry::Circle),
         TextCurve2d::Ellipse {
             center,
             x_axis,
             y_axis,
             major_radius,
             minor_radius,
-        } => cadmpeg_ir::geometry::pcurve::EllipsePcurve::try_new(
-            *center,
-            *x_axis,
-            *y_axis,
-            *major_radius,
-            *minor_radius,
-        )
-        .ok()
-        .map(PcurveGeometry::Ellipse),
+        } => PositiveReal::from_finite(*major_radius)
+            .zip(PositiveReal::from_finite(*minor_radius))
+            .and_then(|(major_radius, minor_radius)| {
+                cadmpeg_ir::geometry::pcurve::EllipsePcurve::from_parts(
+                    *center,
+                    *x_axis,
+                    *y_axis,
+                    major_radius,
+                    minor_radius,
+                )
+            })
+            .map(PcurveGeometry::Ellipse),
         TextCurve2d::Parabola {
             vertex,
             x_axis,
             y_axis,
             focal_distance,
-        } => cadmpeg_ir::geometry::pcurve::ParabolaPcurve::try_new(
-            *vertex,
-            *x_axis,
-            *y_axis,
-            *focal_distance,
-        )
-        .ok()
-        .map(PcurveGeometry::Parabola),
+        } => PositiveReal::from_finite(*focal_distance)
+            .and_then(|focal_distance| {
+                cadmpeg_ir::geometry::pcurve::ParabolaPcurve::from_parts(
+                    *vertex,
+                    *x_axis,
+                    *y_axis,
+                    focal_distance,
+                )
+            })
+            .map(PcurveGeometry::Parabola),
         TextCurve2d::Hyperbola {
             center,
             x_axis,
             y_axis,
             major_radius,
             minor_radius,
-        } => cadmpeg_ir::geometry::pcurve::HyperbolaPcurve::try_new(
-            *center,
-            *x_axis,
-            *y_axis,
-            *major_radius,
-            *minor_radius,
-        )
-        .ok()
-        .map(PcurveGeometry::Hyperbola),
+        } => PositiveReal::from_finite(*major_radius)
+            .zip(PositiveReal::from_finite(*minor_radius))
+            .and_then(|(major_radius, minor_radius)| {
+                cadmpeg_ir::geometry::pcurve::HyperbolaPcurve::from_parts(
+                    *center,
+                    *x_axis,
+                    *y_axis,
+                    major_radius,
+                    minor_radius,
+                )
+            })
+            .map(PcurveGeometry::Hyperbola),
         TextCurve2d::Nurbs(nurbs) => Some(PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::from_lanes(
                 nurbs.degree,
