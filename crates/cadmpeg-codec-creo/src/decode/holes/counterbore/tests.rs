@@ -46,8 +46,8 @@ fn boundary_scan() -> crate::container::ContainerScan<'static> {
         .push(crate::surface::OutlinePlane {
             surface_id: 1,
             origin: [0.0, 0.0, 0.0],
-            normal: [0.0, 0.0, 1.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 1,
         });
     scan
