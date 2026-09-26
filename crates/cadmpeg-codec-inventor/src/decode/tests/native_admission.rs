@@ -21,7 +21,8 @@ use crate::decode::{
     project_ufrx_state, property_set_name, structural_issue,
 };
 
-use crate::assembly::{AssemblyInventory, AssemblyOccurrence};
+use crate::assembly::{AssemblyInventory, AssemblyOccurrence, AssemblyPlacement};
+use crate::compact_matrix::CompactMatrix;
 use crate::external_reference::{
     InventorEmbeddedReference, InventorExternalReference, UfrxDocument, UfrxModelState,
     UfrxModelStateParameter, UfrxOccurrence, UfrxRepresentationState, UfrxState,
@@ -30,12 +31,16 @@ use crate::kernel::ActiveCarrierState;
 use crate::loss::InventorLossCode;
 use crate::native::ufrx::UfrxRecord;
 use crate::native::{AssemblyPlacementRecordWire, StructuralIssueRecord};
-use crate::presentation::{PmAppDefaultStyle, PresentationInventory};
+use crate::pmdc::{PmDcPairedReferenceList, PmDcReference};
+use crate::presentation::{
+    PmAppDefaultStyle, PmAppRenderingStyle, PmGraphicsFace, PmGraphicsPrimaryColorStyle,
+    PmGraphicsStyleCollection, PresentationInventory, RenderingStyleExtension,
+};
 use crate::property_set::{Property, PropertySection, PropertyValue};
 use crate::protein::{ProteinInstanceRecords, ProteinState};
 use crate::record_identity::Located;
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
-use crate::rse::{DocumentKind, RecordFrameState, SegmentBulkState, SegmentKind};
+use crate::rse::{DocumentKind, RecordFrameState, SegmentBulkState, SegmentKind, SegmentMetaState};
 use crate::test_support::test_fixtures::{fixture_with_ufrx, primary_envelope_fixture};
 use crate::test_support::test_fixtures::{push_u16, push_u32, push_utf16};
 use crate::InventorCodec;
@@ -106,6 +111,90 @@ fn rse_segment_native_projection_refuses_each_parsed_copy_before_creation() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
             .expect("fixture context");
     let container = InventorContainer::open(&setup_ctx, root).expect("fixture container");
+    let operations = rse_retained_refusal_operations(&arena, &container);
+    for operation in [
+        "retain Inventor segment pair id",
+        "retain Inventor segment pair token",
+        "retain Inventor segment metadata id",
+        "retain Inventor segment metadata token",
+        "retain Inventor segment kind",
+        "retain Inventor segment display name",
+        "retain Inventor segment GUID",
+        "retain Inventor segment creation text",
+        "retain Inventor segment modification text",
+        "retain Inventor segment body digest",
+        "retain Inventor segment terminal GUID",
+        "retain Inventor metadata section id",
+        "retain Inventor metadata section token",
+        "retain Inventor metadata section digest",
+        "retain Inventor metadata type id",
+        "retain Inventor metadata type token",
+        "retain Inventor metadata type GUID",
+        "retain Inventor RSe record id",
+        "retain Inventor RSe record token",
+        "retain Inventor RSe record type GUID",
+        "retain Inventor RSe payload digest",
+        "retain Inventor RSe trailer digest",
+        "retain Inventor RSe stream trailer digest",
+        "retain Inventor segment bulk id",
+        "retain Inventor segment bulk token",
+        "retain Inventor segment bulk prefix",
+        "retain Inventor compressed bulk digest",
+        "retain Inventor expanded bulk digest",
+    ] {
+        assert!(
+            operations.contains(&operation),
+            "no refusal for {operation}"
+        );
+    }
+}
+
+#[test]
+fn rse_segment_native_projection_refuses_malformed_and_unpaired_copies() {
+    let bytes = primary_envelope_fixture();
+    let arena = DecodeArena::new();
+    let (setup_ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("fixture context");
+    let mut container = InventorContainer::open(&setup_ctx, root).expect("fixture container");
+    let token = container.rse.segments[0].pair.token.clone();
+    container.rse.segments[0]
+        .identity_issues
+        .push("identity issue".into());
+    container.rse.segments[0].meta = SegmentMetaState::Malformed {
+        declared: None,
+        detail: "metadata issue".into(),
+    };
+    container.rse.segments[0].bulk = SegmentBulkState::Malformed("bulk issue".into());
+    container.rse.unpaired_metadata.push(token.clone());
+    container.rse.unpaired_bulk.push(token);
+    let operations = rse_retained_refusal_operations(&arena, &container);
+    for operation in [
+        "retain Inventor segment identity issue id",
+        "retain Inventor segment identity issue scope",
+        "retain Inventor segment identity issue detail",
+        "retain Inventor metadata issue id",
+        "retain Inventor metadata issue token",
+        "retain Inventor metadata issue detail",
+        "retain Inventor bulk issue id",
+        "retain Inventor bulk issue token",
+        "retain Inventor bulk issue detail",
+        "retain Inventor unpaired metadata id",
+        "retain Inventor unpaired metadata token",
+        "retain Inventor unpaired bulk id",
+        "retain Inventor unpaired bulk token",
+    ] {
+        assert!(
+            operations.contains(&operation),
+            "no refusal for {operation}"
+        );
+    }
+}
+
+fn rse_retained_refusal_operations<'a>(
+    arena: &DecodeArena,
+    container: &InventorContainer<'a>,
+) -> Vec<&'static str> {
     let mut cap = 0;
     let mut operations = Vec::new();
     let mut admitted = false;
@@ -129,21 +218,7 @@ fn rse_segment_native_projection_refuses_each_parsed_copy_before_creation() {
         }
     }
     assert!(admitted, "RSe projection did not reach service success");
-    for operation in [
-        "retain Inventor segment pair id",
-        "retain Inventor segment metadata id",
-        "retain Inventor segment display name",
-        "retain Inventor segment GUID",
-        "retain Inventor segment body digest",
-        "retain Inventor segment bulk id",
-        "retain Inventor compressed bulk digest",
-        "retain Inventor expanded bulk digest",
-    ] {
-        assert!(
-            operations.contains(&operation),
-            "no refusal for {operation}"
-        );
-    }
+    operations
 }
 
 #[test]
@@ -241,6 +316,55 @@ fn assembly_occurrence_native_record_refuses_before_id_creation() {
 }
 
 #[test]
+fn assembly_placement_native_record_refuses_id_and_digest_before_creation() {
+    let suffix = [1_u8];
+    let inventory = AssemblyInventory {
+        occurrences: Vec::new(),
+        placements: vec![AssemblyPlacement {
+            segment_token: "segment".into(),
+            record_ordinal: 1,
+            header_id: 0,
+            owner_reference: 0,
+            attribute_reference: 0,
+            state: 0,
+            transform_prefix: false,
+            transform: CompactMatrix::try_new(0, 0, |_| Ok(0.0)).expect("finite matrix"),
+            branch: 0,
+            graphics_state: 0,
+            occurrence_id: 0,
+            graphics_index: 0,
+            object_reference: 0,
+            suffix: View::over_retained(&suffix),
+        }],
+        issues: Vec::new(),
+    };
+    let arena = DecodeArena::new();
+    let id_len = "inventor:assembly:placement#segment-1".len();
+    let token_len = "segment".len();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(id_len - 1).expect("id length fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    assert!(matches!(
+        admit_assembly_native_projection(&ctx, &inventory),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor assembly placement id"
+    ));
+    policy.limits.max_retained_bytes =
+        u64::try_from(id_len + token_len + 63).expect("digest budget fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    assert!(matches!(
+        admit_assembly_native_projection(&ctx, &inventory),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor assembly placement suffix digest"
+    ));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    admit_assembly_native_projection(&ctx, &inventory).expect("admitted placement");
+}
+
+#[test]
 fn presentation_default_native_record_refuses_before_id_creation() {
     let bytes = [];
     let token = cadmpeg_ir::ids::IdentityKey::encode_segment("segment");
@@ -283,6 +407,151 @@ fn presentation_default_native_record_refuses_before_id_creation() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
     admit_presentation_native_projection(&ctx, &inventory).expect("admitted default style");
+}
+
+#[test]
+fn presentation_other_native_records_refuse_before_ids_text_and_reference_copies() {
+    let suffix = [1_u8];
+    let token = cadmpeg_ir::ids::IdentityKey::encode_segment("segment");
+    let reference = PmDcReference {
+        index: 1,
+        qualified: false,
+    };
+    let inventory = PresentationInventory {
+        default_styles: Vec::new(),
+        rendering_styles: vec![Located::new(
+            PmAppRenderingStyle {
+                segment_version_major: 17,
+                header_value: 0,
+                header_id: 0,
+                state: 0,
+                flags: 0,
+                values: [0; 2],
+                default_state: 0,
+                value: 0,
+                name_reference: 0,
+                name: "name".into(),
+                comment: String::new(),
+                long_name: "long".into(),
+                extension: Some(RenderingStyleExtension {
+                    style_state: 0,
+                    style_label: "label".into(),
+                    asset_guid: "asset".into(),
+                    material_id: "material".into(),
+                    asset_library_id: "library".into(),
+                    style_values: [0; 2],
+                    guid: "guid".into(),
+                }),
+                suffix: View::over_retained(&suffix),
+            },
+            "type".into(),
+            &token,
+            1,
+        )],
+        graphics_faces: vec![Located::new(
+            PmGraphicsFace {
+                segment_version_major: 0,
+                header_value: 0,
+                header_id: 0,
+                flags: 0,
+                styles: reference,
+                surface: reference,
+                parent: reference,
+                state: 0,
+                edge_references: PmDcPairedReferenceList::new(Some([0; 2]), vec![reference])
+                    .expect("paired references"),
+                visibility_state: 0,
+                bounds: [cadmpeg_ir::scalar::FiniteReal::ZERO; 6],
+                key: 0,
+                values: [0; 2],
+            },
+            "type".into(),
+            &token,
+            1,
+        )],
+        graphics_style_collections: vec![Located::new(
+            PmGraphicsStyleCollection {
+                segment_version_major: 0,
+                style_references: PmDcPairedReferenceList::new(Some([0; 2]), vec![reference])
+                    .expect("paired references"),
+            },
+            "type".into(),
+            &token,
+            1,
+        )],
+        graphics_primary_color_styles: vec![Located::new(
+            PmGraphicsPrimaryColorStyle {
+                segment_version_major: 0,
+                header_value: 0,
+                controls: [0; 7],
+                color_header: [0; 2],
+                colors: [[0.0; 4]; 4],
+                color_tail: [0; 2],
+                state: 0,
+                values: [0; 2],
+                terminal_state: 0,
+            },
+            "type".into(),
+            &token,
+            1,
+        )],
+        issues: Vec::new(),
+    };
+    let arena = DecodeArena::new();
+    let mut cap = 0;
+    let mut operations = Vec::new();
+    let mut admitted = false;
+    for _ in 0..128 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        match admit_presentation_native_projection(&ctx, &inventory) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                assert!(limit.used + limit.additional > cap);
+                operations.push(limit.operation);
+                cap = limit.used + limit.additional;
+            }
+            Ok(()) => {
+                admitted = true;
+                break;
+            }
+            Err(error) => panic!("unexpected projection error: {error}"),
+        }
+    }
+    assert!(admitted, "presentation projection did not reach success");
+    for operation in [
+        "retain Inventor rendering style id",
+        "retain Inventor rendering style text",
+        "retain Inventor rendering extension text",
+        "retain Inventor rendering style suffix digest",
+        "retain Inventor graphics face id",
+        "retain Inventor graphics style collection id",
+        "retain Inventor primary color style id",
+    ] {
+        assert!(
+            operations.contains(&operation),
+            "no refusal for {operation}"
+        );
+    }
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        admit_presentation_native_projection(&ctx, &inventory),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "copy Inventor graphics face edge references"
+    ));
+    let mut inventory = inventory;
+    inventory.graphics_faces.clear();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        admit_presentation_native_projection(&ctx, &inventory),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "copy Inventor graphics style references"
+    ));
 }
 
 #[test]
