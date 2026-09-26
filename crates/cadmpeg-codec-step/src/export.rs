@@ -117,9 +117,7 @@ fn out_of_domain_cone_half_angle(mut geometry: &SolvedSurfaceGeometry) -> Option
         match geometry {
             SolvedSurfaceGeometry::Cone(cone) => {
                 let angle = cone.half_angle().get();
-                return (!angle.is_finite()
-                    || angle == 0.0
-                    || angle.abs() >= std::f64::consts::FRAC_PI_2)
+                return (angle == 0.0 || angle.abs() >= std::f64::consts::FRAC_PI_2)
                     .then_some(angle);
             }
             SolvedSurfaceGeometry::Transformed(placed) => geometry = placed.basis(),
@@ -485,8 +483,8 @@ impl<'a> Builder<'a> {
         let origin = geometry::placement(
             &mut self.emitter,
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            geometry::NonzeroDirection::from_unit(cadmpeg_ir::units::UnitVector3::Z_AXIS),
+            geometry::NonzeroDirection::from_unit(cadmpeg_ir::units::UnitVector3::X_AXIS),
         );
         items.push(origin);
 
@@ -1232,8 +1230,8 @@ impl<'a> Builder<'a> {
                 geometry::placement(
                     &mut self.emitter,
                     cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                    geometry::NonzeroDirection::from_unit(cadmpeg_ir::units::UnitVector3::Z_AXIS),
+                    geometry::NonzeroDirection::from_unit(cadmpeg_ir::units::UnitVector3::X_AXIS),
                 ),
             );
         }
@@ -1267,13 +1265,9 @@ impl<'a> Builder<'a> {
             {
                 continue;
             }
-            let rows = transform.rows();
-            let to = geometry::placement(
-                &mut self.emitter,
-                cadmpeg_ir::math::Point3::new(rows[0][3], rows[1][3], rows[2][3]),
-                cadmpeg_ir::math::Vector3::new(rows[0][2], rows[1][2], rows[2][2]),
-                cadmpeg_ir::math::Vector3::new(rows[0][0], rows[1][0], rows[2][0]),
-            );
+            let Some(to) = geometry::rigid_placement(&mut self.emitter, transform) else {
+                continue;
+            };
             representation_placements
                 .entry(parent_product.clone())
                 .or_default()
@@ -1690,8 +1684,8 @@ impl<'a> Builder<'a> {
         let origin = geometry::placement(
             &mut self.emitter,
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            geometry::NonzeroDirection::from_unit(cadmpeg_ir::units::UnitVector3::Z_AXIS),
+            geometry::NonzeroDirection::from_unit(cadmpeg_ir::units::UnitVector3::X_AXIS),
         );
         let representation = self.emitter.emit(
             "SHAPE_REPRESENTATION",
@@ -1700,13 +1694,9 @@ impl<'a> Builder<'a> {
         let map = self
             .emitter
             .emit("REPRESENTATION_MAP", &format!("{origin},{representation}"));
-        let rows = transform.rows();
-        let target = geometry::placement(
-            &mut self.emitter,
-            cadmpeg_ir::math::Point3::new(rows[0][3], rows[1][3], rows[2][3]),
-            cadmpeg_ir::math::Vector3::new(rows[0][2], rows[1][2], rows[2][2]),
-            cadmpeg_ir::math::Vector3::new(rows[0][0], rows[1][0], rows[2][0]),
-        );
+        let Some(target) = geometry::rigid_placement(&mut self.emitter, transform) else {
+            return item;
+        };
         self.emitter.emit(
             "MAPPED_ITEM",
             &format!("'cadmpeg body placement',{map},{target}"),
@@ -2717,7 +2707,10 @@ impl<'a> Builder<'a> {
             ProceduralSurfaceDefinition::LinearSweep(definition_payload) => {
                 let direction = definition_payload.direction();
                 let directrix = self.emit_curve(definition_payload.directrix().as_str())?;
-                let direction_ref = geometry::direction(&mut self.emitter, direction.get());
+                let direction_ref = geometry::direction(
+                    &mut self.emitter,
+                    geometry::NonzeroDirection::from_sweep(definition_payload),
+                );
                 let vector = self.emitter.emit(
                     "VECTOR",
                     &format!("'',{direction_ref},{}", self.emitter.real(direction.norm())),
@@ -2733,7 +2726,7 @@ impl<'a> Builder<'a> {
                     geometry::point(&mut self.emitter, definition_payload.axis_origin().get());
                 let direction = geometry::direction(
                     &mut self.emitter,
-                    *definition_payload.axis_direction().as_raw(),
+                    geometry::NonzeroDirection::from_unit(definition_payload.axis_direction()),
                 );
                 let axis = self
                     .emitter
@@ -2797,7 +2790,7 @@ impl<'a> Builder<'a> {
             }
             ProceduralSurfaceDefinition::Replica { source, transform } => {
                 let source = self.emit_surface(source.as_str())?;
-                let operator = geometry::transformation_operator(&mut self.emitter, *transform);
+                let operator = geometry::transformation_operator(&mut self.emitter, *transform)?;
                 Some(
                     self.emitter
                         .emit("SURFACE_REPLICA", &format!("'',{source},{operator}")),
@@ -2808,12 +2801,14 @@ impl<'a> Builder<'a> {
                     return None;
                 };
                 let center = torus_surface.center().get();
-                let axis = torus_surface.frame().axis().as_raw();
-                let ref_direction = torus_surface.frame().reference().as_raw();
                 let major_radius = torus_surface.major_radius().get();
                 let minor_radius = torus_surface.minor_radius().get();
-                let placement =
-                    geometry::placement(&mut self.emitter, center, *axis, *ref_direction);
+                let placement = geometry::placement(
+                    &mut self.emitter,
+                    center,
+                    geometry::NonzeroDirection::from_unit(*torus_surface.frame().axis()),
+                    geometry::NonzeroDirection::from_unit(*torus_surface.frame().reference()),
+                );
                 let reference = self.emitter.emit(
                     "DEGENERATE_TOROIDAL_SURFACE",
                     &format!(
@@ -2931,7 +2926,7 @@ impl<'a> Builder<'a> {
             }
             ProceduralCurveDefinition::Replica { source, transform } => {
                 let source = self.emit_curve(source.as_str())?;
-                let operator = geometry::transformation_operator(&mut self.emitter, *transform);
+                let operator = geometry::transformation_operator(&mut self.emitter, *transform)?;
                 Some(
                     self.emitter
                         .emit("CURVE_REPLICA", &format!("'',{source},{operator}")),
@@ -2944,8 +2939,10 @@ impl<'a> Builder<'a> {
                 let self_intersect = definition_payload.self_intersect();
                 {
                     let source = self.emit_curve(source.as_str())?;
-                    let direction =
-                        geometry::direction(&mut self.emitter, *reference_direction.as_raw());
+                    let direction = geometry::direction(
+                        &mut self.emitter,
+                        geometry::NonzeroDirection::from_unit(*reference_direction),
+                    );
                     let self_intersect = match self_intersect {
                         Some(true) => ".T.",
                         Some(false) => ".F.",
@@ -3467,13 +3464,9 @@ impl<'a> Builder<'a> {
             if !annotation.targets.is_empty() || !placement.is_proper_rigid() {
                 continue;
             }
-            let rows = placement.rows();
-            let placement = geometry::placement(
-                &mut self.emitter,
-                cadmpeg_ir::math::Point3::new(rows[0][3], rows[1][3], rows[2][3]),
-                cadmpeg_ir::math::Vector3::new(rows[0][2], rows[1][2], rows[2][2]),
-                cadmpeg_ir::math::Vector3::new(rows[0][0], rows[1][0], rows[2][0]),
-            );
+            let Some(placement) = geometry::rigid_placement(&mut self.emitter, *placement) else {
+                continue;
+            };
             let font_source = self.emitter.emit("EXTERNAL_SOURCE", "'ISO 3098'");
             let font = self.emitter.emit(
                 "EXTERNALLY_DEFINED_TEXT_FONT",
