@@ -385,7 +385,7 @@ native_record! {
     vertex: cadmpeg_ir::ids::VertexId,
     /// The first two independent tolerance evaluations, retained verbatim in
     /// native centimetres; `-1` denotes an unset evaluation.
-    leading_tolerances: [f64; 2],
+    leading_tolerances: [cadmpeg_ir::scalar::FiniteReal; 2],
     /// Shape of the evaluated tolerance slot, carrying the trailing LONG that
     /// follows it. The unset sentinel is a marker rather than a length, so the
     /// neutral vertex carries no tolerance and this record keeps whether the
@@ -601,9 +601,35 @@ native_record! {
 
 #[cfg(test)]
 mod tests {
-    use super::{EndpointSlot, WireMembers};
+    use super::{EndpointSlot, TolerantVertexTail, WireMembers};
     use cadmpeg_ir::ids::{EdgeId, VertexId};
     use serde::Deserialize;
+
+    #[test]
+    fn tolerant_vertex_tail_json_keeps_sentinel_and_refuses_nonfinite_value() {
+        use serde_value::Value;
+
+        let json = serde_json::json!({
+            "id": "f3d:asm:tolerant-vertex-tail#1",
+            "record_index": 1,
+            "vertex": "f3d:brep:entity#1",
+            "leading_tolerances": [-1.0, 0.03],
+            "evaluated_slot": {"slot": "unset", "trailing": 0},
+        });
+        let tail: TolerantVertexTail = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&tail).unwrap(), json);
+
+        let mut wire = serde_value::to_value(&tail).unwrap();
+        let Value::Map(ref mut members) = wire else {
+            panic!("native record wire must be a map");
+        };
+        members.insert(
+            Value::String("leading_tolerances".into()),
+            Value::Seq(vec![Value::F64(f64::INFINITY), Value::F64(-1.0)]),
+        );
+        let error = TolerantVertexTail::deserialize(wire).unwrap_err();
+        assert!(error.to_string().contains("FiniteReal must be finite"));
+    }
 
     fn assert_empty_slot_refuses_extra_keys<T>(arena: &str, field: &str, record: &serde_json::Value)
     where

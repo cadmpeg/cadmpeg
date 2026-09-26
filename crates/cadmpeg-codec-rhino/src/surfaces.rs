@@ -16,7 +16,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal};
-use cadmpeg_ir::units::FiniteVector;
+use cadmpeg_ir::units::{FiniteVector, UnitVector3};
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader};
 use crate::curves::{decode_embedded_curve, error, exact_nurbs, DecodedCurve, GeometryError};
@@ -133,9 +133,9 @@ pub(crate) enum DecodedProceduralSurface {
     Revolution {
         children: Box<[DecodedCurve; 1]>,
         /// Scaled axis origin.
-        axis_origin: Point3,
+        axis_origin: FinitePoint3,
         /// Unit axis direction.
-        axis_direction: Vector3,
+        axis_direction: Option<UnitVector3>,
         /// Native angular interval.
         angular_interval: [f64; 2],
         /// Native revolution parameter interval.
@@ -175,14 +175,14 @@ impl DecodedProceduralSurface {
                 let [directrix] = *children;
                 let directrix = commit_child(0, "directrix", directrix)?;
                 ProceduralSurfaceDefinition::Revolution(
-                    cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis(
-                        axis_origin,
-                        axis_direction,
-                    )
-                    .and_then(|axis| {
+                    axis_direction
+                    .ok_or(cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
+                        "revolution axis_origin and axis_direction must be finite, with unit axis_direction",
+                    ))
+                    .and_then(|axis_direction| {
                         cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
                             directrix,
-                            axis,
+                            (axis_origin, axis_direction),
                             angular_interval,
                             None,
                             Some(parameter_interval),
@@ -421,8 +421,7 @@ fn read_revolution(
         ));
     }
     let from = crate::wire::scaled_point(point(reader)?.0.get(), scale)
-        .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?
-        .get();
+        .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?;
     let to = crate::wire::scaled_point(point(reader)?.0.get(), scale)
         .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?
         .get();
@@ -465,7 +464,8 @@ fn read_revolution(
     if !axis_length.is_finite() || axis_length <= 0.0 {
         return Err(error(reader.position(), "revolution axis is invalid"));
     }
-    let axis_direction = Vector3::new(
+    let axis_direction = UnitVector3::normalized_by_hypot_division(axis_delta);
+    let raw_axis_direction = Vector3::new(
         axis_delta.x / axis_length,
         axis_delta.y / axis_length,
         axis_delta.z / axis_length,
@@ -475,8 +475,8 @@ fn read_revolution(
     let geometry = revolution_nurbs(
         ctx,
         &profile,
-        from,
-        axis_direction,
+        from.get(),
+        raw_axis_direction,
         RevolutionIntervals {
             angle: angular_interval,
             parameter: parameter_interval,

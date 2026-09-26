@@ -4049,6 +4049,13 @@ pub(super) fn emit_vertices(
                         if let (Some(Token::Double(first)), Some(Token::Double(second))) =
                             (r.chunk(6), r.chunk(7))
                         {
+                            let [Some(first), Some(second)] =
+                                [*first, *second].map(cadmpeg_ir::scalar::FiniteReal::new)
+                            else {
+                                return Err(cadmpeg_core::CodecError::malformed(
+                                    "vertex leading tolerance must be finite",
+                                ));
+                            };
                             out.tolerant_vertex_tails.push(TolerantVertexTail {
                                 source_namespace:
                                     crate::brep::records::identity::NativeRecordNamespace::new(
@@ -4056,7 +4063,7 @@ pub(super) fn emit_vertices(
                                     ),
                                 vertex: <VertexId>::from(id(format, i)),
                                 record_index: r.index as u32,
-                                leading_tolerances: [*first, *second],
+                                leading_tolerances: [first, second],
                                 evaluated_slot: {
                                     let trailing = match r.chunk(9) {
                                         Some(Token::Long(value)) => Some(*value),
