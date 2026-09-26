@@ -1543,7 +1543,7 @@ fn standard_cylinder_witness_selects_complementary_arc() {
         &support,
         Point3::new(2.0, 0.0, 3.0),
         Point3::new(0.0, 2.0, 3.0),
-        Some(FinitePoint3::new(Point3::new(-2.0, 0.0, 3.0)).unwrap()),
+        Some(FinitePoint3::new(Point3::new(-2.0, 0.0, 3.0)).expect("finite witness")),
         None,
         &mut crate::nurbs::LaneRefusals::new(),
     )
@@ -1582,7 +1582,7 @@ fn standard_cylinder_endpoint_witness_preserves_geometric_arc() {
         &support,
         Point3::new(-2.0, 0.0, 3.0),
         Point3::new(0.0, -2.0, 3.0),
-        Some(FinitePoint3::new(Point3::new(-1.0, 0.0, 4.0)).unwrap()),
+        Some(FinitePoint3::new(Point3::new(-1.0, 0.0, 4.0)).expect("finite witness")),
         None,
         &mut crate::nurbs::LaneRefusals::new(),
     )
@@ -1622,7 +1622,7 @@ fn standard_torus_witness_selects_complementary_latitude_arc() {
         &support,
         Point3::new(7.0, 0.0, 0.0),
         Point3::new(0.0, 7.0, 0.0),
-        Some(FinitePoint3::new(Point3::new(-7.0, 0.0, 0.0)).unwrap()),
+        Some(FinitePoint3::new(Point3::new(-7.0, 0.0, 0.0)).expect("finite witness")),
         None,
         &mut crate::nurbs::LaneRefusals::new(),
     )
@@ -1678,7 +1678,7 @@ fn standard_torus_witness_selects_complementary_meridian_arc() {
         &support,
         start,
         end,
-        Some(FinitePoint3::new(witness).unwrap()),
+        Some(FinitePoint3::new(witness).expect("finite witness")),
         None,
         &mut crate::nurbs::LaneRefusals::new(),
     )

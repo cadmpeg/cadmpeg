@@ -7649,9 +7649,10 @@ fn standard_pcurve_geometry(
         crate::families::standard::records::StandardCurveGeometry::Circle { center, radius },
     ) = (surface, &support.geometry)
     {
+        const CIRCLE_TOLERANCE: f64 = 2e-3;
+
         let center = center.get();
         let radius = radius.get();
-        const CIRCLE_TOLERANCE: f64 = 2e-3;
         let normal = plane_surface.frame().axis().as_raw();
         let contained_carrier = point_on_surface(center, surface)
             && (start.distance(center) - radius).abs() <= CIRCLE_TOLERANCE

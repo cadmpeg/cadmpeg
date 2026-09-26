@@ -114,7 +114,9 @@ fn om_numeric_expression_retains_identity_name_unit_and_value() {
     assert_eq!(expressions[0].unit, ExpressionUnit::Degree);
     assert_eq!(expressions[0].expression, "120");
     assert_eq!(
-        expressions[0].constant_value().map(|value| value.get()),
+        expressions[0]
+            .constant_value()
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(120.0)
     );
     let declaration =

@@ -1593,7 +1593,9 @@ fn om_offset_only_index_bounds_storage_blocks() {
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].name.as_str(), "length");
     assert_eq!(
-        expressions[0].constant_value().map(|value| value.get()),
+        expressions[0]
+            .constant_value()
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(25.0)
     );
 }
