@@ -1320,22 +1320,22 @@ fn bspline_span(knots: &[f64], degree: usize, count: usize, t: f64) -> Option<us
 }
 
 /// Non-zero basis function values at `t` for the given span (Cox–de Boor).
+/// Scratch contains `degree + 1` values, at most the admitted control count.
 fn bspline_basis(knots: &[f64], degree: usize, span: usize, t: f64) -> Option<Vec<f64>> {
     let finite_t = FiniteReal::new(t);
-    let mut values = vec![1.0];
-    let mut left = alloc_filled(degree.checked_add(1)?, None, "IR B-spline basis left").ok()?;
-    let mut right = alloc_filled(degree.checked_add(1)?, None, "IR B-spline basis right").ok()?;
+    let mut values = alloc_filled(degree.checked_add(1)?, 0.0, "IR B-spline basis").ok()?;
+    values[0] = 1.0;
     for j in 1..=degree {
-        // Each knot distance is admitted where it is formed.
-        left[j] = FiniteReal::new(t - knots[span + 1 - j]);
-        right[j] = FiniteReal::new(knots[span + j] - t);
         let mut saved = 0.0;
-        let mut next = alloc_filled(j.checked_add(1)?, 0.0, "IR B-spline basis level").ok()?;
-        for (r, &value) in values.iter().enumerate().take(j) {
+        for r in 0..j {
+            let value = values[r];
+            // Each knot distance is admitted where it is formed.
+            let right = FiniteReal::new(knots[span + r + 1] - t);
+            let left = FiniteReal::new(t - knots[span + 1 - j + r]);
             // Two finite distances with a finite sum form the scaled ratio. A
             // distance or a sum outside the finite range takes the exact knot
             // differences instead.
-            let ratio_terms = right[r + 1].zip(left[j - r]).and_then(|(right, left)| {
+            let ratio_terms = right.zip(left).and_then(|(right, left)| {
                 Some((right, left, FiniteReal::new(right.get() + left.get())?))
             });
             let [right_term, left_term] = if let Some((right, left, denominator)) = ratio_terms {
@@ -1356,11 +1356,10 @@ fn bspline_basis(knots: &[f64], degree: usize, span: usize, t: f64) -> Option<Ve
                             .get(),
                 ]
             };
-            next[r] = saved + right_term;
+            values[r] = saved + right_term;
             saved = left_term;
         }
-        next[j] = saved;
-        values = next;
+        values[j] = saved;
     }
     Some(values)
 }
