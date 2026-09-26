@@ -16,6 +16,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
 use cadmpeg_ir::geometry::{nurbs::NurbsSurface, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{IdentityKey, SurfaceId};
+use cadmpeg_ir::scalar::FiniteReal;
 
 /// General reconstructed sweep-extent geometry tolerance.
 const EPS_SWEEP_EXTENT_GEOMETRY: f64 = 1.0e-9;
@@ -514,7 +515,7 @@ pub(in super::super) fn generated_nurbs_translation_extent(
 }
 
 struct RectilinearPlaneStation {
-    pub(in super::super) coordinate: f64,
+    pub(in super::super) coordinate: FiniteReal,
     pub(in super::super) reversed: bool,
 }
 
@@ -627,19 +628,16 @@ fn rectilinear_family_extent(
     let first = family
         .stations
         .iter()
-        .min_by(|left, right| left.coordinate.total_cmp(&right.coordinate))?;
+        .min_by(|left, right| left.coordinate.get().total_cmp(&right.coordinate.get()))?;
     let last = family
         .stations
         .iter()
-        .max_by(|left, right| left.coordinate.total_cmp(&right.coordinate))?;
-    (first.coordinate.is_finite()
-        && last.coordinate.is_finite()
-        && (last.coordinate - first.coordinate).abs() > station_tolerance)
-        .then_some(())?;
+        .max_by(|left, right| left.coordinate.get().total_cmp(&right.coordinate.get()))?;
+    ((last.coordinate.get() - first.coordinate.get()).abs() > station_tolerance).then_some(())?;
     let (start, end) = if first.reversed == start_reversed && last.reversed != start_reversed {
-        (first.coordinate, last.coordinate)
+        (first.coordinate.get(), last.coordinate.get())
     } else if last.reversed == start_reversed && first.reversed != start_reversed {
-        (last.coordinate, first.coordinate)
+        (last.coordinate.get(), first.coordinate.get())
     } else {
         return None;
     };
@@ -666,7 +664,7 @@ fn rectilinear_extent_from_section_plane(
         (
             family
                 .normal
-                .map(|component| component * station.coordinate),
+                .map(|component| component * station.coordinate.get()),
             family.normal,
         )
     });
@@ -756,8 +754,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
     let station_tolerance = EPS_SWEEP_EXTENT_GEOMETRY * coordinate_scale;
     let mut families: Vec<RectilinearPlaneFamily> = Vec::new();
     for (plane, reversed) in planes {
-        let station = dot(plane.origin, plane.normal);
-        station.is_finite().then_some(())?;
+        let station = FiniteReal::new(dot(plane.origin, plane.normal))?;
         if let Some(family) = families.iter_mut().find(|family| {
             family
                 .normal
@@ -768,7 +765,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
             if let Some(known) = family
                 .stations
                 .iter()
-                .find(|known| (station - known.coordinate).abs() <= station_tolerance)
+                .find(|known| (station.get() - known.coordinate.get()).abs() <= station_tolerance)
             {
                 (known.reversed == reversed).then_some(())?;
             } else {
