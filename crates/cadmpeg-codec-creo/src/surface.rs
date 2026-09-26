@@ -14,7 +14,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{NonNegativeLength, PositiveAngle, PositiveLength};
-use cadmpeg_ir::units::OrthonormalFrame3;
+use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 
 use crate::layout::type24_first_coordinate_bounded_round as type24_round;
 use crate::layout::type24_segmented_first_coordinate_bounded_round as type24_seg;
@@ -2395,7 +2395,9 @@ pub(crate) fn uses_matrix_column_frame(frame: &PlaneLocalSystem) -> bool {
     let Some(matrix_normal) = matrix.normal else {
         return false;
     };
-    let directions_agree = |left: [f64; 3], right: [f64; 3]| {
+    let directions_agree = |left: UnitVector3, right: UnitVector3| {
+        let left: [f64; 3] = Vector3::from(left).into();
+        let right: [f64; 3] = Vector3::from(right).into();
         left.into_iter().zip(right).all(|(left, right)| {
             (left - right).abs() <= EPS_PLANE_FRAME_SCALE * left.abs().max(right.abs()).max(1.0)
         })
@@ -2448,21 +2450,30 @@ pub(crate) struct PlaneEnvelopeRecord {
     pub(crate) offset: usize,
 }
 
-/// Axis-aligned model-space plane established by two outline corners with one
-/// and only one held coordinate.
+/// Axis-aligned model-space plane with one held coordinate.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct OutlinePlane {
     /// Owning `srf_array` surface identifier.
     pub(crate) surface_id: u32,
     /// Model-space plane origin with only the held coordinate populated.
     pub(crate) origin: [f64; 3],
-    /// Positive model-space basis normal of the held coordinate.
-    pub(crate) normal: [f64; 3],
-    /// Deterministic positive in-plane direction for carrier constructions.
+    /// Unit model-space normal of the held coordinate.
+    pub(crate) normal: UnitVector3,
+    /// Unit in-plane direction for carrier constructions.
     /// The outline does not define the surface parameter chart.
-    pub(crate) u_axis: [f64; 3],
+    pub(crate) u_axis: UnitVector3,
     /// Byte offset of the outline body.
     pub(crate) offset: usize,
+}
+
+impl OutlinePlane {
+    pub(crate) fn normal(&self) -> [f64; 3] {
+        Vector3::from(self.normal).into()
+    }
+
+    pub(crate) fn u_axis(&self) -> [f64; 3] {
+        Vector3::from(self.u_axis).into()
+    }
 }
 
 /// Return the outline plane for `surface_id` only when exactly one exists.
@@ -2502,12 +2513,15 @@ fn outline_planes(envelopes: &[PlaneEnvelopeRecord]) -> Vec<OutlinePlane> {
         };
         let mut origin = [0.0; 3];
         origin[axis] = coordinate;
-        let mut normal = [0.0; 3];
-        normal[axis] = 1.0;
+        let normal = [
+            UnitVector3::X_AXIS,
+            UnitVector3::Y_AXIS,
+            UnitVector3::Z_AXIS,
+        ][axis];
         let u_axis = if axis == 0 {
-            [0.0, 1.0, 0.0]
+            UnitVector3::Y_AXIS
         } else {
-            [1.0, 0.0, 0.0]
+            UnitVector3::X_AXIS
         };
         result.push(OutlinePlane {
             surface_id: record.surface_id,
@@ -2658,12 +2672,15 @@ pub(crate) fn positional_frame_planes(
                 };
                 let mut origin = [0.0; 3];
                 origin[*axis] = values[*axis];
-                let mut normal = [0.0; 3];
-                normal[*axis] = 1.0;
+                let normal = [
+                    UnitVector3::X_AXIS,
+                    UnitVector3::Y_AXIS,
+                    UnitVector3::Z_AXIS,
+                ][*axis];
                 let u_axis = if *axis == 0 {
-                    [0.0, 1.0, 0.0]
+                    UnitVector3::Y_AXIS
                 } else {
-                    [1.0, 0.0, 0.0]
+                    UnitVector3::X_AXIS
                 };
                 Some(OutlinePlane {
                     surface_id: record.surface_id,
@@ -2694,7 +2711,9 @@ pub(crate) fn frame_bound_outline_planes(
     envelopes: &[PlaneEnvelopeRecord],
     frames: &[PlaneLocalSystem],
 ) -> Vec<OutlinePlane> {
-    let vectors_agree = |first: [f64; 3], second: [f64; 3]| {
+    let vectors_agree = |first: UnitVector3, second: UnitVector3| {
+        let first: [f64; 3] = Vector3::from(first).into();
+        let second: [f64; 3] = Vector3::from(second).into();
         first.iter().zip(second).all(|(first, second)| {
             (first - second).abs() <= EPS_FRAME_AGREEMENT * first.abs().max(second.abs()).max(1.0)
         })
@@ -2721,7 +2740,8 @@ pub(crate) fn frame_bound_outline_planes(
         {
             continue;
         }
-        let axes = normal
+        let normal_components: [f64; 3] = Vector3::from(normal).into();
+        let axes = normal_components
             .iter()
             .enumerate()
             .filter_map(|(axis, value)| (value.abs() > EPS_AXIS_COMPONENT_NONZERO).then_some(axis))
@@ -6419,8 +6439,42 @@ fn sequential_named_local_system_slots(
 
 pub(crate) struct PlaneFrame {
     pub(crate) origin: Option<[f64; 3]>,
-    pub(crate) u_axis: Option<[f64; 3]>,
-    pub(crate) normal: Option<[f64; 3]>,
+    pub(crate) u_axis: Option<UnitVector3>,
+    pub(crate) normal: Option<UnitVector3>,
+}
+
+fn plane_unit_direction(value: [f64; 3], magnitude: f64) -> Option<UnitVector3> {
+    let quotient = Vector3::from(value.map(|component| component / magnitude));
+    UnitVector3::new(quotient).or_else(|| UnitVector3::normalized(Vector3::from(value)))
+}
+
+impl PlaneFrame {
+    fn with_directions(
+        origin: Option<[f64; 3]>,
+        u_axis: Option<UnitVector3>,
+        normal: Option<UnitVector3>,
+    ) -> Self {
+        match (u_axis, normal) {
+            (Some(u_axis), Some(normal)) => Self {
+                origin,
+                u_axis: Some(u_axis),
+                normal: Some(normal),
+            },
+            _ => Self {
+                origin,
+                u_axis: None,
+                normal: None,
+            },
+        }
+    }
+
+    pub(crate) fn normal(&self) -> Option<[f64; 3]> {
+        self.normal.map(|direction| Vector3::from(direction).into())
+    }
+
+    pub(crate) fn u_axis(&self) -> Option<[f64; 3]> {
+        self.u_axis.map(|direction| Vector3::from(direction).into())
+    }
 }
 
 fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
@@ -6488,30 +6542,17 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
     };
     let first = supports[*first_index];
     let second = supports[*second_index];
-    let first_magnitude = magnitudes[*first_index];
-    let u_axis = Some([
-        first[0] / first_magnitude,
-        first[1] / first_magnitude,
-        first[2] / first_magnitude,
-    ]);
+    let u_axis = plane_unit_direction(first, magnitudes[*first_index]);
     let cross = [
         first[1].mul_add(second[2], -(first[2] * second[1])),
         first[2].mul_add(second[0], -(first[0] * second[2])),
         first[0].mul_add(second[1], -(first[1] * second[0])),
     ];
     let magnitude = cross.iter().map(|value| value * value).sum::<f64>().sqrt();
-    let normal = (magnitude > EPS_PLANE_FRAME_NONZERO).then(|| {
-        [
-            cross[0] / magnitude,
-            cross[1] / magnitude,
-            cross[2] / magnitude,
-        ]
-    });
-    PlaneFrame {
-        origin,
-        u_axis,
-        normal,
-    }
+    let normal = (magnitude > EPS_PLANE_FRAME_NONZERO)
+        .then(|| plane_unit_direction(cross, magnitude))
+        .flatten();
+    PlaneFrame::with_directions(origin, u_axis, normal)
 }
 
 fn plane_direct_frame(slots: &[Option<f64>]) -> PlaneFrame {
@@ -6554,11 +6595,11 @@ fn plane_direct_frame(slots: &[Option<f64>]) -> PlaneFrame {
             normal: None,
         };
     }
-    PlaneFrame {
+    PlaneFrame::with_directions(
         origin,
-        u_axis: Some(u_axis.map(|value| value / u_magnitude)),
-        normal: Some(normal.map(|value| value / normal_magnitude)),
-    }
+        plane_unit_direction(u_axis, u_magnitude),
+        plane_unit_direction(normal, normal_magnitude),
+    )
 }
 
 fn plane_matrix_frame(slots: &[Option<f64>]) -> PlaneFrame {
@@ -6613,11 +6654,11 @@ fn plane_matrix_frame(slots: &[Option<f64>]) -> PlaneFrame {
             normal: None,
         };
     }
-    PlaneFrame {
+    PlaneFrame::with_directions(
         origin,
-        u_axis: Some(u_column.map(|value| value / u_magnitude)),
-        normal: Some(normal_column.map(|value| value / normal_magnitude)),
-    }
+        plane_unit_direction(u_column, u_magnitude),
+        plane_unit_direction(normal_column, normal_magnitude),
+    )
 }
 
 #[cfg(test)]

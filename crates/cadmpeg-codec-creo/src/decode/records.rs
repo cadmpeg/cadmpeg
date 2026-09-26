@@ -1296,8 +1296,8 @@ pub(super) fn plane_local_system_records(
                 body: record.body.clone(),
                 slots: record.slots.to_vec(),
                 origin: frame.origin,
-                u_axis: frame.u_axis,
-                normal: frame.normal,
+                u_axis: frame.u_axis(),
+                normal: frame.normal(),
                 classification: match record.classification {
                     crate::surface::LocalSystemClassification::Simple => "simple",
                     crate::surface::LocalSystemClassification::Unclassified => "unclassified",
@@ -1356,8 +1356,8 @@ pub(super) fn outline_plane_records(
             id: format!("{id_prefix}#{}:{}", record.offset, record.surface_id),
             surface_id: record.surface_id,
             origin: record.origin,
-            normal: record.normal,
-            u_axis: record.u_axis,
+            normal: record.normal(),
+            u_axis: record.u_axis(),
             offset: record.offset,
             source_section: source_section(scan, record.offset),
         })

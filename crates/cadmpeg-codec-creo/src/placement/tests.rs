@@ -158,8 +158,8 @@ fn unresolved_local_system_does_not_hide_a_complete_outline_plane() {
     let outline = OutlinePlane {
         surface_id: 7,
         origin: [0.0, 0.0, 3.0],
-        u_axis: [1.0, 0.0, 0.0],
-        normal: [0.0, 0.0, 1.0],
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
+        normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
         offset: 12,
     };
 
@@ -191,8 +191,8 @@ fn plane_namespace_collision_withholds_equation() {
     let outline = OutlinePlane {
         surface_id: 7,
         origin: [0.0, 2.0, 0.0],
-        u_axis: [1.0, 0.0, 0.0],
-        normal: [0.0, 1.0, 0.0],
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
+        normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
         offset: 12,
     };
     assert_eq!(
@@ -458,15 +458,15 @@ fn resolves_generated_section_from_declared_cap_pair() {
         OutlinePlane {
             surface_id: 43,
             origin: [0.0, 0.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 43,
         },
         OutlinePlane {
             surface_id: 92,
             origin: [0.0, 38.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 92,
         },
     ];
@@ -732,8 +732,8 @@ fn resolves_orientation_from_an_outline_plane_carrier() {
     let reference = OutlinePlane {
         surface_id: 4,
         origin: [0.0, 0.0, 3.0],
-        normal: [0.0, 0.0, 1.0],
-        u_axis: [1.0, 0.0, 0.0],
+        normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
         offset: 70,
     };
 
@@ -1196,14 +1196,15 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
         saved_section: None,
         offset: 90,
     };
-    let outline = |surface_id, origin, normal| OutlinePlane {
+    let outline = |surface_id, origin, normal: [f64; 3]| OutlinePlane {
         surface_id,
         origin,
-        normal,
+        normal: cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(normal))
+            .expect("unit normal"),
         u_axis: if normal[0] == 1.0 {
-            [0.0, 1.0, 0.0]
+            cadmpeg_ir::units::UnitVector3::Y_AXIS
         } else {
-            [1.0, 0.0, 0.0]
+            cadmpeg_ir::units::UnitVector3::X_AXIS
         },
         offset: surface_id as usize,
     };
