@@ -801,7 +801,7 @@ pub(crate) fn remap_nurbs_domain(
             .ok_or_else(|| error(offset, "curve knot vector is invalid"))?,
         curve.knots()[end_index],
     ];
-    if !source[0].is_finite() || !source[1].is_finite() || source[0] >= source[1] {
+    if source[0] >= source[1] {
         return Err(error(offset, "curve domain is invalid"));
     }
     if target[0] >= target[1] {
