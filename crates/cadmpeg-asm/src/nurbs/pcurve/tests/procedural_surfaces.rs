@@ -797,9 +797,9 @@ fn revolution_surface_uses_direct_profile_axis_then_cache() {
         assert!((axis_origin.x - 5.0).abs() < f64::EPSILON);
         assert!((axis_origin.y - 10.0).abs() < f64::EPSILON);
         assert!((axis_origin.z - 15.0).abs() < f64::EPSILON);
-        assert!((axis_direction.x - 0.0).abs() < f64::EPSILON);
-        assert!((axis_direction.y - 0.0).abs() < f64::EPSILON);
-        assert!((axis_direction.z - 1.0).abs() < f64::EPSILON);
+        assert!((axis_direction.as_raw().x - 0.0).abs() < f64::EPSILON);
+        assert!((axis_direction.as_raw().y - 0.0).abs() < f64::EPSILON);
+        assert!((axis_direction.as_raw().z - 1.0).abs() < f64::EPSILON);
         assert!((angular_interval[0] - 0.0).abs() < f64::EPSILON);
         assert!((angular_interval[1] - 1.0).abs() < f64::EPSILON);
         assert!((parameter_interval[0] - 0.0).abs() < f64::EPSILON);

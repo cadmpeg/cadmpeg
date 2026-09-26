@@ -384,14 +384,14 @@ fn emit_carrier_surface(
                     source_object: None,
                 });
                 ProceduralSurfaceDefinition::Revolution(
-                    cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis(
-                        axis_origin,
-                        axis_direction,
-                    )
-                    .and_then(|axis| {
+                    cadmpeg_ir::features::FinitePoint3::new(axis_origin)
+                    .ok_or(cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
+                        "revolution axis_origin and axis_direction must be finite, with unit axis_direction",
+                    ))
+                    .and_then(|origin| {
                         cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
                             directrix_id,
-                            axis,
+                            (origin, axis_direction),
                             angular_interval,
                             None,
                             Some(parameter_interval),
