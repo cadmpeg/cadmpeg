@@ -93,7 +93,7 @@ pub(crate) struct CurveExpressionLocalSystem {
     pub(crate) body: Vec<u8>,
     /// Twelve explicit scalar slots, absent when the body uses inheritance or
     /// contains a scalar form that is not decoded.
-    pub(crate) explicit_slots: Option<[f64; 12]>,
+    pub(crate) explicit_slots: Option<cadmpeg_ir::units::FiniteVector<12>>,
     /// Byte offset of the `local_sys` named-record header.
     pub(crate) offset: usize,
 }
@@ -656,8 +656,8 @@ pub(crate) struct Fc05Circle {
     pub(crate) center_row_frame: [f64; 2],
     /// Exact radius in mm.
     pub(crate) radius_mm: f64,
-    /// Unit radial direction from the fitted center to the first stored sample.
-    pub(crate) sample_direction_row_frame: [f64; 2],
+    /// Finite radial quotient from the fitted center to the first stored sample.
+    pub(crate) sample_direction_row_frame: cadmpeg_ir::units::HypotDirection2,
     /// Stored parameter relation and its reference direction.
     pub(crate) angle_parameter: Fc05AngleParameterRelation,
     /// Constant cap-plane ordinate when present in every point.
@@ -6647,8 +6647,14 @@ pub(crate) fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circl
             }
             _ => Fc05AngleParameterRelation::Inconsistent,
         };
-        let sample_direction_row_frame =
-            [(first.0 - center_x) / radius, (first.1 - center_z) / radius];
+        let Some((sample_direction_row_frame, _)) =
+            cadmpeg_ir::units::HypotDirection2::normalized_with_length([
+                first.0 - center_x,
+                first.1 - center_z,
+            ])
+        else {
+            continue;
+        };
         circles.push(Fc05Circle {
             curve_id: record.curve_id,
             center_row_frame: [center_x, center_z],

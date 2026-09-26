@@ -323,6 +323,51 @@ fn parabola_coordinate_scaling_preserves_parameterization() {
 }
 
 #[test]
+fn isotropic_conics_scale_lengths_and_carry_their_admitted_axes() {
+    use crate::geometry::pcurve::{CirclePcurve, EllipsePcurve, HyperbolaPcurve};
+
+    let axes = [Point2::new(2.0, 0.0), Point2::new(0.0, -3.0)];
+    let mut cases = [
+        PcurveGeometry::Circle(
+            CirclePcurve::try_new(Point2::new(1.0, -2.0), axes[0], axes[1], 4.0).unwrap(),
+        ),
+        PcurveGeometry::Ellipse(
+            EllipsePcurve::try_new(Point2::new(1.0, -2.0), axes[0], axes[1], 4.0, 2.0).unwrap(),
+        ),
+        PcurveGeometry::Hyperbola(
+            HyperbolaPcurve::try_new(Point2::new(1.0, -2.0), axes[0], axes[1], 4.0, 2.0).unwrap(),
+        ),
+    ];
+    for geometry in &mut cases {
+        geometry.try_scale_coordinates([2.0, 2.0]).unwrap();
+        match geometry {
+            PcurveGeometry::Circle(curve) => {
+                assert_eq!(curve.center().get(), Point2::new(2.0, -4.0));
+                assert_eq!(curve.radius().get(), 8.0);
+                assert_eq!([curve.x_axis().get(), curve.y_axis().get()], axes);
+            }
+            PcurveGeometry::Ellipse(curve) => {
+                assert_eq!(curve.center().get(), Point2::new(2.0, -4.0));
+                assert_eq!(
+                    [curve.major_radius().get(), curve.minor_radius().get()],
+                    [8.0, 4.0]
+                );
+                assert_eq!([curve.x_axis().get(), curve.y_axis().get()], axes);
+            }
+            PcurveGeometry::Hyperbola(curve) => {
+                assert_eq!(curve.center().get(), Point2::new(2.0, -4.0));
+                assert_eq!(
+                    [curve.major_radius().get(), curve.minor_radius().get()],
+                    [8.0, 4.0]
+                );
+                assert_eq!([curve.x_axis().get(), curve.y_axis().get()], axes);
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[test]
 fn a_line_pcurve_from_admitted_parts_matches_its_raw_admission() {
     use crate::units::{FinitePoint2, NonzeroPoint2};
 

@@ -1022,16 +1022,18 @@ fn rowless_round_cylinder_rejects_duplicate_materialized_source_rows() {
 
 #[test]
 fn round_envelope_rejects_an_extra_reference_circle() {
-    let circle = |entity_id, axis, start, end| crate::reference::ReferenceCircle {
-        entity_id,
-        center: [0.0; 3],
-        center_stored: true,
-        radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
-        axis,
-        start,
-        end,
-        offset: 0,
-    };
+    let circle =
+        |entity_id, axis, start: [f64; 3], end: [f64; 3]| crate::reference::ReferenceCircle {
+            entity_id,
+            center: [0.0; 3],
+            center_stored: true,
+            radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
+            axis: cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
+                .expect("unit axis"),
+            start: cadmpeg_ir::features::FinitePoint3::new(start.into()).expect("finite start"),
+            end: cadmpeg_ir::features::FinitePoint3::new(end.into()).expect("finite end"),
+            offset: 0,
+        };
     let envelope = crate::surface::Type24RoundEnvelope {
         diameter: 2.0,
         extent_endpoints: [[3.5, 8.0, -6.0], [5.5, 10.0, -4.0]],

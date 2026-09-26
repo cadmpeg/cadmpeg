@@ -19,8 +19,8 @@ use cadmpeg_ir::geometry::nurbs::bezier::{
 use cadmpeg_ir::geometry::{
     derive_reference_direction,
     nurbs::{
-        knots_nondecreasing, NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes,
-        SurfaceParameterAxis,
+        knots_nondecreasing, NurbsCurve, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis,
+        NurbsSurfaceLanes, SurfaceParameterAxis,
     },
     Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, RecordBounds,
     SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
@@ -624,24 +624,27 @@ fn same_basis_ruled_surface(
     } else {
         Some(surface_weights)
     };
-    NurbsSurface::from_checked_lanes(
-        NurbsSurfaceAxis::new(
-            first.degree(),
-            first.knots().to_vec(),
-            first.periodic() && second.periodic(),
-        ),
-        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        NurbsSurfaceLanes::new(
-            first
-                .control_points()
-                .into_iter()
-                .zip(second.control_points())
-                .map(|(first, second)| vec![first, second])
-                .collect(),
-            weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-        ),
-        false,
+    NurbsPoleGrid::from_checked_lanes(
+        first
+            .control_points()
+            .into_iter()
+            .zip(second.control_points())
+            .map(|(first, second)| vec![first, second])
+            .collect(),
+        weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
     )
+    .and_then(|poles| {
+        NurbsSurface::new(
+            NurbsSurfaceAxis::new(
+                first.degree(),
+                first.knots().clone(),
+                first.periodic() && second.periodic(),
+            ),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            poles,
+            false,
+        )
+    })
 }
 
 /// Refuses a pole count above the codec limit, naming the limit it exceeds.
@@ -1595,19 +1598,22 @@ pub(super) fn project(
             placed_id
         };
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
-        let surface = match NurbsSurface::from_checked_lanes(
-            NurbsSurfaceAxis::new(
-                placed_directrix.degree(),
-                placed_directrix.knots().to_vec(),
-                placed_directrix.periodic(),
-            ),
-            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-            NurbsSurfaceLanes::new(
-                control_points.chunks(2).map(<[_]>::to_vec).collect(),
-                weights,
-            ),
-            false,
-        ) {
+        let surface = match NurbsPoleGrid::from_checked_lanes(
+            control_points.chunks(2).map(<[_]>::to_vec).collect(),
+            weights,
+        )
+        .and_then(|poles| {
+            NurbsSurface::new(
+                NurbsSurfaceAxis::new(
+                    placed_directrix.degree(),
+                    placed_directrix.knots().clone(),
+                    placed_directrix.periodic(),
+                ),
+                NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                poles,
+                false,
+            )
+        }) {
             Ok(nurbs) => nurbs,
             Err(error) => {
                 losses.push(entity_loss(

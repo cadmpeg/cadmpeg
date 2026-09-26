@@ -84,8 +84,11 @@ pub(super) fn source_meta(
     }
     if let Some(unit) = &scan.framing.principal_unit {
         attributes.insert("principal_unit".to_string(), unit.token());
-        if let Some(scale) = unit.length_scale_mm().filter(|scale| *scale != 1.0) {
-            attributes.insert("source_length_scale_mm".to_string(), scale.to_string());
+        if let Some(scale) = unit.length_scale_mm().filter(|scale| scale.get() != 1.0) {
+            attributes.insert(
+                "source_length_scale_mm".to_string(),
+                scale.get().to_string(),
+            );
         }
     }
     if let Some(legacy) = scan.framing.layout.legacy_ascii() {

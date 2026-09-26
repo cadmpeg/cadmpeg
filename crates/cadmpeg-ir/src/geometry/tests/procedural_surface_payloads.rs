@@ -127,6 +127,8 @@ fn linear_sweep_admission_requires_a_finite_nondegenerate_direction() {
         serde_json::from_value::<ProceduralSurface>(wire.clone()).unwrap(),
         surface
     );
+    assert!(sweep(Vector3::new(f64::EPSILON, 0.0, 0.0)).is_err());
+    assert!(sweep(Vector3::new(2.0 * f64::EPSILON, 0.0, 0.0)).is_ok());
     for direction in [
         Vector3::new(0.0, 0.0, 0.0),
         Vector3::new(f64::NAN, 0.0, 1.0),

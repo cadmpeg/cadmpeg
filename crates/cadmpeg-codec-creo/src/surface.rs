@@ -710,21 +710,21 @@ pub(crate) fn unique_surface_parameter(
 /// Six-slot model-space envelope frame following a tabulated-cylinder marker.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct TabulatedCylinderFrame {
-    values: [f64; 6],
+    values: cadmpeg_ir::units::FiniteVector<6>,
     prefixes: [u8; 6],
 }
 
 impl TabulatedCylinderFrame {
     /// Admits six finite frame coordinates with their scalar prefixes.
     pub(crate) fn new(values: [f64; 6], prefixes: [u8; 6]) -> Option<Self> {
-        values
-            .into_iter()
-            .all(f64::is_finite)
-            .then_some(Self { values, prefixes })
+        Some(Self {
+            values: cadmpeg_ir::units::FiniteVector::new(values)?,
+            prefixes,
+        })
     }
 
     /// Ordered frame coordinates.
-    pub(crate) fn values(&self) -> [f64; 6] {
+    pub(crate) fn values(&self) -> cadmpeg_ir::units::FiniteVector<6> {
         self.values
     }
 
@@ -2292,7 +2292,7 @@ impl SurfaceParameterRecord {
         }
 
         let frame = self.tabulated_cylinder_frame()?;
-        let [start_x, start_y, start_z, end_x, end_y, end_z] = frame.values();
+        let [start_x, start_y, start_z, end_x, end_y, end_z] = frame.values().get();
         Some(LineExtrusionFrame {
             direction: direction_values,
             directrix: [[start_x, start_y, start_z], [end_x, end_y, end_z]],
@@ -4457,24 +4457,36 @@ fn decode_inline_referenced_cylinder_envelope(
 /// separate origin operand that follows it gives one complete frame. An
 /// explicit image is already complete and gives exactly one. Every downstream
 /// reader takes a complete frame, so the compact form cannot reach one.
+/// A frame candidate before the separate compact origin has been admitted.
+/// Explicit candidates carry the raw view of an admitted finite frame.
+#[derive(Clone, Copy)]
+struct ResolvedInlineLocalSystemFrame {
+    values: [f64; 12],
+    cursor: usize,
+}
+
 fn inline_resolved_frames(
     local: &[u8],
     prefix: scalar::InlineNonPlaneLocalSystemPrefix,
     cache: &scalar::ScalarCache,
-) -> Vec<scalar::InlineLocalSystemFrame> {
+) -> Vec<ResolvedInlineLocalSystemFrame> {
     match prefix {
         scalar::InlineNonPlaneLocalSystemPrefix::Compact(compact) => {
             scalar::decode_inline_non_plane_origin_prefix(local, compact.cursor, cache)
                 .into_iter()
                 .map(|(origin, cursor)| {
-                    let mut resolved = compact;
-                    resolved.values[9..12].copy_from_slice(&origin);
-                    resolved.cursor = cursor;
-                    resolved
+                    let mut values = compact.values.get();
+                    values[9..12].copy_from_slice(&origin);
+                    ResolvedInlineLocalSystemFrame { values, cursor }
                 })
                 .collect()
         }
-        scalar::InlineNonPlaneLocalSystemPrefix::Explicit(frame) => vec![frame],
+        scalar::InlineNonPlaneLocalSystemPrefix::Explicit(frame) => {
+            vec![ResolvedInlineLocalSystemFrame {
+                values: frame.values.get(),
+                cursor: frame.cursor,
+            }]
+        }
     }
 }
 
@@ -4482,7 +4494,7 @@ fn inline_surface_carrier(
     kind: SurfaceKind,
     envelope: InlineSurfaceEnvelope,
     local: &[u8],
-    prefix: scalar::InlineLocalSystemFrame,
+    prefix: ResolvedInlineLocalSystemFrame,
     cache: &scalar::ScalarCache,
 ) -> Option<InlineSurfaceCarrier> {
     let (suffix, _) = inline_surface_suffix(kind, local, prefix.cursor, cache)?;
@@ -4606,7 +4618,7 @@ fn decode_inline_surface_suffix_at(
 fn inline_surface_suffix_carrier(
     kind: SurfaceKind,
     local: &[u8],
-    prefix: scalar::InlineLocalSystemFrame,
+    prefix: ResolvedInlineLocalSystemFrame,
     cache: &scalar::ScalarCache,
 ) -> Option<InlineSurfaceCarrier> {
     let (suffix, _) = inline_surface_suffix(kind, local, prefix.cursor, cache)?;
@@ -4645,7 +4657,7 @@ fn inline_surface_suffix_carrier(
 }
 
 fn inline_suffix_frame_directions(
-    prefix: scalar::InlineLocalSystemFrame,
+    prefix: ResolvedInlineLocalSystemFrame,
 ) -> Option<([f64; 3], [f64; 3])> {
     let [first, second, stored_axis, _] = local_system_lanes(prefix.values);
     let norm = |vector: [f64; 3]| {
@@ -4681,7 +4693,7 @@ fn inline_suffix_frame_directions(
 ///
 /// The axis coordinate is the one model axis the stored axis direction lies
 /// along; a stored axis that names no single coordinate has no reading here.
-fn inline_frame_directions(prefix: scalar::InlineLocalSystemFrame) -> Option<(usize, [f64; 3])> {
+fn inline_frame_directions(prefix: ResolvedInlineLocalSystemFrame) -> Option<(usize, [f64; 3])> {
     let [first, second, stored_axis, _] = local_system_lanes(prefix.values);
     let norm = |vector: [f64; 3]| {
         vector
@@ -5240,7 +5252,7 @@ fn decode_positional_torus_frame(
     (close(a1, b0) && (proves_radii(b1 - a1, b2 - a2) ^ proves_radii(b2 - a1, b1 - a2)))
         .then_some(())?;
 
-    let [first, _, second, origin] = local_system_lanes(slots);
+    let [first, _, second, origin] = local_system_lanes(slots.get());
     let first_norm = first.iter().map(|value| value * value).sum::<f64>().sqrt();
     let second_norm = second.iter().map(|value| value * value).sum::<f64>().sqrt();
     let scale = first_norm.max(second_norm).max(1.0);
@@ -5416,7 +5428,7 @@ fn decode_support_apex_cone_frame(
         .filter_map(|start| {
             let mut frame = body.get(start..*apex_start)?.to_vec();
             frame.extend_from_slice(&[0x18, 0x18, 0x18]);
-            let slots = scalar::decode_positional_plane_local_system_slots(&frame, cache)?;
+            let slots = scalar::decode_positional_plane_local_system_slots(&frame, cache)?.get();
             (slots[9..12] == [0.0, 0.0, 0.0]).then_some(slots)
         })
         .collect::<Vec<_>>();
@@ -6613,13 +6625,16 @@ fn complete_plane_local_system_slots(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<[f64; 12]> {
-    complete_plane_local_system(body, cache).map(|(slots, _)| slots)
+    complete_plane_local_system(body, cache).map(|(slots, _)| slots.get())
 }
 
 fn complete_plane_local_system(
     body: &[u8],
     cache: &scalar::ScalarCache,
-) -> Option<([f64; 12], scalar::PlaneSupportFrameLayout)> {
+) -> Option<(
+    cadmpeg_ir::units::FiniteVector<12>,
+    scalar::PlaneSupportFrameLayout,
+)> {
     let frame_body = body.strip_suffix(&[0xe1]).unwrap_or(body);
     if let Some(prefix) = frame_body.strip_suffix(&[0x00, 0x0c, 0x98]) {
         let mut normalized = Vec::with_capacity(prefix.len() + 1);
@@ -6696,7 +6711,7 @@ fn plane_local_systems_for_rows(
             let decoded = complete_plane_local_system(&body, &cache);
             let slots = decoded
                 .as_ref()
-                .map_or([None; 12], |(slots, _)| slots.map(Some));
+                .map_or([None; 12], |(slots, _)| slots.get().map(Some));
             let layout = decoded.as_ref().map(|(_, layout)| *layout);
             let frame_body = body.strip_suffix(&[0xe1]).unwrap_or(&body);
             let simple = matches!(frame_body.first(), Some(0x0f | 0x10 | 0x18))

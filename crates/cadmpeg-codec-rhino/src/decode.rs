@@ -5016,7 +5016,7 @@ fn decode_pcurves(
         );
         let nurbs = match PcurveNurbs::from_checked_lanes(
             nurbs.degree(),
-            nurbs.knots().to_vec(),
+            nurbs.knots().clone(),
             control_points,
             nurbs.weights(),
             nurbs.periodic(),

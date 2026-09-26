@@ -1181,33 +1181,26 @@ impl ProceduralSurfaceDefinition {
     ///
     /// The narrow write route: the borrow of the cache form stays inside this
     /// method, so no construction lends its admitted interior for writing.
-    fn write_revision_fit_tolerance(
-        &mut self,
-        value: FitTolerance,
-        write: ToleranceWrite,
-    ) -> RevisionCacheWrite {
+    fn write_revision_fit_tolerance(&mut self, write: ToleranceWrite) -> RevisionCacheWrite {
         match self {
-            Self::Exact(payload) => payload.write_revision_fit_tolerance(value, write),
-            Self::Taper(payload) => payload.write_revision_fit_tolerance(value, write),
-            Self::Extrusion(payload) => payload.write_revision_fit_tolerance(value, write),
-            Self::Revolution(payload) => payload.write_revision_fit_tolerance(value, write),
-            Self::Sum(payload) => payload.write_revision_fit_tolerance(value, write),
-            Self::Offset(payload) => payload.write_revision_fit_tolerance(value, write),
-            Self::Loft(payload) => payload.write_revision_fit_tolerance(value, write),
+            Self::Exact(payload) => payload.write_revision_fit_tolerance(write),
+            Self::Taper(payload) => payload.write_revision_fit_tolerance(write),
+            Self::Extrusion(payload) => payload.write_revision_fit_tolerance(write),
+            Self::Revolution(payload) => payload.write_revision_fit_tolerance(write),
+            Self::Sum(payload) => payload.write_revision_fit_tolerance(write),
+            Self::Offset(payload) => payload.write_revision_fit_tolerance(write),
+            Self::Loft(payload) => payload.write_revision_fit_tolerance(write),
             Self::RevisionCompoundLoft { construction } => {
-                construction.cache.write_fit_tolerance(value, write)
+                construction.cache.write_fit_tolerance(write)
             }
-            Self::RevisionG2Blend { construction } => {
-                construction.cache.write_fit_tolerance(value, write)
-            }
-            Self::Sweep(payload) => payload.write_revision_fit_tolerance(value, write),
+            Self::RevisionG2Blend { construction } => construction.cache.write_fit_tolerance(write),
+            Self::Sweep(payload) => payload.write_revision_fit_tolerance(write),
             Self::TSpline { construction } => write_revision_form_tolerance(
                 construction.cache.form_mut().map(|form| &mut form.cache),
-                value,
                 write,
             ),
-            Self::Deformable(payload) => payload.write_revision_fit_tolerance(value, write),
-            Self::Blend(payload) => payload.write_revision_fit_tolerance(value, write),
+            Self::Deformable(payload) => payload.write_revision_fit_tolerance(write),
+            Self::Blend(payload) => payload.write_revision_fit_tolerance(write),
             Self::Compound(_)
             | Self::SubSurface(_)
             | Self::CompoundLoft(_)
@@ -1248,6 +1241,8 @@ enum RevisionCacheWrite {
     Parameterized,
     /// The construction owns no revision-gated cache form.
     NoForm,
+    /// Scaling the held tolerance overflowed.
+    InvalidValue(f64),
 }
 
 impl RevisionCacheWrite {
@@ -1257,6 +1252,7 @@ impl RevisionCacheWrite {
             Self::Written => Ok(()),
             Self::Parameterized => Err(CacheContractError::Parameterized),
             Self::NoForm => Err(CacheContractError::Layout(NO_LEGACY_SLOT)),
+            Self::InvalidValue(value) => Err(CacheContractError::InvalidValue { value }),
         }
     }
 }
@@ -1265,19 +1261,20 @@ impl RevisionCacheWrite {
 #[derive(Clone, Copy)]
 enum ToleranceWrite {
     /// State the value in place of the tolerance the form carries.
-    State,
+    State(FitTolerance),
     /// Keep the tolerance the form carries unless the value exceeds it.
-    Raise,
+    Raise(FitTolerance),
+    /// Scale the tolerance already carried by a solved cache.
+    Scale(crate::scalar::PositiveReal),
 }
 
 /// State the fit tolerance of an optional solved cache form.
 fn write_revision_form_tolerance<P>(
     form: Option<&mut RevisionCacheForm<P>>,
-    value: FitTolerance,
     write: ToleranceWrite,
 ) -> RevisionCacheWrite {
     form.map_or(RevisionCacheWrite::NoForm, |form| {
-        form.write_fit_tolerance(value, write)
+        form.write_fit_tolerance(write)
     })
 }
 
@@ -1542,6 +1539,27 @@ impl LegacyCacheSlot<'_> {
             (Self::Required(_), None) => Err(CacheContractError::Layout(REQUIRED_LEGACY_SLOT)),
         }
     }
+
+    /// Scale the tolerance held by this slot, if the optional cache is present.
+    fn scale_fit_tolerance(
+        &mut self,
+        scale: crate::scalar::PositiveReal,
+    ) -> Result<(), CacheContractError> {
+        let cache = match self {
+            Self::Optional(slot) => slot.as_mut(),
+            Self::Required(cache) => Some(&mut **cache),
+        };
+        if let Some(cache) = cache {
+            let value = cache.fit_tolerance;
+            cache.fit_tolerance =
+                value
+                    .scaled(scale)
+                    .ok_or_else(|| CacheContractError::InvalidValue {
+                        value: value.get() * scale.get(),
+                    })?;
+        }
+        Ok(())
+    }
 }
 
 impl ProceduralSurfaceDefinition {
@@ -1673,12 +1691,31 @@ impl ProceduralSurfaceDefinition {
         if self.owns_revision_cache() {
             return match value {
                 Some(value) => self
-                    .write_revision_fit_tolerance(value, ToleranceWrite::State)
+                    .write_revision_fit_tolerance(ToleranceWrite::State(value))
                     .into_set_result(),
                 None => clear_revision_form_tolerance(self.revision_cache()),
             };
         }
         self.set_legacy_cache(value.map(LegacyCache::new))
+    }
+
+    /// Scale only the fit tolerance already carried by this construction.
+    fn scale_cache_fit_tolerance(
+        &mut self,
+        scale: crate::scalar::PositiveReal,
+    ) -> Result<(), CacheContractError> {
+        if let Self::VariableBlend(payload) = self {
+            return payload.scale_cache_fit_tolerance(scale);
+        }
+        match self.write_revision_fit_tolerance(ToleranceWrite::Scale(scale)) {
+            RevisionCacheWrite::Written | RevisionCacheWrite::Parameterized => Ok(()),
+            RevisionCacheWrite::NoForm => self
+                .legacy_cache_slot_mut()
+                .map_or(Ok(()), |mut slot| slot.scale_fit_tolerance(scale)),
+            RevisionCacheWrite::InvalidValue(value) => {
+                Err(CacheContractError::InvalidValue { value })
+            }
+        }
     }
 }
 
@@ -1787,7 +1824,7 @@ impl ProceduralCurveDefinition {
         if self.owns_revision_cache() {
             return match value {
                 Some(value) => self
-                    .write_revision_fit_tolerance(value, ToleranceWrite::State)
+                    .write_revision_fit_tolerance(ToleranceWrite::State(value))
                     .into_set_result(),
                 None => clear_revision_form_tolerance(self.revision_cache()),
             };
@@ -1797,6 +1834,31 @@ impl ProceduralCurveDefinition {
             None => {
                 self.clear_legacy_cache();
                 Ok(())
+            }
+        }
+    }
+
+    /// Scale only the fit tolerance already carried by this construction.
+    fn scale_cache_fit_tolerance(
+        &mut self,
+        scale: crate::scalar::PositiveReal,
+    ) -> Result<(), CacheContractError> {
+        match self.write_revision_fit_tolerance(ToleranceWrite::Scale(scale)) {
+            RevisionCacheWrite::Written | RevisionCacheWrite::Parameterized => Ok(()),
+            RevisionCacheWrite::NoForm => {
+                if let Some(Some(cache)) = self.legacy_cache_slot_mut() {
+                    let value = cache.fit_tolerance;
+                    cache.fit_tolerance =
+                        value
+                            .scaled(scale)
+                            .ok_or_else(|| CacheContractError::InvalidValue {
+                                value: value.get() * scale.get(),
+                            })?;
+                }
+                Ok(())
+            }
+            RevisionCacheWrite::InvalidValue(value) => {
+                Err(CacheContractError::InvalidValue { value })
             }
         }
     }
@@ -1816,7 +1878,7 @@ impl ProceduralCurveDefinition {
         &mut self,
         value: FitTolerance,
     ) -> Result<(), CacheContractError> {
-        match self.write_revision_fit_tolerance(value, ToleranceWrite::Raise) {
+        match self.write_revision_fit_tolerance(ToleranceWrite::Raise(value)) {
             RevisionCacheWrite::Written => Ok(()),
             RevisionCacheWrite::Parameterized => {
                 Err(CacheContractError::Layout(PARAMETERIZED_NO_SOLVED_CACHE))
@@ -1834,6 +1896,9 @@ impl ProceduralCurveDefinition {
                 }
                 None => Err(CacheContractError::Layout(NO_LEGACY_SLOT)),
             },
+            RevisionCacheWrite::InvalidValue(value) => {
+                Err(CacheContractError::InvalidValue { value })
+            }
         }
     }
 }
@@ -1921,15 +1986,7 @@ impl ProceduralSurface {
         &mut self,
         scale: crate::scalar::PositiveReal,
     ) -> Result<(), CacheContractError> {
-        if let Some(value) = self.cache_fit_tolerance() {
-            let scaled = value
-                .scaled(scale)
-                .ok_or_else(|| CacheContractError::InvalidValue {
-                    value: value.get() * scale.get(),
-                })?;
-            self.definition.set_cache_fit_tolerance(Some(scaled))?;
-        }
-        Ok(())
+        self.definition.scale_cache_fit_tolerance(scale)
     }
 }
 
@@ -2475,25 +2532,39 @@ impl HelixCurveConstruction {
     pub fn try_scale_lengths(&mut self, scale: f64) -> Result<(), &'static str> {
         let vector =
             |value: Vector3| Vector3::new(value.x * scale, value.y * scale, value.z * scale);
-        let candidate = Self::try_new(
-            self.angle_range.get(),
-            HelixFrame {
-                center: Point3::new(
-                    self.center.x * scale,
-                    self.center.y * scale,
-                    self.center.z * scale,
-                ),
-                major: vector(self.major.get()),
-                minor: vector(self.minor.get()),
-                pitch: vector(self.pitch.get()),
-                axis: self.axis.get(),
-            },
-            self.apex_factor.get(),
-            // The rebuilt construction is minted fresh; the solved-cache
-            // contract this construction states travels with it.
-            self.cache,
-        )?;
-        *self = candidate;
+        let center = Point3::new(
+            self.center.x * scale,
+            self.center.y * scale,
+            self.center.z * scale,
+        );
+        let major = vector(self.major.get());
+        let minor = vector(self.minor.get());
+        let pitch = vector(self.pitch.get());
+        let major_radius = major.norm();
+        let minor_radius = minor.norm();
+        if major_radius <= f64::EPSILON || minor_radius <= f64::EPSILON {
+            return Err("helix curve major, minor, and axis must be non-degenerate");
+        }
+        if major.is_finite()
+            && minor.is_finite()
+            && (!major_radius.is_finite()
+                || !minor_radius.is_finite()
+                || (major_radius - minor_radius).abs() > EPS_HELIX_CURVE_RADIUS)
+        {
+            return Err("helix curve major and minor radii must agree");
+        }
+        let center =
+            FinitePoint3::new(center).ok_or("HelixCurveConstruction.center must be finite")?;
+        let major =
+            FiniteVector3::new(major).ok_or("HelixCurveConstruction.major must be finite")?;
+        let minor =
+            FiniteVector3::new(minor).ok_or("HelixCurveConstruction.minor must be finite")?;
+        let pitch =
+            FiniteVector3::new(pitch).ok_or("HelixCurveConstruction.pitch must be finite")?;
+        self.center = center;
+        self.major = major;
+        self.minor = minor;
+        self.pitch = pitch;
         Ok(())
     }
 }
@@ -3305,15 +3376,24 @@ pub enum RevisionCacheForm<P = RevisionSurfaceParameterization> {
 
 impl<P> RevisionCacheForm<P> {
     /// State the fit tolerance this form carries for its solved cache.
-    fn write_fit_tolerance(
-        &mut self,
-        value: FitTolerance,
-        write: ToleranceWrite,
-    ) -> RevisionCacheWrite {
+    fn write_fit_tolerance(&mut self, write: ToleranceWrite) -> RevisionCacheWrite {
         match self {
             Self::SolvedCache { fit_tolerance } => {
-                if matches!(write, ToleranceWrite::State) || value.get() > fit_tolerance.get() {
-                    *fit_tolerance = value;
+                match write {
+                    ToleranceWrite::State(value) => *fit_tolerance = value,
+                    ToleranceWrite::Raise(value) => {
+                        if value.get() > fit_tolerance.get() {
+                            *fit_tolerance = value;
+                        }
+                    }
+                    ToleranceWrite::Scale(scale) => {
+                        let Some(scaled) = fit_tolerance.scaled(scale) else {
+                            return RevisionCacheWrite::InvalidValue(
+                                fit_tolerance.get() * scale.get(),
+                            );
+                        };
+                        *fit_tolerance = scaled;
+                    }
                 }
                 RevisionCacheWrite::Written
             }
@@ -3365,6 +3445,23 @@ pub enum VariableBlendCache<R = f64> {
 }
 
 impl<R> VariableBlendCache<R> {
+    /// Scale the tolerance only when this cache carries a solved one.
+    fn scale_fit_tolerance(
+        &mut self,
+        scale: crate::scalar::PositiveReal,
+    ) -> Result<(), CacheContractError> {
+        if let Self::Current { fit_tolerance, .. } = self {
+            let value = *fit_tolerance;
+            *fit_tolerance =
+                value
+                    .scaled(scale)
+                    .ok_or_else(|| CacheContractError::InvalidValue {
+                        value: value.get() * scale.get(),
+                    })?;
+        }
+        Ok(())
+    }
+
     /// Native approximation-current flag.
     #[must_use]
     pub const fn shape_prefix(&self) -> i64 {
@@ -6992,59 +7089,6 @@ pub enum SpringLayout<R = f64, I = [f64; 2]> {
     },
 }
 
-/// The support sides a context-first spring layout states.
-fn spring_context_sides<R>(
-    supports: &[SpringSupport<R>; 2],
-    first_pcurve: &SpringPcurve<R>,
-    second_pcurve: Option<&PcurveGeometry>,
-) -> [IntcurveSupportSide; 2] {
-    [
-        IntcurveSupportSide {
-            surface: match &supports[0] {
-                SpringSupport::Surface(surface) => Some(surface.clone()),
-                SpringSupport::Ranges(_) => None,
-            },
-            pcurve: match first_pcurve {
-                SpringPcurve::Pcurve(pcurve) => Some(SupportPcurve::new(pcurve.clone(), None)),
-                SpringPcurve::Range(_) => None,
-            },
-        },
-        IntcurveSupportSide {
-            surface: match &supports[1] {
-                SpringSupport::Surface(surface) => Some(surface.clone()),
-                SpringSupport::Ranges(_) => None,
-            },
-            pcurve: second_pcurve
-                .cloned()
-                .map(|pcurve| SupportPcurve::new(pcurve, None)),
-        },
-    ]
-}
-
-impl SpringLayout<FiniteReal, crate::topology::ParameterInterval> {
-    /// Return the support context, deriving it for the context-first layout
-    /// from the admitted interval and discontinuities.
-    pub fn support_context(
-        &self,
-    ) -> Result<std::borrow::Cow<'_, IntcurveSupportContext>, &'static str> {
-        match self {
-            Self::CacheFirst { context, .. } => Ok(std::borrow::Cow::Borrowed(context)),
-            Self::ContextFirst {
-                supports,
-                first_pcurve,
-                second_pcurve,
-                parameter_range,
-                discontinuities,
-                ..
-            } => Ok(std::borrow::Cow::Owned(IntcurveSupportContext::from_parts(
-                spring_context_sides(supports, first_pcurve, second_pcurve.as_ref()),
-                *parameter_range,
-                discontinuities.clone(),
-            )?)),
-        }
-    }
-}
-
 impl<R, I> SpringLayout<R, I> {
     fn cache_first(&self) -> Option<&CacheFirstCurveForm<R>> {
         match self {
@@ -7058,13 +7102,9 @@ impl<R, I> SpringLayout<R, I> {
     /// The narrow write route: the borrow of the form stays inside this
     /// method, so the layout lends no interior of the admitted payload that
     /// holds it. The context-first layout owns no cache form.
-    fn write_revision_fit_tolerance(
-        &mut self,
-        value: FitTolerance,
-        write: ToleranceWrite,
-    ) -> RevisionCacheWrite {
+    fn write_revision_fit_tolerance(&mut self, write: ToleranceWrite) -> RevisionCacheWrite {
         match self {
-            Self::CacheFirst { form, .. } => form.cache.write_fit_tolerance(value, write),
+            Self::CacheFirst { form, .. } => form.cache.write_fit_tolerance(write),
             Self::ContextFirst { .. } => RevisionCacheWrite::NoForm,
         }
     }
@@ -7408,18 +7448,14 @@ impl SurfaceCurveFamily {
     ///
     /// The narrow write route: the borrow of the cache form stays inside this
     /// method, so the family lends no admitted interior for writing.
-    fn write_revision_fit_tolerance(
-        &mut self,
-        value: FitTolerance,
-        write: ToleranceWrite,
-    ) -> RevisionCacheWrite {
+    fn write_revision_fit_tolerance(&mut self, write: ToleranceWrite) -> RevisionCacheWrite {
         let form = match self {
             Self::Blend { tail, .. }
             | Self::SurfaceConstrained { tail, .. }
             | Self::Skin { tail, .. } => tail.as_mut().map(|first| &mut first.form.cache),
             Self::Parametric { tail, .. } => tail.as_mut().map(|first| &mut first.form.cache),
         };
-        write_revision_form_tolerance(form, value, write)
+        write_revision_form_tolerance(form, write)
     }
 
     /// Return whether two families have the same discriminant and cache-first
@@ -7872,16 +7908,12 @@ impl ProceduralCurveDefinition {
     ///
     /// The narrow write route: the borrow of the cache form stays inside this
     /// method, so no construction lends its admitted interior for writing.
-    fn write_revision_fit_tolerance(
-        &mut self,
-        value: FitTolerance,
-        write: ToleranceWrite,
-    ) -> RevisionCacheWrite {
+    fn write_revision_fit_tolerance(&mut self, write: ToleranceWrite) -> RevisionCacheWrite {
         match self {
-            Self::SurfaceCurve { family } => family.write_revision_fit_tolerance(value, write),
-            Self::SurfaceOffset(payload) => payload.write_revision_fit_tolerance(value, write),
-            Self::Spring(payload) => payload.write_revision_fit_tolerance(value, write),
-            Self::Deformable(payload) => payload.write_revision_fit_tolerance(value, write),
+            Self::SurfaceCurve { family } => family.write_revision_fit_tolerance(write),
+            Self::SurfaceOffset(payload) => payload.write_revision_fit_tolerance(write),
+            Self::Spring(payload) => payload.write_revision_fit_tolerance(write),
+            Self::Deformable(payload) => payload.write_revision_fit_tolerance(write),
             _ => RevisionCacheWrite::NoForm,
         }
     }
@@ -7964,15 +7996,7 @@ impl ProceduralCurve {
         &mut self,
         scale: crate::scalar::PositiveReal,
     ) -> Result<(), CacheContractError> {
-        if let Some(value) = self.cache_fit_tolerance() {
-            let scaled = value
-                .scaled(scale)
-                .ok_or_else(|| CacheContractError::InvalidValue {
-                    value: value.get() * scale.get(),
-                })?;
-            self.definition.set_cache_fit_tolerance(Some(scaled))?;
-        }
-        Ok(())
+        self.definition.scale_cache_fit_tolerance(scale)
     }
 }
 

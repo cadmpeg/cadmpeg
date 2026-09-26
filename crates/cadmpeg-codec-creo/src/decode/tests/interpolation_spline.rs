@@ -52,6 +52,10 @@ use std::collections::BTreeMap;
 
 const EPS_FULL_TURN: f64 = 1e-12;
 
+fn finite_local_system(values: [f64; 12]) -> cadmpeg_ir::units::FiniteVector<12> {
+    cadmpeg_ir::units::FiniteVector::new(values).expect("finite local system fixture")
+}
+
 #[test]
 // These checked constructors must accept the explicit test fixtures.
 #[allow(clippy::unwrap_used)]
@@ -1450,9 +1454,9 @@ fn datum_feature_uses_its_unique_complete_local_system() {
                 crate::feature::definitions::FeatureParameterFrame {
                     kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
                     body: Vec::new(),
-                    decoded_values: Some([
+                    decoded_values: Some(finite_local_system([
                         1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0, 3.0, 4.0, 5.0,
-                    ]),
+                    ])),
                     offset: 1,
                 },
                 crate::feature::definitions::FeatureParameterFrame {
@@ -1510,9 +1514,9 @@ fn coordinate_system_feature_uses_its_unique_complete_local_system() {
                 crate::feature::definitions::FeatureParameterFrame {
                     kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
                     body: Vec::new(),
-                    decoded_values: Some([
+                    decoded_values: Some(finite_local_system([
                         0.0, 2.0, 0.0, -3.0, 0.0, 0.0, 0.0, 0.0, 4.0, 5.0, 6.0, 7.0,
-                    ]),
+                    ])),
                     offset: 1,
                 },
                 crate::feature::definitions::FeatureParameterFrame {
@@ -1570,7 +1574,9 @@ fn coordinate_system_feature_rejects_a_reflected_local_system() {
             parameter_frames: vec![crate::feature::definitions::FeatureParameterFrame {
                 kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
                 body: Vec::new(),
-                decoded_values: Some([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 5.0, 6.0, 7.0]),
+                decoded_values: Some(finite_local_system([
+                    1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 5.0, 6.0, 7.0,
+                ])),
                 offset: 1,
             }],
             outlines: Vec::new(),
@@ -1615,9 +1621,9 @@ fn coordinate_system_feature_rejects_a_local_system_outside_the_record_tolerance
             parameter_frames: vec![crate::feature::definitions::FeatureParameterFrame {
                 kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
                 body: Vec::new(),
-                decoded_values: Some([
+                decoded_values: Some(finite_local_system([
                     1.0, 0.0, 0.0, 1.0e-10, 1.0, 0.0, 0.0, 0.0, 1.0, 5.0, 6.0, 7.0,
-                ]),
+                ])),
                 offset: 1,
             }],
             outlines: Vec::new(),

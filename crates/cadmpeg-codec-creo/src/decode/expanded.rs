@@ -196,7 +196,7 @@ pub(super) fn fc05_circle_records(scan: &ContainerScan) -> Vec<CreoFc05CircleRec
             curve_id: record.curve_id,
             center_row_frame: record.center_row_frame,
             radius_mm: record.radius_mm,
-            sample_direction_row_frame: record.sample_direction_row_frame,
+            sample_direction_row_frame: record.sample_direction_row_frame.get(),
             angle_parameter: record.angle_parameter,
             cap_ordinate_row_frame: record.cap_ordinate_row_frame,
             point_count: record.point_count,

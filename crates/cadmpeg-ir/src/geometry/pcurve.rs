@@ -601,6 +601,19 @@ impl CirclePcurve {
         })
     }
 
+    fn scaled_isotropic(self, scale: f64) -> Result<Self, &'static str> {
+        let center = self.center.get();
+        let center = FinitePoint2::new(Point2::new(center.u * scale, center.v * scale))
+            .ok_or("CirclePcurve.center must be finite")?;
+        let radius = PositiveReal::new(self.radius.get() * scale)
+            .ok_or("CirclePcurve.radius must be positive and finite")?;
+        Ok(Self {
+            center,
+            radius,
+            ..self
+        })
+    }
+
     /// Return the center.
     #[must_use]
     pub const fn center(&self) -> &FinitePoint2 {
@@ -689,6 +702,22 @@ impl EllipsePcurve {
             y_axis,
             major_radius,
             minor_radius,
+        })
+    }
+
+    fn scaled_isotropic(self, scale: f64) -> Result<Self, &'static str> {
+        let center = self.center.get();
+        let center = FinitePoint2::new(Point2::new(center.u * scale, center.v * scale))
+            .ok_or("EllipsePcurve.center must be finite")?;
+        let major_radius = PositiveReal::new(self.major_radius.get() * scale)
+            .ok_or("EllipsePcurve.major_radius must be positive and finite")?;
+        let minor_radius = PositiveReal::new(self.minor_radius.get() * scale)
+            .ok_or("EllipsePcurve.minor_radius must be positive and finite")?;
+        Ok(Self {
+            center,
+            major_radius,
+            minor_radius,
+            ..self
         })
     }
 
@@ -962,6 +991,22 @@ impl HyperbolaPcurve {
             y_axis,
             major_radius,
             minor_radius,
+        })
+    }
+
+    fn scaled_isotropic(self, scale: f64) -> Result<Self, &'static str> {
+        let center = self.center.get();
+        let center = FinitePoint2::new(Point2::new(center.u * scale, center.v * scale))
+            .ok_or("HyperbolaPcurve.center must be finite")?;
+        let major_radius = PositiveReal::new(self.major_radius.get() * scale)
+            .ok_or("HyperbolaPcurve.major_radius must be positive and finite")?;
+        let minor_radius = PositiveReal::new(self.minor_radius.get() * scale)
+            .ok_or("HyperbolaPcurve.minor_radius must be positive and finite")?;
+        Ok(Self {
+            center,
+            major_radius,
+            minor_radius,
+            ..self
         })
     }
 
@@ -1500,20 +1545,20 @@ impl PolarPcurveNurbs {
     /// Refuses a pole or knot count that does not follow from the degree, a
     /// zero degree, a non-finite raw pole value and then a non-finite or
     /// decreasing knot.
-    pub fn new<P: PoleValue<FinitePoint2>, S: PoleValue<FiniteReal>>(
+    pub fn new<P: PoleValue<FinitePoint2>, S: PoleValue<FiniteReal>, K: super::nurbs::KnotValue>(
         degree: u32,
-        knots: Vec<f64>,
+        knots: K,
         poles: PolarNurbsPoles<P, S>,
         periodic: bool,
     ) -> Result<Self, NurbsError> {
-        require_curve_cardinality(degree, knots.len(), poles.count(), "poles")?;
+        require_curve_cardinality(degree, knots.knot_count(), poles.count(), "poles")?;
         if degree == 0 {
             return Err(NurbsError::Structure(
                 "polar NURBS degree must be positive".into(),
             ));
         }
         let poles = poles.admit()?;
-        let knots = KnotVector::new(knots)?;
+        let knots = knots.admit()?;
         Ok(Self {
             degree,
             knots,
@@ -1544,15 +1589,15 @@ impl PolarPcurveNurbs {
         Self::new(degree, knots, poles, periodic)
     }
 
-    /// Build a polar NURBS from a pole lane and an admitted weight lane.
+    /// Build a polar NURBS from admitted knots, a pole lane and an admitted weight lane.
     ///
     /// # Errors
     ///
-    /// Refuses a weight lane that does not cover the poles and what
-    /// [`Self::new`] refuses.
+    /// Refuses a weight lane that does not cover the poles, invalid
+    /// cardinalities, or a non-finite raw pole value.
     pub fn from_checked_lanes<P: PoleValue<FinitePoint2>, S: PoleValue<FiniteReal>>(
         degree: u32,
-        knots: Vec<f64>,
+        knots: KnotVector,
         poles: Vec<PolarNurbsPole<P, S>>,
         weights: Option<Vec<NonZeroReal>>,
         periodic: bool,
@@ -1661,20 +1706,20 @@ impl PcurveNurbs {
     /// Refuses a pole or knot count that does not follow from the degree, a
     /// zero degree, a non-finite raw pole coordinate and then a non-finite or
     /// decreasing knot.
-    pub fn new<P: PoleValue<FinitePoint2>>(
+    pub fn new<P: PoleValue<FinitePoint2>, K: super::nurbs::KnotValue>(
         degree: u32,
-        knots: Vec<f64>,
+        knots: K,
         poles: PcurveNurbsPoles<P>,
         periodic: bool,
     ) -> Result<Self, NurbsError> {
-        require_curve_cardinality(degree, knots.len(), poles.count(), "control_points")?;
+        require_curve_cardinality(degree, knots.knot_count(), poles.count(), "control_points")?;
         if degree == 0 {
             return Err(NurbsError::Structure(
                 "pcurve NURBS degree must be positive".into(),
             ));
         }
         let poles = poles.admit()?;
-        let knots = KnotVector::new(knots)?;
+        let knots = knots.admit()?;
         Ok(Self {
             degree,
             knots,
@@ -1697,7 +1742,7 @@ impl PcurveNurbs {
             .collect();
         NurbsCurve::from_checked_lanes(
             self.degree,
-            self.knots.to_vec(),
+            self.knots.clone(),
             points,
             self.weights(),
             self.periodic,
@@ -1726,16 +1771,16 @@ impl PcurveNurbs {
         Self::new(degree, knots, poles, periodic)
     }
 
-    /// Build a parameter-space NURBS from a pole lane and an admitted weight
-    /// lane.
+    /// Build a parameter-space NURBS from admitted knots, a pole lane and an
+    /// admitted weight lane.
     ///
     /// # Errors
     ///
-    /// Refuses a weight lane that does not cover the poles and what
-    /// [`Self::new`] refuses.
+    /// Refuses a weight lane that does not cover the poles, invalid
+    /// cardinalities, or a non-finite raw pole coordinate.
     pub fn from_checked_lanes<P: PoleValue<FinitePoint2>>(
         degree: u32,
-        knots: Vec<f64>,
+        knots: KnotVector,
         control_points: Vec<P>,
         weights: Option<Vec<NonZeroReal>>,
         periodic: bool,
@@ -1934,12 +1979,7 @@ impl PcurveGeometry {
                 scale(*line.origin().as_raw()),
                 scale(*line.direction().as_raw()),
             )?),
-            Self::Circle(circle) if isotropic => Self::Circle(CirclePcurve::try_new(
-                scale(circle.center().get()),
-                circle.x_axis().get(),
-                circle.y_axis().get(),
-                circle.radius().get() * u_scale,
-            )?),
+            Self::Circle(circle) if isotropic => Self::Circle(circle.scaled_isotropic(u_scale)?),
             Self::Circle(circle) => Self::Harmonic(HarmonicPcurve::try_new(
                 scale(circle.center().get()),
                 scale(Point2::new(
@@ -1951,13 +1991,9 @@ impl PcurveGeometry {
                     circle.radius().get() * circle.y_axis().v,
                 )),
             )?),
-            Self::Ellipse(ellipse) if isotropic => Self::Ellipse(EllipsePcurve::try_new(
-                scale(ellipse.center().get()),
-                ellipse.x_axis().get(),
-                ellipse.y_axis().get(),
-                ellipse.major_radius().get() * u_scale,
-                ellipse.minor_radius().get() * u_scale,
-            )?),
+            Self::Ellipse(ellipse) if isotropic => {
+                Self::Ellipse(ellipse.scaled_isotropic(u_scale)?)
+            }
             Self::Ellipse(ellipse) => Self::Harmonic(HarmonicPcurve::try_new(
                 scale(ellipse.center().get()),
                 scale(Point2::new(
@@ -1975,13 +2011,9 @@ impl PcurveGeometry {
                 scale(parabola.y_axis().get()),
                 parabola.focal_distance().get(),
             )?),
-            Self::Hyperbola(hyperbola) if isotropic => Self::Hyperbola(HyperbolaPcurve::try_new(
-                scale(hyperbola.center().get()),
-                hyperbola.x_axis().get(),
-                hyperbola.y_axis().get(),
-                hyperbola.major_radius().get() * u_scale,
-                hyperbola.minor_radius().get() * u_scale,
-            )?),
+            Self::Hyperbola(hyperbola) if isotropic => {
+                Self::Hyperbola(hyperbola.scaled_isotropic(u_scale)?)
+            }
             Self::Hyperbola(hyperbola) => Self::Hyperbolic(HyperbolicPcurve::try_new(
                 scale(hyperbola.center().get()),
                 scale(Point2::new(
@@ -2041,17 +2073,15 @@ impl PcurveGeometry {
                 })
             }
             Self::Transformed(placed) => {
-                if !u_scale.is_finite() || !v_scale.is_finite() || u_scale == 0.0 || v_scale == 0.0
-                {
-                    return Err(
-                        "transformed pcurve coordinate scales must be finite and nonzero".into(),
-                    );
-                }
+                let u_scale = NonZeroReal::new(u_scale)
+                    .ok_or("transformed pcurve coordinate scales must be finite and nonzero")?;
+                let v_scale = NonZeroReal::new(v_scale)
+                    .ok_or("transformed pcurve coordinate scales must be finite and nonzero")?;
                 let mut rows = placed.transform.affine_rows();
-                rows[0][1] *= u_scale / v_scale;
-                rows[0][2] *= u_scale;
-                rows[1][0] *= v_scale / u_scale;
-                rows[1][2] *= v_scale;
+                rows[0][1] *= u_scale.get() / v_scale.get();
+                rows[0][2] *= u_scale.get();
+                rows[1][0] *= v_scale.get() / u_scale.get();
+                rows[1][2] *= v_scale.get();
                 let transform =
                     Transform2::affine(rows).ok_or("scaled pcurve transform is invalid")?;
                 let mut basis = placed.basis.clone();
