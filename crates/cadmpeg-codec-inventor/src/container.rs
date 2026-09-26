@@ -139,8 +139,8 @@ impl<'a> InventorContainer<'a> {
         let recovery = crate::dialect::DialectRecovery::of(ctx, self)?;
         let matched = recovery.classify(ctx)?;
         let mut losses = Vec::new();
+        admit_summary_loss_slot(ctx, &matched)?;
         if let Some(loss) = crate::dialect::dialect_loss(ctx, &matched, &recovery)? {
-            ctx.charge_collection_items(1, "collect Inventor summary loss")?;
             losses.push(loss);
         }
         let dialects = crate::dialect::layers(ctx, &matched, &self.rse.active_carrier)?;
@@ -148,35 +148,57 @@ impl<'a> InventorContainer<'a> {
             .iter()
             .find(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
         {
+            admit_summary_loss_slot(ctx, kernel)?;
             if let Some(loss) = crate::dialect::kernel_dialect_loss(ctx, kernel)? {
-                ctx.charge_collection_items(1, "collect Inventor summary loss")?;
                 losses.push(loss);
             }
         }
-        ctx.charge_collection_items(1, "collect Inventor summary note")?;
-        admit_formatted(
+        let note = summary_note(
             ctx,
-            format_args!(
-                "CFB v{} with {} RSe segment pair(s) and {} versioned database(s)",
-                self.snapshot.major_version(),
-                self.rse.segments.len(),
-                self.rse.databases.len()
-            ),
-            "retain Inventor summary note",
+            self.snapshot.major_version(),
+            self.rse.segments.len(),
+            self.rse.databases.len(),
         )?;
         Ok(ContainerSummary::classified(
             dialects,
             cadmpeg_ir::ContainerKind::Cfb,
             entries,
             losses,
-            vec![format!(
-                "CFB v{} with {} RSe segment pair(s) and {} versioned database(s)",
-                self.snapshot.major_version(),
-                self.rse.segments.len(),
-                self.rse.databases.len()
-            )],
+            vec![note],
         ))
     }
+}
+
+fn admit_summary_loss_slot(
+    ctx: &DecodeContext<'_>,
+    matched: &cadmpeg_core::dialect::DialectMatch,
+) -> Result<(), CodecError> {
+    if !matches!(
+        matched.admission(),
+        cadmpeg_core::dialect::Admission::Admitted
+    ) {
+        ctx.charge_collection_items(1, "collect Inventor summary loss")?;
+    }
+    Ok(())
+}
+
+fn summary_note(
+    ctx: &DecodeContext<'_>,
+    major: u16,
+    segment_count: usize,
+    database_count: usize,
+) -> Result<String, CodecError> {
+    ctx.charge_collection_items(1, "collect Inventor summary note")?;
+    admit_formatted(
+        ctx,
+        format_args!(
+            "CFB v{major} with {segment_count} RSe segment pair(s) and {database_count} versioned database(s)"
+        ),
+        "retain Inventor summary note",
+    )?;
+    Ok(format!(
+        "CFB v{major} with {segment_count} RSe segment pair(s) and {database_count} versioned database(s)"
+    ))
 }
 
 fn admit_container_entries(
