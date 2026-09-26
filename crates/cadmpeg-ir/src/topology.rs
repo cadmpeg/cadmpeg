@@ -1061,6 +1061,11 @@ impl From<IncreasingParameterInterval> for ParameterInterval {
 pub struct IncreasingParameterInterval([f64; 2]);
 
 impl IncreasingParameterInterval {
+    /// Order finite endpoints without testing their already admitted finiteness.
+    pub fn from_finite_endpoints(endpoints: crate::units::FiniteVector<2>) -> Option<Self> {
+        (endpoints[0] < endpoints[1]).then_some(Self(endpoints.get()))
+    }
+
     /// The interval from `lower` to `upper`, absent unless `lower` is
     /// strictly below `upper`. Finite reals need no finiteness test.
     pub fn between(
@@ -1397,6 +1402,26 @@ mod tests {
         let next = f64::from_bits(1.0_f64.to_bits() + 1);
         let narrow = IncreasingParameterInterval::new([1.0, next]).unwrap();
         assert!(narrow.split_at_midpoint().is_none());
+    }
+
+    #[test]
+    fn finite_vector_endpoints_keep_bits_when_ordered_as_an_interval() {
+        use super::IncreasingParameterInterval;
+        use crate::units::FiniteVector;
+
+        let endpoints = FiniteVector::new([-0.0, f64::MAX]).expect("finite endpoints");
+        let interval = IncreasingParameterInterval::from_finite_endpoints(endpoints)
+            .expect("strictly increasing endpoints");
+        assert_eq!(interval.lower().to_bits(), (-0.0_f64).to_bits());
+        assert_eq!(interval.upper().to_bits(), f64::MAX.to_bits());
+        assert!(IncreasingParameterInterval::from_finite_endpoints(
+            FiniteVector::new([1.0, 1.0]).expect("finite endpoints")
+        )
+        .is_none());
+        assert!(IncreasingParameterInterval::from_finite_endpoints(
+            FiniteVector::new([2.0, 1.0]).expect("finite endpoints")
+        )
+        .is_none());
     }
 
     #[test]
