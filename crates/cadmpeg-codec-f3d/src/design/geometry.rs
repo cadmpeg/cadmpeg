@@ -1873,15 +1873,12 @@ fn nurbs_speed_bound(curve: &PcurveNurbs) -> Option<f64> {
         .iter()
         .map(|p| [p.u, p.v])
         .collect::<Vec<_>>();
-    let weights = match curve.pole_rows().weights() {
-        Some(weights) => weights,
-        None => alloc_filled(points.len(), 1.0, "f3d_nurbs_weights").ok()?,
-    };
+    let weights = curve.pole_rows().weights();
     cadmpeg_ir::geometry::nurbs::bounds::speed_bound(
         curve.degree(),
         curve.knots(),
         &points,
-        &weights,
+        weights.as_deref(),
         [0.0, 0.0],
     )
     .map(cadmpeg_ir::scalar::FiniteReal::get)
