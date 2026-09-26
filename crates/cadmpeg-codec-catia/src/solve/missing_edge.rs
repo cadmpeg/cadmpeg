@@ -2732,10 +2732,11 @@ fn parse_standard_mesh_selection(
 }
 
 fn boundary_endpoint_support(
+    ctx: &DecodeContext<'_>,
     boundary: &[MeshBoundaryEdgeCandidate],
     edge_candidates: &[Vec<[usize; 2]>],
     budget: &WorkBudget<'_>,
-) -> Option<HashMap<usize, HashSet<[usize; 2]>>> {
+) -> Result<Option<HashMap<usize, HashSet<[usize; 2]>>>, CodecError> {
     #[derive(Clone, Copy)]
     struct State {
         pair: [usize; 2],
@@ -2770,33 +2771,44 @@ fn boundary_endpoint_support(
                 })
             })
         })
-        .collect::<Option<Vec<_>>>()?;
-    let first_layer = layers.first()?;
-    let layer_states = layers
+        .collect::<Option<Vec<_>>>();
+    let Some(layers) = layers else {
+        return Ok(None);
+    };
+    let Some(first_layer) = layers.first() else {
+        return Ok(None);
+    };
+    let Some(layer_states) = layers
         .iter()
-        .try_fold(0usize, |total, layer| total.checked_add(layer.len()))?;
+        .try_fold(0usize, |total, layer| total.checked_add(layer.len()))
+    else {
+        return Ok(None);
+    };
     let first_points = first_layer
         .iter()
         .map(|state| state.start)
         .collect::<HashSet<_>>();
     let mut supported = layers
         .iter()
-        .map(|layer| alloc_filled(layer.len(), false, "catia_boundary_layer_marks").ok())
-        .collect::<Option<Vec<_>>>()?;
+        .map(|layer| ctx.alloc_filled(layer.len(), false, "catia_boundary_layer_marks"))
+        .collect::<Result<Vec<_>, _>>()?;
     for first_point in first_points {
-        if !budget.charge_by(layer_states.checked_mul(3)?) {
-            return None;
+        let Some(work) = layer_states.checked_mul(3) else {
+            return Ok(None);
+        };
+        if !budget.charge_by(work) {
+            return Ok(None);
         }
         let mut forward = layers
             .iter()
-            .map(|layer| alloc_filled(layer.len(), false, "catia_boundary_forward_marks").ok())
-            .collect::<Option<Vec<_>>>()?;
+            .map(|layer| ctx.alloc_filled(layer.len(), false, "catia_boundary_forward_marks"))
+            .collect::<Result<Vec<_>, _>>()?;
         for (state, reachable) in first_layer.iter().zip(&mut forward[0]) {
             *reachable = state.start == first_point;
         }
         for layer in 1..layers.len() {
             if !budget.charge_by(layers[layer - 1].len() + layers[layer].len()) {
-                return None;
+                return Ok(None);
             }
             let reachable_points = layers[layer - 1]
                 .iter()
@@ -2809,8 +2821,8 @@ fn boundary_endpoint_support(
         }
         let mut backward = layers
             .iter()
-            .map(|layer| alloc_filled(layer.len(), false, "catia_boundary_backward_marks").ok())
-            .collect::<Option<Vec<_>>>()?;
+            .map(|layer| ctx.alloc_filled(layer.len(), false, "catia_boundary_backward_marks"))
+            .collect::<Result<Vec<_>, _>>()?;
         let last = layers.len() - 1;
         for (state, (reachable, value)) in layers[last]
             .iter()
@@ -2844,17 +2856,17 @@ fn boundary_endpoint_support(
             .filter_map(|(state, supported)| supported.then_some(state.pair))
             .collect::<HashSet<_>>();
         if values.is_empty() {
-            return None;
+            return Ok(None);
         }
         by_edge
             .entry(use_.edge)
             .and_modify(|stored| stored.retain(|pair| values.contains(pair)))
             .or_insert(values);
     }
-    by_edge
+    Ok(by_edge
         .values()
         .all(|domain| !domain.is_empty())
-        .then_some(by_edge)
+        .then_some(by_edge))
 }
 
 /// Prune endpoint-pair domains through every ordered trim-boundary candidate.
@@ -2862,17 +2874,25 @@ fn boundary_endpoint_support(
 /// whose ordered cycles admit a closed head-to-tail traversal using that pair.
 #[must_use]
 pub(crate) fn standard_mesh_prune_endpoint_candidates(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
-) -> Option<Vec<Vec<[usize; 2]>>> {
+) -> Result<Option<Vec<Vec<[usize; 2]>>>, CodecError> {
     if edge_faces.len() != edge_candidates.len() {
-        return None;
+        return Ok(None);
     }
-    let face_run = selected_standard_run(bytes)?;
+    let Some(face_run) = selected_standard_run(bytes) else {
+        return Ok(None);
+    };
     let after_faces = face_run.after_faces();
-    let (_, vertex_header) = parse_edge_tables(bytes, after_faces)?;
-    let point_count = parse_vertex_table(bytes, vertex_header)?.len();
+    let Some((_, vertex_header)) = parse_edge_tables(bytes, after_faces) else {
+        return Ok(None);
+    };
+    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+        return Ok(None);
+    };
+    let point_count = vertex_points.len();
     let complete_domain = (0..point_count)
         .flat_map(|left| ((left + 1)..point_count).map(move |right| [left, right]))
         .collect::<Vec<_>>();
@@ -2886,7 +2906,9 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
             }
         })
         .collect::<Vec<_>>();
-    let mut faces = standard_mesh_boundary_assignments(bytes, edge_faces, None)?;
+    let Some(mut faces) = standard_mesh_boundary_assignments(bytes, edge_faces, None) else {
+        return Ok(None);
+    };
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     loop {
         let before = (
@@ -2895,29 +2917,28 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
         );
         let mut face_supports = Vec::with_capacity(faces.len());
         for assignments in &mut faces {
-            let evaluated = assignments
-                .iter()
-                .enumerate()
-                .filter_map(|(index, assignment)| {
-                    let mut support = HashMap::<usize, HashSet<[usize; 2]>>::new();
-                    for boundary in &assignment.boundaries {
-                        for (edge, domain) in
-                            boundary_endpoint_support(boundary, &candidates, &budget)?
-                        {
-                            support
-                                .entry(edge)
-                                .and_modify(|stored| stored.retain(|pair| domain.contains(pair)))
-                                .or_insert(domain);
-                        }
+            let mut evaluated = Vec::new();
+            'assignment: for (index, assignment) in assignments.iter().enumerate() {
+                let mut support = HashMap::<usize, HashSet<[usize; 2]>>::new();
+                for boundary in &assignment.boundaries {
+                    let Some(boundary_support) =
+                        boundary_endpoint_support(ctx, boundary, &candidates, &budget)?
+                    else {
+                        continue 'assignment;
+                    };
+                    for (edge, domain) in boundary_support {
+                        support
+                            .entry(edge)
+                            .and_modify(|stored| stored.retain(|pair| domain.contains(pair)))
+                            .or_insert(domain);
                     }
-                    support
-                        .values()
-                        .all(|domain| !domain.is_empty())
-                        .then_some((index, support))
-                })
-                .collect::<Vec<_>>();
+                }
+                if support.values().all(|domain| !domain.is_empty()) {
+                    evaluated.push((index, support));
+                }
+            }
             if evaluated.is_empty() {
-                return None;
+                return Ok(None);
             }
             *assignments = evaluated
                 .iter()
@@ -2943,7 +2964,7 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
                     .copied()
                     .collect::<HashSet<_>>();
                 if support.is_empty() {
-                    return None;
+                    return Ok(None);
                 }
                 if let Some(allowed) = &mut allowed {
                     allowed.retain(|pair| support.contains(pair));
@@ -2951,14 +2972,16 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
                     allowed = Some(support);
                 }
             }
-            let allowed = allowed?;
+            let Some(allowed) = allowed else {
+                return Ok(None);
+            };
             domain.retain(|pair| {
                 let mut pair = *pair;
                 pair.sort_unstable();
                 allowed.contains(&pair)
             });
             if domain.is_empty() {
-                return None;
+                return Ok(None);
             }
         }
         let after = (
@@ -2969,7 +2992,7 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
             break;
         }
     }
-    Some(candidates)
+    Ok(Some(candidates))
 }
 
 type MeshCorner = (usize, usize, usize);

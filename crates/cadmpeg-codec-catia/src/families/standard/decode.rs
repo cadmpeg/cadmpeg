@@ -4786,18 +4786,18 @@ fn attach_standard_topology(
                     changed |= options[edge] != previous;
                 }
             }
-            if let Some(boundary_domains) = options
-                .iter()
-                .all(|domain| !domain.is_empty())
-                .then(|| {
-                    missing_edge::standard_mesh_prune_endpoint_candidates(
-                        spine,
-                        &edge_faces,
-                        options,
-                    )
-                })
-                .flatten()
-            {
+            let boundary_domains = if options.iter().all(|domain| !domain.is_empty()) {
+                missing_edge::standard_mesh_prune_endpoint_candidates(
+                    ctx,
+                    spine,
+                    &edge_faces,
+                    options,
+                )
+                .map_err(StandardTopologyError::Resource)?
+            } else {
+                None
+            };
+            if let Some(boundary_domains) = boundary_domains {
                 for (edge, mut domain) in boundary_domains.into_iter().enumerate() {
                     if deferred_port_edges[edge] {
                         continue;

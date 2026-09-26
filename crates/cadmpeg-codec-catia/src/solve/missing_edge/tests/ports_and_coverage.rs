@@ -34,6 +34,64 @@ fn placement_endpoint_limit_operation(max_collection_items: u64) -> &'static str
     }
 }
 
+fn boundary_support_limit_operation(max_collection_items: u64) -> &'static str {
+    use cadmpeg_core::decode::{
+        DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, WorkBudget,
+    };
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_collection_items;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let boundary = [crate::solve::missing_edge::MeshBoundaryEdgeCandidate {
+        edge: 0,
+        start: 0,
+        end: 1,
+        reversed: None,
+    }];
+    let error = crate::solve::missing_edge::boundary_endpoint_support(
+        &ctx,
+        &boundary,
+        &[vec![[0, 1]]],
+        &WorkBudget::new(100),
+    )
+    .expect_err("boundary support allocation exceeds the collection limit");
+    match error {
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems =>
+        {
+            limit.operation
+        }
+        other => panic!("expected collection resource limit, got {other:?}"),
+    }
+}
+
+#[test]
+fn boundary_support_layer_marks_propagate_collection_refusal() {
+    assert_eq!(
+        boundary_support_limit_operation(0),
+        "catia_boundary_layer_marks"
+    );
+}
+
+#[test]
+fn boundary_support_forward_marks_propagate_collection_refusal() {
+    assert_eq!(
+        boundary_support_limit_operation(2),
+        "catia_boundary_forward_marks"
+    );
+}
+
+#[test]
+fn boundary_support_backward_marks_propagate_collection_refusal() {
+    assert_eq!(
+        boundary_support_limit_operation(4),
+        "catia_boundary_backward_marks"
+    );
+}
+
 #[test]
 fn placement_endpoint_domains_propagate_collection_refusal() {
     assert_eq!(
@@ -338,6 +396,7 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
         [[0, 1], [1, 2], [2, 3], [0, 3]]
     );
     let cycle_domains = crate::solve::missing_edge::standard_mesh_prune_endpoint_candidates(
+        &ctx,
         &bytes,
         &[[0, 0]; 4],
         &[
@@ -347,14 +406,17 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
             vec![[3, 0]],
         ],
     )
+    .expect("service resource budget")
     .expect("ordered boundary endpoint domains");
     assert_eq!(cycle_domains[0], [[0, 1]]);
     let inferred_cycle_domains =
         crate::solve::missing_edge::standard_mesh_prune_endpoint_candidates(
+            &ctx,
             &bytes,
             &[[0, 0]; 4],
             &[Vec::new(), vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]],
         )
+        .expect("service resource budget")
         .expect("endpoint domain inferred from ordered neighbors");
     assert_eq!(inferred_cycle_domains[0], [[0, 1]]);
     let endpoint_domains = crate::solve::missing_edge::standard_mesh_placement_endpoint_pairs(
