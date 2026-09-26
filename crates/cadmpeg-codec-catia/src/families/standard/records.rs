@@ -610,13 +610,12 @@ pub(super) fn plane_params<S: std::hash::BuildHasher>(
 /// Decode a plane carrier from its bridged bounds and trim-frame records.
 pub(super) fn decode_plane(params: &PlaneParams) -> Option<SurfaceGeometry> {
     let normal = unit_vector(Vector3::from(params.normal.get()))?;
+    let ref_direction = UnitVector3::new(cadmpeg_ir::geometry::derive_reference_direction(
+        *normal.as_raw(),
+    ))?;
+    let frame = OrthonormalFrame3::from_units(normal, ref_direction)?;
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-            params.origin.get(),
-            normal,
-            cadmpeg_ir::geometry::derive_reference_direction(normal),
-        )
-        .ok()?,
+        cadmpeg_ir::geometry::analytic::PlaneSurface::new(params.origin, frame),
     )))
 }
 

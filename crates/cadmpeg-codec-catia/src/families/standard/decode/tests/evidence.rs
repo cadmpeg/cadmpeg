@@ -495,7 +495,7 @@ fn non_collinear_circle_endpoints_determine_the_carrier_plane() {
         Point3::new(1.0, 4.0, 3.0),
     )
     .expect("non-collinear radii determine an axis");
-    assert_eq!(axis, Vector3::new(0.0, 0.0, 1.0));
+    assert_eq!(*axis.as_raw(), Vector3::new(0.0, 0.0, 1.0));
     assert!(circle_axis_from_endpoints(
         Point3::new(1.0, 2.0, 3.0),
         2.0,
