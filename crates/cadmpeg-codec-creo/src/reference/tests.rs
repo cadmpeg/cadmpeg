@@ -21,7 +21,7 @@ use super::{
     ReferenceLineKind,
 };
 use crate::scalar::ScalarCache;
-use cadmpeg_ir::scalar::PositiveLength;
+use cadmpeg_ir::scalar::{PositiveLength, PositiveReal};
 
 #[test]
 fn decodes_complete_positional_line_rows() {
@@ -314,7 +314,7 @@ fn decodes_line3d_with_matching_original_length() {
         line.kind,
         ReferenceLineKind::Line3d {
             entity_id: 35,
-            original_length: PositiveLength::new(1.0).expect("positive length")
+            original_length: PositiveReal::new(1.0).expect("positive source length")
         }
     );
     assert_eq!(<[f64; 3]>::from(line.start.get()), [0.0; 3]);
@@ -516,7 +516,7 @@ fn decode_retains_line3d_original_length() {
         line.kind,
         crate::reference::ReferenceLineKind::Line3d {
             entity_id: 35,
-            original_length: PositiveLength::new(1.0).expect("positive length")
+            original_length: PositiveReal::new(1.0).expect("positive source length")
         }
     );
 
