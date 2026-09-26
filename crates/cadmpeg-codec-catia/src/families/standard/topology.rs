@@ -455,9 +455,17 @@ fn reconstruct_incidence_with_edge_classes(
         edge_faces,
         edge_points,
         face_count,
-        edge_classes,
-        None,
+        StandardIncidenceEvidence {
+            edge_classes,
+            mesh_bytes: None,
+        },
     )
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct StandardIncidenceEvidence<'a> {
+    pub(super) edge_classes: Option<&'a [usize]>,
+    pub(super) mesh_bytes: Option<&'a [u8]>,
 }
 
 pub(super) fn reconstruct_incidence_with_edge_classes_and_mesh(
@@ -467,9 +475,12 @@ pub(super) fn reconstruct_incidence_with_edge_classes_and_mesh(
     edge_faces: &[[usize; 2]],
     edge_points: &[[usize; 2]],
     face_count: usize,
-    edge_classes: Option<&[usize]>,
-    mesh_bytes: Option<&[u8]>,
+    evidence: StandardIncidenceEvidence<'_>,
 ) -> Result<Option<StandardTopology>, CodecError> {
+    let StandardIncidenceEvidence {
+        edge_classes,
+        mesh_bytes,
+    } = evidence;
     let Some(completed_edge_faces) = complete_duplicate_face_slots(
         ctx,
         &edge_rows,
@@ -545,7 +556,8 @@ pub(super) fn complete_duplicate_face_slots(
 ) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
     const MAX_DUPLICATE_FACE_OPERATIONS: usize = 65_536;
 
-    struct SearchInputs<'a> {
+    struct SearchInputs<'a, 'ctx> {
+        ctx: &'a DecodeContext<'ctx>,
         unresolved: &'a [usize],
         edge_rows: &'a [EdgeRow],
         edge_faces: &'a [[usize; 2]],
@@ -555,8 +567,7 @@ pub(super) fn complete_duplicate_face_slots(
     }
 
     fn search(
-        ctx: &DecodeContext<'_>,
-        inputs: &SearchInputs<'_>,
+        inputs: &SearchInputs<'_, '_>,
         degrees: &mut [BTreeMap<usize, u8>],
         assignment: &mut [usize],
         used: &mut [bool],
@@ -578,21 +589,20 @@ pub(super) fn complete_duplicate_face_slots(
                 for (&edge, &face) in inputs.unresolved.iter().zip(assignment.iter()) {
                     completed[edge][1] = face;
                 }
-                standard_mesh_boundary_assignments(ctx, bytes, &completed, None)?.is_some()
+                standard_mesh_boundary_assignments(inputs.ctx, bytes, &completed, None)?.is_some()
             } else {
                 true
             };
             if mesh_valid {
                 let distinct = if let Some(existing) = solutions.first() {
                     !duplicate_face_assignments_equivalent(
-                        ctx,
+                        inputs.ctx,
                         inputs.unresolved,
                         inputs.edge_rows,
                         inputs.edge_faces,
                         inputs.edge_points,
                         inputs.edge_classes,
-                        existing,
-                        assignment,
+                        [existing, assignment],
                     )?
                 } else {
                     true
@@ -656,7 +666,7 @@ pub(super) fn complete_duplicate_face_slots(
             assignment[index] = face;
             used[index] = true;
             search(
-                ctx, inputs, degrees, assignment, used, solutions, operations, exhausted,
+                inputs, degrees, assignment, used, solutions, operations, exhausted,
             )?;
             used[index] = false;
             match start_degree_before {
@@ -744,6 +754,7 @@ pub(super) fn complete_duplicate_face_slots(
     let mut operations = 0;
     let mut exhausted = false;
     let inputs = SearchInputs {
+        ctx,
         unresolved: &unresolved,
         edge_rows,
         edge_faces,
@@ -762,7 +773,6 @@ pub(super) fn complete_duplicate_face_slots(
         "catia standard unresolved edge marks",
     )?;
     search(
-        ctx,
         &inputs,
         &mut degrees,
         &mut assignment,
@@ -780,6 +790,7 @@ pub(super) fn complete_duplicate_face_slots(
         };
         solutions.clear();
         let inputs = SearchInputs {
+            ctx,
             unresolved: &unresolved,
             edge_rows,
             edge_faces,
@@ -798,7 +809,6 @@ pub(super) fn complete_duplicate_face_slots(
             "catia standard unresolved edge marks",
         )?;
         search(
-            ctx,
             &inputs,
             &mut degrees,
             &mut assignment,
@@ -827,9 +837,9 @@ fn duplicate_face_assignments_equivalent(
     edge_faces: &[[usize; 2]],
     edge_points: &[[usize; 2]],
     edge_classes: Option<&[usize]>,
-    left: &[usize],
-    right: &[usize],
+    assignments: [&[usize]; 2],
 ) -> Result<bool, CodecError> {
+    let [left, right] = assignments;
     let mut classified = ctx.alloc_filled(
         unresolved.len(),
         false,

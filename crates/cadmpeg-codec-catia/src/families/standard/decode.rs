@@ -2561,8 +2561,10 @@ fn try_decode_standard_population(
         ctx,
         &mut ir,
         &mut annotations,
-        &scan.data,
-        &consolidated_records,
+        StandardConsolidatedSource {
+            data: &scan.data,
+            records: &consolidated_records,
+        },
         &face_bounds,
         &owner_binding_budget,
         refusal,
@@ -5499,8 +5501,10 @@ fn attach_standard_topology(
         annotations,
         &mut topology,
         &point_assignment,
-        &supports,
-        &endpoint_candidates,
+        StandardTopologyValidation {
+            supports: &supports,
+            endpoint_candidates: &endpoint_candidates,
+        },
         admission,
     )
     .map_err(StandardTopologyError::Resource)?
@@ -5545,6 +5549,12 @@ fn attach_standard_topology(
     Ok(())
 }
 
+#[derive(Clone, Copy)]
+struct StandardTopologyValidation<'a> {
+    supports: &'a [crate::families::standard::records::StandardCurveSupport],
+    endpoint_candidates: &'a [Vec<usize>],
+}
+
 /// Validates the solved topology against the decoded model, applies body kinds
 /// and face partitioning, and returns the per-edge logical vertex pairs.
 #[allow(clippy::question_mark)]
@@ -5554,10 +5564,13 @@ fn validate_standard_topology(
     annotations: &mut AnnotationBuilder,
     topology: &mut crate::families::standard::topology::StandardTopology,
     point_assignment: &[usize],
-    supports: &[crate::families::standard::records::StandardCurveSupport],
-    endpoint_candidates: &[Vec<usize>],
+    validation: StandardTopologyValidation<'_>,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<Option<Vec<[usize; 2]>>, cadmpeg_core::CodecError> {
+    let StandardTopologyValidation {
+        supports,
+        endpoint_candidates,
+    } = validation;
     let face_count = ir.model.faces.len();
     if topology.face_count() != face_count
         || topology.edge_rows().len() != supports.len()
@@ -7561,16 +7574,22 @@ fn standard_face_boundary_witnesses(ir: &CadIr) -> Vec<Vec<Point3>> {
         .collect()
 }
 
+#[derive(Clone, Copy)]
+struct StandardConsolidatedSource<'a> {
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
+}
+
 fn bind_standard_a5_owner_surfaces(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    data: &[u8],
-    records: &[ConsolidatedRecord],
+    source: StandardConsolidatedSource<'_>,
     face_bounds: &[Option<crate::families::standard::records::StandardFaceBounds>],
     budget: &WorkBudget<'_>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let StandardConsolidatedSource { data, records } = source;
     let carriers = crate::families::a5a8::records::a5_surfaces_from_records(data, records, refusal);
     let owners = crate::families::b2::records::b2_owner_packets_from_records(data, records);
     if carriers.is_empty() || owners.is_empty() || ir.model.faces.is_empty() {

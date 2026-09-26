@@ -9,11 +9,12 @@ use cadmpeg_ir::units::FiniteVector;
 
 use crate::families::standard::topology::{
     reconstruct, reconstruct_incidence, reconstruct_incidence_with_edge_classes_and_mesh, Boundary,
-    CoedgeUse, EdgeBoundaryLayout, EdgeRow, StandardTopology, TrimRecord,
+    CoedgeUse, EdgeBoundaryLayout, EdgeRow, StandardIncidenceEvidence, StandardTopology,
+    TrimRecord,
 };
 use crate::families::standard::trim_packet::TrimPacket;
 use crate::layout::fbb_face_row as fbb_row;
-use crate::solve::incidence::reconstruct_incidence_candidates;
+use crate::solve::incidence::{reconstruct_incidence_candidates, IncidenceEndpointDomains};
 use crate::solve::mesh_quotient::MeshQuotient;
 use crate::solve::missing_edge::{expand_deferred_edge_port_components, motif_port_points};
 use crate::solve::union_find::UnionFind;
@@ -308,8 +309,10 @@ pub(super) fn parse_standard_endpoints_with_edge_classes(
         edge_faces,
         edge_points,
         face_count,
-        edge_classes,
-        Some(bytes),
+        StandardIncidenceEvidence {
+            edge_classes,
+            mesh_bytes: Some(bytes),
+        },
     )
 }
 
@@ -457,8 +460,10 @@ pub(super) fn parse_standard_endpoint_candidates(
         &edge_rows,
         &vertex_points,
         edge_faces,
-        edge_candidates,
-        None,
+        IncidenceEndpointDomains {
+            candidates: edge_candidates,
+            ports: None,
+        },
         face_count,
         budget,
     )
@@ -503,8 +508,10 @@ pub(super) fn parse_standard_port_endpoint_candidates(
         &edge_rows,
         &vertex_points,
         edge_faces,
-        edge_candidates,
-        Some(edge_ports),
+        IncidenceEndpointDomains {
+            candidates: edge_candidates,
+            ports: Some(edge_ports),
+        },
         face_count,
         budget,
     )
@@ -553,8 +560,10 @@ pub(super) fn parse_fbb_endpoints_with_edge_classes(
         edge_faces,
         edge_points,
         face_count,
-        edge_classes,
-        Some(bytes),
+        StandardIncidenceEvidence {
+            edge_classes,
+            mesh_bytes: Some(bytes),
+        },
     )
 }
 

@@ -15,8 +15,8 @@ use crate::solve::mesh_quotient::{
     mesh_face_endpoint_configurations, AssignmentOrder, MeshCandidateFailure,
     MeshCoordinateRootDomains, MeshEndpointCandidates, MeshEndpointPair,
     MeshEndpointSolutionFilter, MeshFaceEndpointConfigurations, MeshImplicitEdgeCandidates,
-    MeshPartialEndpointConstraint, MeshQuotient, MeshQuotientGaugeState, MeshSolve,
-    MAX_FACE_ENDPOINT_CONFIGURATION_WORK, MAX_MESH_CONSTRAINT_OPERATIONS,
+    MeshIncidenceBoundary, MeshPartialEndpointConstraint, MeshQuotient, MeshQuotientGaugeState,
+    MeshSolve, MAX_FACE_ENDPOINT_CONFIGURATION_WORK, MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 use crate::solve::missing_edge::{
     propagate_edge_port_points, same_unordered_pair, MeshBoundaryEdgeCandidate,
@@ -1511,11 +1511,11 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
                 else {
                     return Ok(true);
                 };
-                if support.is_empty() {
+                if support.by_edge.is_empty() {
                     continue;
                 }
                 assignment_found = true;
-                for (edge, pairs) in support {
+                for (edge, pairs) in support.by_edge {
                     face_support.entry(edge).or_default().extend(pairs);
                 }
             }
@@ -2723,14 +2723,6 @@ impl IncidenceComponentSearch<'_, '_> {
             .filter(|&edge| self.assignment[edge].is_none() && self.branch_edge_ready(edge))
             .collect::<Vec<_>>();
         Ok(Some(self.narrowest_edge_branch(edges, coordinate_domains)?))
-    }
-
-    #[cfg(test)]
-    fn branch_options(
-        &self,
-        coordinate_domains: Option<&MeshCoordinateRootDomains>,
-    ) -> Result<Option<Vec<(usize, [usize; 2])>>, CodecError> {
-        Ok(self.branch(coordinate_domains)?.map(Iterator::collect))
     }
 
     fn adjust(&mut self, edge: usize, pair: [usize; 2]) -> IncidenceDegreeUndo {
@@ -4254,9 +4246,11 @@ where
                     ctx,
                     point_count,
                     &singleton,
-                    edge_faces,
-                    domains.len(),
-                    domains,
+                    MeshIncidenceBoundary {
+                        edge_faces,
+                        face_count: domains.len(),
+                        domains,
+                    },
                     Some(&closure_budget),
                 )?;
                 match outcome {
@@ -4595,9 +4589,11 @@ where
                     ctx,
                     point_count,
                     &singleton,
-                    edge_faces,
-                    face_count,
-                    domains,
+                    MeshIncidenceBoundary {
+                        edge_faces,
+                        face_count,
+                        domains,
+                    },
                     Some(&budget),
                 )?;
                 match outcome {
@@ -4745,17 +4741,27 @@ where
     })
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct IncidenceEndpointDomains<'a> {
+    pub(crate) candidates: &'a [Vec<[usize; 2]>],
+    pub(crate) ports: Option<&'a [[u32; 2]]>,
+}
+
 pub(crate) fn reconstruct_incidence_candidates(
     ctx: &DecodeContext<'_>,
     edge_rows: &[EdgeRow],
     vertex_points: &[[f64; 3]],
     edge_faces: &[[usize; 2]],
-    edge_candidates: &[Vec<[usize; 2]>],
-    edge_ports: Option<&[[u32; 2]]>,
+    endpoints: IncidenceEndpointDomains<'_>,
     face_count: usize,
     budget: &WorkBudget<'_>,
 ) -> Result<Option<StandardTopology>, CodecError> {
     const MAX_TOPOLOGY_ASSIGNMENTS: usize = 256;
+
+    let IncidenceEndpointDomains {
+        candidates: edge_candidates,
+        ports: edge_ports,
+    } = endpoints;
 
     if edge_ports.is_some_and(|ports| ports.len() != edge_candidates.len()) {
         return Ok(None);

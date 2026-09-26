@@ -2852,12 +2852,17 @@ fn parse_standard_mesh_selection(
     ))
 }
 
+#[derive(Debug)]
+struct BoundaryEndpointSupport {
+    by_edge: HashMap<usize, HashSet<[usize; 2]>>,
+}
+
 fn boundary_endpoint_support(
     ctx: &DecodeContext<'_>,
     boundary: &[MeshBoundaryEdgeCandidate],
     edge_candidates: &[Vec<[usize; 2]>],
     budget: &WorkBudget<'_>,
-) -> Result<Option<HashMap<usize, HashSet<[usize; 2]>>>, CodecError> {
+) -> Result<Option<BoundaryEndpointSupport>, CodecError> {
     #[derive(Clone, Copy)]
     struct State {
         pair: [usize; 2],
@@ -2987,7 +2992,7 @@ fn boundary_endpoint_support(
     Ok(by_edge
         .values()
         .all(|domain| !domain.is_empty())
-        .then_some(by_edge))
+        .then_some(BoundaryEndpointSupport { by_edge }))
 }
 
 /// Prune endpoint-pair domains through every ordered trim-boundary candidate.
@@ -3046,7 +3051,7 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
                     else {
                         continue 'assignment;
                     };
-                    for (edge, domain) in boundary_support {
+                    for (edge, domain) in boundary_support.by_edge {
                         support
                             .entry(edge)
                             .and_modify(|stored| stored.retain(|pair| domain.contains(pair)))

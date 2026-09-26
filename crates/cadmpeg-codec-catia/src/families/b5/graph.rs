@@ -937,9 +937,16 @@ pub(in crate::families) fn parse_from_records_budgeted(
         require_topology,
         budget,
         refusal,
-        class21_candidates,
-        &by_id,
+        PreparedB5Graph {
+            class21_candidates,
+            by_id: &by_id,
+        },
     ))
+}
+
+struct PreparedB5Graph<'a, 'b> {
+    class21_candidates: Vec<B5Pcurve>,
+    by_id: &'a HashMap<u32, &'b B5Record>,
 }
 
 fn parse_from_records_with_class21(
@@ -949,9 +956,12 @@ fn parse_from_records_with_class21(
     require_topology: bool,
     budget: Option<&WorkBudget<'_>>,
     refusal: &mut crate::nurbs::LaneRefusals,
-    class21_candidates: Vec<B5Pcurve>,
-    by_id: &HashMap<u32, &B5Record>,
+    prepared: PreparedB5Graph<'_, '_>,
 ) -> Option<B5Graph> {
+    let PreparedB5Graph {
+        class21_candidates,
+        by_id,
+    } = prepared;
     let object_stream_pcurve_jets = crate::families::a5a8::records::object_stream_pcurves(bytes);
     let mut object_stream_pcurve_candidates = BTreeMap::new();
     let mut conflicting_object_stream_pcurves = HashSet::new();

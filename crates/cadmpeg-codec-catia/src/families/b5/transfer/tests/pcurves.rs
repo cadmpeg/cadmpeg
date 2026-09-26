@@ -68,8 +68,10 @@ fn revolution_cache_preserves_native_profile_and_arc_length_chart() {
         revolution_surface(
             ctx,
             Some(&profile),
-            crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
-            crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
+            (
+                crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
+                crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
+            ),
             crate::test_support::test_b5::positive(2.0),
             [[-1.0, 1.0], [0.0, 2.0 * std::f64::consts::PI]],
             &"test record",
@@ -97,8 +99,10 @@ fn revolution_cache_preserves_native_profile_and_arc_length_chart() {
         crate::test_support::with_service_context(|ctx| revolution_surface(
             ctx,
             Some(&profile),
-            crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
-            crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
+            (
+                crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
+                crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
+            ),
             crate::test_support::test_b5::positive(2.0),
             [[-0.5, 1.0], [0.0, 2.0 * std::f64::consts::PI]],
             &"test record",

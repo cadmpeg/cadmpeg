@@ -9,6 +9,7 @@ use crate::solve::mesh_quotient::mesh_edge_points_compatible;
 use crate::solve::mesh_quotient::mesh_face_endpoint_configurations;
 use crate::solve::mesh_quotient::prune_mesh_endpoint_pair_support;
 use crate::solve::mesh_quotient::prune_mesh_endpoint_pair_support_with_limit;
+use crate::solve::mesh_quotient::MeshIncidenceBoundary;
 use crate::solve::mesh_quotient::MeshQuotient;
 use crate::solve::missing_edge::bind_edge_port_candidates;
 use crate::solve::missing_edge::expand_deferred_edge_port_components;
@@ -316,9 +317,11 @@ fn quotient_incidence_closure_updates_face_degrees_incrementally() {
             &ctx,
             EDGE_COUNT,
             &edge_candidates,
-            &edge_faces,
-            1,
-            &domains,
+            MeshIncidenceBoundary {
+                edge_faces: &edge_faces,
+                face_count: 1,
+                domains: &domains,
+            },
             Some(&budget),
         )
         .expect("service resource budget")
@@ -491,9 +494,11 @@ fn quotient_coordinate_closure_enforces_complete_face_degrees() {
             &ctx,
             3,
             &candidates,
-            &edge_faces,
-            1,
-            &domains,
+            MeshIncidenceBoundary {
+                edge_faces: &edge_faces,
+                face_count: 1,
+                domains: &domains,
+            },
             Some(&budget),
         )
         .expect("service resource budget")
@@ -519,9 +524,11 @@ fn quotient_coordinate_closure_enforces_complete_face_degrees() {
             &ctx,
             3,
             &candidates,
-            &edge_faces,
-            1,
-            &domains,
+            MeshIncidenceBoundary {
+                edge_faces: &edge_faces,
+                face_count: 1,
+                domains: &domains,
+            },
             Some(&WorkBudget::new(1_000)),
         )
         .expect("service resource budget")
@@ -555,9 +562,11 @@ fn quotient_coordinate_closure_rejects_sealed_unordered_subcycles() {
             &ctx,
             4,
             &candidates,
-            &edge_faces,
-            1,
-            &domains,
+            MeshIncidenceBoundary {
+                edge_faces: &edge_faces,
+                face_count: 1,
+                domains: &domains,
+            },
             Some(&budget),
         )
         .expect("service resource budget")
@@ -607,9 +616,11 @@ fn quotient_coordinate_closure_enforces_ordered_face_cycles() {
             &ctx,
             4,
             &candidates,
-            &edge_faces,
-            1,
-            &domain([0, 1, 2, 3]),
+            MeshIncidenceBoundary {
+                edge_faces: &edge_faces,
+                face_count: 1,
+                domains: &domain([0, 1, 2, 3]),
+            },
             Some(&WorkBudget::new(10_000)),
         )
         .expect("service resource budget")
@@ -619,9 +630,11 @@ fn quotient_coordinate_closure_enforces_ordered_face_cycles() {
             &ctx,
             4,
             &candidates,
-            &edge_faces,
-            1,
-            &domain([0, 2, 1, 3]),
+            MeshIncidenceBoundary {
+                edge_faces: &edge_faces,
+                face_count: 1,
+                domains: &domain([0, 2, 1, 3]),
+            },
             Some(&WorkBudget::new(10_000)),
         )
         .expect("service resource budget")
@@ -645,9 +658,11 @@ fn quotient_coordinate_closure_enforces_ordered_face_cycles() {
             &ctx,
             4,
             &candidates,
-            &edge_faces,
-            1,
-            &fixed,
+            MeshIncidenceBoundary {
+                edge_faces: &edge_faces,
+                face_count: 1,
+                domains: &fixed,
+            },
             Some(&WorkBudget::new(10_000)),
         )
         .expect("service resource budget")
@@ -749,9 +764,11 @@ fn quotient_counts_global_face_incidence_once_across_coordinate_components() {
             &ctx,
             point_count,
             &candidates,
-            &edge_faces,
-            COMPONENT_COUNT,
-            &domains,
+            MeshIncidenceBoundary {
+                edge_faces: &edge_faces,
+                face_count: COMPONENT_COUNT,
+                domains: &domains,
+            },
             Some(&budget),
         )
         .expect("service resource budget")
@@ -952,9 +969,11 @@ fn quotient_ordered_cycles_use_physical_ports_for_sorted_pairs() {
             &ctx,
             3,
             &candidates,
-            &[[0, 0]; 3],
-            1,
-            &domain,
+            MeshIncidenceBoundary {
+                edge_faces: &[[0, 0]; 3],
+                face_count: 1,
+                domains: &domain,
+            },
             Some(&WorkBudget::new(10_000)),
         )
         .expect("service resource budget")
@@ -1023,9 +1042,9 @@ fn mesh_assignment_endpoint_cycle_support_removes_open_layered_paths() {
     .expect("service resource budget")
     .expect("bounded layered-cycle support");
 
-    assert_eq!(support[&0], HashSet::from([[0, 1]]));
-    assert_eq!(support[&1], HashSet::from([[1, 3]]));
-    assert_eq!(support[&2], HashSet::from([[0, 3]]));
+    assert_eq!(support.by_edge[&0], HashSet::from([[0, 1]]));
+    assert_eq!(support.by_edge[&1], HashSet::from([[1, 3]]));
+    assert_eq!(support.by_edge[&2], HashSet::from([[0, 3]]));
     assert!(!budget.exhausted());
 }
 
@@ -1055,7 +1074,7 @@ fn mesh_assignment_endpoint_cycle_support_requires_one_complete_traversal() {
     .expect("service resource budget")
     .expect("one-layer support");
 
-    assert!(support.is_empty());
+    assert!(support.by_edge.is_empty());
 }
 
 #[test]
@@ -1089,6 +1108,7 @@ fn mesh_assignment_endpoint_cycle_support_refuses_suffix_collection_limit() {
     assert!(run(&service_ctx)
         .expect("service resource budget")
         .expect("one-layer support")
+        .by_edge
         .is_empty());
 
     let arena = DecodeArena::new();

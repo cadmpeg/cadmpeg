@@ -1131,8 +1131,7 @@ fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
             &profile,
             [0.0; 3],
             [0.0, 0.0, 1.0],
-            [0.0, 1.0e300],
-            [0.0, 1.0],
+            [[0.0, 1.0e300], [0.0, 1.0]],
             &"test record",
             &mut crate::nurbs::LaneRefusals::new(),
         ))
@@ -1155,8 +1154,7 @@ fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
             &wide_profile,
             [0.0; 3],
             [0.0, 0.0, 1.0],
-            [0.0, 4096.0 * std::f64::consts::FRAC_PI_2],
-            [0.0, 1.0],
+            [[0.0, 4096.0 * std::f64::consts::FRAC_PI_2], [0.0, 1.0]],
             &"test record",
             &mut crate::nurbs::LaneRefusals::new(),
         ))
