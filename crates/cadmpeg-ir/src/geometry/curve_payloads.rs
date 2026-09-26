@@ -362,6 +362,29 @@ struct OffsetCurveConstructionWire {
 }
 
 impl OffsetCurveConstruction {
+    /// Build a uniform directional offset from admitted finite source parts.
+    /// Only the destination's nonzero direction condition remains to check.
+    pub fn from_admitted_direction(
+        source: CurveId,
+        distance: FiniteReal,
+        direction: FiniteVector3,
+    ) -> Result<Self, ProceduralGeometryError> {
+        if direction.get().norm() <= 0.0 {
+            return Err(ProceduralGeometryError::Payload(
+                crate::geometry::INVALID_CURVE_OFFSET,
+            ));
+        }
+        Ok(Self {
+            source,
+            distance,
+            side: OffsetSide::Direction {
+                direction,
+                support: None,
+            },
+            range: None,
+        })
+    }
+
     /// Build a uniform offset along an explicit direction from admitted
     /// parts. The distance type states finiteness, a unit direction is finite
     /// and nonzero, which is the whole side condition of [`Self::try_new`],

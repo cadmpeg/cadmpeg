@@ -810,7 +810,8 @@ fn indirect_analytic_frames_reverse_the_pcurve_u_parameter() {
     assert!((affine.v_scale - 0.5).abs() < 1.0e-15);
 
     let trimmed = TextSurface::Trimmed {
-        parameter_ranges: [[2.0, 3.0], [4.0, 8.0]],
+        parameter_ranges: [[2.0, 3.0], [4.0, 8.0]]
+            .map(|range| range.map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap())),
         basis: crate::brep::NestedSurface::try_new(cone).expect("one inline basis is admitted"),
     };
     let affine = surface_parameter_affine(&trimmed);
