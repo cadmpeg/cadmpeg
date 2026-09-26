@@ -271,8 +271,8 @@ pub(super) fn spun_nurbs(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<NurbsSurface> {
-    let axis = axis.as_raw();
     use std::f64::consts::{FRAC_PI_2, PI};
+    let axis = axis.as_raw();
     let n = profile.control_points().len();
     let half_sqrt2 = std::f64::consts::SQRT_2 / 2.0;
     let mut control = Vec::with_capacity(n * 9);
@@ -444,7 +444,7 @@ mod tests {
 
     #[test]
     fn admits_square_sum_unit_boundary_even_when_hypot_rounds_outside() {
-        let direction = Vector3::new(-0.3314901066101886, -0.9434586960856134, 0.0);
+        let direction = Vector3::new(-0.331_490_106_610_188_6, -0.943_458_696_085_613_4, 0.0);
         assert!(SumSquaresUnitVector3::new(direction).is_some());
         assert!(cadmpeg_ir::units::UnitVector3::new(direction).is_none());
         let mut bytes = header(0x43, 9, 5);

@@ -312,12 +312,10 @@ pub(super) fn project_revolve(
                 .get("AxisDirection")
                 .and_then(|value| parse_valid_direction(value)),
         )
-        .and_then(|(origin, direction)| {
-            Some(RevolutionAxis {
-                origin,
-                direction,
-                reference: None,
-            })
+        .map(|(origin, direction)| RevolutionAxis {
+            origin,
+            direction,
+            reference: None,
         });
     let op = feature
         .properties
