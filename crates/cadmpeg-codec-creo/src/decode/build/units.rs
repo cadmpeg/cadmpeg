@@ -1111,121 +1111,26 @@ fn scale_hole_shape(
     shape: &mut cadmpeg_ir::features::holes::HoleShape,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
-    let mut construction = shape.construction().clone();
-    let mut exit_kind = *shape.exit_kind();
-    let mut diameter = shape.diameter();
-    scale_hole_construction(&mut construction, scale)?;
-    if let Some(exit_kind) = &mut exit_kind {
-        scale_hole_kind(exit_kind, scale)?;
-    }
-    scale_optional_positive_length(&mut diameter, scale)?;
-    *shape = cadmpeg_ir::features::holes::HoleShape::new(construction, exit_kind, diameter)
-        .map_err(CodecError::malformed)?;
-    Ok(())
-}
+    use cadmpeg_ir::features::holes::HoleLengthEditError;
 
-fn scale_hole_kind(
-    kind: &mut cadmpeg_ir::features::holes::HoleKind,
-    scale: PositiveReal,
-) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::holes::HoleKind;
-
-    match kind {
-        HoleKind::Unresolved(_) => {}
-        HoleKind::PartialCounterbore(pair) => {
-            if let Some(diameter) = pair.first_mut() {
-                scale_positive_length(diameter, scale)?;
-            }
-            if let Some(depth) = pair.second_mut() {
-                scale_positive_length(depth, scale)?;
-            }
-        }
-        HoleKind::PartialCountersink(pair) => {
-            if let Some(diameter) = pair.first_mut() {
-                scale_positive_length(diameter, scale)?;
-            }
-        }
-        HoleKind::Chamfer { diameter, .. } | HoleKind::Countersink { diameter, .. } => {
-            scale_positive_length(diameter, scale)?;
-        }
-        HoleKind::Counterbore { diameter, depth }
-        | HoleKind::CounterboreDrilled {
-            diameter, depth, ..
-        } => {
-            scale_positive_length(diameter, scale)?;
-            scale_positive_length(depth, scale)?;
-        }
-        HoleKind::Counterdrill {
-            diameters, depth, ..
-        } => {
-            let mut diameter = diameters.diameter();
-            let mut entry_diameter = diameters.entry_diameter();
-            scale_positive_length(&mut diameter, scale)?;
-            scale_optional_positive_length(&mut entry_diameter, scale)?;
-            *diameters =
-                cadmpeg_ir::features::holes::CounterdrillDiameters::new(diameter, entry_diameter)
-                    .map_err(CodecError::malformed)?;
-            scale_positive_length(depth, scale)?;
-        }
-        HoleKind::Simple | HoleKind::SimpleDrilled { .. } => {}
-    }
-    Ok(())
-}
-
-fn scale_hole_construction(
-    construction: &mut cadmpeg_ir::features::holes::HoleConstruction,
-    scale: PositiveReal,
-) -> Result<(), cadmpeg_core::CodecError> {
-    match construction {
-        cadmpeg_ir::features::holes::HoleConstruction::Form {
-            kind,
-            specification,
-        } => {
-            scale_hole_kind(kind, scale)?;
-            if let Some(specification) = specification {
-                scale_hole_specification(specification, scale)?;
-            }
-        }
-        cadmpeg_ir::features::holes::HoleConstruction::NativeThread {
-            major_diameter,
-            thread_depth,
-            pitch,
-            ..
-        } => {
-            scale_positive_length(major_diameter, scale)?;
-            scale_positive_length(thread_depth, scale)?;
-            scale_optional_positive_length(pitch, scale)?;
-        }
-    }
-    Ok(())
-}
-
-fn scale_hole_specification(
-    specification: &mut cadmpeg_ir::features::holes::HoleSpecification,
-    scale: PositiveReal,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let (pitch, major_diameter, clearance, depth) = match specification {
-        cadmpeg_ir::features::holes::HoleSpecification::Clearance {
-            clearance, depth, ..
-        } => (None, None, clearance, depth),
-        cadmpeg_ir::features::holes::HoleSpecification::Threaded {
-            pitch,
-            major_diameter,
-            clearance,
-            depth,
-            ..
-        } => (Some(pitch), Some(major_diameter), clearance, depth),
-    };
-    if let Some(pitch) = pitch {
-        scale_optional_positive_length(pitch, scale)?;
-    }
-    if let Some(major_diameter) = major_diameter {
-        scale_optional_positive_length(major_diameter, scale)?;
-    }
-    scale_optional_length(clearance, scale)?;
-    if let cadmpeg_ir::features::holes::HoleThreadDepth::Blind { depth } = depth {
-        scale_positive_length(depth, scale)?;
-    }
+    *shape = shape
+        .try_map_lengths(
+            &mut |value| {
+                let mut value = value;
+                scale_positive_length(&mut value, scale)?;
+                Ok(value)
+            },
+            &mut |value| {
+                let mut value = value;
+                scale_length(&mut value, scale)?;
+                Ok(value)
+            },
+        )
+        .map_err(|error| match error {
+            HoleLengthEditError::Field(error) => error,
+            HoleLengthEditError::Counterdrill(message)
+            | HoleLengthEditError::Treatment(message) => CodecError::malformed(message),
+        })?;
     Ok(())
 }
 
@@ -2276,7 +2181,7 @@ mod tests {
     #[test]
     fn a_counterdrill_whose_diameters_round_to_one_value_is_refused() {
         let [low, high] = collapsing_pair();
-        let mut kind = cadmpeg_ir::features::holes::HoleKind::Counterdrill {
+        let kind = cadmpeg_ir::features::holes::HoleKind::Counterdrill {
             diameters: cadmpeg_ir::features::holes::CounterdrillDiameters::new(
                 positive_length(low),
                 Some(positive_length(high)),
@@ -2285,9 +2190,14 @@ mod tests {
             depth: positive_length(1.0),
             angle: cadmpeg_ir::scalar::InteriorAngle::new(1.0).expect("an interior angle"),
         };
-        let error = super::scale_hole_kind(&mut kind, positive(25.4))
-            .expect_err("the diameters collapse")
-            .to_string();
+        let error = kind
+            .try_map_lengths(&mut |value| -> Result<_, cadmpeg_core::CodecError> {
+                let mut value = value;
+                super::scale_positive_length(&mut value, positive(25.4))?;
+                Ok(value)
+            })
+            .expect_err("the diameters collapse");
+        let error = format!("{error:?}");
         assert!(
             error.contains("entry_diameter must exceed diameter"),
             "{error}"
