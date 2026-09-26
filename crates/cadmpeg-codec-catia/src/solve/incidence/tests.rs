@@ -71,7 +71,13 @@ fn endpoint_candidate_search_selects_a_face_closing_assignment() {
     )
     .expect("service resource budget")
     .expect("unique face-closing endpoint assignment");
-    assert_eq!(topology.edge_vertices().expect("edge vertices")[0], [0, 1]);
+    assert_eq!(
+        topology
+            .edge_vertices(&ctx)
+            .expect("service resource budget")
+            .expect("edge vertices")[0],
+        [0, 1]
+    );
 
     let ports = [[11, 10], [11, 12], [10, 12], [13, 10], [11, 13], [13, 12]];
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
@@ -87,7 +93,13 @@ fn endpoint_candidate_search_selects_a_face_closing_assignment() {
     )
     .expect("service resource budget")
     .expect("unique face-closing assignment with deferred port orientation");
-    assert_eq!(topology.edge_vertices().expect("edge vertices")[0], [1, 0]);
+    assert_eq!(
+        topology
+            .edge_vertices(&ctx)
+            .expect("service resource budget")
+            .expect("edge vertices")[0],
+        [1, 0]
+    );
 }
 
 #[test]

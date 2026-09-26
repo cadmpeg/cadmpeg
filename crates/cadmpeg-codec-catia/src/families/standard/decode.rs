@@ -4984,28 +4984,30 @@ fn attach_standard_topology(
         let Some(topology) = (!has_open_face_domains).then_some(mesh_topology).flatten() else {
             return Ok(None);
         };
-        let Some(endpoint_pairs) = resolved_endpoint_pairs
-            .clone()
-            .or_else(|| {
-                endpoint_candidates
-                    .iter()
-                    .map(|candidates| <[usize; 2]>::try_from(candidates.as_slice()).ok())
-                    .collect::<Option<Vec<[usize; 2]>>>()
-            })
-            .or_else(|| {
-                let ports = topology
-                    .edge_vertices()?
-                    .into_iter()
-                    .map(|[left, right]| {
-                        Some([u32::try_from(left).ok()?, u32::try_from(right).ok()?])
-                    })
-                    .collect::<Option<Vec<_>>>()?;
+        let candidate_pairs = resolved_endpoint_pairs.clone().or_else(|| {
+            endpoint_candidates
+                .iter()
+                .map(|candidates| <[usize; 2]>::try_from(candidates.as_slice()).ok())
+                .collect::<Option<Vec<[usize; 2]>>>()
+        });
+        let endpoint_pairs = if let Some(pairs) = candidate_pairs {
+            Some(pairs)
+        } else {
+            let Some(vertices) = topology.edge_vertices(ctx)? else {
+                return Ok(None);
+            };
+            let ports = vertices
+                .into_iter()
+                .map(|[left, right]| Some([u32::try_from(left).ok()?, u32::try_from(right).ok()?]))
+                .collect::<Option<Vec<_>>>();
+            ports.and_then(|ports| {
                 missing_edge::bind_edge_port_candidates(
                     &ports,
                     constrained_endpoint_options.as_ref()?,
                 )
             })
-        else {
+        };
+        let Some(endpoint_pairs) = endpoint_pairs else {
             return Ok(None);
         };
         let Some(point_assignment) = topology.bind_vertex_points(ctx, &endpoint_pairs)? else {
@@ -5394,6 +5396,7 @@ fn attach_standard_topology(
         }
     }
     let Some(edge_vertices) = validate_standard_topology(
+        ctx,
         ir,
         annotations,
         &mut topology,
@@ -5448,6 +5451,7 @@ fn attach_standard_topology(
 /// and face partitioning, and returns the per-edge logical vertex pairs.
 #[allow(clippy::question_mark)]
 fn validate_standard_topology(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     topology: &mut crate::families::standard::topology::StandardTopology,
@@ -5479,7 +5483,7 @@ fn validate_standard_topology(
     let Some(body_kinds) = topology.body_kinds(&face_groups) else {
         return Ok(None);
     };
-    let Some(edge_vertices) = topology.edge_vertices() else {
+    let Some(edge_vertices) = topology.edge_vertices(ctx)? else {
         return Ok(None);
     };
     if edge_vertices.iter().enumerate().any(|(edge, vertices)| {

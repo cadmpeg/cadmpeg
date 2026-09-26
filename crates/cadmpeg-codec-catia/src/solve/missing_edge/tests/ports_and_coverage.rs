@@ -110,7 +110,10 @@ fn standard_mesh_resolver_derives_trim_components_from_local_ports() {
 
     assert_eq!(assignment, vec![0, 1, 2, 3]);
     assert_eq!(
-        topology.edge_vertices().expect("resolved edge endpoints"),
+        topology
+            .edge_vertices(&ctx)
+            .expect("service resource budget")
+            .expect("resolved edge endpoints"),
         vec![[0, 1], [1, 2], [2, 3], [0, 3]]
     );
 }
@@ -253,7 +256,10 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
     .expect("selected mesh-corner quotient");
     assert_eq!(selected.logical_vertex_count(), 4);
     assert_eq!(
-        selected.edge_vertices().expect("selected edge vertices"),
+        selected
+            .edge_vertices(&ctx)
+            .expect("service resource budget")
+            .expect("selected edge vertices"),
         [[0, 1], [1, 2], [2, 3], [3, 0]]
     );
     let (searched, point_assignment) =
@@ -268,7 +274,8 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
     assert_eq!(searched.logical_vertex_count(), 4);
     assert_eq!(
         searched
-            .edge_vertices()
+            .edge_vertices(&ctx)
+            .expect("service resource budget")
             .expect("searched edge vertices")
             .into_iter()
             .map(|vertices| {

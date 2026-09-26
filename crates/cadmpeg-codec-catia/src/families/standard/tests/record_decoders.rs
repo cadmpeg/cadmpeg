@@ -387,22 +387,28 @@ fn fbb_topology_reads_u24_mesh_and_edge_handles() {
             .expect("native endpoint quotient");
     assert_eq!(quotient.logical_vertex_count(), 4);
     assert_eq!(
-        quotient.edge_vertices().expect("edge vertices"),
+        quotient
+            .edge_vertices(&ctx)
+            .expect("service resource budget")
+            .expect("edge vertices"),
         native_ports.map(|pair| pair
             .map(|identity| usize::try_from(identity - 100).expect("required invariant")))
     );
     assert_eq!(
         quotient
-            .bind_vertex_points(&ctx, &[
-                [0, 1],
-                [1, 2],
-                [2, 3],
-                [3, 0],
-                [0, 1],
-                [1, 2],
-                [2, 3],
-                [3, 0],
-            ])
+            .bind_vertex_points(
+                &ctx,
+                &[
+                    [0, 1],
+                    [1, 2],
+                    [2, 3],
+                    [3, 0],
+                    [0, 1],
+                    [1, 2],
+                    [2, 3],
+                    [3, 0],
+                ]
+            )
             .expect("coordinate binding fits the service profile")
             .expect("coordinate binding"),
         vec![0, 1, 2, 3]
@@ -414,6 +420,10 @@ fn fbb_topology_reads_u24_mesh_and_edge_handles() {
 
 #[test]
 fn fbb_only_topology_uses_complete_boundary_runs_and_scoped_ports() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
     let bytes = fbb_only_quad_topology_stream();
     assert_eq!(
         crate::families::standard::fbb::fbb_only_edge_count(&bytes),
@@ -441,7 +451,10 @@ fn fbb_only_topology_uses_complete_boundary_runs_and_scoped_ports() {
             .expect("FBB-only native endpoint quotient");
     assert_eq!(topology.logical_vertex_count(), 4);
     assert_eq!(
-        topology.edge_vertices().expect("FBB-only edge endpoints"),
+        topology
+            .edge_vertices(&ctx)
+            .expect("service resource budget")
+            .expect("FBB-only edge endpoints"),
         ports
             .into_iter()
             .map(|pair| pair.map(|identity| identity as usize))
