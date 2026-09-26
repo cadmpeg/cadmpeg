@@ -1784,9 +1784,9 @@ pub(crate) struct TextPolygon3d {
     /// Chordal deflection.
     pub(crate) deflection: NonNegativeReal,
     /// Ordered model-space nodes.
-    pub(crate) nodes: Vec<Point3>,
+    pub(crate) nodes: Vec<FinitePoint3>,
     /// Optional per-node curve parameters.
-    pub(crate) parameters: Option<Vec<f64>>,
+    pub(crate) parameters: Option<Vec<FiniteReal>>,
 }
 
 /// One polygon whose indices address a triangulation node table.
@@ -1797,11 +1797,11 @@ pub(crate) struct TextPolygonOnTriangulation {
     /// Chordal deflection.
     pub(crate) deflection: NonNegativeReal,
     /// Optional per-node curve parameters.
-    pub(crate) parameters: Option<Vec<f64>>,
+    pub(crate) parameters: Option<Vec<FiniteReal>>,
 }
 
-fn admit_polygon_deflection(value: f64) -> Result<NonNegativeReal, CodecError> {
-    NonNegativeReal::new(value).ok_or_else(|| {
+fn admit_polygon_deflection(value: FiniteReal) -> Result<NonNegativeReal, CodecError> {
+    NonNegativeReal::from_finite(value).ok_or_else(|| {
         CodecError::Malformed("polygon deflection must be finite and non-negative".into())
     })
 }
@@ -2727,14 +2727,14 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion)
     for _ in 0..polygon_count {
         let node_count = cursor.count("binary 3D polygon node count")?;
         let has_parameters = cursor.bool("binary 3D polygon parameter flag")?;
-        let deflection = cursor.f64("binary 3D polygon deflection")?;
+        let deflection = cursor.finite_f64("binary 3D polygon deflection")?;
         let nodes = (0..node_count)
-            .map(|_| cursor.point3("binary 3D polygon node"))
+            .map(|_| cursor.finite_point3("binary 3D polygon node"))
             .collect::<Result<Vec<_>, _>>()?;
         let parameters = has_parameters
             .then(|| {
                 (0..node_count)
-                    .map(|_| cursor.f64("binary 3D polygon parameter"))
+                    .map(|_| cursor.finite_f64("binary 3D polygon parameter"))
                     .collect::<Result<Vec<_>, _>>()
             })
             .transpose()?;
@@ -2766,12 +2766,12 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion)
                 "binary indexed polygon node indices are one-based".into(),
             ));
         }
-        let deflection = cursor.f64("binary indexed polygon deflection")?;
+        let deflection = cursor.finite_f64("binary indexed polygon deflection")?;
         let has_parameters = cursor.bool("binary indexed polygon parameter flag")?;
         let parameters = has_parameters
             .then(|| {
                 (0..node_count)
-                    .map(|_| cursor.f64("binary indexed polygon parameter"))
+                    .map(|_| cursor.finite_f64("binary indexed polygon parameter"))
                     .collect::<Result<Vec<_>, _>>()
             })
             .transpose()?;
@@ -4272,18 +4272,18 @@ fn parse_polygons3d(
     for _ in 0..count {
         let node_count = cursor.count("3D polygon node count", 1_000_000)?;
         let has_parameters = cursor.boolean("3D polygon parameter flag")?;
-        let deflection = cursor.real("3D polygon deflection")?;
+        let deflection = cursor.finite_real("3D polygon deflection")?;
         // Each node consumes its three point tokens.
         let mut nodes = Vec::with_capacity(cursor.bounded(node_count, 3, "3D polygon node")?);
         for _ in 0..node_count {
-            nodes.push(cursor.point("3D polygon node")?);
+            nodes.push(cursor.finite_point("3D polygon node")?);
         }
         let parameters = if has_parameters {
             // Each parameter consumes its one token.
             let mut parameters =
                 Vec::with_capacity(cursor.bounded(node_count, 1, "3D polygon parameter")?);
             for _ in 0..node_count {
-                parameters.push(cursor.real("3D polygon parameter")?);
+                parameters.push(cursor.finite_real("3D polygon parameter")?);
             }
             Some(parameters)
         } else {
@@ -4330,7 +4330,7 @@ fn parse_polygons_on_triangulations(
                 "polygon-on-triangulation has no parameter marker".into(),
             ));
         }
-        let deflection = cursor.real("polygon-on-triangulation deflection")?;
+        let deflection = cursor.finite_real("polygon-on-triangulation deflection")?;
         let has_parameters = cursor.boolean("polygon-on-triangulation parameter flag")?;
         let parameters = if has_parameters {
             // Each parameter consumes its one token.
@@ -4340,7 +4340,7 @@ fn parse_polygons_on_triangulations(
                 "polygon-on-triangulation parameter",
             )?);
             for _ in 0..node_count {
-                parameters.push(cursor.real("polygon-on-triangulation parameter")?);
+                parameters.push(cursor.finite_real("polygon-on-triangulation parameter")?);
             }
             Some(parameters)
         } else {
@@ -6137,6 +6137,7 @@ pub(crate) mod tests {
 
     use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
     use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::scalar::FiniteReal;
     use cadmpeg_ir::transform::Transform;
 
     use super::{
@@ -6154,10 +6155,9 @@ pub(crate) mod tests {
 
     #[test]
     fn polygon_deflection_is_admitted_on_source_and_native_wire() {
-        assert!(super::admit_polygon_deflection(0.0).is_ok());
-        for value in [-1.0, f64::INFINITY] {
-            assert!(super::admit_polygon_deflection(value).is_err());
-        }
+        assert!(super::admit_polygon_deflection(FiniteReal::ZERO).is_ok());
+        assert!(super::admit_polygon_deflection(FiniteReal::new(-1.0).unwrap()).is_err());
+        assert!(FiniteReal::new(f64::INFINITY).is_none());
 
         let polygon = serde_json::json!({
             "deflection": 0.5,
@@ -6888,8 +6888,14 @@ pub(crate) mod tests {
         assert!(matches!(facts.curves[1], TextCurve::Offset { .. }));
         assert_eq!(facts.polygons3d[0].nodes.len(), 2);
         assert_eq!(
-            facts.polygons3d[0].parameters.as_deref(),
-            Some(&[0.0, 1.0][..])
+            facts.polygons3d[0]
+                .parameters
+                .as_deref()
+                .map(|parameters| parameters
+                    .iter()
+                    .map(|value| value.get())
+                    .collect::<Vec<_>>()),
+            Some(vec![0.0, 1.0])
         );
         assert_eq!(facts.polygons_on_triangulations[0].nodes, [1, 2]);
         assert!(matches!(facts.surfaces[0], TextSurface::Plane { .. }));
@@ -6945,8 +6951,14 @@ pub(crate) mod tests {
         let facts = parse_text(input.as_bytes()).expect("polygonal carriers").0;
         assert_eq!(facts.polygons3d[0].nodes.len(), 2);
         assert_eq!(
-            facts.polygons3d[0].parameters.as_deref(),
-            Some(&[0.0, 1.0][..])
+            facts.polygons3d[0]
+                .parameters
+                .as_deref()
+                .map(|parameters| parameters
+                    .iter()
+                    .map(|value| value.get())
+                    .collect::<Vec<_>>()),
+            Some(vec![0.0, 1.0])
         );
         assert_eq!(facts.polygons_on_triangulations[0].nodes, [1, 2]);
         let triangulation = &facts.triangulations[0];
@@ -6954,6 +6966,30 @@ pub(crate) mod tests {
         assert_eq!(triangulation.triangles(), [[0, 1, 2]]);
         assert_eq!(triangulation.uv_nodes().map(<[_]>::len), Some(3));
         assert_eq!(triangulation.normals().map(<[_]>::len), Some(3));
+    }
+
+    #[test]
+    fn polygon_source_readers_refuse_nonfinite_nodes_and_parameters() {
+        for (polygon_section, expected) in [
+            (
+                "Polygon3D 1\n1 0 0.1 NaN 0 0\nPolygonOnTriangulations 0",
+                "non-finite 3D polygon node",
+            ),
+            (
+                "Polygon3D 1\n1 1 0.1 0 0 0 NaN\nPolygonOnTriangulations 0",
+                "non-finite 3D polygon parameter",
+            ),
+            (
+                "Polygon3D 0\nPolygonOnTriangulations 1\n1 1 p 0.1 1 NaN",
+                "non-finite polygon-on-triangulation parameter",
+            ),
+        ] {
+            let input = format!(
+                "CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\n{polygon_section}\nSurfaces 0\nTriangulations 0\nTShapes 0\n*"
+            );
+            let error = parse_text(input.as_bytes()).unwrap_err();
+            assert!(error.to_string().contains(expected), "{error}");
+        }
     }
 
     #[test]

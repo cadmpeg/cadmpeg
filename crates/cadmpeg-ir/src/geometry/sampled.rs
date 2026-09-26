@@ -401,19 +401,53 @@ impl PolylineSamples<f64, FinitePoint3> {
                         point: vertex.point,
                     })
                 })?;
-                (vertices
-                    .windows(2)
-                    .all(|pair| pair[0].parameter < pair[1].parameter)
-                    || vertices
-                        .windows(2)
-                        .all(|pair| pair[0].parameter > pair[1].parameter))
-                .then_some(PolylineSamples::Parameterized { vertices })
+                let samples = PolylineSamples::Parameterized { vertices };
+                samples
+                    .has_strictly_monotonic_parameters()
+                    .then_some(samples)
             }
         }
     }
 }
 
 impl PolylineSamples<FiniteReal, FinitePoint3> {
+    fn has_strictly_monotonic_parameters(&self) -> bool {
+        match self {
+            Self::Unparameterized { .. } => true,
+            Self::Parameterized { vertices } => {
+                vertices
+                    .windows(2)
+                    .all(|pair| pair[0].parameter < pair[1].parameter)
+                    || vertices
+                        .windows(2)
+                        .all(|pair| pair[0].parameter > pair[1].parameter)
+            }
+        }
+    }
+
+    /// Edit admitted points transactionally. The edit supplies an admitted
+    /// point, so no coordinate needs another admission.
+    pub fn edit_admitted_points(
+        &mut self,
+        mut edit: impl FnMut(FinitePoint3) -> Result<FinitePoint3, GeometryLayoutError>,
+    ) -> Result<(), GeometryLayoutError> {
+        let mut candidate = self.clone();
+        match &mut candidate {
+            Self::Unparameterized { points } => {
+                for point in points.iter_mut() {
+                    *point = edit(*point)?;
+                }
+            }
+            Self::Parameterized { vertices } => {
+                for vertex in vertices.iter_mut() {
+                    vertex.point = edit(vertex.point)?;
+                }
+            }
+        }
+        *self = candidate;
+        Ok(())
+    }
+
     /// The samples with raw parameters and points.
     #[must_use]
     pub fn to_raw(&self) -> PolylineSamples {
@@ -453,6 +487,32 @@ impl PolylineCurve {
             chordal_deflection.scaled(scale).ok_or_else(|| {
                 geometry_layout_error("chordal_deflection must be finite and non-negative")
             })
+        })
+    }
+
+    /// Build from admitted source samples and deflection after placement.
+    /// Check only sample count, scaled deflection and parameter order.
+    pub fn from_admitted_scaled_deflection(
+        samples: PolylineSamples<FiniteReal, FinitePoint3>,
+        chordal_deflection: NonNegativeReal,
+        scale: crate::scalar::PositiveReal,
+    ) -> Result<Self, GeometryLayoutError> {
+        if samples.count() < 2 {
+            return Err(geometry_layout_error(
+                "polyline must contain at least two points",
+            ));
+        }
+        let chordal_deflection = chordal_deflection.scaled(scale).ok_or_else(|| {
+            geometry_layout_error("chordal_deflection must be finite and non-negative")
+        })?;
+        if !samples.has_strictly_monotonic_parameters() {
+            return Err(geometry_layout_error(
+                "parameters must be finite and strictly monotonic",
+            ));
+        }
+        Ok(Self {
+            samples,
+            chordal_deflection,
         })
     }
 
