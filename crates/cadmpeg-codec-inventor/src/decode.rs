@@ -134,20 +134,27 @@ fn decode_container<'a>(
     for descriptor in &container.property_sets {
         match &descriptor.state {
             PropertySetState::Malformed(detail) => {
-                property_set_issues.push(PropertySetIssueRecord {
-                    id: format!(
-                        "inventor:property:set-issue#{}",
-                        descriptor.stream.directory_id()
-                    ),
-                    path: descriptor.path.clone(),
-                    directory_id: descriptor.stream.directory_id(),
-                    detail: detail.clone(),
-                });
+                property_set_issues.push(project_property_set_issue(
+                    ctx,
+                    descriptor.stream.directory_id(),
+                    &descriptor.path,
+                    detail,
+                )?);
             }
             PropertySetState::Parsed(property_set) => {
+                let id = retained_format(
+                    ctx,
+                    format_args!("inventor:property:set#{}", descriptor.stream.directory_id()),
+                    "retain Inventor property-set id",
+                )?;
+                charge_retained_len(ctx, 32, "retain Inventor property-set CLSID")?;
                 property_sets.push(PropertySetRecord {
-                    id: format!("inventor:property:set#{}", descriptor.stream.directory_id()),
-                    path: descriptor.path.clone(),
+                    id,
+                    path: retained_clone(
+                        ctx,
+                        &descriptor.path,
+                        "retain Inventor property-set path",
+                    )?,
                     directory_id: descriptor.stream.directory_id(),
                     version: property_set.version,
                     system_identifier: property_set.system_identifier,
@@ -162,22 +169,46 @@ fn decode_container<'a>(
                         .is_none_or(|expected| expected == section.fmtid);
                     if !identity_matches {
                         admit_native_items(ctx, 1)?;
-                        property_set_issues.push(PropertySetIssueRecord {
-                            id: format!(
+                        let id = retained_format(
+                            ctx,
+                            format_args!(
                                 "inventor:property:set-identity#{}-{section_ordinal}",
                                 descriptor.stream.directory_id()
                             ),
-                            path: descriptor.path.clone(),
+                            "retain Inventor property-set identity issue id",
+                        )?;
+                        charge_retained_len(
+                            ctx,
+                            "embedded property-set name does not match its FMTID".len(),
+                            "retain Inventor property-set identity issue detail",
+                        )?;
+                        property_set_issues.push(PropertySetIssueRecord {
+                            id,
+                            path: retained_clone(
+                                ctx,
+                                &descriptor.path,
+                                "retain Inventor property-set identity issue path",
+                            )?,
                             directory_id: descriptor.stream.directory_id(),
                             detail: "embedded property-set name does not match its FMTID".into(),
                         });
                     }
-                    property_sections.push(PropertySectionRecord {
-                        id: format!(
+                    let section_id = retained_format(
+                        ctx,
+                        format_args!(
                             "inventor:property:section#{}-{section_ordinal}",
                             descriptor.stream.directory_id()
                         ),
-                        set_path: descriptor.path.clone(),
+                        "retain Inventor property section id",
+                    )?;
+                    charge_retained_len(ctx, 32, "retain Inventor property section FMTID")?;
+                    property_sections.push(PropertySectionRecord {
+                        id: section_id,
+                        set_path: retained_clone(
+                            ctx,
+                            &descriptor.path,
+                            "retain Inventor property section path",
+                        )?,
                         ordinal: section_ordinal as u32,
                         fmtid: hex(&section.fmtid),
                         code_page: section.code_page,
@@ -186,6 +217,20 @@ fn decode_container<'a>(
                         property_count: section.properties.len() as u64,
                     });
                     for property in &section.properties {
+                        if let Some(name) = &property.name {
+                            charge_retained_len(ctx, name.len(), "retain Inventor property name")?;
+                        } else if identity_matches {
+                            if let Some(name) = set_name
+                                .as_deref()
+                                .and_then(|set_name| built_in_property_name(set_name, property.id))
+                            {
+                                charge_retained_len(
+                                    ctx,
+                                    name.len(),
+                                    "retain Inventor built-in property name",
+                                )?;
+                            }
+                        }
                         let property_name = property.name.clone().or_else(|| {
                             identity_matches
                                 .then_some(set_name.as_deref())
@@ -193,11 +238,15 @@ fn decode_container<'a>(
                                 .and_then(|set_name| built_in_property_name(set_name, property.id))
                                 .map(str::to_owned)
                         });
-                        let native_id = format!(
-                            "inventor:property:value#{}-{section_ordinal}-{}",
-                            descriptor.stream.directory_id(),
-                            property.id
-                        );
+                        let native_id = retained_format(
+                            ctx,
+                            format_args!(
+                                "inventor:property:value#{}-{section_ordinal}-{}",
+                                descriptor.stream.directory_id(),
+                                property.id
+                            ),
+                            "retain Inventor property value id",
+                        )?;
                         let scalar_value = property.value.scalar_text(ctx)?;
                         metadata.consider(
                             ctx,
@@ -209,36 +258,25 @@ fn decode_container<'a>(
                         )?;
                         if is_preview(ctx, &section.fmtid, property.id, property_name.as_deref())? {
                             if let Some((bytes, media_type)) = preview_bytes(&property.value) {
-                                let data =
-                                    ctx.copy_retained(bytes, "retain Inventor preview asset")?;
-                                ir.model.assets.push(
-                                    Asset::try_new(
-                                        AssetId::compose(
-                                            &cadmpeg_ir::identity_namespace!(
-                                                "inventor", "document", "asset"
-                                            ),
-                                            cadmpeg_ir::identity_key!("preview-")
-                                                .then(ir.model.assets.len()),
-                                        ),
-                                        Some("document preview".into()),
-                                        Some(media_type.into()),
-                                        AssetContent::Embedded {
-                                            data: cadmpeg_ir::assets::AssetData::new(data)
-                                                .ok_or_else(|| {
-                                                    CodecError::Malformed(
-                                                        "asset data must not be empty".into(),
-                                                    )
-                                                })?,
-                                        },
-                                        Some(native_id.clone()),
-                                    )
-                                    .map_err(CodecError::Malformed)?,
-                                );
+                                let ordinal = ir.model.assets.len();
+                                ir.model.assets.push(project_preview_asset(
+                                    ctx, ordinal, &native_id, bytes, media_type,
+                                )?);
                             }
                         }
+                        charge_retained_len(ctx, 32, "retain Inventor property value FMTID")?;
+                        charge_retained_len(ctx, 64, "retain Inventor property raw digest")?;
+                        ctx.charge_work(
+                            property.raw.window().len() as u64,
+                            "hash Inventor property raw bytes",
+                        )?;
                         properties.push(PropertyRecord {
                             id: native_id,
-                            set_path: descriptor.path.clone(),
+                            set_path: retained_clone(
+                                ctx,
+                                &descriptor.path,
+                                "retain Inventor property value path",
+                            )?,
                             section_ordinal: section_ordinal as u32,
                             fmtid: hex(&section.fmtid),
                             property_id: property.id,
@@ -1775,6 +1813,80 @@ fn charge_retained_len(
         ctx.refuse_codec_limit("Inventor retained byte count", u64::MAX - 1, u64::MAX)
     })?;
     ctx.charge_retained(bytes, operation)
+}
+
+fn retained_clone(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    charge_retained_len(ctx, value.len(), operation)?;
+    Ok(value.to_owned())
+}
+
+fn retained_format(
+    ctx: &DecodeContext<'_>,
+    value: std::fmt::Arguments<'_>,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    crate::record_issue::admit_formatted(ctx, value, operation)?;
+    Ok(value.to_string())
+}
+
+fn project_property_set_issue(
+    ctx: &DecodeContext<'_>,
+    directory_id: u32,
+    path: &str,
+    detail: &str,
+) -> Result<PropertySetIssueRecord, CodecError> {
+    let id = retained_format(
+        ctx,
+        format_args!("inventor:property:set-issue#{directory_id}"),
+        "retain Inventor property-set issue id",
+    )?;
+    let path = retained_clone(ctx, path, "retain Inventor property-set issue path")?;
+    let detail = retained_clone(ctx, detail, "retain Inventor property-set issue detail")?;
+    Ok(PropertySetIssueRecord {
+        id,
+        path,
+        directory_id,
+        detail,
+    })
+}
+
+fn project_preview_asset(
+    ctx: &DecodeContext<'_>,
+    ordinal: usize,
+    native_id: &str,
+    bytes: &[u8],
+    media_type: &str,
+) -> Result<Asset, CodecError> {
+    ctx.charge_collection_items(1, "collect Inventor preview asset")?;
+    let key_len = 8_u64 + u64::from(ordinal.checked_ilog10().map_or(1, |digits| digits + 1));
+    ctx.charge_retained(key_len, "retain Inventor preview identity key")?;
+    ctx.charge_retained(24_u64 + key_len, "retain Inventor preview asset id")?;
+    charge_retained_len(ctx, native_id.len(), "retain Inventor preview source id")?;
+    charge_retained_len(
+        ctx,
+        "document preview".len(),
+        "retain Inventor preview name",
+    )?;
+    charge_retained_len(ctx, media_type.len(), "retain Inventor preview media type")?;
+    let data = ctx.copy_retained(bytes, "retain Inventor preview asset")?;
+    Asset::try_new(
+        AssetId::compose(
+            &cadmpeg_ir::identity_namespace!("inventor", "document", "asset"),
+            cadmpeg_ir::identity_key!("preview-").then(ordinal),
+        ),
+        Some("document preview".into()),
+        Some(media_type.into()),
+        AssetContent::Embedded {
+            data: cadmpeg_ir::assets::AssetData::new(data)
+                .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
+        },
+        Some(native_id.to_owned()),
+    )
+    .map_err(CodecError::Malformed)
 }
 
 fn admit_native_items(ctx: &DecodeContext<'_>, count: usize) -> Result<(), CodecError> {
