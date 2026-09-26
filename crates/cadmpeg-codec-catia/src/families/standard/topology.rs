@@ -219,7 +219,7 @@ impl StandardTopology {
         {
             return Ok(None);
         }
-        let Some(edge_vertices) = self.edge_vertices() else {
+        let Some(edge_vertices) = self.edge_vertices(ctx)? else {
             return Ok(None);
         };
         let all_points: HashSet<usize> = (0..self.vertex_points.len()).collect();
@@ -246,9 +246,12 @@ impl StandardTopology {
 
     /// Logical endpoint components in physical edge-row direction.
     #[must_use]
-    pub(crate) fn edge_vertices(&self) -> Option<Vec<[usize; 2]>> {
+    pub(crate) fn edge_vertices(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
         let mut edge_vertices =
-            alloc_filled(self.edge_rows.len(), None, "catia standard edge vertices").ok()?;
+            ctx.alloc_filled(self.edge_rows.len(), None, "catia standard edge vertices")?;
         for face in &self.faces {
             for boundary in &face.boundaries {
                 for coedge in &boundary.coedges {
@@ -258,7 +261,7 @@ impl StandardTopology {
                         [coedge.start_vertex, coedge.end_vertex]
                     };
                     match edge_vertices[coedge.edge_row] {
-                        Some(previous) if previous != endpoints => return None,
+                        Some(previous) if previous != endpoints => return Ok(None),
                         Some(_) => {}
                         None => edge_vertices[coedge.edge_row] = Some(endpoints),
                     }
@@ -266,7 +269,7 @@ impl StandardTopology {
             }
         }
 
-        edge_vertices.into_iter().collect()
+        Ok(edge_vertices.into_iter().collect())
     }
 
     /// Replace provisional trim-handle endpoint components with the quotient

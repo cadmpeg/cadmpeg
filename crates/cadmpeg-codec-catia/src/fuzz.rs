@@ -50,8 +50,14 @@ pub fn geometry_a8_surfaces(data: &[u8]) {
 
 /// Exercise standard-nested and FBB topology parsing.
 pub fn standard_topology(data: &[u8]) {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+    else {
+        return;
+    };
     if let Some(topology) = crate::families::standard::fbb::parse_standard(data) {
-        let _probe = topology.edge_vertices();
+        let _probe = topology.edge_vertices(&ctx);
     }
     let _probe = crate::families::standard::topology::parse_fbb(data);
 }

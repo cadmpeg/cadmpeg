@@ -5723,7 +5723,8 @@ fn resolve_endpoint_configuration_relation_streaming(
         match outcome {
             MeshSolve::Solved((topology, assignment)) => {
                 if let Some(valid) = complete_solution_valid {
-                    let Some(candidate_pairs) = mesh_candidate_point_pairs(&topology, &assignment)
+                    let Some(candidate_pairs) =
+                        mesh_candidate_point_pairs(ctx, &topology, &assignment)?
                     else {
                         return Ok(false);
                     };
@@ -5795,15 +5796,18 @@ fn resolve_endpoint_configuration_relation_streaming(
 }
 
 fn mesh_candidate_point_pairs(
+    ctx: &DecodeContext<'_>,
     topology: &StandardTopology,
     point_assignment: &[usize],
-) -> Option<Vec<Option<[usize; 2]>>> {
-    let pairs = topology
-        .edge_vertices()?
+) -> Result<Option<Vec<Option<[usize; 2]>>>, CodecError> {
+    let Some(edge_vertices) = topology.edge_vertices(ctx)? else {
+        return Ok(None);
+    };
+    let pairs = edge_vertices
         .into_iter()
         .map(|[start, end]| Some([*point_assignment.get(start)?, *point_assignment.get(end)?]))
-        .collect::<Option<Vec<[usize; 2]>>>()?;
-    Some(pairs.into_iter().map(Some).collect())
+        .collect::<Option<Vec<[usize; 2]>>>();
+    Ok(pairs.map(|pairs| pairs.into_iter().map(Some).collect()))
 }
 
 fn endpoint_pairs_respect_candidate_domains(
@@ -7766,7 +7770,7 @@ impl MeshSelectionSearch<'_, '_> {
                 {
                     break 'candidate None;
                 }
-                let Some(edge_vertices) = topology.edge_vertices() else {
+                let Some(edge_vertices) = topology.edge_vertices(self.ctx)? else {
                     break 'candidate None;
                 };
                 let mut point_assignment = self.ctx.alloc_filled(
@@ -8187,14 +8191,15 @@ fn canonical_singleton_coordinate_cycles(
 }
 
 fn reconstruct_singleton_coordinate_topology(
+    ctx: &DecodeContext<'_>,
     edge_rows: &[EdgeRow],
     vertex_points: &[[f64; 3]],
     edge_candidates: &[Vec<[usize; 2]>],
     selected: &[MeshFaceBoundaryAssignment],
     directions: &[Vec<Vec<bool>>],
-) -> Option<StandardTopology> {
+) -> Result<Option<StandardTopology>, CodecError> {
     if selected.len() != directions.len() {
-        return None;
+        return Ok(None);
     }
     let faces = selected
         .iter()
@@ -8228,15 +8233,20 @@ fn reconstruct_singleton_coordinate_topology(
                 .collect::<Option<Vec<_>>>()?;
             Some(FaceTopology { boundaries })
         })
-        .collect::<Option<Vec<_>>>()?;
+        .collect::<Option<Vec<_>>>();
+    let Some(faces) = faces else {
+        return Ok(None);
+    };
     let topology = StandardTopology {
         faces,
         edge_rows: edge_rows.to_vec(),
         vertex_points: vertex_points.to_vec(),
         logical_vertex_count: vertex_points.len(),
     };
-    topology.edge_vertices()?;
-    Some(topology)
+    let Some(_) = topology.edge_vertices(ctx)? else {
+        return Ok(None);
+    };
+    Ok(Some(topology))
 }
 
 fn resolve_mesh_selection_from_quotient(
@@ -8257,7 +8267,7 @@ fn resolve_mesh_selection_from_quotient(
     {
         return Ok(None);
     }
-    let Some(edge_vertices) = topology.edge_vertices() else {
+    let Some(edge_vertices) = topology.edge_vertices(ctx)? else {
         return Ok(None);
     };
     if edge_vertices.len() != edge_candidates.len() {
@@ -8400,7 +8410,7 @@ fn resolve_singleton_mesh_selection(
     ) else {
         return Ok(None);
     };
-    let Some(edge_vertices) = topology.edge_vertices() else {
+    let Some(edge_vertices) = topology.edge_vertices(ctx)? else {
         return Ok(None);
     };
     let Some(mut quotient) =
@@ -8628,12 +8638,13 @@ fn resolve_singleton_mesh_endpoint_candidates(
     };
     let (selected, endpoint_labelled_directions): (Vec<_>, Vec<_>) = selected.into_iter().unzip();
     if let Some(topology) = reconstruct_singleton_coordinate_topology(
+        ctx,
         edge_rows,
         vertex_points,
         edge_candidates,
         &selected,
         &endpoint_labelled_directions,
-    ) {
+    )? {
         return Ok(Some(MeshSolve::Solved((
             topology,
             (0..vertex_points.len()).collect(),

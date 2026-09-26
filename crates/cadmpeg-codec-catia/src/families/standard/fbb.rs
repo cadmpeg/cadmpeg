@@ -1549,6 +1549,10 @@ mod endpoint_tests {
 
     #[test]
     fn fbb_endpoint_reconstruction_uses_the_native_edge_pairs() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
         let bytes = synthetic_fbb_triangle();
         let topology = parse_fbb_endpoints_with_edge_classes(
             &bytes,
@@ -1564,7 +1568,12 @@ mod endpoint_tests {
             topology.vertex_points(),
             &[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
         );
-        assert_eq!(topology.edge_vertices(), Some(vec![[0, 1], [1, 2], [0, 2]]));
+        assert_eq!(
+            topology
+                .edge_vertices(&ctx)
+                .expect("service resource budget"),
+            Some(vec![[0, 1], [1, 2], [0, 2]])
+        );
     }
 }
 

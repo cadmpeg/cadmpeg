@@ -593,7 +593,11 @@ fn canonicalize_mesh_edge_row_gauges(
             return Some(Ok(topology));
         }
 
-        let edge_vertices = topology.edge_vertices()?;
+        let edge_vertices = match topology.edge_vertices(ctx) {
+            Ok(Some(vertices)) => vertices,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let mut incident_faces = match ctx.alloc_filled(
             edge_count,
             Vec::<usize>::new(),
