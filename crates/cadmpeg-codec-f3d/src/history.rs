@@ -926,7 +926,7 @@ fn bind_base_feature_output_selection(feature: &mut cadmpeg_ir::features::Featur
         return;
     };
     let bodies = cadmpeg_ir::features::BodySelection::Resolved {
-        bodies: feature.evaluation.outputs().clone(),
+        bodies: feature.evaluation.outputs().iter().cloned().collect(),
         native: native.clone(),
     };
     feature
@@ -1259,7 +1259,7 @@ pub(crate) fn bind_feature_body_selections(
                             *tools = if let [row] = direct_tool_rows.as_slice() {
                                 let (body, native) = row.clone().into_parts();
                                 BodySelection::Resolved {
-                                    bodies: vec![body],
+                                    bodies: std::iter::once(body).collect(),
                                     native,
                                 }
                             } else {
@@ -1920,7 +1920,7 @@ fn bind_direct_body_recipe_body_selection(
                 selected.push(body);
             }
             *selection = BodySelection::Resolved {
-                bodies: selected,
+                bodies: selected.into_iter().collect(),
                 native: group.id.clone(),
             };
             return;

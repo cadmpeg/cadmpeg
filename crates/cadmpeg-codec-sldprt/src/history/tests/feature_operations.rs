@@ -90,7 +90,7 @@ fn decode_resolves_feature_topology_selections() {
             operands,
 
             ..
-        }) if matches!((operands.target(), operands.tools(),), (BodySelection::Resolved { bodies, native }, BodySelection::Resolved { .. },) if bodies == &[base.ir().model.bodies[0].id.clone()] && native == body)));
+        }) if matches!((operands.target(), operands.tools(),), (BodySelection::Resolved { bodies, native }, BodySelection::Resolved { .. },) if bodies.as_slice() == &[base.ir().model.bodies[0].id.clone()] && native == body)));
     assert!(matches!(
         decoded.ir().model.features[3].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -146,8 +146,14 @@ fn decode_resolves_feature_topology_selections() {
             {
                 operands
                     .try_edit(|target, tools| {
-                        *target = BodySelection::Bodies(vec![body_id.clone()]);
-                        *tools = BodySelection::Bodies(vec![tool_body_id.clone()]);
+                        *target = BodySelection::Bodies(
+                            vec![body_id.clone()].try_into().expect("distinct bodies"),
+                        );
+                        *tools = BodySelection::Bodies(
+                            vec![tool_body_id.clone()]
+                                .try_into()
+                                .expect("distinct bodies"),
+                        );
                     })
                     .unwrap();
             }

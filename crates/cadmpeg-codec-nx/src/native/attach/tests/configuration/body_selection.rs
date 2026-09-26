@@ -88,7 +88,7 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
         )
         .into_selection(),
         BodySelection::Resolved {
-            bodies: vec![first.clone()],
+            bodies: vec![first.clone()].try_into().expect("distinct bodies"),
             native: "nx:om-object-index#94".to_string(),
         }
     );
@@ -326,7 +326,7 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
         *ir.model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {
             bodies: BodySelection::Resolved {
-                bodies: vec![bound.clone()],
+                bodies: vec![bound.clone()].try_into().expect("distinct bodies"),
                 native: "nx:segment-body-bindings".to_string(),
             },
         })
@@ -395,7 +395,7 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Resolved {
-                    bodies: vec![body.clone()],
+                    bodies: vec![body.clone()].try_into().expect("distinct bodies"),
                     native: "nx:om-object-index#94".to_string(),
                 },
                 BodySelection::local(

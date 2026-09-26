@@ -576,7 +576,7 @@ mod tests {
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                     FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                         bodies: BodySelection::Resolved {
-                            bodies: vec![body.clone()],
+                            bodies: vec![body.clone()].try_into().expect("distinct bodies"),
                             native: "test".into(),
                         },
                     }),
@@ -663,7 +663,7 @@ mod tests {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                     bodies: BodySelection::Resolved {
-                        bodies: vec![body.clone()],
+                        bodies: vec![body.clone()].try_into().expect("distinct bodies"),
                         native: "test".into(),
                     },
                 }),
