@@ -1400,6 +1400,49 @@ fn revolution_major_versions_decode_child_and_scale_coordinates_once() {
 }
 
 #[test]
+fn revolution_subnormal_axis_defers_unit_refusal_to_payload_admission() {
+    let mut bytes = valid_revolution_payload(0x20);
+    let smallest = f64::from_bits(1);
+    for (index, value) in [0.0, 0.0, 0.0, 2.0 * smallest, smallest, 0.0]
+        .into_iter()
+        .enumerate()
+    {
+        let offset = 1 + index * 8;
+        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("revolution frame");
+    let decoded = read_revolution(
+        &bytes,
+        &mut reader,
+        MillimeterScale::IDENTITY,
+        ArchiveVersion::V5,
+        0,
+    )
+    .expect("finite nonzero source axis");
+    let DecodedSurface::Procedural { definition, .. } = decoded else {
+        panic!("expected procedural revolution");
+    };
+    let super::DecodedProceduralSurface::Revolution { axis_direction, .. } = &definition else {
+        panic!("expected revolution fields");
+    };
+    assert!(axis_direction.is_none());
+    let error = definition
+        .into_definition(
+            |_, _, _| {
+                Ok::<_, String>(
+                    cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#subnormal-axis")
+                        .expect("identity grammar"),
+                )
+            },
+            |error| error.to_string(),
+        )
+        .expect_err("unit axis required by procedural payload");
+    assert!(error.contains(
+        "revolution axis_origin and axis_direction must be finite, with unit axis_direction"
+    ));
+}
+
+#[test]
 fn sum_surface_decodes_ordered_children_and_scales_once() {
     let bytes = valid_sum_payload();
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");

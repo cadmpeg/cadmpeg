@@ -499,8 +499,7 @@ fn transfer_schema_one(
         {
             let width = values
                 .get("LineWidth")
-                .and_then(|value| value.attribute("value"))
-                .and_then(|value| value.parse::<f64>().ok());
+                .and_then(|value| value.attribute("value"));
             transfer_primitive_appearance(
                 ir,
                 &mut plan,
@@ -509,7 +508,7 @@ fn transfer_schema_one(
                     provider_name: name,
                     object_id,
                     packed_color: color,
-                    style: PrimitiveStyle::Line(width),
+                    style: PrimitiveStyle::Line(PrimitiveSize::from_source(width)),
                     payload_prefixes: &payload_prefixes,
                     provenance: property_provenance("LineWidth", "App::PropertyFloatConstraint"),
                 },
@@ -544,8 +543,7 @@ fn transfer_schema_one(
         {
             let size = values
                 .get("PointSize")
-                .and_then(|value| value.attribute("value"))
-                .and_then(|value| value.parse::<f64>().ok());
+                .and_then(|value| value.attribute("value"));
             transfer_primitive_appearance(
                 ir,
                 &mut plan,
@@ -554,7 +552,7 @@ fn transfer_schema_one(
                     provider_name: name,
                     object_id,
                     packed_color: color,
-                    style: PrimitiveStyle::Point(size),
+                    style: PrimitiveStyle::Point(PrimitiveSize::from_source(size)),
                     payload_prefixes: &payload_prefixes,
                     provenance: property_provenance("PointSize", "App::PropertyFloatConstraint"),
                 },
@@ -947,8 +945,26 @@ fn camera_field<const N: usize>(
 
 #[derive(Clone, Copy)]
 enum PrimitiveStyle {
-    Line(Option<f64>),
-    Point(Option<f64>),
+    Line(PrimitiveSize),
+    Point(PrimitiveSize),
+}
+
+#[derive(Clone, Copy)]
+enum PrimitiveSize {
+    Absent,
+    Admitted(cadmpeg_ir::scalar::FiniteReal),
+    NonFinite,
+}
+
+impl PrimitiveSize {
+    fn from_source(value: Option<&str>) -> Self {
+        match value.and_then(|text| text.parse::<f64>().ok()) {
+            None => Self::Absent,
+            Some(value) => {
+                cadmpeg_ir::scalar::FiniteReal::new(value).map_or(Self::NonFinite, Self::Admitted)
+            }
+        }
+    }
 }
 
 struct PrimitiveAppearanceSource<'a> {
@@ -1022,10 +1038,13 @@ fn transfer_primitive_appearance(
             "vertex_over_object",
         ),
     };
-    let admitted_size = size
-        .filter(|value| *value >= 0.0)
-        .and_then(cadmpeg_ir::scalar::FiniteReal::new);
-    if size.is_some() && admitted_size.is_none() {
+    let admitted_size = match size {
+        PrimitiveSize::Admitted(value) if value.get() >= 0.0 => Some(value),
+        PrimitiveSize::Absent | PrimitiveSize::Admitted(_) | PrimitiveSize::NonFinite => None,
+    };
+    if matches!(size, PrimitiveSize::NonFinite | PrimitiveSize::Admitted(_))
+        && admitted_size.is_none()
+    {
         losses.push(
             FreecadLossCode::AppearancePrimitiveSizeNotTransferred
                 .note(format!(

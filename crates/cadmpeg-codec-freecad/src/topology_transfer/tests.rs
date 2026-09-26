@@ -59,17 +59,52 @@ fn geometry_for_kind(kind: TextShapeKind) -> TextTShapeGeometry {
 const EPS_COLOR_COMPONENT: f32 = 1.0e-6;
 
 #[test]
-fn indexed_polygon_admits_only_aligned_parameters() {
-    let node = Point3::new(0.0, 0.0, 0.0);
-    let deflection = cadmpeg_ir::scalar::NonNegativeReal::new(0.0).expect("zero deflection");
-    assert!(IndexedPolygon::try_new(vec![node], Some(vec![]), deflection).is_err());
-    let polygon = IndexedPolygon::try_new(vec![node], Some(vec![2.0]), deflection).unwrap();
+fn indexed_polygon_pairs_checked_samples() {
+    let node = cadmpeg_ir::features::FinitePoint3::ZERO;
+    let polygon = IndexedPolygon::try_new(
+        vec![node],
+        Some(vec![
+            cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite")
+        ]),
+        cadmpeg_ir::scalar::NonNegativeReal::ZERO,
+    )
+    .unwrap();
     assert_eq!(
-        polygon.samples,
+        polygon.samples.to_raw(),
         cadmpeg_ir::geometry::sampled::PolylineSamples::Parameterized {
             vertices: vec![cadmpeg_ir::geometry::sampled::PolylineVertex {
                 parameter: 2.0,
-                point: node
+                point: node.get()
+            }]
+            .try_into()
+            .expect("nonempty polyline fixture")
+        }
+    );
+    assert!(
+        IndexedPolygon::try_new(vec![node], None, cadmpeg_ir::scalar::NonNegativeReal::ZERO)
+            .is_ok()
+    );
+}
+
+#[test]
+fn indexed_polygon_admits_only_aligned_parameters() {
+    let node = cadmpeg_ir::features::FinitePoint3::ZERO;
+    let deflection = cadmpeg_ir::scalar::NonNegativeReal::ZERO;
+    assert!(IndexedPolygon::try_new(vec![node], Some(vec![]), deflection).is_err());
+    let polygon = IndexedPolygon::try_new(
+        vec![node],
+        Some(vec![
+            cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite")
+        ]),
+        deflection,
+    )
+    .unwrap();
+    assert_eq!(
+        polygon.samples.to_raw(),
+        cadmpeg_ir::geometry::sampled::PolylineSamples::Parameterized {
+            vertices: vec![cadmpeg_ir::geometry::sampled::PolylineVertex {
+                parameter: 2.0,
+                point: node.get()
             }]
             .try_into()
             .expect("nonempty polyline fixture")

@@ -51,6 +51,7 @@ const EXTERNAL_GEO_AXIS_COUNT: usize = 2;
 const EXTERNAL_GEOMETRY_MISSING_FLAG: u64 = 1 << 3;
 const DEFAULT_HELICAL_SWEEP_TOLERANCE: f64 = 0.1;
 const DEFAULT_PART_SPIRAL_SEGMENT_TURNS: f64 = 1.0;
+const U64_UPPER_EXCLUSIVE: f64 = 18_446_744_073_709_551_616.0;
 
 pub(crate) fn transfer(
     ctx: &DecodeContext<'_>,
@@ -1235,7 +1236,7 @@ fn append_operation_parameters(
             value: if is_angle {
                 cadmpeg_ir::scalar::Angle::new(value.get().to_radians()).map(ParameterValue::Angle)
             } else {
-                Some(ParameterValue::Length(Length::from(value)))
+                Some(ParameterValue::Length(Length::from_assigned_real(value)))
             },
             dependencies: DistinctMembers::default(),
             properties: retained,
@@ -3488,8 +3489,8 @@ fn revolution_definition(
     );
     let angle = || {
         scalar_named(properties, "Angle")
-            .filter(|angle| *angle > 0.0)
-            .and_then(|angle| cadmpeg_ir::scalar::PositiveAngle::new(angle.to_radians()))
+            .filter(|angle| angle.get() > 0.0)
+            .and_then(|angle| cadmpeg_ir::scalar::PositiveAngle::new(angle.get().to_radians()))
     };
     let mode = enumeration_selector(properties, "Type", 0)?;
     let extent = if kind == "Part::Revolution" {
@@ -3536,7 +3537,8 @@ fn revolution_definition(
                 second: AngularTermination::Angle {
                     angle: cadmpeg_ir::scalar::PositiveAngle::new(
                         scalar_named(properties, "Angle2")
-                            .filter(|angle| *angle > 0.0)?
+                            .filter(|angle| angle.get() > 0.0)?
+                            .get()
                             .to_radians(),
                     )?,
                 },
@@ -3704,14 +3706,14 @@ fn part_construction_geometry_definition(
 ) -> Option<FeatureDefinition> {
     let point = |x: &str, y: &str, z: &str| {
         Some(cadmpeg_ir::features::FinitePoint3::from_coordinates(
-            scalar_value(property(properties, x)?)?,
-            scalar_value(property(properties, y)?)?,
-            scalar_value(property(properties, z)?)?,
+            scalar_named(properties, x)?,
+            scalar_named(properties, y)?,
+            scalar_named(properties, z)?,
         ))
     };
     let angle = |name: &str| {
         scalar_named(properties, name)
-            .and_then(|value| cadmpeg_ir::scalar::Angle::new(value.to_radians()))
+            .and_then(|value| cadmpeg_ir::scalar::Angle::new(value.get().to_radians()))
     };
     match kind {
         "Part::Vertex" => Some(FeatureDefinition::Operation(
@@ -3734,9 +3736,7 @@ fn part_construction_geometry_definition(
                     arc: cadmpeg_ir::features::FeatureCircularArc::from_parts(
                         cadmpeg_ir::features::FinitePoint3::ZERO,
                         cadmpeg_ir::features::FeatureDirection3::Z_AXIS,
-                        cadmpeg_ir::scalar::PositiveLength::new(scalar_named(
-                            properties, "Radius",
-                        )?)?,
+                        positive_length(scalar_named(properties, "Radius")?)?,
                         cadmpeg_ir::geometry::DirectedParameterRange::new([
                             angle(if legacy_angles { "Angle0" } else { "Angle1" })?.get(),
                             angle(if legacy_angles { "Angle1" } else { "Angle2" })?.get(),
@@ -3753,14 +3753,8 @@ fn part_construction_geometry_definition(
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                     [
-                        cadmpeg_ir::scalar::PositiveLength::new(scalar_named(
-                            properties,
-                            "MajorRadius",
-                        )?)?,
-                        cadmpeg_ir::scalar::PositiveLength::new(scalar_named(
-                            properties,
-                            "MinorRadius",
-                        )?)?,
+                        positive_length(scalar_named(properties, "MajorRadius")?)?,
+                        positive_length(scalar_named(properties, "MinorRadius")?)?,
                     ],
                     cadmpeg_ir::geometry::DirectedParameterRange::new([
                         angle("Angle1")?.get(),
@@ -3782,19 +3776,13 @@ fn part_construction_geometry_definition(
                 sides: cadmpeg_ir::features::PolygonSideCount::new(
                     u32::try_from(integer_property(properties, "Polygon")?).ok()?,
                 )?,
-                circumradius: cadmpeg_ir::scalar::PositiveLength::new(
-                    scalar_named(properties, "Circumradius").filter(|value| *value > 0.0)?,
-                )?,
+                circumradius: positive_length(scalar_named(properties, "Circumradius")?)?,
             },
         )),
         "Part::Plane" => Some(FeatureDefinition::Operation(
             FeatureOperation::PlanarPatch {
-                length: cadmpeg_ir::scalar::PositiveLength::new(
-                    scalar_named(properties, "Length").filter(|value| *value > 0.0)?,
-                )?,
-                width: cadmpeg_ir::scalar::PositiveLength::new(
-                    scalar_named(properties, "Width").filter(|value| *value > 0.0)?,
-                )?,
+                length: positive_length(scalar_named(properties, "Length")?)?,
+                width: positive_length(scalar_named(properties, "Width")?)?,
             },
         )),
         "Part::Face" => {
@@ -3820,7 +3808,7 @@ fn parametric_helix_definition(
     kind: &str,
     properties: &[&PropertyRecord],
 ) -> Option<FeatureDefinition> {
-    let radius = scalar_named(properties, "Radius").filter(|value| *value > 0.0)?;
+    let radius = scalar_named(properties, "Radius")?;
     let segment_default = if kind == "Part::Spiral" {
         DEFAULT_PART_SPIRAL_SEGMENT_TURNS
     } else {
@@ -3835,11 +3823,16 @@ fn parametric_helix_definition(
     if segment_value.get() < 0.0 {
         return None;
     }
-    let segment_turns = cadmpeg_ir::scalar::PositiveReal::from_finite(segment_value);
+    let segment_turns = (segment_value.get() > 0.0)
+        .then(|| cadmpeg_ir::scalar::PositiveReal::try_from(segment_value))
+        .transpose()
+        .ok()?;
     let (shape, revolutions, clockwise, construction_style) = if kind == "Part::Helix" {
-        let pitch = scalar_named(properties, "Pitch").filter(|value| *value > 0.0)?;
-        let height = scalar_named(properties, "Height").filter(|value| *value > 0.0)?;
-        let angle = scalar_named(properties, "Angle").unwrap_or(0.0);
+        let pitch = positive_length(scalar_named(properties, "Pitch")?)?;
+        let height = positive_length(scalar_named(properties, "Height")?)?;
+        let angle = scalar_named(properties, "Angle")
+            .unwrap_or(FiniteReal::ZERO)
+            .get();
         if angle.abs() >= 90.0 {
             return None;
         }
@@ -3855,21 +3848,28 @@ fn parametric_helix_definition(
         };
         let shape = if angle == 0.0 {
             cadmpeg_ir::features::HelixShape::Cylindrical {
-                pitch: cadmpeg_ir::scalar::NonZeroLength::new(pitch)?,
+                pitch: pitch.into(),
             }
         } else {
             cadmpeg_ir::features::HelixShape::Conical {
-                pitch: cadmpeg_ir::scalar::NonZeroLength::new(pitch)?,
+                pitch: pitch.into(),
                 cone_angle: cadmpeg_ir::scalar::SlopeAngle::new(angle.to_radians())?,
             }
         };
-        (shape, height / pitch, clockwise, construction_style)
+        (
+            shape,
+            cadmpeg_ir::scalar::PositiveReal::new(height.get() / pitch.get())?,
+            clockwise,
+            construction_style,
+        )
     } else {
-        let growth = scalar_named(properties, "Growth").filter(|value| *value >= 0.0)?;
-        let revolutions = scalar_named(properties, "Rotations").filter(|value| *value > 0.0)?;
+        let growth = nonnegative_length(scalar_named(properties, "Growth")?)?;
+        let revolutions =
+            cadmpeg_ir::scalar::PositiveReal::try_from(scalar_named(properties, "Rotations")?)
+                .ok()?;
         (
             cadmpeg_ir::features::HelixShape::Spiral {
-                radial_growth: Length::new(growth)?,
+                radial_growth: growth.into(),
             },
             revolutions,
             false,
@@ -3879,9 +3879,9 @@ fn parametric_helix_definition(
     Some(FeatureDefinition::Operation(FeatureOperation::Helix {
         axis_origin: cadmpeg_ir::features::FinitePoint3::ZERO,
         axis_direction: cadmpeg_ir::features::FeatureDirection3::Z_AXIS,
-        radius: cadmpeg_ir::scalar::PositiveLength::new(radius)?,
+        radius: positive_length(radius)?,
         shape,
-        revolutions: cadmpeg_ir::scalar::PositiveReal::new(revolutions)?,
+        revolutions,
         start_angle: cadmpeg_ir::scalar::Angle::ZERO,
         clockwise,
         segment_turns,
@@ -3917,10 +3917,10 @@ fn taper_angle(
     properties: &[&PropertyRecord],
     key: &str,
 ) -> Result<Option<cadmpeg_ir::scalar::SlopeAngle>, CodecError> {
-    let Some(degrees) = scalar_named(properties, key).filter(|angle| *angle != 0.0) else {
+    let Some(degrees) = scalar_named(properties, key).filter(|angle| angle.get() != 0.0) else {
         return Ok(None);
     };
-    cadmpeg_ir::scalar::SlopeAngle::try_from(degrees.to_radians())
+    cadmpeg_ir::scalar::SlopeAngle::try_from(degrees.get().to_radians())
         .map(Some)
         .map_err(|error| CodecError::malformed(format!("{key}: {error}")))
 }
@@ -4025,7 +4025,7 @@ fn extrusion_shape(
             _ => return None,
         };
         let signed_length = |name| match scalar_named(properties, name) {
-            Some(value) => Some(value),
+            Some(value) => Some(value.get()),
             None => Some(0.0),
         };
         let mut forward = signed_length("LengthFwd")?;
@@ -4165,15 +4165,19 @@ fn extrusion_shape(
             enumeration_selector(properties, &type_name, 0)?
         };
         let offset = if property(properties, &offset_name).is_some() {
-            Some(Length::new(scalar_named(properties, &offset_name)?)?)
+            Some(Length::from_assigned_real(scalar_named(
+                properties,
+                &offset_name,
+            )?))
         } else {
             None
         };
         match termination_type {
             0 => Some(LinearTermination::Blind {
-                length: cadmpeg_ir::scalar::NonZeroLength::new(
-                    scalar_named(properties, &length_name).filter(|value| *value != 0.0)?,
-                )?,
+                length: cadmpeg_ir::scalar::NonZeroLength::from_assigned_real(scalar_named(
+                    properties,
+                    &length_name,
+                )?)?,
             }),
             1 if kind.contains("Pocket") => Some(LinearTermination::ThroughAll {}),
             1 => Some(LinearTermination::ToLast {}),
@@ -4325,8 +4329,10 @@ fn dress_up_edge_selection(kind: &str, properties: &[&PropertyRecord]) -> Option
 
 fn scale_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
     let base = singular_operand(properties, "Base")?;
-    let factor =
-        |name| scalar_named(properties, name).and_then(cadmpeg_ir::scalar::NonZeroReal::new);
+    let factor = |name| {
+        scalar_named(properties, name)
+            .and_then(|value| cadmpeg_ir::scalar::NonZeroReal::try_from(value).ok())
+    };
     let factors = if bool_selector(properties, "Uniform", true)? {
         ScaleFactors::Uniform {
             factor: factor("UniformScale")?,
@@ -4360,17 +4366,16 @@ fn fillet_definition(
             .all(|(_, first, second)| {
                 *first == radius && *second == radius && radius.is_finite() && radius > 0.0
             })
-            .then_some(radius)?
+            .then_some(radius)
+            .and_then(cadmpeg_ir::scalar::PositiveLength::new)?
     } else {
-        scalar_named(properties, "Radius").filter(|radius| *radius > 0.0)?
+        positive_length(scalar_named(properties, "Radius")?)?
     };
     Some(FeatureDefinition::Operation(FeatureOperation::Fillet {
         groups: cadmpeg_ir::features::NonEmptyMembers::one(
             cadmpeg_ir::features::edge_treatments::FilletGroup {
                 edges,
-                radius: RadiusSpec::Constant {
-                    radius: cadmpeg_ir::scalar::PositiveLength::new(radius)?,
-                },
+                radius: RadiusSpec::Constant { radius },
                 tangency_weight: None,
             },
         ),
@@ -4473,7 +4478,7 @@ fn shell_join(kind: &str, properties: &[&PropertyRecord]) -> Option<ShellJoin> {
 
 fn thickness_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
     let thickness = scalar_named(properties, "Value")?;
-    if thickness == 0.0 {
+    if thickness.get() == 0.0 {
         return None;
     }
     let source_name = if kind == "Part::Thickness" {
@@ -4488,9 +4493,9 @@ fn thickness_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Fe
     Some(FeatureDefinition::Operation(FeatureOperation::Shell {
         bodies: None,
         removed_faces: cadmpeg_ir::features::FaceSelection::Native(selection.id.clone()),
-        thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(thickness.abs())?),
+        thickness: Some(positive_length(thickness.abs())?),
         outward: Some(if kind == "Part::Thickness" {
-            thickness > 0.0
+            thickness.get() > 0.0
         } else {
             !bool_property(properties, "Reversed").unwrap_or(false)
         }),
@@ -4508,7 +4513,8 @@ fn offset_shape_definition(
     properties: &[&PropertyRecord],
 ) -> Option<FeatureDefinition> {
     let source = singular_operand(properties, "Source")?;
-    let distance = scalar_named(properties, "Value").filter(|distance| *distance != 0.0)?;
+    let distance =
+        cadmpeg_ir::scalar::NonZeroLength::from_assigned_real(scalar_named(properties, "Value")?)?;
     let mode = shell_mode(kind, properties)?;
     if kind == "Part::Offset2D" && mode == ShellMode::BothSides {
         return None;
@@ -4516,7 +4522,7 @@ fn offset_shape_definition(
     Some(FeatureDefinition::Operation(
         FeatureOperation::OffsetShape {
             source: BodySelection::Native(source.id.clone()),
-            distance: cadmpeg_ir::scalar::NonZeroLength::new(distance)?,
+            distance,
             mode,
             join: shell_join(kind, properties)?,
             resolve_intersections: bool_property(properties, "Intersection").unwrap_or(false),
@@ -4647,14 +4653,14 @@ fn project_on_surface_definition(properties: &[&PropertyRecord]) -> Option<Featu
         _ => return None,
     };
     let height = if property(properties, "Height").is_some() {
-        scalar_named(properties, "Height").filter(|value| *value >= 0.0)?
+        scalar_named(properties, "Height")?
     } else {
-        0.0
+        FiniteReal::ZERO
     };
     let offset = if property(properties, "Offset").is_some() {
         scalar_named(properties, "Offset")?
     } else {
-        0.0
+        FiniteReal::ZERO
     };
     Some(FeatureDefinition::Operation(
         FeatureOperation::ProjectOnSurface {
@@ -4664,8 +4670,8 @@ fn project_on_surface_definition(properties: &[&PropertyRecord]) -> Option<Featu
                 vector_property(properties, "Direction")?.get(),
             )?,
             mode,
-            height: cadmpeg_ir::scalar::NonNegativeLength::new(height)?,
-            offset: Length::new(offset)?,
+            height: nonnegative_length(height)?,
+            offset: Length::from_assigned_real(offset),
         },
     ))
 }
@@ -4702,7 +4708,7 @@ fn draft_definition(
             }),
         },
         angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(
-            if reversed { -angle } else { angle }.to_radians(),
+            if reversed { -angle.get() } else { angle.get() }.to_radians(),
         )?),
         outward: Some(reversed),
     }))
@@ -4724,7 +4730,7 @@ fn chamfer_spec(properties: &[&PropertyRecord]) -> Option<ChamferSpec> {
         (0, Some(distance)) => Some(ChamferSpec::Distance { distance }),
         (1, Some(first)) => property(properties, "Size2")
             .and_then(scalar_value)
-            .and_then(|value| cadmpeg_ir::scalar::PositiveLength::new(value.get()))
+            .and_then(positive_length)
             .map(|second| ChamferSpec::TwoDistances { first, second }),
         (2, Some(distance)) => property(properties, "Angle")
             .and_then(scalar_value)
@@ -4918,7 +4924,7 @@ fn primitive_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Fe
     let length = |name: &str| {
         property(properties, name)
             .and_then(scalar_value)
-            .map(Length::from)
+            .map(Length::from_assigned_real)
     };
     let angle = |name: &str| {
         property(properties, name)
@@ -5319,12 +5325,15 @@ fn hole_definition(
         7 => HoleProfileFilter::All,
         _ => return None,
     };
-    let positive = |name| scalar_named(properties, name).filter(|value| *value > 0.0);
+    let positive = |name| {
+        scalar_named(properties, name)
+            .and_then(|value| cadmpeg_ir::scalar::PositiveReal::try_from(value).ok())
+    };
     let diameter = positive("Diameter")?;
     let cut_angle = || {
         positive("HoleCutCountersinkAngle")
-            .filter(|value| *value < 180.0)
-            .and_then(|value| cadmpeg_ir::scalar::InteriorAngle::new(value.to_radians()))
+            .filter(|value| value.get() < 180.0)
+            .and_then(|value| cadmpeg_ir::scalar::InteriorAngle::new(value.get().to_radians()))
     };
     let legacy_cut_types = program_version
         .and_then(freecad_program_version)
@@ -5332,36 +5341,53 @@ fn hole_definition(
     let kind = match enumeration_selector(properties, "HoleCutType", 0)? {
         0 => HoleKind::Simple,
         1 => HoleKind::Counterbore {
-            diameter: cadmpeg_ir::scalar::PositiveLength::new(positive("HoleCutDiameter")?)?,
-            depth: cadmpeg_ir::scalar::PositiveLength::new(positive("HoleCutDepth")?)?,
+            diameter: cadmpeg_ir::scalar::PositiveLength::from_assigned_real(positive(
+                "HoleCutDiameter",
+            )?),
+            depth: cadmpeg_ir::scalar::PositiveLength::from_assigned_real(positive(
+                "HoleCutDepth",
+            )?),
         },
         2 => HoleKind::Countersink {
-            diameter: cadmpeg_ir::scalar::PositiveLength::new(positive("HoleCutDiameter")?)?,
+            diameter: cadmpeg_ir::scalar::PositiveLength::from_assigned_real(positive(
+                "HoleCutDiameter",
+            )?),
             angle: cut_angle()?,
         },
         3 if !legacy_cut_types => HoleKind::Counterdrill {
             diameters: cadmpeg_ir::features::holes::CounterdrillDiameters::new(
-                cadmpeg_ir::scalar::PositiveLength::new(positive("HoleCutDiameter")?)?,
+                cadmpeg_ir::scalar::PositiveLength::from_assigned_real(positive(
+                    "HoleCutDiameter",
+                )?),
                 None,
             )
             .ok()?,
 
-            depth: cadmpeg_ir::scalar::PositiveLength::new(positive("HoleCutDepth")?)?,
+            depth: cadmpeg_ir::scalar::PositiveLength::from_assigned_real(positive(
+                "HoleCutDepth",
+            )?),
             angle: cut_angle()?,
         },
         3 | 5 if legacy_cut_types => HoleKind::Counterbore {
-            diameter: cadmpeg_ir::scalar::PositiveLength::new(positive("HoleCutDiameter")?)?,
-            depth: cadmpeg_ir::scalar::PositiveLength::new(positive("HoleCutDepth")?)?,
+            diameter: cadmpeg_ir::scalar::PositiveLength::from_assigned_real(positive(
+                "HoleCutDiameter",
+            )?),
+            depth: cadmpeg_ir::scalar::PositiveLength::from_assigned_real(positive(
+                "HoleCutDepth",
+            )?),
         },
         4 if legacy_cut_types => HoleKind::Countersink {
-            diameter: cadmpeg_ir::scalar::PositiveLength::new(positive("HoleCutDiameter")?)?,
+            diameter: cadmpeg_ir::scalar::PositiveLength::from_assigned_real(positive(
+                "HoleCutDiameter",
+            )?),
             angle: cut_angle()?,
         },
         _ => return None,
     };
     let extent = match enumeration_selector(properties, "DepthType", 0)? {
         0 => LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::new(positive("Depth")?)?,
+            length: cadmpeg_ir::scalar::PositiveLength::from_assigned_real(positive("Depth")?)
+                .into(),
         },
         1 => LinearTermination::ThroughAll {},
         _ => return None,
@@ -5370,7 +5396,7 @@ fn hole_definition(
         0 => HoleBottom::Flat,
         1 => HoleBottom::Angled {
             included_angle: cadmpeg_ir::scalar::InteriorAngle::new(
-                positive("DrillPointAngle")?.to_radians(),
+                positive("DrillPointAngle")?.get().to_radians(),
             )?,
             depth_to_tip: bool_selector(properties, "DrillForDepth", false)?,
         },
@@ -5380,8 +5406,8 @@ fn hole_definition(
     let taper_angle = tapered
         .then(|| {
             positive("TaperedAngle")
-                .filter(|value| *value < 180.0)
-                .and_then(|value| cadmpeg_ir::scalar::InteriorAngle::new(value.to_radians()))
+                .filter(|value| value.get() < 180.0)
+                .and_then(|value| cadmpeg_ir::scalar::InteriorAngle::new(value.get().to_radians()))
         })
         .flatten();
     if tapered && taper_angle.is_none() {
@@ -5408,16 +5434,18 @@ fn hole_definition(
         let depth = match enumeration_selector(properties, "ThreadDepthType", 0)? {
             0 => HoleThreadDepth::HoleDepth,
             1 => HoleThreadDepth::Blind {
-                depth: cadmpeg_ir::scalar::PositiveLength::new(positive("ThreadDepth")?)?,
+                depth: cadmpeg_ir::scalar::PositiveLength::from_assigned_real(positive(
+                    "ThreadDepth",
+                )?),
             },
             2 => HoleThreadDepth::TappedStandard,
             _ => return None,
         };
         let clearance = if bool_selector(properties, "UseCustomThreadClearance", false)? {
-            Some(Length::new(scalar_named(
+            Some(Length::from_assigned_real(scalar_named(
                 properties,
                 "CustomThreadClearance",
-            )?)?)
+            )?))
         } else {
             None
         };
@@ -5428,9 +5456,10 @@ fn hole_definition(
                 class: enumeration_label(properties, "ThreadClass"),
                 modeled,
                 cosmetic,
-                pitch: positive("ThreadPitch").and_then(cadmpeg_ir::scalar::PositiveLength::new),
+                pitch: positive("ThreadPitch")
+                    .map(cadmpeg_ir::scalar::PositiveLength::from_assigned_real),
                 major_diameter: positive("ThreadDiameter")
-                    .and_then(cadmpeg_ir::scalar::PositiveLength::new),
+                    .map(cadmpeg_ir::scalar::PositiveLength::from_assigned_real),
                 hand,
                 depth,
                 clearance,
@@ -5462,7 +5491,9 @@ fn hole_definition(
                 specification,
             },
             None,
-            Some(cadmpeg_ir::scalar::PositiveLength::new(diameter)?),
+            Some(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(
+                diameter,
+            )),
         )
         .ok()?,
 
@@ -5536,14 +5567,15 @@ fn helical_sweep_definition(
         axis_origin: cadmpeg_ir::features::FinitePoint3::new(axis_origin)?,
         axis_direction,
         law,
-        pitch: cadmpeg_ir::scalar::NonNegativeLength::new(scalar_named(properties, "Pitch")?)?,
+        pitch: nonnegative_length(scalar_named(properties, "Pitch")?)?,
         travel: cadmpeg_ir::features::HelicalSweepTravel::new(
-            Length::new(scalar_named(properties, "Height")?)?,
-            Length::new(scalar_named(properties, "Growth")?)?,
+            Length::from_assigned_real(scalar_named(properties, "Height")?),
+            Length::from_assigned_real(scalar_named(properties, "Growth")?),
         )?,
-        turns: cadmpeg_ir::scalar::PositiveReal::new(scalar_named(properties, "Turns")?)?,
+        turns: cadmpeg_ir::scalar::PositiveReal::try_from(scalar_named(properties, "Turns")?)
+            .ok()?,
         cone_angle: cadmpeg_ir::scalar::Angle::new(
-            scalar_named(properties, "Angle")?.to_radians(),
+            scalar_named(properties, "Angle")?.get().to_radians(),
         )?,
         left_handed: bool_selector(properties, "LeftHanded", false)?,
         reversed: bool_selector(properties, "Reversed", false)?,
@@ -5935,7 +5967,7 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
 
     if kind.ends_with("Scaled") {
         let final_factor =
-            cadmpeg_ir::scalar::PositiveReal::new(scalar_named(properties, "Factor")?)?;
+            cadmpeg_ir::scalar::PositiveReal::try_from(scalar_named(properties, "Factor")?).ok()?;
         return (count >= 2).then_some(
             PatternKind::new(PatternTransform::Scale {
                 center: PatternScaleCenter::FirstSeedCentroid,
@@ -6081,11 +6113,12 @@ fn pattern_locations(
     let name = |base: &str| format!("{base}{suffix}");
     let intervals = match mode {
         0 => {
-            let interval = scalar_named(properties, &name(extent_base))? / f64::from(count - 1);
+            let interval =
+                scalar_named(properties, &name(extent_base))?.get() / f64::from(count - 1);
             alloc_filled(count as usize - 1, interval, "freecad pattern intervals").ok()?
         }
         1 => {
-            let fallback = scalar_named(properties, &name(offset_base))?;
+            let fallback = scalar_named(properties, &name(offset_base))?.get();
             let spacings = property(properties, &name("Spacings")).map_or_else(
                 || Some(Vec::new()),
                 |property| numeric_list(property, entries),
@@ -6277,10 +6310,19 @@ fn is_link_property_type(type_name: &str) -> bool {
     )
 }
 
-fn scalar_named(properties: &[&PropertyRecord], name: &str) -> Option<f64> {
-    property(properties, name)
-        .and_then(scalar_value)
-        .map(FiniteReal::get)
+fn scalar_named(
+    properties: &[&PropertyRecord],
+    name: &str,
+) -> Option<cadmpeg_ir::scalar::FiniteReal> {
+    property(properties, name).and_then(scalar_value)
+}
+
+fn positive_length(value: FiniteReal) -> Option<cadmpeg_ir::scalar::PositiveLength> {
+    cadmpeg_ir::scalar::PositiveLength::try_from(Length::from_assigned_real(value)).ok()
+}
+
+fn nonnegative_length(value: FiniteReal) -> Option<cadmpeg_ir::scalar::NonNegativeLength> {
+    cadmpeg_ir::scalar::NonNegativeLength::try_from(Length::from_assigned_real(value)).ok()
 }
 
 fn string_property_value(property: &PropertyRecord) -> Option<String> {
@@ -6290,7 +6332,15 @@ fn string_property_value(property: &PropertyRecord) -> Option<String> {
 
 fn integer_property(properties: &[&PropertyRecord], name: &str) -> Option<u64> {
     let value = scalar_named(properties, name)?;
-    (value.is_finite() && value >= 0.0 && value.fract() == 0.0).then_some(value as u64)
+    let value = value.get();
+    if value < 0.0 || value.fract() != 0.0 {
+        return None;
+    }
+    Some(if value >= U64_UPPER_EXCLUSIVE {
+        u64::MAX
+    } else {
+        value as u64
+    })
 }
 
 fn integer_selector(

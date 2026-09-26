@@ -374,7 +374,7 @@ fn saved_line_fixed_coordinate_value(
 #[derive(Clone, Copy)]
 pub(in crate::decode) enum SectionPointSource {
     Point(u32),
-    Value([f64; 2]),
+    Value(cadmpeg_ir::units::FiniteVector<2>),
 }
 
 pub(in crate::decode) fn unique_section_skamp_segment(
@@ -515,7 +515,7 @@ pub(in crate::decode) fn section_skamp_incidence_point(
 fn saved_section_point(
     definition: &crate::feature::definitions::FeatureDefinition,
     item: &crate::feature::definitions::FeatureSkampItem,
-) -> Option<[f64; 2]> {
+) -> Option<cadmpeg_ir::units::FiniteVector<2>> {
     if !saved_section_entity_fallback_allowed(definition, item.entity_id) {
         return None;
     }
@@ -538,7 +538,7 @@ fn saved_section_point(
     let [Some(u), Some(v), _] = coordinates else {
         return None;
     };
-    (u.is_finite() && v.is_finite()).then_some([u, v])
+    cadmpeg_ir::units::FiniteVector::new([u, v])
 }
 
 #[cfg(test)]

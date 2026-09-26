@@ -301,9 +301,11 @@ impl SumSquaresUnitVector3 {
         &self.0
     }
 
-    /// Divide the admitted components by their square-sum length. The length
-    /// lies within `1e-9` of one, so it is finite and nonzero. Each quotient
-    /// is finite, and its resulting length is within rounding of one.
+    /// Divide the admitted components by their square-sum length. Admission
+    /// bounds that length within `1e-9` of one, excluding zero and overflow.
+    /// Every finite component, including a subnormal one, divided by that
+    /// length remains finite. The quotient length differs from one only by
+    /// rounding, below the unit admission tolerance.
     #[must_use]
     pub fn normalized(self) -> UnitVector3 {
         let value = self.0;
@@ -609,8 +611,15 @@ impl DirectionAboveEpsilon {
 
     /// Divide by the Euclidean length, using the largest component when that length overflows.
     ///
-    /// The admitted length is nonzero. Both division routes produce finite
-    /// components with unit length to rounding.
+    /// Admission gives finite components and a `hypot` length above machine
+    /// epsilon. If that length is finite, division is by a positive finite
+    /// value; a subnormal component can round to zero but cannot make a
+    /// quotient non-finite. If the length overflows, the largest component is
+    /// finite and nonzero. Dividing by it gives one component of magnitude one
+    /// and all others at most one, so the chart length is in `[1, sqrt(3)]`.
+    /// Dividing either chart by its length produces finite components whose
+    /// `hypot` length differs from one by rounding, below the `1e-9` unit
+    /// admission tolerance.
     #[must_use]
     pub fn normalized(self) -> UnitVector3 {
         let value = self.get();
