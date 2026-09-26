@@ -2,6 +2,8 @@
 //! Typed geometry arrays from expanded `SolidPrimdata` sections.
 
 use crate::{psb, scalar};
+use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::units::FiniteVector;
 
 /// Named scalar-array field in a primitive record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,7 +41,7 @@ pub(crate) struct PrimitiveScalarArray {
     /// Byte offset of the named-record header in the expanded section.
     pub(crate) offset: usize,
     /// Completely decoded scalar values.
-    pub(crate) values: Vec<f64>,
+    pub(crate) values: Vec<FiniteReal>,
 }
 
 /// One complete triangle-strip primitive.
@@ -48,11 +50,11 @@ pub(crate) struct PrimitiveTriangleStrip {
     /// Byte offset of `value(prim_tristripsetwithatt)` in the expanded section.
     pub(crate) offset: usize,
     /// Consecutive model-space positions.
-    pub(crate) positions: Vec<[f64; 3]>,
+    pub(crate) positions: Vec<FiniteVector<3>>,
     /// Per-vertex normals when the primitive uses the interleaved normal and
     /// position lane. A primitive that carries only the position lane states
     /// an unshaded strip set and no normal lane at all.
-    pub(crate) normals: Option<Vec<[f64; 3]>>,
+    pub(crate) normals: Option<Vec<FiniteVector<3>>>,
     /// Vertex count of each consecutive triangle strip.
     pub(crate) strip_lengths: Vec<u32>,
 }
@@ -74,8 +76,8 @@ enum TriangleStripGeometryError {
 
 #[derive(Debug, Clone, PartialEq)]
 struct TriangleStripGeometry {
-    positions: Vec<[f64; 3]>,
-    normals: Option<Vec<[f64; 3]>>,
+    positions: Vec<FiniteVector<3>>,
+    normals: Option<Vec<FiniteVector<3>>>,
 }
 
 fn triangle_strip_geometry(
@@ -84,8 +86,8 @@ fn triangle_strip_geometry(
 ) -> Result<TriangleStripGeometry, TriangleStripGeometryError> {
     let vertex_count =
         usize::try_from(vertex_count).map_err(|_| TriangleStripGeometryError::Missing)?;
-    let mut positions = None::<Vec<[f64; 3]>>;
-    let mut normals = None::<Vec<[f64; 3]>>;
+    let mut positions = None::<Vec<FiniteVector<3>>>;
+    let mut normals = None::<Vec<FiniteVector<3>>>;
     for array in arrays {
         let (candidate_positions, candidate_normals) = match array.field {
             PrimitiveArrayField::VertexPositions => {
@@ -100,7 +102,7 @@ fn triangle_strip_geometry(
                     array
                         .values
                         .chunks_exact(3)
-                        .map(|point| [point[0], point[1], point[2]])
+                        .map(|point| FiniteVector::from([point[0], point[1], point[2]]))
                         .collect(),
                     None,
                 )
@@ -117,13 +119,13 @@ fn triangle_strip_geometry(
                     array
                         .values
                         .chunks_exact(6)
-                        .map(|tuple| [tuple[3], tuple[4], tuple[5]])
+                        .map(|tuple| FiniteVector::from([tuple[3], tuple[4], tuple[5]]))
                         .collect(),
                     Some(
                         array
                             .values
                             .chunks_exact(6)
-                            .map(|tuple| [tuple[0], tuple[1], tuple[2]])
+                            .map(|tuple| FiniteVector::from([tuple[0], tuple[1], tuple[2]]))
                             .collect(),
                     ),
                 )
@@ -270,15 +272,18 @@ pub(crate) fn scalar_arrays(data: &[u8]) -> Vec<PrimitiveScalarArray> {
             let mut cursor = psb::Cursor::at(data, start);
             while values.len() < capacity {
                 if capacity - values.len() >= 3 && cursor.take_slice_if(&[0x00, 0x28, 0x00]) {
-                    values.extend([0.0, 1.0, 0.0]);
+                    values.extend([FiniteReal::ZERO, FiniteReal::ONE, FiniteReal::ZERO]);
                     continue;
                 }
                 let Some(value) = cursor.take_with(primitive_scalar) else {
                     break;
                 };
+                let Some(value) = FiniteReal::new(value) else {
+                    break;
+                };
                 values.push(value);
             }
-            if values.len() == capacity && values.iter().all(|value| value.is_finite()) {
+            if values.len() == capacity {
                 arrays.push(PrimitiveScalarArray {
                     field,
                     offset,
@@ -315,6 +320,22 @@ mod tests {
         scalar_arrays, triangle_strip_geometry, triangle_strips, PrimitiveArrayField,
         PrimitiveScalarArray, TriangleStripGeometry, TriangleStripGeometryError,
     };
+    use cadmpeg_ir::scalar::FiniteReal;
+    use cadmpeg_ir::units::FiniteVector;
+
+    fn finite_values(values: Vec<f64>) -> Vec<FiniteReal> {
+        values
+            .into_iter()
+            .map(|value| FiniteReal::new(value).expect("finite test scalar"))
+            .collect()
+    }
+
+    fn finite_points(points: Vec<[f64; 3]>) -> Vec<FiniteVector<3>> {
+        points
+            .into_iter()
+            .map(|point| FiniteVector::new(point).expect("finite test point"))
+            .collect()
+    }
 
     fn named(name: &str, values: &[u8], count: u8) -> Vec<u8> {
         let mut bytes = vec![0xe0, 0x06];
@@ -333,9 +354,9 @@ mod tests {
         );
         let arrays = scalar_arrays(&bytes);
         assert_eq!(arrays.len(), 1);
-        assert_eq!(arrays[0].values[0], 0.0);
-        assert!((arrays[0].values[1] - 20.8).abs() < 1.0e-5);
-        assert!((arrays[0].values[2] + 16.8).abs() < 1.0e-5);
+        assert_eq!(arrays[0].values[0].get(), 0.0);
+        assert!((arrays[0].values[1].get() - 20.8).abs() < 1.0e-5);
+        assert!((arrays[0].values[2].get() + 16.8).abs() < 1.0e-5);
     }
 
     #[test]
@@ -410,7 +431,10 @@ mod tests {
             strips[0].positions,
             [[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
         );
-        assert_eq!(strips[0].normals, Some(vec![[0.0, 1.0, 0.0]; 3]));
+        assert_eq!(
+            strips[0].normals,
+            Some(finite_points(vec![[0.0, 1.0, 0.0]; 3]))
+        );
         assert_eq!(strips[0].strip_lengths, [3]);
     }
 
@@ -419,20 +443,20 @@ mod tests {
         let xyz = PrimitiveScalarArray {
             field: PrimitiveArrayField::VertexPositions,
             offset: 10,
-            values: vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+            values: finite_values(vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0]),
         };
         let normal_xyz = PrimitiveScalarArray {
             field: PrimitiveArrayField::VertexNormalsAndPositions,
             offset: 20,
-            values: vec![
+            values: finite_values(vec![
                 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
                 1.0, 0.0,
-            ],
+            ]),
         };
 
         let expected = TriangleStripGeometry {
-            positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
-            normals: Some(vec![[0.0, 0.0, 1.0]; 3]),
+            positions: finite_points(vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]),
+            normals: Some(finite_points(vec![[0.0, 0.0, 1.0]; 3])),
         };
         assert_eq!(
             triangle_strip_geometry(&[xyz.clone(), normal_xyz.clone()], 3),
@@ -446,15 +470,15 @@ mod tests {
         let xyz = PrimitiveScalarArray {
             field: PrimitiveArrayField::VertexPositions,
             offset: 10,
-            values: vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+            values: finite_values(vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0]),
         };
         let conflicting_xyz = PrimitiveScalarArray {
             field: PrimitiveArrayField::VertexNormalsAndPositions,
             offset: 20,
-            values: vec![
+            values: finite_values(vec![
                 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
                 1.0, 0.0,
-            ],
+            ]),
         };
 
         assert_eq!(

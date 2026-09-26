@@ -802,7 +802,9 @@ fn legacy_round_dimension_supplies_constant_radius() {
         .legacy_rounds
         .push(crate::legacy_feature::LegacyRoundFeature {
             feature_id: 913,
-            radius: crate::legacy_feature::LegacyRoundRadius::Constant(2.0),
+            radius: crate::legacy_feature::LegacyRoundRadius::Constant(
+                cadmpeg_ir::scalar::PositiveReal::new(2.0).expect("positive radius"),
+            ),
             edge_ids: None,
             offset: 0,
         });

@@ -192,11 +192,11 @@ fn class_913_round_replay_scalars_use_bounded_short_form_lane() {
 
     assert_eq!(decoded.len(), 2);
     assert_eq!(decoded[0].feature_id, 17);
-    assert!((decoded[0].value - 0.5).abs() < EPS_ROUND_REPLAY_TEST);
+    assert!((decoded[0].value.get() - 0.5).abs() < EPS_ROUND_REPLAY_TEST);
     assert_eq!(decoded[0].offset, 400 + first_scalar_offset);
     assert_eq!(decoded[0].record_offset, 400 + first_record_offset);
     assert_eq!(decoded[1].feature_id, 17);
-    assert!((decoded[1].value - 0.2).abs() < EPS_ROUND_REPLAY_TEST);
+    assert!((decoded[1].value.get() - 0.2).abs() < EPS_ROUND_REPLAY_TEST);
     assert_eq!(decoded[1].offset, 400 + second_scalar_offset);
     assert_eq!(decoded[1].record_offset, 400 + second_record_offset);
 }

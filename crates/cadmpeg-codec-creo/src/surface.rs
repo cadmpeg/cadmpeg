@@ -6441,6 +6441,7 @@ pub(crate) struct PlaneFrame {
     pub(crate) origin: Option<[f64; 3]>,
     pub(crate) u_axis: Option<UnitVector3>,
     pub(crate) normal: Option<UnitVector3>,
+    pub(crate) cross_overflow: bool,
 }
 
 fn plane_unit_direction(value: [f64; 3], magnitude: f64) -> Option<UnitVector3> {
@@ -6449,6 +6450,15 @@ fn plane_unit_direction(value: [f64; 3], magnitude: f64) -> Option<UnitVector3> 
 }
 
 impl PlaneFrame {
+    fn without_directions(origin: Option<[f64; 3]>) -> Self {
+        Self {
+            origin,
+            u_axis: None,
+            normal: None,
+            cross_overflow: false,
+        }
+    }
+
     fn with_directions(
         origin: Option<[f64; 3]>,
         u_axis: Option<UnitVector3>,
@@ -6459,12 +6469,9 @@ impl PlaneFrame {
                 origin,
                 u_axis: Some(u_axis),
                 normal: Some(normal),
+                cross_overflow: false,
             },
-            _ => Self {
-                origin,
-                u_axis: None,
-                normal: None,
-            },
+            _ => Self::without_directions(origin),
         }
     }
 
@@ -6489,11 +6496,7 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
     let (Some(first), Some(middle), Some(third)) =
         (triple([0, 1, 2]), triple([3, 4, 5]), triple([6, 7, 8]))
     else {
-        return PlaneFrame {
-            origin,
-            u_axis: None,
-            normal: None,
-        };
+        return PlaneFrame::without_directions(origin);
     };
     let supports = [first, middle, third];
     let magnitudes = supports.map(|support| {
@@ -6508,11 +6511,7 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
         .filter(|magnitude| *magnitude <= EPS_PLANE_FRAME_NONZERO)
         .any(|magnitude| magnitude > EPS_PLANE_FRAME_ZERO)
     {
-        return PlaneFrame {
-            origin,
-            u_axis: None,
-            normal: None,
-        };
+        return PlaneFrame::without_directions(origin);
     }
     let pairs = [(0, 1), (0, 2), (1, 2)]
         .into_iter()
@@ -6534,11 +6533,7 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
         })
         .collect::<Vec<_>>();
     let [(first_index, second_index)] = pairs.as_slice() else {
-        return PlaneFrame {
-            origin,
-            u_axis: None,
-            normal: None,
-        };
+        return PlaneFrame::without_directions(origin);
     };
     let first = supports[*first_index];
     let second = supports[*second_index];
@@ -6548,6 +6543,12 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
         first[2].mul_add(second[0], -(first[0] * second[2])),
         first[0].mul_add(second[1], -(first[1] * second[0])),
     ];
+    if cross.iter().any(|component| !component.is_finite()) {
+        return PlaneFrame {
+            cross_overflow: true,
+            ..PlaneFrame::without_directions(origin)
+        };
+    }
     let magnitude = cross.iter().map(|value| value * value).sum::<f64>().sqrt();
     let normal = (magnitude > EPS_PLANE_FRAME_NONZERO)
         .then(|| plane_unit_direction(cross, magnitude))
@@ -6567,11 +6568,7 @@ fn plane_direct_frame(slots: &[Option<f64>]) -> PlaneFrame {
     let (Some(u_axis), Some(zero_rank), Some(normal)) =
         (triple([0, 1, 2]), triple([3, 4, 5]), triple([6, 7, 8]))
     else {
-        return PlaneFrame {
-            origin,
-            u_axis: None,
-            normal: None,
-        };
+        return PlaneFrame::without_directions(origin);
     };
     let u_magnitude = u_axis.iter().map(|value| value * value).sum::<f64>().sqrt();
     let normal_magnitude = normal.iter().map(|value| value * value).sum::<f64>().sqrt();
@@ -6589,11 +6586,7 @@ fn plane_direct_frame(slots: &[Option<f64>]) -> PlaneFrame {
         || (u_magnitude - normal_magnitude).abs() > EPS_PLANE_FRAME_SCALE * scale
         || orthogonal.abs() > EPS_PLANE_FRAME_ORTHOGONAL * u_magnitude * normal_magnitude
     {
-        return PlaneFrame {
-            origin,
-            u_axis: None,
-            normal: None,
-        };
+        return PlaneFrame::without_directions(origin);
     }
     PlaneFrame::with_directions(
         origin,
@@ -6614,18 +6607,10 @@ fn plane_matrix_frame(slots: &[Option<f64>]) -> PlaneFrame {
     let (Some(u_column), Some(rank_column), Some(normal_column)) =
         (triple([0, 3, 6]), triple([1, 4, 7]), triple([2, 5, 8]))
     else {
-        return PlaneFrame {
-            origin,
-            u_axis: None,
-            normal: None,
-        };
+        return PlaneFrame::without_directions(origin);
     };
     if rank_column.into_iter().any(|value| value != 0.0) {
-        return PlaneFrame {
-            origin,
-            u_axis: None,
-            normal: None,
-        };
+        return PlaneFrame::without_directions(origin);
     }
     let magnitudes = [u_column, normal_column].map(|direction| {
         direction
@@ -6648,11 +6633,7 @@ fn plane_matrix_frame(slots: &[Option<f64>]) -> PlaneFrame {
         || (u_magnitude - normal_magnitude).abs() > EPS_PLANE_FRAME_SCALE * scale.max(1.0)
         || dot.abs() > EPS_PLANE_FRAME_ORTHOGONAL * u_magnitude * normal_magnitude
     {
-        return PlaneFrame {
-            origin,
-            u_axis: None,
-            normal: None,
-        };
+        return PlaneFrame::without_directions(origin);
     }
     PlaneFrame::with_directions(
         origin,
