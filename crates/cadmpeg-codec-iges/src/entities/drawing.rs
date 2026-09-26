@@ -7,6 +7,7 @@ use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -400,7 +401,7 @@ pub(super) fn project(
         let count = record.count(1).filter(|count| *count > 0);
         let mut last_view = None;
         let mut closed_views = BTreeSet::new();
-        let mut last_breakpoint = None;
+        let mut last_breakpoint: Option<FiniteReal> = None;
         let blocks_valid = count.is_some_and(|count| {
             (0..count).all(|index| {
                 let start = 2 + index * 6;
@@ -419,9 +420,10 @@ pub(super) fn project(
                     last_breakpoint = None;
                 }
                 let view_order_valid = view.is_some_and(|view| !closed_views.contains(&view));
-                let breakpoint = record.number(start + 1).filter(|value| value.is_finite());
-                let breakpoint_order_valid = breakpoint
-                    .is_some_and(|value| last_breakpoint.is_none_or(|previous| value > previous));
+                let breakpoint = record.number(start + 1).and_then(FiniteReal::new);
+                let breakpoint_order_valid = breakpoint.is_some_and(|value| {
+                    last_breakpoint.is_none_or(|previous| value.get() > previous.get())
+                });
                 last_view = view;
                 last_breakpoint = breakpoint;
                 let display_valid = record.integer(start + 2).is_some_and(display_flag_valid);
