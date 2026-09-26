@@ -7,6 +7,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::ids::PointId;
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::scalar::{FiniteBinary32, FiniteReal};
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::SourceObjectAssociation;
@@ -166,7 +167,7 @@ fn parse_mesh(property: &PropertyRecord, bytes: &[u8]) -> Result<Tessellation, C
         }
     }
     reader.finish("mesh payload")?;
-    Ok(Tessellation::new(
+    Ok(Tessellation::from_parts(
         format!("{}:mesh", property.id),
         cadmpeg_ir::tessellation::TessellationMesh::List {
             vertices,
@@ -201,7 +202,7 @@ fn parse_points(property: &PropertyRecord, bytes: &[u8]) -> Result<Vec<Point>, C
     Ok(points)
 }
 
-fn point_transform(property: &PropertyRecord) -> Result<[[f64; 4]; 4], CodecError> {
+fn point_transform(property: &PropertyRecord) -> Result<[[FiniteReal; 4]; 4], CodecError> {
     let document = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
         CodecError::malformed(format_args!(
             "invalid point property XML {}: {error}",
@@ -221,25 +222,45 @@ fn point_transform(property: &PropertyRecord) -> Result<[[f64; 4]; 4], CodecErro
         .map(str::parse::<f64>)
         .collect::<Result<Vec<_>, _>>()
         .map_err(|_| CodecError::Malformed("invalid point-cloud transform scalar".into()))?;
-    if values.len() != 16 || values.iter().any(|value| !value.is_finite()) {
+    if values.len() != 16 {
         return Err(CodecError::Malformed(
             "point-cloud transform must contain 16 finite scalars".into(),
         ));
     }
+    let values = values
+        .into_iter()
+        .map(FiniteReal::new)
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| {
+            CodecError::Malformed("point-cloud transform must contain 16 finite scalars".into())
+        })?;
     Ok(std::array::from_fn(|row| {
         std::array::from_fn(|column| values[row * 4 + column])
     }))
 }
 
-fn identity() -> [[f64; 4]; 4] {
-    std::array::from_fn(|row| std::array::from_fn(|column| f64::from(row == column)))
+fn identity() -> [[FiniteReal; 4]; 4] {
+    std::array::from_fn(|row| {
+        std::array::from_fn(|column| {
+            if row == column {
+                FiniteReal::ONE
+            } else {
+                FiniteReal::ZERO
+            }
+        })
+    })
 }
 
 /// Places a finite point with a finite transform.
 ///
 /// Finite operands still multiply and add to a non-finite coordinate, which
 /// states no position, so the transformed position carries its own test.
-fn transform_point(transform: [[f64; 4]; 4], point: Point3) -> Result<FinitePoint3, CodecError> {
+fn transform_point(
+    transform: [[FiniteReal; 4]; 4],
+    point: FinitePoint3,
+) -> Result<FinitePoint3, CodecError> {
+    let transform = transform.map(|row| row.map(FiniteReal::get));
+    let point = point.get();
     let values: [f64; 3] = std::array::from_fn(|row| {
         transform[row][0] * point.x
             + transform[row][1] * point.y
@@ -343,17 +364,17 @@ impl<'a> Reader<'a> {
         Ok(index)
     }
 
-    fn point3(&mut self, order: ByteOrder, label: &str) -> Result<Point3, CodecError> {
+    fn point3(&mut self, order: ByteOrder, label: &str) -> Result<FinitePoint3, CodecError> {
         let values = [self.f32(order)?, self.f32(order)?, self.f32(order)?];
-        if values.iter().any(|value| !value.is_finite()) {
+        let [Some(x), Some(y), Some(z)] = values.map(FiniteBinary32::new) else {
             return Err(CodecError::malformed(format_args!(
                 "{label} contains a non-finite coordinate"
             )));
-        }
-        Ok(Point3::new(
-            f64::from(values[0]),
-            f64::from(values[1]),
-            f64::from(values[2]),
+        };
+        Ok(FinitePoint3::from_coordinates(
+            FiniteReal::from_finite_binary32(x),
+            FiniteReal::from_finite_binary32(y),
+            FiniteReal::from_finite_binary32(z),
         ))
     }
 
