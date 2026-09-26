@@ -930,6 +930,8 @@ fn rodrigues(value: Vector3, axis: Vector3, angle: f64) -> Vector3 {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    const EPS_MITER_DIRECTION: f64 = 1.0e-12;
+
     use super::{
         active_miter, cap_frame, exact_orientation, mitered_local, read_v5_mesh_cache,
         split_profiles, ANONYMOUS, CLOSURE_ABSOLUTE_TOLERANCE, ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
@@ -1567,7 +1569,6 @@ pub(crate) mod tests {
         .expect("required invariant");
         assert_eq!(Vector3::from(plain.2), Vector3::new(0.0, 0.0, 1.0));
         let mitered_normal: Vector3 = mitered.2.into();
-        const EPS_MITER_DIRECTION: f64 = 1.0e-12;
         assert!((mitered_normal.y - 0.6).abs() < EPS_MITER_DIRECTION);
         assert!((mitered_normal.z - 0.8).abs() < EPS_MITER_DIRECTION);
     }
