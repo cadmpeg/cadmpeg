@@ -9,6 +9,39 @@ use crate::{
 };
 
 #[test]
+fn hypot_axes_build_pcurves_without_changing_admitted_coordinates() {
+    use crate::geometry::pcurve::{CirclePcurve, EllipsePcurve, HyperbolaPcurve, ParabolaPcurve};
+    use crate::units::HypotDirection2;
+
+    let x_axis = HypotDirection2::normalized_with_length([3.0, 4.0])
+        .unwrap()
+        .0;
+    let y_axis = x_axis.quarter_turn();
+    let [x_u, x_v] = x_axis.get();
+    let [y_u, y_v] = y_axis.get();
+    let x_raw = Point2::new(x_u, x_v);
+    let y_raw = Point2::new(y_u, y_v);
+    let center = Point2::new(2.0, -3.0);
+
+    assert_eq!(
+        CirclePcurve::try_from_parts(center, x_axis, y_axis, 5.0),
+        CirclePcurve::try_new(center, x_raw, y_raw, 5.0)
+    );
+    assert_eq!(
+        EllipsePcurve::try_from_parts(center, x_axis, y_axis, 5.0, 2.0),
+        EllipsePcurve::try_new(center, x_raw, y_raw, 5.0, 2.0)
+    );
+    assert_eq!(
+        ParabolaPcurve::try_from_parts(center, x_axis, y_axis, 5.0),
+        ParabolaPcurve::try_new(center, x_raw, y_raw, 5.0)
+    );
+    assert_eq!(
+        HyperbolaPcurve::try_from_parts(center, x_axis, y_axis, 5.0, 2.0),
+        HyperbolaPcurve::try_new(center, x_raw, y_raw, 5.0, 2.0)
+    );
+}
+
+#[test]
 fn a_refused_pcurve_pole_edit_keeps_the_prior_poles() {
     let mut pcurve = pcurve();
     let original = pcurve.clone();

@@ -11,7 +11,7 @@ use crate::math::{Point2, Point3};
 use crate::scalar::{FiniteReal, NonZeroReal, PositiveReal};
 use crate::topology::ParameterInterval;
 use crate::transform::Transform2;
-use crate::units::{FinitePoint2, FiniteVector, NonzeroPoint2};
+use crate::units::{FinitePoint2, FiniteVector, HypotDirection2, NonzeroPoint2};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -575,6 +575,23 @@ struct CirclePcurveWire {
 }
 
 impl CirclePcurve {
+    /// Admit the center and radius with axes already admitted by a `hypot` quotient.
+    pub fn try_from_parts(
+        center: Point2,
+        x_axis: HypotDirection2,
+        y_axis: HypotDirection2,
+        radius: f64,
+    ) -> Result<Self, &'static str> {
+        let center = FinitePoint2::new(center).ok_or("CirclePcurve.center must be finite")?;
+        let radius =
+            PositiveReal::new(radius).ok_or("CirclePcurve.radius must be positive and finite")?;
+        Ok(Self {
+            center,
+            x_axis: FinitePoint2::from(x_axis),
+            y_axis: FinitePoint2::from(y_axis),
+            radius,
+        })
+    }
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(
         center: Point2,
@@ -675,6 +692,27 @@ struct EllipsePcurveWire {
 }
 
 impl EllipsePcurve {
+    /// Admit the center and radii with axes already admitted by a `hypot` quotient.
+    pub fn try_from_parts(
+        center: Point2,
+        x_axis: HypotDirection2,
+        y_axis: HypotDirection2,
+        major_radius: f64,
+        minor_radius: f64,
+    ) -> Result<Self, &'static str> {
+        let center = FinitePoint2::new(center).ok_or("EllipsePcurve.center must be finite")?;
+        let major_radius = PositiveReal::new(major_radius)
+            .ok_or("EllipsePcurve.major_radius must be positive and finite")?;
+        let minor_radius = PositiveReal::new(minor_radius)
+            .ok_or("EllipsePcurve.minor_radius must be positive and finite")?;
+        Ok(Self {
+            center,
+            x_axis: FinitePoint2::from(x_axis),
+            y_axis: FinitePoint2::from(y_axis),
+            major_radius,
+            minor_radius,
+        })
+    }
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(
         center: Point2,
@@ -866,6 +904,23 @@ struct ParabolaPcurveWire {
 }
 
 impl ParabolaPcurve {
+    /// Admit the vertex and focal distance with axes admitted by a `hypot` quotient.
+    pub fn try_from_parts(
+        vertex: Point2,
+        x_axis: HypotDirection2,
+        y_axis: HypotDirection2,
+        focal_distance: f64,
+    ) -> Result<Self, &'static str> {
+        let vertex = FinitePoint2::new(vertex).ok_or("ParabolaPcurve.vertex must be finite")?;
+        let focal_distance = PositiveReal::new(focal_distance)
+            .ok_or("ParabolaPcurve.focal_distance must be positive and finite")?;
+        Ok(Self {
+            vertex,
+            x_axis: FinitePoint2::from(x_axis),
+            y_axis: FinitePoint2::from(y_axis),
+            focal_distance,
+        })
+    }
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(
         vertex: Point2,
@@ -964,6 +1019,27 @@ struct HyperbolaPcurveWire {
 }
 
 impl HyperbolaPcurve {
+    /// Admit the center and radii with axes admitted by a `hypot` quotient.
+    pub fn try_from_parts(
+        center: Point2,
+        x_axis: HypotDirection2,
+        y_axis: HypotDirection2,
+        major_radius: f64,
+        minor_radius: f64,
+    ) -> Result<Self, &'static str> {
+        let center = FinitePoint2::new(center).ok_or("HyperbolaPcurve.center must be finite")?;
+        let major_radius = PositiveReal::new(major_radius)
+            .ok_or("HyperbolaPcurve.major_radius must be positive and finite")?;
+        let minor_radius = PositiveReal::new(minor_radius)
+            .ok_or("HyperbolaPcurve.minor_radius must be positive and finite")?;
+        Ok(Self {
+            center,
+            x_axis: FinitePoint2::from(x_axis),
+            y_axis: FinitePoint2::from(y_axis),
+            major_radius,
+            minor_radius,
+        })
+    }
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(
         center: Point2,
