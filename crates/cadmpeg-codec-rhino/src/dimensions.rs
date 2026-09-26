@@ -8,7 +8,7 @@ use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader
 use crate::objects::{parse_class_wrapper, UserdataDescriptor};
 use crate::settings::{plane, utf16, MillimeterScale, Plane, PlaneLane};
 use crate::wire::{scaled_coordinate, uuid, Uuid};
-use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, PositiveAngle, PositiveReal};
 use cadmpeg_ir::units::FiniteVector;
 
 const ANONYMOUS: u32 = 0x4000_8000;
@@ -90,8 +90,8 @@ enum Definition {
     Angular {
         first_direction: PlaneLane<2>,
         second_direction: PlaneLane<2>,
-        first_extension_offset: f64,
-        second_extension_offset: f64,
+        first_extension_offset: FiniteReal,
+        second_extension_offset: FiniteReal,
         dimension_line_point: PlaneLane<2>,
     },
     Radial {
@@ -103,10 +103,10 @@ enum Definition {
         definition_point: PlaneLane<2>,
         leader_point: PlaneLane<2>,
         measured_direction: OrdinateAxis,
-        kink_offsets: [f64; 2],
+        kink_offsets: [FiniteReal; 2],
     },
     CenterMark {
-        radius: f64,
+        radius: NonNegativeReal,
     },
 }
 
@@ -124,7 +124,7 @@ enum DimensionFamily {
     V2 {
         default_text: String,
         points: Vec<FiniteVector<2>>,
-        angular_radius: Option<f64>,
+        angular_radius: Option<PositiveReal>,
     },
     /// Modern dimension referencing a dimstyle UUID.
     Modern { dimstyle_id: Uuid },
@@ -650,12 +650,12 @@ enum LegacyDimensionFields {
     Linear,
     Radial,
     Angular {
-        angle: f64,
-        radius: f64,
+        angle: NonNegativeReal,
+        radius: FiniteReal,
     },
     Ordinate {
         direction: i32,
-        kink_offsets: [f64; 2],
+        kink_offsets: [FiniteReal; 2],
     },
 }
 
@@ -720,16 +720,13 @@ fn decode_legacy(
         let radius = scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
             FramingError::structural(outer.position() - 8, "invalid legacy angular radius")
         })?;
-        if !angle.is_finite() || angle < 0.0 {
+        let Some(angle) = NonNegativeReal::new(angle) else {
             return Err(FramingError::structural(
                 outer.position() - 16,
                 "invalid legacy angular angle",
             ));
-        }
-        LegacyDimensionFields::Angular {
-            angle,
-            radius: radius.get(),
-        }
+        };
+        LegacyDimensionFields::Angular { angle, radius }
     } else {
         let direction = outer.i32()?;
         let kink_offsets = if minor >= 1 {
@@ -752,7 +749,7 @@ fn decode_legacy(
         };
         LegacyDimensionFields::Ordinate {
             direction,
-            kink_offsets: kink_offsets.map(FiniteReal::get),
+            kink_offsets,
         }
     };
     outer.skip_remaining()?;
@@ -811,8 +808,11 @@ fn decode_legacy(
                 ));
             }
             let first_direction = [1.0, 0.0];
-            let second_direction = [angle.cos(), angle.sin()];
-            let dimension_line_point = [radius * (0.5 * angle).cos(), radius * (0.5 * angle).sin()];
+            let second_direction = [angle.get().cos(), angle.get().sin()];
+            let dimension_line_point = [
+                radius.get() * (0.5 * angle.get()).cos(),
+                radius.get() * (0.5 * angle.get()).sin(),
+            ];
             (
                 annotation.plane,
                 Definition::Angular {
@@ -820,12 +820,12 @@ fn decode_legacy(
                     second_direction: PlaneLane::Derived(second_direction),
                     // ON_OBSOLETE_V5_DimAngular returns -1 when its optional
                     // ON_AngularDimension2Extra userdata is absent.
-                    first_extension_offset: -1.0,
-                    second_extension_offset: -1.0,
+                    first_extension_offset: FiniteReal::NEG_ONE,
+                    second_extension_offset: FiniteReal::NEG_ONE,
                     dimension_line_point: PlaneLane::Derived(dimension_line_point),
                 },
                 PlaneLane::Admitted(annotation.points[0]),
-                angle,
+                angle.get(),
             )
         }
         LegacyDimensionFields::Ordinate {
@@ -976,18 +976,22 @@ fn decode_v2(
             .ok_or_else(|| FramingError::structural(radius_offset, "invalid V2 angular radius"))?;
         // The scaled radius is admitted finite, and the unit scale is finite
         // and positive, so the stored radius is finite too.
-        if !angle.is_finite()
-            || angle <= 0.0
-            || angle > V2_REALLY_BIG_NUMBER
+        let angle = PositiveAngle::new(angle).filter(|value| value.get() <= V2_REALLY_BIG_NUMBER);
+        let radius = PositiveReal::from_finite(radius);
+        if angle.is_none()
             || raw_radius <= 0.0
             || raw_radius > V2_REALLY_BIG_NUMBER
-            || radius.get() <= 0.0
+            || radius.is_none()
         {
             return Err(FramingError::structural(
                 range.start,
                 "invalid V2 angular value",
             ));
         }
+        let angle = angle
+            .ok_or_else(|| FramingError::structural(range.start, "invalid V2 angular value"))?;
+        let radius = radius
+            .ok_or_else(|| FramingError::structural(range.start, "invalid V2 angular value"))?;
         angular_radius = Some(radius);
         let user_text_point = points
             .get(2)
@@ -998,16 +1002,16 @@ fn decode_v2(
             Definition::Angular {
                 first_direction: PlaneLane::Admitted(points[0]),
                 second_direction: PlaneLane::Admitted(points[1]),
-                first_extension_offset: -1.0,
-                second_extension_offset: -1.0,
+                first_extension_offset: FiniteReal::NEG_ONE,
+                second_extension_offset: FiniteReal::NEG_ONE,
                 dimension_line_point: PlaneLane::Derived([
-                    radius.get() * (0.5 * angle).cos(),
-                    radius.get() * (0.5 * angle).sin(),
+                    radius.get() * (0.5 * angle.get()).cos(),
+                    radius.get() * (0.5 * angle.get()).sin(),
                 ]),
             },
             PlaneLane::Admitted(user_text_point),
             !annotation.user_positioned_text,
-            angle,
+            angle.get(),
         )
     } else {
         return Err(FramingError::structural(
@@ -1030,7 +1034,7 @@ fn decode_v2(
         family: DimensionFamily::V2 {
             default_text: annotation.default_text,
             points: annotation.points,
-            angular_radius: angular_radius.map(FiniteReal::get),
+            angular_radius,
         },
         plane,
         horizontal_direction: PlaneLane::Derived(world_horizontal_in_plane(&plane)),
@@ -1153,8 +1157,8 @@ pub(crate) fn decode(
         Definition::Angular {
             first_direction: PlaneLane::Admitted(first),
             second_direction: PlaneLane::Admitted(second),
-            first_extension_offset: first_extension_offset.get(),
-            second_extension_offset: second_extension_offset.get(),
+            first_extension_offset,
+            second_extension_offset,
             dimension_line_point: PlaneLane::Admitted(dimension_line_point),
         }
     } else if class == RADIAL {
@@ -1210,7 +1214,7 @@ pub(crate) fn decode(
             definition_point: PlaneLane::Admitted(definition_point),
             leader_point: PlaneLane::Admitted(leader_point),
             measured_direction,
-            kink_offsets: kink_offsets.map(FiniteReal::get),
+            kink_offsets,
         }
     } else if class == CENTERMARK {
         if annotation.kind != 8 {
@@ -1220,13 +1224,11 @@ pub(crate) fn decode(
             ));
         }
         let radius = scaled_coordinate(outer.f64()?, scale)
-            .filter(|radius| radius.get() >= 0.0)
+            .and_then(NonNegativeReal::from_finite)
             .ok_or_else(|| {
                 FramingError::structural(outer.position() - 8, "invalid center-mark radius")
             })?;
-        Definition::CenterMark {
-            radius: radius.get(),
-        }
+        Definition::CenterMark { radius }
     } else {
         return Err(FramingError::structural(
             range.start,
@@ -1323,22 +1325,19 @@ pub(crate) fn apply_userdata(
                 extra.payload_range.end,
                 archive,
             )?;
-            *first_extension_offset = scaled_coordinate(reader.f64()?, scale)
-                .ok_or_else(|| {
+            *first_extension_offset = scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
+                FramingError::structural(
+                    reader.position() - 8,
+                    "invalid V5 angular extension offset",
+                )
+            })?;
+            *second_extension_offset =
+                scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
                     FramingError::structural(
                         reader.position() - 8,
                         "invalid V5 angular extension offset",
                     )
-                })?
-                .get();
-            *second_extension_offset = scaled_coordinate(reader.f64()?, scale)
-                .ok_or_else(|| {
-                    FramingError::structural(
-                        reader.position() - 8,
-                        "invalid V5 angular extension offset",
-                    )
-                })?
-                .get();
+                })?;
             reader.skip_remaining()?;
         }
     }
@@ -1436,7 +1435,7 @@ pub(crate) fn project(
         Definition::Ordinate { .. } => ("ordinate_dimension", dimension.measurement),
         // A center mark measures nothing, so `measurement` is zero by
         // construction. Its radius is the one persisted numeric it does carry.
-        Definition::CenterMark { radius } => ("center_mark", radius),
+        Definition::CenterMark { radius } => ("center_mark", radius.get()),
     };
     let mut parameters =
         BTreeMap::from([("measurement".to_string(), dimension.measurement.to_string())]);
@@ -1577,7 +1576,7 @@ pub(crate) fn project(
                     "v2_numeric_value_degrees".to_string(),
                     (angle * 180.0 / std::f64::consts::PI).to_string(),
                 );
-                properties.insert("v2_radius".to_string(), radius.to_string());
+                properties.insert("v2_radius".to_string(), radius.get().to_string());
             }
         }
     }
@@ -1612,11 +1611,11 @@ pub(crate) fn project(
             );
             properties.insert(
                 "first_extension_offset".to_string(),
-                first_extension_offset.to_string(),
+                first_extension_offset.get().to_string(),
             );
             properties.insert(
                 "second_extension_offset".to_string(),
-                second_extension_offset.to_string(),
+                second_extension_offset.get().to_string(),
             );
             properties.insert(
                 "dimension_line_point".to_string(),
@@ -1657,11 +1656,11 @@ pub(crate) fn project(
             );
             properties.insert(
                 "kink_offsets".to_string(),
-                format!("{},{}", kink_offsets[0], kink_offsets[1]),
+                format!("{},{}", kink_offsets[0].get(), kink_offsets[1].get()),
             );
         }
         Definition::CenterMark { radius } => {
-            properties.insert("radius".to_string(), radius.to_string());
+            properties.insert("radius".to_string(), radius.get().to_string());
         }
     }
     if let Some(name) = name {
@@ -1837,6 +1836,7 @@ pub(crate) mod tests {
     use crate::settings::MillimeterScale;
     use crate::test_support::test_dump::{crc_chunk, utf16_bytes};
     use crate::wire::Uuid;
+    use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 
     #[test]
     fn angular_measurement_uses_counterclockwise_extension_sweep() {
@@ -2032,7 +2032,7 @@ pub(crate) mod tests {
             panic!("V2 angular dimension");
         };
         assert_eq!(angular_radius.map(|_| angular.measurement), Some(1.25));
-        assert_eq!(angular_radius, Some(19.0));
+        assert_eq!(angular_radius.map(PositiveReal::get), Some(19.0));
         assert!(!angular.use_default_text_point);
         assert_eq!(angular.user_text_point.get(), [4.0, 6.0]);
     }
@@ -2349,9 +2349,10 @@ pub(crate) mod tests {
                 definition_point,
                 leader_point,
                 measured_direction: OrdinateAxis::X,
-                kink_offsets: [15.0, 7.5]
+                kink_offsets,
             } if definition_point.get() == [-30.0, 80.0]
                 && leader_point.get() == [20.0, 120.0]
+                && kink_offsets.map(FiniteReal::get) == [15.0, 7.5]
         ));
     }
 
@@ -2515,8 +2516,8 @@ pub(crate) mod tests {
         assert!((second_direction[1] - 1.0).abs() < 1.0e-12);
         assert!((dimension_line_point[0] - 50.0 / 2.0_f64.sqrt()).abs() < 1.0e-12);
         assert!((dimension_line_point[1] - 50.0 / 2.0_f64.sqrt()).abs() < 1.0e-12);
-        assert_eq!(first_extension_offset, -1.0);
-        assert_eq!(second_extension_offset, -1.0);
+        assert_eq!(first_extension_offset.get(), -1.0);
+        assert_eq!(second_extension_offset.get(), -1.0);
 
         let center_bytes = payload(8, &4.5_f64.to_le_bytes());
         let center = decode(
@@ -2530,7 +2531,7 @@ pub(crate) mod tests {
         assert_eq!(center.measurement, 0.0);
         assert!(matches!(
             center.definition,
-            Definition::CenterMark { radius: 45.0 }
+            Definition::CenterMark { radius } if radius.get() == 45.0
         ));
 
         let annotation = legacy_annotation_payload(8, &[[4.0, -7.0], [4.0, 2.0]]);
@@ -2554,9 +2555,10 @@ pub(crate) mod tests {
                 definition_point,
                 leader_point,
                 measured_direction: OrdinateAxis::X,
-                kink_offsets: [12.5, 5.0]
+                kink_offsets,
             } if definition_point.get() == [40.0, -70.0]
                 && leader_point.get() == [40.0, 20.0]
+                && kink_offsets.map(FiniteReal::get) == [12.5, 5.0]
         ));
 
         let mut extension = [0_u8; 16].to_vec();
@@ -2647,10 +2649,10 @@ pub(crate) mod tests {
         assert!(matches!(
             angular.definition,
             Definition::Angular {
-                first_extension_offset: 25.0,
-                second_extension_offset: 40.0,
+                first_extension_offset,
+                second_extension_offset,
                 ..
-            }
+            } if first_extension_offset.get() == 25.0 && second_extension_offset.get() == 40.0
         ));
 
         let mut wrong_item_descriptor = angular_descriptor.clone();
@@ -2678,10 +2680,10 @@ pub(crate) mod tests {
         assert!(matches!(
             wrong_item_angular.definition,
             Definition::Angular {
-                first_extension_offset: -1.0,
-                second_extension_offset: -1.0,
+                first_extension_offset,
+                second_extension_offset,
                 ..
-            }
+            } if first_extension_offset.get() == -1.0 && second_extension_offset.get() == -1.0
         ));
 
         let second_extension =
@@ -2712,10 +2714,10 @@ pub(crate) mod tests {
         assert!(matches!(
             duplicate_angular.definition,
             Definition::Angular {
-                first_extension_offset: 25.0,
-                second_extension_offset: 40.0,
+                first_extension_offset,
+                second_extension_offset,
                 ..
-            }
+            } if first_extension_offset.get() == 25.0 && second_extension_offset.get() == 40.0
         ));
     }
 
@@ -2787,9 +2789,9 @@ pub(crate) mod tests {
             ordinate.definition,
             Definition::Ordinate {
                 measured_direction: OrdinateAxis::X,
-                kink_offsets: [12.5, 5.0],
+                kink_offsets,
                 ..
-            }
+            } if kink_offsets.map(FiniteReal::get) == [12.5, 5.0]
         ));
     }
 }
