@@ -283,11 +283,23 @@ impl SegmentMetaState<'_> {
     /// parsed stream is not evidence that it declared version 8, and reporting
     /// the verified pair here would erase the unverified admission the
     /// declaration earns.
-    pub(crate) fn declaration(&self) -> Option<MetaStreamDeclaration> {
-        match self {
-            Self::Parsed(meta) => Some(meta.declared.clone()),
-            Self::Malformed { declared, .. } => declared.clone(),
-        }
+    pub(crate) fn declaration(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<MetaStreamDeclaration>, CodecError> {
+        let declaration = match self {
+            Self::Parsed(meta) => Some(&meta.declared),
+            Self::Malformed { declared, .. } => declared.as_ref(),
+        };
+        declaration
+            .map(|declaration| {
+                let bytes = u64::try_from(declaration.marker.len()).map_err(|_| {
+                    ctx.refuse_codec_limit("Inventor dialect marker length", u64::MAX - 1, u64::MAX)
+                })?;
+                ctx.charge_retained(bytes, "retain Inventor dialect declaration marker")?;
+                Ok(declaration.clone())
+            })
+            .transpose()
     }
 }
 
@@ -369,13 +381,32 @@ impl DatabaseDescriptor {
         }
     }
 
-    pub(crate) fn issue_detail(&self) -> Option<String> {
+    pub(crate) fn issue_detail(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<String>, CodecError> {
         match &self.state {
-            DatabaseState::Parsed(_) => None,
+            DatabaseState::Parsed(_) => Ok(None),
             DatabaseState::Unframed { schema, detail } => {
-                Some(DatabaseHeader::unframed_detail(*schema, detail))
+                admit_formatted(
+                    ctx,
+                    format_args!(
+                        "RSe database schema {} was read with the schema {} grammar, which did not frame it: \
+                         {detail}",
+                        schema.value(),
+                        RseSchema::SCHEMA_31.value()
+                    ),
+                    "retain Inventor database issue detail",
+                )?;
+                Ok(Some(DatabaseHeader::unframed_detail(*schema, detail)))
             }
-            DatabaseState::Unreadable(detail) => Some(detail.clone()),
+            DatabaseState::Unreadable(detail) => {
+                let bytes = u64::try_from(detail.len()).map_err(|_| {
+                    ctx.refuse_codec_limit("Inventor database issue length", u64::MAX - 1, u64::MAX)
+                })?;
+                ctx.charge_retained(bytes, "retain Inventor database issue detail")?;
+                Ok(Some(detail.clone()))
+            }
         }
     }
 }
@@ -574,7 +605,7 @@ impl<'a> RseInventory<'a> {
             unpaired_bulk.push(token.clone());
         }
         let document_kind = document_kind_for_segments(&segments);
-        let active_carrier = select_active_carrier(&segments, &document_kind);
+        let active_carrier = select_active_carrier(ctx, &segments, &document_kind)?;
         Ok(Self {
             databases: database_descriptors,
             registry,
@@ -963,6 +994,90 @@ mod tests {
     use cadmpeg_core::decode::DecodeContext;
     use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn database_issue_detail_refuses_retained_limit_before_copy() {
+        let bytes =
+            crate::test_support::test_fixtures::primary_envelope_fixture_with_broken_database();
+        let arena = DecodeArena::new();
+        let (setup_ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("database fixture context");
+        let snapshot = CompoundSnapshot::new(&setup_ctx, root).expect("compound fixture");
+        let mut inventory = RseInventory::build(&setup_ctx, &snapshot).expect("RSe fixture");
+        let descriptor = &mut inventory.databases[0];
+        let detail = descriptor
+            .issue_detail(&setup_ctx)
+            .expect("service admission")
+            .expect("unframed issue");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = (detail.len() - 1) as u64;
+        let (limited_ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+        assert!(matches!(
+            descriptor.issue_detail(&limited_ctx),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor database issue detail"
+        ));
+
+        descriptor.state = super::DatabaseState::Unreadable("bad".into());
+        policy.limits.max_retained_bytes = 2;
+        let (limited_ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+        assert!(matches!(
+            descriptor.issue_detail(&limited_ctx),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor database issue detail"
+        ));
+        assert_eq!(
+            descriptor
+                .issue_detail(&setup_ctx)
+                .expect("service admission"),
+            Some("bad".into())
+        );
+    }
+
+    #[test]
+    fn dialect_declaration_refuses_retained_limit_before_marker_clone() {
+        let bytes = crate::test_support::test_fixtures::primary_envelope_fixture();
+        let arena = DecodeArena::new();
+        let (setup_ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("metadata fixture context");
+        let snapshot = CompoundSnapshot::new(&setup_ctx, root).expect("compound fixture");
+        let mut inventory = RseInventory::build(&setup_ctx, &snapshot).expect("RSe fixture");
+        let meta = &mut inventory.segments[0].meta;
+        let expected = meta
+            .declaration(&setup_ctx)
+            .expect("service admission")
+            .expect("metadata declaration");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = (expected.marker.len() - 1) as u64;
+        let (limited_ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+        assert!(matches!(
+            meta.declaration(&limited_ctx),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor dialect declaration marker"
+        ));
+
+        *meta = SegmentMetaState::Malformed {
+            declared: Some(expected.clone()),
+            detail: "bad body".into(),
+        };
+        assert!(matches!(
+            meta.declaration(&limited_ctx),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.operation == "retain Inventor dialect declaration marker"
+        ));
+        assert_eq!(
+            meta.declaration(&setup_ctx).expect("service admission"),
+            Some(expected)
+        );
+    }
 
     fn inventory_refusal_operations(
         dimension: ResourceDimension,
