@@ -34,7 +34,11 @@ pub(super) fn tolerant_coedge_range(
     index
         .tolerant_coedges
         .get(coedge.as_str())
-        .map(|parameters| parameters.parameter_range)
+        .map(|parameters| {
+            parameters
+                .parameter_range
+                .map(cadmpeg_ir::scalar::FiniteReal::get)
+        })
 }
 
 pub(super) fn native_tolerant_coedge_extension(

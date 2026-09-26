@@ -292,7 +292,9 @@ fn tolerant_vertex_uses_the_third_double_for_evaluation_and_unset_state() {
             );
             assert_eq!(out.tolerant_vertex_tails.len(), 1);
             assert_eq!(
-                out.tolerant_vertex_tails[0].leading_tolerances,
+                out.tolerant_vertex_tails[0]
+                    .leading_tolerances
+                    .map(cadmpeg_ir::scalar::FiniteReal::get),
                 [0.03, 0.07]
             );
             assert_eq!(out.tolerant_vertex_tails[0].evaluated_slot, slot);

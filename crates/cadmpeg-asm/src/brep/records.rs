@@ -385,7 +385,7 @@ native_record! {
     vertex: cadmpeg_ir::ids::VertexId,
     /// The first two independent tolerance evaluations, retained verbatim in
     /// native centimetres; `-1` denotes an unset evaluation.
-    leading_tolerances: [f64; 2],
+    leading_tolerances: [cadmpeg_ir::scalar::FiniteReal; 2],
     /// Shape of the evaluated tolerance slot, carrying the trailing LONG that
     /// follows it. The unset sentinel is a marker rather than a length, so the
     /// neutral vertex carries no tolerance and this record keeps whether the
@@ -418,7 +418,7 @@ native_record! {
     /// Solved B-rep coedge carrying the tolerant interval.
     coedge: cadmpeg_ir::ids::CoedgeId,
     /// Native start and end parameters following the base coedge fields.
-    parameter_range: [f64; 2],
+    parameter_range: [cadmpeg_ir::scalar::FiniteReal; 2],
     /// Release-selected fixed fields following the parameter interval.
     extension: crate::brep::records::TolerantCoedgeExtension [serde(default)],
 }
