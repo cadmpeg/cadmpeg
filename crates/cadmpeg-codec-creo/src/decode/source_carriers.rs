@@ -13,6 +13,9 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, EdgeId, SurfaceId};
 use cadmpeg_ir::products::Occurrence;
 use cadmpeg_ir::scalar::PositiveReal;
+use cadmpeg_ir::sketches::{
+    Sketch, SketchConstraint, SketchEntity, SketchEntityId, SketchGeometry,
+};
 use cadmpeg_ir::topology::{Body, Coedge, Edge, EdgeCarrier, Face, Point, Vertex};
 use cadmpeg_ir::transform::Transform;
 
@@ -22,6 +25,7 @@ pub(super) struct SourceUnitCarriers {
     surfaces: BTreeMap<SurfaceId, SurfaceGeometry>,
     curves: BTreeMap<CurveId, CurveGeometry>,
     edge_parameter_ranges: BTreeMap<EdgeId, [f64; 2]>,
+    sketch_entities: BTreeMap<SketchEntityId, SketchGeometry>,
 }
 
 impl SourceUnitCarriers {
@@ -31,6 +35,7 @@ impl SourceUnitCarriers {
             surfaces: BTreeMap::new(),
             curves: BTreeMap::new(),
             edge_parameter_ranges: BTreeMap::new(),
+            sketch_entities: BTreeMap::new(),
         }
     }
 
@@ -115,6 +120,70 @@ impl SourceUnitCarriers {
             CodecError::Malformed(message) => CodecError::NotImplemented(message),
             other => other,
         }
+    }
+
+    pub(super) fn admit_sketch(
+        &self,
+        ir: &mut CadIr,
+        mut sketch: Sketch,
+    ) -> Result<(), CodecError> {
+        if let (Some(scale), Some((origin, _, _))) =
+            (self.length_scale_mm, sketch.resolved_placement())
+        {
+            let origin = origin.scaled(scale).ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "sketch origin cannot be represented in millimeters".into(),
+                )
+            })?;
+            sketch.placement = sketch.placement.with_origin(origin);
+        }
+        ir.model.sketches.push(sketch);
+        Ok(())
+    }
+
+    pub(super) fn admit_sketch_entities(
+        &mut self,
+        ir: &mut CadIr,
+        entities: Vec<SketchEntity>,
+    ) -> Result<(), CodecError> {
+        for mut entity in entities {
+            let source_geometry = entity.geometry.clone();
+            if let Some(scale) = self.length_scale_mm {
+                crate::decode::build::units::scale_sketch_geometry(&mut entity.geometry, scale)
+                    .map_err(Self::unrepresentable_length)?;
+            }
+            self.sketch_entities
+                .insert(entity.id().clone(), source_geometry);
+            ir.model.sketch_entities.push(entity);
+        }
+        Ok(())
+    }
+
+    pub(super) fn sketch_geometry<'a>(&'a self, entity: &'a SketchEntity) -> &'a SketchGeometry {
+        self.sketch_entities
+            .get(entity.id())
+            .unwrap_or(&entity.geometry)
+    }
+
+    pub(super) fn admit_sketch_constraints(
+        &self,
+        ir: &mut CadIr,
+        constraints: Vec<SketchConstraint>,
+    ) -> Result<(), CodecError> {
+        for mut constraint in constraints {
+            if let Some(scale) = self.length_scale_mm {
+                constraint.definition.scale_lengths(scale).map_err(|error| match error {
+                    cadmpeg_ir::sketches::scaling::SketchConstraintScaleError::LengthOverflow => {
+                        CodecError::NotImplemented("Creo scaled length must be finite".into())
+                    }
+                    cadmpeg_ir::sketches::scaling::SketchConstraintScaleError::InvalidLocalValue => {
+                        CodecError::malformed("invalid sketch constraint local arity or scalar value")
+                    }
+                })?;
+            }
+            ir.model.sketch_constraints.push(constraint);
+        }
+        Ok(())
     }
 
     pub(super) fn admit_surface(
@@ -425,6 +494,11 @@ mod tests {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::products::{Occurrence, OccurrenceParent, PrototypeReference};
     use cadmpeg_ir::scalar::PositiveReal;
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput,
+        SketchEntity, SketchGeometry, SketchGeometryDefinition, SketchLocus, SketchPlacement,
+        SketchProfiles,
+    };
     use cadmpeg_ir::topology::{
         Body, BodyKind, Coedge, CoedgeUseCurve, Edge, EdgeCarrier, Face, FaceLoops,
         ParameterInterval, Point, Sense, Vertex,
@@ -467,6 +541,144 @@ mod tests {
             pmi: None,
             native_ref: None,
         }
+    }
+
+    fn source_sketch(origin: Point3) -> Sketch {
+        Sketch {
+            id: cadmpeg_ir::sketches::SketchId::mint("creo:test:sketch#1")
+                .expect("identity grammar"),
+            name: None,
+            configuration: None,
+            visible: None,
+            placement: SketchPlacement::try_resolved(
+                origin,
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("source placement"),
+            profiles: SketchProfiles::default(),
+            native_ref: None,
+        }
+    }
+
+    fn source_sketch_line(x: f64) -> SketchEntity {
+        SketchEntity::new(
+            cadmpeg_ir::sketches::SketchEntityId::mint("creo:test:sketch_entity#1")
+                .expect("identity grammar"),
+            cadmpeg_ir::sketches::SketchId::mint("creo:test:sketch#1").expect("identity grammar"),
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: cadmpeg_ir::math::Point2::new(x, 0.0),
+                end: cadmpeg_ir::math::Point2::new(2.0, 0.0),
+            })
+            .expect("source line"),
+        )
+    }
+
+    fn source_distance_constraint(value: f64) -> SketchConstraint {
+        let entity = cadmpeg_ir::sketches::SketchEntityId::mint("creo:test:sketch_entity#1")
+            .expect("identity grammar");
+        SketchConstraint {
+            id: cadmpeg_ir::sketches::SketchConstraintId::mint("creo:test:sketch_constraint#1")
+                .expect("identity grammar"),
+            sketch: cadmpeg_ir::sketches::SketchId::mint("creo:test:sketch#1")
+                .expect("identity grammar"),
+            definition: SketchConstraintDefinition::try_from(
+                SketchConstraintDefinitionInput::DistanceLociValue {
+                    first: SketchLocus::Start(entity.clone()),
+                    second: SketchLocus::End(entity),
+                    distance: cadmpeg_ir::scalar::Length::new(value)
+                        .expect("finite source distance"),
+                    parameter: None,
+                },
+            )
+            .expect("valid source distance"),
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
+            native_ref: None,
+        }
+    }
+
+    #[test]
+    fn planar_sketch_lengths_are_in_millimeters_at_admission() {
+        let mut ir = CadIr::empty();
+        let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+        carriers
+            .admit_sketch(&mut ir, source_sketch(Point3::new(1.0, 0.0, 0.0)))
+            .expect("sketch admission");
+        carriers
+            .admit_sketch_entities(&mut ir, vec![source_sketch_line(1.0)])
+            .expect("entity admission");
+        carriers
+            .admit_sketch_constraints(&mut ir, vec![source_distance_constraint(2.0)])
+            .expect("constraint admission");
+        assert_eq!(
+            ir.model.sketches[0]
+                .resolved_placement()
+                .expect("resolved placement")
+                .0
+                .get()
+                .x,
+            25.4
+        );
+        let SketchGeometryDefinition::Line { start, .. } =
+            ir.model.sketch_entities[0].geometry.definition()
+        else {
+            panic!("sketch line changed family");
+        };
+        assert_eq!(start.u, 25.4);
+        let SketchConstraintDefinitionInput::DistanceLociValue { distance, .. } =
+            ir.model.sketch_constraints[0].definition.kind()
+        else {
+            panic!("distance constraint changed family");
+        };
+        assert_eq!(distance.get(), 50.8);
+        let SketchGeometryDefinition::Line { start, .. } = carriers
+            .sketch_geometry(&ir.model.sketch_entities[0])
+            .definition()
+        else {
+            panic!("source sketch line changed family");
+        };
+        assert_eq!(start.u, 1.0);
+    }
+
+    #[test]
+    fn sketch_origin_overflow_refuses_before_admission() {
+        let mut ir = CadIr::empty();
+        let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+        let error = carriers
+            .admit_sketch(&mut ir, source_sketch(Point3::new(f64::MAX, 0.0, 0.0)))
+            .expect_err("millimeter placement cannot be represented");
+        assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
+        assert!(ir.model.sketches.is_empty());
+    }
+
+    #[test]
+    fn sketch_entity_overflow_refuses_before_admission() {
+        let mut ir = CadIr::empty();
+        let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+        let error = carriers
+            .admit_sketch_entities(&mut ir, vec![source_sketch_line(f64::MAX)])
+            .expect_err("millimeter line cannot be represented");
+        assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
+        assert!(ir.model.sketch_entities.is_empty());
+    }
+
+    #[test]
+    fn sketch_constraint_overflow_refuses_before_admission() {
+        let mut ir = CadIr::empty();
+        let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+        let error = carriers
+            .admit_sketch_constraints(&mut ir, vec![source_distance_constraint(f64::MAX)])
+            .expect_err("millimeter constraint cannot be represented");
+        assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
+        assert!(ir.model.sketch_constraints.is_empty());
     }
 
     #[test]
@@ -730,8 +942,6 @@ mod tests {
             panic!("procedural construction changed family");
         };
         assert_eq!(construction.direction().get(), Vector3::new(0.0, 0.0, 25.4));
-        crate::decode::build::units::normalize_model_lengths(&mut ir, scale)
-            .expect("remaining unit normalization");
         let ProceduralSurfaceDefinition::Extrusion(construction) =
             ir.model.procedural_surfaces[0].definition()
         else {
