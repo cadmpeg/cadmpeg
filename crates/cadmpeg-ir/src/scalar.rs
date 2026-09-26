@@ -127,6 +127,13 @@ impl From<FiniteBinary32> for f32 {
     }
 }
 
+impl From<FiniteBinary32> for FiniteReal {
+    /// Widen an admitted finite binary32 value without another admission.
+    fn from(value: FiniteBinary32) -> Self {
+        Self(f64::from(value.get()))
+    }
+}
+
 /// A finite binary32 fraction in the closed unit interval.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -322,13 +329,6 @@ impl Length {
     pub const ZERO: Self = Self(0.0);
 }
 
-impl From<FiniteReal> for Length {
-    /// A finite scalar interpreted in canonical millimeters.
-    fn from(value: FiniteReal) -> Self {
-        Self(value.get())
-    }
-}
-
 impl Angle {
     /// One full turn in radians.
     pub const FULL_TURN: Self = Self(std::f64::consts::TAU);
@@ -385,6 +385,13 @@ impl PositiveReal {
     /// Unit scalar value.
     pub const ONE: Self = Self(1.0);
 
+    /// Assign a positive length to a dimensionless positive value.
+    /// The caller supplies the quantity meaning; both domains admit the same bits.
+    #[must_use]
+    pub const fn from_assigned_length(value: PositiveLength) -> Self {
+        Self(value.0)
+    }
+
     /// Admit a finite scalar as positive. Only its sign remains to check.
     #[must_use]
     pub const fn from_finite(value: FiniteReal) -> Option<Self> {
@@ -397,6 +404,9 @@ impl PositiveReal {
 }
 
 impl NonNegativeReal {
+    /// Zero dimensionless scalar.
+    pub const ZERO: Self = Self(0.0);
+
     /// The value times `scale`.
     ///
     /// A positive scale keeps the sign of a nonnegative value: zero stays
@@ -524,6 +534,13 @@ impl Length {
 }
 
 impl PositiveLength {
+    /// Assign the length family to an admitted positive real in millimeters.
+    /// Both domains admit every finite positive value.
+    #[must_use]
+    pub const fn from_assigned_real(value: PositiveReal) -> Self {
+        Self(value.0)
+    }
+
     /// The length in canonical millimeters as a dimensionless real, for a
     /// quotient of lengths. A positive length is finite, so nothing is
     /// checked.

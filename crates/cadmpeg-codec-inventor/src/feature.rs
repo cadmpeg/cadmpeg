@@ -1332,9 +1332,9 @@ fn project_extrusion(
 
     let direction_record = resolve_direction(source, 2, index)?;
     let mut direction = cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(
-        direction_record.direction[0],
-        direction_record.direction[1],
-        direction_record.direction[2],
+        direction_record.direction[0].get(),
+        direction_record.direction[1].get(),
+        direction_record.direction[2].get(),
     ))?;
     if boolean(source, 3, index)? {
         direction = direction.reversed();
@@ -1681,9 +1681,9 @@ fn project_hole(
     }
     let direction_record = resolve_direction(source, 16, index)?;
     let direction = cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(
-        direction_record.direction[0],
-        direction_record.direction[1],
-        direction_record.direction[2],
+        direction_record.direction[0].get(),
+        direction_record.direction[1].get(),
+        direction_record.direction[2].get(),
     ))?;
     let placement = slot_property(source, 21, index)?;
     let PmDcFeaturePropertyKind::Placement {
@@ -2582,8 +2582,8 @@ mod tests {
                 name_value: 0,
                 unit: reference(0),
                 formula: reference(0),
-                nominal_value: 0.0,
-                model_value: 0.0,
+                nominal_value: cadmpeg_ir::scalar::FiniteReal::ZERO,
+                model_value: cadmpeg_ir::scalar::FiniteReal::ZERO,
                 tolerance: 0,
                 terminal_value: 0,
             },
@@ -3214,9 +3214,13 @@ mod tests {
                 save_version_major: 16,
                 header: test_header(),
                 entity_flags: 0,
-                parameter: 0.0,
+                parameter: cadmpeg_ir::scalar::FiniteReal::ZERO,
                 extension: None,
-                direction: [0.0, 0.0, 1.0],
+                direction: [
+                    cadmpeg_ir::scalar::FiniteReal::ZERO,
+                    cadmpeg_ir::scalar::FiniteReal::ZERO,
+                    cadmpeg_ir::scalar::FiniteReal::ONE,
+                ],
             },
             "40df52ced011d0d20008ccbc0663dc09".into(),
             &segment(),
@@ -3411,9 +3415,13 @@ mod tests {
                 save_version_major: 16,
                 header: test_header(),
                 entity_flags: 0,
-                parameter: 0.0,
+                parameter: cadmpeg_ir::scalar::FiniteReal::ZERO,
                 extension: None,
-                direction: [0.0, 0.0, -1.0],
+                direction: [
+                    cadmpeg_ir::scalar::FiniteReal::ZERO,
+                    cadmpeg_ir::scalar::FiniteReal::ZERO,
+                    cadmpeg_ir::scalar::FiniteReal::ONE.negated(),
+                ],
             },
             "40df52ced011d0d20008ccbc0663dc09".into(),
             &segment(),

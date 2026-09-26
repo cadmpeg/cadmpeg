@@ -1653,7 +1653,7 @@ pub(super) fn indexed_rectangle_from_line_cycle(
                 marker.kind(),
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             ) && marker.coordinates_m.is_some())
-            .then_some((*vertex, marker.coordinates_m?))
+            .then_some((*vertex, marker.coordinates_m?.get()))
         })
         .collect::<Vec<_>>();
     known.sort_unstable_by_key(|(vertex, _)| *vertex);
@@ -1893,7 +1893,7 @@ pub(super) fn current_wide_rectangle_line_endpoints(
 pub(super) fn legacy_extended_rectangle_diagonal_endpoint(
     payload: &[u8],
     marker: &SketchInputEntity,
-) -> Option<[f64; 2]> {
+) -> Option<cadmpeg_ir::units::FiniteVector<2>> {
     let offset = usize::try_from(marker.offset()).ok()?;
     if marker.kind() != SketchInputKind::LineOrCircle
         || payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
@@ -1959,7 +1959,7 @@ pub(super) fn unique_dimensioned_rectangle_markers<'a>(
     let points = markers
         .iter()
         .filter_map(|marker| {
-            let [u, v] = marker.coordinates_m?;
+            let [u, v] = marker.coordinates_m?.get();
             Some((
                 *marker,
                 quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM).cells()?,

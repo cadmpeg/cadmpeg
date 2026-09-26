@@ -141,7 +141,13 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
         },
     ]);
     assert_eq!(
-        generated_nurbs_translation_extent(&scan, &ir, 7, None),
+        generated_nurbs_translation_extent(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            7,
+            None
+        ),
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {

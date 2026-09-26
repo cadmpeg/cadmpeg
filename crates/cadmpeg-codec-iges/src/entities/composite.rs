@@ -18,7 +18,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, EdgeId, VertexId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::borrow::Cow;
@@ -394,18 +394,13 @@ fn homogeneous_control_points(curve: &NurbsCurve) -> Option<Vec<[f64; 4]>> {
 fn euclidean_control_points(
     homogeneous: Vec<[f64; 4]>,
     rational: bool,
-) -> Option<(Vec<Point3>, Option<Vec<f64>>)> {
+) -> Option<(Vec<FinitePoint3>, Option<Vec<PositiveReal>>)> {
     let mut control_points = Vec::with_capacity(homogeneous.len());
     let mut weights = rational.then(|| Vec::with_capacity(homogeneous.len()));
     for [weight, x, y, z] in homogeneous {
-        if !weight.is_finite() || weight <= 0.0 {
-            return None;
-        }
-        let point = Point3::new(x / weight, y / weight, z / weight);
-        if !point.is_finite() {
-            return None;
-        }
-        control_points.push(point);
+        let weight = PositiveReal::new(weight)?;
+        let point = Point3::new(x / weight.get(), y / weight.get(), z / weight.get());
+        control_points.push(FinitePoint3::new(point)?);
         if let Some(weights) = &mut weights {
             weights.push(weight);
         }
@@ -626,7 +621,8 @@ fn trim_nurbs_to_interval(
     let Some((control_points, weights, trimmed_knots)) = trim_nurbs_lanes(curve, interval) else {
         return Ok(None);
     };
-    Ok(Some(NurbsCurve::from_lanes(
+    let weights = weights.map(|weights| weights.into_iter().map(Into::into).collect());
+    Ok(Some(NurbsCurve::from_checked_lanes(
         curve.degree(),
         trimmed_knots,
         control_points,
@@ -635,7 +631,7 @@ fn trim_nurbs_to_interval(
     )?))
 }
 
-type TrimmedLanes = (Vec<Point3>, Option<Vec<f64>>, Vec<f64>);
+type TrimmedLanes = (Vec<FinitePoint3>, Option<Vec<PositiveReal>>, Vec<f64>);
 
 fn trim_nurbs_lanes(curve: &NurbsCurve, interval: [f64; 2]) -> Option<TrimmedLanes> {
     let degree = usize::try_from(curve.degree()).ok()?;
@@ -1060,7 +1056,8 @@ fn elevate_nurbs_to_degree(
         let end_knots = alloc_filled(target_knot_count, end, "iges composite elevated knots")
             .map_err(DegreeElevationError::Allocation)?;
         piece_knots.extend(end_knots);
-        let piece = NurbsCurve::from_lanes(
+        let weights = weights.map(|weights| weights.into_iter().map(Into::into).collect());
+        let piece = NurbsCurve::from_checked_lanes(
             target_degree as u32,
             piece_knots,
             control_points,

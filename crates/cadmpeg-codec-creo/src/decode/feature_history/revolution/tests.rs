@@ -125,6 +125,13 @@ fn saved_spline_curve() -> Curve {
 }
 
 fn transfer_with_curve_count(curve_count: usize) -> (usize, CadIr) {
+    transfer_with_curve_count_and_scale(curve_count, None)
+}
+
+fn transfer_with_curve_count_and_scale(
+    curve_count: usize,
+    length_scale_mm: Option<cadmpeg_ir::scalar::PositiveReal>,
+) -> (usize, CadIr) {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.definitions.push(saved_spline_definition());
     scan.features.section_transforms.push(
@@ -185,9 +192,17 @@ fn transfer_with_curve_count(curve_count: usize) -> (usize, CadIr) {
     );
 
     let mut ir = CadIr::empty();
-    ir.model
-        .curves
-        .extend((0..curve_count).map(|_| saved_spline_curve()));
+    let mut source_carriers =
+        crate::decode::source_carriers::SourceUnitCarriers::new(length_scale_mm);
+    for curve in (0..curve_count).map(|_| saved_spline_curve()) {
+        if length_scale_mm.is_some() {
+            source_carriers
+                .admit_curve(&mut ir, curve)
+                .expect("saved spline admission");
+        } else {
+            ir.model.curves.push(curve);
+        }
+    }
     let transferred = crate::decode::with_test_decode_ctx(|ctx| {
         transfer_resolved_revolution_surfaces(
             ctx,
@@ -195,10 +210,31 @@ fn transfer_with_curve_count(curve_count: usize) -> (usize, CadIr) {
             &mut ir,
             &mut AnnotationBuilder::new(),
             &mut Vec::new(),
+            &mut source_carriers,
         )
     })
     .expect("valid source object identity");
     (transferred, ir)
+}
+
+#[test]
+fn saved_spline_revolution_uses_source_directrix_after_mm_admission() {
+    let scale = cadmpeg_ir::scalar::PositiveReal::new(25.4).expect("inch scale");
+    let (transferred, ir) = transfer_with_curve_count_and_scale(1, Some(scale));
+    assert_eq!(transferred, 1);
+    let Some(SolvedCurveGeometry::Nurbs(directrix)) = ir.model.curves[0].geometry.solved() else {
+        panic!("saved directrix changed family");
+    };
+    assert_eq!(
+        directrix.control_points()[0].get(),
+        Point3::new(50.8, 0.0, 0.0)
+    );
+    let Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(surface)) =
+        ir.model.surfaces[0].geometry.solved()
+    else {
+        panic!("revolved surface changed family");
+    };
+    assert_eq!(surface.poles()[0].get(), Point3::new(50.8, 0.0, 0.0));
 }
 
 #[test]

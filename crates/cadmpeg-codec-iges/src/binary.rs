@@ -11,6 +11,7 @@
 use crate::directory::DirectoryFieldSlot;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 const CARD_WIDTH: usize = 80;
@@ -55,7 +56,7 @@ struct BinarySections<'a> {
 enum BinaryValue {
     Default,
     Integer(i64),
-    Real(f64),
+    Real(FiniteReal),
     Pointer(i64),
     String(Vec<u8>),
 }
@@ -200,7 +201,11 @@ impl<'a> BitReader<'a> {
         self.read_integer(BINARY_INTEGER_POINTER_BITS)
     }
 
-    fn read_real(&mut self, exponent_bits: u8, fraction_bits: u8) -> Result<f64, CodecError> {
+    fn read_real(
+        &mut self,
+        exponent_bits: u8,
+        fraction_bits: u8,
+    ) -> Result<FiniteReal, CodecError> {
         if exponent_bits == 0 {
             return Err(malformed("a Binary real has zero exponent width"));
         }
@@ -218,7 +223,7 @@ impl<'a> BitReader<'a> {
         let fraction = self.read_bits(fraction_bits)?;
         self.align_zero()?;
         if biased_exponent == 0 {
-            return Ok(0.0);
+            return Ok(FiniteReal::ZERO);
         }
         let bias = 1_u64 << (exponent_bits - 1);
         let exponent = i128::from(biased_exponent) - i128::from(bias);
@@ -226,7 +231,8 @@ impl<'a> BitReader<'a> {
             return Err(malformed("a Binary real is not finite"));
         }
         if exponent < -1074 {
-            return Ok(if negative { -0.0 } else { 0.0 });
+            return FiniteReal::new(if negative { -0.0 } else { 0.0 })
+                .ok_or_else(|| malformed("a Binary real is not finite"));
         }
         // The range checks prove this conversion and keep the power finite.
         let exponent = exponent as i32;
@@ -236,10 +242,8 @@ impl<'a> BitReader<'a> {
         } else {
             (fraction * 2_f64.powi(exponent + 1074)) * f64::from_bits(1)
         };
-        if !value.is_finite() {
-            return Err(malformed("a Binary real is not finite"));
-        }
-        Ok(if negative { -value } else { value })
+        FiniteReal::new(if negative { -value } else { value })
+            .ok_or_else(|| malformed("a Binary real is not finite"))
     }
 
     fn read_string(&mut self, lengths: PrimitiveLengths) -> Result<Vec<u8>, CodecError> {
@@ -642,7 +646,8 @@ fn read_directory(
     Ok(records)
 }
 
-fn render_real(value: f64) -> Vec<u8> {
+fn render_real(value: FiniteReal) -> Vec<u8> {
+    let value = value.get();
     if value == 0.0 {
         b"0".to_vec()
     } else {
@@ -1259,7 +1264,7 @@ mod tests {
                 .read_real(12, 51)
                 .expect("the written exponent and fraction are representable");
             assert_eq!(
-                value,
+                value.get(),
                 if negative == 0 {
                     2.0_f64.powi(1023)
                 } else {
@@ -1274,9 +1279,24 @@ mod tests {
         assert_eq!(
             super::BitReader::new(&writer.bytes)
                 .read_real(63, 0)
-                .expect("the written integer exponent is representable"),
+                .expect("the written integer exponent is representable")
+                .get(),
             1.0
         );
+    }
+
+    #[test]
+    fn binary_real_admission_preserves_the_underflow_zero_sign() {
+        for (negative, expected) in [(0, 0.0_f64), (1, -0.0_f64)] {
+            let mut writer = BitWriter::default();
+            writer.push_bits(negative, 1);
+            writer.push_bits(1, 12);
+            writer.push_bits(0, 51);
+            let value = super::BitReader::new(&writer.bytes)
+                .read_real(12, 51)
+                .expect("the underflowed real is finite");
+            assert_eq!(value.get().to_bits(), expected.to_bits());
+        }
     }
 
     use super::{normalize, BinaryValue, PrimitiveLengths, ValueStream};
@@ -1698,11 +1718,11 @@ mod tests {
             Some(BinaryValue::Integer(-257))
         );
         match stream.next().expect("single real") {
-            Some(BinaryValue::Real(value)) => assert!((value + 3.5).abs() < f64::EPSILON),
+            Some(BinaryValue::Real(value)) => assert!((value.get() + 3.5).abs() < f64::EPSILON),
             other => panic!("expected single real, got {other:?}"),
         }
         match stream.next().expect("double real") {
-            Some(BinaryValue::Real(value)) => assert!((value - 0.125).abs() < f64::EPSILON),
+            Some(BinaryValue::Real(value)) => assert!((value.get() - 0.125).abs() < f64::EPSILON),
             other => panic!("expected double real, got {other:?}"),
         }
         assert_eq!(

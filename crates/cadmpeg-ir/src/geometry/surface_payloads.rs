@@ -1234,6 +1234,23 @@ impl ExactSurfacePayload {
             ))?;
         Ok(Self { spline })
     }
+
+    /// Build a legacy construction from admitted U and V parameter intervals.
+    #[must_use]
+    pub fn from_legacy_intervals(
+        u: IncreasingParameterInterval,
+        v: IncreasingParameterInterval,
+        extension: i64,
+        cache: Option<LegacyCache>,
+    ) -> Self {
+        Self {
+            spline: ExactSpline::Legacy {
+                ranges: [u.finite_endpoints(), v.finite_endpoints()],
+                extension,
+                cache,
+            },
+        }
+    }
     /// Return the spline.
     pub fn spline(&self) -> &ExactSpline<FiniteReal> {
         &self.spline

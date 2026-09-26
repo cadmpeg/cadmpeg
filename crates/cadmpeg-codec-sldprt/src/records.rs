@@ -4,6 +4,7 @@
 
 use crate::brep::feature_source::FeatureSourceId;
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -31,7 +32,7 @@ pub(crate) struct PmiDimension {
     /// Native PMI dimension subtype.
     pub(crate) subtype: String,
     /// Stored dimension value.
-    pub(crate) value: f64,
+    pub(crate) value: FiniteReal,
     /// Byte offset of the big-endian `f64` value.
     pub(crate) value_offset: u64,
     /// Display precision.
@@ -965,7 +966,7 @@ pub(crate) struct FeatureInputScalar {
     /// Name record attached to this scalar.
     pub(crate) name: String,
     /// Scalar value in native SI units.
-    pub(crate) value: f64,
+    pub(crate) value: FiniteReal,
     /// Function of this scalar in the dimension record.
     pub(crate) role: FeatureInputScalarRole,
     /// Typed native operand cells attached to this scalar.
@@ -1190,7 +1191,7 @@ pub(crate) struct SketchInputEntity {
     pub(crate) state_value: Option<cadmpeg_ir::scalar::FiniteReal>,
     /// Two little-endian coordinate fields stored by geometry-handle marker families, in metres.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) coordinates_m: Option<[f64; 2]>,
+    pub(crate) coordinates_m: Option<cadmpeg_ir::units::FiniteVector<2>>,
     /// Resolved links and their selector from the reference-bearing layout.
     #[serde(flatten, with = "sketch_input_links_wire")]
     pub(crate) links: Option<SketchInputLinks>,
@@ -1241,9 +1242,9 @@ pub(crate) struct SketchInputEntityWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_coordinates_m"
+        deserialize_with = "deserialize_checked_coordinates_m"
     )]
-    coordinates_m: Option<[f64; 2]>,
+    coordinates_m: Option<cadmpeg_ir::units::FiniteVector<2>>,
     /// Resolved links and their selector from the reference-bearing layout.
     #[serde(flatten, with = "sketch_input_links_wire")]
     links: Option<SketchInputLinks>,
@@ -2306,6 +2307,60 @@ mod tests {
         assert!(SketchInputLinks::new(3, Vec::new()).is_none());
     }
 
+    #[test]
+    fn feature_input_marker_coordinate_wire_proof() {
+        use super::{FeatureInputLane, SketchInputEntity, SketchInputKind};
+
+        let mut payload = vec![0u8; 39];
+        payload[..5].copy_from_slice(&[0xff, 0xff, 0x1f, 0x00, 0x03]);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        let mut entity = SketchInputEntity::try_new(
+            "marker".into(),
+            "lane".into(),
+            0,
+            0,
+            SketchInputKind::Point,
+            &payload,
+        )
+        .expect("marker fixture");
+        entity.coordinates_m = cadmpeg_ir::units::FiniteVector::new([1.25, -2.5]);
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: payload,
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: vec![entity],
+        };
+        let mut wire = serde_json::to_value(&lane).expect("native JSON");
+        let record = &wire["sketch_entities"][0];
+        assert_eq!(record["coordinates_m"], serde_json::json!([1.25, -2.5]));
+        assert_eq!(
+            record.to_string(),
+            r#"{"coordinates_m":[1.25,-2.5],"id":"marker","kind":"point","offset":0,"ordinal":0,"parent":"lane"}"#
+        );
+        let restored: FeatureInputLane =
+            serde_json::from_value(wire.clone()).expect("native JSON round trip");
+        assert_eq!(serde_json::to_value(restored).expect("native JSON"), wire);
+        wire["sketch_entities"][0]["coordinates_m"] = serde_json::json!([1.25, "bad"]);
+        let refusal = serde_json::from_value::<FeatureInputLane>(wire)
+            .expect_err("invalid coordinate")
+            .to_string();
+        assert_eq!(
+            refusal,
+            "coordinates_m: invalid type: string \"bad\", expected f64"
+        );
+    }
+
     use super::{SketchInputKind, SketchRelationKind};
 
     #[test]
@@ -2482,3 +2537,15 @@ cadmpeg_core::named_optional_field!(
     "state_value"
 );
 cadmpeg_core::named_optional_field!(deserialize_coordinates_m, [f64; 2], "coordinates_m");
+
+fn deserialize_checked_coordinates_m<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<cadmpeg_ir::units::FiniteVector<2>>, D::Error> {
+    deserialize_coordinates_m(deserializer)?
+        .map(|coordinates| {
+            cadmpeg_ir::units::FiniteVector::new(coordinates).ok_or_else(|| {
+                serde::de::Error::custom("coordinates_m: coordinates must be finite")
+            })
+        })
+        .transpose()
+}

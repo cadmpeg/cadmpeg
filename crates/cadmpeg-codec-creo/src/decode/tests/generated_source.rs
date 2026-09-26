@@ -40,7 +40,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::{Angle, Length};
+use cadmpeg_ir::scalar::{Angle, Length, PositiveLength};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
     SketchGeometryDefinition, SketchId,
@@ -48,6 +48,12 @@ use cadmpeg_ir::sketches::{
 use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_GENERATED_CYLINDER_RADIUS: f64 = 1.0e-12;
+
+fn admitted_spans(raw: [[Option<f64>; 2]; 3]) -> [[Option<PositiveLength>; 2]; 3] {
+    raw.map(|axis| {
+        axis.map(|span| span.map(|value| PositiveLength::new(value).expect("positive span")))
+    })
+}
 
 #[test]
 fn generated_source_ids_bind_carriers_independently_of_table_position() {
@@ -531,7 +537,11 @@ fn simple_drilled_dimensions_require_complete_agreeing_tables() {
     assert_eq!(
         simple_drilled_hole_dimension_values(
             [&first, &conflicting].into_iter(),
-            Some([[Some(8.4), None], [Some(25.0), None], [Some(100.0), None],]),
+            Some(admitted_spans([
+                [Some(8.4), None],
+                [Some(25.0), None],
+                [Some(100.0), None],
+            ])),
             id2,
         ),
         Some((8.4, angle, 25.0))
@@ -539,7 +549,11 @@ fn simple_drilled_dimensions_require_complete_agreeing_tables() {
     assert_eq!(
         simple_drilled_hole_dimension_values(
             [&first, &conflicting].into_iter(),
-            Some([[Some(12.0), None], [Some(30.0), None], [Some(100.0), None],]),
+            Some(admitted_spans([
+                [Some(12.0), None],
+                [Some(30.0), None],
+                [Some(100.0), None],
+            ])),
             id2,
         ),
         None
@@ -561,7 +575,11 @@ fn simple_drilled_dimensions_require_complete_agreeing_tables() {
     assert_eq!(
         simple_drilled_hole_dimension_values(
             [&first, &other_layout].into_iter(),
-            Some([[Some(8.4), None], [Some(25.0), None], [Some(100.0), None],]),
+            Some(admitted_spans([
+                [Some(8.4), None],
+                [Some(25.0), None],
+                [Some(100.0), None],
+            ])),
             id2,
         ),
         Some((8.4, angle, 25.0))
@@ -574,7 +592,11 @@ fn simple_drilled_dimensions_require_complete_agreeing_tables() {
     assert_eq!(
         simple_drilled_hole_dimension_values(
             [&first, &invalid_angle].into_iter(),
-            Some([[Some(8.4), None], [Some(25.0), None], [Some(100.0), None],]),
+            Some(admitted_spans([
+                [Some(8.4), None],
+                [Some(25.0), None],
+                [Some(100.0), None],
+            ])),
             id2,
         ),
         None
@@ -583,7 +605,11 @@ fn simple_drilled_dimensions_require_complete_agreeing_tables() {
     assert_eq!(
         simple_drilled_hole_dimension_values(
             [&first, &invalid_other_angle].into_iter(),
-            Some([[Some(8.4), None], [Some(25.0), None], [Some(100.0), None],]),
+            Some(admitted_spans([
+                [Some(8.4), None],
+                [Some(25.0), None],
+                [Some(100.0), None],
+            ])),
             id2,
         ),
         Some((8.4, angle, 25.0))
@@ -592,7 +618,11 @@ fn simple_drilled_dimensions_require_complete_agreeing_tables() {
     assert_eq!(
         simple_drilled_hole_dimension_values(
             [&adjacent_diameter].into_iter(),
-            Some([[Some(6.375), None], [Some(0.5), None], [None, Some(0.25)],]),
+            Some(admitted_spans([
+                [Some(6.375), None],
+                [Some(0.5), None],
+                [None, Some(0.25)],
+            ])),
             id2,
         ),
         Some((0.25, angle, 0.5))
@@ -606,48 +636,80 @@ fn paired_corner_envelopes_expose_dimension_candidate_spans() {
             [[0.0, 0.0, -10.0], [25.0, 8.38, 100.0]],
             [[0.0, 0.0, 100.0], [25.0, 8.38, 180.0]],
         ),
-        Some([[Some(25.0), None], [Some(8.38), None], [None, Some(190.0)],])
+        Some(admitted_spans([
+            [Some(25.0), None],
+            [Some(8.38), None],
+            [None, Some(190.0)],
+        ]))
     );
     assert_eq!(
         paired_corner_envelope_axis_spans(
             [[0.0, 0.0, 0.0], [6.375, 0.5, 0.125]],
             [[0.0, 0.0, 0.125], [6.375, 0.5, 0.25]],
         ),
-        Some([[Some(6.375), None], [Some(0.5), None], [None, Some(0.25)],])
+        Some(admitted_spans([
+            [Some(6.375), None],
+            [Some(0.5), None],
+            [None, Some(0.25)],
+        ]))
     );
     assert_eq!(
         paired_corner_envelope_axis_spans(
             [[1.9375, 0.75, 0.6875], [2.5625, 1.25, 0.0]],
             [[1.9375, 0.75, 0.0], [2.5625, 1.25, 1.3125]],
         ),
-        Some([[Some(0.625), None], [Some(0.5), None], [None, Some(0.625)],])
+        Some(admitted_spans([
+            [Some(0.625), None],
+            [Some(0.5), None],
+            [None, Some(0.625)],
+        ]))
     );
     assert_eq!(
         paired_corner_envelope_axis_spans(
             [[0.0, -15.0, 0.0], [10.0, 20.0, 30.0]],
             [[0.0, 20.0, 0.0], [10.0, -25.0, 30.0]],
         ),
-        Some([[Some(10.0), None], [None, Some(10.0)], [Some(30.0), None],])
+        Some(admitted_spans([
+            [Some(10.0), None],
+            [None, Some(10.0)],
+            [Some(30.0), None],
+        ]))
     );
     assert_eq!(
         paired_corner_envelope_axis_spans(
             [[0.0, 0.0, 0.0], [1.0, 2.0, 3.0]],
             [[0.0, 4.0, 0.0], [1.0, 6.0, 3.0]],
         ),
-        Some([[Some(1.0), None], [None, None], [Some(3.0), None],])
+        Some(admitted_spans([
+            [Some(1.0), None],
+            [None, None],
+            [Some(3.0), None],
+        ]))
     );
     assert_eq!(
         paired_corner_envelope_axis_spans(
             [[0.0, 0.0, 0.0], [0.0, 2.0, 3.0]],
             [[0.0, 0.0, 0.0], [0.0, 2.0, 3.0]],
         ),
-        Some([[None, None], [Some(2.0), None], [Some(3.0), None],])
+        Some(admitted_spans([
+            [None, None],
+            [Some(2.0), None],
+            [Some(3.0), None],
+        ]))
     );
     assert!(!dimension_pair_matches_envelope_spans(
         4.0,
         5.0,
-        [[Some(4.0), Some(5.0)], [Some(2.0), None], [Some(3.0), None]],
+        admitted_spans([[Some(4.0), Some(5.0)], [Some(2.0), None], [Some(3.0), None]]),
     ));
+}
+
+#[test]
+fn overflowing_corner_span_does_not_match_finite_hole_dimensions() {
+    let corners = [[-f64::MAX, -f64::MAX, 0.0], [f64::MAX, f64::MAX, 0.0]];
+    let spans =
+        paired_corner_envelope_axis_spans(corners, corners).expect("finite corner coordinates");
+    assert!(!dimension_pair_matches_envelope_spans(1.0, 1.0, spans));
 }
 
 #[test]
@@ -793,6 +855,7 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
         schema_feature_definition(
             &scan,
             &CadIr::empty(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
             9,
             Some(SchemaClass::Hole),
             "Hole"
@@ -839,7 +902,7 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
         .rows
         .push(surface_row(24, 9, crate::surface::SurfaceKind::Cylinder));
     assert!(matches!(
-        schema_feature_definition(&scan, &CadIr::empty(), 9, Some(SchemaClass::Hole), "Hole").expect("valid test fixture"), IrFeatureDefinition::Operation(IrFeatureOperation::Hole {
+        schema_feature_definition(&scan, &CadIr::empty(), &crate::decode::source_carriers::SourceUnitCarriers::default(), 9, Some(SchemaClass::Hole), "Hole").expect("valid test fixture"), IrFeatureDefinition::Operation(IrFeatureOperation::Hole {
             shape,
 
             extent: None,
@@ -983,8 +1046,9 @@ fn counterbore_envelope_family_accepts_signed_depth_and_optional_drill_angle() {
         .collect(),
         offset: 0,
     };
-    let bore_spans = [[Some(40.0), None], [Some(49.0), None], [None, Some(40.0)]];
-    let counterbore_spans = [[Some(120.0), None], [Some(8.0), None], [None, Some(120.0)]];
+    let bore_spans = admitted_spans([[Some(40.0), None], [Some(49.0), None], [None, Some(40.0)]]);
+    let counterbore_spans =
+        admitted_spans([[Some(120.0), None], [Some(8.0), None], [None, Some(120.0)]]);
     let first = table(8.0);
     assert_eq!(
         counterbore_envelope_dimension_values(
@@ -1054,11 +1118,11 @@ fn counterbore_envelope_family_accepts_signed_depth_and_optional_drill_angle() {
         ),
         Some((40.0, 120.0, 8.0))
     );
-    let dual_role_spans = [
+    let dual_role_spans = admitted_spans([
         [Some(40.0), Some(120.0)],
         [Some(40.0), Some(120.0)],
         [Some(8.0), None],
-    ];
+    ]);
     assert!(counterbore_envelope_dimension_values(
         std::iter::once(&shifted_four_row),
         &[Some(dual_role_spans), None],
@@ -1531,13 +1595,17 @@ fn extrusion_profile_area_includes_oriented_arc_sector() {
         ProfileEntity::new(line, true).expect("valid profile entity"),
     ];
     assert!(
-        (extrusion_profile_signed_area(&counterclockwise).expect("positive area")
+        (extrusion_profile_signed_area(&counterclockwise)
+            .expect("positive area")
+            .get()
             - std::f64::consts::FRAC_PI_2)
             .abs()
             < 1.0e-12
     );
     assert!(
-        (extrusion_profile_signed_area(&clockwise).expect("negative area")
+        (extrusion_profile_signed_area(&clockwise)
+            .expect("negative area")
+            .get()
             + std::f64::consts::FRAC_PI_2)
             .abs()
             < 1.0e-12

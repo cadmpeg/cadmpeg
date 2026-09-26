@@ -554,7 +554,7 @@ fn the_4_0_missing_numeric_context_uses_reported_recovery_fallbacks() {
 
     assert_eq!(parsed.real_precision().single_significance, 17);
     assert_eq!(parsed.real_precision().double_significance, 17);
-    assert_eq!(parsed.minimum_resolution, 0.0);
+    assert_eq!(parsed.minimum_resolution.get(), 0.0);
     assert!(parsed.line_weight_scale.is_none());
     assert_eq!(
         code_count(&losses, IgesLossCode::LineWeightScaleUnavailable),

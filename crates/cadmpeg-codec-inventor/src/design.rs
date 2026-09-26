@@ -10,7 +10,7 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::{
     features::{DesignParameter, ParameterId, ParameterValue},
-    scalar::{Angle, Length},
+    scalar::{Angle, FiniteReal, Length},
 };
 use serde::{Deserialize, Serialize};
 
@@ -83,8 +83,8 @@ pub(crate) struct PmDcParameterPayload {
     pub(crate) name_value: u32,
     pub(crate) unit: PmDcReference,
     pub(crate) formula: PmDcReference,
-    pub(crate) nominal_value: f64,
-    pub(crate) model_value: f64,
+    pub(crate) nominal_value: cadmpeg_ir::scalar::FiniteReal,
+    pub(crate) model_value: cadmpeg_ir::scalar::FiniteReal,
     pub(crate) tolerance: u16,
     pub(crate) terminal_value: i16,
 }
@@ -102,7 +102,7 @@ pub(crate) struct PmDcExpressionPayload {
 #[serde(tag = "form", rename_all = "snake_case")]
 pub(crate) enum PmDcExpressionKind {
     Value {
-        value: f64,
+        value: FiniteReal,
         value_type: u16,
         state: u32,
     },
@@ -158,9 +158,9 @@ pub(crate) enum PmDcUnitKind {
     Base {
         dimension: PmDcUnitDimension,
         symbol: String,
-        scale_to_internal: f64,
-        magnitude: f64,
-        factor: f64,
+        scale_to_internal: FiniteReal,
+        magnitude: FiniteReal,
+        factor: FiniteReal,
     },
 }
 
@@ -178,9 +178,9 @@ enum PmDcUnitKindWire {
     Base {
         dimension: PmDcUnitDimension,
         symbol: String,
-        scale_to_internal: f64,
-        magnitude: f64,
-        factor: f64,
+        scale_to_internal: FiniteReal,
+        magnitude: FiniteReal,
+        factor: FiniteReal,
     },
 }
 
@@ -478,14 +478,12 @@ pub(crate) fn project_parameters(
         };
         let value = match unit.dimension {
             PmDcUnitDimension::Length => {
-                Length::new(parameter.model_value * 10.0).map(ParameterValue::Length)
+                Length::new(parameter.model_value.get() * 10.0).map(ParameterValue::Length)
             }
-            PmDcUnitDimension::Angle => {
-                Angle::new(parameter.model_value).map(ParameterValue::Angle)
-            }
-            PmDcUnitDimension::Dimensionless => {
-                cadmpeg_ir::scalar::FiniteReal::new(parameter.model_value).map(ParameterValue::Real)
-            }
+            PmDcUnitDimension::Angle => Some(ParameterValue::Angle(Angle::from_assigned_real(
+                parameter.model_value,
+            ))),
+            PmDcUnitDimension::Dimensionless => Some(ParameterValue::Real(parameter.model_value)),
         };
         let Some(value) = value else {
             unresolved += 1;
@@ -632,7 +630,7 @@ fn decimal_len(mut value: u32) -> usize {
 struct ResolvedUnit<'a> {
     dimension: PmDcUnitDimension,
     symbol: &'a str,
-    scale_to_internal: f64,
+    scale_to_internal: FiniteReal,
 }
 
 fn resolve_unit<'a>(
@@ -663,15 +661,12 @@ fn resolve_unit<'a>(
         dimension,
         symbol,
         scale_to_internal,
-        magnitude,
-        factor,
+        magnitude: _,
+        factor: _,
     } = &base.kind
     else {
         return None;
     };
-    if !magnitude.is_finite() || !factor.is_finite() {
-        return None;
-    }
     Some(ResolvedUnit {
         dimension: *dimension,
         symbol,
@@ -704,9 +699,10 @@ fn render_expression<'a>(
         return Ok(None);
     };
     let total = plan.order.iter().try_fold(0usize, |sum, ordinal| {
-        sum.checked_add(plan.lengths[ordinal].0).ok_or_else(|| {
-            ctx.refuse_codec_limit("Inventor expression byte count", u64::MAX - 1, u64::MAX)
-        })
+        sum.checked_add(plan.lengths[ordinal].length)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("Inventor expression byte count", u64::MAX - 1, u64::MAX)
+            })
     })?;
     let reserved = ctx.reserve_scoped(total as u64, "render Inventor expression bytes")?;
     ctx.charge_retained(root_length as u64, "retain Inventor expression text")?;
@@ -714,7 +710,7 @@ fn render_expression<'a>(
     ctx.charge_collection_items(plan.order.len() as u64, "memoize Inventor expression text")?;
     let mut rendered: HashMap<u32, String> = HashMap::new();
     for &ordinal in &plan.order {
-        let length = plan.lengths[&ordinal].0;
+        let length = plan.lengths[&ordinal].length;
         let mut text = String::new();
         text.try_reserve_exact(length).map_err(|_| {
             ctx.refuse_codec_limit(
@@ -725,15 +721,17 @@ fn render_expression<'a>(
         })?;
         let expression = expressions[&(token, ordinal)];
         match &expression.kind {
-            PmDcExpressionKind::Value { value, .. } => {
+            PmDcExpressionKind::Value { .. } => {
                 let unit = resolve_unit(token, expression.unit.index, units).ok_or_else(|| {
                     CodecError::Malformed("Inventor expression unit changed during render".into())
                 })?;
-                let scalar = value / unit.scale_to_internal;
-                if scalar == 0.0 {
+                let scalar = plan.lengths[&ordinal].scalar.ok_or_else(|| {
+                    CodecError::Malformed("Inventor measured expression scalar is missing".into())
+                })?;
+                if scalar.get() == 0.0 {
                     text.push('0');
                 } else {
-                    write!(&mut text, "{scalar}").map_err(|_| {
+                    write!(&mut text, "{}", scalar.get()).map_err(|_| {
                         CodecError::Malformed("Inventor scalar formatting failed".into())
                     })?;
                 }
@@ -794,11 +792,18 @@ struct ExpressionRenderPlan<'a, 'b> {
     expressions: &'b HashMap<(&'a str, u32), &'a PmDcExpression>,
     units: &'b HashMap<(&'a str, u32), &'a PmDcUnit>,
     parameters: &'b HashMap<(&'a str, u32), &'a PmDcParameter>,
-    lengths: HashMap<u32, (usize, usize)>,
+    lengths: HashMap<u32, MeasuredExpression>,
     visiting: HashSet<u32>,
     order: Vec<u32>,
     dependency_ordinals: Vec<u32>,
     seen_dependencies: HashSet<u32>,
+}
+
+#[derive(Clone, Copy)]
+struct MeasuredExpression {
+    length: usize,
+    height: usize,
+    scalar: Option<FiniteReal>,
 }
 
 impl ExpressionRenderPlan<'_, '_> {
@@ -813,9 +818,9 @@ impl ExpressionRenderPlan<'_, '_> {
                 "Inventor expression graph contains a cycle".into(),
             ));
         }
-        if let Some(&(length, height)) = self.lengths.get(&ordinal) {
-            admit_cached_expression_depth(self.ctx, height - 1)?;
-            return Ok(Some((length, height)));
+        if let Some(measured) = self.lengths.get(&ordinal) {
+            admit_cached_expression_depth(self.ctx, measured.height - 1)?;
+            return Ok(Some((measured.length, measured.height)));
         }
         let Some(expression) = self.expressions.get(&(self.token, ordinal)) else {
             return Ok(None);
@@ -828,26 +833,24 @@ impl ExpressionRenderPlan<'_, '_> {
                 let Some(unit) = resolve_unit(self.token, expression.unit.index, self.units) else {
                     return Ok(None);
                 };
-                if !value.is_finite()
-                    || !unit.scale_to_internal.is_finite()
-                    || unit.scale_to_internal == 0.0
-                {
+                if unit.scale_to_internal.get() == 0.0 {
                     return Ok(None);
                 }
-                let scalar = value / unit.scale_to_internal;
-                if !scalar.is_finite() {
+                let Some(scalar) = FiniteReal::new(value.get() / unit.scale_to_internal.get())
+                else {
                     return Ok(None);
-                }
+                };
                 let scalar_length = scalar_display_len(self.ctx, scalar)?;
                 let unit_length = if unit.symbol.is_empty() {
                     0
                 } else {
                     checked_expression_len(self.ctx, unit.symbol.len(), 1)?
                 };
-                (
-                    checked_expression_len(self.ctx, scalar_length, unit_length)?,
-                    1,
-                )
+                MeasuredExpression {
+                    length: checked_expression_len(self.ctx, scalar_length, unit_length)?,
+                    height: 1,
+                    scalar: Some(scalar),
+                }
             }
             PmDcExpressionKind::ParameterReference { operand } => {
                 let Some(target_ordinal) = operand.index.checked_sub(1) else {
@@ -862,7 +865,11 @@ impl ExpressionRenderPlan<'_, '_> {
                     self.seen_dependencies.insert(target_ordinal);
                     self.dependency_ordinals.push(target_ordinal);
                 }
-                (target.name.len(), 1)
+                MeasuredExpression {
+                    length: target.name.len(),
+                    height: 1,
+                    scalar: None,
+                }
             }
             PmDcExpressionKind::Unary { operation, operand } => {
                 let Some((child_length, child_height)) = self.measure(operand.index)? else {
@@ -871,10 +878,11 @@ impl ExpressionRenderPlan<'_, '_> {
                 if *operation == PmDcUnaryOperation::PowerIdentity {
                     return Ok(None);
                 }
-                (
-                    checked_expression_len(self.ctx, child_length, 3)?,
-                    checked_expression_len(self.ctx, child_height, 1)?,
-                )
+                MeasuredExpression {
+                    length: checked_expression_len(self.ctx, child_length, 3)?,
+                    height: checked_expression_len(self.ctx, child_height, 1)?,
+                    scalar: None,
+                }
             }
             PmDcExpressionKind::Binary { left, right, .. } => {
                 let Some((left_length, left_height)) = self.measure(left.index)? else {
@@ -884,10 +892,11 @@ impl ExpressionRenderPlan<'_, '_> {
                     return Ok(None);
                 };
                 let children = checked_expression_len(self.ctx, left_length, right_length)?;
-                (
-                    checked_expression_len(self.ctx, children, 7)?,
-                    checked_expression_len(self.ctx, left_height.max(right_height), 1)?,
-                )
+                MeasuredExpression {
+                    length: checked_expression_len(self.ctx, children, 7)?,
+                    height: checked_expression_len(self.ctx, left_height.max(right_height), 1)?,
+                    scalar: None,
+                }
             }
         };
         self.visiting.remove(&ordinal);
@@ -895,7 +904,7 @@ impl ExpressionRenderPlan<'_, '_> {
             .charge_collection_items(2, "memoize Inventor expression shape")?;
         self.lengths.insert(ordinal, measured);
         self.order.push(ordinal);
-        Ok(Some(measured))
+        Ok(Some((measured.length, measured.height)))
     }
 }
 
@@ -931,12 +940,12 @@ impl std::fmt::Write for ByteCounter {
     }
 }
 
-fn scalar_display_len(ctx: &DecodeContext<'_>, scalar: f64) -> Result<usize, CodecError> {
-    if scalar == 0.0 {
+fn scalar_display_len(ctx: &DecodeContext<'_>, scalar: FiniteReal) -> Result<usize, CodecError> {
+    if scalar.get() == 0.0 {
         return Ok(1);
     }
     let mut counter = ByteCounter::default();
-    write!(&mut counter, "{scalar}").map_err(|_| {
+    write!(&mut counter, "{}", scalar.get()).map_err(|_| {
         ctx.refuse_codec_limit("Inventor scalar byte count", u64::MAX - 1, u64::MAX)
     })?;
     Ok(counter.0)
@@ -1119,7 +1128,9 @@ fn parse_base_unit(
         kind: PmDcUnitKind::Base {
             dimension,
             symbol: symbol.into(),
-            scale_to_internal,
+            scale_to_internal: FiniteReal::new(scale_to_internal).ok_or_else(|| {
+                CodecError::Malformed("Inventor PmDc base-unit scale is not finite".into())
+            })?,
             magnitude,
             factor,
         },
@@ -1243,11 +1254,15 @@ mod tests {
     use cadmpeg_core::decode::{DecodeContext, View};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
-    use cadmpeg_ir::scalar::Length;
+    use cadmpeg_ir::scalar::{FiniteReal, Length};
     use std::collections::HashMap;
 
     const fn reference(index: u32, qualified: bool) -> PmDcReference {
         PmDcReference { index, qualified }
+    }
+
+    fn real(value: f64) -> FiniteReal {
+        FiniteReal::new(value).expect("finite test scalar")
     }
 
     #[test]
@@ -1588,9 +1603,9 @@ mod tests {
                 kind: PmDcUnitKind::Base {
                     dimension: PmDcUnitDimension::Length,
                     symbol: "mm".into(),
-                    scale_to_internal: 1.0e-308,
-                    magnitude: 1.0,
-                    factor: 1.0,
+                    scale_to_internal: real(1.0e-308),
+                    magnitude: real(1.0),
+                    factor: real(1.0),
                 },
             },
             String::new(),
@@ -1604,7 +1619,7 @@ mod tests {
                 header_id: 0,
                 unit: reference(1, false),
                 kind: PmDcExpressionKind::Value {
-                    value: 1.0e308,
+                    value: real(1.0e308),
                     value_type: 0,
                     state: 0,
                 },
@@ -1681,7 +1696,7 @@ mod tests {
                 .expect("fixture view");
         let parameter = parse_parameter(&ctx, source, 22).expect("generated parameter parses");
         assert_eq!(parameter.name, "length");
-        assert_eq!(parameter.model_value, 60.96);
+        assert_eq!(parameter.model_value.get(), 60.96);
         assert_eq!(parameter.formula, reference(4, false));
     }
 
@@ -1706,10 +1721,10 @@ mod tests {
         assert!(matches!(
             parsed.kind,
             PmDcExpressionKind::Value {
-                value: 25.4,
+                value,
                 state: 0,
                 ..
-            }
+            } if value.get() == 25.4
         ));
 
         for operation in [
@@ -1806,9 +1821,9 @@ mod tests {
                 kind: PmDcUnitKind::Base {
                     dimension: PmDcUnitDimension::Length,
                     symbol: "in".into(),
-                    scale_to_internal: 2.54,
-                    magnitude: 1.0,
-                    factor: 1.0,
+                    scale_to_internal: real(2.54),
+                    magnitude: real(1.0),
+                    factor: real(1.0),
                 },
             },
             String::new(),
@@ -1843,7 +1858,7 @@ mod tests {
                 header_id: 0,
                 unit: reference(2, false),
                 kind: PmDcExpressionKind::Value {
-                    value: 60.96,
+                    value: real(60.96),
                     value_type: 0,
                     state: 0,
                 },
@@ -1867,8 +1882,8 @@ mod tests {
                 name_value: 0,
                 unit: reference(2, false),
                 formula: reference(3, false),
-                nominal_value: 60.96,
-                model_value: 60.96,
+                nominal_value: real(60.96),
+                model_value: real(60.96),
                 tolerance: 0,
                 terminal_value: -1,
             },
@@ -1905,8 +1920,8 @@ mod tests {
                 name_value: 0,
                 unit: reference(2, false),
                 formula: reference(5, false),
-                nominal_value: 60.96,
-                model_value: 60.96,
+                nominal_value: real(60.96),
+                model_value: real(60.96),
                 tolerance: 0,
                 terminal_value: -1,
             },
@@ -1963,9 +1978,9 @@ mod tests {
                 kind: PmDcUnitKind::Base {
                     dimension: PmDcUnitDimension::Dimensionless,
                     symbol: String::new(),
-                    scale_to_internal: 1.0,
-                    magnitude: 1.0,
-                    factor: 1.0,
+                    scale_to_internal: real(1.0),
+                    magnitude: real(1.0),
+                    factor: real(1.0),
                 },
             },
             String::new(),
@@ -2000,7 +2015,7 @@ mod tests {
                 header_id: 0,
                 unit: reference(2, false),
                 kind: PmDcExpressionKind::Value {
-                    value: 1.0,
+                    value: real(1.0),
                     value_type: 0,
                     state: 0,
                 },
@@ -2024,8 +2039,8 @@ mod tests {
                 name_value: 0,
                 unit: reference(2, false),
                 formula: reference(3, false),
-                nominal_value: 1.0,
-                model_value: 1.0,
+                nominal_value: real(1.0),
+                model_value: real(1.0),
                 tolerance: 0,
                 terminal_value: -1,
             },
@@ -2302,8 +2317,8 @@ mod tests {
                 name_value: 0,
                 unit: reference(0, false),
                 formula: reference(0, false),
-                nominal_value: 0.0,
-                model_value: 0.0,
+                nominal_value: real(0.0),
+                model_value: real(0.0),
                 tolerance: 0,
                 terminal_value: 0,
             },

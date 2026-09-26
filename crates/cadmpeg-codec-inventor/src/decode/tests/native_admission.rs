@@ -360,7 +360,8 @@ fn assembly_placement_native_record_refuses_id_and_digest_before_creation() {
             attribute_reference: 0,
             state: 0,
             transform_prefix: false,
-            transform: CompactMatrix::try_new(0, 0, |_| Ok(0.0)).expect("finite matrix"),
+            transform: CompactMatrix::try_new(0, 0, |_| Ok(cadmpeg_ir::scalar::FiniteReal::ZERO))
+                .expect("finite matrix"),
             branch: 0,
             graphics_state: 0,
             occurrence_id: 0,

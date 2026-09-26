@@ -60,7 +60,7 @@ fn circle_dimension_driver_supplies_the_center_operand() {
         offset,
         object_id: 1,
         name: "dimension-name".into(),
-        value: 1.0,
+        value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Native,
 
         operands,
@@ -382,7 +382,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         offset: 10,
         object_id: 1,
         name: "name".into(),
-        value: 0.012,
+        value: cadmpeg_ir::scalar::FiniteReal::new(0.012).expect("finite test scalar"),
         role: FeatureInputScalarRole::Display,
 
         operands: Vec::new(),

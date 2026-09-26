@@ -390,6 +390,7 @@ pub(super) fn agreed_plane(candidates: &[PlaneEquation]) -> Option<PlaneEquation
 pub(in crate::decode) fn reconciled_model_plane(
     local_planes: &BTreeMap<u32, PlaneEquation>,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     surface_id: u32,
 ) -> Option<PlaneEquation> {
     let model_id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, surface_id);
@@ -401,7 +402,7 @@ pub(in crate::decode) fn reconciled_model_plane(
         .collect::<Vec<_>>();
     let model_plane = match model_surfaces.as_slice() {
         [] => None,
-        [surface] => match &surface.geometry {
+        [surface] => match source_carriers.surface_geometry(surface) {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
                 let origin = plane_surface.origin().get();
                 let normal = plane_surface.frame().axis().as_raw();
@@ -954,12 +955,12 @@ fn fc05_reference_circle_frame(
     let axis = crate::vecmath::unit_length(circle.axis);
     let start: [f64; 3] = circle.start.get().into();
     let end: [f64; 3] = circle.end.get().into();
-    let radial = std::array::from_fn(|index| start[index] - circle.center[index]);
-    let end_radial = std::array::from_fn(|index| end[index] - circle.center[index]);
+    let center: [f64; 3] = circle.center.get().into();
+    let radial = std::array::from_fn(|index| start[index] - center[index]);
+    let end_radial = std::array::from_fn(|index| end[index] - center[index]);
     let radial_length = dot(radial, radial).sqrt();
     let end_radial_length = dot(end_radial, end_radial).sqrt();
-    let scale = circle
-        .center
+    let scale = center
         .into_iter()
         .chain(start)
         .chain(end)
@@ -975,7 +976,7 @@ fn fc05_reference_circle_frame(
         return None;
     }
     crate::surface::PositionalCylinderFrame::new(
-        circle.center,
+        center,
         axis,
         radial.map(|value| value / radial_length),
         radius,

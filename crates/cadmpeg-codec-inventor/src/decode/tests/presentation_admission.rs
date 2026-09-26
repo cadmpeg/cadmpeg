@@ -150,7 +150,7 @@ fn presentation_other_native_records_refuse_before_ids_text_and_reference_copies
                 header_value: 0,
                 controls: [0; 7],
                 color_header: [0; 2],
-                colors: [[0.0; 4]; 4],
+                colors: [[cadmpeg_ir::scalar::FiniteBinary32::ZERO; 4]; 4],
                 color_tail: [0; 2],
                 state: 0,
                 values: [0; 2],

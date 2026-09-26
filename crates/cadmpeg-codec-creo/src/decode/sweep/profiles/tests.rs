@@ -142,6 +142,28 @@ fn circular_pcurve_refuses_unbounded_span_before_allocation() {
 }
 
 #[test]
+fn overflowing_profile_area_is_not_validated() {
+    let edge = |start: [f64; 2], end: [f64; 2]| {
+        super::ProfileEntity::new(
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: Point2::new(start[0], start[1]),
+                end: Point2::new(end[0], end[1]),
+            })
+            .expect("finite sketch line"),
+            false,
+        )
+        .expect("profile entity")
+    };
+    let origin = [0.0, 0.0];
+    let right = [1.0e154, 0.0];
+    let upper = [0.0, 1.0e154];
+    let circuit = [edge(origin, right), edge(right, upper), edge(upper, origin)];
+    let profile: Vec<_> = circuit.clone().into_iter().chain(circuit).collect();
+    assert!(super::extrusion_profile_signed_area(&profile).is_none());
+    assert!(super::ValidatedProfile::new(profile).is_none());
+}
+
+#[test]
 fn large_profile_circle_intersections_stay_finite() {
     let r = 1e200;
     let arc = ([0., 0.], r, 0., std::f64::consts::TAU);

@@ -47,15 +47,14 @@ pub(super) fn project_cosmetic_thread(feature: &Feature) -> FeatureDefinition {
             let diameter = tagged.next()?;
             tagged.next().is_none().then_some(diameter)
         })
-        .filter(|value| *value > 0.0)
-        .and_then(cadmpeg_ir::scalar::PositiveLength::new);
+        .and_then(|value| cadmpeg_ir::scalar::PositiveLength::try_from(value).ok());
     let extent = match feature.parameters.get("D1") {
         Some(value) => parse_positive_dimension_length_mm(value)
-            .and_then(cadmpeg_ir::scalar::PositiveLength::new)
             .map(|length| CosmeticThreadExtent::Blind { length })
             .or_else(|| {
                 (parse_angle_rad(value).is_some()
-                    || parse_dimension_display_length(value) == Some(0.0))
+                    || parse_dimension_display_length(value)
+                        == Some(cadmpeg_ir::scalar::Length::ZERO))
                 .then_some(CosmeticThreadExtent::Through {})
             }),
         None => Some(CosmeticThreadExtent::Through {}),
@@ -72,7 +71,7 @@ pub(super) fn project_cosmetic_thread(feature: &Feature) -> FeatureDefinition {
 }
 
 pub(in crate::history) fn sketch_block_placement(feature: &Feature) -> Option<Transform> {
-    let origin = parse_point3_mm(feature.properties.get("BlockOrigin")?)?;
+    let origin = parse_point3_mm(feature.properties.get("BlockOrigin")?)?.get();
     Transform::affine([
         [1.0, 0.0, 0.0, origin.x],
         [0.0, 1.0, 0.0, origin.y],

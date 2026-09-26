@@ -433,9 +433,9 @@ pub(super) fn take_bool(bytes: &[u8], position: &mut usize) -> Option<bool> {
 }
 
 pub(super) fn normalized(value: [f64; 3]) -> Option<cadmpeg_ir::units::UnitVector3> {
-    cadmpeg_ir::units::UnitVector3::normalized_finite_nonzero(
-        cadmpeg_ir::features::FiniteVector3::new(Vector3::from(value))?,
-    )
+    cadmpeg_ir::units::UnitVector3::normalized_nonzero(cadmpeg_ir::features::FiniteVector3::new(
+        Vector3::from(value),
+    )?)
 }
 
 pub(super) fn take_native_ident(bytes: &[u8], position: &mut usize) -> Option<String> {

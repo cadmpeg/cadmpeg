@@ -11,6 +11,7 @@ use crate::decode::sketch::geometry::{
     saved_section_arc, saved_section_arc_carrier, saved_section_circle_values,
     saved_section_entity_geometry, saved_section_line_geometry,
     saved_section_missing_line_geometry, saved_section_segment_point_coordinates,
+    SectionArcCarrier,
 };
 use crate::decode::sketch::intersect::resolved_trim_vertex_coordinates;
 use crate::decode::sketch::radii::{resolved_section_radii, trim_segment_id};
@@ -1676,13 +1677,17 @@ fn saved_arc_joins_through_order_table() {
             crate::feature::definitions::FeatureTrimVertex {
                 vertex_id: 1,
                 entities: vec![42, 43],
-                section_coordinates: Some([0.0, -2.0]),
+                section_coordinates: cadmpeg_ir::units::FinitePoint2::new(
+                    cadmpeg_ir::math::Point2::new(0.0, -2.0),
+                ),
                 offset: 31,
             },
             crate::feature::definitions::FeatureTrimVertex {
                 vertex_id: 1,
                 entities: vec![42, 44],
-                section_coordinates: Some([9.0, 9.0]),
+                section_coordinates: cadmpeg_ir::units::FinitePoint2::new(
+                    cadmpeg_ir::math::Point2::new(9.0, 9.0),
+                ),
                 offset: 32,
             },
         ],
@@ -1710,7 +1715,7 @@ fn saved_arc_joins_through_order_table() {
         .cloned()
         .collect::<Vec<_>>()[0];
     assert_eq!(
-        saved_section_arc_carrier(&trimmed, segment),
+        saved_section_arc_carrier(&trimmed, segment).map(SectionArcCarrier::raw),
         Some(([0.0, 0.0], 2.0))
     );
     if let crate::feature::definitions::FeatureSavedEntity::Arc(arc) = &mut trimmed

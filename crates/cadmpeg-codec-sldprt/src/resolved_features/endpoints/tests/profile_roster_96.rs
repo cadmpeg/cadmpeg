@@ -50,7 +50,7 @@ fn profile_roster_payload(endpoints: [u16; 2]) -> Vec<u8> {
 
 #[test]
 fn compact_legacy_96_profile_roster_uses_coordinate_geometry_ordinals() {
-    let entity = |id: &str, offset, coordinates_m, kind, object_index| {
+    let entity = |id: &str, offset, coordinates_m: Option<[f64; 2]>, kind, object_index| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
         let mut constructed_marker =
@@ -58,7 +58,8 @@ fn compact_legacy_96_profile_roster_uses_coordinate_geometry_ordinals() {
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };
