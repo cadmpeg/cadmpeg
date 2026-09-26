@@ -1015,6 +1015,7 @@ mod tests {
             "admit RSe database descriptors",
             "pair RSe segment streams",
             "admit RSe segment descriptors",
+            "admit RSe parsed metadata segment",
             "admit RSe framed segments",
         ] {
             assert!(
