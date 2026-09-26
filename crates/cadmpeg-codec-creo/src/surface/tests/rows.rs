@@ -143,6 +143,42 @@ fn positional_spline_replay_uses_the_named_array_extents() {
 }
 
 #[test]
+fn positional_spline_replay_rejects_unordered_parameters_at_grid_admission() {
+    let mut payload = b"srf_array\0\xf8\x02".to_vec();
+    payload.extend_from_slice(&[7, 0x28, 4, 0x01, 0, 8, 0xe3]);
+    payload.extend_from_slice(b"srf_prim_ptr(splsrf)\0");
+    payload.extend_from_slice(b"\xe0\x01tan_cond\0\xf8\x02\x03\xe4");
+    for name in ["i_points", "end_u_tangts", "end_v_tangts", "end_uv_deriv"] {
+        payload.extend_from_slice(&[0xe0, 0x02]);
+        payload.extend_from_slice(name.as_bytes());
+        payload.extend_from_slice(b"\0\xf9\x04\x03");
+        payload.extend(std::iter::repeat_n(0x0f, 12));
+    }
+    for name in ["u_params", "v_params"] {
+        payload.extend_from_slice(&[0xe0, 0x01]);
+        payload.extend_from_slice(name.as_bytes());
+        payload.extend_from_slice(b"\0\xf8\x02\x0f\xe4");
+    }
+    payload.push(0xe3);
+    payload.extend_from_slice(&[8, 0x28, 4, 0x01, 0, 0, 0xe3, 0x03, 0xe4]);
+    payload.extend(std::iter::repeat_n(0x0f, 48));
+    payload.extend_from_slice(&[0x0f, 0xe4, 0x0f, 0xe4, 0xe3]);
+    payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+
+    let decoded_rows = rows(&payload);
+    let later = decoded_rows.iter().find(|row| row.id == 8).unwrap();
+    let prototype = positional_spline_replay_prototype(&payload, &decoded_rows, later).unwrap();
+    let parameters = parameter_records(&payload);
+    let later_parameter = unique_surface_parameter(&parameters, 8).unwrap();
+    let cache = scalar::ScalarCache::from_section(&payload);
+    let mut replay_body = later_parameter.body.clone();
+    let u_second = replay_body.len() - 3;
+    assert_eq!(replay_body[u_second], 0xe4);
+    replay_body[u_second] = 0x0f;
+    assert!(decode_positional_spline_replay(&replay_body, &prototype, &cache).is_none());
+}
+
+#[test]
 fn cross_section_filters_boundary_one_body_candidate() {
     let payload =
         b"Sld_Xsections\0srf_array\0\xf8\x01\x07\x24\x04\x01\x06\0\x2d\x25\x32\xf6\x01\x01\xe2";
@@ -171,7 +207,7 @@ fn cross_section_plane_envelope_retains_its_namespace_geometry() {
     assert_eq!(planes.len(), 1);
     assert_eq!(planes[0].surface_id, 7);
     assert_eq!(planes[0].origin, [0.0, 0.0, 0.0]);
-    assert_eq!(planes[0].normal, [0.0, 1.0, 0.0]);
+    assert_eq!(planes[0].normal(), [0.0, 1.0, 0.0]);
 }
 
 #[test]
@@ -227,10 +263,10 @@ fn plane_local_system_follows_a_parameter_scalar_containing_a_named_record_heade
         Some([-1.335_000_000_000_026_4, 17.5, -3.595_135_602_449_500_5])
     );
     assert_eq!(
-        systems[0].frame().u_axis,
+        systems[0].frame().u_axis(),
         Some([0.0, 0.121_869_343_405_147_49, -0.992_546_151_641_322_1])
     );
-    assert_eq!(systems[0].frame().normal, Some([1.0, 0.0, 0.0]));
+    assert_eq!(systems[0].frame().normal(), Some([1.0, 0.0, 0.0]));
     assert_eq!(systems[0].body.len(), 52);
 }
 

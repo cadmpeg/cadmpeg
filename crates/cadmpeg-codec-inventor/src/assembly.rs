@@ -74,11 +74,24 @@ pub(crate) struct AssemblyPlacement<'a> {
 }
 
 /// Records one more occurrence of `cause` in a non-zero tally.
-pub(crate) fn count_unresolved<C: Ord>(counts: &mut BTreeMap<C, NonZeroUsize>, cause: C) {
-    counts
-        .entry(cause)
-        .and_modify(|count| *count = count.saturating_add(1))
-        .or_insert(NonZeroUsize::MIN);
+pub(crate) fn count_unresolved<C: Ord>(
+    ctx: &DecodeContext<'_>,
+    counts: &mut BTreeMap<C, NonZeroUsize>,
+    cause: C,
+) -> Result<(), CodecError> {
+    if let Some(count) = counts.get_mut(&cause) {
+        *count = count.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "count unresolved Inventor projection cause",
+                u64::MAX,
+                u64::MAX,
+            )
+        })?;
+        return Ok(());
+    }
+    ctx.charge_collection_items(1, "count unresolved Inventor projection cause")?;
+    counts.insert(cause, NonZeroUsize::MIN);
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -115,14 +128,30 @@ pub(crate) struct AssemblyProjection {
 /// assemblies remain one unresolved external prototype, so their internal trees
 /// are not invented as children of this document.
 pub(crate) fn project_occurrences(
+    ctx: &DecodeContext<'_>,
     ufrx_occurrences: &[UfrxOccurrenceRecord],
     external_references: &[ExternalReferenceRecord],
     assembly_occurrences: &[AssemblyOccurrenceRecord],
     assembly_placements: &[AssemblyPlacementRecord],
-) -> AssemblyProjection {
-    let references = unique_by(external_references, |record| record.reference_id);
-    let occurrence_records = unique_by(assembly_occurrences, |record| record.occurrence_id);
-    let placements = unique_by(assembly_placements, |record| record.occurrence_id);
+) -> Result<AssemblyProjection, CodecError> {
+    let references = unique_by(
+        ctx,
+        external_references,
+        "index Inventor external references",
+        |record| record.reference_id,
+    )?;
+    let occurrence_records = unique_by(
+        ctx,
+        assembly_occurrences,
+        "index Inventor assembly occurrences",
+        |record| record.occurrence_id,
+    )?;
+    let placements = unique_by(
+        ctx,
+        assembly_placements,
+        "index Inventor assembly placements",
+        |record| record.occurrence_id,
+    )?;
     let mut emitted_ids = HashSet::new();
     let mut occurrences = Vec::new();
     let mut unresolved_placements = BTreeMap::new();
@@ -130,25 +159,30 @@ pub(crate) fn project_occurrences(
     for source in ufrx_occurrences {
         let Some(reference) = references.get(&source.file_reference_id) else {
             count_unresolved(
+                ctx,
                 &mut unresolved_placements,
                 UnresolvedCause::ExternalReference,
-            );
+            )?;
             continue;
         };
         if !occurrence_records.contains_key(&source.occurrence_id) {
             count_unresolved(
+                ctx,
                 &mut unresolved_placements,
                 UnresolvedCause::OccurrenceRecord,
-            );
+            )?;
             continue;
         }
-        if !emitted_ids.insert(source.occurrence_id) {
+        if emitted_ids.contains(&source.occurrence_id) {
             count_unresolved(
+                ctx,
                 &mut unresolved_placements,
                 UnresolvedCause::DuplicateOccurrence,
-            );
+            )?;
             continue;
         }
+        ctx.charge_collection_items(1, "track Inventor emitted occurrence id")?;
+        emitted_ids.insert(source.occurrence_id);
 
         let suppressed = reference.state[0] & SUPPRESSED_REFERENCE_STATE != 0;
         let (transform, visible) = match placements.get(&source.occurrence_id) {
@@ -163,20 +197,41 @@ pub(crate) fn project_occurrences(
                     .flatten()
                 else {
                     count_unresolved(
+                        ctx,
                         &mut unresolved_placements,
                         UnresolvedCause::InvalidTransform,
-                    );
+                    )?;
                     continue;
                 };
                 (transform, suppressed.then_some(false))
             }
             None if suppressed => (Transform::identity(), Some(false)),
             None => {
-                count_unresolved(&mut unresolved_placements, UnresolvedCause::Placement);
+                count_unresolved(ctx, &mut unresolved_placements, UnresolvedCause::Placement)?;
                 continue;
             }
         };
 
+        ctx.charge_collection_items(1, "project Inventor occurrence")?;
+        ctx.charge_entities(1, "project Inventor occurrence")?;
+        ctx.charge_retained(
+            ("inventor:assembly:instance#".len()
+                + source.occurrence_id.max(1).ilog10() as usize
+                + 1) as u64,
+            "retain projected Inventor occurrence id",
+        )?;
+        ctx.charge_retained(
+            reference.document_copy_len() as u64,
+            "retain projected Inventor external document",
+        )?;
+        ctx.charge_retained(
+            source.title.as_ref().map_or(0, String::len) as u64,
+            "retain projected Inventor occurrence title",
+        )?;
+        ctx.charge_retained(
+            source.id.len() as u64,
+            "retain projected Inventor occurrence native reference",
+        )?;
         occurrences.push(Occurrence {
             id: OccurrenceId::compose(
                 &cadmpeg_ir::identity_namespace!("inventor", "assembly", "instance"),
@@ -198,10 +253,10 @@ pub(crate) fn project_occurrences(
         });
     }
 
-    AssemblyProjection {
+    Ok(AssemblyProjection {
         occurrences,
         unresolved_placements,
-    }
+    })
 }
 
 pub(crate) fn inventory<'a>(
@@ -516,8 +571,8 @@ mod tests {
     use cadmpeg_ir::products::PrototypeReference;
 
     use super::{
-        inventory, parse_occurrence, parse_placement, project_occurrences, OCCURRENCE_TYPE,
-        PLACEMENT_TYPE_CA, SUPPRESSED_REFERENCE_STATE,
+        inventory, parse_occurrence, parse_placement, OCCURRENCE_TYPE, PLACEMENT_TYPE_CA,
+        SUPPRESSED_REFERENCE_STATE,
     };
     use crate::compact_matrix::CompactMatrix;
     use crate::native::ufrx::{ExternalReferenceRecord, UfrxOccurrenceRecord};
@@ -526,6 +581,89 @@ mod tests {
     use cadmpeg_ir::transform::Transform;
     use std::collections::BTreeMap;
     use std::num::NonZeroUsize;
+
+    fn project_under_service(
+        ufrx_occurrences: &[UfrxOccurrenceRecord],
+        external_references: &[ExternalReferenceRecord],
+        assembly_occurrences: &[AssemblyOccurrenceRecord],
+        assembly_placements: &[AssemblyPlacementRecord],
+    ) -> super::AssemblyProjection {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("projection context");
+        super::project_occurrences(
+            &ctx,
+            ufrx_occurrences,
+            external_references,
+            assembly_occurrences,
+            assembly_placements,
+        )
+        .expect("projection fits service policy")
+    }
+
+    #[test]
+    fn occurrence_projection_refuses_collection_limit_before_output() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 7;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
+        assert!(matches!(
+            super::project_occurrences(
+                &ctx,
+                &[ufrx_occurrence(4, 7, 0)],
+                &[external_reference(4, "part.ipt", [0, 0])],
+                &[assembly_occurrence(7)],
+                &[assembly_placement(7)],
+            ),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "project Inventor occurrence"
+        ));
+        assert_eq!(
+            project_under_service(
+                &[ufrx_occurrence(4, 7, 0)],
+                &[external_reference(4, "part.ipt", [0, 0])],
+                &[assembly_occurrence(7)],
+                &[assembly_placement(7)],
+            )
+            .occurrences
+            .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn occurrence_projection_refuses_entity_limit_before_creation() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_entities = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
+        assert!(matches!(
+            super::project_occurrences(
+                &ctx,
+                &[ufrx_occurrence(4, 7, 0)],
+                &[external_reference(4, "part.ipt", [0, 0])],
+                &[assembly_occurrence(7)],
+                &[assembly_placement(7)],
+            ),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::Entities
+                    && limit.operation == "project Inventor occurrence"
+        ));
+        assert_eq!(
+            project_under_service(
+                &[ufrx_occurrence(4, 7, 0)],
+                &[external_reference(4, "part.ipt", [0, 0])],
+                &[assembly_occurrence(7)],
+                &[assembly_placement(7)],
+            )
+            .occurrences
+            .len(),
+            1
+        );
+    }
 
     fn inventory_with_record(
         kind: SegmentKind,
@@ -781,7 +919,7 @@ mod tests {
         placement.transform =
             CompactMatrix::try_from_rows(0, 0, rows).expect("finite explicit matrix fixture");
 
-        let projection = project_occurrences(&[ufrx], &[reference], &[occurrence], &[placement]);
+        let projection = project_under_service(&[ufrx], &[reference], &[occurrence], &[placement]);
 
         assert!(projection.unresolved_placements.is_empty());
         let [projected] = projection.occurrences.as_slice() else {
@@ -831,7 +969,7 @@ mod tests {
         second.transform =
             CompactMatrix::try_from_rows(0, 0, rows).expect("finite explicit matrix fixture");
 
-        let projection = project_occurrences(&ufrx, &[reference], &occurrences, &[first, second]);
+        let projection = project_under_service(&ufrx, &[reference], &occurrences, &[first, second]);
 
         assert!(projection.unresolved_placements.is_empty());
         assert_eq!(projection.occurrences.len(), 2);
@@ -850,7 +988,7 @@ mod tests {
             [0, 0],
             "00112233445566778899aabbccddeeff",
         );
-        let projection = project_occurrences(
+        let projection = project_under_service(
             &[ufrx_occurrence(4, 7, 0)],
             &[reference],
             &[assembly_occurrence(7)],
@@ -892,7 +1030,7 @@ mod tests {
         );
         let occurrence = assembly_occurrence(7);
 
-        let projection = project_occurrences(&[ufrx], &[reference], &[occurrence], &[]);
+        let projection = project_under_service(&[ufrx], &[reference], &[occurrence], &[]);
 
         assert!(projection.unresolved_placements.is_empty());
         let [projected] = projection.occurrences.as_slice() else {
@@ -922,7 +1060,7 @@ mod tests {
 
     #[test]
     fn reports_active_occurrence_without_placement() {
-        let projection = project_occurrences(
+        let projection = project_under_service(
             &[ufrx_occurrence(4, 7, 0)],
             &[external_reference(4, "part.ipt", [0, 0])],
             &[assembly_occurrence(7)],

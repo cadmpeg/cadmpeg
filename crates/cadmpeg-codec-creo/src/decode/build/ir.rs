@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Container IR bootstrap and model-entity assembly.
 
-use crate::vecmath::normalize;
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::DecodeContext;
@@ -197,8 +196,10 @@ fn transfer_reference_lines(
                 counts
             });
     for line in &scan.references.lines {
-        let direction = std::array::from_fn(|axis| line.end[axis] - line.start[axis]);
-        let Some(direction) = normalize(direction) else {
+        let start: [f64; 3] = line.start.get().into();
+        let end: [f64; 3] = line.end.get().into();
+        let direction = std::array::from_fn(|axis| end[axis] - start[axis]);
+        let Some((direction, _)) = crate::vecmath::normalize_with_length(direction) else {
             continue;
         };
         let (family, native_identity, id) = match &line.kind {
@@ -243,11 +244,7 @@ fn transfer_reference_lines(
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    Point3::from(line.start),
-                    Vector3::from(direction),
-                )
-                .map_err(CodecError::malformed)?,
+                cadmpeg_ir::geometry::analytic::LineCurve::new(line.start, direction),
             )),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
@@ -283,8 +280,9 @@ fn transfer_reference_circles(
                 counts
             });
     for circle in &scan.references.circles {
-        let radial = std::array::from_fn(|axis| circle.start[axis] - circle.center[axis]);
-        let Some(reference) = normalize(radial) else {
+        let start: [f64; 3] = circle.start.get().into();
+        let radial = std::array::from_fn(|axis| start[axis] - circle.center[axis]);
+        let Some((reference, _)) = crate::vecmath::normalize_with_length(radial) else {
             continue;
         };
         let native_identity = if circle_id_counts.get(&circle.entity_id) == Some(&1) {
@@ -312,16 +310,18 @@ fn transfer_reference_circles(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model curves")?;
+        let frame = cadmpeg_ir::units::OrthonormalFrame3::from_units(circle.axis, reference)
+            .ok_or_else(|| {
+                CodecError::malformed(
+                    "CircleCurve.axis/ref_direction must form an orthonormal frame",
+                )
+            })?;
+        let center = cadmpeg_ir::features::FinitePoint3::new(Point3::from(circle.center))
+            .ok_or_else(|| CodecError::malformed("CircleCurve.center must be finite"))?;
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    Point3::from(circle.center),
-                    Vector3::from(circle.axis),
-                    Vector3::from(reference),
-                    circle.radius.get(),
-                )
-                .map_err(CodecError::malformed)?,
+                cadmpeg_ir::geometry::analytic::CircleCurve::new(center, frame, circle.radius),
             )),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
@@ -387,12 +387,19 @@ fn transfer_reference_ellipses(
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-                cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
-                    Point3::from(ellipse.center),
-                    Vector3::from(ellipse.axis),
-                    Vector3::from(ellipse.major_direction),
-                    ellipse.major_radius.get(),
-                    ellipse.minor_radius.get(),
+                cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
+                    ellipse.center,
+                    cadmpeg_ir::units::OrthonormalFrame3::from_units(
+                        ellipse.axis,
+                        ellipse.major_direction,
+                    )
+                    .ok_or_else(|| {
+                        CodecError::malformed(
+                            "EllipseCurve.axis/ref_direction must form an orthonormal frame",
+                        )
+                    })?,
+                    ellipse.major_radius,
+                    ellipse.minor_radius,
                 )
                 .map_err(CodecError::malformed)?,
             )),
@@ -421,6 +428,10 @@ fn transfer_display_tessellations(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
+    let length_scale = scan
+        .framing
+        .principal_unit
+        .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm);
     for strip in &scan.primitives.triangle_strips {
         let id = format!("creo:solid_primdata:tessellation#{}", strip.offset);
         annotate(
@@ -432,18 +443,43 @@ fn transfer_display_tessellations(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model tessellations")?;
+        let positions = strip
+            .positions
+            .iter()
+            .copied()
+            .map(|position| {
+                let position = Point3::from(position.get());
+                let Some(scale) = length_scale else {
+                    return Ok(position);
+                };
+                let position = Point3::new(
+                    position.x * scale.get(),
+                    position.y * scale.get(),
+                    position.z * scale.get(),
+                );
+                if !position.is_finite() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SolidPrimdata display triangle strip at byte {} has a vertex that cannot be represented in millimeters",
+                        strip.offset
+                    )));
+                }
+                Ok(position)
+            })
+            .collect::<Result<Vec<_>, CodecError>>()?;
         ir.model.tessellations.push(
             Tessellation::new(
                 id,
                 cadmpeg_ir::tessellation::TessellationMesh::from_strip_lanes(
-                    strip.positions.iter().copied().map(Point3::from).collect(),
+                    positions,
                     // A primitive that carries only `mv_p_xyz` states an
                     // unshaded strip set: the normal lane is absent, never
                     // empty.
-                    strip
-                        .normals
-                        .as_ref()
-                        .map(|normals| normals.iter().copied().map(Vector3::from).collect()),
+                    strip.normals.as_ref().map(|normals| {
+                        normals
+                            .iter()
+                            .map(|normal| Vector3::from(normal.get()))
+                            .collect()
+                    }),
                     &strip.strip_lengths,
                 )
                 .map_err(|error| {
@@ -523,6 +559,14 @@ fn transfer_placed_plane_surfaces_into_ir(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
+    for frame in &scan.planes.local_systems {
+        if frame.frame().cross_overflow {
+            return Err(CodecError::NotImplemented(format!(
+                "Creo plane local system at byte {} has a cross product outside the representable range",
+                frame.offset
+            )));
+        }
+    }
     for (surface_id, (plane, u_axis, offset)) in placed_plane_surfaces(scan) {
         let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, surface_id);
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
@@ -642,3 +686,6 @@ pub(in super::super) fn build_ir(
         transfer_losses,
     })
 }
+
+#[cfg(test)]
+mod tests;

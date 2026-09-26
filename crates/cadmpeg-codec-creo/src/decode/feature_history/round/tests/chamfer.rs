@@ -115,8 +115,8 @@ fn chamfer_requires_every_affected_support_plane_to_be_placed() {
         .push(crate::surface::OutlinePlane {
             surface_id: 31,
             origin: [0.0, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: 31,
         });
     scan.features

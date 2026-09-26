@@ -179,7 +179,7 @@ fn decode_preserves_offset_status_without_assigning_parameter_sense() {
             assert_eq!(char::from(records[0].discriminator), discriminator);
             assert_eq!(records[0].true_offset, true_offset);
             assert_eq!(records[0].state.support(), 6);
-            assert_eq!(records[0].state.distance(), 2.5);
+            assert_eq!(records[0].state.distance().get(), 2.5);
             let carrier = result
                 .ir()
                 .model
@@ -223,7 +223,7 @@ fn decode_resolves_surface_curve_to_its_basis_curve() {
     assert_eq!(records[0].state.surface(), 6);
     assert_eq!(records[0].state.pcurve(), 9);
     assert_eq!(records[0].state.original(), Some(9));
-    assert_eq!(records[0].state.tolerance(), 0.000_01);
+    assert_eq!(records[0].state.tolerance().get(), 0.000_01);
     assert_eq!(
         result.ir().model.edges[0].curve(),
         Some(&result.ir().model.curves[0].id)
@@ -420,7 +420,15 @@ fn decode_emits_charted_surface_intersection_construction() {
     assert_eq!(support_uv.len(), 1);
     assert_eq!(support_uv[0].values.count(), 4);
     assert_eq!(support_uv[0].values.marker(), 2);
-    assert_eq!(support_uv[0].values.values(), [0.0, 0.0, 0.01, 0.0]);
+    assert_eq!(
+        support_uv[0]
+            .values
+            .values()
+            .iter()
+            .map(|value| value.get())
+            .collect::<Vec<_>>(),
+        [0.0, 0.0, 0.01, 0.0]
+    );
     assert!(matches!(
         support_uv[0].framing,
         crate::intersection::SupportUvFraming::Direct

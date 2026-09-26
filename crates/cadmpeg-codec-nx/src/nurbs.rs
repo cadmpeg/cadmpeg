@@ -494,10 +494,7 @@ impl ArrayValues<'_> {
         let end = count.checked_mul(8)?;
         let raw = raw.get(..end)?;
         (0..count)
-            .map(|index| {
-                let value = View::f64_be_at(raw, index.checked_mul(8)?)?;
-                value.is_finite().then_some(value)
-            })
+            .map(|index| View::f64_be_at(raw, index.checked_mul(8)?))
             .collect()
     }
 }

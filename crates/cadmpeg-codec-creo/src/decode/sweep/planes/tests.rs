@@ -54,8 +54,8 @@ fn plane_outline(id: u32, z: f64) -> crate::surface::OutlinePlane {
     crate::surface::OutlinePlane {
         surface_id: id,
         origin: [0.0, 0.0, z],
-        normal: [0.0, 0.0, 1.0],
-        u_axis: [1.0, 0.0, 0.0],
+        normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
         offset: id as usize,
     }
 }
@@ -117,15 +117,15 @@ fn generated_table_cap_classes_use_placed_cap_planes() {
         crate::surface::OutlinePlane {
             surface_id: 31,
             origin: [4.0, -2.0, 2.0],
-            normal: [0.0, 0.0, 1.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 31,
         },
         crate::surface::OutlinePlane {
             surface_id: 32,
             origin: [4.0, -2.0, 8.0],
-            normal: [0.0, 0.0, 1.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 32,
         },
     ]);

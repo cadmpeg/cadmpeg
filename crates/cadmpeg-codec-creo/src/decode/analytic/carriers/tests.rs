@@ -249,8 +249,8 @@ fn duplicate_model_surface_ids_remove_native_carrier() {
         .push(crate::surface::OutlinePlane {
             surface_id: 7,
             origin: [0.0, 0.0, 0.0],
-            normal: [0.0, 0.0, 1.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 0,
         });
     let mut ir = CadIr::empty();

@@ -547,6 +547,15 @@ fn normalized_plane(normal: [f64; 3], distance: f64) -> Option<PlaneEquation> {
     })
 }
 
+fn unit_plane(normal: cadmpeg_ir::units::UnitVector3, origin: [f64; 3]) -> Option<PlaneEquation> {
+    let normal: [f64; 3] = cadmpeg_ir::math::Vector3::from(normal).into();
+    let distance = dot(normal, origin);
+    distance.is_finite().then_some(PlaneEquation {
+        origin: normal.map(|component| component * distance),
+        normal,
+    })
+}
+
 fn section_plane_evidence(scan: &ContainerScan, id: u32) -> SectionPlaneEvidence {
     let datums = scan
         .planes
@@ -566,7 +575,7 @@ fn section_plane_evidence(scan: &ContainerScan, id: u32) -> SectionPlaneEvidence
             frame
                 .normal
                 .zip(frame.origin)
-                .and_then(|(normal, origin)| normalized_plane(normal, dot(normal, origin)))
+                .and_then(|(normal, origin)| unit_plane(normal, origin))
         }
         _ => None,
     };
@@ -589,7 +598,7 @@ fn section_plane_evidence(scan: &ContainerScan, id: u32) -> SectionPlaneEvidence
             .collect::<Vec<_>>()
     };
     let outline_equation = match outline_planes.as_slice() {
-        [plane] => normalized_plane(plane.normal, dot(plane.normal, plane.origin)),
+        [plane] => unit_plane(plane.normal, plane.origin),
         _ => None,
     };
 

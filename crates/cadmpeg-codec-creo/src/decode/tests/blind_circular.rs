@@ -83,8 +83,8 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
     scan.planes.outlines.push(crate::surface::OutlinePlane {
         surface_id: 46,
         origin: [0.0, 16.0, 0.0],
-        normal: [0.0, 1.0, 0.0],
-        u_axis: [1.0, 0.0, 0.0],
+        normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
         offset: 46,
     });
     scan.planes
@@ -141,8 +141,8 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
     scan.planes.outlines.push(crate::surface::OutlinePlane {
         surface_id: 143,
         origin: [0.0, 16.0, 0.0],
-        normal: [0.0, 1.0, 0.0],
-        u_axis: [1.0, 0.0, 0.0],
+        normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
         offset: 143,
     });
     scan.planes
@@ -218,15 +218,15 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
         .push(crate::surface::OutlinePlane {
             surface_id: 828,
             origin: [0.0, 4.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 828,
         });
     scan.planes.outlines.push(crate::surface::OutlinePlane {
         surface_id: 831,
         origin: [0.0, -4.0, 0.0],
-        normal: [0.0, 1.0, 0.0],
-        u_axis: [1.0, 0.0, 0.0],
+        normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
         offset: 831,
     });
     scan.planes
@@ -1119,16 +1119,18 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
 
 #[test]
 fn opposite_reference_caps_select_one_round_envelope_axis() {
-    let circle = |entity_id, axis, start, end| crate::reference::ReferenceCircle {
-        entity_id,
-        center: [0.0; 3],
-        center_stored: true,
-        radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
-        axis,
-        start,
-        end,
-        offset: 0,
-    };
+    let circle =
+        |entity_id, axis, start: [f64; 3], end: [f64; 3]| crate::reference::ReferenceCircle {
+            entity_id,
+            center: [0.0; 3],
+            center_stored: true,
+            radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
+            axis: cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
+                .expect("unit axis"),
+            start: cadmpeg_ir::features::FinitePoint3::new(start.into()).expect("finite start"),
+            end: cadmpeg_ir::features::FinitePoint3::new(end.into()).expect("finite end"),
+            offset: 0,
+        };
     let envelope = crate::surface::Type24RoundEnvelope {
         diameter: 2.0,
         extent_endpoints: [[3.5, 8.0, -6.0], [5.5, 10.0, -4.0]],
@@ -1162,14 +1164,15 @@ fn opposite_reference_caps_select_one_round_envelope_axis() {
 
 #[test]
 fn coaxial_reference_circles_define_a_cylinder_frame() {
-    let circle = |entity_id, center, axis, start| crate::reference::ReferenceCircle {
+    let circle = |entity_id, center, axis, start: [f64; 3]| crate::reference::ReferenceCircle {
         entity_id,
         center,
         center_stored: true,
         radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
-        axis,
-        start,
-        end: [0.0, 0.0, 0.0],
+        axis: cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
+            .expect("unit axis"),
+        start: cadmpeg_ir::features::FinitePoint3::new(start.into()).expect("finite start"),
+        end: cadmpeg_ir::features::FinitePoint3::ZERO,
         offset: 0,
     };
     let first = circle(41, [3.0, 5.0, -2.0], [0.0, 0.0, 1.0], [3.0, 7.0, -2.0]);
@@ -1543,8 +1546,8 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     scan.planes.outlines.push(crate::surface::OutlinePlane {
         surface_id: 31,
         origin: [0.0, 5.0, 0.0],
-        normal: [0.0, 1.0, 0.0],
-        u_axis: [1.0, 0.0, 0.0],
+        normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
         offset: 31,
     });
     let conflicting_extent = generated_bounded_cylinder_extent(&scan, &ir, 7, None);

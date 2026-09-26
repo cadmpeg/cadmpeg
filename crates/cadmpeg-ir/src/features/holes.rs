@@ -76,6 +76,17 @@ pub struct HoleShape {
     diameter: Option<PositiveLength>,
 }
 
+/// A failed edit of the length-bearing dimensions of an admitted hole.
+#[derive(Debug)]
+pub enum HoleLengthEditError<E> {
+    /// A changed length was refused by the caller's map.
+    Field(E),
+    /// A scaled counterdrill entry no longer exceeds its recess diameter.
+    Counterdrill(&'static str),
+    /// A scaled treatment diameter no longer exceeds the bore diameter.
+    Treatment(&'static str),
+}
+
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -94,23 +105,22 @@ impl HoleShape {
         exit_kind: Option<HoleKind>,
         diameter: Option<PositiveLength>,
     ) -> Result<Self, &'static str> {
-        let larger =
-            |treatment: PositiveLength| diameter.is_some_and(|bore| treatment.get() > bore.get());
-        let valid_kind = |kind: &HoleKind| match kind {
-            HoleKind::Unresolved(_)
-            | HoleKind::PartialCounterbore(..)
-            | HoleKind::PartialCountersink(..)
-            | HoleKind::Simple
-            | HoleKind::SimpleDrilled { .. } => true,
-            HoleKind::Chamfer { diameter, .. }
-            | HoleKind::Counterbore { diameter, .. }
-            | HoleKind::CounterboreDrilled { diameter, .. }
-            | HoleKind::Countersink { diameter, .. } => larger(*diameter),
-            HoleKind::Counterdrill { diameters, .. } => larger(diameters.diameter()),
+        let valid_kind = |kind: &HoleKind| match diameter {
+            Some(bore) => treatment_exceeds_bore(kind, bore),
+            None => matches!(
+                kind,
+                HoleKind::Unresolved(_)
+                    | HoleKind::PartialCounterbore(..)
+                    | HoleKind::PartialCountersink(..)
+                    | HoleKind::Simple
+                    | HoleKind::SimpleDrilled { .. }
+            ),
         };
         let valid = match &construction {
             HoleConstruction::Form { kind, .. } => valid_kind(kind),
-            HoleConstruction::NativeThread { major_diameter, .. } => larger(*major_diameter),
+            HoleConstruction::NativeThread { major_diameter, .. } => {
+                diameter.is_some_and(|bore| major_diameter.get() > bore.get())
+            }
         };
         if !valid || exit_kind.as_ref().is_some_and(|kind| !valid_kind(kind)) {
             return Err(
@@ -139,6 +149,43 @@ impl HoleShape {
         self.diameter
     }
 
+    /// Map length fields without changing the hole's bore presence, treatment
+    /// kinds, or non-length fields. Recheck strict diameter relations, which
+    /// can collapse when two positive dimensions are rounded after scaling.
+    pub fn try_map_lengths<E>(
+        &self,
+        map_positive: &mut impl FnMut(PositiveLength) -> Result<PositiveLength, E>,
+        map_length: &mut impl FnMut(Length) -> Result<Length, E>,
+    ) -> Result<Self, HoleLengthEditError<E>> {
+        let mut mapped = self.clone();
+        map_hole_construction_lengths(&mut mapped.construction, map_positive, map_length)?;
+        if let Some(kind) = &mut mapped.exit_kind {
+            map_hole_kind_lengths(kind, map_positive)?;
+        }
+        if let Some(diameter) = &mut mapped.diameter {
+            *diameter = map_positive(*diameter).map_err(HoleLengthEditError::Field)?;
+        }
+        if let Some(bore) = mapped.diameter {
+            let valid = match &mapped.construction {
+                HoleConstruction::Form { kind, .. } => treatment_exceeds_bore(kind, bore),
+                HoleConstruction::NativeThread { major_diameter, .. } => {
+                    major_diameter.get() > bore.get()
+                }
+            };
+            if !valid
+                || mapped
+                    .exit_kind
+                    .as_ref()
+                    .is_some_and(|kind| !treatment_exceeds_bore(kind, bore))
+            {
+                return Err(HoleLengthEditError::Treatment(
+                    "construction and exit_kind treatment diameters must exceed the bore diameter",
+                ));
+            }
+        }
+        Ok(mapped)
+    }
+
     /// Admit edited construction and dimensions before replacing the hole shape.
     pub fn try_edit(
         &mut self,
@@ -151,6 +198,147 @@ impl HoleShape {
         *self = Self::new(construction, exit_kind, diameter)?;
         Ok(())
     }
+}
+
+fn treatment_exceeds_bore(kind: &HoleKind, bore: PositiveLength) -> bool {
+    match kind {
+        HoleKind::Unresolved(_)
+        | HoleKind::PartialCounterbore(..)
+        | HoleKind::PartialCountersink(..)
+        | HoleKind::Simple
+        | HoleKind::SimpleDrilled { .. } => true,
+        HoleKind::Chamfer { diameter, .. }
+        | HoleKind::Counterbore { diameter, .. }
+        | HoleKind::CounterboreDrilled { diameter, .. }
+        | HoleKind::Countersink { diameter, .. } => diameter.get() > bore.get(),
+        HoleKind::Counterdrill { diameters, .. } => diameters.diameter().get() > bore.get(),
+    }
+}
+
+fn map_hole_kind_lengths<E>(
+    kind: &mut HoleKind,
+    map_positive: &mut impl FnMut(PositiveLength) -> Result<PositiveLength, E>,
+) -> Result<(), HoleLengthEditError<E>> {
+    let mut edit = |length: &mut PositiveLength| {
+        *length = map_positive(*length).map_err(HoleLengthEditError::Field)?;
+        Ok(())
+    };
+    match kind {
+        HoleKind::Unresolved(_) | HoleKind::Simple | HoleKind::SimpleDrilled { .. } => {}
+        HoleKind::PartialCounterbore(pair) => {
+            if let Some(diameter) = pair.first_mut() {
+                edit(diameter)?;
+            }
+            if let Some(depth) = pair.second_mut() {
+                edit(depth)?;
+            }
+        }
+        HoleKind::PartialCountersink(pair) => {
+            if let Some(diameter) = pair.first_mut() {
+                edit(diameter)?;
+            }
+        }
+        HoleKind::Chamfer { diameter, .. } | HoleKind::Countersink { diameter, .. } => {
+            edit(diameter)?;
+        }
+        HoleKind::Counterbore { diameter, depth }
+        | HoleKind::CounterboreDrilled {
+            diameter, depth, ..
+        } => {
+            edit(diameter)?;
+            edit(depth)?;
+        }
+        HoleKind::Counterdrill {
+            diameters, depth, ..
+        } => {
+            let mut diameter = diameters.diameter();
+            let mut entry_diameter = diameters.entry_diameter();
+            edit(&mut diameter)?;
+            if let Some(entry) = &mut entry_diameter {
+                edit(entry)?;
+            }
+            *diameters = CounterdrillDiameters::new(diameter, entry_diameter)
+                .map_err(HoleLengthEditError::Counterdrill)?;
+            edit(depth)?;
+        }
+    }
+    Ok(())
+}
+
+impl HoleKind {
+    /// Map this treatment's length fields while retaining its form and angles.
+    /// Strict counterdrill diameter ordering is checked after the map.
+    pub fn try_map_lengths<E>(
+        &self,
+        map_positive: &mut impl FnMut(PositiveLength) -> Result<PositiveLength, E>,
+    ) -> Result<Self, HoleLengthEditError<E>> {
+        let mut mapped = *self;
+        map_hole_kind_lengths(&mut mapped, map_positive)?;
+        Ok(mapped)
+    }
+}
+
+fn map_hole_construction_lengths<E>(
+    construction: &mut HoleConstruction,
+    map_positive: &mut impl FnMut(PositiveLength) -> Result<PositiveLength, E>,
+    map_length: &mut impl FnMut(Length) -> Result<Length, E>,
+) -> Result<(), HoleLengthEditError<E>> {
+    match construction {
+        HoleConstruction::Form {
+            kind,
+            specification,
+        } => {
+            map_hole_kind_lengths(kind, map_positive)?;
+            if let Some(specification) = specification {
+                map_hole_specification_lengths(specification, map_positive, map_length)?;
+            }
+        }
+        HoleConstruction::NativeThread {
+            major_diameter,
+            thread_depth,
+            pitch,
+            ..
+        } => {
+            *major_diameter = map_positive(*major_diameter).map_err(HoleLengthEditError::Field)?;
+            *thread_depth = map_positive(*thread_depth).map_err(HoleLengthEditError::Field)?;
+            if let Some(pitch) = pitch {
+                *pitch = map_positive(*pitch).map_err(HoleLengthEditError::Field)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn map_hole_specification_lengths<E>(
+    specification: &mut HoleSpecification,
+    map_positive: &mut impl FnMut(PositiveLength) -> Result<PositiveLength, E>,
+    map_length: &mut impl FnMut(Length) -> Result<Length, E>,
+) -> Result<(), HoleLengthEditError<E>> {
+    let (pitch, major_diameter, clearance, depth) = match specification {
+        HoleSpecification::Clearance {
+            clearance, depth, ..
+        } => (None, None, clearance, depth),
+        HoleSpecification::Threaded {
+            pitch,
+            major_diameter,
+            clearance,
+            depth,
+            ..
+        } => (Some(pitch), Some(major_diameter), clearance, depth),
+    };
+    if let Some(Some(pitch)) = pitch {
+        *pitch = map_positive(*pitch).map_err(HoleLengthEditError::Field)?;
+    }
+    if let Some(Some(major_diameter)) = major_diameter {
+        *major_diameter = map_positive(*major_diameter).map_err(HoleLengthEditError::Field)?;
+    }
+    if let Some(clearance) = clearance {
+        *clearance = map_length(*clearance).map_err(HoleLengthEditError::Field)?;
+    }
+    if let HoleThreadDepth::Blind { depth } = depth {
+        *depth = map_positive(*depth).map_err(HoleLengthEditError::Field)?;
+    }
+    Ok(())
 }
 
 impl TryFrom<HoleShapeWire> for HoleShape {
@@ -710,6 +898,67 @@ pub enum HoleThreadDepth {
     },
     /// Standard tapped-hole runout is subtracted from the hole depth.
     TappedStandard,
+}
+
+#[cfg(test)]
+mod length_mapping_tests {
+    use super::{HoleConstruction, HoleKind, HoleShape};
+    use crate::scalar::{InteriorAngle, Length, PositiveLength};
+
+    fn positive(value: f64) -> PositiveLength {
+        PositiveLength::new(value).expect("positive test length")
+    }
+
+    #[test]
+    fn hole_length_mapping_carries_bore_presence_and_angles() {
+        let angle = InteriorAngle::new(1.0).expect("interior test angle");
+        let source = HoleShape::new(
+            HoleConstruction::form(HoleKind::Counterbore {
+                diameter: positive(4.0),
+                depth: positive(3.0),
+            }),
+            Some(HoleKind::Chamfer {
+                diameter: positive(5.0),
+                angle,
+            }),
+            Some(positive(2.0)),
+        )
+        .expect("valid source hole");
+        let mapped = source
+            .try_map_lengths(
+                &mut |value| PositiveLength::new(value.get() * 2.0).ok_or("scaled positive length"),
+                &mut |value: Length| -> Result<Length, &'static str> { Ok(value) },
+            )
+            .expect("valid scaled hole");
+        let expected = HoleShape::new(
+            HoleConstruction::form(HoleKind::Counterbore {
+                diameter: positive(8.0),
+                depth: positive(6.0),
+            }),
+            Some(HoleKind::Chamfer {
+                diameter: positive(10.0),
+                angle,
+            }),
+            Some(positive(4.0)),
+        )
+        .expect("valid expected hole");
+        assert_eq!(mapped, expected);
+        assert_eq!(source.diameter(), Some(positive(2.0)));
+
+        let without_bore = HoleShape::new(HoleConstruction::form(HoleKind::Simple), None, None)
+            .expect("valid hole without bore");
+        assert_eq!(
+            without_bore
+                .try_map_lengths(
+                    &mut |value| {
+                        PositiveLength::new(value.get() * 2.0).ok_or("scaled positive length")
+                    },
+                    &mut |value: Length| -> Result<Length, &'static str> { Ok(value) },
+                )
+                .expect("valid mapped hole without bore"),
+            without_bore
+        );
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

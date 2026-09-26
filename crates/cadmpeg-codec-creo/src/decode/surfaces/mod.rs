@@ -256,7 +256,7 @@ pub(super) fn fc05_cap_pair_model_frame(
     let (first_cap, first_ordinate) = placed_caps.first().copied()?;
     let axis_index = Axis::ALL
         .into_iter()
-        .find(|axis| first_cap.normal[axis.index()].abs() > 1.0 - EPS_FC05_CAP_FRAME)?;
+        .find(|axis| first_cap.normal()[axis.index()].abs() > 1.0 - EPS_FC05_CAP_FRAME)?;
     if placed_caps
         .iter()
         .any(|(plane, _)| plane.normal != first_cap.normal)
@@ -348,7 +348,7 @@ pub(super) fn transfer_fc05_cap_circles(
         };
         let Some(axis_index) = Axis::ALL
             .into_iter()
-            .find(|axis| cap.normal[axis.index()].abs() > 1.0 - EPS_FC05_CAP_FRAME)
+            .find(|axis| cap.normal()[axis.index()].abs() > 1.0 - EPS_FC05_CAP_FRAME)
         else {
             continue;
         };
@@ -361,8 +361,8 @@ pub(super) fn transfer_fc05_cap_circles(
             .and_then(|pair| fc05_cap_pair_model_frame(scan, pair));
         let (reference, circle_axis_sign) = match circle.angle_parameter {
             crate::curve::Fc05AngleParameterRelation::Inconsistent => (
-                circle.sample_direction_row_frame,
-                Sign::of_component(cap.normal[axis_index.index()]),
+                circle.sample_direction_row_frame.get(),
+                Sign::of_component(cap.normal()[axis_index.index()]),
             ),
             crate::curve::Fc05AngleParameterRelation::Consistent {
                 sense,
