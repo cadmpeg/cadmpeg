@@ -186,22 +186,28 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
-        ir.model.surfaces.push(Surface {
-            id,
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_core::text::NonBlankString::new(format!("VisibGeom:{}", row.id))
+        source_carriers.admit_surface(
+            ir,
+            Surface {
+                id,
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
+                source_object: Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        "VisibGeom:{}",
+                        row.id
+                    ))
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            },
+        )?;
         transferred += 1;
     }
     Ok(transferred)
@@ -212,6 +218,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    source_carriers: &mut SourceUnitCarriers,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for (rows, namespace) in [
         (&scan.surfaces.rows, LegacySurfaceNamespace::Visible),
@@ -246,32 +253,37 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                 Exactness::Unknown,
             );
             ctx.charge_entities(1, "admit Creo model surfaces")?;
-            ir.model.surfaces.push(Surface {
-                id,
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                    record: geometry_section_record(scan, row.offset),
-                }),
-                source_object: Some(SourceObjectAssociation {
-                    format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                        "{}{}",
-                        namespace.source_prefix(),
-                        row.id
-                    ))
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                    })?,
-                    name: None,
-                    color: None,
-                    visible: if namespace.is_visible() {
-                        None
-                    } else {
-                        Some(false)
-                    },
-                    layer: None,
-                    instance_path: Vec::new(),
-                }),
-            });
+            source_carriers.admit_surface(
+                ir,
+                Surface {
+                    id,
+                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+                        record: geometry_section_record(scan, row.offset),
+                    }),
+                    source_object: Some(SourceObjectAssociation {
+                        format: cadmpeg_ir::CodecFormat::Creo,
+                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                            "{}{}",
+                            namespace.source_prefix(),
+                            row.id
+                        ))
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "source object_id must not be empty",
+                            )
+                        })?,
+                        name: None,
+                        color: None,
+                        visible: if namespace.is_visible() {
+                            None
+                        } else {
+                            Some(false)
+                        },
+                        layer: None,
+                        instance_path: Vec::new(),
+                    }),
+                },
+            )?;
         }
     }
     for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
@@ -288,24 +300,30 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             Exactness::Unknown,
         );
         ctx.charge_entities(1, "admit Creo model curves")?;
-        ir.model.curves.push(Curve {
-            id,
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                record: geometry_section_record(scan, row.offset),
-            }),
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_core::text::NonBlankString::new(format!("VisibGeom:{}", row.id))
+        source_carriers.admit_curve(
+            ir,
+            Curve {
+                id,
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+                    record: geometry_section_record(scan, row.offset),
+                }),
+                source_object: Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        "VisibGeom:{}",
+                        row.id
+                    ))
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            },
+        )?;
     }
     Ok(())
 }

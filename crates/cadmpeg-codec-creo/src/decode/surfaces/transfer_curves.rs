@@ -73,7 +73,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     nurbs_endpoint_witnesses: &BTreeSet<CurveId>,
-    source_carriers: &SourceUnitCarriers,
+    source_carriers: &mut SourceUnitCarriers,
 ) -> Result<BTreeSet<CurveId>, cadmpeg_core::CodecError> {
     let mut transferred = BTreeSet::new();
     let carriers = placed_carriers(scan, ir, source_carriers);
@@ -141,22 +141,28 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model curves")?;
-        ir.model.curves.push(Curve {
-            id: id.clone(),
-            geometry,
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_core::text::NonBlankString::new(format!("VisibGeom:{}", row.id))
+        source_carriers.admit_curve(
+            ir,
+            Curve {
+                id: id.clone(),
+                geometry,
+                source_object: Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        "VisibGeom:{}",
+                        row.id
+                    ))
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            },
+        )?;
         transferred.insert(id);
     }
     Ok(transferred)
@@ -241,7 +247,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    source_carriers: &SourceUnitCarriers,
+    source_carriers: &mut SourceUnitCarriers,
 ) -> Result<TransferredNurbsBoundaryCurves, CodecError> {
     let mut result = TransferredNurbsBoundaryCurves {
         ids: BTreeSet::new(),
@@ -347,22 +353,28 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model curves")?;
-        ir.model.curves.push(Curve {
-            id: id.clone(),
-            geometry,
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_core::text::NonBlankString::new(format!("VisibGeom:{}", row.id))
+        source_carriers.admit_curve(
+            ir,
+            Curve {
+                id: id.clone(),
+                geometry,
+                source_object: Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        "VisibGeom:{}",
+                        row.id
+                    ))
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            },
+        )?;
         result.ids.insert(id.clone());
         result.endpoint_witnesses.insert(id);
         match kind {
@@ -546,7 +558,7 @@ mod tests {
                 &mut ir,
                 &mut AnnotationBuilder::new(),
                 &BTreeSet::new(),
-                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
             )
         })
         .expect("valid source object identity");
@@ -661,7 +673,7 @@ mod tests {
             &mut ir,
             &mut AnnotationBuilder::new(),
             &mut Vec::new(),
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
         .expect("transfer should not fail");
 

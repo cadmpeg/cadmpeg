@@ -212,7 +212,7 @@ fn carrier_intersection_uses_nurbs_boundary_endpoints_to_select_a_generator() {
             &mut with_witness,
             &mut AnnotationBuilder::new(),
             &witness,
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     })
     .expect("valid source object identity");
@@ -245,7 +245,7 @@ fn carrier_intersection_uses_nurbs_boundary_endpoints_to_select_a_generator() {
             &mut without_witness,
             &mut AnnotationBuilder::new(),
             &BTreeSet::new(),
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         ))
         .expect("valid source object identity")
         .is_empty()
