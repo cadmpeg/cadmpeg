@@ -250,6 +250,32 @@ fn nurbs_stores_hand_out_their_admitted_poles_knots_and_weights() {
 }
 
 #[test]
+fn finite_knot_lanes_keep_the_raw_wire_and_order_refusal() {
+    use crate::geometry::nurbs::KnotVector;
+    use crate::scalar::FiniteReal;
+
+    let raw = vec![0.0, 0.0, 1.0, 1.0];
+    let admitted = raw
+        .iter()
+        .copied()
+        .map(FiniteReal::new)
+        .collect::<Option<Vec<_>>>()
+        .unwrap();
+    let from_finite = KnotVector::from_finite_lanes(admitted).unwrap();
+    let from_raw = KnotVector::new(raw).unwrap();
+    assert_eq!(from_finite, from_raw);
+    assert_eq!(
+        serde_json::to_vec(&from_finite).unwrap(),
+        serde_json::to_vec(&from_raw).unwrap()
+    );
+    assert!(KnotVector::from_finite_lanes(vec![
+        FiniteReal::new(1.0).unwrap(),
+        FiniteReal::new(0.0).unwrap(),
+    ])
+    .is_err());
+}
+
+#[test]
 fn a_bspline_surface_holds_its_admitted_knots_and_poles() {
     use crate::features::FinitePoint3;
     use crate::geometry::nurbs::{BsplineSurface, KnotVector};

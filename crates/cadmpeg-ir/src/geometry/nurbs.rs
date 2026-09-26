@@ -8,7 +8,7 @@ pub mod bounds;
 
 use crate::features::FinitePoint3;
 use crate::math::Point3;
-use crate::scalar::NonZeroReal;
+use crate::scalar::{FiniteReal, NonZeroReal};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -29,6 +29,15 @@ impl KnotVector {
     /// Refuses a non-finite knot, then a decreasing pair.
     pub(crate) fn new(knots: Vec<f64>) -> Result<Self, NurbsError> {
         require_nondecreasing_knots(&knots)?;
+        Ok(Self(knots))
+    }
+
+    /// Build a knot vector from finite values. Only their order is checked.
+    pub fn from_finite_lanes(knots: Vec<FiniteReal>) -> Result<Self, NurbsError> {
+        let knots = knots.into_iter().map(FiniteReal::get).collect::<Vec<_>>();
+        if !knots_nondecreasing(&knots) {
+            return Err(NurbsError::Structure("knots must be non-decreasing".into()));
+        }
         Ok(Self(knots))
     }
 

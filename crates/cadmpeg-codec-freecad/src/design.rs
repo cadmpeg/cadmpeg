@@ -7,6 +7,7 @@ use cadmpeg_core::decode::{alloc_filled, DecodeContext, View};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::nurbs::KnotVector;
 use cadmpeg_ir::ids::IdentityKey;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -18,6 +19,7 @@ use cadmpeg_ir::spreadsheets::{
     CellAddress, Spreadsheet, SpreadsheetCell, SpreadsheetDimension, SpreadsheetId,
     SpreadsheetRange,
 };
+use cadmpeg_ir::units::FinitePoint2;
 use cadmpeg_ir::{
     features::{
         edge_treatments::{ChamferSpec, RadiusSpec},
@@ -38,7 +40,7 @@ use cadmpeg_ir::{
         SurfaceProjectionMode, SweepMode, SweepOrientation, SweepTransformation, SweepTransition,
         TreeChildren,
     },
-    scalar::{FiniteReal, Length},
+    scalar::{FiniteReal, Length, NonZeroReal, PositiveReal},
 };
 
 use crate::brep::ShapePayloadRecord;
@@ -1744,9 +1746,9 @@ fn builtin_reference_usage(properties: &[&PropertyRecord]) -> (bool, bool, bool)
 /// Lanes of a sketch B-spline record, as the source states them.
 struct SketchNurbsLanes {
     degree: u32,
-    knots: Vec<f64>,
-    control_points: Vec<Point2>,
-    weights: Option<Vec<f64>>,
+    knots: KnotVector,
+    control_points: Vec<FinitePoint2>,
+    weights: Option<Vec<NonZeroReal>>,
     periodic: bool,
 }
 
@@ -1760,7 +1762,7 @@ fn sketch_nurbs(
         return Ok(None);
     };
     Ok(Some(SketchGeometry::nurbs(
-        cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
             lanes.degree,
             lanes.knots,
             lanes.control_points,
@@ -1791,14 +1793,16 @@ fn sketch_nurbs_lanes(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<Sketc
         .children()
         .filter(|child| child.has_tag_name("Pole"))
         .map(|pole| {
-            Some((
-                Point2::new(
-                    pole.attribute("X")?.parse().ok()?,
-                    pole.attribute("Y")?.parse().ok()?,
-                ),
-                pole.attribute("Z")?.parse::<f64>().ok()?,
-                pole.attribute("Weight")?.parse::<f64>().ok()?,
-            ))
+            let point = FinitePoint2::new(Point2::new(
+                pole.attribute("X")?.parse().ok()?,
+                pole.attribute("Y")?.parse().ok()?,
+            ))?;
+            let z = FiniteReal::new(pole.attribute("Z")?.parse::<f64>().ok()?)?;
+            if z.get().abs() > f64::EPSILON {
+                return None;
+            }
+            let weight = PositiveReal::new(pole.attribute("Weight")?.parse::<f64>().ok()?)?;
+            Some((point, weight))
         })
         .collect::<Option<Vec<_>>>()?;
     let knots = node
@@ -1806,7 +1810,7 @@ fn sketch_nurbs_lanes(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<Sketc
         .filter(|child| child.has_tag_name("Knot"))
         .map(|knot| {
             Some((
-                knot.attribute("Value")?.parse::<f64>().ok()?,
+                FiniteReal::new(knot.attribute("Value")?.parse::<f64>().ok()?)?,
                 knot.attribute("Mult")?.parse::<usize>().ok()?,
             ))
         })
@@ -1817,17 +1821,12 @@ fn sketch_nurbs_lanes(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<Sketc
         || usize::try_from(degree)
             .ok()
             .is_none_or(|degree| degree >= pole_count)
-        || poles.iter().any(|(point, z, weight)| {
-            !point.is_finite()
-                || !z.is_finite()
-                || z.abs() > f64::EPSILON
-                || !weight.is_finite()
-                || *weight <= 0.0
-        })
-        || knots.iter().any(|(value, multiplicity)| {
-            !value.is_finite() || *multiplicity == 0 || *multiplicity > MAX_SKETCH_RECORDS
-        })
-        || knots.windows(2).any(|pair| pair[0].0 >= pair[1].0)
+        || knots
+            .iter()
+            .any(|(_, multiplicity)| *multiplicity == 0 || *multiplicity > MAX_SKETCH_RECORDS)
+        || knots
+            .windows(2)
+            .any(|pair| pair[0].0.get() >= pair[1].0.get())
     {
         return None;
     }
@@ -1848,20 +1847,17 @@ fn sketch_nurbs_lanes(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<Sketc
     let full_knots = knots
         .iter()
         .flat_map(|(value, multiplicity)| std::iter::repeat_n(*value, *multiplicity))
-        .collect();
-    let control_points = poles.iter().map(|(point, _, _)| *point).collect();
-    let weights = poles
-        .iter()
-        .map(|(_, _, weight)| *weight)
         .collect::<Vec<_>>();
+    let control_points = poles.iter().map(|(point, _)| *point).collect();
+    let weights = poles.iter().map(|(_, weight)| *weight).collect::<Vec<_>>();
     Some(SketchNurbsLanes {
         degree,
-        knots: full_knots,
+        knots: KnotVector::from_finite_lanes(full_knots).ok()?,
         control_points,
         weights: weights
             .iter()
-            .any(|weight| (*weight - 1.0).abs() > f64::EPSILON)
-            .then_some(weights),
+            .any(|weight| (weight.get() - 1.0).abs() > f64::EPSILON)
+            .then(|| weights.into_iter().map(NonZeroReal::from).collect()),
         periodic,
     })
 }
