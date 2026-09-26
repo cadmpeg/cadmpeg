@@ -282,8 +282,11 @@ fn targeted_surface_evidence_retains_revolution_construction() {
         )]),
     };
 
-    let evidence = standard_surface_evidence(&graph, 10, &mut crate::nurbs::LaneRefusals::new())
-        .expect("revolution evidence");
+    let evidence = crate::test_support::with_service_context(|ctx| {
+        standard_surface_evidence(ctx, &graph, 10, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("revolution evidence");
     let Some(StandardSurfaceProcedure::Revolution(revolution)) = evidence.procedure_ref() else {
         panic!("surface-of-revolution evidence must retain its construction");
     };

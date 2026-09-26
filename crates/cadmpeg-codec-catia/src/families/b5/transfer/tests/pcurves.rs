@@ -64,15 +64,19 @@ fn revolution_cache_preserves_native_profile_and_arc_length_chart() {
         direction: crate::test_support::test_b5::exact_unit([0.0, 0.0, 1.0]),
         parameter_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
     };
-    let (surface, plan) = revolution_surface(
-        Some(&profile),
-        crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
-        crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
-        crate::test_support::test_b5::positive(2.0),
-        [[-1.0, 1.0], [0.0, 2.0 * std::f64::consts::PI]],
-        &"test record",
-        &mut crate::nurbs::LaneRefusals::new(),
-    )
+    let (surface, plan) = crate::test_support::with_service_context(|ctx| {
+        revolution_surface(
+            ctx,
+            Some(&profile),
+            crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
+            crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
+            crate::test_support::test_b5::positive(2.0),
+            [[-1.0, 1.0], [0.0, 2.0 * std::f64::consts::PI]],
+            &"test record",
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service resource budget")
     .expect("exact revolution cache");
     assert_eq!(plan.parameter_interval, [-1.0, 1.0]);
     assert_eq!(plan.angular_interval, [0.0, std::f64::consts::PI]);
@@ -89,16 +93,20 @@ fn revolution_cache_preserves_native_profile_and_arc_length_chart() {
     assert!(evaluated.x.abs() < 1.0e-12);
     assert!((evaluated.y - 2.0).abs() < 1.0e-12);
     assert!((evaluated.z - 0.5).abs() < 1.0e-12);
-    assert!(revolution_surface(
-        Some(&profile),
-        crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
-        crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
-        crate::test_support::test_b5::positive(2.0),
-        [[-0.5, 1.0], [0.0, 2.0 * std::f64::consts::PI]],
-        &"test record",
-        &mut crate::nurbs::LaneRefusals::new(),
-    )
-    .is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| revolution_surface(
+            ctx,
+            Some(&profile),
+            crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
+            crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
+            crate::test_support::test_b5::positive(2.0),
+            [[-0.5, 1.0], [0.0, 2.0 * std::f64::consts::PI]],
+            &"test record",
+            &mut crate::nurbs::LaneRefusals::new(),
+        ))
+        .expect("service resource budget")
+        .is_none()
+    );
 }
 
 #[test]
@@ -209,7 +217,13 @@ fn revolution_isocurve_keeps_its_native_trim_range() {
         )]),
     };
     assert!(matches!(
-        resolved_surface_carrier_in_graph(&graph, 10, &mut crate::nurbs::LaneRefusals::new()),
+        crate::test_support::with_service_context(|ctx| resolved_surface_carrier_in_graph(
+            ctx,
+            &graph,
+            10,
+            &mut crate::nurbs::LaneRefusals::new()
+        ))
+        .expect("service resource budget"),
         Some(ResolvedPcurveSurface::Geometry(SurfaceGeometry::Solved(
             SolvedSurfaceGeometry::Nurbs(_)
         )))

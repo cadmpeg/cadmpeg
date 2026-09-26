@@ -370,10 +370,13 @@ fn build_plan(
         let mut surface_plan = BTreeMap::new();
         for surface_id in referenced_surfaces {
             let surface = graph.surfaces.get(&surface_id)?;
-            surface_plan.insert(
-                surface_id,
-                surfaces::neutral_surface(surface, graph, surface_id, payload, refusal),
-            );
+            let plan = match surfaces::neutral_surface(
+                ctx, surface, graph, surface_id, payload, refusal,
+            ) {
+                Ok(plan) => plan,
+                Err(error) => return Some(Err(error)),
+            };
+            surface_plan.insert(surface_id, plan);
         }
 
         let mut pcurve_plan = BTreeMap::new();
@@ -719,22 +722,25 @@ fn build_plan(
 }
 
 pub(in crate::families) fn resolved_surface_geometry(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     graph: &B5Graph,
     surface_id: u32,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<SurfaceGeometry> {
-    let surface = graph.surfaces.get(&surface_id)?;
+) -> Result<Option<SurfaceGeometry>, cadmpeg_core::CodecError> {
+    let Some(surface) = graph.surfaces.get(&surface_id) else {
+        return Ok(None);
+    };
     let payload = UnknownId::compose(
         &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
         cadmpeg_ir::identity_key!("b5-surface"),
     );
     let geometry =
-        surfaces::neutral_surface(surface, graph, surface_id, &payload, refusal).geometry;
-    (!matches!(
+        surfaces::neutral_surface(ctx, surface, graph, surface_id, &payload, refusal)?.geometry;
+    Ok((!matches!(
         geometry,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
     ))
-    .then_some(geometry)
+    .then_some(geometry))
 }
 
 /// Exact construction of a surface-of-revolution carrier.
@@ -756,11 +762,14 @@ pub(in crate::families) struct ResolvedRevolutionSurface {
 
 /// Resolve a surface-of-revolution construction with an exact NURBS result.
 pub(in crate::families) fn resolved_revolution_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     graph: &B5Graph,
     surface_id: u32,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<ResolvedRevolutionSurface> {
-    let surface = graph.surfaces.get(&surface_id)?;
+) -> Result<Option<ResolvedRevolutionSurface>, cadmpeg_core::CodecError> {
+    let Some(surface) = graph.surfaces.get(&surface_id) else {
+        return Ok(None);
+    };
     let payload = UnknownId::compose(
         &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
         cadmpeg_ir::identity_key!("b5-surface"),
@@ -768,23 +777,24 @@ pub(in crate::families) fn resolved_revolution_surface(
     let SurfacePlan {
         geometry,
         procedure,
-    } = surfaces::neutral_surface(surface, graph, surface_id, &payload, refusal);
-    let SurfaceProcedure::Revolution(plan) = procedure? else {
-        return None;
+    } = surfaces::neutral_surface(ctx, surface, graph, surface_id, &payload, refusal)?;
+    let Some(SurfaceProcedure::Revolution(plan)) = procedure else {
+        return Ok(None);
     };
-    matches!(
+    if !matches!(
         geometry,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
-    )
-    .then_some(())?;
-    Some(ResolvedRevolutionSurface {
+    ) {
+        return Ok(None);
+    }
+    Ok(Some(ResolvedRevolutionSurface {
         directrix: plan.directrix,
         axis_origin: plan.axis_origin,
         axis_direction: plan.axis_direction,
         angular_interval: plan.angular_interval,
         angular_parameter_interval: plan.angular_parameter_interval,
         parameter_interval: plan.parameter_interval,
-    })
+    }))
 }
 
 #[derive(Clone, PartialEq)]
@@ -839,69 +849,87 @@ pub(in crate::families) fn resolved_surface_carrier(
 /// Resolve a pcurve support carrier with the graph context required by exact
 /// constructed surfaces such as surface-of-revolution records.
 pub(in crate::families) fn resolved_surface_carrier_in_graph(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     graph: &B5Graph,
     surface_object_id: u32,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<ResolvedPcurveSurface> {
-    let surface = graph.surfaces.get(&surface_object_id)?;
-    resolved_surface_carrier(surface).or_else(|| {
-        resolved_surface_geometry(graph, surface_object_id, refusal)
-            .map(ResolvedPcurveSurface::Geometry)
-    })
+) -> Result<Option<ResolvedPcurveSurface>, cadmpeg_core::CodecError> {
+    let Some(surface) = graph.surfaces.get(&surface_object_id) else {
+        return Ok(None);
+    };
+    if let Some(carrier) = resolved_surface_carrier(surface) {
+        return Ok(Some(carrier));
+    }
+    Ok(
+        resolved_surface_geometry(ctx, graph, surface_object_id, refusal)?
+            .map(ResolvedPcurveSurface::Geometry),
+    )
 }
 
 /// Lower one decoded degree-5 UV jet through its resolved native chart.
 #[must_use]
 pub(in crate::families) fn resolved_object_stream_pcurve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     pcurve: &crate::families::a5a8::records::A8Pcurve,
     surface: &B5Surface,
     graph: Option<&B5Graph>,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<ResolvedObjectStreamPcurve> {
-    let carrier = graph
-        .and_then(|graph| resolved_surface_carrier_in_graph(graph, pcurve.support_id, refusal))
-        .or_else(|| resolved_surface_carrier(surface))?;
-    let (knots, control_points) = pcurve.bspline()?;
-    Some(ResolvedObjectStreamPcurve {
+) -> Result<Option<ResolvedObjectStreamPcurve>, cadmpeg_core::CodecError> {
+    let graph_carrier = match graph {
+        Some(graph) => resolved_surface_carrier_in_graph(ctx, graph, pcurve.support_id, refusal)?,
+        None => None,
+    };
+    let Some(carrier) = graph_carrier.or_else(|| resolved_surface_carrier(surface)) else {
+        return Ok(None);
+    };
+    let Some((knots, control_points)) = pcurve.bspline() else {
+        return Ok(None);
+    };
+    let Some(nurbs) = crate::nurbs::note_refusal(
+        PcurveNurbs::from_lanes(
+            crate::families::a5a8::records::A8Pcurve::DEGREE,
+            knots,
+            control_points
+                .into_iter()
+                .map(|point| pcurves::neutral_pcurve_point(point.get(), surface))
+                .collect(),
+            None,
+            false,
+        ),
+        refusal,
+        format_args!("a8 object-stream pcurve record #{}", pcurve.support_id),
+    ) else {
+        return Ok(None);
+    };
+    Ok(Some(ResolvedObjectStreamPcurve {
         surface_object_id: pcurve.support_id,
         carrier,
-        geometry: PcurveGeometry::Nurbs {
-            nurbs: crate::nurbs::note_refusal(
-                PcurveNurbs::from_lanes(
-                    crate::families::a5a8::records::A8Pcurve::DEGREE,
-                    knots,
-                    control_points
-                        .into_iter()
-                        .map(|point| pcurves::neutral_pcurve_point(point.get(), surface))
-                        .collect(),
-                    None,
-                    false,
-                ),
-                refusal,
-                format_args!("a8 object-stream pcurve record #{}", pcurve.support_id),
-            )?,
-        },
+        geometry: PcurveGeometry::Nurbs { nurbs },
         parameter_range: pcurve.range.map(FiniteReal::get),
-    })
+    }))
 }
 
 pub(in crate::families) fn resolved_surface_procedural_definition(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     graph: &B5Graph,
     surface_id: u32,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<(u32, ProceduralSurfaceDefinition)> {
-    let surface = graph.surfaces.get(&surface_id)?;
+) -> Result<Option<(u32, ProceduralSurfaceDefinition)>, cadmpeg_core::CodecError> {
+    let Some(surface) = graph.surfaces.get(&surface_id) else {
+        return Ok(None);
+    };
     let payload = UnknownId::compose(
         &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
         cadmpeg_ir::identity_key!("b5-surface"),
     );
-    match surfaces::neutral_surface(surface, graph, surface_id, &payload, refusal).procedure? {
-        SurfaceProcedure::RollingBall {
+    let procedure = surfaces::neutral_surface(ctx, surface, graph, surface_id, &payload, refusal)?;
+    Ok(match procedure.procedure {
+        Some(SurfaceProcedure::RollingBall {
             carrier_object_id,
             definition,
-        } => Some((carrier_object_id, definition)),
-        SurfaceProcedure::Extrusion(_) | SurfaceProcedure::Revolution(_) => None,
-    }
+        }) => Some((carrier_object_id, definition)),
+        Some(SurfaceProcedure::Extrusion(_) | SurfaceProcedure::Revolution(_)) | None => None,
+    })
 }
 
 /// Neutral support evidence for one side of an exact extrusion directrix.
@@ -1015,130 +1043,157 @@ pub(in crate::families) fn parameter_record_bounds(
 }
 
 pub(in crate::families) fn resolved_extrusion_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     graph: &B5Graph,
     surface_id: u32,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<ResolvedExtrusionSurface> {
-    let construction_id = graph.canonical_surface_id(surface_id)?;
-    let extrusion = graph.extrusion_surfaces.get(&construction_id)?;
-    let active = extrusion.parameter_bounds[1];
-    let mut resolve_support = |(surface_object_id, pcurve_object_id, pcurve_parameter_range): (
-        u32,
-        u32,
-        [FiniteReal; 2],
-    )| {
-        let source_surface = graph.surfaces.get(&surface_object_id)?;
-        let surface = resolved_surface_geometry(graph, surface_object_id, refusal)?;
-        let pcurve = graph.pcurves.get(&pcurve_object_id)?;
-        let knots = pcurve_nurbs_knots(pcurve)?
-            .into_iter()
-            .map(FiniteReal::get)
-            .collect();
-        let domain = pcurve_parameter_domain(pcurve)?;
-        bounded_occurrence_range(pcurve_parameter_range, domain)?;
-        let pcurve_geometry = PcurveGeometry::Nurbs {
-            nurbs: crate::nurbs::note_refusal(
-                PcurveNurbs::from_lanes(
-                    pcurve.degree,
-                    knots,
-                    pcurve
-                        .control_points
-                        .iter()
-                        .map(|point| neutral_pcurve_point(point.get(), source_surface))
-                        .collect(),
-                    pcurve
-                        .weights
-                        .as_ref()
-                        .map(|weights| weights.iter().copied().map(PositiveReal::get).collect()),
-                    false,
-                ),
-                refusal,
-                format_args!("b5 extrusion pcurve record #{pcurve_object_id}"),
-            )?,
-        };
-        let curve = lifted_curve_geometry(pcurve, source_surface);
-        Some(ResolvedExtrusionSupport {
-            surface_object_id,
-            surface,
-            pcurve: pcurve_geometry,
-            pcurve_parameter_range: pcurve_parameter_range.map(FiniteReal::get),
-            curve,
-        })
-    };
-    let directrix = match &extrusion.directrix {
-        B5ExtrusionDirectrix::Intersection {
-            supports,
-            cache_fit_tolerance,
-            ..
-        } => {
-            let supports: [ResolvedExtrusionSupport; 2] = supports
-                .map(resolve_support)
-                .into_iter()
-                .collect::<Option<Vec<_>>>()?
-                .try_into()
-                .ok()?;
-            (supports[0].surface_object_id != supports[1].surface_object_id).then_some(())?;
-            ResolvedExtrusionDirectrix::Intersection {
-                supports: Box::new(supports),
-                cache_fit_tolerance: *cache_fit_tolerance,
-            }
-        }
-        B5ExtrusionDirectrix::SurfaceCurve { support, .. } => {
-            let support = resolve_support(*support)?;
-            let curve = curve_on_parameter_range(
-                support.curve.clone()?,
-                support.pcurve_parameter_range,
-                active,
-                &format_args!(
-                    "b5 extrusion directrix on surface record #{}",
-                    support.surface_object_id
-                ),
-                refusal,
-            )?;
-            ResolvedExtrusionDirectrix::SurfaceCurve { support, curve }
-        }
-        B5ExtrusionDirectrix::Offset {
-            source,
-            source_parameter_range,
-            distance,
-            direction,
-            ..
-        } => {
-            let B5ExtrusionDirectrix::SurfaceCurve {
-                object_id, support, ..
-            } = source.as_ref()
-            else {
-                return None;
+) -> Result<Option<ResolvedExtrusionSurface>, cadmpeg_core::CodecError> {
+    (|| -> Option<Result<ResolvedExtrusionSurface, cadmpeg_core::CodecError>> {
+        let construction_id = graph.canonical_surface_id(surface_id)?;
+        let extrusion = graph.extrusion_surfaces.get(&construction_id)?;
+        let active = extrusion.parameter_bounds[1];
+        let mut resolve_support =
+            |(surface_object_id, pcurve_object_id, pcurve_parameter_range): (
+                u32,
+                u32,
+                [FiniteReal; 2],
+            )|
+             -> Result<Option<ResolvedExtrusionSupport>, cadmpeg_core::CodecError> {
+                (|| -> Option<Result<ResolvedExtrusionSupport, cadmpeg_core::CodecError>> {
+                    let source_surface = graph.surfaces.get(&surface_object_id)?;
+                    let surface =
+                        match resolved_surface_geometry(ctx, graph, surface_object_id, refusal) {
+                            Ok(Some(surface)) => surface,
+                            Ok(None) => return None,
+                            Err(error) => return Some(Err(error)),
+                        };
+                    let pcurve = graph.pcurves.get(&pcurve_object_id)?;
+                    let knots = pcurve_nurbs_knots(pcurve)?
+                        .into_iter()
+                        .map(FiniteReal::get)
+                        .collect();
+                    let domain = pcurve_parameter_domain(pcurve)?;
+                    bounded_occurrence_range(pcurve_parameter_range, domain)?;
+                    let pcurve_geometry = PcurveGeometry::Nurbs {
+                        nurbs: crate::nurbs::note_refusal(
+                            PcurveNurbs::from_lanes(
+                                pcurve.degree,
+                                knots,
+                                pcurve
+                                    .control_points
+                                    .iter()
+                                    .map(|point| neutral_pcurve_point(point.get(), source_surface))
+                                    .collect(),
+                                pcurve.weights.as_ref().map(|weights| {
+                                    weights.iter().copied().map(PositiveReal::get).collect()
+                                }),
+                                false,
+                            ),
+                            refusal,
+                            format_args!("b5 extrusion pcurve record #{pcurve_object_id}"),
+                        )?,
+                    };
+                    let curve = lifted_curve_geometry(pcurve, source_surface);
+                    Some(Ok(ResolvedExtrusionSupport {
+                        surface_object_id,
+                        surface,
+                        pcurve: pcurve_geometry,
+                        pcurve_parameter_range: pcurve_parameter_range.map(FiniteReal::get),
+                        curve,
+                    }))
+                })()
+                .transpose()
             };
-            let support = resolve_support(*support)?;
-            let source_curve = curve_on_parameter_range(
-                support.curve.clone()?,
-                source_parameter_range.endpoints(),
-                active,
-                &format_args!(
-                    "b5 offset extrusion source curve on surface record #{}",
-                    support.surface_object_id
-                ),
-                refusal,
-            )?;
-            ResolvedExtrusionDirectrix::Offset {
-                source_object_id: *object_id,
-                support,
-                source_curve,
-                source_parameter_range: active,
-                distance: *distance,
-                direction: *direction,
+        let directrix = match &extrusion.directrix {
+            B5ExtrusionDirectrix::Intersection {
+                supports,
+                cache_fit_tolerance,
+                ..
+            } => {
+                let [left, right] = supports.map(&mut resolve_support);
+                let left = match left {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
+                let right = match right {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
+                let supports = [left, right];
+                (supports[0].surface_object_id != supports[1].surface_object_id).then_some(())?;
+                ResolvedExtrusionDirectrix::Intersection {
+                    supports: Box::new(supports),
+                    cache_fit_tolerance: *cache_fit_tolerance,
+                }
             }
-        }
-    };
-    Some(ResolvedExtrusionSurface {
-        surface_object_id: surface_id,
-        directrix_object_id: extrusion.directrix.object_id(),
-        directrix_parameter_range: active,
-        direction: extrusion.direction,
-        parameter_bounds: extrusion.parameter_bounds,
-        directrix,
-    })
+            B5ExtrusionDirectrix::SurfaceCurve { support, .. } => {
+                let support = match resolve_support(*support) {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
+                let curve = curve_on_parameter_range(
+                    support.curve.clone()?,
+                    support.pcurve_parameter_range,
+                    active,
+                    &format_args!(
+                        "b5 extrusion directrix on surface record #{}",
+                        support.surface_object_id
+                    ),
+                    refusal,
+                )?;
+                ResolvedExtrusionDirectrix::SurfaceCurve { support, curve }
+            }
+            B5ExtrusionDirectrix::Offset {
+                source,
+                source_parameter_range,
+                distance,
+                direction,
+                ..
+            } => {
+                let B5ExtrusionDirectrix::SurfaceCurve {
+                    object_id, support, ..
+                } = source.as_ref()
+                else {
+                    return None;
+                };
+                let support = match resolve_support(*support) {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
+                let source_curve = curve_on_parameter_range(
+                    support.curve.clone()?,
+                    source_parameter_range.endpoints(),
+                    active,
+                    &format_args!(
+                        "b5 offset extrusion source curve on surface record #{}",
+                        support.surface_object_id
+                    ),
+                    refusal,
+                )?;
+                ResolvedExtrusionDirectrix::Offset {
+                    source_object_id: *object_id,
+                    support,
+                    source_curve,
+                    source_parameter_range: active,
+                    distance: *distance,
+                    direction: *direction,
+                }
+            }
+        };
+        Some(Ok(ResolvedExtrusionSurface {
+            surface_object_id: surface_id,
+            directrix_object_id: extrusion.directrix.object_id(),
+            directrix_parameter_range: active,
+            direction: extrusion.direction,
+            parameter_bounds: extrusion.parameter_bounds,
+            directrix,
+        }))
+    })()
+    .transpose()
 }
 
 fn curve_on_parameter_range(
@@ -1236,26 +1291,35 @@ fn curve_on_parameter_range(
 }
 
 pub(in crate::families) fn resolved_offset_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     graph: &B5Graph,
     surface_id: u32,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<ResolvedOffsetSurface> {
-    let construction_id = graph.canonical_surface_id(surface_id)?;
-    let offset = graph.offset_surfaces.get(&construction_id)?;
-    let support = resolved_surface_geometry(graph, offset.source_surface, refusal)
-        .map(ResolvedOffsetSupport::Geometry)
-        .or_else(|| {
-            resolved_extrusion_surface(graph, offset.source_surface, refusal)
-                .map(Box::new)
-                .map(ResolvedOffsetSupport::Extrusion)
-        })?;
-    Some(ResolvedOffsetSurface {
+) -> Result<Option<ResolvedOffsetSurface>, cadmpeg_core::CodecError> {
+    let Some(construction_id) = graph.canonical_surface_id(surface_id) else {
+        return Ok(None);
+    };
+    let Some(offset) = graph.offset_surfaces.get(&construction_id) else {
+        return Ok(None);
+    };
+    let support = if let Some(geometry) =
+        resolved_surface_geometry(ctx, graph, offset.source_surface, refusal)?
+    {
+        ResolvedOffsetSupport::Geometry(geometry)
+    } else if let Some(extrusion) =
+        resolved_extrusion_surface(ctx, graph, offset.source_surface, refusal)?
+    {
+        ResolvedOffsetSupport::Extrusion(Box::new(extrusion))
+    } else {
+        return Ok(None);
+    };
+    Ok(Some(ResolvedOffsetSurface {
         carrier_object_id: offset.carrier_surface,
         support_object_id: offset.source_surface,
         support,
         distance: offset.distance,
         parameter_bounds: offset.parameter_bounds,
-    })
+    }))
 }
 
 fn annotate(
