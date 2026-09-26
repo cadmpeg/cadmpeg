@@ -5,7 +5,10 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, Confidence};
 
-use super::{admit_container_entries, classify, find_summary_entry, insert_attribute};
+use super::{
+    admit_container_entries, admit_summary_loss_slot, classify, find_summary_entry,
+    insert_attribute, summary_note, InventorContainer,
+};
 use crate::test_support::test_fixtures::{fixture, primary_envelope_fixture_with_broken_metadata};
 use crate::InventorCodec;
 
@@ -111,6 +114,53 @@ fn container_summary_search_refuses_work_limit_before_scan() {
             if limit.dimension == ResourceDimension::WorkUnits
                 && limit.operation == "find Inventor summary entry"
     ));
+}
+
+#[test]
+fn container_summary_note_refuses_before_text_creation() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    assert!(matches!(
+        summary_note(&ctx, 3, 1, 1),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "collect Inventor summary note"
+    ));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    assert_eq!(
+        summary_note(&ctx, 3, 1, 1).expect("admitted note"),
+        "CFB v3 with 1 RSe segment pair(s) and 1 versioned database(s)"
+    );
+}
+
+#[test]
+fn container_summary_loss_slot_refuses_before_loss_construction() {
+    let bytes = primary_envelope_fixture_with_broken_metadata();
+    let arena = DecodeArena::new();
+    let (setup, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("service context");
+    let container = InventorContainer::open(&setup, root).expect("fixture container");
+    let recovery = crate::dialect::DialectRecovery::of(&setup, &container).expect("recovery");
+    let matched = recovery.classify(&setup).expect("classification");
+    assert!(!matches!(
+        matched.admission(),
+        cadmpeg_core::dialect::Admission::Admitted
+    ));
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    assert!(matches!(
+        admit_summary_loss_slot(&ctx, &matched),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "collect Inventor summary loss"
+    ));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    admit_summary_loss_slot(&ctx, &matched).expect("admitted loss slot");
 }
 
 #[test]

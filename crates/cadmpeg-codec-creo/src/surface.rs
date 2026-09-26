@@ -556,7 +556,7 @@ fn take_spline_scalars(
             cache,
         )?;
         let value = value?;
-        (next > *cursor && value.is_finite()).then_some(())?;
+        (next > *cursor).then_some(())?;
         values.push(value);
         *cursor = next;
     }
@@ -917,7 +917,7 @@ impl PositionalTorusFrame {
     }
 }
 
-/// Six-slot outline frame in a positional torus-or-sphere body.
+/// Six finite outline coordinates in a positional torus-or-sphere body.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct TorusOutlineFrame {
     /// Ordered outline coordinates.
@@ -928,7 +928,7 @@ pub(crate) struct TorusOutlineFrame {
     pub(crate) offset: usize,
 }
 
-/// Five-coordinate endpoint envelope in an untagged type-26 body.
+/// Five finite endpoint coordinates in an untagged type-26 body.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Type26FiveCoordinateEnvelope {
     /// Final five coordinates after the leading body-local scalar.
@@ -937,7 +937,7 @@ pub(crate) struct Type26FiveCoordinateEnvelope {
     pub(crate) offset: usize,
 }
 
-/// Four coordinates separated by a body-local control payload in a type-26 body.
+/// Four finite coordinates separated by a body-local control payload in a type-26 body.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Type26SplitCoordinateEnvelope {
     /// Two coordinates before and two coordinates after the control payload.
@@ -946,7 +946,8 @@ pub(crate) struct Type26SplitCoordinateEnvelope {
     pub(crate) offset: usize,
 }
 
-/// Tagged radius overrides in a positional torus-or-sphere body.
+/// Finite nonnegative major and positive minor radius overrides in a positional
+/// torus-or-sphere body.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct TorusRadiusOverrides {
     /// Major torus radius, or zero for a sphere.
@@ -1001,7 +1002,7 @@ pub(crate) struct Type24RoundEnvelope {
     pub(crate) extent_endpoints: [[f64; 3]; 2],
 }
 
-/// Axial parameters and model-space endpoint samples from a generated
+/// Finite axial parameters and model-space endpoint samples from a generated
 /// type-24 round edge.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Type24RoundEdgeEnvelope {
@@ -1069,8 +1070,8 @@ impl serde::Serialize for SurfaceParameterOpaqueSpan {
 /// One scalar token located within a positional surface parameter body.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SurfaceParameterScalar {
-    /// Decoded scalar value, or `None` for a structurally framed token whose
-    /// numeric mapping is not defined.
+    /// Raw decoded scalar value, which can be nonfinite, or `None` for a
+    /// structurally framed token whose numeric mapping is not defined.
     pub(crate) value: Option<f64>,
     /// Exact source bytes occupied by the token.
     pub(crate) raw: Vec<u8>,
@@ -1090,7 +1091,8 @@ impl serde::Serialize for SurfaceParameterScalar {
     }
 }
 
-/// Complete positional construction for a line-generated extrusion surface.
+/// Complete finite positional construction for a line-generated extrusion
+/// surface, with nonparallel sweep and directrix directions.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct LineExtrusionFrame {
     /// Stored model-space sweep direction.
@@ -2248,9 +2250,9 @@ impl SurfaceParameterRecord {
                 [start_x.value?, start_y.value?, start_z.value?],
                 [end_x.value?, end_y.value?, end_z.value?],
             ];
-            direction_values
+            directrix_points
+                .as_flattened()
                 .iter()
-                .chain(directrix_points.as_flattened())
                 .all(|value| value.is_finite())
                 .then_some(())?;
             let first_gap = self.opaque_spans.first()?;
@@ -4397,8 +4399,7 @@ fn decode_inline_selector_cylinder_envelope(
     cursor = selector_end(next)?;
     let (second_axial, next) = decode_coordinate(cursor)?;
     cursor = next;
-    (first_axial.is_finite() && second_axial.is_finite() && first_axial != second_axial)
-        .then_some(())?;
+    (first_axial != second_axial).then_some(())?;
 
     let mut corners = [[None; 3]; 2];
     for coordinate in corners.iter_mut().flatten() {
@@ -6441,6 +6442,7 @@ pub(crate) struct PlaneFrame {
     pub(crate) origin: Option<[f64; 3]>,
     pub(crate) u_axis: Option<UnitVector3>,
     pub(crate) normal: Option<UnitVector3>,
+    pub(crate) cross_overflow: bool,
 }
 
 fn plane_unit_direction(value: [f64; 3], magnitude: f64) -> Option<UnitVector3> {
@@ -6449,6 +6451,15 @@ fn plane_unit_direction(value: [f64; 3], magnitude: f64) -> Option<UnitVector3> 
 }
 
 impl PlaneFrame {
+    fn without_directions(origin: Option<[f64; 3]>) -> Self {
+        Self {
+            origin,
+            u_axis: None,
+            normal: None,
+            cross_overflow: false,
+        }
+    }
+
     fn with_directions(
         origin: Option<[f64; 3]>,
         u_axis: Option<UnitVector3>,
@@ -6459,12 +6470,9 @@ impl PlaneFrame {
                 origin,
                 u_axis: Some(u_axis),
                 normal: Some(normal),
+                cross_overflow: false,
             },
-            _ => Self {
-                origin,
-                u_axis: None,
-                normal: None,
-            },
+            _ => Self::without_directions(origin),
         }
     }
 
@@ -6489,11 +6497,7 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
     let (Some(first), Some(middle), Some(third)) =
         (triple([0, 1, 2]), triple([3, 4, 5]), triple([6, 7, 8]))
     else {
-        return PlaneFrame {
-            origin,
-            u_axis: None,
-            normal: None,
-        };
+        return PlaneFrame::without_directions(origin);
     };
     let supports = [first, middle, third];
     let magnitudes = supports.map(|support| {
@@ -6508,11 +6512,7 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
         .filter(|magnitude| *magnitude <= EPS_PLANE_FRAME_NONZERO)
         .any(|magnitude| magnitude > EPS_PLANE_FRAME_ZERO)
     {
-        return PlaneFrame {
-            origin,
-            u_axis: None,
-            normal: None,
-        };
+        return PlaneFrame::without_directions(origin);
     }
     let pairs = [(0, 1), (0, 2), (1, 2)]
         .into_iter()
@@ -6534,11 +6534,7 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
         })
         .collect::<Vec<_>>();
     let [(first_index, second_index)] = pairs.as_slice() else {
-        return PlaneFrame {
-            origin,
-            u_axis: None,
-            normal: None,
-        };
+        return PlaneFrame::without_directions(origin);
     };
     let first = supports[*first_index];
     let second = supports[*second_index];
@@ -6548,6 +6544,12 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
         first[2].mul_add(second[0], -(first[0] * second[2])),
         first[0].mul_add(second[1], -(first[1] * second[0])),
     ];
+    if cross.iter().any(|component| !component.is_finite()) {
+        return PlaneFrame {
+            cross_overflow: true,
+            ..PlaneFrame::without_directions(origin)
+        };
+    }
     let magnitude = cross.iter().map(|value| value * value).sum::<f64>().sqrt();
     let normal = (magnitude > EPS_PLANE_FRAME_NONZERO)
         .then(|| plane_unit_direction(cross, magnitude))
@@ -6567,11 +6569,7 @@ fn plane_direct_frame(slots: &[Option<f64>]) -> PlaneFrame {
     let (Some(u_axis), Some(zero_rank), Some(normal)) =
         (triple([0, 1, 2]), triple([3, 4, 5]), triple([6, 7, 8]))
     else {
-        return PlaneFrame {
-            origin,
-            u_axis: None,
-            normal: None,
-        };
+        return PlaneFrame::without_directions(origin);
     };
     let u_magnitude = u_axis.iter().map(|value| value * value).sum::<f64>().sqrt();
     let normal_magnitude = normal.iter().map(|value| value * value).sum::<f64>().sqrt();
@@ -6589,11 +6587,7 @@ fn plane_direct_frame(slots: &[Option<f64>]) -> PlaneFrame {
         || (u_magnitude - normal_magnitude).abs() > EPS_PLANE_FRAME_SCALE * scale
         || orthogonal.abs() > EPS_PLANE_FRAME_ORTHOGONAL * u_magnitude * normal_magnitude
     {
-        return PlaneFrame {
-            origin,
-            u_axis: None,
-            normal: None,
-        };
+        return PlaneFrame::without_directions(origin);
     }
     PlaneFrame::with_directions(
         origin,
@@ -6614,18 +6608,10 @@ fn plane_matrix_frame(slots: &[Option<f64>]) -> PlaneFrame {
     let (Some(u_column), Some(rank_column), Some(normal_column)) =
         (triple([0, 3, 6]), triple([1, 4, 7]), triple([2, 5, 8]))
     else {
-        return PlaneFrame {
-            origin,
-            u_axis: None,
-            normal: None,
-        };
+        return PlaneFrame::without_directions(origin);
     };
     if rank_column.into_iter().any(|value| value != 0.0) {
-        return PlaneFrame {
-            origin,
-            u_axis: None,
-            normal: None,
-        };
+        return PlaneFrame::without_directions(origin);
     }
     let magnitudes = [u_column, normal_column].map(|direction| {
         direction
@@ -6648,11 +6634,7 @@ fn plane_matrix_frame(slots: &[Option<f64>]) -> PlaneFrame {
         || (u_magnitude - normal_magnitude).abs() > EPS_PLANE_FRAME_SCALE * scale.max(1.0)
         || dot.abs() > EPS_PLANE_FRAME_ORTHOGONAL * u_magnitude * normal_magnitude
     {
-        return PlaneFrame {
-            origin,
-            u_axis: None,
-            normal: None,
-        };
+        return PlaneFrame::without_directions(origin);
     }
     PlaneFrame::with_directions(
         origin,

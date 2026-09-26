@@ -430,8 +430,10 @@ fn generated_source_less_rejects_collapsed_native_topology_metadata() {
             ),
             vertex,
             record_index: 0,
-            leading_tolerances: [1.0, 2.0]
-                .map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite")),
+            leading_tolerances: [
+                cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
+                cadmpeg_ir::scalar::FiniteReal::new(2.0).unwrap(),
+            ],
             evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Evaluated {
                 trailing: Some(0),
             },

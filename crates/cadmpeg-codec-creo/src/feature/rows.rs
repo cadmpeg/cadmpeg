@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::bytes::{contains, find_from, find_in};
 use cadmpeg_core::decode::{bounded_len, index_from_u32};
+use cadmpeg_ir::scalar::FiniteReal;
 
 use crate::psb;
 use crate::scalar;
@@ -67,7 +68,7 @@ pub(crate) struct FeatureRoundReplayScalar {
     /// Owning feature identifier.
     pub(crate) feature_id: u32,
     /// Decoded short-form scalar value.
-    pub(crate) value: f64,
+    pub(crate) value: FiniteReal,
     /// Absolute byte offset of the scalar in the source stream.
     pub(super) offset: usize,
     /// Absolute byte offset of the enclosing `cr_flags_xar` record.
@@ -497,9 +498,12 @@ pub(crate) fn round_replay_scalars(rows: &[FeatureRow]) -> Vec<FeatureRoundRepla
             let Some((value, scalar_end)) = scalar::decode(&row.body, scalar_offset) else {
                 continue;
             };
-            if scalar_end != scalar_offset + 3 || !value.is_finite() {
+            if scalar_end != scalar_offset + 3 {
                 continue;
             }
+            let Some(value) = FiniteReal::new(value) else {
+                continue;
+            };
             result.push(FeatureRoundReplayScalar {
                 feature_id: row.feature_id,
                 value,

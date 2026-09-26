@@ -28,6 +28,10 @@ use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
 const EPS_CONE_ANGLE: f64 = 1.0e-12;
 
+fn finite_tolerance_pair(values: [f64; 2]) -> [cadmpeg_ir::scalar::FiniteReal; 2] {
+    values.map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap())
+}
+
 #[test]
 fn generated_design_configuration_json_decodes_and_writes_source_less() {
     let name = "FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg";
@@ -371,8 +375,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             ),
             vertex: tolerant_vertex,
             record_index: 0,
-            leading_tolerances: [-1.0, -1.0]
-                .map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite")),
+            leading_tolerances: finite_tolerance_pair([-1.0, -1.0]),
             evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Evaluated {
                 trailing: Some(0),
             },
@@ -393,8 +396,8 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
                 ),
                 coedge: tolerant_coedge,
                 record_index: 0,
-                parameter_range: [0.25, 0.75]
-                    .map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite")),
+                parameter_range: cadmpeg_ir::units::FiniteVector::new([0.25, 0.75])
+                    .expect("finite interval"),
                 extension: cadmpeg_asm::brep::records::TolerantCoedgeExtension::None {},
             }];
         native.body_visibilities = vec![crate::records::bodies::BodyVisibility {
@@ -529,7 +532,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     assert_eq!(
         f3d_native(round_trip.ir()).tolerant_coedge_parameters[0]
             .parameter_range
-            .map(cadmpeg_ir::scalar::FiniteReal::get),
+            .get(),
         [0.25, 0.75]
     );
     let ownerships = f3d_native(round_trip.ir()).vertex_ownerships;
@@ -570,8 +573,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         native.body_native_keys[0].asm_body_key = Some(84);
         native.face_sidedness[0].containment =
             Some(cadmpeg_asm::brep::records::FaceContainment::Out);
-        native.tolerant_vertex_tails[0].leading_tolerances =
-            [3.5, -4.5].map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite"));
+        native.tolerant_vertex_tails[0].leading_tolerances = finite_tolerance_pair([3.5, -4.5]);
     }
     let mut retained = Vec::new();
     crate::test_support::plan_inherited_write(&edited, &fidelity, &mut retained)
@@ -654,8 +656,7 @@ fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
                 ),
                 vertex: tolerant_vertex,
                 record_index: 0,
-                leading_tolerances: [-1.0, -1.0]
-                    .map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite")),
+                leading_tolerances: finite_tolerance_pair([-1.0, -1.0]),
                 evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Evaluated {
                     trailing: vertex_trailing,
                 },
@@ -716,8 +717,7 @@ fn an_unset_tolerant_vertex_sentinel_round_trips_without_a_neutral_tolerance() {
             ),
             vertex: tolerant_vertex,
             record_index: 0,
-            leading_tolerances: [-1.0, -1.0]
-                .map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite")),
+            leading_tolerances: finite_tolerance_pair([-1.0, -1.0]),
             evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Unset {
                 trailing: Some(0),
             },
@@ -776,8 +776,7 @@ fn an_absent_tolerant_vertex_slot_round_trips_without_a_neutral_tolerance() {
             ),
             vertex: tolerant_vertex,
             record_index: 0,
-            leading_tolerances: [-1.0, -1.0]
-                .map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite")),
+            leading_tolerances: finite_tolerance_pair([-1.0, -1.0]),
             evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Absent {},
         }];
     }

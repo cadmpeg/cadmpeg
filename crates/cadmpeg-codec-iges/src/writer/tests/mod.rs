@@ -761,7 +761,7 @@ fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
     ));
     let range = [0.2, 1.1];
     let span = CurveSpan {
-        range,
+        range: cadmpeg_ir::units::FiniteVector::new(range).expect("finite test range"),
         start: curve_point(&geometry, range[0])
             .expect("start evaluates")
             .get(),
@@ -912,7 +912,7 @@ fn generated_circle_refuses_a_zero_length_edge_span() {
         .expect("valid CircleCurve fixture"),
     ));
     let span = CurveSpan {
-        range: [0.5, 0.5],
+        range: cadmpeg_ir::units::FiniteVector::new([0.5, 0.5]).expect("finite test range"),
         start: Point3::new(0.0, 0.0, 0.0),
         end: Point3::new(0.0, 0.0, 0.0),
     };
@@ -1131,7 +1131,7 @@ fn negative_nurbs_weights_are_not_implemented() {
         curve_entity(
             &SolvedCurveGeometry::Nurbs(curve),
             Some(&CurveSpan {
-                range: [0.0, 1.0],
+                range: cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite test range"),
                 start: Point3::new(0.0, 0.0, 0.0),
                 end: Point3::new(1.0, 0.0, 0.0),
             }),
@@ -1208,7 +1208,7 @@ fn hyperbola_endpoint_overflow_is_not_implemented() {
     )
     .expect("the IR admits finite positive hyperbola radii");
     let span = CurveSpan {
-        range: [0.0, 2000.0],
+        range: cadmpeg_ir::units::FiniteVector::new([0.0, 2000.0]).expect("finite test range"),
         start: Point3::new(1.0, 0.0, 0.0),
         end: Point3::new(1.0, 0.0, 0.0),
     };
@@ -1232,7 +1232,7 @@ fn parabola_endpoint_overflow_is_not_implemented() {
     )
     .expect("the IR admits a finite positive focal distance");
     let span = CurveSpan {
-        range: [0.0, 2.0],
+        range: cadmpeg_ir::units::FiniteVector::new([0.0, 2.0]).expect("finite test range"),
         start: Point3::new(0.0, 0.0, 0.0),
         end: Point3::new(0.0, 0.0, 0.0),
     };
@@ -1264,7 +1264,7 @@ fn zero_conic_parameter_span_is_not_implemented() {
     )
     .expect("valid hyperbola");
     let span = CurveSpan {
-        range: [1.0, 1.0],
+        range: cadmpeg_ir::units::FiniteVector::new([1.0, 1.0]).expect("finite test range"),
         start: Point3::new(0.0, 0.0, 0.0),
         end: Point3::new(0.0, 0.0, 0.0),
     };
@@ -1301,7 +1301,7 @@ fn decreasing_polyline_parameters_are_not_implemented() {
         curve_entity(
             &SolvedCurveGeometry::Polyline(polyline),
             Some(&CurveSpan {
-                range: [0.0, 1.0],
+                range: cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite test range"),
                 start: Point3::new(0.0, 0.0, 0.0),
                 end: Point3::new(1.0, 0.0, 0.0),
             }),
@@ -1325,7 +1325,7 @@ fn parabola_coefficient_that_overflows_is_not_implemented() {
     )
     .expect("the IR admits a finite positive focal distance");
     let span = CurveSpan {
-        range: [0.0, 1.0e-160],
+        range: cadmpeg_ir::units::FiniteVector::new([0.0, 1.0e-160]).expect("finite test range"),
         start: Point3::new(0.0, 0.0, 0.0),
         end: Point3::new(0.0, 0.0, 0.0),
     };

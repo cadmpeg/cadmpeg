@@ -1,9 +1,9 @@
 use super::entity;
+use super::length;
 use super::neutral_feature;
 use super::reference;
 use super::simple_hole_definition;
 use crate::swift::enrich_implicit_nominals_with_context;
-use crate::swift::length;
 use crate::swift::pattern_hole_nominal_context;
 use crate::swift::project;
 use crate::swift::project_with_topology;
@@ -15,6 +15,7 @@ use crate::swift::ROOT_CLASS;
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::pmi::PmiDefinition;
 use cadmpeg_ir::pmi::PmiTarget;
+use cadmpeg_ir::scalar::PositiveReal;
 use std::collections::BTreeMap;
 
 #[test]
@@ -50,7 +51,10 @@ fn empty_swift_pattern_uses_one_native_hole_join() {
         ),
     ];
     let context = pattern_hole_nominal_context(&features);
-    assert_eq!(context.get("Hole Pattern6"), Some(&6.1468));
+    assert_eq!(
+        context.get("Hole Pattern6").copied().map(PositiveReal::get),
+        Some(6.1468)
+    );
 
     let mut pattern = cad_feature("GdtPattern", "");
     pattern

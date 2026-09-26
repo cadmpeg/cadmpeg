@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{
     DeformableCurveConstruction, ProceduralGeometryError, ProjectionCurvePayload,
-    SpatialOffsetCurveConstruction, SpringCurvePayload, SurfaceOffsetCurveConstruction,
-    ThreeSurfaceIntersectionCurvePayload,
+    SilhouetteCurveConstruction, SpatialOffsetCurveConstruction, SpringCurvePayload,
+    SurfaceOffsetCurveConstruction, ThreeSurfaceIntersectionCurvePayload,
 };
 use crate::geometry::{
     pcurve::{LinePcurve, PcurveGeometry},
     CacheContract, CacheFirstCurveForm, CacheFirstCurveParameterization, DeformableCurveData,
     DeformableCurveSource, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
-    ProceduralCurveDefinition, ProjectionRole, ProjectionTail, RevisionCacheForm, SpringLayout,
-    SpringPcurve, SpringSupport, SupportPcurve,
+    ProceduralCurveDefinition, ProjectionRole, ProjectionTail, RevisionCacheForm, SilhouetteKind,
+    SpringLayout, SpringPcurve, SpringSupport, SupportPcurve,
 };
-use crate::ids::CurveId;
+use crate::ids::{CurveId, SurfaceId};
 use crate::math::{Point2, Vector3};
 use crate::units::UnitVector3;
 
@@ -50,6 +50,30 @@ fn context(range: [f64; 2]) -> IntcurveSupportContext {
         std::array::from_fn(|_| Vec::new()),
     )
     .unwrap()
+}
+
+#[test]
+fn silhouette_unit_light_direction_keeps_the_raw_construction_and_wire() {
+    let cast_surface = SurfaceId::mint("synthetic:test:surface#silhouette").unwrap();
+    let light = Vector3::new(0.0, 0.0, 1.0);
+    let raw = SilhouetteCurveConstruction::try_new(
+        context([0.0, 1.0]),
+        SilhouetteKind::Standard {},
+        cast_surface.clone(),
+        light,
+    )
+    .unwrap();
+    let typed = SilhouetteCurveConstruction::from_unit_direction(
+        context([0.0, 1.0]),
+        SilhouetteKind::Standard {},
+        cast_surface,
+        UnitVector3::Z_AXIS,
+    );
+    assert_eq!(raw, typed);
+    assert_eq!(
+        serde_json::to_vec(&raw).unwrap(),
+        serde_json::to_vec(&typed).unwrap()
+    );
 }
 
 #[test]
@@ -362,6 +386,37 @@ fn a_direction_offset_from_admitted_parts_matches_its_raw_admission() {
                 support,
                 range,
             ))
+        );
+    }
+}
+
+#[test]
+fn a_plane_normal_offset_from_a_unit_matches_raw_admission() {
+    use super::OffsetCurveConstruction;
+    use crate::geometry::{CurveOffsetRange, OffsetSide};
+    use crate::ids::CurveId;
+    use crate::math::Vector3;
+    use crate::units::UnitVector3;
+
+    let source = CurveId::mint("synthetic:test:curve#source").unwrap();
+    let normal = UnitVector3::normalized_by_reciprocal(Vector3::new(0.0, 3.0, 4.0)).unwrap();
+    let range = CurveOffsetRange::uniform([2.0, 5.0]).unwrap();
+    for distance in [-1.25, f64::INFINITY] {
+        assert_eq!(
+            OffsetCurveConstruction::with_unit_plane_normal(
+                source.clone(),
+                distance,
+                normal,
+                Some(range.clone()),
+            ),
+            OffsetCurveConstruction::try_new(
+                source.clone(),
+                distance,
+                OffsetSide::PlaneNormal {
+                    normal: *normal.as_raw(),
+                },
+                Some(range.clone()),
+            )
         );
     }
 }

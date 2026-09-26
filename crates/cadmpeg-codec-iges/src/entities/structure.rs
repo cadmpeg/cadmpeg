@@ -20,6 +20,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, VertexId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Loop, Region, Sense, Shell};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
@@ -545,18 +546,12 @@ fn legacy_associativity_valid(
                 return false;
             };
             let description = layout.description_start();
-            let numeric_fields_valid = record
-                .number_or(description, 0.0)
-                .is_some_and(f64::is_finite)
-                && record
-                    .number_or(description + 1, 0.0)
-                    .is_some_and(f64::is_finite)
+            let numeric_fields_valid = record.number_or(description, 0.0).is_some()
+                && record.number_or(description + 1, 0.0).is_some()
                 && record
                     .number_or(description + 3, std::f64::consts::FRAC_PI_2)
-                    .is_some_and(f64::is_finite)
-                && record
-                    .number_or(description + 4, 0.0)
-                    .is_some_and(f64::is_finite);
+                    .is_some()
+                && record.number_or(description + 4, 0.0).is_some();
             let mirror_valid = record
                 .integer_or(description + 5, 0)
                 .is_some_and(|value| matches!(value, 0..=2));
@@ -599,9 +594,7 @@ fn attribute_value_valid(
         (0 | 5, Some(TokenValue::Omitted))
         | (1, Some(TokenValue::Integer(_)))
         | (3, Some(TokenValue::String(_))) => true,
-        (2, Some(TokenValue::Integer(_) | TokenValue::Real(_))) => {
-            record.number(index).is_some_and(f64::is_finite)
-        }
+        (2, Some(TokenValue::Integer(_) | TokenValue::Real(_))) => record.number(index).is_some(),
         (4, Some(TokenValue::Integer(value))) => u32::try_from(*value)
             .ok()
             .filter(|sequence| sequence % 2 == 1)
@@ -796,7 +789,7 @@ fn generic_property_value_valid(
     match data_type {
         0 => matches!(record.value(index), Some(TokenValue::Omitted)),
         1 => record.integer(index).is_some(),
-        2 => record.number(index).is_some_and(f64::is_finite),
+        2 => record.number(index).is_some(),
         3 => record.string(index).is_some(),
         4 => existing_pointer(record, index, entries).is_some(),
         6 => record
@@ -879,7 +872,7 @@ fn property_fields_valid(
                 && integer_range(3, 0..=1)
                 && integer_range(4, 0..=2)
                 && integer_range(5, 0..=2)
-                && record.number(6).is_some_and(f64::is_finite)
+                && record.number(6).is_some()
         }
         6 => {
             exact(5)
@@ -940,8 +933,7 @@ fn property_fields_valid(
                 && types_valid
                 && expected_end == Some(end)
                 && record.integer(1) == i64::try_from(end - 2).ok()
-                && (5 + 2 * independent_count..end)
-                    .all(|index| record.number(index).is_some_and(f64::is_finite))
+                && (5 + 2 * independent_count..end).all(|index| record.number(index).is_some())
         }
         12 | 14 => record.count(1).is_some_and(|count| {
             count > 0
@@ -951,7 +943,7 @@ fn property_fields_valid(
         13 => {
             matches!(record.integer(1), Some(2 | 3))
                 && end == record.integer(1).unwrap_or_default() as usize + 2
-                && record.number(2).is_some_and(f64::is_finite)
+                && record.number(2).is_some()
                 && record.string(3).is_some()
                 && (record.integer(1) == Some(2) || record.string(4).is_some())
         }
@@ -966,7 +958,7 @@ fn property_fields_valid(
         22 => {
             exact(9)
                 && (2..=4).all(|index| integer_range(index, 0..=1))
-                && (5..=6).all(|index| record.number(index).is_some_and(f64::is_finite))
+                && (5..=6).all(|index| record.number(index).is_some())
                 && (7..=8).all(|index| {
                     record
                         .number(index)
@@ -1055,7 +1047,7 @@ fn property_fields_valid(
                 && record
                     .integer_or(4, 2)
                     .is_some_and(|value| (1..=4).contains(&value))
-                && (5..=6).all(|index| record.number(index).is_some_and(f64::is_finite))
+                && (5..=6).all(|index| record.number(index).is_some())
                 && integer_range(7, 0..=1)
                 && fraction.is_some_and(|value| matches!(value, 0..=2))
                 && record
@@ -1075,14 +1067,12 @@ fn property_fields_valid(
                         .is_some_and(|value| matches!(value, 1 | 1001..=1003))
                     && record.string(5).is_some()
                     && integer_range(6, 0..=1)
-                    && record
-                        .number_or(7, std::f64::consts::FRAC_PI_2)
-                        .is_some_and(f64::is_finite)
+                    && record.number_or(7, std::f64::consts::FRAC_PI_2).is_some()
                     && integer_range(8, 0..=1)
                     && integer_range(9, 0..=2)
                     && integer_range(10, 0..=2)
                     && integer_range(11, 0..=1)
-                    && record.number(12).is_some_and(f64::is_finite)
+                    && record.number(12).is_some()
                     && (0..count).all(|offset| {
                         let start = 14 + offset * 3;
                         integer_range(start, 1..=4)
@@ -1092,7 +1082,7 @@ fn property_fields_valid(
                                 .is_some_and(|(first, last)| first > 0 && last >= first)
                     })
             }),
-        31 => exact(8) && (2..=9).all(|index| record.number(index).is_some_and(f64::is_finite)),
+        31 => exact(8) && (2..=9).all(|index| record.number(index).is_some()),
         32 => {
             exact(3)
                 && record.string(2).is_some_and(|value| !value.is_empty())
@@ -1163,8 +1153,7 @@ fn predefined_associativity_valid(
                         entries
                             .get(&sequence)
                             .is_some_and(|target| target.entity_type == 410)
-                    }) && (start + 1..=start + 3)
-                        .all(|index| record.number(index).is_some_and(f64::is_finite))
+                    }) && (start + 1..=start + 3).all(|index| record.number(index).is_some())
                         && existing_pointer(record, start + 4, entries).is_some_and(|sequence| {
                             entries
                                 .get(&sequence)
@@ -1294,7 +1283,7 @@ fn predefined_associativity_valid(
                     _ => false,
                 })
             });
-            let angle_valid = record.number(5).is_some_and(f64::is_finite);
+            let angle_valid = record.number(5).is_some();
             let geometry_valid = geometry_count.is_some_and(|count| {
                 end == 6 + count * 5
                     && (0..count).all(|offset| {
@@ -1308,8 +1297,7 @@ fn predefined_associativity_valid(
                             && record
                                 .integer(start + 1)
                                 .is_some_and(|location| matches!(location, 0..=5))
-                            && (start + 2..=start + 4)
-                                .all(|index| record.number(index).is_some_and(f64::is_finite))
+                            && (start + 2..=start + 4).all(|index| record.number(index).is_some())
                     })
             });
             let arrow_cardinality_valid = dimension_entry.is_none_or(|dimension| {
@@ -2008,35 +1996,50 @@ pub(crate) fn placement_affine(
     let translation_component = |index| {
         record
             .number_or(index, 0.0)
-            .filter(|value| value.is_finite())
+            .and_then(FiniteReal::new)
             .ok_or(())
     };
     let scale_component = |index, default| {
         record
             .number_or(index, default)
-            .filter(|value| value.is_finite() && *value > 0.0)
+            .and_then(PositiveReal::new)
             .ok_or(())
     };
     let x_scale = scale_component(5, 1.0)?;
     let scales = if instance.entity_type == 420 {
         [
             x_scale,
-            scale_component(6, x_scale)?,
-            scale_component(7, x_scale)?,
+            scale_component(6, x_scale.get())?,
+            scale_component(7, x_scale.get())?,
         ]
     } else {
         [x_scale; 3]
     };
     let translation = Transform::affine([
-        [1.0, 0.0, 0.0, translation_component(2)? * length_factor],
-        [0.0, 1.0, 0.0, translation_component(3)? * length_factor],
-        [0.0, 0.0, 1.0, translation_component(4)? * length_factor],
+        [
+            1.0,
+            0.0,
+            0.0,
+            translation_component(2)?.get() * length_factor,
+        ],
+        [
+            0.0,
+            1.0,
+            0.0,
+            translation_component(3)?.get() * length_factor,
+        ],
+        [
+            0.0,
+            0.0,
+            1.0,
+            translation_component(4)?.get() * length_factor,
+        ],
     ])
     .ok_or(())?;
     let scale = Transform::affine([
-        [scales[0], 0.0, 0.0, 0.0],
-        [0.0, scales[1], 0.0, 0.0],
-        [0.0, 0.0, scales[2], 0.0],
+        [scales[0].get(), 0.0, 0.0, 0.0],
+        [0.0, scales[1].get(), 0.0, 0.0],
+        [0.0, 0.0, scales[2].get(), 0.0],
     ])
     .ok_or(())?;
     let directory = if instance.transform == 0 {
@@ -2793,8 +2796,7 @@ pub(super) fn project(
             let scale_valid = record
                 .number_or(2, 1.0)
                 .is_some_and(|value| value.is_finite() && value > 0.0);
-            let coordinates_valid =
-                (3..=5).all(|index| record.number(index).is_some_and(f64::is_finite));
+            let coordinates_valid = (3..=5).all(|index| record.number(index).is_some());
             let columns = record
                 .integer(6)
                 .and_then(|value| usize::try_from(value).ok());
@@ -2808,18 +2810,18 @@ pub(super) fn project(
             });
             scale_valid
                 && coordinates_valid
-                && (8..=10).all(|index| record.number(index).is_some_and(f64::is_finite))
+                && (8..=10).all(|index| record.number(index).is_some())
                 && dimensions.is_some_and(|total| array_mask_valid(record, 11, 12, 13, total))
         } else {
             let locations = record
                 .integer(2)
                 .and_then(|value| usize::try_from(value).ok())
                 .filter(|count| *count > 0);
-            (3..=5).all(|index| record.number(index).is_some_and(f64::is_finite))
+            (3..=5).all(|index| record.number(index).is_some())
                 && record
                     .number(6)
                     .is_some_and(|value| value.is_finite() && value > 0.0)
-                && (7..=8).all(|index| record.number(index).is_some_and(f64::is_finite))
+                && (7..=8).all(|index| record.number(index).is_some())
                 && locations.is_some_and(|total| array_mask_valid(record, 9, 10, 11, total))
         };
         if target_valid && !cyclic && transform_valid && fields_valid {
@@ -2840,7 +2842,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let position_valid = (1..=3).all(|index| record.number(index).is_some_and(f64::is_finite));
+        let position_valid = (1..=3).all(|index| record.number(index).is_some());
         let optional_pointer_valid = |index: usize, entity_type: Option<i64>| {
             record.integer_or(index, 0).is_some_and(|value| {
                 value == 0

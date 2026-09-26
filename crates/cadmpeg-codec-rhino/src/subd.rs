@@ -608,8 +608,8 @@ fn read_edge(
         _ => return Err(malformed(reader.position() - 1, "invalid SubD edge tag")),
     };
     let face_count = usize::from(reader.u16()?);
-    let [first, second] = [reader.f64()?, reader.f64()?];
-    let (Some(first), Some(second)) = (FiniteReal::new(first), FiniteReal::new(second)) else {
+    let coefficients = [reader.f64()?, reader.f64()?];
+    let [Some(first), Some(second)] = coefficients.map(FiniteReal::new) else {
         return Err(malformed(
             reader.position() - 16,
             "SubD edge sector coefficient is not finite",
@@ -1209,7 +1209,7 @@ fn materialize(
                     "invalid materialized SubD edge tag",
                 )
             })?;
-            SubdEdge::from_checked_parts(
+            SubdEdge::from_admitted(
                 [
                     *vertex_indices
                         .get(&edge.vertices[0].archive_id)

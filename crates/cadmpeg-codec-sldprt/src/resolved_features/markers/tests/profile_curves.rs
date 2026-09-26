@@ -1,6 +1,7 @@
 //! Inline profile-curve marker tests.
 
 use super::super::super::LEGACY_SKETCH_MARKER;
+use super::{raw2, raw_pairs};
 use crate::records::SketchInputKind;
 use crate::resolved_features::markers::compact_legacy_142_profile_curve_coordinates;
 use crate::resolved_features::markers::inline_arc_coordinates;
@@ -42,14 +43,14 @@ fn compact_legacy_142_profile_curve_selects_arc_or_line_from_radii() {
     let mut arc =
         compact_legacy_142_profile_curve_payload([0x1a, 0x00], [2.0, 3.0], [1.0, 3.0], [2.0, 4.0]);
     assert_eq!(
-        compact_legacy_142_profile_curve_coordinates(&arc, 0),
+        raw_pairs(compact_legacy_142_profile_curve_coordinates(&arc, 0)),
         Some([[2.0, 3.0], [1.0, 3.0], [2.0, 4.0]])
     );
     assert_eq!(
-        inline_arc_coordinates(&arc, 0),
+        raw_pairs(inline_arc_coordinates(&arc, 0)),
         Some([[2.0, 3.0], [1.0, 3.0], [2.0, 4.0]])
     );
-    assert_eq!(marker_coordinates(&arc, 0), Some([2.0, 3.0]));
+    assert_eq!(raw2(marker_coordinates(&arc, 0)), Some([2.0, 3.0]));
     assert_eq!(
         sketch_input_entities(&arc, "lane")[0].kind(),
         SketchInputKind::Arc
@@ -60,11 +61,11 @@ fn compact_legacy_142_profile_curve_selects_arc_or_line_from_radii() {
     separated[142..146].copy_from_slice(&[1, 0, 0, 0]);
     separated[146..].copy_from_slice(LEGACY_SKETCH_MARKER);
     assert_eq!(
-        compact_legacy_142_profile_curve_coordinates(&separated, 0),
+        raw_pairs(compact_legacy_142_profile_curve_coordinates(&separated, 0)),
         Some([[2.0, 3.0], [1.0, 3.0], [2.0, 4.0]])
     );
     assert_eq!(
-        inline_arc_coordinates(&separated, 0),
+        raw_pairs(inline_arc_coordinates(&separated, 0)),
         Some([[2.0, 3.0], [1.0, 3.0], [2.0, 4.0]])
     );
 
@@ -75,19 +76,25 @@ fn compact_legacy_142_profile_curve_selects_arc_or_line_from_radii() {
         [1.0, 0.0],
     );
     assert_eq!(
-        compact_legacy_142_profile_curve_coordinates(&line, 0),
+        raw_pairs(compact_legacy_142_profile_curve_coordinates(&line, 0)),
         Some([[10.0, 10.0], [0.0, 0.0], [1.0, 0.0]])
     );
-    assert_eq!(inline_arc_coordinates(&line, 0), None);
-    assert_eq!(marker_coordinates(&line, 0), None);
+    assert_eq!(raw_pairs(inline_arc_coordinates(&line, 0)), None);
+    assert_eq!(raw2(marker_coordinates(&line, 0)), None);
     assert_eq!(
         sketch_input_entities(&line, "lane")[0].kind(),
         SketchInputKind::LineOrCircle
     );
 
     arc[17..21].copy_from_slice(&1u32.to_le_bytes());
-    assert_eq!(compact_legacy_142_profile_curve_coordinates(&arc, 0), None);
+    assert_eq!(
+        raw_pairs(compact_legacy_142_profile_curve_coordinates(&arc, 0)),
+        None
+    );
     arc[17..21].copy_from_slice(&2u32.to_le_bytes());
     arc[64..66].copy_from_slice(&[0x14, 0x00]);
-    assert_eq!(compact_legacy_142_profile_curve_coordinates(&arc, 0), None);
+    assert_eq!(
+        raw_pairs(compact_legacy_142_profile_curve_coordinates(&arc, 0)),
+        None
+    );
 }

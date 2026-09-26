@@ -7,19 +7,18 @@ use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
-fn finite_vector(record: &ParameterRecord, start: usize) -> Option<[f64; 3]> {
+fn finite_vector(record: &ParameterRecord, start: usize) -> Option<FiniteVector<3>> {
     let values = [
         record.number_or(start, 0.0)?,
         record.number_or(start + 1, 0.0)?,
         record.number_or(start + 2, 0.0)?,
     ];
-    values
-        .iter()
-        .all(|value| value.is_finite())
-        .then_some(values)
+    FiniteVector::new(values)
 }
 
 fn has_in_plane_component(normal: [f64; 3], up: [f64; 3]) -> bool {
@@ -115,7 +114,7 @@ fn clipping_plane_valid(entry: &DirectoryEntry, global_table: GlobalTable) -> bo
 #[derive(Debug, PartialEq)]
 pub(crate) enum DrawingPropertyValue {
     Name(Vec<u8>),
-    Size([f64; 2]),
+    Size(FiniteVector<2>),
     Units(i64, Vec<u8>),
 }
 
@@ -133,9 +132,7 @@ pub(crate) fn drawing_property_value(
                 return None;
             }
             let size = [record.number(2)?, record.number(3)?];
-            size.iter()
-                .all(|value| value.is_finite())
-                .then_some(DrawingPropertyValue::Size(size))
+            FiniteVector::new(size).map(DrawingPropertyValue::Size)
         }
         17 => {
             let units = record.integer(2).filter(|value| (1..=11).contains(value))?;
@@ -208,8 +205,7 @@ pub(super) fn project(
             continue;
         };
         let valid = if entry.form == 16 {
-            record.integer(1) == Some(2)
-                && (2..=3).all(|index| record.number(index).is_some_and(f64::is_finite))
+            record.integer(1) == Some(2) && (2..=3).all(|index| record.number(index).is_some())
         } else {
             record.integer(1) == Some(2)
                 && record
@@ -264,12 +260,11 @@ pub(super) fn project(
                     .is_some_and(|view| {
                         view.entity_type == 410 && view.status.is_logically_dependent()
                     })
-                    && (start + 1..=start + 2)
-                        .all(|index| record.number(index).is_some_and(f64::is_finite))
+                    && (start + 1..=start + 2).all(|index| record.number(index).is_some())
                     && (entry.form == 0
                         || match record.value(start + 3) {
                             None | Some(crate::parameter::TokenValue::Omitted) => true,
-                            _ => record.number(start + 3).is_some_and(f64::is_finite),
+                            _ => record.number(start + 3).is_some(),
                         })
             })
         });
@@ -350,9 +345,8 @@ pub(super) fn project(
             let up = finite_vector(record, 12);
             let vectors_valid = normal
                 .zip(up)
-                .is_some_and(|(normal, up)| has_in_plane_component(normal, up));
-            let window_valid = (15..=19)
-                .all(|index| record.number_or(index, 0.0).is_some_and(f64::is_finite))
+                .is_some_and(|(normal, up)| has_in_plane_component(normal.get(), up.get()));
+            let window_valid = (15..=19).all(|index| record.number_or(index, 0.0).is_some())
                 && record
                     .number_or(16, 0.0)
                     .zip(record.number_or(17, 0.0))
@@ -364,8 +358,7 @@ pub(super) fn project(
             let depth = record
                 .integer_or(20, 0)
                 .filter(|value| depth_clipping_valid(*value));
-            let depth_values_valid = (21..=22)
-                .all(|index| record.number_or(index, 0.0).is_some_and(f64::is_finite))
+            let depth_values_valid = (21..=22).all(|index| record.number_or(index, 0.0).is_some())
                 && (depth != Some(3)
                     || record
                         .number_or(21, 0.0)
@@ -404,7 +397,7 @@ pub(super) fn project(
         let count = record.count(1).filter(|count| *count > 0);
         let mut last_view = None;
         let mut closed_views = BTreeSet::new();
-        let mut last_breakpoint = None;
+        let mut last_breakpoint: Option<FiniteReal> = None;
         let blocks_valid = count.is_some_and(|count| {
             (0..count).all(|index| {
                 let start = 2 + index * 6;
@@ -423,9 +416,10 @@ pub(super) fn project(
                     last_breakpoint = None;
                 }
                 let view_order_valid = view.is_some_and(|view| !closed_views.contains(&view));
-                let breakpoint = record.number(start + 1).filter(|value| value.is_finite());
-                let breakpoint_order_valid = breakpoint
-                    .is_some_and(|value| last_breakpoint.is_none_or(|previous| value > previous));
+                let breakpoint = record.number(start + 1).and_then(FiniteReal::new);
+                let breakpoint_order_valid = breakpoint.is_some_and(|value| {
+                    last_breakpoint.is_none_or(|previous| value.get() > previous.get())
+                });
                 last_view = view;
                 last_breakpoint = breakpoint;
                 let display_valid = record.integer(start + 2).is_some_and(display_flag_valid);

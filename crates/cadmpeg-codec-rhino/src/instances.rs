@@ -1295,11 +1295,13 @@ pub(crate) fn parse_reference(
 
 /// Converts source-unit translation coefficients to canonical millimeters.
 pub(crate) fn scale_translation(transform: Transform, scale: MillimeterScale) -> Option<Transform> {
-    let mut rows = transform.affine_rows();
-    for row in &mut rows {
-        row[3] = crate::wire::scaled_coordinate(row[3], scale)?.get();
-    }
-    Transform::affine(rows)
+    let rows = transform.affine_rows();
+    let translation = cadmpeg_ir::features::FiniteVector3::from_components(
+        crate::wire::scaled_coordinate(rows[0][3], scale)?,
+        crate::wire::scaled_coordinate(rows[1][3], scale)?,
+        crate::wire::scaled_coordinate(rows[2][3], scale)?,
+    );
+    Some(transform.with_translation(translation))
 }
 
 /// Returns whether a class UUID denotes an instance reference.

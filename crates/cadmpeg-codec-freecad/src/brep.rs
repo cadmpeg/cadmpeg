@@ -18,7 +18,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::FinitePoint2;
 use cadmpeg_ir::SourceObjectAssociation;
@@ -196,43 +196,38 @@ pub(crate) struct ShapeSet {
     roots: Vec<TextShapeUse>,
 }
 
+/// Immutable tables from one validated shape set.
+#[derive(Clone, Copy)]
+pub(crate) struct Tables<'a> {
+    pub(crate) locations: &'a [TextLocation],
+    pub(crate) curve2ds: &'a [TextCurve2d],
+    pub(crate) curves: &'a [TextCurve],
+    pub(crate) surfaces: &'a [TextSurface],
+    pub(crate) polygons3d: &'a [TextPolygon3d],
+    pub(crate) polygons_on_triangulations: &'a [TextPolygonOnTriangulation],
+    pub(crate) tshapes: &'a TextTShapes,
+    pub(crate) triangulations: &'a [TextTriangulation],
+    pub(crate) roots: &'a [TextShapeUse],
+}
+
+impl<'a> Tables<'a> {
+    pub(crate) fn from_payload(payload: &'a ShapePayloadRecord) -> Option<Self> {
+        let set = payload.payload.shape_set()?;
+        Some(Self {
+            locations: &set.locations,
+            curve2ds: &set.curve2ds,
+            curves: &set.curves,
+            surfaces: &set.surfaces,
+            polygons3d: &set.polygons3d,
+            polygons_on_triangulations: &set.polygons_on_triangulations,
+            tshapes: &set.tshapes,
+            triangulations: &set.triangulations,
+            roots: &set.roots,
+        })
+    }
+}
+
 impl ShapeSet {
-    pub(crate) fn locations(&self) -> &[TextLocation] {
-        &self.locations
-    }
-
-    pub(crate) fn curve2ds(&self) -> &[TextCurve2d] {
-        &self.curve2ds
-    }
-
-    pub(crate) fn curves(&self) -> &[TextCurve] {
-        &self.curves
-    }
-
-    pub(crate) fn polygons3d(&self) -> &[TextPolygon3d] {
-        &self.polygons3d
-    }
-
-    pub(crate) fn polygons_on_triangulations(&self) -> &[TextPolygonOnTriangulation] {
-        &self.polygons_on_triangulations
-    }
-
-    pub(crate) fn surfaces(&self) -> &[TextSurface] {
-        &self.surfaces
-    }
-
-    pub(crate) fn triangulations(&self) -> &[TextTriangulation] {
-        &self.triangulations
-    }
-
-    pub(crate) fn tshapes(&self) -> &TextTShapes {
-        &self.tshapes
-    }
-
-    pub(crate) fn roots(&self) -> &[TextShapeUse] {
-        &self.roots
-    }
-
     fn section_counts(&self) -> BTreeMap<String, usize> {
         [
             ("Locations", self.locations.len()),
@@ -1787,7 +1782,7 @@ impl TryFrom<TextTShapeWire> for TextTShape {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct TextPolygon3d {
     /// Chordal deflection.
-    pub(crate) deflection: FiniteReal,
+    pub(crate) deflection: NonNegativeReal,
     /// Ordered model-space nodes.
     pub(crate) nodes: Vec<FinitePoint3>,
     /// Optional per-node curve parameters.
@@ -1800,9 +1795,15 @@ pub(crate) struct TextPolygonOnTriangulation {
     /// One-based source node indices.
     pub(crate) nodes: Vec<u32>,
     /// Chordal deflection.
-    pub(crate) deflection: FiniteReal,
+    pub(crate) deflection: NonNegativeReal,
     /// Optional per-node curve parameters.
     pub(crate) parameters: Option<Vec<FiniteReal>>,
+}
+
+fn admit_polygon_deflection(value: f64) -> Result<NonNegativeReal, CodecError> {
+    NonNegativeReal::new(value).ok_or_else(|| {
+        CodecError::Malformed("polygon deflection must be finite and non-negative".into())
+    })
 }
 
 /// A rational or non-rational 2D B-spline curve.
@@ -2738,7 +2739,7 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion)
             })
             .transpose()?;
         polygons3d.push(TextPolygon3d {
-            deflection,
+            deflection: admit_polygon_deflection(deflection.get())?,
             nodes,
             parameters,
         });
@@ -2776,7 +2777,7 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion)
             .transpose()?;
         polygons_on_triangulations.push(TextPolygonOnTriangulation {
             nodes,
-            deflection,
+            deflection: admit_polygon_deflection(deflection.get())?,
             parameters,
         });
     }
@@ -4298,7 +4299,7 @@ fn parse_polygons3d(
             None
         };
         polygons.push(TextPolygon3d {
-            deflection,
+            deflection: admit_polygon_deflection(deflection.get())?,
             nodes,
             parameters,
         });
@@ -4356,7 +4357,7 @@ fn parse_polygons_on_triangulations(
         };
         polygons.push(TextPolygonOnTriangulation {
             nodes,
-            deflection,
+            deflection: admit_polygon_deflection(deflection.get())?,
             parameters,
         });
     }
@@ -6168,7 +6169,7 @@ pub(crate) mod tests {
             curve2ds: Vec::new(),
             curves: Vec::new(),
             polygons3d: vec![super::TextPolygon3d {
-                deflection: cadmpeg_ir::scalar::FiniteReal::ZERO,
+                deflection: cadmpeg_ir::scalar::NonNegativeReal::ZERO,
                 nodes: vec![node],
                 parameters: Some(vec![]),
             }],
@@ -6185,6 +6186,48 @@ pub(crate) mod tests {
         assert!(facts.validate().is_ok());
         facts.polygons3d[0].parameters = None;
         assert!(facts.validate().is_ok());
+    }
+
+    #[test]
+    fn polygon_deflection_is_admitted_on_source_and_native_wire() {
+        assert!(super::admit_polygon_deflection(0.0).is_ok());
+        for value in [-1.0, f64::INFINITY] {
+            assert!(super::admit_polygon_deflection(value).is_err());
+        }
+
+        for (value, expected) in [
+            ("nan", "non-finite 3D polygon deflection"),
+            ("-1.0", "polygon deflection must be finite and non-negative"),
+        ] {
+            let text = format!(
+                "CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 1\n1 0 {value} 0 0 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*"
+            );
+            let error = super::parse_text(text.as_bytes()).expect_err("invalid source deflection");
+            assert!(error.to_string().contains(expected), "{error}");
+        }
+
+        let polygon = serde_json::json!({
+            "deflection": 0.5,
+            "nodes": [{"x": 0.0, "y": 0.0, "z": 0.0}],
+            "parameters": null,
+        });
+        let admitted: super::TextPolygon3d = serde_json::from_value(polygon.clone()).unwrap();
+        assert_eq!(serde_json::to_value(admitted).unwrap(), polygon);
+        let mut invalid = polygon;
+        invalid["deflection"] = serde_json::json!(-1.0);
+        assert!(serde_json::from_value::<super::TextPolygon3d>(invalid).is_err());
+
+        let polygon = serde_json::json!({
+            "nodes": [1],
+            "deflection": 0.5,
+            "parameters": null,
+        });
+        let admitted: super::TextPolygonOnTriangulation =
+            serde_json::from_value(polygon.clone()).unwrap();
+        assert_eq!(serde_json::to_value(admitted).unwrap(), polygon);
+        let mut invalid = polygon;
+        invalid["deflection"] = serde_json::json!(-1.0);
+        assert!(serde_json::from_value::<super::TextPolygonOnTriangulation>(invalid).is_err());
     }
 
     #[test]

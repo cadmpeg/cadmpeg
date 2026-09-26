@@ -13,8 +13,8 @@ pub(crate) struct InterpolationGrid {
 }
 
 impl InterpolationGrid {
-    /// Admits a grid whose point and boundary-derivative counts agree with
-    /// the parameter counts.
+    /// Admits a complete finite grid with increasing parameters and matching
+    /// point and boundary-derivative counts.
     pub(crate) fn try_new(
         points: Vec<[f64; 3]>,
         u_parameters: Vec<f64>,
@@ -25,7 +25,24 @@ impl InterpolationGrid {
     ) -> Option<Self> {
         let u_count = u_parameters.len();
         let v_count = v_parameters.len();
-        (points.len() == u_count.checked_mul(v_count)?
+        let ordered_finite = |parameters: &[f64]| {
+            parameters.iter().all(|value| value.is_finite())
+                && parameters.windows(2).all(|pair| pair[0] < pair[1])
+        };
+        let vectors_finite =
+            |vectors: &[[f64; 3]]| vectors.iter().flatten().all(|value| value.is_finite());
+        (u_count >= 2
+            && v_count >= 2
+            && ordered_finite(&u_parameters)
+            && ordered_finite(&v_parameters)
+            && vectors_finite(&points)
+            && vectors_finite(&u_derivatives)
+            && vectors_finite(&v_derivatives)
+            && mixed_derivatives
+                .iter()
+                .flatten()
+                .all(|value| value.is_finite())
+            && points.len() == u_count.checked_mul(v_count)?
             && u_derivatives.len() == v_count.checked_mul(2)?
             && v_derivatives.len() == u_count.checked_mul(2)?)
         .then_some(())?;
@@ -39,7 +56,7 @@ impl InterpolationGrid {
         })
     }
 
-    /// Admits complete finite source grids and selects boundary derivatives.
+    /// Selects boundary derivatives from a complete finite source grid.
     pub(crate) fn from_full_tangent_grid(
         points: Vec<[f64; 3]>,
         u_parameters: Vec<f64>,
@@ -51,17 +68,10 @@ impl InterpolationGrid {
         let u_count = u_parameters.len();
         let v_count = v_parameters.len();
         let point_count = u_count.checked_mul(v_count)?;
-        let ordered_finite = |parameters: &[f64]| {
-            parameters.iter().all(|value| value.is_finite())
-                && parameters.windows(2).all(|pair| pair[0] < pair[1])
-        };
         let vectors_finite =
             |vectors: &[[f64; 3]]| vectors.iter().flatten().all(|value| value.is_finite());
         (u_count >= 2
             && v_count >= 2
-            && ordered_finite(&u_parameters)
-            && ordered_finite(&v_parameters)
-            && vectors_finite(&points)
             && points.len() == point_count
             && vectors_finite(u_tangents)
             && vectors_finite(v_tangents)
@@ -131,6 +141,82 @@ impl InterpolationGrid {
 #[cfg(test)]
 mod tests {
     use super::InterpolationGrid;
+
+    fn valid_grid() -> InterpolationGrid {
+        InterpolationGrid::try_new(
+            vec![[0.0; 3]; 4],
+            vec![0.0, 1.0],
+            vec![0.0, 1.0],
+            vec![[0.0; 3]; 4],
+            vec![[0.0; 3]; 4],
+            [[0.0; 3]; 4],
+        )
+        .expect("valid grid fixture")
+    }
+
+    fn readmit(grid: InterpolationGrid) -> Option<InterpolationGrid> {
+        InterpolationGrid::try_new(
+            grid.points,
+            grid.u_parameters,
+            grid.v_parameters,
+            grid.u_derivatives,
+            grid.v_derivatives,
+            grid.mixed_derivatives,
+        )
+    }
+
+    #[test]
+    fn grid_admission_rejects_nonfinite_points() {
+        let mut grid = valid_grid();
+        grid.points[0][0] = f64::NAN;
+        assert!(readmit(grid).is_none());
+    }
+
+    #[test]
+    fn grid_admission_rejects_nonfinite_parameters() {
+        let mut grid = valid_grid();
+        grid.u_parameters[0] = f64::INFINITY;
+        assert!(readmit(grid).is_none());
+        let mut grid = valid_grid();
+        grid.v_parameters[1] = f64::NAN;
+        assert!(readmit(grid).is_none());
+    }
+
+    #[test]
+    fn grid_admission_rejects_unordered_parameters() {
+        let mut grid = valid_grid();
+        grid.u_parameters[1] = 0.0;
+        assert!(readmit(grid).is_none());
+        let mut grid = valid_grid();
+        grid.v_parameters.swap(0, 1);
+        assert!(readmit(grid).is_none());
+    }
+
+    #[test]
+    fn grid_admission_rejects_nonfinite_boundary_derivatives() {
+        let mut grid = valid_grid();
+        grid.u_derivatives[0][1] = f64::NAN;
+        assert!(readmit(grid).is_none());
+        let mut grid = valid_grid();
+        grid.v_derivatives[3][2] = f64::INFINITY;
+        assert!(readmit(grid).is_none());
+    }
+
+    #[test]
+    fn grid_admission_rejects_nonfinite_mixed_derivatives() {
+        let mut grid = valid_grid();
+        grid.mixed_derivatives[2][0] = f64::NAN;
+        assert!(readmit(grid).is_none());
+    }
+
+    #[test]
+    fn grid_admission_rejects_single_parameter_axes() {
+        let mut grid = valid_grid();
+        grid.u_parameters.pop();
+        grid.points.truncate(2);
+        grid.v_derivatives.truncate(2);
+        assert!(readmit(grid).is_none());
+    }
 
     #[test]
     fn source_grid_admission_rejects_mismatched_and_unordered_fields() {

@@ -17,6 +17,7 @@ use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
+use cadmpeg_ir::scalar::PositiveReal;
 use std::collections::BTreeSet;
 
 const EPS_CYLINDER_FIT: f64 = 1.0e-8;
@@ -398,7 +399,7 @@ pub(in super::super) fn round_constant_radius(
             if !legacy_round_radius_agrees(scan, ir, feature_id, radius) {
                 return Ok(None);
             }
-            return Ok(Some(radius));
+            return Ok(Some(radius.get()));
         }
         Some(LegacyRoundRadius::Ambiguous) => return Ok(None),
         Some(LegacyRoundRadius::NotPresent) | None => {}
@@ -492,8 +493,8 @@ fn round_replay_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Opt
         .iter()
         .filter(|candidate| candidate.feature_id == feature_id)
         .any(|candidate| {
-            candidate.value > 0.0
-                && (candidate.value - radius).abs() <= EPS_ROUND_RADIUS_RECONCILIATION * scale
+            candidate.value.get() > 0.0
+                && (candidate.value.get() - radius).abs() <= EPS_ROUND_RADIUS_RECONCILIATION * scale
         })
         .then_some(radius)
 }
@@ -502,11 +503,9 @@ fn legacy_round_radius_agrees(
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
-    radius: f64,
+    radius: PositiveReal,
 ) -> bool {
-    if !radius.is_finite() || radius <= 0.0 {
-        return false;
-    }
+    let radius = radius.get();
     let mut samples = round_observed_radii(scan, feature_id);
     samples.extend(round_placed_cylinder_radii(scan, ir, feature_id));
     if samples

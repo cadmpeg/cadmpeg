@@ -118,7 +118,7 @@ pub(crate) fn classify(entity_type: i64, form: i64) -> Option<AnnotationKind> {
 }
 
 fn finite(record: &ParameterRecord, index: usize) -> bool {
-    record.number(index).is_some_and(f64::is_finite)
+    record.number(index).is_some()
 }
 
 fn exact_parameter_count(record: &ParameterRecord, expected: usize) -> bool {
@@ -226,16 +226,15 @@ fn general_note_valid_for_global_table(
                     })
                 && record
                     .number_or(start + 4, std::f64::consts::FRAC_PI_2)
-                    .is_some_and(f64::is_finite)
-                && record.number_or(start + 5, 0.0).is_some_and(f64::is_finite)
+                    .is_some()
+                && record.number_or(start + 5, 0.0).is_some()
                 && record
                     .integer_or(start + 6, 0)
                     .is_some_and(mirror_flag_valid)
                 && record
                     .integer_or(start + 7, 0)
                     .is_some_and(vertical_text_flag_valid)
-                && (start + 8..=start + 10)
-                    .all(|field| record.number_or(field, 0.0).is_some_and(f64::is_finite))
+                && (start + 8..=start + 10).all(|field| record.number_or(field, 0.0).is_some())
         })
 }
 
@@ -319,7 +318,7 @@ fn new_general_note_valid(
                 .is_some_and(|value| value.is_finite() && value >= 0.0)
         })
         && record.integer_or(3, 0).is_some_and(justification_valid)
-        && (4..=11).all(|index| record.number_or(index, 0.0).is_some_and(f64::is_finite))
+        && (4..=11).all(|index| record.number_or(index, 0.0).is_some())
         && (0..count).all(|index| {
             let start = 13 + index * 20;
             let fixed = record.integer_or(start, 0);
@@ -352,7 +351,7 @@ fn new_general_note_valid(
                 })
                 && fixed.is_some_and(fixed_or_variable_valid);
             metrics_valid
-                && record.number_or(start + 4, 0.0).is_some_and(f64::is_finite)
+                && record.number_or(start + 4, 0.0).is_some()
                 && record.number_or(start + 6, 0.0).is_some_and(|value| {
                     value.is_finite() && (0.0..=std::f64::consts::TAU).contains(&value)
                 })
@@ -371,18 +370,15 @@ fn new_general_note_valid(
                 && character_set.is_some_and(|value| new_general_note_charset_valid(value, entries))
                 && record
                     .number_or(start + 12, std::f64::consts::FRAC_PI_2)
-                    .is_some_and(f64::is_finite)
-                && record
-                    .number_or(start + 13, 0.0)
-                    .is_some_and(f64::is_finite)
+                    .is_some()
+                && record.number_or(start + 13, 0.0).is_some()
                 && record
                     .integer_or(start + 14, 0)
                     .is_some_and(mirror_flag_valid)
                 && record
                     .integer_or(start + 15, 0)
                     .is_some_and(vertical_text_flag_valid)
-                && (start + 16..=start + 18)
-                    .all(|field| record.number_or(field, 0.0).is_some_and(f64::is_finite))
+                && (start + 16..=start + 18).all(|field| record.number_or(field, 0.0).is_some())
         })
 }
 
