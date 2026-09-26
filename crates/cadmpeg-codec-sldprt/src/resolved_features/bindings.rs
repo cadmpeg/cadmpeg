@@ -38,7 +38,7 @@ use cadmpeg_ir::sketches::SketchId;
 use cadmpeg_ir::{
     features::{
         patterns::{PatternKind, PatternSeed, PatternTransform},
-        FeatureDefinition, FeatureDirection3, FeatureOperation, PathRef,
+        FeatureDefinition, FeatureDirection3, FeatureOperation, FinitePoint3, PathRef,
     },
     units::UnitVector3,
 };
@@ -82,7 +82,7 @@ pub(crate) fn bind_pattern_inputs(
     let mut curve_path_assignments =
         Vec::<(usize, cadmpeg_ir::features::FeatureId, PathRef)>::new();
     let mut pattern_seed_assignments = Vec::<(usize, cadmpeg_ir::features::FeatureId)>::new();
-    let mut circular_axis_assignments = Vec::<(usize, Point3, Vector3)>::new();
+    let mut circular_axis_assignments = Vec::<(usize, FinitePoint3, UnitVector3)>::new();
     let mut linear_direction_assignments = Vec::<(usize, FeatureDirection3)>::new();
     let mut mirror_plane_assignments = Vec::<(usize, Point3, Vector3)>::new();
     let mut mirror_seed_assignments = Vec::<(usize, Vec<cadmpeg_ir::features::FeatureId>)>::new();
@@ -659,7 +659,7 @@ pub(crate) fn bind_pattern_inputs(
         }
         model_features[index].evaluation.set_definition(definition);
     }
-    let mut circular_axes_by_pattern = HashMap::<usize, Vec<(Point3, Vector3)>>::new();
+    let mut circular_axes_by_pattern = HashMap::<usize, Vec<(FinitePoint3, UnitVector3)>>::new();
     for (index, origin, direction) in circular_axis_assignments {
         let candidates = circular_axes_by_pattern.entry(index).or_default();
         if !candidates.contains(&(origin, direction)) {
@@ -706,8 +706,8 @@ pub(crate) fn bind_pattern_inputs(
                 continue;
             }
             *slot = PatternKind::new(PatternTransform::Circular {
-                axis_origin: admitted_point(*axis_origin)?,
-                axis_dir: admitted_direction(*axis_dir)?,
+                axis_origin: *axis_origin,
+                axis_dir: FeatureDirection3::from(*axis_dir),
                 angle,
                 count,
             })

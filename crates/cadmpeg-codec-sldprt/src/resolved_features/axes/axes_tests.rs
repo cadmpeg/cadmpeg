@@ -9,8 +9,9 @@ use super::{
     bounded_profile_axis_endpoints, common_generated_surface_axis,
     compact_line_reference_directions, enrich_history_revolution_inputs,
     profile_roster_construction_axis, profile_roster_origin_axis_endpoints,
-    profile_roster_principal_axis_endpoints, revolution_line_reference_inputs,
-    temporary_axis_reference,
+    profile_roster_principal_axis_endpoints,
+    revolution_line_reference_inputs as typed_revolution_line_reference_inputs,
+    temporary_axis_reference as typed_temporary_axis_reference,
 };
 use crate::layout::temporary_axis_reference_nine_scalar as temporary_axis;
 use crate::records::FeatureSource;
@@ -24,6 +25,25 @@ use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchId};
 use std::collections::{BTreeMap, HashSet};
+
+fn revolution_line_reference_inputs(
+    payload: &[u8],
+    object_start: usize,
+    object_end: usize,
+    profile_sources: &HashSet<u32>,
+) -> Option<(u32, Point3, Vector3)> {
+    typed_revolution_line_reference_inputs(payload, object_start, object_end, profile_sources)
+        .map(|(source, origin, direction)| (source, origin.get(), *direction.as_raw()))
+}
+
+fn temporary_axis_reference(
+    payload: &[u8],
+    object_start: usize,
+    object_end: usize,
+) -> Option<(Point3, Vector3)> {
+    typed_temporary_axis_reference(payload, object_start, object_end)
+        .map(|(origin, direction)| (origin.get(), *direction.as_raw()))
+}
 
 #[test]
 fn compact_line_reference_rejects_conflicting_eight_and_nine_scalar_directions() {
