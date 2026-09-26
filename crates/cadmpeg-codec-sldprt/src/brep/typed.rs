@@ -60,8 +60,14 @@ struct BodyCandidate {
 }
 
 impl BodyCandidate {
-    fn into_node(self) -> BodyNode {
-        BodyNode {
+    fn into_node(self, ctx: Option<&DecodeContext<'_>>) -> Result<BodyNode, CodecError> {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(
+                self.ownership_len as u64,
+                "copy Parasolid body ownership references",
+            )?;
+        }
+        Ok(BodyNode {
             attr: self.attr,
             node_id: self.node_id,
             topology_refs: self.topology_refs,
@@ -69,7 +75,7 @@ impl BodyCandidate {
             kind: self.kind,
             offset: self.offset,
             end: self.end,
-        }
+        })
     }
 }
 
@@ -822,7 +828,7 @@ pub(super) fn scan(bytes: &[u8], ctx: Option<&DecodeContext<'_>>) -> Result<Fact
         if let Some(body) = parse_body_layout(bytes, z + 1, z + 1) {
             admit_record(ctx)?;
             body_offsets.insert(body.offset);
-            facts.bodies.push(body.into_node());
+            facts.bodies.push(body.into_node(ctx)?);
         }
         if let Some(shell) = parse_shell_fields(bytes, z + 1, z + 1) {
             if !shell_offsets.contains(&shell.offset) {
@@ -852,7 +858,7 @@ pub(super) fn scan(bytes: &[u8], ctx: Option<&DecodeContext<'_>>) -> Result<Fact
                 if !body_offsets.contains(&body.offset) {
                     admit_record(ctx)?;
                     body_offsets.insert(body.offset);
-                    facts.bodies.push(body.into_node());
+                    facts.bodies.push(body.into_node(ctx)?);
                 }
             }
         }
@@ -897,12 +903,13 @@ pub(super) fn scan(bytes: &[u8], ctx: Option<&DecodeContext<'_>>) -> Result<Fact
 #[cfg(test)]
 mod tests {
     use super::{
-        read_ref, region_chain, scan, BodyNode, FaceNode, Facts, RegionNode, ShellNode, BODY_TAG,
-        FACE_TAG, MAGIC, REGION_TAG, SHELL_TAG,
+        read_ref, region_chain, scan, BodyCandidate, BodyNode, FaceNode, Facts, RegionNode,
+        ShellNode, BODY_POST_TOPOLOGY_REF_MAX, BODY_TAG, FACE_TAG, MAGIC, REGION_TAG, SHELL_TAG,
     };
     use crate::test_support::container::sldprt_with_body;
     use crate::test_support::parasolid::triangle_body;
     use crate::SldprtCodec;
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::topology::BodyKind;
     use cadmpeg_ir::topology::Sense;
@@ -950,6 +957,34 @@ mod tests {
             .expect("service profile admits typed records")
             .bodies
             .is_empty());
+    }
+
+    #[test]
+    fn parasolid_body_ownership_references_refuse_before_copy() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let bytes = [0_u8; 1];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 6;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+        let candidate = BodyCandidate {
+            attr: 2,
+            node_id: 1,
+            topology_refs: [0; 7],
+            ownership_refs: [0; 7 + BODY_POST_TOPOLOGY_REF_MAX],
+            ownership_len: 7,
+            kind: BodyKind::Solid,
+            offset: 0,
+            end: 0,
+        };
+        let error = candidate
+            .into_node(Some(&ctx))
+            .expect_err("seven references exceed six items");
+        assert!(matches!(error,
+            CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "copy Parasolid body ownership references"));
     }
 
     fn push_ref(bytes: &mut Vec<u8>, value: u32) {

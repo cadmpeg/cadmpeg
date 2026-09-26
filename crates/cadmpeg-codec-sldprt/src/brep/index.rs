@@ -152,7 +152,7 @@ pub(super) fn scan_carriers(
     (out.blends, out.blend_support_pairs) = blend::scan(body);
     out.offsets = offset::scan(body);
     for intersection in
-        intersection::scan_intersection_carriers(body, &mut lane_refusals).into_values()
+        intersection::scan_intersection_carriers(ctx, body, &mut lane_refusals)?.into_values()
     {
         out.insert_intersection(intersection);
     }

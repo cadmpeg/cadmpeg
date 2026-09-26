@@ -37,7 +37,7 @@ pub fn spline_surfaces(data: &[u8]) {
 
 /// Exercise topology record scanning.
 pub fn topology(data: &[u8]) {
-    crate::brep::topology::scan(data);
+    drop(crate::brep::topology::scan(data));
 }
 
 /// Exercise entity record scanning.
