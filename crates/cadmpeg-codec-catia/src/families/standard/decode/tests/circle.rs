@@ -70,18 +70,22 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
         geometry: StandardCurveGeometry::Circle { center, radius },
     };
 
-    let (curve, range) = build_standard_edge_curve(
-        &mut ir,
-        &mut AnnotationBuilder::new(),
-        &bindings,
-        &surface_indices,
-        &[],
-        &support,
-        [0, 1],
-        None,
-        None,
-        &mut crate::nurbs::LaneRefusals::new(),
-    )
+    let (curve, range) = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        build_standard_edge_curve(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &bindings,
+            &surface_indices,
+            &[],
+            &support,
+            [0, 1],
+            None,
+            None,
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut admission,
+        )
+    })
     .expect("valid source object identity");
     let curve = curve.expect("the serialized circle retains a carrier identity");
     assert_eq!(range, None);

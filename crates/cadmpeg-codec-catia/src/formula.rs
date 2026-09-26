@@ -13,6 +13,7 @@ use cadmpeg_ir::{AnnotationBuilder, Annotations};
 use crate::native::CatiaNative;
 
 pub(crate) fn transfer_parameters(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     native: &CatiaNative,
     annotations: &mut Annotations,
@@ -32,11 +33,12 @@ pub(crate) fn transfer_parameters(
     let mut candidates = BTreeMap::<ParameterId, FormulaParameterCandidate>::new();
     let mut conflicting_inputs = BTreeSet::<ParameterId>::new();
     collect_definition_chain_parameters(
+        ctx,
         native,
         graph_scope,
         &mut candidates,
         &mut conflicting_inputs,
-    );
+    )?;
     let mut programs = Vec::<FormulaProgramCandidate>::new();
     let mut formula_definition_counts = HashMap::<ParameterId, usize>::new();
     for entity in native
@@ -73,7 +75,7 @@ pub(crate) fn transfer_parameters(
                 LegacyModelingScope::Container,
             )
     };
-    let legacy_transfer = collect_legacy_parameters(native, &mut candidates, legacy_scope)?;
+    let legacy_transfer = collect_legacy_parameters(ctx, native, &mut candidates, legacy_scope)?;
     let mut relation_program_parameters =
         BTreeMap::<ParameterId, Option<(DesignParameter, FormulaParameterType)>>::new();
     for program_entity in native
@@ -95,8 +97,11 @@ pub(crate) fn transfer_parameters(
             else {
                 continue;
             };
-            let Some(candidate) =
-                typed_entity_parameter_candidate_for_source(entity, input.value_type.as_str())
+            let Some(candidate) = typed_entity_parameter_candidate_for_source(
+                ctx,
+                entity,
+                input.value_type.as_str(),
+            )?
             else {
                 continue;
             };
@@ -178,7 +183,7 @@ pub(crate) fn transfer_parameters(
                 continue;
             };
             let Some(candidate) =
-                typed_entity_parameter_candidate_for_source(entity, &input.input_type)
+                typed_entity_parameter_candidate_for_source(ctx, entity, &input.input_type)?
             else {
                 all_inputs_complete = false;
                 all_inputs_typed = false;
@@ -273,6 +278,7 @@ pub(crate) fn transfer_parameters(
                                 inputs: dependencies.clone(),
                                 input_parameters,
                             });
+                            ctx.charge_entities(1, "admit CATIA formula candidate")?;
                             transferred.push(FormulaParameterCandidate {
                                 parameter: DesignParameter {
                                     id: output_id,
@@ -333,21 +339,19 @@ pub(crate) fn transfer_parameters(
         let Some(expression) = expression_entity.relation_expression() else {
             continue;
         };
-        let Some(signature) = expression.signature() else {
-            continue;
-        };
         let Some(inputs) = instance.inputs.as_ref() else {
             continue;
         };
         let Some((program, candidate)) = relation_program_output_candidate(
+            ctx,
             relation_entity,
             expression_entity,
             output_entity,
             expression,
-            &signature,
             inputs,
             &entities,
-        ) else {
+        )?
+        else {
             continue;
         };
         programs.push(program);
@@ -474,6 +478,7 @@ pub(crate) fn transfer_parameters(
             .then(|| object.id.clone())
         })
         .collect();
+    let transferred = candidates.len();
     let mut parameters = candidates.into_values().collect::<Vec<_>>();
     parameters.sort_by_key(|candidate| candidate.source_order);
     let Some(parameters) = parameters
@@ -510,7 +515,6 @@ pub(crate) fn transfer_parameters(
         }
     }
     *annotations = annotation_builder.build();
-    let transferred = parameters.len();
     ir.model
         .parameters
         .extend(parameters.into_iter().map(|candidate| candidate.parameter));
@@ -532,11 +536,12 @@ pub(crate) fn transfer_parameters(
 /// first definition; the native decoder enforces that invariant. Other suffix
 /// states remain native because they do not contain a neutral parameter value.
 fn collect_definition_chain_parameters(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     native: &CatiaNative,
     graph_scope: &crate::decode::ModelingGraphScope,
     candidates: &mut BTreeMap<ParameterId, FormulaParameterCandidate>,
     conflicting_inputs: &mut BTreeSet<ParameterId>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for entity in native
         .entity_records
         .iter()
@@ -545,7 +550,7 @@ fn collect_definition_chain_parameters(
         let Some(chain) = entity.definition_chain_value() else {
             continue;
         };
-        let Some(candidate) = definition_chain_parameter_candidate(entity, chain) else {
+        let Some(candidate) = definition_chain_parameter_candidate(ctx, entity, chain)? else {
             continue;
         };
         let id = candidate.parameter.id.clone();
@@ -559,19 +564,24 @@ fn collect_definition_chain_parameters(
             Some(_) => {}
         }
     }
+    Ok(())
 }
 
 fn definition_chain_parameter_candidate(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entity: &crate::native::entity_record::CatiaEntityRecord,
     chain: &crate::native::CatiaDefinitionChainValue,
-) -> Option<FormulaParameterCandidate> {
+) -> Result<Option<FormulaParameterCandidate>, cadmpeg_core::CodecError> {
     let (parameter_type, evaluation, evaluation_opcode_offset, atom_value) = match &chain.value {
         crate::native::CatiaEntitySuffixSchemaValue::Evaluation {
             opcode_offset,
             evaluation,
         } => {
-            let (parameter_type, evaluation) =
-                typed_parameter_evaluation(&chain.role.value, evaluation)?;
+            let Some((parameter_type, evaluation)) =
+                typed_parameter_evaluation(&chain.role.value, evaluation)
+            else {
+                return Ok(None);
+            };
             (parameter_type, evaluation, Some(*opcode_offset), None)
         }
         crate::native::CatiaEntitySuffixSchemaValue::Atom { value }
@@ -583,15 +593,22 @@ fn definition_chain_parameter_candidate(
                 TypedParameterEvaluation::Value(ParameterValue::Boolean(match value {
                     0 => false,
                     1 => true,
-                    _ => return None,
+                    _ => return Ok(None),
                 })),
                 None,
                 Some(*value),
             )
         }
-        _ => return None,
+        _ => return Ok(None),
     };
-    let name = (!chain.selector.value.is_empty()).then(|| chain.selector.value.clone())?;
+    if chain.selector.value.is_empty() {
+        return Ok(None);
+    }
+    let Some(id) = neutral_parameter_id(&entity.id).ok() else {
+        return Ok(None);
+    };
+    ctx.charge_entities(1, "admit CATIA formula candidate")?;
+    let name = chain.selector.value.clone();
     let (expression, value) = match evaluation {
         TypedParameterEvaluation::Unset => (String::new(), None),
         TypedParameterEvaluation::Value(value) => {
@@ -643,9 +660,9 @@ fn definition_chain_parameter_candidate(
             atom_value.to_string(),
         );
     }
-    Some(FormulaParameterCandidate {
+    Ok(Some(FormulaParameterCandidate {
         parameter: DesignParameter {
-            id: neutral_parameter_id(&entity.id).ok()?,
+            id,
             owner: None,
             ordinal: 0,
             name,
@@ -660,7 +677,7 @@ fn definition_chain_parameter_candidate(
         parameter_type,
         role: FormulaParameterRole::Input,
         source_order: entity.byte_offset,
-    })
+    }))
 }
 
 #[derive(Default)]
@@ -689,6 +706,7 @@ enum LegacyModelingScope<'a> {
 }
 
 fn collect_legacy_parameters(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     native: &CatiaNative,
     candidates: &mut BTreeMap<ParameterId, FormulaParameterCandidate>,
     modeling_scope: LegacyModelingScope<'_>,
@@ -724,13 +742,6 @@ fn collect_legacy_parameters(
             else {
                 continue;
             };
-            let (expression, value) = match evaluation {
-                TypedParameterEvaluation::Unset => (String::new(), None),
-                TypedParameterEvaluation::Value(value) => {
-                    let expression = parameter_expression(&value);
-                    (expression, Some(value))
-                }
-            };
             let Some(key) = scalar.id.strip_prefix("catia:legacy:scalar#") else {
                 continue;
             };
@@ -743,6 +754,14 @@ fn collect_legacy_parameters(
             if candidates.contains_key(&id) {
                 continue;
             }
+            ctx.charge_entities(1, "admit CATIA formula candidate")?;
+            let (expression, value) = match evaluation {
+                TypedParameterEvaluation::Unset => (String::new(), None),
+                TypedParameterEvaluation::Value(value) => {
+                    let expression = parameter_expression(&value);
+                    (expression, Some(value))
+                }
+            };
             candidates.insert(
                 id.clone(),
                 FormulaParameterCandidate {
@@ -801,6 +820,7 @@ fn collect_legacy_parameters(
             if candidates.contains_key(&id) {
                 continue;
             }
+            ctx.charge_entities(1, "admit CATIA formula candidate")?;
             let value = ParameterValue::String(string.value.clone());
             candidates.insert(
                 id.clone(),
@@ -860,6 +880,7 @@ fn collect_legacy_parameters(
             if candidates.contains_key(&id) {
                 continue;
             }
+            ctx.charge_entities(1, "admit CATIA formula candidate")?;
             let value = ParameterValue::Integer(i64::from(integer.value));
             candidates.insert(
                 id.clone(),
@@ -1159,12 +1180,20 @@ impl FormulaParameterRole {
 }
 
 fn typed_entity_parameter_candidate(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entity: &crate::native::entity_record::CatiaEntityRecord,
     parameter: &crate::native::CatiaParameterValue,
     source_type: &str,
-) -> Option<FormulaParameterCandidate> {
-    let (parameter_type, evaluation) =
-        typed_parameter_evaluation(source_type, &parameter.evaluation)?;
+) -> Result<Option<FormulaParameterCandidate>, cadmpeg_core::CodecError> {
+    let Some((parameter_type, evaluation)) =
+        typed_parameter_evaluation(source_type, &parameter.evaluation)
+    else {
+        return Ok(None);
+    };
+    let Some(id) = neutral_parameter_id(&entity.id).ok() else {
+        return Ok(None);
+    };
+    ctx.charge_entities(1, "admit CATIA formula candidate")?;
     let (expression, value) = match evaluation {
         TypedParameterEvaluation::Unset => (String::new(), None),
         TypedParameterEvaluation::Value(value) => {
@@ -1172,9 +1201,9 @@ fn typed_entity_parameter_candidate(
             (expression, Some(value))
         }
     };
-    Some(FormulaParameterCandidate {
+    Ok(Some(FormulaParameterCandidate {
         parameter: DesignParameter {
-            id: neutral_parameter_id(&entity.id).ok()?,
+            id,
             owner: None,
             ordinal: 0,
             name: parameter.name.value.clone(),
@@ -1192,19 +1221,30 @@ fn typed_entity_parameter_candidate(
         parameter_type,
         role: FormulaParameterRole::Input,
         source_order: entity.byte_offset,
-    })
+    }))
 }
 
 fn typed_entity_parameter_candidate_for_source(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entity: &crate::native::entity_record::CatiaEntityRecord,
     source_type: &str,
-) -> Option<FormulaParameterCandidate> {
+) -> Result<Option<FormulaParameterCandidate>, cadmpeg_core::CodecError> {
     if let Some(parameter) = entity.parameter_value() {
-        return typed_entity_parameter_candidate(entity, parameter, source_type);
+        return typed_entity_parameter_candidate(ctx, entity, parameter, source_type);
     }
-    let chain = entity.definition_chain_value()?;
-    let candidate = definition_chain_parameter_candidate(entity, chain)?;
-    (canonical_parameter_type(source_type) == Some(candidate.parameter_type)).then_some(candidate)
+    let Some(chain) = entity.definition_chain_value() else {
+        return Ok(None);
+    };
+    if canonical_parameter_type(source_type) != canonical_parameter_type(&chain.role.value) {
+        return Ok(None);
+    }
+    let Some(candidate) = definition_chain_parameter_candidate(ctx, entity, chain)? else {
+        return Ok(None);
+    };
+    Ok(
+        (canonical_parameter_type(source_type) == Some(candidate.parameter_type))
+            .then_some(candidate),
+    )
 }
 
 struct FormulaProgramCandidate {
@@ -1262,14 +1302,18 @@ fn merge_formula_parameter_candidate(
 }
 
 fn relation_program_output_candidate(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     relation_entity: &crate::native::entity_record::CatiaEntityRecord,
     expression_entity: &crate::native::entity_record::CatiaEntityRecord,
     output_entity: &crate::native::entity_record::CatiaEntityRecord,
     expression: &crate::native::CatiaRelationExpression,
-    signature: &crate::native::CatiaRelationTypeSignature,
     inputs: &[crate::native::CatiaRelationProgramInput],
     entities: &HashMap<&str, &crate::native::entity_record::CatiaEntityRecord>,
-) -> Option<(FormulaProgramCandidate, FormulaParameterCandidate)> {
+) -> Result<Option<(FormulaProgramCandidate, FormulaParameterCandidate)>, cadmpeg_core::CodecError>
+{
+    let Some(signature) = expression.signature() else {
+        return Ok(None);
+    };
     if inputs.len() != signature.inputs.len()
         || inputs
             .iter()
@@ -1278,7 +1322,7 @@ fn relation_program_output_candidate(
                 input.parameter != declared.parameter || input.value_type != declared.input_type
             })
     {
-        return None;
+        return Ok(None);
     }
 
     let mut dependencies = Vec::with_capacity(inputs.len());
@@ -1287,11 +1331,16 @@ fn relation_program_output_candidate(
     let mut type_bindings = BTreeMap::new();
     let mut all_inputs_complete = true;
     for input in inputs {
-        let input_entity = input.entity.entity().and_then(|id| entities.get(id))?;
-        let candidate =
-            typed_entity_parameter_candidate_for_source(input_entity, &input.value_type)?;
+        let Some(input_entity) = input.entity.entity().and_then(|id| entities.get(id)) else {
+            return Ok(None);
+        };
+        let Some(candidate) =
+            typed_entity_parameter_candidate_for_source(ctx, input_entity, &input.value_type)?
+        else {
+            return Ok(None);
+        };
         if dependencies.contains(&candidate.parameter.id) {
-            return None;
+            return Ok(None);
         }
         dependencies.push(candidate.parameter.id.clone());
         type_bindings.insert(
@@ -1323,18 +1372,27 @@ fn relation_program_output_candidate(
             canonical_parameter_type(&signature.result_type)
                 .is_some_and(|source_type| value.satisfies_source_type(source_type))
         });
-    (if all_inputs_complete {
+    let Some(_) = (if all_inputs_complete {
         evaluated_expression.as_ref()
     } else {
         type_checked_expression.as_ref()
-    })?;
-    let output_value = output_entity.parameter_value()?;
-    let output_id = neutral_parameter_id(&output_entity.id).ok()?;
+    }) else {
+        return Ok(None);
+    };
+    let Some(output_value) = output_entity.parameter_value() else {
+        return Ok(None);
+    };
+    let Some(output_id) = neutral_parameter_id(&output_entity.id).ok() else {
+        return Ok(None);
+    };
     if dependencies.contains(&output_id) {
-        return None;
+        return Ok(None);
     }
-    let (parameter_type, value) =
-        typed_parameter_evaluation(&signature.result_type, &output_value.evaluation)?;
+    let Some((parameter_type, value)) =
+        typed_parameter_evaluation(&signature.result_type, &output_value.evaluation)
+    else {
+        return Ok(None);
+    };
     let accepted = match &value {
         TypedParameterEvaluation::Unset => true,
         TypedParameterEvaluation::Value(value) => {
@@ -1344,8 +1402,9 @@ fn relation_program_output_candidate(
         }
     };
     if !accepted {
-        return None;
+        return Ok(None);
     }
+    ctx.charge_entities(1, "admit CATIA formula candidate")?;
     let candidate = FormulaParameterCandidate {
         parameter: DesignParameter {
             id: output_id.clone(),
@@ -1370,7 +1429,7 @@ fn relation_program_output_candidate(
         role: FormulaParameterRole::FormulaOutput { fallback: None },
         source_order: output_entity.byte_offset,
     };
-    Some((
+    Ok(Some((
         FormulaProgramCandidate {
             relation_entity: relation_entity.id.clone(),
             expression_entity: expression_entity.id.clone(),
@@ -1379,7 +1438,7 @@ fn relation_program_output_candidate(
             input_parameters,
         },
         candidate,
-    ))
+    )))
 }
 
 fn formula_parameter_candidates_agree(

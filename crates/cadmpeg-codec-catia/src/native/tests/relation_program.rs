@@ -375,12 +375,15 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
 
     let mut ir = CadIr::empty();
     let mut annotations = Annotations::default();
-    let transfer = crate::formula::transfer_parameters(
-        &mut ir,
-        &native,
-        &mut annotations,
-        &crate::decode::ModelingGraphScope::Unscoped,
-    )
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        crate::formula::transfer_parameters(
+            ctx,
+            &mut ir,
+            &native,
+            &mut annotations,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
     .expect("valid exactness fields");
     let [parameter] = ir.model.parameters.as_slice() else {
         panic!("one relation-program input parameter")
@@ -413,12 +416,15 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
         .value
         .clear();
     let mut empty_binding_ir = CadIr::empty();
-    let empty_binding_transfer = crate::formula::transfer_parameters(
-        &mut empty_binding_ir,
-        &empty_binding_native,
-        &mut Annotations::default(),
-        &crate::decode::ModelingGraphScope::Unscoped,
-    )
+    let empty_binding_transfer = crate::test_support::with_service_context(|ctx| {
+        crate::formula::transfer_parameters(
+            ctx,
+            &mut empty_binding_ir,
+            &empty_binding_native,
+            &mut Annotations::default(),
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
     .expect("valid exactness fields");
     let [empty_binding_parameter] = empty_binding_ir.model.parameters.as_slice() else {
         panic!("one empty-binding input parameter")
@@ -448,12 +454,15 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
         ),
     );
     let mut conflicting_ir = CadIr::empty();
-    let conflicting_transfer = crate::formula::transfer_parameters(
-        &mut conflicting_ir,
-        &conflicting_native,
-        &mut Annotations::default(),
-        &crate::decode::ModelingGraphScope::Unscoped,
-    )
+    let conflicting_transfer = crate::test_support::with_service_context(|ctx| {
+        crate::formula::transfer_parameters(
+            ctx,
+            &mut conflicting_ir,
+            &conflicting_native,
+            &mut Annotations::default(),
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
     .expect("valid exactness fields");
     assert_eq!(conflicting_transfer.relation_program_parameter_count, 0);
     assert!(conflicting_ir.model.parameters.is_empty());
@@ -498,12 +507,15 @@ fn complete_relation_program_output_transfers_a_typed_result() {
 
     let mut ir = CadIr::empty();
     let mut annotations = Annotations::default();
-    let transfer = crate::formula::transfer_parameters(
-        &mut ir,
-        &native,
-        &mut annotations,
-        &crate::decode::ModelingGraphScope::Unscoped,
-    )
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        crate::formula::transfer_parameters(
+            ctx,
+            &mut ir,
+            &native,
+            &mut annotations,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
     .expect("valid exactness fields");
     let [input, output] = ir.model.parameters.as_slice() else {
         panic!("typed relation-program input and output")
@@ -540,12 +552,15 @@ fn complete_relation_program_output_transfers_a_typed_result() {
         ),
     );
     let mut ambiguous_ir = CadIr::empty();
-    let ambiguous_transfer = crate::formula::transfer_parameters(
-        &mut ambiguous_ir,
-        &ambiguous_native,
-        &mut Annotations::default(),
-        &crate::decode::ModelingGraphScope::Unscoped,
-    )
+    let ambiguous_transfer = crate::test_support::with_service_context(|ctx| {
+        crate::formula::transfer_parameters(
+            ctx,
+            &mut ambiguous_ir,
+            &ambiguous_native,
+            &mut Annotations::default(),
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
     .expect("valid exactness fields");
     let [ambiguous_input] = ambiguous_ir.model.parameters.as_slice() else {
         panic!("ambiguous compound output keeps its typed input")

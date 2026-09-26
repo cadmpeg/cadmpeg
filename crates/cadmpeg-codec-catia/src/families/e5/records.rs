@@ -6,7 +6,8 @@
 
 use crate::families::a5a8::records::rolling_ball_jet_derivative;
 use crate::math::distance;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
     nurbs::NurbsSurface, CurveGeometry, ProceduralSurfaceDefinition, RollingBallJetSite,
@@ -381,189 +382,213 @@ pub(in crate::families) fn e5_surfaces(
 /// channel is the opening angle. The tail range, radius, and sense are kept on
 /// the native record; the neutral definition contains the complete value and
 /// derivative jets.
-#[must_use]
-pub(in crate::families) fn e5_rolling_ball_jets(data: &[u8]) -> Vec<E5RollingBallJet> {
-    e5_records(data)
+pub(in crate::families) fn e5_rolling_ball_jets(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+) -> Result<Vec<E5RollingBallJet>, CodecError> {
+    let mut jets = Vec::new();
+    for record in e5_records(data)
         .into_iter()
         .filter(|record| record.class == 0xd8)
-        .filter_map(|record| parse_e5_rolling_ball_jet(data, record))
-        .collect()
+    {
+        if let Some(jet) = parse_e5_rolling_ball_jet(ctx, data, record)? {
+            jets.push(jet);
+        }
+    }
+    Ok(jets)
 }
 
-fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingBallJet> {
-    let mut view = View::over_retained(data).child(record.pos.checked_add(13)?, record.end())?;
-    if view.u8()? != 0x80 {
-        return None;
-    }
-    let station_count = usize::try_from(view.u32_le()?).ok()?;
-    let degree = view.u32_le()?;
-    let zero0 = view.u32_le()?;
-    let zero1 = view.u32_le()?;
-    let repeated_station_count = usize::try_from(view.u32_le()?).ok()?;
-    let zero2 = view.u32_le()?;
-    if station_count < 2
-        || degree != E5RollingBallJet::DEGREE
-        || repeated_station_count != station_count
-        || [zero0, zero1, zero2] != [0; 3]
-        || record.size
-            != station_count
-                .checked_mul(252)
-                .and_then(|size| size.checked_add(88))?
-    {
-        return None;
-    }
-    let station_count_u64 = u64::try_from(station_count).ok()?;
-    let knots = view.read_counted(station_count_u64, 8, |view| FiniteReal::new(view.f64_le()?))?;
-    if knots.windows(2).any(|pair| pair[0] >= pair[1]) {
-        return None;
-    }
-    let multiplicities = view.read_counted(station_count_u64, 4, View::u32_le)?;
-    // `station_count < 2` is refused above, so the interior station count is
-    // the exact difference. The checked subtraction refuses a stated count this
-    // record cannot span instead of saturating it to an empty interior, which
-    // would admit any interior multiplicity.
-    let interior_station_count = station_count.checked_sub(2)?;
-    if multiplicities.first() != Some(&6)
-        || multiplicities.last() != Some(&6)
-        || multiplicities
-            .iter()
-            .skip(1)
-            .take(interior_station_count)
-            .any(|multiplicity| *multiplicity != 3)
-    {
-        return None;
-    }
-    let positions = read_d8_channel_rows(&mut view, station_count_u64)?;
-    let first_derivatives = read_d8_channel_rows(&mut view, station_count_u64)?;
-    let second_derivatives = read_d8_channel_rows(&mut view, station_count_u64)?;
-    if view.remaining() != E5_D8_TAIL_BYTES {
-        return None;
-    }
-    let parameter_min = view.f64_le()?;
-    let parameter_max = view.f64_le()?;
-    let tail_zero0 = view.f64_le()?;
-    let tail_radius0 = view.f64_le()?;
-    let tail_radius1 = view.f64_le()?;
-    let sense = match view.i32_le()? {
-        -1 => Sign::Negative,
-        1 => Sign::Positive,
-        _ => return None,
+fn parse_e5_rolling_ball_jet(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    record: E5Record,
+) -> Result<Option<E5RollingBallJet>, CodecError> {
+    let Some((mut view, station_count)) = (|| {
+        let mut view =
+            View::over_retained(data).child(record.pos.checked_add(13)?, record.end())?;
+        if view.u8()? != 0x80 {
+            return None;
+        }
+        let station_count = usize::try_from(view.u32_le()?).ok()?;
+        let degree = view.u32_le()?;
+        let zero0 = view.u32_le()?;
+        let zero1 = view.u32_le()?;
+        let repeated_station_count = usize::try_from(view.u32_le()?).ok()?;
+        let zero2 = view.u32_le()?;
+        (station_count >= 2
+            && degree == E5RollingBallJet::DEGREE
+            && repeated_station_count == station_count
+            && [zero0, zero1, zero2] == [0; 3]
+            && record.size
+                == station_count
+                    .checked_mul(252)
+                    .and_then(|size| size.checked_add(88))?)
+        .then_some((view, station_count))
+    })() else {
+        return Ok(None);
     };
-    let tail_zero1 = view.f64_le()?;
-    let tail_radius2 = view.f64_le()?;
-    if parameter_min.to_bits() != knots.first()?.get().to_bits()
-        || parameter_max.to_bits() != knots.last()?.get().to_bits()
-        || tail_zero0.to_bits() != 0
-        || tail_zero1.to_bits() != 0
-        || !tail_radius0.is_finite()
-        || tail_radius0 <= 0.0
-        || !relative_close(tail_radius0, tail_radius1, E5_D8_RADIUS_TOLERANCE)
-        || !relative_close(tail_radius0, tail_radius2, E5_D8_RADIUS_TOLERANCE)
-        || view.array::<3>()? != [1, 0, 0]
-    {
-        return None;
-    }
-    let sites = positions
-        .into_iter()
-        .zip(first_derivatives)
-        .zip(second_derivatives)
-        .map(|((position, first), second)| {
-            let first_limit = FinitePoint3::from_coordinates(position[0], position[1], position[2]);
-            let second_limit =
-                FinitePoint3::from_coordinates(position[3], position[4], position[5]);
-            let center = FinitePoint3::from_coordinates(position[6], position[7], position[8]);
-            let radius = distance(center.get(), first_limit.get());
-            let second_radius = distance(center.get(), second_limit.get());
-            let expected_angle = if radius > 0.0 && second_radius > 0.0 {
-                first_limit
-                    .get()
-                    .vector_from(center.get())
-                    .scale(1.0 / radius)
-                    .dot(
-                        second_limit
-                            .get()
-                            .vector_from(center.get())
-                            .scale(1.0 / second_radius),
-                    )
-                    .clamp(-1.0, 1.0)
-                    .acos()
-            } else {
-                f64::NAN
-            };
-            (
-                first_limit,
-                second_limit,
-                center,
+    // Knots, multiplicities, three channel lanes, sites, and stations each
+    // contain one item per declared station.
+    let station_count_u64 = station_count as u64;
+    ctx.charge_collection_items(
+        station_count_u64 * 7,
+        "decode CATIA E5 rolling-ball stations",
+    )?;
+    Ok((|| {
+        let knots =
+            view.read_counted(station_count_u64, 8, |view| FiniteReal::new(view.f64_le()?))?;
+        if knots.windows(2).any(|pair| pair[0] >= pair[1]) {
+            return None;
+        }
+        let multiplicities = view.read_counted(station_count_u64, 4, View::u32_le)?;
+        // `station_count < 2` is refused above, so the interior station count is
+        // the exact difference. The checked subtraction refuses a stated count this
+        // record cannot span instead of saturating it to an empty interior, which
+        // would admit any interior multiplicity.
+        let interior_station_count = station_count.checked_sub(2)?;
+        if multiplicities.first() != Some(&6)
+            || multiplicities.last() != Some(&6)
+            || multiplicities
+                .iter()
+                .skip(1)
+                .take(interior_station_count)
+                .any(|multiplicity| *multiplicity != 3)
+        {
+            return None;
+        }
+        let positions = read_d8_channel_rows(&mut view, station_count_u64)?;
+        let first_derivatives = read_d8_channel_rows(&mut view, station_count_u64)?;
+        let second_derivatives = read_d8_channel_rows(&mut view, station_count_u64)?;
+        if view.remaining() != E5_D8_TAIL_BYTES {
+            return None;
+        }
+        let parameter_min = view.f64_le()?;
+        let parameter_max = view.f64_le()?;
+        let tail_zero0 = view.f64_le()?;
+        let tail_radius0 = view.f64_le()?;
+        let tail_radius1 = view.f64_le()?;
+        let sense = match view.i32_le()? {
+            -1 => Sign::Negative,
+            1 => Sign::Positive,
+            _ => return None,
+        };
+        let tail_zero1 = view.f64_le()?;
+        let tail_radius2 = view.f64_le()?;
+        if parameter_min.to_bits() != knots.first()?.get().to_bits()
+            || parameter_max.to_bits() != knots.last()?.get().to_bits()
+            || tail_zero0.to_bits() != 0
+            || tail_zero1.to_bits() != 0
+            || !tail_radius0.is_finite()
+            || tail_radius0 <= 0.0
+            || !relative_close(tail_radius0, tail_radius1, E5_D8_RADIUS_TOLERANCE)
+            || !relative_close(tail_radius0, tail_radius2, E5_D8_RADIUS_TOLERANCE)
+            || view.array::<3>()? != [1, 0, 0]
+        {
+            return None;
+        }
+        let sites = positions
+            .into_iter()
+            .zip(first_derivatives)
+            .zip(second_derivatives)
+            .map(|((position, first), second)| {
+                let first_limit =
+                    FinitePoint3::from_coordinates(position[0], position[1], position[2]);
+                let second_limit =
+                    FinitePoint3::from_coordinates(position[3], position[4], position[5]);
+                let center = FinitePoint3::from_coordinates(position[6], position[7], position[8]);
+                let radius = distance(center.get(), first_limit.get());
+                let second_radius = distance(center.get(), second_limit.get());
+                let expected_angle = if radius > 0.0 && second_radius > 0.0 {
+                    first_limit
+                        .get()
+                        .vector_from(center.get())
+                        .scale(1.0 / radius)
+                        .dot(
+                            second_limit
+                                .get()
+                                .vector_from(center.get())
+                                .scale(1.0 / second_radius),
+                        )
+                        .clamp(-1.0, 1.0)
+                        .acos()
+                } else {
+                    f64::NAN
+                };
+                (
+                    first_limit,
+                    second_limit,
+                    center,
+                    radius,
+                    second_radius,
+                    expected_angle,
+                    position[9],
+                    first,
+                    second,
+                )
+            })
+            .collect::<Vec<_>>();
+        if sites.iter().any(
+            |(
+                _first_limit,
+                _second_limit,
+                _center,
                 radius,
                 second_radius,
                 expected_angle,
-                position[9],
-                first,
-                second,
+                stored_angle,
+                _first,
+                _second,
+            )| {
+                !radius.is_finite()
+                    || *radius <= 0.0
+                    || !second_radius.is_finite()
+                    || !relative_close(*radius, *second_radius, E5_D8_RADIUS_TOLERANCE)
+                    || !expected_angle.is_finite()
+                    || (stored_angle.get() - expected_angle).abs() > E5_D8_ARC_TOLERANCE
+                    || !relative_close(*radius, tail_radius0, E5_D8_RADIUS_TOLERANCE)
+            },
+        ) {
+            return None;
+        }
+        let stations = sites
+            .into_iter()
+            .map(
+                |(
+                    first_limit,
+                    second_limit,
+                    center,
+                    _radius,
+                    _second_radius,
+                    _expected_angle,
+                    angle,
+                    first,
+                    second,
+                )| RollingBallJetSite {
+                    first_limit,
+                    second_limit,
+                    center,
+                    angle,
+                    first_derivative: rolling_ball_jet_derivative(first),
+                    second_derivative: rolling_ball_jet_derivative(second),
+                },
             )
+            .zip(knots)
+            .zip(multiplicities)
+            .map(
+                |((site, knot), multiplicity)| cadmpeg_ir::geometry::RollingBallJetStation {
+                    knot,
+                    multiplicity,
+                    site,
+                },
+            )
+            .collect();
+        Some(E5RollingBallJet {
+            pos: record.pos,
+            record_id: View::u32_le_at(data, record.pos + 9)?,
+            stations,
+            sense,
         })
-        .collect::<Vec<_>>();
-    if sites.iter().any(
-        |(
-            _first_limit,
-            _second_limit,
-            _center,
-            radius,
-            second_radius,
-            expected_angle,
-            stored_angle,
-            _first,
-            _second,
-        )| {
-            !radius.is_finite()
-                || *radius <= 0.0
-                || !second_radius.is_finite()
-                || !relative_close(*radius, *second_radius, E5_D8_RADIUS_TOLERANCE)
-                || !expected_angle.is_finite()
-                || (stored_angle.get() - expected_angle).abs() > E5_D8_ARC_TOLERANCE
-                || !relative_close(*radius, tail_radius0, E5_D8_RADIUS_TOLERANCE)
-        },
-    ) {
-        return None;
-    }
-    let stations = sites
-        .into_iter()
-        .map(
-            |(
-                first_limit,
-                second_limit,
-                center,
-                _radius,
-                _second_radius,
-                _expected_angle,
-                angle,
-                first,
-                second,
-            )| RollingBallJetSite {
-                first_limit,
-                second_limit,
-                center,
-                angle,
-                first_derivative: rolling_ball_jet_derivative(first),
-                second_derivative: rolling_ball_jet_derivative(second),
-            },
-        )
-        .zip(knots)
-        .zip(multiplicities)
-        .map(
-            |((site, knot), multiplicity)| cadmpeg_ir::geometry::RollingBallJetStation {
-                knot,
-                multiplicity,
-                site,
-            },
-        )
-        .collect();
-    Some(E5RollingBallJet {
-        pos: record.pos,
-        record_id: View::u32_le_at(data, record.pos + 9)?,
-        stations,
-        sense,
-    })
+    })())
 }
 
 fn read_d8_channel_rows(
@@ -763,6 +788,8 @@ fn e5_ref(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -770,6 +797,12 @@ mod tests {
     use crate::test_support::test_e5::append_e5_record;
 
     const TEST_F64_TOLERANCE: f64 = 1e-12;
+
+    fn decoded_jets(bytes: &[u8]) -> Result<Vec<super::E5RollingBallJet>, CodecError> {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())?;
+        e5_rolling_ball_jets(&ctx, bytes)
+    }
 
     fn assert_close(actual: f64, expected: f64) {
         assert!((actual - expected).abs() <= TEST_F64_TOLERANCE);
@@ -801,7 +834,7 @@ mod tests {
     fn d8_record_decodes_the_quintic_rolling_ball_jet() {
         let bytes = crate::test_support::test_e5::e5_d8_rolling_ball_stream();
 
-        let jets = e5_rolling_ball_jets(&bytes);
+        let jets = decoded_jets(&bytes).expect("service profile admits two stations");
         assert_eq!(jets.len(), 1);
         let jet = &jets[0];
         assert_eq!(jet.record_id, 42);
@@ -847,7 +880,23 @@ mod tests {
         let mut payload = crate::test_support::test_e5::e5_d8_rolling_ball_stream();
         let last = payload.len() - 3;
         payload[last] = 0;
-        assert!(e5_rolling_ball_jets(&payload).is_empty());
+        assert!(decoded_jets(&payload)
+            .expect("service profile admits two stations")
+            .is_empty());
+    }
+
+    #[test]
+    fn e5_station_collection_limit_refuses_before_station_vectors() {
+        let bytes = crate::test_support::test_e5::e5_d8_rolling_ball_stream();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 13;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("the source fits the service input limit");
+        let error = e5_rolling_ball_jets(&ctx, &bytes).expect_err("two stations need 14 slots");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "decode CATIA E5 rolling-ball stations"));
     }
 
     fn nurbs_surface_payload(mode: u16) -> Vec<u8> {

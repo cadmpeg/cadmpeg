@@ -138,6 +138,23 @@ fn decode_zero_entity_transfers_framed_cylinder() {
 }
 
 #[test]
+fn zero_entity_surface_entity_limit_refuses_before_surface_push() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_entities = 1;
+    let options = DecodeOptions {
+        policy,
+        ..DecodeOptions::default()
+    };
+    let error = CatiaCodec
+        .decode(&mut Cursor::new(zero_entity_cylinder_catpart()), &options)
+        .expect_err("one raw payload and one surface exceed one entity");
+    assert!(matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                && limit.operation == "admit CATIA family model entity"));
+}
+
+#[test]
 fn decode_zero_entity_transfers_parametric_surface_curve_without_a_cache() {
     let result = CatiaCodec
         .decode(

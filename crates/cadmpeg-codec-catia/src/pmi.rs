@@ -25,11 +25,12 @@ use crate::native::{CatiaNative, CatiaRangeInterval};
 /// lane; an unresolved source target is deliberately left empty rather than
 /// guessed from an incoming class.
 pub(crate) fn transfer_dimensions(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     native: &CatiaNative,
     graph_scope: &crate::decode::ModelingGraphScope,
     transferred_sketch_ranges: &HashSet<String>,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for entity in native
         .entity_records
@@ -46,6 +47,7 @@ pub(crate) fn transfer_dimensions(
         if ir.model.pmi.iter().any(|annotation| annotation.id == id) {
             continue;
         }
+        ctx.charge_entities(1, "admit CATIA PMI dimension")?;
         ir.model.pmi.push(PmiAnnotation {
             id,
             name: None,
@@ -55,7 +57,7 @@ pub(crate) fn transfer_dimensions(
         });
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }
 
 fn pmi_id(source_offset: u64) -> PmiId {
@@ -143,6 +145,7 @@ mod tests {
         CatiaEntitySchemaValue, CatiaEntityValueSchemaSelection, CatiaObjectRecordReferenceSource,
         CatiaRangeNominal, CatiaRangeNominalFraming,
     };
+    use crate::test_support::with_service_context;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::pmi::DimensionKind;
     use cadmpeg_ir::pmi::DimensionTolerance;
@@ -266,12 +269,14 @@ mod tests {
         };
 
         assert_eq!(
-            transfer_dimensions(
+            with_service_context(|ctx| transfer_dimensions(
+                ctx,
                 &mut ir,
                 &native,
                 &crate::decode::ModelingGraphScope::Unscoped,
                 &HashSet::new()
-            ),
+            )
+            .expect("service profile admits the source dimensions")),
             0
         );
         assert!(ir.model.pmi.is_empty());
@@ -289,12 +294,14 @@ mod tests {
         let mut ir = CadIr::empty();
 
         assert_eq!(
-            transfer_dimensions(
+            with_service_context(|ctx| transfer_dimensions(
+                ctx,
                 &mut ir,
                 &native,
                 &crate::decode::ModelingGraphScope::Unscoped,
                 &HashSet::new()
-            ),
+            )
+            .expect("service profile admits two dimensions")),
             2
         );
         let dimensions = ir
@@ -322,6 +329,37 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(dimensions[0], (&DimensionKind::Diameter, 12.7, -0.1, 0.2));
         assert_eq!(dimensions[1], (&DimensionKind::Size, 12.7, -0.1, 0.2));
+    }
+
+    #[test]
+    fn pmi_dimension_entity_limit_refuses_before_second_dimension() {
+        let diameter = range_only_entity("DiameterThread");
+        let mut size = range_only_entity("FeatureRSUR");
+        size.byte_offset = 1;
+        let native = CatiaNative {
+            entity_records: vec![diameter, size],
+            ..CatiaNative::default()
+        };
+        let mut ir = CadIr::empty();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_entities = 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test root fits service input limit");
+        let error = transfer_dimensions(
+            &ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+            &HashSet::new(),
+        )
+        .expect_err("two dimensions exceed one entity");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                && limit.operation == "admit CATIA PMI dimension")
+        );
+        assert_eq!(ir.model.pmi.len(), 1);
     }
 
     #[test]
@@ -387,12 +425,14 @@ mod tests {
         let mut ir = CadIr::empty();
 
         assert_eq!(
-            transfer_dimensions(
+            with_service_context(|ctx| transfer_dimensions(
+                ctx,
                 &mut ir,
                 &native,
                 &crate::decode::ModelingGraphScope::Unscoped,
                 &HashSet::new()
-            ),
+            )
+            .expect("service profile admits the source dimensions")),
             0
         );
         assert!(ir.model.pmi.is_empty());

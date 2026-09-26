@@ -55,12 +55,21 @@ impl CatiaNative {
     /// Decode CATIA-native records directly from a synthesized record source.
     #[must_use]
     pub(crate) fn decode(bytes: &[u8]) -> Self {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            bytes,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("test source fits the service profile");
         let consolidated_records = crate::wire::records::consolidated_records(bytes);
         Self::decode_with_records(
+            &ctx,
             bytes,
             &consolidated_records,
             &mut crate::nurbs::LaneRefusals::new(),
         )
+        .expect("test native records fit the service profile")
     }
 
     /// Load the typed CATIA namespace from generic native arenas.

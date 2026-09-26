@@ -33,7 +33,7 @@ use crate::container::{self, ContainerScan};
 use crate::families::b5::graph::controls::{
     B5EdgeTerminalControl, B5FramingControl, B5VertexIncidenceControl,
 };
-use crate::families::FamilyOutput;
+use crate::families::{FamilyEntityAdmission, FamilyOutput};
 use crate::loss::{identity_statement, CatiaLossCode};
 use crate::math::distance;
 
@@ -59,7 +59,8 @@ pub(super) fn append_consolidated_revolutions(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     resolved: &[crate::families::b2::records::B2ResolvedRevolution],
-) -> Vec<ConsolidatedRevolutionBinding> {
+    admission: &mut FamilyEntityAdmission<'_, '_>,
+) -> Result<Vec<ConsolidatedRevolutionBinding>, cadmpeg_core::CodecError> {
     let mut bindings = Vec::new();
     for carrier in resolved {
         let index = carrier.revolution_index;
@@ -106,6 +107,7 @@ pub(super) fn append_consolidated_revolutions(
             format!("circle:{}", profile.record_id),
             Exactness::ByteExact,
         );
+        admission.charge()?;
         ir.model.curves.push(Curve {
             id: directrix.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(payload)),
@@ -171,6 +173,7 @@ pub(super) fn append_consolidated_revolutions(
             format!("profile-allocation:{}", revolution.profile_allocation_id),
             Exactness::ByteExact,
         );
+        admission.charge()?;
         ir.model.surfaces.push(Surface {
             id: surface.clone(),
             geometry: torus_geometry.clone().unwrap_or(SurfaceGeometry::Solved(
@@ -181,6 +184,7 @@ pub(super) fn append_consolidated_revolutions(
                 u32::from(revolution.profile_allocation_id),
             )),
         });
+        admission.charge()?;
         let _attached = ir.model.add_procedural_surface(
             surface,
             ProceduralSurface::new(
@@ -210,7 +214,7 @@ pub(super) fn append_consolidated_revolutions(
             });
         }
     }
-    bindings
+    Ok(bindings)
 }
 
 fn typed_face_counts(
@@ -280,396 +284,453 @@ pub(super) fn try_decode_freeform_surfaces(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<FamilyOutput> {
-    let logical_streams = container::logical_record_streams(scan);
-    let selection_budget =
-        ctx.work_budget(crate::families::b5::graph::MAX_OBJECT_STREAM_SELECTION_WORK as u64);
-    let object_selection = crate::families::b5::graph::select_object_stream_population(
-        &logical_streams,
-        Some(&selection_budget),
-    );
-    let (
-        object_stream_run_count,
-        selected_object_stream_run_count,
-        object_stream_selection_exhausted,
-        object_source,
-        object_frames,
-        selected_object_records,
-        census_object_records,
-    ) = match object_selection {
-        crate::families::b5::graph::ObjectStreamSelection::Exhausted { run_count } => (
-            run_count,
-            0,
+) -> Result<Option<FamilyOutput>, cadmpeg_core::CodecError> {
+    (|| -> Option<Result<FamilyOutput, cadmpeg_core::CodecError>> {
+        let logical_streams = container::logical_record_streams(scan);
+        let selection_budget =
+            ctx.work_budget(crate::families::b5::graph::MAX_OBJECT_STREAM_SELECTION_WORK as u64);
+        let object_selection = crate::families::b5::graph::select_object_stream_population(
+            &logical_streams,
+            Some(&selection_budget),
+        );
+        let (
+            object_stream_run_count,
+            selected_object_stream_run_count,
+            object_stream_selection_exhausted,
+            object_source,
+            object_frames,
+            selected_object_records,
+            census_object_records,
+        ) = match object_selection {
+            crate::families::b5::graph::ObjectStreamSelection::Exhausted { run_count } => (
+                run_count,
+                0,
+                true,
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+            ),
+            crate::families::b5::graph::ObjectStreamSelection::Unselected {
+                run_count,
+                census_records,
+            } => (
+                run_count,
+                0,
+                false,
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                census_records,
+            ),
+            crate::families::b5::graph::ObjectStreamSelection::Selected {
+                source,
+                frames,
+                records,
+                census_records,
+                run_count,
+            } => (run_count, 1, false, source, frames, records, census_records),
+        };
+        let consolidated_records = crate::wire::records::consolidated_records_in_sources(
+            &scan.data,
+            container::consolidated_record_sources(scan),
+        );
+        let mut b5_graph = crate::families::b5::graph::parse_from_records_budgeted(
+            &object_source,
+            &selected_object_records,
+            &object_frames,
             true,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        ),
-        crate::families::b5::graph::ObjectStreamSelection::Unselected {
-            run_count,
-            census_records,
-        } => (
-            run_count,
-            0,
-            false,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            census_records,
-        ),
-        crate::families::b5::graph::ObjectStreamSelection::Selected {
-            source,
-            frames,
-            records,
-            census_records,
-            run_count,
-        } => (run_count, 1, false, source, frames, records, census_records),
-    };
-    let consolidated_records = crate::wire::records::consolidated_records_in_sources(
-        &scan.data,
-        container::consolidated_record_sources(scan),
-    );
-    let mut b5_graph = crate::families::b5::graph::parse_from_records_budgeted(
-        &object_source,
-        &selected_object_records,
-        &object_frames,
-        true,
-        Some(&selection_budget),
-        refusal,
-    );
-    let face_terminal_controls = b5_graph.as_ref().map(|graph| {
-        graph.faces.iter().fold([0usize; 3], |mut counts, face| {
-            match face.terminal_control {
-                Some(B5FramingControl::Control03) => counts[0] += 1,
-                Some(B5FramingControl::Control05) => counts[1] += 1,
-                None => counts[2] += 1,
-            }
-            counts
-        })
-    });
-    let typed_face_counts = if let Some(graph) = &b5_graph {
-        Some(typed_face_counts(&graph.face_records, &graph.faces))
-    } else {
-        let records =
-            crate::families::b5::graph::typed_face_records_from_records(&census_object_records);
-        (!records.is_empty()).then(|| typed_face_counts(&records, &[]))
-    };
-    let typed_multi_surface_face_count = b5_graph
-        .as_ref()
-        .map(typed_multi_surface_face_count)
-        .unwrap_or_default();
-    let typed_edge_records =
-        crate::families::b5::graph::typed_edge_records_from_records(&census_object_records);
-    let edge_terminal_controls = (!typed_edge_records.is_empty()).then(|| {
-        typed_edge_records
-            .values()
-            .fold([0usize; 8], |mut counts, edge| {
-                let index = match edge.terminal_control {
-                    B5EdgeTerminalControl::Control01 => 0,
-                    B5EdgeTerminalControl::Control02 => 1,
-                    B5EdgeTerminalControl::Control21 => 2,
-                    B5EdgeTerminalControl::Control22 => 3,
-                    B5EdgeTerminalControl::Control25 => 4,
-                    B5EdgeTerminalControl::Control26 => 5,
-                    B5EdgeTerminalControl::Control29 => 6,
-                    B5EdgeTerminalControl::Control2A => 7,
-                };
-                counts[index] += 1;
+            Some(&selection_budget),
+            refusal,
+        );
+        let face_terminal_controls = b5_graph.as_ref().map(|graph| {
+            graph.faces.iter().fold([0usize; 3], |mut counts, face| {
+                match face.terminal_control {
+                    Some(B5FramingControl::Control03) => counts[0] += 1,
+                    Some(B5FramingControl::Control05) => counts[1] += 1,
+                    None => counts[2] += 1,
+                }
                 counts
             })
-    });
-    let typed_vertex_incidence_links =
-        crate::families::b5::graph::typed_vertex_incidence_links_from_records(
-            &census_object_records,
-        );
-    let vertex_incidence_terminal_controls =
-        (!typed_vertex_incidence_links.is_empty()).then(|| {
-            typed_vertex_incidence_links
+        });
+        let typed_face_counts = if let Some(graph) = &b5_graph {
+            Some(typed_face_counts(&graph.face_records, &graph.faces))
+        } else {
+            let records =
+                crate::families::b5::graph::typed_face_records_from_records(&census_object_records);
+            (!records.is_empty()).then(|| typed_face_counts(&records, &[]))
+        };
+        let typed_multi_surface_face_count = b5_graph
+            .as_ref()
+            .map(typed_multi_surface_face_count)
+            .unwrap_or_default();
+        let typed_edge_records =
+            crate::families::b5::graph::typed_edge_records_from_records(&census_object_records);
+        let edge_terminal_controls = (!typed_edge_records.is_empty()).then(|| {
+            typed_edge_records
                 .values()
-                .fold([0usize; 2], |mut counts, link| {
-                    match link.terminal_control {
-                        B5VertexIncidenceControl::Control00 => counts[0] += 1,
-                        B5VertexIncidenceControl::Control04 => counts[1] += 1,
-                    }
+                .fold([0usize; 8], |mut counts, edge| {
+                    let index = match edge.terminal_control {
+                        B5EdgeTerminalControl::Control01 => 0,
+                        B5EdgeTerminalControl::Control02 => 1,
+                        B5EdgeTerminalControl::Control21 => 2,
+                        B5EdgeTerminalControl::Control22 => 3,
+                        B5EdgeTerminalControl::Control25 => 4,
+                        B5EdgeTerminalControl::Control26 => 5,
+                        B5EdgeTerminalControl::Control29 => 6,
+                        B5EdgeTerminalControl::Control2A => 7,
+                    };
+                    counts[index] += 1;
                     counts
                 })
         });
-    let resolved_loop_metadata_counts = b5_graph
-        .as_ref()
-        .map(|graph| loop_metadata_counts(graph.loops.values()));
-    let typed_loop_records =
-        crate::families::b5::graph::typed_loop_records_from_records(&census_object_records);
-    let typed_loop_metadata_counts = (!typed_loop_records.is_empty()).then(|| {
-        (
-            loop_metadata_counts(typed_loop_records.values()),
-            typed_loop_records
-                .keys()
-                .filter(|id| {
-                    b5_graph
-                        .as_ref()
-                        .is_none_or(|graph| !graph.loops.contains_key(id))
-                })
-                .count(),
-        )
-    });
-    let class_21_suffix_scalar_count = b5_graph.as_ref().map(|graph| {
-        graph
-            .pcurves
-            .values()
-            .filter(|pcurve| pcurve.class_21_suffix_scalar.is_some())
-            .count()
-    });
-    let typed_class_21_pcurve_count =
-        crate::families::b5::graph::typed_class_21_pcurves_from_records(&census_object_records)
-            .len();
-    let typed_parameter_incidences =
-        crate::families::b5::graph::typed_parameter_incidences_from_records(&census_object_records);
-    let typed_parameter_incidence_member_count = typed_parameter_incidences
-        .values()
-        .map(|incidence| incidence.lanes.len())
-        .sum();
-    let typed_vertex_incidence_rosters =
-        crate::families::b5::graph::typed_vertex_incidence_rosters_from_records(
-            &census_object_records,
-        );
-    let typed_vertex_incidence_roster_member_count =
-        typed_vertex_incidence_rosters.values().map(Vec::len).sum();
-    let mut fallback_surfaces = if b5_graph.is_none() {
-        Some(freeform_surface_carriers(
-            &scan.data,
-            &consolidated_records,
-            refusal,
-        ))
-    } else {
-        None
-    };
-    let b2_nurbs_curves = crate::families::b2::records::b2_nurbs_curves_from_records(
-        &scan.data,
-        &consolidated_records,
-        refusal,
-    );
-    let b2_nurbs_curve_count = b2_nurbs_curves.len();
-    let a5_nurbs_curves = crate::families::a5a8::records::a5_nurbs_curves_from_records(
-        &scan.data,
-        &consolidated_records,
-        refusal,
-    );
-    let a5_nurbs_curve_count = a5_nurbs_curves.len();
-    let b2_spatial_circles = crate::families::b2::records::b2_spatial_circles_from_records(
-        &scan.data,
-        &consolidated_records,
-    );
-    let b2_line_profile_count = crate::families::b2::records::b2_line_profiles_from_records(
-        &scan.data,
-        &consolidated_records,
-    )
-    .len();
-    let resolved_consolidated_revolutions =
-        crate::families::b2::records::b2_resolved_revolutions_from_records(
-            &scan.data,
-            &consolidated_records,
-        );
-    let resolved_consolidated_revolution_count = resolved_consolidated_revolutions.len();
-    let b2_spatial_circle_count = b2_spatial_circles.len();
-    if fallback_surfaces.as_ref().is_some_and(Vec::is_empty)
-        && crate::families::a5a8::records::a8_freeform_curves(&scan.data).is_empty()
-        && b2_nurbs_curves.is_empty()
-        && a5_nurbs_curves.is_empty()
-        && b2_spatial_circles.is_empty()
-        && b2_line_profile_count == 0
-        && resolved_consolidated_revolution_count == 0
-    {
-        return None;
-    }
-    let mut ir = CadIr::empty();
-    let mut annotations = AnnotationBuilder::new();
-    let mut unknowns = Vec::new();
-    let payload_id = UnknownId::compose(
-        &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
-        cadmpeg_ir::identity_key!("freeform"),
-    );
-    let payload_index =
-        preserve_raw_payload(&mut unknowns, &mut annotations, scan, payload_id.clone());
-    let b5_complete = b5_graph.as_ref().is_some_and(|graph| graph.complete);
-    // The graph moves into the transfer below. Keep the record identities the
-    // topology loss notes must name.
-    let b5_face_object_ids = b5_graph
-        .as_ref()
-        .map(|graph| {
-            graph
-                .faces
-                .iter()
-                .map(|face| face.object_id)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let b5_loop_object_ids = b5_graph
-        .as_ref()
-        .map(|graph| graph.loops.keys().copied().collect::<Vec<_>>())
-        .unwrap_or_default();
-    let census_face_object_ids = census_object_records
-        .iter()
-        .filter(|record| record.class == B5_FACE_CLASS)
-        .map(|record| record.object_id)
-        .collect::<Vec<_>>();
-    let mut topology_ir = ir.clone();
-    let mut topology_annotations = annotations.clone();
-    let topology_transferred = b5_graph.take().is_some_and(|graph| {
-        crate::families::b5::transfer::transfer(
-            &mut topology_ir,
-            &mut topology_annotations,
-            graph,
-            &payload_id,
-            refusal,
-        ) && neutral_model_is_admissible(&mut topology_ir, &unknowns)
-    });
-    if topology_transferred {
-        ir = topology_ir;
-        annotations = topology_annotations;
-    }
-    if !topology_transferred {
-        let surfaces = match fallback_surfaces.take() {
-            Some(surfaces) => surfaces,
-            None => freeform_surface_carriers(&scan.data, &consolidated_records, refusal),
-        };
-        for (index, surface) in surfaces.iter().enumerate() {
-            let id = SurfaceId::compose(
-                &cadmpeg_ir::identity_namespace!("catia", "a8", "surf"),
-                index,
+        let typed_vertex_incidence_links =
+            crate::families::b5::graph::typed_vertex_incidence_links_from_records(
+                &census_object_records,
             );
+        let vertex_incidence_terminal_controls =
+            (!typed_vertex_incidence_links.is_empty()).then(|| {
+                typed_vertex_incidence_links
+                    .values()
+                    .fold([0usize; 2], |mut counts, link| {
+                        match link.terminal_control {
+                            B5VertexIncidenceControl::Control00 => counts[0] += 1,
+                            B5VertexIncidenceControl::Control04 => counts[1] += 1,
+                        }
+                        counts
+                    })
+            });
+        let resolved_loop_metadata_counts = b5_graph
+            .as_ref()
+            .map(|graph| loop_metadata_counts(graph.loops.values()));
+        let typed_loop_records =
+            crate::families::b5::graph::typed_loop_records_from_records(&census_object_records);
+        let typed_loop_metadata_counts = (!typed_loop_records.is_empty()).then(|| {
+            (
+                loop_metadata_counts(typed_loop_records.values()),
+                typed_loop_records
+                    .keys()
+                    .filter(|id| {
+                        b5_graph
+                            .as_ref()
+                            .is_none_or(|graph| !graph.loops.contains_key(id))
+                    })
+                    .count(),
+            )
+        });
+        let class_21_suffix_scalar_count = b5_graph.as_ref().map(|graph| {
+            graph
+                .pcurves
+                .values()
+                .filter(|pcurve| pcurve.class_21_suffix_scalar.is_some())
+                .count()
+        });
+        let typed_class_21_pcurve_count =
+            crate::families::b5::graph::typed_class_21_pcurves_from_records(&census_object_records)
+                .len();
+        let typed_parameter_incidences =
+            crate::families::b5::graph::typed_parameter_incidences_from_records(
+                &census_object_records,
+            );
+        let typed_parameter_incidence_member_count = typed_parameter_incidences
+            .values()
+            .map(|incidence| incidence.lanes.len())
+            .sum();
+        let typed_vertex_incidence_rosters =
+            crate::families::b5::graph::typed_vertex_incidence_rosters_from_records(
+                &census_object_records,
+            );
+        let typed_vertex_incidence_roster_member_count =
+            typed_vertex_incidence_rosters.values().map(Vec::len).sum();
+        let mut fallback_surfaces = if b5_graph.is_none() {
+            Some(freeform_surface_carriers(
+                &scan.data,
+                &consolidated_records,
+                refusal,
+            ))
+        } else {
+            None
+        };
+        let b2_nurbs_curves = crate::families::b2::records::b2_nurbs_curves_from_records(
+            &scan.data,
+            &consolidated_records,
+            refusal,
+        );
+        let b2_nurbs_curve_count = b2_nurbs_curves.len();
+        let a5_nurbs_curves = crate::families::a5a8::records::a5_nurbs_curves_from_records(
+            &scan.data,
+            &consolidated_records,
+            refusal,
+        );
+        let a5_nurbs_curve_count = a5_nurbs_curves.len();
+        let b2_spatial_circles = crate::families::b2::records::b2_spatial_circles_from_records(
+            &scan.data,
+            &consolidated_records,
+        );
+        let b2_line_profile_count = crate::families::b2::records::b2_line_profiles_from_records(
+            &scan.data,
+            &consolidated_records,
+        )
+        .len();
+        let resolved_consolidated_revolutions =
+            crate::families::b2::records::b2_resolved_revolutions_from_records(
+                &scan.data,
+                &consolidated_records,
+            );
+        let resolved_consolidated_revolution_count = resolved_consolidated_revolutions.len();
+        let b2_spatial_circle_count = b2_spatial_circles.len();
+        if fallback_surfaces.as_ref().is_some_and(Vec::is_empty)
+            && crate::families::a5a8::records::a8_freeform_curves(&scan.data).is_empty()
+            && b2_nurbs_curves.is_empty()
+            && a5_nurbs_curves.is_empty()
+            && b2_spatial_circles.is_empty()
+            && b2_line_profile_count == 0
+            && resolved_consolidated_revolution_count == 0
+        {
+            return None;
+        }
+        let mut ir = CadIr::empty();
+        let mut admission = FamilyEntityAdmission::new(ctx);
+        let mut annotations = AnnotationBuilder::new();
+        let mut unknowns = Vec::new();
+        let payload_id = UnknownId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
+            cadmpeg_ir::identity_key!("freeform"),
+        );
+        let payload_index = match preserve_raw_payload(
+            ctx,
+            &mut unknowns,
+            &mut annotations,
+            scan,
+            payload_id.clone(),
+        ) {
+            Ok(index) => index,
+            Err(error) => return Some(Err(error)),
+        };
+        let b5_complete = b5_graph.as_ref().is_some_and(|graph| graph.complete);
+        // The graph moves into the transfer below. Keep the record identities the
+        // topology loss notes must name.
+        let b5_face_object_ids = b5_graph
+            .as_ref()
+            .map(|graph| {
+                graph
+                    .faces
+                    .iter()
+                    .map(|face| face.object_id)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let b5_loop_object_ids = b5_graph
+            .as_ref()
+            .map(|graph| graph.loops.keys().copied().collect::<Vec<_>>())
+            .unwrap_or_default();
+        let census_face_object_ids = census_object_records
+            .iter()
+            .filter(|record| record.class == B5_FACE_CLASS)
+            .map(|record| record.object_id)
+            .collect::<Vec<_>>();
+        let mut topology_ir = ir.clone();
+        let mut topology_annotations = annotations.clone();
+        let topology_transferred = if let Some(graph) = b5_graph.take() {
+            let transferred = match crate::families::b5::transfer::transfer(
+                &mut topology_ir,
+                &mut topology_annotations,
+                graph,
+                &payload_id,
+                refusal,
+                &mut admission,
+            ) {
+                Ok(transferred) => transferred,
+                Err(error) => return Some(Err(error)),
+            };
+            transferred && neutral_model_is_admissible(&mut topology_ir, &unknowns)
+        } else {
+            false
+        };
+        if topology_transferred {
+            ir = topology_ir;
+            annotations = topology_annotations;
+        }
+        if !topology_transferred {
+            let surfaces = match fallback_surfaces.take() {
+                Some(surfaces) => surfaces,
+                None => freeform_surface_carriers(&scan.data, &consolidated_records, refusal),
+            };
+            for (index, surface) in surfaces.iter().enumerate() {
+                let id = SurfaceId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "a8", "surf"),
+                    index,
+                );
+                annotate(
+                    &mut annotations,
+                    &id,
+                    "object_stream_a8_03",
+                    surface.pos as u64,
+                    &surface.source_tag,
+                    Exactness::ByteExact,
+                );
+                if let Err(error) = admission.charge() {
+                    return Some(Err(error));
+                }
+                ir.model.surfaces.push(Surface {
+                    id,
+                    geometry: surface.geometry.clone(),
+                    source_object: Some(surface.source_object.clone()),
+                });
+            }
+        }
+        // The bindings this call returns are read by the standard-family route
+        // alone; here the call is made for the curves and surfaces it appends.
+        if let Err(error) = append_consolidated_revolutions(
+            &mut ir,
+            &mut annotations,
+            &resolved_consolidated_revolutions,
+            &mut admission,
+        ) {
+            return Some(Err(error));
+        }
+        if let Err(error) =
+            append_a8_rolling_ball_pools(&mut ir, &mut annotations, &scan.data, &mut admission)
+        {
+            return Some(Err(error));
+        }
+        let line_profiles = consolidated_line_profiles(&scan.data, &consolidated_records);
+        let mut standalone_wires = line_profiles
+            .iter()
+            .map(|profile| (profile.curve.id.clone(), profile.range, profile.pos))
+            .collect::<Vec<_>>();
+        if let Err(error) = append_consolidated_line_profiles(
+            &mut ir,
+            &mut annotations,
+            line_profiles,
+            &mut admission,
+        ) {
+            return Some(Err(error));
+        }
+        for curve in b2_nurbs_curves {
+            let id = CurveId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "b2", "nurbs-curve"),
+                ir.model.curves.len(),
+            );
+            let parameter_range = curve.geometry.full_knot_endpoints();
             annotate(
                 &mut annotations,
                 &id,
-                "object_stream_a8_03",
-                surface.pos as u64,
-                &surface.source_tag,
+                "consolidated_b2_03_16",
+                curve.pos as u64,
+                format!("header_token:{:08x}", curve.header_token),
                 Exactness::ByteExact,
             );
-            ir.model.surfaces.push(Surface {
-                id,
-                geometry: surface.geometry.clone(),
-                source_object: Some(surface.source_object.clone()),
+            if let Err(error) = admission.charge() {
+                return Some(Err(error));
+            }
+            ir.model.curves.push(Curve {
+                id: id.clone(),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.geometry)),
+                source_object: Some(cgm_source_key(
+                    "b2-nurbs-curve-frame",
+                    format!("{:010}", curve.pos),
+                )),
             });
+            standalone_wires.push((id, parameter_range.endpoints(), curve.pos));
         }
-    }
-    // The bindings this call returns are read by the standard-family route
-    // alone; here the call is made for the curves and surfaces it appends.
-    append_consolidated_revolutions(
-        &mut ir,
-        &mut annotations,
-        &resolved_consolidated_revolutions,
-    );
-    append_a8_rolling_ball_pools(&mut ir, &mut annotations, &scan.data);
-    let line_profiles = consolidated_line_profiles(&scan.data, &consolidated_records);
-    let mut standalone_wires = line_profiles
-        .iter()
-        .map(|profile| (profile.curve.id.clone(), profile.range, profile.pos))
-        .collect::<Vec<_>>();
-    append_consolidated_line_profiles(&mut ir, &mut annotations, line_profiles);
-    for curve in b2_nurbs_curves {
-        let id = CurveId::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "b2", "nurbs-curve"),
-            ir.model.curves.len(),
-        );
-        let parameter_range = curve.geometry.full_knot_endpoints();
-        annotate(
-            &mut annotations,
-            &id,
-            "consolidated_b2_03_16",
-            curve.pos as u64,
-            format!("header_token:{:08x}", curve.header_token),
-            Exactness::ByteExact,
-        );
-        ir.model.curves.push(Curve {
-            id: id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.geometry)),
-            source_object: Some(cgm_source_key(
-                "b2-nurbs-curve-frame",
-                format!("{:010}", curve.pos),
-            )),
-        });
-        standalone_wires.push((id, parameter_range.endpoints(), curve.pos));
-    }
-    for curve in a5_nurbs_curves {
-        let id = CurveId::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "a5", "nurbs-curve"),
-            ir.model.curves.len(),
-        );
-        let parameter_range = curve.geometry.full_knot_endpoints();
-        annotate(
-            &mut annotations,
-            &id,
-            "consolidated_a5_13_16",
-            curve.pos as u64,
-            format!("header_token:{:08x}", curve.header_token),
-            Exactness::ByteExact,
-        );
-        ir.model.curves.push(Curve {
-            id: id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.geometry)),
-            source_object: Some(cgm_source_key(
-                "a5-nurbs-curve-frame",
-                format!("{:010}", curve.pos),
-            )),
-        });
-        standalone_wires.push((id, parameter_range.endpoints(), curve.pos));
-    }
-    for circle in b2_spatial_circles {
-        let id = CurveId::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "b2", "circle"),
-            ir.model.curves.len(),
-        );
-        let parameter_range = [
-            circle.range.lower() / circle.radius.get(),
-            circle.range.upper() / circle.radius.get(),
-        ];
-        annotate(
-            &mut annotations,
-            &id,
-            "consolidated_b2_03_0f",
-            circle.pos as u64,
-            format!(
-                "header_token:{:08x}:range:{:?}:chart_shift:{}",
-                circle.header_token,
-                circle.range.endpoints(),
-                circle.chart_shift.get()
-            ),
-            Exactness::ByteExact,
-        );
-        ir.model.curves.push(Curve {
-            id: id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::new(
-                    circle.center,
-                    circle.frame,
-                    circle.radius,
+        for curve in a5_nurbs_curves {
+            let id = CurveId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "a5", "nurbs-curve"),
+                ir.model.curves.len(),
+            );
+            let parameter_range = curve.geometry.full_knot_endpoints();
+            annotate(
+                &mut annotations,
+                &id,
+                "consolidated_a5_13_16",
+                curve.pos as u64,
+                format!("header_token:{:08x}", curve.header_token),
+                Exactness::ByteExact,
+            );
+            if let Err(error) = admission.charge() {
+                return Some(Err(error));
+            }
+            ir.model.curves.push(Curve {
+                id: id.clone(),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.geometry)),
+                source_object: Some(cgm_source_key(
+                    "a5-nurbs-curve-frame",
+                    format!("{:010}", curve.pos),
+                )),
+            });
+            standalone_wires.push((id, parameter_range.endpoints(), curve.pos));
+        }
+        for circle in b2_spatial_circles {
+            let id = CurveId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "b2", "circle"),
+                ir.model.curves.len(),
+            );
+            let parameter_range = [
+                circle.range.lower() / circle.radius.get(),
+                circle.range.upper() / circle.radius.get(),
+            ];
+            annotate(
+                &mut annotations,
+                &id,
+                "consolidated_b2_03_0f",
+                circle.pos as u64,
+                format!(
+                    "header_token:{:08x}:range:{:?}:chart_shift:{}",
+                    circle.header_token,
+                    circle.range.endpoints(),
+                    circle.chart_shift.get()
                 ),
-            )),
-            source_object: Some(cgm_source_key(
-                "b2-spatial-circle-frame",
-                format!("{:010}", circle.pos),
-            )),
-        });
-        standalone_wires.push((id, parameter_range, circle.pos));
-    }
-    let wire_topology_transferred = !topology_transferred
-        && ir.model.surfaces.is_empty()
-        && standalone_wires.len() == ir.model.curves.len()
-        && !standalone_wires.is_empty()
-        && attach_standalone_wires(&mut ir, &mut annotations, &standalone_wires);
-    let mut losses = if wire_topology_transferred {
-        Vec::new()
-    } else if topology_transferred && b5_complete {
-        vec![CatiaLossCode::TopologyB5GaugeSubstituted.note(format!(
-            "The B5 reference graph is closed; face sense and body kind use a deterministic \
+                Exactness::ByteExact,
+            );
+            if let Err(error) = admission.charge() {
+                return Some(Err(error));
+            }
+            ir.model.curves.push(Curve {
+                id: id.clone(),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                        circle.center,
+                        circle.frame,
+                        circle.radius,
+                    ),
+                )),
+                source_object: Some(cgm_source_key(
+                    "b2-spatial-circle-frame",
+                    format!("{:010}", circle.pos),
+                )),
+            });
+            standalone_wires.push((id, parameter_range, circle.pos));
+        }
+        let wire_topology_transferred = if !topology_transferred
+            && ir.model.surfaces.is_empty()
+            && standalone_wires.len() == ir.model.curves.len()
+            && !standalone_wires.is_empty()
+        {
+            match attach_standalone_wires(
+                &mut ir,
+                &mut annotations,
+                &standalone_wires,
+                &mut admission,
+            ) {
+                Ok(transferred) => transferred,
+                Err(error) => return Some(Err(error)),
+            }
+        } else {
+            false
+        };
+        let mut losses = if wire_topology_transferred {
+            Vec::new()
+        } else if topology_transferred && b5_complete {
+            vec![CatiaLossCode::TopologyB5GaugeSubstituted.note(format!(
+                "The B5 reference graph is closed; face sense and body kind use a deterministic \
              topology gauge because their source fields remain unresolved. Gauged b5 03 5f face \
              records, by object id ({}): {}.",
-            b5_face_object_ids.len(),
-            identity_statement(&b5_face_object_ids)
-        ))]
-    } else if topology_transferred {
-        vec![CatiaLossCode::TopologyB5SubsetIncomplete.note(format!(
+                b5_face_object_ids.len(),
+                identity_statement(&b5_face_object_ids)
+            ))]
+        } else if topology_transferred {
+            vec![CatiaLossCode::TopologyB5SubsetIncomplete.note(format!(
             "A maximal reference-closed B5 face/loop/pcurve/edge subset was transferred; variant \
              nodes and unresolved endpoint lifts remain outside the connected graph. Transferred \
              b5 03 5f face records, by object id ({}): {}. Transferred b5 03 62 loop records, by \
@@ -679,234 +740,238 @@ pub(super) fn try_decode_freeform_surfaces(
             b5_loop_object_ids.len(),
             identity_statement(&b5_loop_object_ids)
         ))]
-    } else if object_stream_selection_exhausted {
-        vec![
-            CatiaLossCode::TopologyObjectStreamWorkSliceExhausted.note(format!(
+        } else if object_stream_selection_exhausted {
+            vec![
+                CatiaLossCode::TopologyObjectStreamWorkSliceExhausted.note(format!(
             "The object-stream graph exceeds the bounded frame-index and record-materialization \
              work slice; its topology remains native. The {object_stream_run_count} object runs \
              stay inside retained record {payload_id}."
         )),
-        ]
-    } else {
-        vec![CatiaLossCode::TopologyB5GraphUnclosed.note(format!(
-            "Object-stream and consolidated NURBS carriers were decoded, but the \
+            ]
+        } else {
+            vec![CatiaLossCode::TopologyB5GraphUnclosed.note(format!(
+                "Object-stream and consolidated NURBS carriers were decoded, but the \
              face/loop/pcurve/edge graph did not close. Unclosed b5 03 5f face records, by object \
              id ({}): {}. The records stay inside retained record {payload_id}.",
-            census_face_object_ids.len(),
-            identity_statement(&census_face_object_ids)
-        ))]
-    };
-    insert_unresolved_carrier_loss(&ir, &mut losses);
-    link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations).ok()?;
-    let annotations = annotations.build();
-    let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
-    coverage.record(
-        crate::coverage::DECODED_OBJECT_STREAM_RUN_COUNT,
-        object_stream_run_count,
-    );
-    coverage.record(
-        crate::coverage::SELECTED_OBJECT_STREAM_RUN_COUNT,
-        selected_object_stream_run_count,
-    );
-    coverage.record(
-        crate::coverage::UNSELECTED_OBJECT_STREAM_RUN_COUNT,
-        object_stream_run_count - selected_object_stream_run_count,
-    );
-    coverage.record(
-        crate::coverage::EXHAUSTED_OBJECT_STREAM_SELECTION_COUNT,
-        usize::from(object_stream_selection_exhausted),
-    );
-    coverage.record(
-        crate::coverage::DECODED_B2_NURBS_CURVE_COUNT,
-        b2_nurbs_curve_count,
-    );
-    coverage.record(
-        crate::coverage::DECODED_A5_NURBS_CURVE_COUNT,
-        a5_nurbs_curve_count,
-    );
-    coverage.record(
-        crate::coverage::DECODED_B2_SPATIAL_CIRCLE_COUNT,
-        b2_spatial_circle_count,
-    );
-    coverage.record(
-        crate::coverage::ATTACHED_STANDALONE_WIRE_EDGE_COUNT,
-        usize::from(wire_topology_transferred) * standalone_wires.len(),
-    );
-    if let Some([control_03, control_05, uncounted]) = face_terminal_controls {
+                census_face_object_ids.len(),
+                identity_statement(&census_face_object_ids)
+            ))]
+        };
+        insert_unresolved_carrier_loss(&ir, &mut losses);
+        link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations).ok()?;
+        let annotations = annotations.build();
+        let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
         coverage.record(
-            crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT,
-            control_03,
+            crate::coverage::DECODED_OBJECT_STREAM_RUN_COUNT,
+            object_stream_run_count,
         );
         coverage.record(
-            crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT,
-            control_05,
+            crate::coverage::SELECTED_OBJECT_STREAM_RUN_COUNT,
+            selected_object_stream_run_count,
         );
         coverage.record(
-            crate::coverage::RESOLVED_OBJECT_STREAM_UNCOUNTED_FACE_COUNT,
-            uncounted,
-        );
-    }
-    if topology_transferred {
-        coverage.record(
-            crate::coverage::TRANSFERRED_OBJECT_STREAM_FACE_COUNT,
-            ir.model.faces.len(),
+            crate::coverage::UNSELECTED_OBJECT_STREAM_RUN_COUNT,
+            object_stream_run_count - selected_object_stream_run_count,
         );
         coverage.record(
-            crate::coverage::TRANSFERRED_OBJECT_STREAM_LOOP_COUNT,
-            ir.model.loops.len(),
-        );
-    }
-    if let Some([control_03, control_05, uncounted, unresolved]) = typed_face_counts {
-        coverage.record(
-            crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT,
-            control_03,
+            crate::coverage::EXHAUSTED_OBJECT_STREAM_SELECTION_COUNT,
+            usize::from(object_stream_selection_exhausted),
         );
         coverage.record(
-            crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT,
-            control_05,
+            crate::coverage::DECODED_B2_NURBS_CURVE_COUNT,
+            b2_nurbs_curve_count,
         );
         coverage.record(
-            crate::coverage::TYPED_OBJECT_STREAM_UNCOUNTED_FACE_COUNT,
-            uncounted,
+            crate::coverage::DECODED_A5_NURBS_CURVE_COUNT,
+            a5_nurbs_curve_count,
         );
         coverage.record(
-            crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_FACE_COUNT,
-            unresolved,
+            crate::coverage::DECODED_B2_SPATIAL_CIRCLE_COUNT,
+            b2_spatial_circle_count,
         );
-    }
-    if typed_multi_surface_face_count != 0 {
         coverage.record(
-            crate::coverage::TYPED_MULTI_SURFACE_OBJECT_STREAM_FACE_COUNT,
-            typed_multi_surface_face_count,
+            crate::coverage::ATTACHED_STANDALONE_WIRE_EDGE_COUNT,
+            usize::from(wire_topology_transferred) * standalone_wires.len(),
         );
-    }
-    if let Some(counts) = edge_terminal_controls {
-        for (key, count) in [
-            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_01_COUNT,
-            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_02_COUNT,
-            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_21_COUNT,
-            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_22_COUNT,
-            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_25_COUNT,
-            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_26_COUNT,
-            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_29_COUNT,
-            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_2A_COUNT,
-        ]
-        .into_iter()
-        .zip(counts)
+        if let Some([control_03, control_05, uncounted]) = face_terminal_controls {
+            coverage.record(
+                crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT,
+                control_03,
+            );
+            coverage.record(
+                crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT,
+                control_05,
+            );
+            coverage.record(
+                crate::coverage::RESOLVED_OBJECT_STREAM_UNCOUNTED_FACE_COUNT,
+                uncounted,
+            );
+        }
+        if topology_transferred {
+            coverage.record(
+                crate::coverage::TRANSFERRED_OBJECT_STREAM_FACE_COUNT,
+                ir.model.faces.len(),
+            );
+            coverage.record(
+                crate::coverage::TRANSFERRED_OBJECT_STREAM_LOOP_COUNT,
+                ir.model.loops.len(),
+            );
+        }
+        if let Some([control_03, control_05, uncounted, unresolved]) = typed_face_counts {
+            coverage.record(
+                crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT,
+                control_03,
+            );
+            coverage.record(
+                crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT,
+                control_05,
+            );
+            coverage.record(
+                crate::coverage::TYPED_OBJECT_STREAM_UNCOUNTED_FACE_COUNT,
+                uncounted,
+            );
+            coverage.record(
+                crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_FACE_COUNT,
+                unresolved,
+            );
+        }
+        if typed_multi_surface_face_count != 0 {
+            coverage.record(
+                crate::coverage::TYPED_MULTI_SURFACE_OBJECT_STREAM_FACE_COUNT,
+                typed_multi_surface_face_count,
+            );
+        }
+        if let Some(counts) = edge_terminal_controls {
+            for (key, count) in [
+                crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_01_COUNT,
+                crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_02_COUNT,
+                crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_21_COUNT,
+                crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_22_COUNT,
+                crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_25_COUNT,
+                crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_26_COUNT,
+                crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_29_COUNT,
+                crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_2A_COUNT,
+            ]
+            .into_iter()
+            .zip(counts)
+            {
+                coverage.record(key, count);
+            }
+        }
+        if let Some([control_00, control_04]) = vertex_incidence_terminal_controls {
+            coverage.record(
+                crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_00_COUNT,
+                control_00,
+            );
+            coverage.record(
+                crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_04_COUNT,
+                control_04,
+            );
+        }
+        if let Some([controls_03_03, controls_03_05, controls_05_03, controls_05_05, extended]) =
+            resolved_loop_metadata_counts
         {
-            coverage.record(key, count);
+            for (key, count) in [
+                (
+                    crate::coverage::RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_03_COUNT,
+                    controls_03_03,
+                ),
+                (
+                    crate::coverage::RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_05_COUNT,
+                    controls_03_05,
+                ),
+                (
+                    crate::coverage::RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_03_COUNT,
+                    controls_05_03,
+                ),
+                (
+                    crate::coverage::RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_05_COUNT,
+                    controls_05_05,
+                ),
+            ] {
+                coverage.record(key, count);
+            }
+            coverage.record(
+                crate::coverage::RESOLVED_OBJECT_STREAM_EXTENDED_LOOP_METADATA_COUNT,
+                extended,
+            );
         }
-    }
-    if let Some([control_00, control_04]) = vertex_incidence_terminal_controls {
-        coverage.record(
-            crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_00_COUNT,
-            control_00,
-        );
-        coverage.record(
-            crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_04_COUNT,
-            control_04,
-        );
-    }
-    if let Some([controls_03_03, controls_03_05, controls_05_03, controls_05_05, extended]) =
-        resolved_loop_metadata_counts
-    {
-        for (key, count) in [
-            (
-                crate::coverage::RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_03_COUNT,
-                controls_03_03,
-            ),
-            (
-                crate::coverage::RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_05_COUNT,
-                controls_03_05,
-            ),
-            (
-                crate::coverage::RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_03_COUNT,
-                controls_05_03,
-            ),
-            (
-                crate::coverage::RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_05_COUNT,
-                controls_05_05,
-            ),
-        ] {
-            coverage.record(key, count);
+        if let Some((counts, unresolved)) = typed_loop_metadata_counts {
+            for (key, count) in [
+                crate::coverage::TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_03_COUNT,
+                crate::coverage::TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_05_COUNT,
+                crate::coverage::TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_03_COUNT,
+                crate::coverage::TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_05_COUNT,
+            ]
+            .into_iter()
+            .zip(counts[..4].iter().copied())
+            {
+                coverage.record(key, count);
+            }
+            coverage.record(
+                crate::coverage::TYPED_OBJECT_STREAM_EXTENDED_LOOP_METADATA_COUNT,
+                counts[4],
+            );
+            coverage.record(
+                crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_LOOP_COUNT,
+                unresolved,
+            );
         }
-        coverage.record(
-            crate::coverage::RESOLVED_OBJECT_STREAM_EXTENDED_LOOP_METADATA_COUNT,
-            extended,
-        );
-    }
-    if let Some((counts, unresolved)) = typed_loop_metadata_counts {
-        for (key, count) in [
-            crate::coverage::TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_03_COUNT,
-            crate::coverage::TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_05_COUNT,
-            crate::coverage::TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_03_COUNT,
-            crate::coverage::TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_05_COUNT,
-        ]
-        .into_iter()
-        .zip(counts[..4].iter().copied())
-        {
-            coverage.record(key, count);
+        if let Some(count) = class_21_suffix_scalar_count {
+            coverage.record(
+                crate::coverage::RESOLVED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT,
+                count,
+            );
         }
-        coverage.record(
-            crate::coverage::TYPED_OBJECT_STREAM_EXTENDED_LOOP_METADATA_COUNT,
-            counts[4],
-        );
-        coverage.record(
-            crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_LOOP_COUNT,
-            unresolved,
-        );
-    }
-    if let Some(count) = class_21_suffix_scalar_count {
-        coverage.record(
-            crate::coverage::RESOLVED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT,
-            count,
-        );
-    }
-    if typed_class_21_pcurve_count != 0 {
-        coverage.record(
-            crate::coverage::TYPED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT,
-            typed_class_21_pcurve_count,
-        );
-    }
-    if !typed_parameter_incidences.is_empty() {
-        coverage.record(
-            crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_COUNT,
-            typed_parameter_incidences.len(),
-        );
-        coverage.record(
-            crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_MEMBER_COUNT,
-            typed_parameter_incidence_member_count,
-        );
-    }
-    if !typed_vertex_incidence_rosters.is_empty() {
-        coverage.record(
-            crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_COUNT,
-            typed_vertex_incidence_rosters.len(),
-        );
-        coverage.record(
-            crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_MEMBER_COUNT,
-            typed_vertex_incidence_roster_member_count,
-        );
-    }
-    Some(FamilyOutput {
-        ir,
-        report: DecodeBody {
-            transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
-            coverage,
-            losses,
-            notes: Vec::new(),
-            transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
-        },
-        annotations,
-        unknowns,
-    })
+        if typed_class_21_pcurve_count != 0 {
+            coverage.record(
+                crate::coverage::TYPED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT,
+                typed_class_21_pcurve_count,
+            );
+        }
+        if !typed_parameter_incidences.is_empty() {
+            coverage.record(
+                crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_COUNT,
+                typed_parameter_incidences.len(),
+            );
+            coverage.record(
+                crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_MEMBER_COUNT,
+                typed_parameter_incidence_member_count,
+            );
+        }
+        if !typed_vertex_incidence_rosters.is_empty() {
+            coverage.record(
+                crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_COUNT,
+                typed_vertex_incidence_rosters.len(),
+            );
+            coverage.record(
+                crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_MEMBER_COUNT,
+                typed_vertex_incidence_roster_member_count,
+            );
+        }
+        Some(Ok(FamilyOutput {
+            ir,
+            report: DecodeBody {
+                transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+                coverage,
+                losses,
+                notes: Vec::new(),
+                transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
+            },
+            annotations,
+            unknowns,
+            admitted_model_entities: admission.admitted(),
+        }))
+    })()
+    .transpose()
 }
 
 fn attach_standalone_wires(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     wires: &[(CurveId, [f64; 2], usize)],
-) -> bool {
+    admission: &mut FamilyEntityAdmission<'_, '_>,
+) -> Result<bool, cadmpeg_core::CodecError> {
     let plans = wires
         .iter()
         .enumerate()
@@ -926,7 +991,7 @@ fn attach_standalone_wires(
         })
         .collect::<Option<Vec<_>>>();
     let Some(plans) = plans else {
-        return false;
+        return Ok(false);
     };
     let body_id = BodyId::compose(
         &cadmpeg_ir::identity_namespace!("catia", "freeform", "wire-body"),
@@ -956,7 +1021,7 @@ fn attach_standalone_wires(
         edge_ids,
         Vec::new(),
     ) else {
-        return false;
+        return Ok(false);
     };
     for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
         annotate(
@@ -1009,10 +1074,14 @@ fn attach_standalone_wires(
                 Exactness::Derived,
             );
         }
+        admission.charge()?;
+        admission.charge()?;
         ir.model.points.extend([
             Point::new(point_ids[1].clone(), end, None),
             Point::new(point_ids[0].clone(), start, None),
         ]);
+        admission.charge()?;
+        admission.charge()?;
         ir.model.vertices.extend([
             Vertex {
                 id: vertex_ids[1].clone(),
@@ -1025,6 +1094,7 @@ fn attach_standalone_wires(
                 tolerance: None,
             },
         ]);
+        admission.charge()?;
         ir.model.edges.push(Edge {
             id: edge_id.clone(),
             carrier,
@@ -1033,6 +1103,7 @@ fn attach_standalone_wires(
             tolerance: None,
         });
     }
+    admission.charge()?;
     ir.model.bodies.push(Body {
         id: body_id.clone(),
         kind: BodyKind::Wire,
@@ -1042,13 +1113,15 @@ fn attach_standalone_wires(
         color: None,
         visible: None,
     });
+    admission.charge()?;
     ir.model.regions.push(Region {
         id: region_id.clone(),
         body: body_id,
         shells: vec![shell_id.clone()],
     });
+    admission.charge()?;
     ir.model.shells.push(shell);
-    true
+    Ok(true)
 }
 
 fn freeform_surface_carriers(
@@ -1238,7 +1311,8 @@ fn append_consolidated_line_profiles(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     profiles: Vec<ConsolidatedLineProfile>,
-) {
+    admission: &mut FamilyEntityAdmission<'_, '_>,
+) -> Result<(), cadmpeg_core::CodecError> {
     for profile in profiles {
         annotate(
             annotations,
@@ -1248,8 +1322,10 @@ fn append_consolidated_line_profiles(
             "line_profile_carrier",
             Exactness::ByteExact,
         );
+        admission.charge()?;
         ir.model.curves.push(profile.curve);
     }
+    Ok(())
 }
 
 /// Append standalone freeform carriers and return the number of consolidated
@@ -1261,6 +1337,7 @@ pub(super) fn append_freeform_surface_pools(
     records: &[crate::wire::records::ConsolidatedRecord],
     surface_alias_tags: &HashMap<u32, Option<u32>>,
     refusal: &mut crate::nurbs::LaneRefusals,
+    admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<ConsolidatedCurveBindingCounts, cadmpeg_core::CodecError> {
     let mut surfaces = crate::families::a5a8::records::resolved_a8_surfaces(data, refusal);
     surfaces.extend(crate::families::a5a8::records::a5_surfaces_from_records(
@@ -1283,6 +1360,7 @@ pub(super) fn append_freeform_surface_pools(
             source_tag,
             Exactness::ByteExact,
         );
+        admission.charge()?;
         ir.model.surfaces.push(Surface {
             id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
@@ -1312,6 +1390,7 @@ pub(super) fn append_freeform_surface_pools(
             format!("support_ref:{:08x}", offset.support_id),
             Exactness::Unknown,
         );
+        admission.charge()?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
@@ -1330,6 +1409,7 @@ pub(super) fn append_freeform_surface_pools(
             format!("support_ref:{:08x}", offset.support_id),
             Exactness::ByteExact,
         );
+        admission.charge()?;
         let _attached = ir.model.add_procedural_surface(
             surface_id,
             ProceduralSurface::new(
@@ -1350,7 +1430,12 @@ pub(super) fn append_freeform_surface_pools(
         );
     }
 
-    append_consolidated_line_profiles(ir, annotations, consolidated_line_profiles(data, records));
+    append_consolidated_line_profiles(
+        ir,
+        annotations,
+        consolidated_line_profiles(data, records),
+        admission,
+    )?;
 
     for guide in crate::families::a5a8::records::a5_guide_curves_from_records(data, records) {
         let points = guide
@@ -1405,6 +1490,7 @@ pub(super) fn append_freeform_surface_pools(
             format!("header_token:{:08x}", guide.header_token),
             Exactness::Derived,
         );
+        admission.charge()?;
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),
@@ -1434,6 +1520,7 @@ pub(super) fn append_freeform_surface_pools(
                 format!("limit_{}", side + 1),
                 Exactness::Derived,
             );
+            admission.charge()?;
             ir.model.curves.push(Curve {
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
@@ -1470,6 +1557,7 @@ pub(super) fn append_freeform_surface_pools(
             format!("header_token:{:08x}", jet.header_token),
             Exactness::Unknown,
         );
+        admission.charge()?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Procedural {
@@ -1487,6 +1575,7 @@ pub(super) fn append_freeform_surface_pools(
             format!("header_token:{:08x}", jet.header_token),
             Exactness::ByteExact,
         );
+        admission.charge()?;
         ir.model.procedural_surfaces.push(ProceduralSurface::new(
             procedural_id,
             ProceduralSurfaceDefinition::RollingBallJet(
@@ -1500,7 +1589,7 @@ pub(super) fn append_freeform_surface_pools(
         ));
     }
 
-    append_a8_rolling_ball_pools(ir, annotations, data);
+    append_a8_rolling_ball_pools(ir, annotations, data, admission)?;
     let counts = append_resolved_consolidated_surface_curves(
         ir,
         annotations,
@@ -1512,6 +1601,7 @@ pub(super) fn append_freeform_surface_pools(
             surface_alias_tags,
         },
         refusal,
+        admission,
     )?;
     Ok(counts)
 }
@@ -1651,6 +1741,7 @@ fn append_resolved_consolidated_surface_curves(
     records: &[crate::wire::records::ConsolidatedRecord],
     pool: FreeformSurfacePool<'_>,
     refusal: &mut crate::nurbs::LaneRefusals,
+    admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<ConsolidatedCurveBindingCounts, cadmpeg_core::CodecError> {
     let FreeformSurfacePool {
         surfaces: freeform_surfaces,
@@ -1908,6 +1999,7 @@ fn append_resolved_consolidated_surface_curves(
                             "resolved_pcurve_support",
                             Exactness::Unknown,
                         );
+                        admission.charge()?;
                         ir.model.surfaces.push(Surface {
                             id: id.clone(),
                             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
@@ -1931,6 +2023,7 @@ fn append_resolved_consolidated_surface_curves(
                             "resolved_pcurve_support",
                             Exactness::Derived,
                         );
+                        admission.charge()?;
                         let _attached = ir.model.add_procedural_surface(
                             id.clone(),
                             ProceduralSurface::new(
@@ -2074,6 +2167,7 @@ fn append_resolved_consolidated_surface_curves(
                     "resolved_pcurve_support",
                     Exactness::ByteExact,
                 );
+                admission.charge()?;
                 ir.model.surfaces.push(Surface {
                     id: id.clone(),
                     geometry: carrier,
@@ -2494,6 +2588,7 @@ fn append_resolved_consolidated_surface_curves(
                         "resolved_face_side_pcurve",
                         Exactness::Derived,
                     );
+                    admission.charge()?;
                     ir.model.pcurves.push(Pcurve {
                         id: pcurve_id.clone(),
                         geometry,
@@ -2548,6 +2643,7 @@ fn append_resolved_consolidated_surface_curves(
                 "procedural_curve_cache",
                 Exactness::Unknown,
             );
+            admission.charge()?;
             ir.model.curves.push(Curve {
                 id: curve_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -2570,6 +2666,7 @@ fn append_resolved_consolidated_surface_curves(
                 .map_err(cadmpeg_core::CodecError::malformed)?
                 .derived(&procedural_id, "definition")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
+            admission.charge()?;
             let _attached = ir
                 .model
                 .add_procedural_curve(curve_id, ProceduralCurve::new(procedural_id, definition));
@@ -2945,7 +3042,12 @@ fn rechart_equivalent_surface_pcurve(
     }
 }
 
-fn append_a8_rolling_ball_pools(ir: &mut CadIr, annotations: &mut AnnotationBuilder, data: &[u8]) {
+fn append_a8_rolling_ball_pools(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    data: &[u8],
+    admission: &mut FamilyEntityAdmission<'_, '_>,
+) -> Result<(), cadmpeg_core::CodecError> {
     for jet in crate::families::a5a8::records::a8_freeform_curves(data) {
         let Some(definition) = crate::families::a5a8::records::rolling_ball_jet_definition(&jet)
         else {
@@ -2967,6 +3069,7 @@ fn append_a8_rolling_ball_pools(ir: &mut CadIr, annotations: &mut AnnotationBuil
             format!("object_id:{:08x}", jet.object_id),
             Exactness::Unknown,
         );
+        admission.charge()?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Procedural {
@@ -2988,10 +3091,12 @@ fn append_a8_rolling_ball_pools(ir: &mut CadIr, annotations: &mut AnnotationBuil
             ),
             Exactness::ByteExact,
         );
+        admission.charge()?;
         ir.model
             .procedural_surfaces
             .push(ProceduralSurface::new(procedural_id, definition, None));
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -3019,6 +3124,105 @@ mod tests {
     use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
     use cadmpeg_ir::AnnotationBuilder;
     use std::collections::HashMap;
+
+    fn with_admission<T>(run: impl FnOnce(&mut super::FamilyEntityAdmission<'_, '_>) -> T) -> T {
+        crate::test_support::with_service_context(|ctx| {
+            let mut admission = super::FamilyEntityAdmission::new(ctx);
+            run(&mut admission)
+        })
+    }
+
+    #[test]
+    fn freeform_surface_pool_entity_limit_refuses_before_curve_append() {
+        let bytes = crate::test_support::test_a5a8::a5_freeform_curve_stream();
+        crate::test_support::with_entity_limit(0, |ctx| {
+            let mut ir = CadIr::empty();
+            let mut admission = super::FamilyEntityAdmission::new(ctx);
+            let Err(error) = append_freeform_surface_pools(
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &bytes,
+                &crate::wire::records::consolidated_records(&bytes),
+                &HashMap::new(),
+                &mut crate::nurbs::LaneRefusals::new(),
+                &mut admission,
+            ) else {
+                panic!("an A5 limiting curve exceeds the zero-entity allowance");
+            };
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                        && limit.operation == "admit CATIA family model entity"
+            ));
+            assert_eq!(ir.model.entity_count(), 0);
+        });
+    }
+
+    #[test]
+    fn freeform_wire_entity_limit_refuses_before_endpoint_append() {
+        let mut ir = CadIr::empty();
+        let curve_id = CurveId::mint("catia:test:curve#wire").expect("identity grammar");
+        ir.model.curves.push(Curve {
+            id: curve_id.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                    None,
+                    false,
+                )
+                .expect("valid linear wire curve"),
+            )),
+            source_object: None,
+        });
+        crate::test_support::with_entity_limit(0, |ctx| {
+            let mut admission = super::FamilyEntityAdmission::new(ctx);
+            let error = attach_standalone_wires(
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &[(curve_id, [0.0, 1.0], 0)],
+                &mut admission,
+            )
+            .expect_err("the first endpoint exceeds the zero-entity allowance");
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                        && limit.operation == "admit CATIA family model entity"
+            ));
+            assert!(ir.model.points.is_empty());
+        });
+    }
+
+    #[test]
+    fn consolidated_revolution_entity_limit_refuses_before_directrix_append() {
+        let bytes = crate::test_support::test_b2::b2_resolved_revolution_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let resolved =
+            crate::families::b2::records::b2_resolved_revolutions_from_records(&bytes, &records);
+        assert_eq!(resolved.len(), 1);
+        crate::test_support::with_entity_limit(0, |ctx| {
+            let mut ir = CadIr::empty();
+            let mut admission = super::FamilyEntityAdmission::new(ctx);
+            let Err(error) = super::append_consolidated_revolutions(
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &resolved,
+                &mut admission,
+            ) else {
+                panic!("the directrix exceeds the zero-entity allowance");
+            };
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                        && limit.operation == "admit CATIA family model entity"
+            ));
+            assert_eq!(ir.model.entity_count(), 0);
+        });
+    }
 
     #[test]
     fn typed_face_counts_partition_the_parsed_record_identities() {
@@ -3134,11 +3338,13 @@ mod tests {
             )),
             source_object: None,
         });
-        assert!(attach_standalone_wires(
+        assert!(with_admission(|admission| attach_standalone_wires(
             &mut ir,
             &mut AnnotationBuilder::new(),
             &[(curve_id, [0.0, 1.0], 17)],
-        ));
+            admission
+        ))
+        .expect("service limits admit freeform model records"));
         assert_eq!(
             ir.model.bodies[0].kind,
             cadmpeg_ir::topology::BodyKind::Wire
@@ -3179,11 +3385,13 @@ mod tests {
             source_object: None,
         });
         let before = ir.model.clone();
-        assert!(!attach_standalone_wires(
+        assert!(!with_admission(|admission| attach_standalone_wires(
             &mut ir,
             &mut AnnotationBuilder::new(),
             &[(curve_id.clone(), [0.0, 1.0], 0), (curve_id, [1.0, 0.0], 1)],
-        ));
+            admission
+        ))
+        .expect("service limits admit freeform model records"));
         assert_eq!(ir.model, before);
     }
 
@@ -3197,13 +3405,23 @@ mod tests {
             .iter()
             .map(|profile| (profile.curve.id.clone(), profile.range, profile.pos))
             .collect::<Vec<_>>();
-        append_consolidated_line_profiles(&mut ir, &mut AnnotationBuilder::new(), profiles);
+        with_admission(|admission| {
+            append_consolidated_line_profiles(
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                profiles,
+                admission,
+            )
+        })
+        .expect("service limits admit freeform model records");
         assert_eq!(wires.len(), 1);
-        assert!(attach_standalone_wires(
+        assert!(with_admission(|admission| attach_standalone_wires(
             &mut ir,
             &mut AnnotationBuilder::new(),
             &wires,
-        ));
+            admission
+        ))
+        .expect("service limits admit freeform model records"));
         assert_eq!(
             ir.model.edges[0]
                 .param_range()
@@ -3231,21 +3449,28 @@ mod tests {
         let records = crate::wire::records::consolidated_records(&bytes);
 
         let mut standalone = CadIr::empty();
-        append_consolidated_line_profiles(
-            &mut standalone,
-            &mut AnnotationBuilder::new(),
-            consolidated_line_profiles(&bytes, &records),
-        );
+        with_admission(|admission| {
+            append_consolidated_line_profiles(
+                &mut standalone,
+                &mut AnnotationBuilder::new(),
+                consolidated_line_profiles(&bytes, &records),
+                admission,
+            )
+        })
+        .expect("service limits admit freeform model records");
 
         let mut pooled = CadIr::empty();
-        append_freeform_surface_pools(
-            &mut pooled,
-            &mut AnnotationBuilder::new(),
-            &bytes,
-            &records,
-            &HashMap::new(),
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
+        with_admission(|admission| {
+            append_freeform_surface_pools(
+                &mut pooled,
+                &mut AnnotationBuilder::new(),
+                &bytes,
+                &records,
+                &HashMap::new(),
+                &mut crate::nurbs::LaneRefusals::new(),
+                admission,
+            )
+        })
         .expect("valid source object identity");
 
         assert_eq!(standalone.model.curves.len(), 1);
@@ -3270,14 +3495,17 @@ mod tests {
     fn rolling_ball_pool_retains_both_exact_limiting_curves() {
         let mut ir = CadIr::empty();
         let bytes = crate::test_support::test_a5a8::a5_freeform_curve_stream();
-        append_freeform_surface_pools(
-            &mut ir,
-            &mut AnnotationBuilder::new(),
-            &bytes,
-            &crate::wire::records::consolidated_records(&bytes),
-            &HashMap::new(),
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
+        with_admission(|admission| {
+            append_freeform_surface_pools(
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &bytes,
+                &crate::wire::records::consolidated_records(&bytes),
+                &HashMap::new(),
+                &mut crate::nurbs::LaneRefusals::new(),
+                admission,
+            )
+        })
         .expect("valid source object identity");
 
         assert!(matches!(
@@ -3657,18 +3885,21 @@ mod tests {
             ),
         );
 
-        let attached = append_resolved_consolidated_surface_curves(
-            &mut ir,
-            &mut AnnotationBuilder::new(),
-            &bytes,
-            &crate::wire::records::consolidated_records(&bytes),
-            FreeformSurfacePool {
-                surfaces: &[],
-                surface_ids: &[],
-                surface_alias_tags: &HashMap::new(),
-            },
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
+        let attached = with_admission(|admission| {
+            append_resolved_consolidated_surface_curves(
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &bytes,
+                &crate::wire::records::consolidated_records(&bytes),
+                FreeformSurfacePool {
+                    surfaces: &[],
+                    surface_ids: &[],
+                    surface_alias_tags: &HashMap::new(),
+                },
+                &mut crate::nurbs::LaneRefusals::new(),
+                admission,
+            )
+        })
         .expect("valid source object identity");
         assert_eq!(attached.standard_edges, 1);
         assert_eq!(attached.partner_face_pcurve_pairs, 0);
@@ -3730,18 +3961,21 @@ mod tests {
             source_object: Some(crate::assemble::cgm_source("carrier", 0x1234)),
         });
 
-        let counts = append_resolved_consolidated_surface_curves(
-            &mut ir,
-            &mut AnnotationBuilder::new(),
-            &bytes,
-            &crate::wire::records::consolidated_records(&bytes),
-            FreeformSurfacePool {
-                surfaces: &[],
-                surface_ids: &[],
-                surface_alias_tags: &HashMap::new(),
-            },
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
+        let counts = with_admission(|admission| {
+            append_resolved_consolidated_surface_curves(
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &bytes,
+                &crate::wire::records::consolidated_records(&bytes),
+                FreeformSurfacePool {
+                    surfaces: &[],
+                    surface_ids: &[],
+                    surface_alias_tags: &HashMap::new(),
+                },
+                &mut crate::nurbs::LaneRefusals::new(),
+                admission,
+            )
+        })
         .expect("valid source object identity");
 
         assert_eq!(counts.standard_edges, 0);
@@ -3790,18 +4024,21 @@ mod tests {
             source_object: Some(crate::assemble::cgm_source("carrier", 0x1234)),
         });
 
-        let counts = append_resolved_consolidated_surface_curves(
-            &mut ir,
-            &mut AnnotationBuilder::new(),
-            &bytes,
-            &crate::wire::records::consolidated_records(&bytes),
-            FreeformSurfacePool {
-                surfaces: &[],
-                surface_ids: &[],
-                surface_alias_tags: &HashMap::from([(0x5678, Some(0x1234))]),
-            },
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
+        let counts = with_admission(|admission| {
+            append_resolved_consolidated_surface_curves(
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &bytes,
+                &crate::wire::records::consolidated_records(&bytes),
+                FreeformSurfacePool {
+                    surfaces: &[],
+                    surface_ids: &[],
+                    surface_alias_tags: &HashMap::from([(0x5678, Some(0x1234))]),
+                },
+                &mut crate::nurbs::LaneRefusals::new(),
+                admission,
+            )
+        })
         .expect("valid source object identity");
 
         assert_eq!(counts.standard_edges, 0);
@@ -3954,18 +4191,21 @@ mod tests {
             ),
         );
 
-        let attached = append_resolved_consolidated_surface_curves(
-            &mut ir,
-            &mut AnnotationBuilder::new(),
-            &bytes,
-            &crate::wire::records::consolidated_records(&bytes),
-            FreeformSurfacePool {
-                surfaces: &[],
-                surface_ids: &[],
-                surface_alias_tags: &HashMap::new(),
-            },
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
+        let attached = with_admission(|admission| {
+            append_resolved_consolidated_surface_curves(
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &bytes,
+                &crate::wire::records::consolidated_records(&bytes),
+                FreeformSurfacePool {
+                    surfaces: &[],
+                    surface_ids: &[],
+                    surface_alias_tags: &HashMap::new(),
+                },
+                &mut crate::nurbs::LaneRefusals::new(),
+                admission,
+            )
+        })
         .expect("valid source object identity");
         assert_eq!(attached.standard_edges, 1);
         assert_eq!(
@@ -4272,11 +4512,15 @@ mod tests {
             crate::families::b2::records::b2_resolved_revolutions_from_records(&bytes, &records);
         assert_eq!(resolved.len(), 1);
 
-        let bindings = super::append_consolidated_revolutions(
-            &mut CadIr::empty(),
-            &mut AnnotationBuilder::default(),
-            &resolved,
-        );
+        let bindings = with_admission(|admission| {
+            super::append_consolidated_revolutions(
+                &mut CadIr::empty(),
+                &mut AnnotationBuilder::default(),
+                &resolved,
+                admission,
+            )
+        })
+        .expect("service limits admit freeform model records");
         let [binding] = bindings.as_slice() else {
             panic!("the admitted revolution converts to one torus");
         };
@@ -4318,11 +4562,15 @@ mod tests {
                 &bytes, &records,
             );
             assert_eq!(resolved.len(), 1);
-            super::append_consolidated_revolutions(
-                &mut CadIr::empty(),
-                &mut AnnotationBuilder::default(),
-                &resolved,
-            )
+            with_admission(|admission| {
+                super::append_consolidated_revolutions(
+                    &mut CadIr::empty(),
+                    &mut AnnotationBuilder::default(),
+                    &resolved,
+                    admission,
+                )
+            })
+            .expect("service limits admit freeform model records")
         };
         assert!(convert(1.0 + deviation).is_empty());
         let bindings = convert(1.0);

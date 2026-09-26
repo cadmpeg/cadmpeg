@@ -19,6 +19,37 @@ use crate::variant::Variant;
 use crate::CatiaCodec;
 
 #[test]
+fn b5_route_propagates_topology_entity_refusal() {
+    let mut stream = b5_closed_triangle_stream();
+    append_b5_record(
+        &mut stream,
+        0x5e,
+        900,
+        &[
+            0x85, 0x81, 0x18, 0x85, 0x03, 0x18, 0x85, 0x03, 0x81, 0x81, 0x2a,
+        ],
+    );
+    append_b5_record(&mut stream, 0x5d, 901, &[0x81, 0x81, 0x04]);
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_entities = 1;
+    let error = CatiaCodec
+        .decode(
+            &mut Cursor::new(object_main_catpart(&stream)),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        )
+        .expect_err("retained source consumes the sole entity allowance");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                && limit.operation == "admit CATIA family model entity"
+    ));
+}
+
+#[test]
 fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
     let mut stream = b5_closed_triangle_stream();
     append_b5_record(

@@ -30,11 +30,12 @@ use crate::native::{
 /// The returned object-record identities are the exact fields represented by
 /// the emitted native entities and are used to close design-record accounting.
 pub(crate) fn transfer_native_sketch_entities(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     native: &CatiaNative,
     feature_transfer: &DesignFeatureTransfer,
     graph_scope: &crate::decode::ModelingGraphScope,
-) -> HashSet<String> {
+) -> Result<HashSet<String>, cadmpeg_core::CodecError> {
     let object_records = unique_object_records(native);
     let entity_records = unique_entity_records(native);
     let design_objects = unique_design_objects(native);
@@ -121,6 +122,7 @@ pub(crate) fn transfer_native_sketch_entities(
             }) {
                 continue;
             }
+            ctx.charge_entities(1, "admit CATIA sketch entity")?;
             ir.model.sketch_entities.push(
                 SketchEntity::new(
                     entity_id,
@@ -133,7 +135,7 @@ pub(crate) fn transfer_native_sketch_entities(
         }
     }
 
-    transferred
+    Ok(transferred)
 }
 
 /// Transfer one source-closed native relation between a sketch point and a
@@ -145,11 +147,12 @@ pub(crate) fn transfer_native_sketch_entities(
 /// the same Sketch owner list. This proves incidence and source identity. It
 /// does not assign a neutral constraint kind, coordinates, or driving state.
 pub(crate) fn transfer_native_sketch_constraints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     native: &CatiaNative,
     feature_transfer: &DesignFeatureTransfer,
     graph_scope: &crate::decode::ModelingGraphScope,
-) -> HashSet<String> {
+) -> Result<HashSet<String>, cadmpeg_core::CodecError> {
     let object_records = unique_object_records(native);
     let entity_records = unique_entity_records(native);
     let design_objects = unique_design_objects(native);
@@ -401,6 +404,7 @@ pub(crate) fn transfer_native_sketch_constraints(
                 native_ref: Some(candidate.target_entity_record.id.clone()),
             },
         );
+        ctx.charge_entities(1, "admit CATIA sketch constraint")?;
         ir.model.sketch_constraints.push(SketchConstraint {
             id: constraint_id,
             sketch: candidate.sketch,
@@ -418,7 +422,7 @@ pub(crate) fn transfer_native_sketch_constraints(
         });
         transferred.insert(candidate.target_record.id.clone());
     }
-    transferred
+    Ok(transferred)
 }
 
 struct NativeSketchConstraintCandidate<'a> {
@@ -578,6 +582,7 @@ fn admitted_sketch_geometry_fields<'a>(
 /// operand records represented by the emitted neutral constraints. The source
 /// operand's semantic role remains unresolved by design.
 pub(crate) fn transfer_constraint_ranges(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     native: &CatiaNative,
     feature_transfer: &DesignFeatureTransfer,
@@ -617,6 +622,7 @@ pub(crate) fn transfer_constraint_ranges(
             binding.entity.into_iter().collect(),
             binding.operand,
         );
+        ctx.charge_entities(1, "admit CATIA sketch constraint")?;
         ir.model.sketch_constraints.push(SketchConstraint {
             id: constraint_id,
             sketch: binding.sketch,
@@ -1336,8 +1342,10 @@ mod tests {
     fn transfers_one_exact_native_sketch_geometry_member() {
         let (mut ir, native, transfer, graph_scope) = native_sketch_fixture("2DPoint");
 
-        let transferred =
-            transfer_native_sketch_entities(&mut ir, &native, &transfer, &graph_scope);
+        let transferred = crate::test_support::with_service_context(|ctx| {
+            transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
+                .expect("service profile admits sketch transfer")
+        });
         assert_eq!(transferred.len(), 1);
         assert!(transferred.contains("catia:outer:object-record#geometry-field"));
         assert_eq!(ir.model.sketch_entities.len(), 1);
@@ -1358,11 +1366,34 @@ mod tests {
     }
 
     #[test]
+    fn sketch_entity_limit_refuses_before_native_member_push() {
+        let (mut ir, native, transfer, graph_scope) = native_sketch_fixture("2DPoint");
+        let error = crate::test_support::with_entity_limit(0, |ctx| {
+            transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
+        })
+        .expect_err("one sketch member exceeds zero entities");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                && limit.operation == "admit CATIA sketch entity")
+        );
+        assert!(ir.model.sketch_entities.is_empty());
+    }
+
+    #[test]
     fn does_not_promote_an_unadmitted_native_sketch_member() {
         let (mut ir, native, transfer, graph_scope) = native_sketch_fixture("Point");
 
         assert!(
-            transfer_native_sketch_entities(&mut ir, &native, &transfer, &graph_scope).is_empty()
+            crate::test_support::with_service_context(|ctx| transfer_native_sketch_entities(
+                ctx,
+                &mut ir,
+                &native,
+                &transfer,
+                &graph_scope
+            )
+            .expect("service profile admits sketch transfer"))
+            .is_empty()
         );
         assert!(ir.model.sketch_entities.is_empty());
     }
@@ -1393,7 +1424,15 @@ mod tests {
             .push(second_field_id.to_string());
 
         assert!(
-            transfer_native_sketch_entities(&mut ir, &native, &transfer, &graph_scope).is_empty()
+            crate::test_support::with_service_context(|ctx| transfer_native_sketch_entities(
+                ctx,
+                &mut ir,
+                &native,
+                &transfer,
+                &graph_scope
+            )
+            .expect("service profile admits sketch transfer"))
+            .is_empty()
         );
         assert!(ir.model.sketch_entities.is_empty());
     }
@@ -1401,15 +1440,19 @@ mod tests {
     #[test]
     fn refuses_constraint_relations_with_duplicate_sketch_entity_references() {
         let (mut ir, native, transfer, graph_scope) = native_sketch_constraint_fixture();
-        transfer_native_sketch_entities(&mut ir, &native, &transfer, &graph_scope);
+        crate::test_support::with_service_context(|ctx| {
+            transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
+                .expect("service profile admits sketch transfer")
+        });
         assert!(!ir.model.sketch_entities.is_empty());
         let duplicates = ir.model.sketch_entities.clone();
         ir.model.sketch_entities.extend(duplicates.clone());
         ir.model.sketch_entities.extend(duplicates);
-        assert!(
-            transfer_native_sketch_constraints(&mut ir, &native, &transfer, &graph_scope)
-                .is_empty()
-        );
+        assert!(crate::test_support::with_service_context(|ctx| {
+            transfer_native_sketch_constraints(ctx, &mut ir, &native, &transfer, &graph_scope)
+                .expect("service profile admits sketch transfer")
+        })
+        .is_empty());
         assert!(ir.model.sketch_constraints.is_empty());
     }
 
@@ -1417,9 +1460,19 @@ mod tests {
     fn transfers_a_source_closed_native_sketch_constraint_relation() {
         let (mut ir, native, transfer, graph_scope) = native_sketch_constraint_fixture();
 
-        transfer_native_sketch_entities(&mut ir, &native, &transfer, &graph_scope);
+        crate::test_support::with_service_context(|ctx| {
+            transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
+                .expect("service profile admits sketch transfer")
+        });
         assert_eq!(
-            transfer_native_sketch_constraints(&mut ir, &native, &transfer, &graph_scope),
+            crate::test_support::with_service_context(|ctx| transfer_native_sketch_constraints(
+                ctx,
+                &mut ir,
+                &native,
+                &transfer,
+                &graph_scope
+            )
+            .expect("service profile admits sketch transfer")),
             HashSet::from(["catia:outer:object-record#constraint-field".to_string()])
         );
         assert_eq!(ir.model.sketch_constraints.len(), 1);
@@ -1527,6 +1580,25 @@ mod tests {
     }
 
     #[test]
+    fn sketch_constraint_entity_limit_refuses_before_native_relation_push() {
+        let (mut ir, native, transfer, graph_scope) = native_sketch_constraint_fixture();
+        crate::test_support::with_service_context(|ctx| {
+            transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
+                .expect("service profile admits sketch member")
+        });
+        let error = crate::test_support::with_entity_limit(0, |ctx| {
+            transfer_native_sketch_constraints(ctx, &mut ir, &native, &transfer, &graph_scope)
+        })
+        .expect_err("one sketch relation exceeds zero entities");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                && limit.operation == "admit CATIA sketch constraint")
+        );
+        assert!(ir.model.sketch_constraints.is_empty());
+    }
+
+    #[test]
     fn refuses_a_native_sketch_constraint_without_source_incidence() {
         let (mut ir, mut native, transfer, graph_scope) = native_sketch_constraint_fixture();
         native.object_graphs[0]
@@ -1537,11 +1609,15 @@ mod tests {
             .references
             .clear();
 
-        transfer_native_sketch_entities(&mut ir, &native, &transfer, &graph_scope);
-        assert!(
-            transfer_native_sketch_constraints(&mut ir, &native, &transfer, &graph_scope)
-                .is_empty()
-        );
+        crate::test_support::with_service_context(|ctx| {
+            transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
+                .expect("service profile admits sketch transfer")
+        });
+        assert!(crate::test_support::with_service_context(|ctx| {
+            transfer_native_sketch_constraints(ctx, &mut ir, &native, &transfer, &graph_scope)
+                .expect("service profile admits sketch transfer")
+        })
+        .is_empty());
         assert!(ir.model.sketch_constraints.is_empty());
     }
 
@@ -1556,11 +1632,15 @@ mod tests {
             .references
             .retain(|reference| reference.target() != Some("constraint-owner-record"));
 
-        transfer_native_sketch_entities(&mut ir, &native, &transfer, &graph_scope);
-        assert!(
-            transfer_native_sketch_constraints(&mut ir, &native, &transfer, &graph_scope)
-                .is_empty()
-        );
+        crate::test_support::with_service_context(|ctx| {
+            transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
+                .expect("service profile admits sketch transfer")
+        });
+        assert!(crate::test_support::with_service_context(|ctx| {
+            transfer_native_sketch_constraints(ctx, &mut ir, &native, &transfer, &graph_scope)
+                .expect("service profile admits sketch transfer")
+        })
+        .is_empty());
         assert!(ir.model.sketch_constraints.is_empty());
     }
 
@@ -1576,8 +1656,10 @@ mod tests {
                 .incoming_references[0]
                 .object_record = name.to_owned();
 
-            let transferred = transfer_constraint_ranges(&mut ir, &native, &transfer, &graph_scope)
-                .expect("unresolved source operand");
+            let transferred = crate::test_support::with_service_context(|ctx| {
+                transfer_constraint_ranges(ctx, &mut ir, &native, &transfer, &graph_scope)
+            })
+            .expect("unresolved source operand");
             assert!(transferred.is_empty());
             assert!(ir.model.sketch_constraints.is_empty());
         }
@@ -1601,8 +1683,10 @@ mod tests {
             Some(" \t".to_owned()),
         ));
 
-        let transferred = transfer_constraint_ranges(&mut ir, &native, &transfer, &graph_scope)
-            .expect("unresolved source operand");
+        let transferred = crate::test_support::with_service_context(|ctx| {
+            transfer_constraint_ranges(ctx, &mut ir, &native, &transfer, &graph_scope)
+        })
+        .expect("unresolved source operand");
         assert!(transferred.is_empty());
         assert!(ir.model.sketch_constraints.is_empty());
     }
@@ -1612,8 +1696,14 @@ mod tests {
         let (mut ir, native, transfer, graph_scope) = fixture(false);
 
         assert_eq!(
-            transfer_constraint_ranges(&mut ir, &native, &transfer, &graph_scope)
-                .expect("valid sketch constraint transfer"),
+            crate::test_support::with_service_context(|ctx| transfer_constraint_ranges(
+                ctx,
+                &mut ir,
+                &native,
+                &transfer,
+                &graph_scope
+            ))
+            .expect("valid sketch constraint transfer"),
             HashSet::from(["range-record".to_string(), "source-record".to_string()])
         );
         assert_eq!(ir.model.sketch_constraints.len(), 1);
@@ -1660,6 +1750,21 @@ mod tests {
     }
 
     #[test]
+    fn sketch_range_entity_limit_refuses_before_constraint_push() {
+        let (mut ir, native, transfer, graph_scope) = fixture(false);
+        let error = crate::test_support::with_entity_limit(0, |ctx| {
+            transfer_constraint_ranges(ctx, &mut ir, &native, &transfer, &graph_scope)
+        })
+        .expect_err("one range constraint exceeds zero entities");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                && limit.operation == "admit CATIA sketch constraint")
+        );
+        assert!(ir.model.sketch_constraints.is_empty());
+    }
+
+    #[test]
     fn sketch_dimension_scalar_remains_native_without_a_quantity() {
         let (mut ir, mut native, transfer, graph_scope) = fixture(false);
         native.entity_records[0].range_interval = Some(crate::native::CatiaRangeInterval {
@@ -1682,8 +1787,10 @@ mod tests {
             incoming_storage_references: Vec::new(),
         });
 
-        transfer_constraint_ranges(&mut ir, &native, &transfer, &graph_scope)
-            .expect("valid sketch constraint transfer");
+        crate::test_support::with_service_context(|ctx| {
+            transfer_constraint_ranges(ctx, &mut ir, &native, &transfer, &graph_scope)
+        })
+        .expect("valid sketch constraint transfer");
 
         assert!(ir.model.parameters.is_empty());
 
@@ -1714,8 +1821,10 @@ mod tests {
             .with_native_ref(Some("source-record".to_string())),
         );
 
-        transfer_constraint_ranges(&mut ir, &native, &transfer, &graph_scope)
-            .expect("valid sketch constraint transfer");
+        crate::test_support::with_service_context(|ctx| {
+            transfer_constraint_ranges(ctx, &mut ir, &native, &transfer, &graph_scope)
+        })
+        .expect("valid sketch constraint transfer");
 
         let constraint = &ir.model.sketch_constraints[0];
         let SketchConstraintDefinitionInput::Native { entities, .. } = constraint.definition.kind()
@@ -1744,8 +1853,10 @@ mod tests {
             );
         }
 
-        transfer_constraint_ranges(&mut ir, &native, &transfer, &graph_scope)
-            .expect("valid sketch constraint transfer");
+        crate::test_support::with_service_context(|ctx| {
+            transfer_constraint_ranges(ctx, &mut ir, &native, &transfer, &graph_scope)
+        })
+        .expect("valid sketch constraint transfer");
 
         let constraint = &ir.model.sketch_constraints[0];
         let SketchConstraintDefinitionInput::Native { entities, .. } = constraint.definition.kind()
@@ -1772,8 +1883,10 @@ mod tests {
             .with_native_ref(Some("source-record".to_string())),
         );
 
-        transfer_constraint_ranges(&mut ir, &native, &transfer, &graph_scope)
-            .expect("valid sketch constraint transfer");
+        crate::test_support::with_service_context(|ctx| {
+            transfer_constraint_ranges(ctx, &mut ir, &native, &transfer, &graph_scope)
+        })
+        .expect("valid sketch constraint transfer");
 
         let constraint = &ir.model.sketch_constraints[0];
         let SketchConstraintDefinitionInput::Native { entities, .. } = constraint.definition.kind()
@@ -1788,8 +1901,14 @@ mod tests {
         let (mut ir, native, transfer, graph_scope) = fixture(true);
 
         assert_eq!(
-            transfer_constraint_ranges(&mut ir, &native, &transfer, &graph_scope)
-                .expect("valid sketch constraint transfer"),
+            crate::test_support::with_service_context(|ctx| transfer_constraint_ranges(
+                ctx,
+                &mut ir,
+                &native,
+                &transfer,
+                &graph_scope
+            ))
+            .expect("valid sketch constraint transfer"),
             HashSet::from(["range-record".to_string(), "source-record".to_string()])
         );
         assert_eq!(ir.model.sketch_constraints.len(), 1);
@@ -1806,8 +1925,14 @@ mod tests {
             .push(range.incoming_references[0].clone());
 
         assert_eq!(
-            transfer_constraint_ranges(&mut ir, &native, &transfer, &graph_scope)
-                .expect("valid sketch constraint transfer"),
+            crate::test_support::with_service_context(|ctx| transfer_constraint_ranges(
+                ctx,
+                &mut ir,
+                &native,
+                &transfer,
+                &graph_scope
+            ))
+            .expect("valid sketch constraint transfer"),
             HashSet::new()
         );
         assert!(ir.model.sketch_constraints.is_empty());
@@ -1825,8 +1950,14 @@ mod tests {
         );
 
         assert_eq!(
-            transfer_constraint_ranges(&mut ir, &native, &transfer, &graph_scope)
-                .expect("valid sketch constraint transfer"),
+            crate::test_support::with_service_context(|ctx| transfer_constraint_ranges(
+                ctx,
+                &mut ir,
+                &native,
+                &transfer,
+                &graph_scope
+            ))
+            .expect("valid sketch constraint transfer"),
             HashSet::new()
         );
         assert!(ir.model.sketch_constraints.is_empty());

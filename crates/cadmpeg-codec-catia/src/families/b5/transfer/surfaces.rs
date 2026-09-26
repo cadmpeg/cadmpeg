@@ -515,6 +515,7 @@ pub(super) fn emit_surfaces(
     annotations: &mut AnnotationBuilder,
     graph: &B5Graph,
     plan: &mut TransferPlan,
+    admission: &mut crate::families::FamilyEntityAdmission<'_, '_>,
 ) -> Result<HashMap<u32, SurfaceId>, cadmpeg_core::CodecError> {
     let surface_plan: BTreeMap<u32, SurfacePlan> = std::mem::take(&mut plan.surface_plan);
     let surface_ids = surface_plan
@@ -576,6 +577,7 @@ pub(super) fn emit_surfaces(
                 .derived(&id, "geometry")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
+        admission.charge()?;
         ir.model.surfaces.push(Surface {
             id: id.clone(),
             geometry: plan.geometry,
@@ -583,7 +585,15 @@ pub(super) fn emit_surfaces(
         });
         match plan.procedure {
             Some(SurfaceProcedure::Extrusion(extrusion)) => {
-                emit_extrusion_procedure(ir, annotations, &surface_ids, id, object_id, *extrusion);
+                emit_extrusion_procedure(
+                    ir,
+                    annotations,
+                    &surface_ids,
+                    id,
+                    object_id,
+                    *extrusion,
+                    admission,
+                )?;
             }
             Some(SurfaceProcedure::Revolution(revolution)) => {
                 let directrix_id = CurveId::compose(
@@ -600,6 +610,7 @@ pub(super) fn emit_surfaces(
                 annotations
                     .derived(&directrix_id, "geometry")
                     .map_err(cadmpeg_core::CodecError::malformed)?;
+                admission.charge()?;
                 ir.model.curves.push(Curve {
                     id: directrix_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -618,6 +629,7 @@ pub(super) fn emit_surfaces(
                     "2d_surface_of_revolution",
                     Exactness::Derived,
                 );
+                admission.charge()?;
                 let _attached = ir.model.add_procedural_surface(
                     id,
                     cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
@@ -658,6 +670,7 @@ pub(super) fn emit_surfaces(
                     &carrier_tag,
                     Exactness::ByteExact,
                 );
+                admission.charge()?;
                 let _attached = ir.model.add_procedural_surface(
                     id,
                     ProceduralSurface::new(procedural_id, definition, None),
@@ -691,6 +704,7 @@ pub(super) fn emit_surfaces(
             Exactness::Derived,
         );
         let record_bounds = super::parameter_record_bounds(offset.parameter_bounds);
+        admission.charge()?;
         let _attached = ir.model.add_procedural_surface(
             surface.clone(),
             ProceduralSurface::new(
@@ -720,7 +734,8 @@ fn emit_extrusion_procedure(
     surface_id: SurfaceId,
     surface_object_id: u32,
     extrusion: super::ResolvedExtrusionSurface,
-) {
+    admission: &mut crate::families::FamilyEntityAdmission<'_, '_>,
+) -> Result<(), cadmpeg_core::CodecError> {
     let directrix_id = CurveId::compose(
         &cadmpeg_ir::identity_namespace!("catia", "b5", "extrusion-directrix"),
         extrusion.directrix_object_id,
@@ -747,6 +762,7 @@ fn emit_extrusion_procedure(
                 "two_support_directrix",
                 Exactness::Unknown,
             );
+            admission.charge()?;
             ir.model.curves.push(Curve {
                 id: directrix_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -777,6 +793,7 @@ fn emit_extrusion_procedure(
                 },
             );
 
+            admission.charge()?;
             let _attached = ir
                 .model
                 .add_procedural_curve(directrix_id.clone(), procedure);
@@ -789,6 +806,7 @@ fn emit_extrusion_procedure(
                 "support_pcurve_lift",
                 Exactness::Derived,
             );
+            admission.charge()?;
             ir.model.curves.push(Curve {
                 id: directrix_id.clone(),
                 geometry: curve,
@@ -814,6 +832,7 @@ fn emit_extrusion_procedure(
                 "support_pcurve_lift",
                 Exactness::Derived,
             );
+            admission.charge()?;
             ir.model.curves.push(Curve {
                 id: source_id.clone(),
                 geometry: source_curve,
@@ -826,6 +845,7 @@ fn emit_extrusion_procedure(
                 "fixed_direction_offset_curve",
                 Exactness::Unknown,
             );
+            admission.charge()?;
             ir.model.curves.push(Curve {
                 id: directrix_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -842,6 +862,7 @@ fn emit_extrusion_procedure(
                 "fixed_direction_offset_curve",
                 Exactness::ByteExact,
             );
+            admission.charge()?;
             let _attached = ir.model.add_procedural_curve(
                 directrix_id.clone(),
                 ProceduralCurve::new(
@@ -871,6 +892,7 @@ fn emit_extrusion_procedure(
         Exactness::ByteExact,
     );
     let record_bounds = super::parameter_record_bounds(extrusion.parameter_bounds);
+    admission.charge()?;
     let _attached = ir.model.add_procedural_surface(
         surface_id,
         ProceduralSurface::new(
@@ -887,6 +909,7 @@ fn emit_extrusion_procedure(
             Some(record_bounds),
         ),
     );
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1008,14 +1031,19 @@ mod tests {
             source_object: None,
         });
 
-        emit_extrusion_procedure(
-            &mut ir,
-            &mut AnnotationBuilder::new(),
-            &support_ids,
-            surface_id,
-            30,
-            extrusion,
-        );
+        crate::test_support::with_service_context(|ctx| {
+            let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+            emit_extrusion_procedure(
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &support_ids,
+                surface_id,
+                30,
+                extrusion,
+                &mut admission,
+            )
+            .expect("service limits admit the extrusion procedure");
+        });
 
         assert!(matches!(
             &ir.model.curves[0].geometry,

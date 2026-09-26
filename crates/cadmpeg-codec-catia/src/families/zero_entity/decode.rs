@@ -22,7 +22,7 @@ use crate::assemble::{
     annotate, link_payload_carriers, neutral_model_is_admissible, preserve_raw_payload,
 };
 use crate::container::{self, ContainerScan};
-use crate::families::FamilyOutput;
+use crate::families::{FamilyEntityAdmission, FamilyOutput};
 use crate::loss::CatiaLossCode;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -119,6 +119,7 @@ fn closed_wire_loop_members<'a>(
 }
 
 fn append_oriented_wire_curve(
+    admission: &mut FamilyEntityAdmission<'_, '_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     curve_id: CurveId,
@@ -170,6 +171,7 @@ fn append_oriented_wire_curve(
                     CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }) => None,
                     CurveGeometry::Solved(geometry) => Some(geometry),
                 };
+                admission.charge()?;
                 ir.model.procedural_curves.push(procedural);
                 CurveGeometry::Procedural {
                     construction: construction_id,
@@ -192,6 +194,7 @@ fn append_oriented_wire_curve(
     annotations
         .derived(&curve_id, "geometry")
         .map_err(cadmpeg_core::CodecError::malformed)?;
+    admission.charge()?;
     ir.model.curves.push(Curve {
         id: curve_id,
         geometry,
@@ -219,6 +222,7 @@ fn source_wire_procedural(ir: &CadIr, geometry: &CurveGeometry) -> Option<WireSo
 /// source physical-edge or face identities. A complete ownership root groups
 /// the wires under its one source shell and body.
 fn transfer_closed_wire_loops(
+    admission: &mut FamilyEntityAdmission<'_, '_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     support_runs: &[crate::families::zero_entity::records::ZeroEntitySupportRun],
@@ -322,9 +326,11 @@ fn transfer_closed_wire_loops(
                     .map_err(cadmpeg_core::CodecError::malformed)?
                     .derived(&vertex_id, "point")
                     .map_err(cadmpeg_core::CodecError::malformed)?;
+                admission.charge()?;
                 ir.model
                     .points
                     .push(Point::new(point_id.clone(), start, None));
+                admission.charge()?;
                 ir.model.vertices.push(Vertex {
                     id: vertex_id.clone(),
                     point: point_id,
@@ -507,6 +513,7 @@ fn transfer_closed_wire_loops(
                                     identity.clone().dash(index),
                                 );
                                 append_oriented_wire_curve(
+                                    admission,
                                     ir,
                                     annotations,
                                     oriented_curve_id.clone(),
@@ -554,6 +561,7 @@ fn transfer_closed_wire_loops(
                     .map_err(cadmpeg_core::CodecError::malformed)?
                     .derived(&edge_id, "end")
                     .map_err(cadmpeg_core::CodecError::malformed)?;
+                admission.charge()?;
                 ir.model.edges.push(Edge {
                     id: edge_id.clone(),
                     carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), param_range)
@@ -574,6 +582,7 @@ fn transfer_closed_wire_loops(
             if root_owns_support_runs {
                 owned_edge_ids.extend(edge_ids);
             } else {
+                admission.charge()?;
                 ir.model.bodies.push(Body {
                     id: body_id.clone(),
                     kind: BodyKind::Wire,
@@ -583,11 +592,13 @@ fn transfer_closed_wire_loops(
                     color: None,
                     visible: None,
                 });
+                admission.charge()?;
                 ir.model.regions.push(Region {
                     id: region_id.clone(),
                     body: body_id,
                     shells: vec![shell_id.clone()],
                 });
+                admission.charge()?;
                 ir.model.shells.push(
                     match Shell::new(shell_id, region_id, Vec::new(), edge_ids, Vec::new()) {
                         Ok(shell) => shell,
@@ -643,6 +654,7 @@ fn transfer_closed_wire_loops(
             "owned_wire_shell",
             Exactness::Derived,
         );
+        admission.charge()?;
         ir.model.bodies.push(Body {
             id: body_id.clone(),
             kind: BodyKind::Wire,
@@ -652,11 +664,13 @@ fn transfer_closed_wire_loops(
             color: None,
             visible: None,
         });
+        admission.charge()?;
         ir.model.regions.push(Region {
             id: region_id.clone(),
             body: body_id,
             shells: vec![shell_id.clone()],
         });
+        admission.charge()?;
         ir.model.shells.push(
             match Shell::new(shell_id, region_id, Vec::new(), owned_edge_ids, Vec::new()) {
                 Ok(shell) => shell,
@@ -676,7 +690,8 @@ pub(in crate::families) fn try_decode_zero_entity(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<FamilyOutput> {
+) -> Result<Option<FamilyOutput>, cadmpeg_core::CodecError> {
+    (|| -> Option<Result<FamilyOutput, cadmpeg_core::CodecError>> {
     let preamble = container::outer_preamble_range(&scan.data)?;
     let surfaces = crate::families::zero_entity::records::zero_entity_surfaces_in_range(
         &scan.data,
@@ -696,9 +711,11 @@ pub(in crate::families) fn try_decode_zero_entity(
     );
 
     let mut ir = CadIr::empty();
+    let mut admission = FamilyEntityAdmission::new(ctx);
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
-    let payload_index = preserve_raw_payload(
+    let payload_index = match preserve_raw_payload(
+        ctx,
         &mut unknowns,
         &mut annotations,
         scan,
@@ -706,7 +723,10 @@ pub(in crate::families) fn try_decode_zero_entity(
             &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
             cadmpeg_ir::identity_key!("zero-entity"),
         ),
-    );
+    ) {
+        Ok(index) => index,
+        Err(error) => return Some(Err(error)),
+    };
 
     let mut surface_ids_by_position = HashMap::new();
     for (index, surface) in surfaces.into_iter().enumerate() {
@@ -722,6 +742,9 @@ pub(in crate::families) fn try_decode_zero_entity(
             "analytic_surface",
             Exactness::ByteExact,
         );
+        if let Err(error) = admission.charge() {
+            return Some(Err(error));
+        }
         ir.model.surfaces.push(Surface {
             id: id.clone(),
             geometry: surface.geometry,
@@ -752,6 +775,9 @@ pub(in crate::families) fn try_decode_zero_entity(
                     Exactness::Derived,
                 );
                 annotations.derived(&curve_id, "geometry").ok()?;
+                if let Err(error) = admission.charge() {
+                    return Some(Err(error));
+                }
                 ir.model.curves.push(Curve {
                     id: curve_id.clone(),
                     geometry,
@@ -854,6 +880,9 @@ pub(in crate::families) fn try_decode_zero_entity(
                 .ok()?
                 .derived(&construction_id, "definition")
                 .ok()?;
+            if let Err(error) = admission.charge() {
+                return Some(Err(error));
+            }
             ir.model.curves.push(Curve {
                 id: curve_id.clone(),
                 geometry: CurveGeometry::Procedural {
@@ -862,6 +891,9 @@ pub(in crate::families) fn try_decode_zero_entity(
                 },
                 source_object: None,
             });
+            if let Err(error) = admission.charge() {
+                return Some(Err(error));
+            }
             ir.model
                 .procedural_curves
                 .push(ProceduralCurve::new(construction_id, definition));
@@ -877,6 +909,7 @@ pub(in crate::families) fn try_decode_zero_entity(
             crate::families::zero_entity::topology::MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS as u64,
         );
         let counts = crate::families::zero_entity::topology_transfer::transfer_closed_face_topology(
+            &mut admission,
             &mut candidate_ir,
             &mut candidate_annotations,
             crate::families::zero_entity::topology_transfer::ZeroEntityClosedTopology {
@@ -889,26 +922,31 @@ pub(in crate::families) fn try_decode_zero_entity(
             refusal,
         );
         match counts {
-            Some(counts) if neutral_model_is_admissible(&mut candidate_ir, &unknowns) => {
+            Ok(Some(counts)) if neutral_model_is_admissible(&mut candidate_ir, &unknowns) => {
                 ir = candidate_ir;
                 annotations = candidate_annotations;
                 Some(counts)
             }
+            Err(error) => return Some(Err(error)),
             _ => None,
         }
     };
     let wire_counts = if topology_counts.is_some() {
         WireTransferCounts::default()
     } else {
-        transfer_closed_wire_loops(
+        match transfer_closed_wire_loops(
+            &mut admission,
             &mut ir,
             &mut annotations,
             &support_runs,
             &support_curve_ids,
             ownership_root.as_ref(),
             refusal,
-        )
-        .ok()?
+        ) {
+            Ok(counts) => counts,
+            Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
+            Err(_) => return None,
+        }
     };
 
     link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations).ok()?;
@@ -1006,7 +1044,7 @@ pub(in crate::families) fn try_decode_zero_entity(
     } else {
         CatiaLossCode::TopologyZeroEntityFaceUnresolved
     };
-    Some(FamilyOutput {
+    Some(Ok(FamilyOutput {
         ir,
         report: DecodeBody {
             transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
@@ -1017,7 +1055,10 @@ pub(in crate::families) fn try_decode_zero_entity(
         },
         annotations: annotations.build(),
         unknowns,
-    })
+        admitted_model_entities: admission.admitted(),
+    }))
+    })()
+    .transpose()
 }
 
 #[cfg(test)]
@@ -1163,14 +1204,18 @@ mod tests {
         ]);
         let mut annotations = AnnotationBuilder::new();
 
-        let counts = transfer_closed_wire_loops(
-            &mut ir,
-            &mut annotations,
-            &support_runs,
-            &support_curve_ids,
-            None,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
+        let counts = crate::test_support::with_service_context(|ctx| {
+            let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+            transfer_closed_wire_loops(
+                &mut admission,
+                &mut ir,
+                &mut annotations,
+                &support_runs,
+                &support_curve_ids,
+                None,
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        })
         .expect("valid exactness fields");
 
         assert_eq!(counts.edges, 2);
@@ -1296,14 +1341,18 @@ mod tests {
         };
         let mut annotations = AnnotationBuilder::new();
 
-        let counts = transfer_closed_wire_loops(
-            &mut ir,
-            &mut annotations,
-            &support_runs,
-            &support_curve_ids,
-            Some(&ownership_root),
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
+        let counts = crate::test_support::with_service_context(|ctx| {
+            let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+            transfer_closed_wire_loops(
+                &mut admission,
+                &mut ir,
+                &mut annotations,
+                &support_runs,
+                &support_curve_ids,
+                Some(&ownership_root),
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        })
         .expect("valid exactness fields");
 
         assert_eq!(counts.bodies, 1);
@@ -1455,14 +1504,18 @@ mod tests {
         ]);
         let mut annotations = AnnotationBuilder::new();
 
-        let counts = transfer_closed_wire_loops(
-            &mut ir,
-            &mut annotations,
-            &support_runs,
-            &support_curve_ids,
-            None,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
+        let counts = crate::test_support::with_service_context(|ctx| {
+            let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+            transfer_closed_wire_loops(
+                &mut admission,
+                &mut ir,
+                &mut annotations,
+                &support_runs,
+                &support_curve_ids,
+                None,
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        })
         .expect("valid exactness fields");
 
         assert_eq!(counts.loops, 1);
@@ -1566,14 +1619,18 @@ mod tests {
         let support_curve_ids = HashMap::from([(4, curve_id.clone())]);
         let mut annotations = AnnotationBuilder::new();
 
-        let counts = transfer_closed_wire_loops(
-            &mut ir,
-            &mut annotations,
-            &support_runs,
-            &support_curve_ids,
-            None,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
+        let counts = crate::test_support::with_service_context(|ctx| {
+            let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+            transfer_closed_wire_loops(
+                &mut admission,
+                &mut ir,
+                &mut annotations,
+                &support_runs,
+                &support_curve_ids,
+                None,
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        })
         .expect("valid exactness fields");
 
         assert_eq!(counts.bodies, 1);
@@ -1671,14 +1728,18 @@ mod tests {
         let mut ir = CadIr::empty();
         let mut annotations = AnnotationBuilder::new();
 
-        let counts = transfer_closed_wire_loops(
-            &mut ir,
-            &mut annotations,
-            &support_runs,
-            &HashMap::new(),
-            None,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
+        let counts = crate::test_support::with_service_context(|ctx| {
+            let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+            transfer_closed_wire_loops(
+                &mut admission,
+                &mut ir,
+                &mut annotations,
+                &support_runs,
+                &HashMap::new(),
+                None,
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        })
         .expect("valid exactness fields");
 
         assert_eq!(counts, WireTransferCounts::default());
