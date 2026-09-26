@@ -26,7 +26,7 @@ use cadmpeg_ir::topology::EdgeCarrier;
 use cadmpeg_ir::transform::Transform;
 
 /// Scale neutral model lengths not converted at transfer.
-pub(super) fn normalize_model_lengths(
+pub(in crate::decode) fn normalize_model_lengths(
     ir: &mut CadIr,
     scale: PositiveReal,
     source_carriers: &SourceUnitCarriers,
@@ -55,11 +55,17 @@ pub(super) fn normalize_model_lengths(
         }
     }
     for curve in &mut ir.model.curves {
+        if source_carriers.contains_curve(&curve.id) {
+            continue;
+        }
         if let CurveGeometry::Solved(geometry) = &mut curve.geometry {
             scale_curve_geometry(geometry, scale)?;
         }
     }
     for procedural in &mut ir.model.procedural_surfaces {
+        if source_carriers.contains_procedural_surface(&procedural.id) {
+            continue;
+        }
         procedural
             .edit_definition(|definition| definition.scale_lengths(scale))
             .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -1152,7 +1158,7 @@ pub(in crate::decode) fn scale_surface_geometry(
     Ok(())
 }
 
-fn scale_curve_geometry(
+pub(in crate::decode) fn scale_curve_geometry(
     geometry: &mut SolvedCurveGeometry,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
@@ -1282,6 +1288,19 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralCurveDefinition 
         }
         Ok(())
     }
+}
+
+pub(in crate::decode) fn scale_procedural_surface(
+    procedural: &mut cadmpeg_ir::geometry::ProceduralSurface,
+    scale: PositiveReal,
+) -> Result<(), CodecError> {
+    procedural
+        .edit_definition(|definition| definition.scale_lengths(scale))
+        .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
+    procedural
+        .scale_cache_fit_tolerance(scale)
+        .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
+    Ok(())
 }
 
 /// The scale of a curve's parameter under the unit scaling. A line is

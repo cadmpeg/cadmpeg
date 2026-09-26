@@ -106,7 +106,8 @@ fn malformed_saved_spline_reports_transfer_loss() {
             &scan,
             &mut ir,
             &mut AnnotationBuilder::new(),
-            &mut losses
+            &mut losses,
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         ))
         .expect("transfer"),
         0

@@ -185,6 +185,7 @@ fn transfer_reference_lines(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    source_carriers: &mut SourceUnitCarriers,
 ) -> Result<(), CodecError> {
     let line3d_id_counts =
         scan.references
@@ -242,26 +243,29 @@ fn transfer_reference_lines(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model curves")?;
-        ir.model.curves.push(Curve {
-            id,
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::new(line.start, direction),
-            )),
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                    "MdlRefInfo:{family}:{native_identity}"
-                ))
-                .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                })?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
+        source_carriers.admit_curve(
+            ir,
+            Curve {
+                id,
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    cadmpeg_ir::geometry::analytic::LineCurve::new(line.start, direction),
+                )),
+                source_object: Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        "MdlRefInfo:{family}:{native_identity}"
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            },
+        )?;
     }
     Ok(())
 }
@@ -271,6 +275,7 @@ fn transfer_reference_circles(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    source_carriers: &mut SourceUnitCarriers,
 ) -> Result<(), CodecError> {
     let circle_id_counts =
         scan.references
@@ -319,26 +324,29 @@ fn transfer_reference_circles(
             })?;
         let center = cadmpeg_ir::features::FinitePoint3::new(Point3::from(circle.center))
             .ok_or_else(|| CodecError::malformed("CircleCurve.center must be finite"))?;
-        ir.model.curves.push(Curve {
-            id,
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::new(center, frame, circle.radius),
-            )),
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                    "MdlRefInfo:arc_z:{native_identity}"
-                ))
-                .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                })?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
+        source_carriers.admit_curve(
+            ir,
+            Curve {
+                id,
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::new(center, frame, circle.radius),
+                )),
+                source_object: Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        "MdlRefInfo:arc_z:{native_identity}"
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            },
+        )?;
     }
     Ok(())
 }
@@ -348,6 +356,7 @@ fn transfer_reference_ellipses(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    source_carriers: &mut SourceUnitCarriers,
 ) -> Result<(), CodecError> {
     let ellipse_id_counts = scan.references.ellipses.iter().fold(
         BTreeMap::<u32, usize>::new(),
@@ -385,40 +394,43 @@ fn transfer_reference_ellipses(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model curves")?;
-        ir.model.curves.push(Curve {
-            id,
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-                cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
-                    ellipse.center,
-                    cadmpeg_ir::units::OrthonormalFrame3::from_units(
-                        ellipse.axis,
-                        ellipse.major_direction,
-                    )
-                    .ok_or_else(|| {
-                        CodecError::malformed(
-                            "EllipseCurve.axis/ref_direction must form an orthonormal frame",
+        source_carriers.admit_curve(
+            ir,
+            Curve {
+                id,
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
+                    cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
+                        ellipse.center,
+                        cadmpeg_ir::units::OrthonormalFrame3::from_units(
+                            ellipse.axis,
+                            ellipse.major_direction,
                         )
+                        .ok_or_else(|| {
+                            CodecError::malformed(
+                                "EllipseCurve.axis/ref_direction must form an orthonormal frame",
+                            )
+                        })?,
+                        ellipse.major_radius,
+                        ellipse.minor_radius,
+                    )
+                    .map_err(CodecError::malformed)?,
+                )),
+                source_object: Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        "MdlRefInfo:conic:{native_identity}"
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
-                    ellipse.major_radius,
-                    ellipse.minor_radius,
-                )
-                .map_err(CodecError::malformed)?,
-            )),
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                    "MdlRefInfo:conic:{native_identity}"
-                ))
-                .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                })?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            },
+        )?;
     }
     Ok(())
 }
@@ -654,9 +666,9 @@ pub(in super::super) fn build_ir(
     emit_legacy_arenas(scan, &mut ir, &mut annotations)?;
     let unknowns = preserve_passthrough_sections(ctx, scan, &mut annotations)?;
     emit_reference_arenas(scan, &mut ir, &mut annotations)?;
-    transfer_reference_lines(ctx, scan, &mut ir, &mut annotations)?;
-    transfer_reference_circles(ctx, scan, &mut ir, &mut annotations)?;
-    transfer_reference_ellipses(ctx, scan, &mut ir, &mut annotations)?;
+    transfer_reference_lines(ctx, scan, &mut ir, &mut annotations, &mut source_carriers)?;
+    transfer_reference_circles(ctx, scan, &mut ir, &mut annotations, &mut source_carriers)?;
+    transfer_reference_ellipses(ctx, scan, &mut ir, &mut annotations, &mut source_carriers)?;
     transfer_display_tessellations(ctx, scan, &mut ir, &mut annotations)?;
     transfer_datum_plane_surfaces(ctx, scan, &mut ir, &mut annotations, &mut source_carriers)?;
     transfer_placed_plane_surfaces_into_ir(
