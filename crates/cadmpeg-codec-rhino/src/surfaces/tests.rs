@@ -1099,8 +1099,14 @@ fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
         Ok(())
     })
     .expect("valid test curve edit");
-    let plain =
-        super::extrusion_nurbs(&start, &end, [10.0, 20.0], false, 0).expect("required invariant");
+    let plain = super::extrusion_nurbs(
+        &start,
+        &end,
+        cadmpeg_ir::units::FiniteVector::new([10.0, 20.0]).expect("finite path domain"),
+        false,
+        0,
+    )
+    .expect("required invariant");
     assert_eq!((plain.u_degree(), plain.v_degree()), (2, 1));
     assert_eq!(plain.u_knots(), start.knots());
     assert_eq!(plain.v_knots().as_slice(), vec![10.0, 10.0, 20.0, 20.0]);
@@ -1112,8 +1118,14 @@ fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
         plain.poles().into_iter().nth(3).unwrap(),
         end.control_points()[1]
     );
-    let transposed =
-        super::extrusion_nurbs(&start, &end, [10.0, 20.0], true, 0).expect("required invariant");
+    let transposed = super::extrusion_nurbs(
+        &start,
+        &end,
+        cadmpeg_ir::units::FiniteVector::new([10.0, 20.0]).expect("finite path domain"),
+        true,
+        0,
+    )
+    .expect("required invariant");
     assert_eq!((transposed.u_degree(), transposed.v_degree()), (1, 2));
     assert_eq!((transposed.u_count(), transposed.v_count()), (2, 3));
     assert_eq!(
