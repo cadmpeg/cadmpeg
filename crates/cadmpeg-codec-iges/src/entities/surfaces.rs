@@ -698,12 +698,17 @@ fn ruled_surface_carrier(
         return Ok(None);
     };
     Ok(Some(
-        NurbsSurface::from_lanes(
+        NurbsSurface::from_checked_lanes(
             NurbsSurfaceAxis::new(degree, u_knots, first.periodic() && second.periodic()),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceLanes::new(
                 control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
-                weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+                weights.map(|values| {
+                    values
+                        .chunks(2_usize)
+                        .map(|row| row.iter().copied().map(Into::into).collect())
+                        .collect()
+                }),
             ),
             false,
         )
@@ -711,7 +716,7 @@ fn ruled_surface_carrier(
     ))
 }
 
-type RuledSpanLanes = (u32, Vec<f64>, Vec<Point3>, Option<Vec<f64>>);
+type RuledSpanLanes = (u32, Vec<f64>, Vec<FinitePoint3>, Option<Vec<PositiveReal>>);
 
 /// The span lanes of a ruled carrier, or `None` when the rails state none.
 ///
@@ -773,24 +778,16 @@ fn ruled_surface_span_lanes(
     let mut weights = Vec::with_capacity(pole_count);
     for control in homogeneous {
         let weight = control[3];
-        if !weight.is_finite() || weight <= 0.0 {
-            return None;
-        }
+        let weight = PositiveReal::new(weight)?;
         let point = Point3::new(
-            control[0] / weight,
-            control[1] / weight,
-            control[2] / weight,
+            control[0] / weight.get(),
+            control[1] / weight.get(),
+            control[2] / weight.get(),
         );
-        if [point.x, point.y, point.z]
-            .into_iter()
-            .any(|value| !value.is_finite())
-        {
-            return None;
-        }
-        control_points.push(point);
+        control_points.push(FinitePoint3::new(point)?);
         weights.push(weight);
     }
-    let weights = if weights.iter().all(|weight| *weight == 1.0) {
+    let weights = if weights.iter().all(|weight| weight.get() == 1.0) {
         None
     } else {
         Some(weights)
