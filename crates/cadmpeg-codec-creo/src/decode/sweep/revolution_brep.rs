@@ -38,6 +38,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
@@ -267,18 +268,19 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             );
             let position = section_point_in_model(transform, entity.start());
             ctx.charge_entities(1, "admit Creo model curves")?;
-            ir.model.curves.push(Curve {
-                id: curve_id.clone(),
-                geometry: curve_geometry,
-                source_object: None,
-            });
+            source_carriers.admit_curve(
+                ir,
+                Curve {
+                    id: curve_id.clone(),
+                    geometry: curve_geometry,
+                    source_object: None,
+                },
+            )?;
             let finite_position = cadmpeg_ir::features::FinitePoint3::new(Point3::from(position))
                 .ok_or(Point::NON_FINITE_POSITION)
                 .map_err(cadmpeg_core::CodecError::malformed)?;
             ctx.charge_entities(1, "admit Creo model points")?;
-            ir.model
-                .points
-                .push(Point::new(point_id.clone(), finite_position, None));
+            source_carriers.admit_point(ir, Point::new(point_id.clone(), finite_position, None))?;
             ctx.charge_entities(1, "admit Creo model vertices")?;
             ir.model.vertices.push(Vertex {
                 id: vertex_id.clone(),
@@ -286,17 +288,20 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 tolerance: None,
             });
             ctx.charge_entities(1, "admit Creo model edges")?;
-            ir.model.edges.push(Edge {
-                id: edge_id.clone(),
-                carrier: cadmpeg_ir::topology::EdgeCarrier::new(
-                    Some(curve_id),
-                    Some([0.0, std::f64::consts::TAU]),
-                )
-                .map_err(cadmpeg_core::CodecError::malformed)?,
-                start: vertex_id.clone(),
-                end: vertex_id,
-                tolerance: None,
-            });
+            source_carriers.admit_edge(
+                ir,
+                Edge {
+                    id: edge_id.clone(),
+                    carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                        Some(curve_id),
+                        Some([0.0, std::f64::consts::TAU]),
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                    start: vertex_id.clone(),
+                    end: vertex_id,
+                    tolerance: None,
+                },
+            )?;
             edges[index] = Some(edge_id);
         }
         let mut faces = Vec::new();
@@ -311,11 +316,14 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 revolution_id!(SurfaceId, cadmpeg_ir::identity_key!("surface").colon(index));
             let face_id = revolution_id!(FaceId, cadmpeg_ir::identity_key!("face").colon(index));
             ctx.charge_entities(1, "admit Creo model surfaces")?;
-            ir.model.surfaces.push(Surface {
-                id: surface_id.clone(),
-                geometry: surface_geometry.clone(),
-                source_object: None,
-            });
+            source_carriers.admit_surface(
+                ir,
+                Surface {
+                    id: surface_id.clone(),
+                    geometry: surface_geometry.clone(),
+                    source_object: None,
+                },
+            )?;
             let mut loops = Vec::new();
             for PrevalidatedRevolutionBoundary {
                 boundary,
@@ -353,6 +361,9 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     ctx,
                     ir,
                     annotations,
+                    source_carriers,
+                    &surface_id,
+                    None,
                     revolution_id!(
                         PcurveId,
                         cadmpeg_ir::identity_key!("pcurve").colon(index).colon(
