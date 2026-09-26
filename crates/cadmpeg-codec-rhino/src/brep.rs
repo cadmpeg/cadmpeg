@@ -19,7 +19,7 @@ use crate::curves::{error, GeometryError};
 use crate::objects::{
     parse_class_wrapper, parse_class_wrapper_with_userdata, ClassUserdata, UserdataDescriptor,
 };
-use crate::settings::{bbox, interval, BoundingBox, Interval, Point3};
+use crate::settings::{bbox, interval, BoundingBox, CoordinateLane, Interval, Point3};
 use crate::wire::{uuid, Uuid};
 
 /// `ON_Brep` class UUID.
@@ -115,7 +115,7 @@ pub(crate) struct RawBrepVertex {
     /// legacy Brep computes it as the mean of the curve endpoints merged into
     /// the vertex, and a non-finite coordinate carries through to the point,
     /// where the Brep validator owns it.
-    pub(crate) point: [f64; 3],
+    pub(crate) point: CoordinateLane<3>,
     /// Incident edge indexes.
     pub(crate) edges: Vec<i32>,
     /// Vertex tolerance.
@@ -1026,7 +1026,7 @@ impl LegacyVertex {
                 *coordinate =
                     scaled_mean(self.point_sum[axis], self.point_count)? * self.point_scale[axis];
             }
-            self.vertex.point = point;
+            self.vertex.point = CoordinateLane::Derived(point);
         }
         Some(self.vertex)
     }
@@ -1356,7 +1356,7 @@ fn parse_legacy_major2(
                 vertices.push(LegacyVertex {
                     vertex: RawBrepVertex {
                         index,
-                        point: [0.0; 3],
+                        point: CoordinateLane::Derived([0.0; 3]),
                         edges: Vec::new(),
                         tolerance: 0.0,
                         source_range: 0..0,
@@ -1682,7 +1682,7 @@ fn legacy_vertex(
     if let Some((index, _)) = vertices
         .iter()
         .enumerate()
-        .find(|(_, value)| value.vertex.point == point)
+        .find(|(_, value)| value.vertex.point.get() == point)
     {
         return Ok(index);
     }
@@ -1692,7 +1692,7 @@ fn legacy_vertex(
     vertices.push(LegacyVertex {
         vertex: RawBrepVertex {
             index: stored_index,
-            point,
+            point: CoordinateLane::Derived(point),
             edges: Vec::new(),
             tolerance: 0.0,
             source_range: 0..0,
@@ -1875,7 +1875,7 @@ fn read_vertices(
         let tolerance = child.f64()?;
         result.push(RawBrepVertex {
             index,
-            point: point.0.get(),
+            point: CoordinateLane::Admitted(point.0),
             edges,
             tolerance,
             source_range: start..child.position(),
@@ -2920,7 +2920,7 @@ mod tests {
             }
             let vertex = vertices.pop().unwrap().into_vertex().unwrap();
             assert_eq!(
-                vertex.point,
+                vertex.point.get(),
                 [(endpoints[0] / 2.0 + endpoints[1] / 2.0), 0., 0.]
             );
         }
@@ -3262,11 +3262,14 @@ mod tests {
             .enumerate()
             .map(|(index, edges)| RawBrepVertex {
                 index: i32::try_from(index).expect("index"),
-                point: [
-                    f64::from((index == 1) as u8),
-                    f64::from((index == 2) as u8),
-                    0.0,
-                ],
+                point: super::CoordinateLane::Admitted(
+                    crate::test_support::point3([
+                        f64::from((index == 1) as u8),
+                        f64::from((index == 2) as u8),
+                        0.0,
+                    ])
+                    .0,
+                ),
                 edges: edges.into_iter().collect(),
                 tolerance: 0.0,
                 source_range: 0..0,
@@ -3497,7 +3500,7 @@ mod tests {
             },
             vertices: vec![RawBrepVertex {
                 index: 0,
-                point: [0.0, 0.0, 0.0],
+                point: super::CoordinateLane::Admitted(crate::test_support::point3([0.0; 3]).0),
                 edges: Vec::new(),
                 tolerance: 0.0,
                 source_range: 0..0,

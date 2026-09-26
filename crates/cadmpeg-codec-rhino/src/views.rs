@@ -126,11 +126,11 @@ struct ViewportUserdataScan {
 
 #[derive(Debug, Serialize)]
 struct ConstructionPlane {
-    plane_origin_mm: crate::settings::PlaneLane<3>,
+    plane_origin_mm: crate::settings::CoordinateLane<3>,
     plane_x_axis: cadmpeg_ir::units::FiniteVector<3>,
     plane_y_axis: cadmpeg_ir::units::FiniteVector<3>,
     plane_z_axis: cadmpeg_ir::units::FiniteVector<3>,
-    plane_equation_mm: crate::settings::PlaneLane<4>,
+    plane_equation_mm: crate::settings::CoordinateLane<4>,
     grid_spacing_mm: FiniteReal,
     snap_spacing_mm: FiniteReal,
     grid_line_count: i32,
@@ -201,7 +201,7 @@ struct TraceImage {
     legacy_file_path: String,
     width_mm: FiniteReal,
     height_mm: FiniteReal,
-    plane_origin_mm: crate::settings::PlaneLane<3>,
+    plane_origin_mm: crate::settings::CoordinateLane<3>,
     plane_x_axis: cadmpeg_ir::units::FiniteVector<3>,
     plane_y_axis: cadmpeg_ir::units::FiniteVector<3>,
     grayscale: bool,
@@ -293,8 +293,9 @@ fn scaled_plane(
     scale: MillimeterScale,
     offset: usize,
 ) -> Result<Plane, FramingError> {
-    value.origin =
-        crate::settings::PlaneLane::Admitted(scaled3(value.origin.get(), scale, offset)?.into());
+    value.origin = crate::settings::CoordinateLane::Admitted(
+        scaled3(value.origin.get(), scale, offset)?.into(),
+    );
     let constant = scaled_coordinate(value.equation[3], scale)
         .ok_or_else(|| FramingError::structural(offset, "scaled plane equation is invalid"))?;
     value.equation = value.equation.with_fourth(constant);

@@ -515,9 +515,15 @@ fn point_vector_plane_and_transform_readers_hold_their_admitted_values() {
     }
     let mut reader = BoundedReader::new(&bytes, 1, bytes.len()).expect("plane reader");
     let plane = settings::plane(&mut reader).expect("finite plane");
-    assert!(matches!(plane.origin, settings::PlaneLane::Admitted(_)));
+    assert!(matches!(
+        plane.origin,
+        settings::CoordinateLane::Admitted(_)
+    ));
     assert_eq!(plane.xaxis.get(), [1.0, 0.0, 0.0]);
-    assert!(matches!(plane.equation, settings::PlaneLane::Admitted(_)));
+    assert!(matches!(
+        plane.equation,
+        settings::CoordinateLane::Admitted(_)
+    ));
     assert_eq!(plane.origin.get(), [1.0, 2.0, 3.0]);
     assert_eq!(plane.zaxis.get(), [0.0, 0.0, 1.0]);
     assert_eq!(plane.equation.get(), [0.0, 0.0, 1.0, -3.0]);
