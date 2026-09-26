@@ -4,6 +4,7 @@
 use crate::pmdc::unique_by;
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::fmt::Write;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -379,19 +380,29 @@ pub(crate) fn inventory(
 pub(crate) fn project_parameters(
     ctx: &DecodeContext<'_>,
     inventory: &DesignInventory,
+    admitted_entities: &mut u64,
 ) -> Result<(Vec<DesignParameter>, usize), CodecError> {
+    ctx.charge_collection_items(
+        inventory.expressions.len() as u64,
+        "index Inventor expressions",
+    )?;
     let expressions = unique_by(&inventory.expressions, |record| {
         (
             record.identity.segment_token.as_str(),
             record.identity.record_ordinal,
         )
     });
+    ctx.charge_collection_items(inventory.units.len() as u64, "index Inventor units")?;
     let units = unique_by(&inventory.units, |record| {
         (
             record.identity.segment_token.as_str(),
             record.identity.record_ordinal,
         )
     });
+    ctx.charge_collection_items(
+        inventory.parameters.len() as u64,
+        "index Inventor parameters",
+    )?;
     let parameters = unique_by(&inventory.parameters, |record| {
         (
             record.identity.segment_token.as_str(),
@@ -417,16 +428,16 @@ pub(crate) fn project_parameters(
             continue;
         };
         let mut dependencies = Vec::new();
-        let mut visiting = HashSet::new();
         let Some(expression) = render_expression(
+            ctx,
             parameter.identity.segment_token.as_str(),
             parameter.formula.index,
             &expressions,
             &units,
             &parameters,
             &mut dependencies,
-            &mut visiting,
-        ) else {
+        )?
+        else {
             unresolved += 1;
             continue;
         };
@@ -445,6 +456,16 @@ pub(crate) fn project_parameters(
             unresolved += 1;
             continue;
         };
+        ctx.charge_collection_items(1, "project Inventor parameter")?;
+        ctx.admit_entities(
+            projected.len() as u64 + 1,
+            admitted_entities,
+            "project Inventor parameter",
+        )?;
+        ctx.charge_retained(
+            parameter.name.len() as u64,
+            "retain Inventor parameter name",
+        )?;
         projected.push(DesignParameter {
             id: parameter_id(parameter),
             owner: None,
@@ -460,6 +481,7 @@ pub(crate) fn project_parameters(
         });
     }
     let (projected, graph_rejections) = close_parameter_graph(ctx, projected)?;
+    *admitted_entities = projected.len() as u64;
     Ok((projected, unresolved.saturating_add(graph_rejections)))
 }
 
@@ -520,6 +542,7 @@ fn close_parameter_graph(
         }
     }
     let accepted = closed.iter().filter(|&&value| value).count();
+    ctx.charge_collection_items(accepted as u64, "collect closed Inventor parameters")?;
     Ok((
         parameters
             .into_iter()
@@ -537,17 +560,17 @@ fn parameter_id(parameter: &PmDcParameter) -> ParameterId {
     )
 }
 
-struct ResolvedUnit {
+struct ResolvedUnit<'a> {
     dimension: PmDcUnitDimension,
-    symbol: String,
+    symbol: &'a str,
     scale_to_internal: f64,
 }
 
-fn resolve_unit(
+fn resolve_unit<'a>(
     token: &str,
     reference: u32,
-    units: &HashMap<(&str, u32), &PmDcUnit>,
-) -> Option<ResolvedUnit> {
+    units: &HashMap<(&str, u32), &'a PmDcUnit>,
+) -> Option<ResolvedUnit<'a>> {
     let ordinal = reference.checked_sub(1)?;
     let definition = units.get(&(token, ordinal))?;
     let PmDcUnitKind::Definition {
@@ -582,112 +605,267 @@ fn resolve_unit(
     }
     Some(ResolvedUnit {
         dimension: *dimension,
-        symbol: symbol.clone(),
+        symbol,
         scale_to_internal: *scale_to_internal,
     })
 }
 
 fn render_expression<'a>(
+    ctx: &DecodeContext<'_>,
     token: &str,
     reference: u32,
     expressions: &HashMap<(&str, u32), &'a PmDcExpression>,
     units: &HashMap<(&str, u32), &'a PmDcUnit>,
     parameters: &HashMap<(&str, u32), &'a PmDcParameter>,
     dependencies: &mut Vec<ParameterId>,
-    visiting: &mut HashSet<u32>,
-) -> Option<String> {
-    let ordinal = reference.checked_sub(1)?;
-    if !visiting.insert(ordinal) {
-        return None;
-    }
-    let expression = expressions.get(&(token, ordinal))?;
-    let result = match &expression.kind {
-        PmDcExpressionKind::Value { value, .. } => {
-            let unit = resolve_unit(token, expression.unit.index, units)?;
-            if !value.is_finite()
-                || !unit.scale_to_internal.is_finite()
-                || unit.scale_to_internal == 0.0
-            {
-                return None;
-            }
-            let scalar = value / unit.scale_to_internal;
-            if !scalar.is_finite() {
-                return None;
-            }
-            let scalar = format_scalar(scalar);
-            if unit.symbol.is_empty() {
-                scalar
-            } else {
-                format!("{scalar} {}", unit.symbol)
-            }
-        }
-        PmDcExpressionKind::ParameterReference { operand } => {
-            let target = parameters.get(&(token, operand.index.checked_sub(1)?))?;
-            let id = parameter_id(target);
-            if !dependencies.contains(&id) {
-                dependencies.push(id);
-            }
-            target.name.clone()
-        }
-        PmDcExpressionKind::Unary { operation, operand } => {
-            let value = render_expression(
-                token,
-                operand.index,
-                expressions,
-                units,
-                parameters,
-                dependencies,
-                visiting,
-            )?;
-            match operation {
-                PmDcUnaryOperation::Negate => format!("-({value})"),
-                PmDcUnaryOperation::PowerIdentity => return None,
-            }
-        }
-        PmDcExpressionKind::Binary {
-            operation,
-            left,
-            right,
-        } => {
-            let left = render_expression(
-                token,
-                left.index,
-                expressions,
-                units,
-                parameters,
-                dependencies,
-                visiting,
-            )?;
-            let right = render_expression(
-                token,
-                right.index,
-                expressions,
-                units,
-                parameters,
-                dependencies,
-                visiting,
-            )?;
-            let symbol = match operation {
-                PmDcBinaryOperation::Add => "+",
-                PmDcBinaryOperation::Subtract => "-",
-                PmDcBinaryOperation::Multiply => "*",
-                PmDcBinaryOperation::Divide => "/",
-                PmDcBinaryOperation::Modulo => "%",
-                PmDcBinaryOperation::Power => "^",
-            };
-            format!("({left}) {symbol} ({right})")
-        }
+) -> Result<Option<String>, CodecError> {
+    let mut plan = ExpressionRenderPlan {
+        ctx,
+        token,
+        expressions,
+        units,
+        parameters,
+        lengths: HashMap::new(),
+        visiting: HashSet::new(),
+        order: Vec::new(),
+        dependencies,
+        seen_dependencies: HashSet::new(),
     };
-    visiting.remove(&ordinal);
-    Some(result)
+    let Some((root_length, _)) = plan.measure(reference)? else {
+        return Ok(None);
+    };
+    let total = plan.order.iter().try_fold(0usize, |sum, ordinal| {
+        sum.checked_add(plan.lengths[ordinal].0).ok_or_else(|| {
+            ctx.refuse_codec_limit("Inventor expression byte count", u64::MAX - 1, u64::MAX)
+        })
+    })?;
+    let reserved = ctx.reserve_scoped(total as u64, "render Inventor expression bytes")?;
+    ctx.charge_retained(root_length as u64, "retain Inventor expression text")?;
+    ctx.charge_work(total as u64, "render Inventor expression bytes")?;
+    ctx.charge_collection_items(plan.order.len() as u64, "memoize Inventor expression text")?;
+    let mut rendered: HashMap<u32, String> = HashMap::new();
+    for &ordinal in &plan.order {
+        let length = plan.lengths[&ordinal].0;
+        let mut text = String::new();
+        text.try_reserve_exact(length).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "Inventor expression string allocation",
+                length as u64,
+                length as u64 + 1,
+            )
+        })?;
+        let expression = expressions[&(token, ordinal)];
+        match &expression.kind {
+            PmDcExpressionKind::Value { value, .. } => {
+                let unit = resolve_unit(token, expression.unit.index, units).ok_or_else(|| {
+                    CodecError::Malformed("Inventor expression unit changed during render".into())
+                })?;
+                let scalar = value / unit.scale_to_internal;
+                if scalar == 0.0 {
+                    text.push('0');
+                } else {
+                    write!(&mut text, "{scalar}").map_err(|_| {
+                        CodecError::Malformed("Inventor scalar formatting failed".into())
+                    })?;
+                }
+                if !unit.symbol.is_empty() {
+                    text.push(' ');
+                    text.push_str(unit.symbol);
+                }
+            }
+            PmDcExpressionKind::ParameterReference { operand } => {
+                let target = parameters[&(token, operand.index - 1)];
+                text.push_str(&target.name);
+            }
+            PmDcExpressionKind::Unary { operand, .. } => {
+                text.push_str("-(");
+                text.push_str(&rendered[&(operand.index - 1)]);
+                text.push(')');
+            }
+            PmDcExpressionKind::Binary {
+                operation,
+                left,
+                right,
+            } => {
+                text.push('(');
+                text.push_str(&rendered[&(left.index - 1)]);
+                text.push_str(") ");
+                let symbol = match operation {
+                    PmDcBinaryOperation::Add => "+",
+                    PmDcBinaryOperation::Subtract => "-",
+                    PmDcBinaryOperation::Multiply => "*",
+                    PmDcBinaryOperation::Divide => "/",
+                    PmDcBinaryOperation::Modulo => "%",
+                    PmDcBinaryOperation::Power => "^",
+                };
+                text.push_str(symbol);
+                text.push_str(" (");
+                text.push_str(&rendered[&(right.index - 1)]);
+                text.push(')');
+            }
+        }
+        rendered.insert(ordinal, text);
+    }
+    let root = reference - 1;
+    let result = rendered.remove(&root).ok_or_else(|| {
+        CodecError::Malformed("Inventor expression root missing after render".into())
+    })?;
+    drop(reserved);
+    Ok(Some(result))
 }
 
-fn format_scalar(value: f64) -> String {
-    if value == 0.0 {
-        "0".into()
-    } else {
-        value.to_string()
+struct ExpressionRenderPlan<'a, 'b> {
+    ctx: &'b DecodeContext<'b>,
+    token: &'a str,
+    expressions: &'b HashMap<(&'a str, u32), &'a PmDcExpression>,
+    units: &'b HashMap<(&'a str, u32), &'a PmDcUnit>,
+    parameters: &'b HashMap<(&'a str, u32), &'a PmDcParameter>,
+    lengths: HashMap<u32, (usize, usize)>,
+    visiting: HashSet<u32>,
+    order: Vec<u32>,
+    dependencies: &'b mut Vec<ParameterId>,
+    seen_dependencies: HashSet<u32>,
+}
+
+impl ExpressionRenderPlan<'_, '_> {
+    fn measure(&mut self, reference: u32) -> Result<Option<(usize, usize)>, CodecError> {
+        let _depth = self.ctx.enter_nested("walk Inventor expression graph")?;
+        self.ctx.charge_work(1, "walk Inventor expression node")?;
+        let Some(ordinal) = reference.checked_sub(1) else {
+            return Ok(None);
+        };
+        if self.visiting.contains(&ordinal) {
+            return Err(CodecError::Malformed(
+                "Inventor expression graph contains a cycle".into(),
+            ));
+        }
+        if let Some(&(length, height)) = self.lengths.get(&ordinal) {
+            admit_cached_expression_depth(self.ctx, height - 1)?;
+            return Ok(Some((length, height)));
+        }
+        let Some(expression) = self.expressions.get(&(self.token, ordinal)) else {
+            return Ok(None);
+        };
+        self.ctx
+            .charge_collection_items(1, "track Inventor expression ancestors")?;
+        self.visiting.insert(ordinal);
+        let measured = match &expression.kind {
+            PmDcExpressionKind::Value { value, .. } => {
+                let Some(unit) = resolve_unit(self.token, expression.unit.index, self.units) else {
+                    return Ok(None);
+                };
+                if !value.is_finite()
+                    || !unit.scale_to_internal.is_finite()
+                    || unit.scale_to_internal == 0.0
+                {
+                    return Ok(None);
+                }
+                let scalar = value / unit.scale_to_internal;
+                if !scalar.is_finite() {
+                    return Ok(None);
+                }
+                let scalar_length = scalar_display_len(self.ctx, scalar)?;
+                let unit_length = if unit.symbol.is_empty() {
+                    0
+                } else {
+                    checked_expression_len(self.ctx, unit.symbol.len(), 1)?
+                };
+                (
+                    checked_expression_len(self.ctx, scalar_length, unit_length)?,
+                    1,
+                )
+            }
+            PmDcExpressionKind::ParameterReference { operand } => {
+                let Some(target_ordinal) = operand.index.checked_sub(1) else {
+                    return Ok(None);
+                };
+                let Some(target) = self.parameters.get(&(self.token, target_ordinal)) else {
+                    return Ok(None);
+                };
+                if !self.seen_dependencies.contains(&target_ordinal) {
+                    self.ctx
+                        .charge_collection_items(2, "track Inventor expression dependencies")?;
+                    self.seen_dependencies.insert(target_ordinal);
+                    self.dependencies.push(parameter_id(target));
+                }
+                (target.name.len(), 1)
+            }
+            PmDcExpressionKind::Unary { operation, operand } => {
+                let Some((child_length, child_height)) = self.measure(operand.index)? else {
+                    return Ok(None);
+                };
+                if *operation == PmDcUnaryOperation::PowerIdentity {
+                    return Ok(None);
+                }
+                (
+                    checked_expression_len(self.ctx, child_length, 3)?,
+                    checked_expression_len(self.ctx, child_height, 1)?,
+                )
+            }
+            PmDcExpressionKind::Binary { left, right, .. } => {
+                let Some((left_length, left_height)) = self.measure(left.index)? else {
+                    return Ok(None);
+                };
+                let Some((right_length, right_height)) = self.measure(right.index)? else {
+                    return Ok(None);
+                };
+                let children = checked_expression_len(self.ctx, left_length, right_length)?;
+                (
+                    checked_expression_len(self.ctx, children, 7)?,
+                    checked_expression_len(self.ctx, left_height.max(right_height), 1)?,
+                )
+            }
+        };
+        self.visiting.remove(&ordinal);
+        self.ctx
+            .charge_collection_items(2, "memoize Inventor expression shape")?;
+        self.lengths.insert(ordinal, measured);
+        self.order.push(ordinal);
+        Ok(Some(measured))
     }
+}
+
+fn checked_expression_len(
+    ctx: &DecodeContext<'_>,
+    left: usize,
+    right: usize,
+) -> Result<usize, CodecError> {
+    left.checked_add(right).ok_or_else(|| {
+        ctx.refuse_codec_limit("Inventor expression byte count", u64::MAX - 1, u64::MAX)
+    })
+}
+
+fn admit_cached_expression_depth(
+    ctx: &DecodeContext<'_>,
+    remaining: usize,
+) -> Result<(), CodecError> {
+    if remaining == 0 {
+        return Ok(());
+    }
+    let _depth = ctx.enter_nested("walk cached Inventor expression depth")?;
+    ctx.charge_work(1, "walk cached Inventor expression depth")?;
+    admit_cached_expression_depth(ctx, remaining - 1)
+}
+
+#[derive(Default)]
+struct ScalarByteCounter(usize);
+
+impl std::fmt::Write for ScalarByteCounter {
+    fn write_str(&mut self, text: &str) -> std::fmt::Result {
+        self.0 = self.0.checked_add(text.len()).ok_or(std::fmt::Error)?;
+        Ok(())
+    }
+}
+
+fn scalar_display_len(ctx: &DecodeContext<'_>, scalar: f64) -> Result<usize, CodecError> {
+    if scalar == 0.0 {
+        return Ok(1);
+    }
+    let mut counter = ScalarByteCounter::default();
+    write!(&mut counter, "{scalar}").map_err(|_| {
+        ctx.refuse_codec_limit("Inventor scalar byte count", u64::MAX - 1, u64::MAX)
+    })?;
+    Ok(counter.0)
 }
 
 fn parse_parameter(
@@ -985,7 +1163,7 @@ mod tests {
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
     use cadmpeg_ir::scalar::Length;
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashMap;
 
     const fn reference(index: u32, qualified: bool) -> PmDcReference {
         PmDcReference { index, qualified }
@@ -1037,15 +1215,19 @@ mod tests {
         );
         let expressions = HashMap::from([((token.as_str(), 0), &expression)]);
         let units = HashMap::from([((token.as_str(), 0), &unit)]);
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("empty fixture view");
         assert!(render_expression(
+            &ctx,
             token.as_str(),
             1,
             &expressions,
             &units,
             &HashMap::new(),
             &mut Vec::new(),
-            &mut HashSet::new(),
         )
+        .expect("invalid scalar remains unresolved")
         .is_none());
     }
 
@@ -1341,7 +1523,9 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("empty fixture view");
-        let (parameters, unresolved) = project_parameters(&ctx, &inventory).expect("projection");
+        let mut admitted_entities = 0;
+        let (parameters, unresolved) =
+            project_parameters(&ctx, &inventory, &mut admitted_entities).expect("projection");
         assert_eq!(unresolved, 0);
         assert_eq!(parameters[0].expression, "24 in");
         assert_eq!(parameters[1].expression, "width");
@@ -1355,6 +1539,108 @@ mod tests {
                 Length::new(609.6).expect("finite length fixture")
             ))
         );
+    }
+
+    #[test]
+    fn parameter_projection_refuses_entity_limit_before_output_creation() {
+        let token = cadmpeg_ir::identity_key!("segment");
+        let base = Located::new(
+            PmDcUnitPayload {
+                save_version_major: 22,
+                header_value: 0,
+                header_id: 0,
+                kind: PmDcUnitKind::Base {
+                    dimension: PmDcUnitDimension::Dimensionless,
+                    symbol: String::new(),
+                    scale_to_internal: 1.0,
+                    magnitude: 1.0,
+                    factor: 1.0,
+                },
+            },
+            String::new(),
+            &token,
+            0,
+        );
+        let unit = Located::new(
+            PmDcUnitPayload {
+                save_version_major: 22,
+                header_value: 0,
+                header_id: 0,
+                kind: PmDcUnitKind::Definition {
+                    numerators: PmDcPairedReferenceList::new(
+                        Some([0, 0]),
+                        vec![reference(1, false)],
+                    )
+                    .expect("valid test fixture"),
+                    denominators: PmDcPairedReferenceList::new(None, Vec::new())
+                        .expect("valid test fixture"),
+                    visible: true,
+                    derived: reference(0, false),
+                },
+            },
+            String::new(),
+            &token,
+            1,
+        );
+        let literal = Located::new(
+            PmDcExpressionPayload {
+                save_version_major: 22,
+                header_value: 0,
+                header_id: 0,
+                unit: reference(2, false),
+                kind: PmDcExpressionKind::Value {
+                    value: 1.0,
+                    value_type: 0,
+                    state: 0,
+                },
+            },
+            String::new(),
+            &token,
+            2,
+        );
+        let parameter = Located::new(
+            PmDcParameterPayload {
+                save_version_major: 22,
+                header: PmDcContentHeader {
+                    header_value: 0,
+                    header_id: 0,
+                    next: reference(0, false),
+                    flags: 0,
+                    context: reference(0, false),
+                    source_index: 0,
+                },
+                name: "ratio".into(),
+                name_value: 0,
+                unit: reference(2, false),
+                formula: reference(3, false),
+                nominal_value: 1.0,
+                model_value: 1.0,
+                tolerance: 0,
+                terminal_value: -1,
+            },
+            String::new(),
+            &token,
+            3,
+        );
+        let inventory = DesignInventory {
+            parameters: vec![parameter],
+            expressions: vec![literal],
+            units: vec![base, unit],
+            issues: Vec::new(),
+        };
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_entities = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty fixture view");
+        let mut admitted_entities = 0;
+        assert!(matches!(
+            project_parameters(&ctx, &inventory, &mut admitted_entities),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::Entities
+                    && limit.operation == "project Inventor parameter"
+                    && limit.used == 0
+        ));
     }
 
     #[test]
@@ -1475,6 +1761,284 @@ mod tests {
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "visit Inventor parameter edge"
+        ));
+    }
+
+    #[test]
+    fn parameter_closure_refuses_collection_limit_before_index_allocation() {
+        let id = ParameterId::mint("synthetic:test:id#a").expect("identity grammar");
+        let parameter = DesignParameter {
+            id,
+            owner: None,
+            ordinal: 0,
+            name: "a".into(),
+            expression: "a".into(),
+            display: None,
+            value: None,
+            dependencies: Vec::new().try_into().expect("empty dependencies"),
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        };
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty fixture view");
+        assert!(matches!(
+            close_parameter_graph(&ctx, vec![parameter]),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "index Inventor parameter closure"
+                    && limit.used == 0
+        ));
+    }
+
+    #[test]
+    fn parameter_closure_refuses_collection_limit_before_closed_output_allocation() {
+        let parameter = DesignParameter {
+            id: ParameterId::mint("synthetic:test:id#a").expect("identity grammar"),
+            owner: None,
+            ordinal: 0,
+            name: "a".into(),
+            expression: "a".into(),
+            display: None,
+            value: None,
+            dependencies: Vec::new().try_into().expect("empty dependencies"),
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        };
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 5;
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty fixture view");
+        assert!(matches!(
+            close_parameter_graph(&ctx, vec![parameter]),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "collect closed Inventor parameters"
+                    && limit.used == 5
+        ));
+    }
+
+    fn render_graph(
+        policy: &DecodePolicy,
+        kinds: Vec<PmDcExpressionKind>,
+        root: u32,
+    ) -> Result<Option<(String, Vec<ParameterId>)>, CodecError> {
+        let token = cadmpeg_ir::identity_key!("segment");
+        let parameter = Located::new(
+            PmDcParameterPayload {
+                save_version_major: 22,
+                header: PmDcContentHeader {
+                    header_value: 0,
+                    header_id: 0,
+                    next: reference(0, false),
+                    flags: 0,
+                    context: reference(0, false),
+                    source_index: 0,
+                },
+                name: "x".into(),
+                name_value: 0,
+                unit: reference(0, false),
+                formula: reference(0, false),
+                nominal_value: 0.0,
+                model_value: 0.0,
+                tolerance: 0,
+                terminal_value: 0,
+            },
+            String::new(),
+            &token,
+            0,
+        );
+        let nodes = kinds
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, kind)| {
+                Located::new(
+                    PmDcExpressionPayload {
+                        save_version_major: 22,
+                        header_value: 0,
+                        header_id: 0,
+                        unit: reference(0, false),
+                        kind,
+                    },
+                    String::new(),
+                    &token,
+                    u32::try_from(ordinal).expect("small fixture"),
+                )
+            })
+            .collect::<Vec<_>>();
+        let expressions = nodes
+            .iter()
+            .map(|node| ((token.as_str(), node.identity.record_ordinal), node))
+            .collect::<HashMap<_, _>>();
+        let parameters = HashMap::from([((token.as_str(), 0), &parameter)]);
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+        let mut dependencies = Vec::new();
+        let text = render_expression(
+            &ctx,
+            token.as_str(),
+            root,
+            &expressions,
+            &HashMap::new(),
+            &parameters,
+            &mut dependencies,
+        )?;
+        Ok(text.map(|text| (text, dependencies)))
+    }
+
+    fn reference_leaf() -> PmDcExpressionKind {
+        PmDcExpressionKind::ParameterReference {
+            operand: reference(1, false),
+        }
+    }
+
+    fn shared_add(previous: u32) -> PmDcExpressionKind {
+        PmDcExpressionKind::Binary {
+            operation: PmDcBinaryOperation::Add,
+            left: reference(previous, false),
+            right: reference(previous, false),
+        }
+    }
+
+    #[test]
+    fn shared_expression_dag_renders_once_per_node_with_original_text_and_dependencies() {
+        let result = render_graph(
+            &DecodePolicy::service(),
+            vec![reference_leaf(), shared_add(1)],
+            2,
+        )
+        .expect("admitted graph")
+        .expect("closed graph");
+        assert_eq!(result.0, "(x) + (x)");
+        assert_eq!(result.1.len(), 1);
+    }
+
+    #[test]
+    fn shared_expression_dag_refuses_materialized_byte_limit_before_render() {
+        let mut kinds = vec![reference_leaf()];
+        for ordinal in 1..8 {
+            kinds.push(shared_add(ordinal));
+        }
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 100;
+        assert!(matches!(
+            render_graph(&policy, kinds, 8),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::MaterializedBytes
+                    && limit.operation == "render Inventor expression bytes"
+                    && limit.used == 0
+                    && limit.additional > limit.limit
+        ));
+    }
+
+    #[test]
+    fn expression_cycle_is_malformed_at_the_expression_aggregate() {
+        let kinds = vec![
+            PmDcExpressionKind::Unary {
+                operation: PmDcUnaryOperation::Negate,
+                operand: reference(2, false),
+            },
+            PmDcExpressionKind::Unary {
+                operation: PmDcUnaryOperation::Negate,
+                operand: reference(1, false),
+            },
+        ];
+        assert!(matches!(
+            render_graph(&DecodePolicy::service(), kinds, 1),
+            Err(CodecError::Malformed(message)) if message.contains("expression graph contains a cycle")
+        ));
+    }
+
+    #[test]
+    fn expression_chain_refuses_recursion_depth_before_render() {
+        let kinds = vec![
+            reference_leaf(),
+            PmDcExpressionKind::Unary {
+                operation: PmDcUnaryOperation::Negate,
+                operand: reference(1, false),
+            },
+            PmDcExpressionKind::Unary {
+                operation: PmDcUnaryOperation::Negate,
+                operand: reference(2, false),
+            },
+        ];
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = 2;
+        assert!(matches!(
+            render_graph(&policy, kinds, 3),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RecursionDepth
+                    && limit.operation == "walk Inventor expression graph"
+        ));
+    }
+
+    #[test]
+    fn cached_expression_subtree_refuses_deeper_reuse() {
+        let kinds = vec![
+            reference_leaf(),
+            PmDcExpressionKind::Unary {
+                operation: PmDcUnaryOperation::Negate,
+                operand: reference(1, false),
+            },
+            PmDcExpressionKind::Unary {
+                operation: PmDcUnaryOperation::Negate,
+                operand: reference(2, false),
+            },
+            PmDcExpressionKind::Binary {
+                operation: PmDcBinaryOperation::Add,
+                left: reference(2, false),
+                right: reference(3, false),
+            },
+        ];
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = 3;
+        assert!(matches!(
+            render_graph(&policy, kinds, 4),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RecursionDepth
+                    && limit.operation == "walk cached Inventor expression depth"
+        ));
+    }
+
+    #[test]
+    fn expression_render_refuses_work_limit_before_text_allocation() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        assert!(matches!(
+            render_graph(&policy, vec![reference_leaf()], 1),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "render Inventor expression bytes"
+        ));
+    }
+
+    #[test]
+    fn expression_render_refuses_retained_byte_limit_before_text_allocation() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        assert!(matches!(
+            render_graph(&policy, vec![reference_leaf()], 1),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor expression text"
+        ));
+    }
+
+    #[test]
+    fn expression_render_refuses_collection_limit_before_graph_memoization() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        assert!(matches!(
+            render_graph(&policy, vec![reference_leaf()], 1),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "track Inventor expression ancestors"
+                    && limit.used == 0
         ));
     }
 }
