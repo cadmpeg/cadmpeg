@@ -790,6 +790,37 @@ fn rejects_wrong_runtime_types_for_named_product_carriers() {
 }
 
 #[test]
+fn rejects_nonfinite_product_scale_at_source_admission() {
+    for (property, name) in [
+        (
+            r#"<Property name="Scale" type="App::PropertyFloat"><Float value="NaN"/></Property>"#,
+            "Scale",
+        ),
+        (
+            r#"<Property name="ScaleVector" type="App::PropertyVector"><PropertyVector valueX="1" valueY="Infinity" valueZ="3"/></Property>"#,
+            "ScaleVector",
+        ),
+    ] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::Link" name="Occurrence"/></Objects>
+<ObjectData Count="1"><Object name="Occurrence"><Properties Count="1">
+{property}
+</Properties></Object></ObjectData></Document>"#
+        );
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .expect_err("nonfinite product scale");
+        assert!(error
+            .to_string()
+            .contains(&format!("invalid finite value for {name}")));
+    }
+}
+
+#[test]
 fn link_group_retains_element_list_on_the_native_wire() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2"><Object type="App::LinkGroup" name="Group"/><Object type="Part::Feature" name="Member"/></Objects>
