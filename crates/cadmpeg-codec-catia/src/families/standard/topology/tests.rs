@@ -121,6 +121,34 @@ fn standard_face_edges_propagate_collection_refusal() {
 }
 
 #[test]
+fn standard_boundary_constraints_propagate_collection_refusal() {
+    let operation = standard_collection_limit_operation(0, |ctx| {
+        solve_boundary_orientation_constraints(
+            ctx,
+            2,
+            &HashMap::from([(0, vec![(0, false), (1, false)])]),
+            true,
+        )?;
+        Ok(())
+    });
+    assert_eq!(operation, "catia standard boundary constraints");
+}
+
+#[test]
+fn standard_boundary_flips_propagate_collection_refusal() {
+    let operation = standard_collection_limit_operation(2, |ctx| {
+        solve_boundary_orientation_constraints(
+            ctx,
+            2,
+            &HashMap::from([(0, vec![(0, false), (1, false)])]),
+            true,
+        )?;
+        Ok(())
+    });
+    assert_eq!(operation, "catia standard boundary flips");
+}
+
+#[test]
 fn standard_edge_vertices_propagate_collection_refusal() {
     use super::{Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopology};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -194,7 +222,10 @@ fn boundary_orientation_constraints_retain_the_flip_assignment() {
     ]);
 
     assert_eq!(
-        solve_boundary_orientation_constraints(4, &edge_uses, false),
+        crate::test_support::with_service_context(|ctx| {
+            solve_boundary_orientation_constraints(ctx, 4, &edge_uses, false)
+        })
+        .expect("service resource budget"),
         Some(vec![false, true, true, false])
     );
 }

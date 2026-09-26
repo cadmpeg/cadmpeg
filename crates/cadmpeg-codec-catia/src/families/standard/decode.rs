@@ -5540,7 +5540,10 @@ fn validate_standard_topology(
         return Ok(None);
     }
     let face_groups = vec![topology.face_count()];
-    if topology.orient_solid_body_cycles(&face_groups).is_none() {
+    if topology
+        .orient_solid_body_cycles(ctx, &face_groups)?
+        .is_none()
+    {
         return Ok(None);
     }
     let Some(body_kinds) = topology.body_kinds(&face_groups) else {

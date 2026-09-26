@@ -942,6 +942,7 @@ fn mesh_selection_rejects_an_odd_boundary_orientation_cycle() {
 
 #[test]
 fn partial_boundary_orientation_constraints_reject_an_odd_parity_cycle() {
+    catia_test_context!(ctx);
     let mut edge_uses = HashMap::from([
         (0, vec![(0, false), (1, false)]),
         (1, vec![(1, false), (2, false)]),
@@ -949,32 +950,49 @@ fn partial_boundary_orientation_constraints_reject_an_odd_parity_cycle() {
         (3, vec![(3, false)]),
     ]);
 
-    assert!(solve_boundary_orientation_constraints(4, &edge_uses, false).is_none());
+    assert!(
+        solve_boundary_orientation_constraints(&ctx, 4, &edge_uses, false)
+            .expect("service resource budget")
+            .is_none()
+    );
     edge_uses.get_mut(&2).expect("third paired edge")[1].1 = true;
-    assert!(solve_boundary_orientation_constraints(4, &edge_uses, false).is_some());
-    assert!(solve_boundary_orientation_constraints(4, &edge_uses, true).is_none());
+    assert!(
+        solve_boundary_orientation_constraints(&ctx, 4, &edge_uses, false)
+            .expect("service resource budget")
+            .is_some()
+    );
+    assert!(
+        solve_boundary_orientation_constraints(&ctx, 4, &edge_uses, true)
+            .expect("service resource budget")
+            .is_none()
+    );
 }
 
 #[test]
 fn partial_face_orientability_rejects_an_odd_open_path_cycle() {
+    catia_test_context!(ctx);
     let edge_faces = [[0, 1], [1, 2], [2, 0]];
     let face_edges = vec![vec![0, 2], vec![0, 1], vec![1, 2]];
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let complete = [Some([0, 1]), Some([1, 2]), Some([0, 2])];
 
     assert!(!crate::solve::incidence::partial_face_orientability_viable(
+        &ctx,
         &complete,
         &edge_faces,
         &face_edges,
         &budget,
-    ));
+    )
+    .expect("service resource budget"));
     let partial = [Some([0, 1]), Some([1, 2]), None];
     assert!(crate::solve::incidence::partial_face_orientability_viable(
+        &ctx,
         &partial,
         &edge_faces,
         &face_edges,
         &budget,
-    ));
+    )
+    .expect("service resource budget"));
     assert!(!budget.exhausted());
 }
 

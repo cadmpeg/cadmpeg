@@ -11,7 +11,7 @@ use crate::solve::missing_edge::{
     standard_mesh_boundary_assignments, MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment,
 };
 use crate::solve::union_find::UnionFind;
-use cadmpeg_core::decode::{alloc_filled, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::{features::NonEmptyMembers, topology::BodyKind};
@@ -185,24 +185,34 @@ impl StandardTopology {
 
     /// Orient every incidence-closed FBB face group independently. Open sheet
     /// and non-manifold general groups retain their reconstructed loop senses.
-    pub(super) fn orient_solid_body_cycles(&mut self, face_groups: &[usize]) -> Option<()> {
+    pub(super) fn orient_solid_body_cycles(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        face_groups: &[usize],
+    ) -> Result<Option<()>, CodecError> {
         let mut remaining = self.faces.as_mut_slice();
         let mut groups = Vec::new();
         for &count in face_groups {
-            let (group, rest) = remaining.split_at_mut_checked(count)?;
+            let Some((group, rest)) = remaining.split_at_mut_checked(count) else {
+                return Ok(None);
+            };
             groups.push(group);
             remaining = rest;
         }
         if !remaining.is_empty() {
-            return None;
+            return Ok(None);
         }
-        let kinds = classify_body_groups(&groups, self.edge_rows.len())?;
+        let Some(kinds) = classify_body_groups(&groups, self.edge_rows.len()) else {
+            return Ok(None);
+        };
         for (group, kind) in groups.into_iter().zip(kinds) {
             if kind == BodyKind::Solid {
-                orient_face_cycles(group)?;
+                if orient_face_cycles(ctx, group)?.is_none() {
+                    return Ok(None);
+                }
             }
         }
-        Some(())
+        Ok(Some(()))
     }
 
     /// Bind logical port/corner components to coordinate-row indices from one
@@ -517,7 +527,7 @@ pub(super) fn reconstruct_incidence_with_edge_classes_and_mesh(
                 .collect(),
         });
     }
-    if orient_face_cycles(&mut faces).is_none() {
+    if orient_face_cycles(ctx, &mut faces)?.is_none() {
         return Ok(None);
     }
     Ok(Some(StandardTopology {
@@ -867,7 +877,10 @@ fn duplicate_face_assignments_equivalent(
     Ok(true)
 }
 
-pub(crate) fn orient_face_cycles(faces: &mut [FaceTopology]) -> Option<()> {
+pub(crate) fn orient_face_cycles(
+    ctx: &DecodeContext<'_>,
+    faces: &mut [FaceTopology],
+) -> Result<Option<()>, CodecError> {
     let boundaries = faces
         .iter_mut()
         .flat_map(|face| &mut face.boundaries)
@@ -881,7 +894,11 @@ pub(crate) fn orient_face_cycles(faces: &mut [FaceTopology]) -> Option<()> {
                 .push((node, coedge.reversed));
         }
     }
-    let flips = solve_boundary_orientation_constraints(boundaries.len(), &edge_uses, true)?;
+    let Some(flips) =
+        solve_boundary_orientation_constraints(ctx, boundaries.len(), &edge_uses, true)?
+    else {
+        return Ok(None);
+    };
     for (boundary, flip) in boundaries.into_iter().zip(flips) {
         if flip {
             boundary.coedges.reverse();
@@ -891,34 +908,34 @@ pub(crate) fn orient_face_cycles(faces: &mut [FaceTopology]) -> Option<()> {
             }
         }
     }
-    Some(())
+    Ok(Some(()))
 }
 
 pub(crate) fn solve_boundary_orientation_constraints(
+    ctx: &DecodeContext<'_>,
     boundary_count: usize,
     edge_uses: &HashMap<usize, Vec<(usize, bool)>>,
     require_paired_uses: bool,
-) -> Option<Vec<bool>> {
-    let mut constraints = alloc_filled(
+) -> Result<Option<Vec<bool>>, CodecError> {
+    let mut constraints = ctx.alloc_filled(
         boundary_count,
         Vec::<(usize, bool)>::new(),
         "catia standard boundary constraints",
-    )
-    .ok()?;
+    )?;
     for uses in edge_uses.values() {
         let [(left_node, left_reversed), (right_node, right_reversed)] = uses.as_slice() else {
             if !require_paired_uses && uses.len() == 1 {
                 continue;
             }
-            return None;
+            return Ok(None);
         };
         if *left_node >= boundary_count || *right_node >= boundary_count {
-            return None;
+            return Ok(None);
         }
         let parity = left_reversed == right_reversed;
         if left_node == right_node {
             if parity {
-                return None;
+                return Ok(None);
             }
         } else {
             constraints[*left_node].push((*right_node, parity));
@@ -926,7 +943,7 @@ pub(crate) fn solve_boundary_orientation_constraints(
         }
     }
 
-    let mut flips = alloc_filled(boundary_count, None, "catia standard boundary flips").ok()?;
+    let mut flips = ctx.alloc_filled(boundary_count, None, "catia standard boundary flips")?;
     let mut result = Vec::new();
     for root in 0..boundary_count {
         if let Some(flip) = flips[root] {
@@ -939,7 +956,7 @@ pub(crate) fn solve_boundary_orientation_constraints(
             for &(neighbor, parity) in &constraints[face] {
                 let required = flip ^ parity;
                 match flips[neighbor] {
-                    Some(existing) if existing != required => return None,
+                    Some(existing) if existing != required => return Ok(None),
                     Some(_) => {}
                     None => {
                         flips[neighbor] = Some(required);
@@ -950,7 +967,7 @@ pub(crate) fn solve_boundary_orientation_constraints(
         }
         result.push(false);
     }
-    Some(result)
+    Ok(Some(result))
 }
 
 pub(crate) fn incidence_cycles(

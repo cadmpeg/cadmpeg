@@ -3777,13 +3777,14 @@ fn component_incidence_faces_viable(
 }
 
 pub(super) fn partial_face_orientability_viable(
+    ctx: &DecodeContext<'_>,
     assignment: &[Option<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     face_edges: &[Vec<usize>],
     budget: &WorkBudget<'_>,
-) -> bool {
+) -> Result<bool, CodecError> {
     if !edge_faces.iter().any(|faces| faces[0] != faces[1]) {
-        return true;
+        return Ok(true);
     }
     let edge_points = assignment
         .iter()
@@ -3801,7 +3802,7 @@ pub(super) fn partial_face_orientability_viable(
             continue;
         }
         if !budget.charge_by(selected.len()) {
-            return false;
+            return Ok(false);
         }
         let mut edges_at_point = HashMap::<usize, Vec<usize>>::new();
         let mut degrees = HashMap::<usize, u8>::new();
@@ -3811,12 +3812,12 @@ pub(super) fn partial_face_orientability_viable(
                 let degree = degrees.entry(point).or_default();
                 *degree = match degree.checked_add(1) {
                     Some(degree) => degree,
-                    None => return false,
+                    None => return Ok(false),
                 };
             }
         }
         if degrees.values().any(|degree| *degree > 2) {
-            return false;
+            return Ok(false);
         }
         let mut unseen = selected.iter().copied().collect::<HashSet<_>>();
         for first in selected {
@@ -3839,10 +3840,10 @@ pub(super) fn partial_face_orientability_viable(
             component.sort_unstable();
             let trail = if points.iter().all(|point| degrees[point] == 2) {
                 let Some(cycles) = incidence_cycles(&component, &edge_points) else {
-                    return false;
+                    return Ok(false);
                 };
                 let [cycle] = cycles.as_slice() else {
-                    return false;
+                    return Ok(false);
                 };
                 cycle.iter().copied().collect()
             } else {
@@ -3853,13 +3854,13 @@ pub(super) fn partial_face_orientability_viable(
                     .collect::<Vec<_>>();
                 endpoints.sort_unstable();
                 let [start, end] = endpoints.as_slice() else {
-                    return false;
+                    return Ok(false);
                 };
                 if points
                     .iter()
                     .any(|point| !endpoints.contains(point) && degrees[point] != 2)
                 {
-                    return false;
+                    return Ok(false);
                 }
                 let mut remaining = component.iter().copied().collect::<HashSet<_>>();
                 let mut point = *start;
@@ -3869,25 +3870,25 @@ pub(super) fn partial_face_orientability_viable(
                     .find(|edge| remaining.contains(edge))
                 {
                     if !remaining.remove(&edge) {
-                        return false;
+                        return Ok(false);
                     }
                     let pair = edge_points[edge];
                     let reversed = pair[1] == point;
                     if !reversed && pair[0] != point {
-                        return false;
+                        return Ok(false);
                     }
                     point = pair[usize::from(!reversed)];
                     trail.push((edge, reversed));
                 }
                 if point != *end || !remaining.is_empty() {
-                    return false;
+                    return Ok(false);
                 }
                 trail
             };
             let boundary = boundary_count;
             boundary_count = match boundary_count.checked_add(1) {
                 Some(count) => count,
-                None => return false,
+                None => return Ok(false),
             };
             for (edge, reversed) in trail {
                 edge_uses
@@ -3898,9 +3899,9 @@ pub(super) fn partial_face_orientability_viable(
         }
     }
     if !budget.charge_by(edge_uses.values().map(Vec::len).sum()) {
-        return false;
+        return Ok(false);
     }
-    solve_boundary_orientation_constraints(boundary_count, &edge_uses, false).is_some()
+    Ok(solve_boundary_orientation_constraints(ctx, boundary_count, &edge_uses, false)?.is_some())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4124,14 +4125,17 @@ where
             if !locally_closed {
                 return Ok(false);
             }
-            let orientable = orientation_budget.exhausted()
-                || partial_face_orientability_viable(
+            let orientable = if orientation_budget.exhausted() {
+                true
+            } else {
+                partial_face_orientability_viable(
+                    ctx,
                     &completed,
                     edge_faces,
                     face_edges,
                     orientation_budget,
-                )
-                || orientation_budget.exhausted();
+                )? || orientation_budget.exhausted()
+            };
             if !orientable {
                 return Ok(false);
             }

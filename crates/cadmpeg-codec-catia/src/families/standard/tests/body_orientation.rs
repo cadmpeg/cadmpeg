@@ -160,9 +160,11 @@ fn solid_body_cycles_orient_independently_from_an_open_sheet_body() {
     );
     assert_eq!(topology.body_kinds(&[3]), Some(vec![BodyKind::General]));
     assert_eq!(topology.face_components(), vec![vec![0, 1], vec![2]]);
-    topology
-        .orient_solid_body_cycles(&[2, 1])
-        .expect("closed group orientation");
+    crate::test_support::with_service_context(|ctx| {
+        topology.orient_solid_body_cycles(ctx, &[2, 1])
+    })
+    .expect("service resource budget")
+    .expect("closed group orientation");
 
     for edge in 0..2 {
         assert_ne!(
