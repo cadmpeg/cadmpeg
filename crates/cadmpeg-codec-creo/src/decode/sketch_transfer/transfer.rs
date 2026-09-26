@@ -931,7 +931,7 @@ pub(in super::super) fn transfer_sketches(
                 Exactness::Derived,
             );
             ctx.charge_entities(1, "admit Creo model features")?;
-            ir.model.features.push(Feature {
+            let feature = Feature {
                 id: feature_id,
                 ordinal: ir.model.features.len() as u64,
                 name: None,
@@ -950,7 +950,8 @@ pub(in super::super) fn transfer_sketches(
                     }),
                 ),
                 native_ref: Some(sketch_native_ref(&sketch_id)),
-            });
+            };
+            source_carriers.admit_feature(ir, feature)?;
         }
     }
     Ok(coverage)

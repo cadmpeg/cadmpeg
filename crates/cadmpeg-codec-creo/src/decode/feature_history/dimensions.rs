@@ -189,6 +189,7 @@ pub(in super::super) fn transfer_feature_dimensions(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<(usize, BTreeMap<String, ParameterId>), cadmpeg_core::CodecError> {
     let feature_ids = ir
         .model
@@ -316,19 +317,22 @@ pub(in super::super) fn transfer_feature_dimensions(
                 }
             });
         ctx.charge_entities(1, "admit Creo model parameters")?;
-        ir.model.parameters.push(DesignParameter {
-            id: id.clone(),
-            owner: Some(owner_id.clone()),
-            ordinal,
-            name,
-            expression,
-            display: feature_dimension_display(dimension.dimension_type),
-            value,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-            properties: cadmpeg_core::text::named_entries(id.as_str(), properties)?,
-            pmi: None,
-            native_ref: Some(feature_sketch_record_id_in_scan(scan, definition)),
-        });
+        source_carriers.admit_parameter(
+            ir,
+            DesignParameter {
+                id: id.clone(),
+                owner: Some(owner_id.clone()),
+                ordinal,
+                name,
+                expression,
+                display: feature_dimension_display(dimension.dimension_type),
+                value,
+                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                properties: cadmpeg_core::text::named_entries(id.as_str(), properties)?,
+                pmi: None,
+                native_ref: Some(feature_sketch_record_id_in_scan(scan, definition)),
+            },
+        )?;
         if let Some(feature) = exactly_one(
             ir.model
                 .features

@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{DesignParameter, Feature, FeatureDefinition, ParameterValue};
 use cadmpeg_ir::geometry::{
     pcurve::Pcurve, Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, Surface,
     SurfaceGeometry,
@@ -64,6 +65,56 @@ impl SourceUnitCarriers {
         }
         ir.model.occurrences.push(occurrence);
         Ok(())
+    }
+
+    pub(super) fn admit_feature(
+        &self,
+        ir: &mut CadIr,
+        mut feature: Feature,
+    ) -> Result<(), CodecError> {
+        if let Some(scale) = self.length_scale_mm {
+            let mut definition = feature.evaluation.definition().clone();
+            crate::decode::build::units::scale_feature_definition(&mut definition, scale)
+                .map_err(Self::unrepresentable_length)?;
+            feature.evaluation.set_definition(definition);
+        }
+        ir.model.features.push(feature);
+        Ok(())
+    }
+
+    pub(super) fn replace_feature_definition(
+        &self,
+        feature: &mut Feature,
+        mut definition: FeatureDefinition,
+    ) -> Result<(), CodecError> {
+        if let Some(scale) = self.length_scale_mm {
+            crate::decode::build::units::scale_feature_definition(&mut definition, scale)
+                .map_err(Self::unrepresentable_length)?;
+        }
+        feature.evaluation.set_definition(definition);
+        Ok(())
+    }
+
+    pub(super) fn admit_parameter(
+        &self,
+        ir: &mut CadIr,
+        mut parameter: DesignParameter,
+    ) -> Result<(), CodecError> {
+        if let (Some(scale), Some(ParameterValue::Length(length))) =
+            (self.length_scale_mm, parameter.value.as_mut())
+        {
+            crate::decode::build::units::scale_length(length, scale)
+                .map_err(Self::unrepresentable_length)?;
+        }
+        ir.model.parameters.push(parameter);
+        Ok(())
+    }
+
+    fn unrepresentable_length(error: CodecError) -> CodecError {
+        match error {
+            CodecError::Malformed(message) => CodecError::NotImplemented(message),
+            other => other,
+        }
     }
 
     pub(super) fn admit_surface(
@@ -361,6 +412,10 @@ impl SourceUnitCarriers {
 mod tests {
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::features::{
+        DesignParameter, Feature, FeatureDefinition, FeatureEvaluation, FeatureOperation,
+        FuzzyTolerance, ParameterValue,
+    };
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, HelixCurveConstruction, HelixFrame, ProceduralCurve,
         ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
@@ -377,6 +432,123 @@ mod tests {
     use cadmpeg_ir::transform::Transform;
 
     use super::SourceUnitCarriers;
+
+    fn source_feature(definition: FeatureDefinition) -> Feature {
+        Feature {
+            id: cadmpeg_ir::features::FeatureId::mint("creo:test:feature#1")
+                .expect("identity grammar"),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+            evaluation: FeatureEvaluation::from_definition(definition),
+            native_ref: None,
+        }
+    }
+
+    fn source_length_parameter(value: f64) -> DesignParameter {
+        DesignParameter {
+            id: cadmpeg_ir::features::ParameterId::mint("creo:test:parameter#1")
+                .expect("identity grammar"),
+            owner: None,
+            ordinal: 0,
+            name: "length".into(),
+            expression: "length".into(),
+            display: None,
+            value: Some(ParameterValue::Length(
+                cadmpeg_ir::scalar::Length::new(value).expect("finite source length"),
+            )),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        }
+    }
+
+    #[test]
+    fn datum_offset_distance_is_in_millimeters_at_feature_admission() {
+        let mut ir = CadIr::empty();
+        let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+        carriers
+            .admit_feature(
+                &mut ir,
+                source_feature(FeatureDefinition::Operation(
+                    FeatureOperation::DatumOffsetPlane {
+                        reference: None,
+                        distance: cadmpeg_ir::scalar::Length::new(2.0).expect("finite distance"),
+                    },
+                )),
+            )
+            .expect("feature admission");
+        let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { distance, .. }) =
+            ir.model.features[0].evaluation.definition()
+        else {
+            panic!("datum offset feature changed family");
+        };
+        assert_eq!(distance.get(), 50.8);
+    }
+
+    #[test]
+    fn post_process_fuzzy_tolerance_is_in_millimeters_at_feature_admission() {
+        let mut ir = CadIr::empty();
+        let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+        carriers
+            .admit_feature(
+                &mut ir,
+                source_feature(FeatureDefinition::PostProcess {
+                    operation: FeatureOperation::StoredGeometry {},
+                    refine: false,
+                    fuzzy_tolerance: FuzzyTolerance::Explicit(
+                        cadmpeg_ir::scalar::PositiveLength::new(0.5)
+                            .expect("positive source tolerance"),
+                    ),
+                }),
+            )
+            .expect("feature admission");
+        let FeatureDefinition::PostProcess {
+            fuzzy_tolerance: FuzzyTolerance::Explicit(tolerance),
+            ..
+        } = ir.model.features[0].evaluation.definition()
+        else {
+            panic!("post process feature changed family");
+        };
+        assert_eq!(tolerance.get(), 12.7);
+    }
+
+    #[test]
+    fn feature_length_overflow_refuses_before_admission() {
+        let mut ir = CadIr::empty();
+        let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+        let error = carriers
+            .admit_feature(
+                &mut ir,
+                source_feature(FeatureDefinition::Operation(
+                    FeatureOperation::DatumOffsetPlane {
+                        reference: None,
+                        distance: cadmpeg_ir::scalar::Length::new(f64::MAX)
+                            .expect("finite source distance"),
+                    },
+                )),
+            )
+            .expect_err("millimeter distance cannot be represented");
+        assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
+        assert!(ir.model.features.is_empty());
+    }
+
+    #[test]
+    fn parameter_length_overflow_refuses_before_admission() {
+        let mut ir = CadIr::empty();
+        let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+        let error = carriers
+            .admit_parameter(&mut ir, source_length_parameter(f64::MAX))
+            .expect_err("millimeter parameter cannot be represented");
+        assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
+        assert!(ir.model.parameters.is_empty());
+    }
 
     fn translated_product_transform(x: f64) -> Transform {
         Transform::affine([

@@ -27,17 +27,6 @@ pub(in crate::decode) fn normalize_model_lengths(
         return Ok(());
     }
 
-    for feature in &mut ir.model.features {
-        let mut definition = feature.evaluation.definition().clone();
-        scale_feature_definition(&mut definition, scale)?;
-        feature.evaluation.set_definition(definition);
-    }
-
-    for parameter in &mut ir.model.parameters {
-        if let Some(ParameterValue::Length(length)) = parameter.value.as_mut() {
-            scale_length(length, scale)?;
-        }
-    }
     for configuration in &mut ir.model.configurations {
         for value in configuration.parameter_values.values_mut() {
             if let ParameterValue::Length(length) = value {
@@ -140,7 +129,10 @@ fn scale_transform_translation(
     Ok(())
 }
 
-fn scale_length(length: &mut Length, scale: PositiveReal) -> Result<(), CodecError> {
+pub(in crate::decode) fn scale_length(
+    length: &mut Length,
+    scale: PositiveReal,
+) -> Result<(), CodecError> {
     *length = Length::new(length.get() * scale.get())
         .ok_or_else(|| CodecError::Malformed("Creo scaled length must be finite".into()))?;
     Ok(())
@@ -233,7 +225,7 @@ fn scale_datum_point_construction(
     Ok(())
 }
 
-fn scale_feature_definition(
+pub(in crate::decode) fn scale_feature_definition(
     definition: &mut FeatureDefinition,
     scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -1333,70 +1325,98 @@ mod tests {
     };
 
     #[test]
-    fn scales_model_geometry_and_feature_dimensions() {
+    fn feature_and_parameter_lengths_are_in_millimeters_at_admission() {
         let mut ir = CadIr::empty();
-        ir.model.features.push(Feature {
-            id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#feature")
-                .expect("identity grammar"),
-            ordinal: 0,
-            name: None,
-            suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-            source_properties: std::collections::BTreeMap::default(),
-            source_tag: None,
-            source_text: None,
-            source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Operation(FeatureOperation::Extrude {
-                    profile: ProfileRef::Planar(PlanarProfileRef::Unresolved("profile".into())),
-                    direction: ExtrudeDirection::ProfileNormal {},
-                    start: ExtrudeStart::OffsetProfilePlane {
-                        offset: Length::new(2.0).expect("finite length fixture"),
-                    },
-                    extent: ExtrudeExtent::TwoSided {
-                        first: ExtrudeSide {
-                            termination: LinearTermination::Blind {
-                                length: cadmpeg_ir::scalar::NonZeroLength::new(3.0)
-                                    .expect("nonzero length fixture"),
+        let carriers =
+            crate::decode::source_carriers::SourceUnitCarriers::new(Some(positive(25.4)));
+        carriers
+            .admit_feature(
+                &mut ir,
+                Feature {
+                    id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#feature")
+                        .expect("identity grammar"),
+                    ordinal: 0,
+                    name: None,
+                    suppressed: None,
+                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                    source_properties: std::collections::BTreeMap::default(),
+                    source_tag: None,
+                    source_text: None,
+                    source_content: cadmpeg_ir::features::FeatureContent::default(),
+                    evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                        FeatureDefinition::Operation(FeatureOperation::Extrude {
+                            profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(
+                                "profile".into(),
+                            )),
+                            direction: ExtrudeDirection::ProfileNormal {},
+                            start: ExtrudeStart::OffsetProfilePlane {
+                                offset: Length::new(2.0).expect("finite length fixture"),
                             },
-                            draft: None,
-                        },
-                        second: ExtrudeSide {
-                            termination: LinearTermination::ToFace {
-                                face: cadmpeg_ir::features::FaceSelection::Native("face".into()),
-                                offset: Some(Length::new(4.0).expect("finite length fixture")),
+                            extent: ExtrudeExtent::TwoSided {
+                                first: ExtrudeSide {
+                                    termination: LinearTermination::Blind {
+                                        length: cadmpeg_ir::scalar::NonZeroLength::new(3.0)
+                                            .expect("nonzero length fixture"),
+                                    },
+                                    draft: None,
+                                },
+                                second: ExtrudeSide {
+                                    termination: LinearTermination::ToFace {
+                                        face: cadmpeg_ir::features::FaceSelection::Native(
+                                            "face".into(),
+                                        ),
+                                        offset: Some(
+                                            Length::new(4.0).expect("finite length fixture"),
+                                        ),
+                                    },
+                                    draft: None,
+                                },
                             },
-                            draft: None,
-                        },
-                    },
-                    op: BooleanOp::NewBody,
-                    solid: None,
-                    face_maker: None,
-                    inner_wire_taper: None,
-                    length_along_profile_normal: None,
-                    allow_multi_profile_faces: None,
-                }),
-            ),
-            native_ref: None,
-        });
-        ir.model
-            .parameters
-            .push(cadmpeg_ir::features::DesignParameter {
-                id: cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#length")
-                    .expect("identity grammar"),
-                owner: None,
-                ordinal: 0,
-                name: "length".into(),
-                expression: "2".into(),
-                display: None,
-                value: Some(ParameterValue::Length(
-                    Length::new(5.0).expect("finite length fixture"),
-                )),
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                properties: BTreeMap::new(),
-                pmi: None,
-                native_ref: None,
-            });
+                            op: BooleanOp::NewBody,
+                            solid: None,
+                            face_maker: None,
+                            inner_wire_taper: None,
+                            length_along_profile_normal: None,
+                            allow_multi_profile_faces: None,
+                        }),
+                    ),
+                    native_ref: None,
+                },
+            )
+            .expect("feature admission");
+        carriers
+            .admit_parameter(
+                &mut ir,
+                cadmpeg_ir::features::DesignParameter {
+                    id: cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#length")
+                        .expect("identity grammar"),
+                    owner: None,
+                    ordinal: 0,
+                    name: "length".into(),
+                    expression: "2".into(),
+                    display: None,
+                    value: Some(ParameterValue::Length(
+                        Length::new(5.0).expect("finite length fixture"),
+                    )),
+                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                    properties: BTreeMap::new(),
+                    pmi: None,
+                    native_ref: None,
+                },
+            )
+            .expect("parameter admission");
+        let FeatureDefinition::Operation(FeatureOperation::Extrude {
+            start: ExtrudeStart::OffsetProfilePlane { offset },
+            ..
+        }) = ir.model.features[0].evaluation.definition()
+        else {
+            panic!("admitted feature changed family");
+        };
+        assert_close(offset.get(), 50.8);
+        let Some(ParameterValue::Length(length)) = ir.model.parameters[0].value.as_ref() else {
+            panic!("admitted parameter changed family");
+        };
+        assert_close(length.get(), 127.0);
         normalize_model_lengths(&mut ir, positive(25.4)).expect("valid unit scaling");
 
         let FeatureDefinition::Operation(FeatureOperation::Extrude { start, extent, .. }) =
