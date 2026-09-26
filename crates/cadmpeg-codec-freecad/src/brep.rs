@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{bounded_len, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
     Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
@@ -18,8 +18,9 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
+use cadmpeg_ir::scalar::{FiniteBinary32, FiniteReal, NonNegativeReal};
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::units::FinitePoint2;
 use cadmpeg_ir::SourceObjectAssociation;
 use serde::{Deserialize, Serialize};
 
@@ -2795,14 +2796,14 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion)
         let triangle_count = cursor.count("binary triangulation triangle count")?;
         let has_uv = cursor.bool("binary triangulation UV flag")?;
         let has_normals = version >= 4 && cursor.bool("binary triangulation normal flag")?;
-        let deflection = cursor.f64("binary triangulation deflection")?;
+        let deflection = cursor.finite_f64("binary triangulation deflection")?;
         let nodes = (0..node_count)
-            .map(|_| cursor.point3("binary triangulation node"))
+            .map(|_| cursor.finite_point3("binary triangulation node"))
             .collect::<Result<Vec<_>, _>>()?;
         let uv_nodes = has_uv
             .then(|| {
                 (0..node_count)
-                    .map(|_| cursor.point2("binary triangulation UV node"))
+                    .map(|_| cursor.finite_point2("binary triangulation UV node"))
                     .collect::<Result<Vec<_>, _>>()
             })
             .transpose()?;
@@ -2826,7 +2827,7 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion)
             })
             .transpose()?;
         triangulations.push(
-            TextTriangulation::try_new(deflection, nodes, uv_nodes, triangles, normals)
+            TextTriangulation::from_admitted_parts(deflection, nodes, uv_nodes, triangles, normals)
                 .map_err(CodecError::Malformed)?,
         );
     }
@@ -3917,12 +3918,17 @@ impl<'a> BinaryCursor<'a> {
             .ok_or_else(|| CodecError::malformed(format_args!("non-finite {label}")))
     }
 
-    fn f32(&mut self, label: &str) -> Result<f32, CodecError> {
+    fn f32(&mut self, label: &str) -> Result<FiniteBinary32, CodecError> {
         let value = self.view.f32_le().ok_or_else(|| Self::truncated(label))?;
-        value
-            .is_finite()
-            .then_some(value)
+        FiniteBinary32::new(value)
             .ok_or_else(|| CodecError::malformed(format_args!("non-finite {label}")))
+    }
+
+    fn finite_point2(&mut self, label: &str) -> Result<FinitePoint2, CodecError> {
+        Ok(FinitePoint2::from_coordinates(
+            self.finite_f64(label)?,
+            self.finite_f64(label)?,
+        ))
     }
 
     fn point2(&mut self, label: &str) -> Result<Point2, CodecError> {
@@ -3953,11 +3959,11 @@ impl<'a> BinaryCursor<'a> {
         ))
     }
 
-    fn vector3_f32(&mut self, label: &str) -> Result<Vector3, CodecError> {
-        Ok(Vector3::new(
-            f64::from(self.f32(label)?),
-            f64::from(self.f32(label)?),
-            f64::from(self.f32(label)?),
+    fn vector3_f32(&mut self, label: &str) -> Result<FiniteVector3, CodecError> {
+        Ok(FiniteVector3::from_components(
+            FiniteReal::from_finite_binary32(self.f32(label)?),
+            FiniteReal::from_finite_binary32(self.f32(label)?),
+            FiniteReal::from_finite_binary32(self.f32(label)?),
         ))
     }
 
@@ -4364,18 +4370,18 @@ fn parse_triangulations(
         let triangle_count = cursor.count("triangulation triangle count", 1_000_000)?;
         let has_uv = cursor.boolean("triangulation UV flag")?;
         let has_normals = topology_version >= 3 && cursor.boolean("triangulation normal flag")?;
-        let deflection = cursor.real("triangulation deflection")?;
+        let deflection = cursor.finite_real("triangulation deflection")?;
         // Each node consumes its three point tokens.
         let mut nodes = Vec::with_capacity(cursor.bounded(node_count, 3, "triangulation node")?);
         for _ in 0..node_count {
-            nodes.push(cursor.point("triangulation node")?);
+            nodes.push(cursor.finite_point("triangulation node")?);
         }
         let uv_nodes = if has_uv {
             // Each UV node consumes its two point2 tokens.
             let mut uv_nodes =
                 Vec::with_capacity(cursor.bounded(node_count, 2, "triangulation UV node")?);
             for _ in 0..node_count {
-                uv_nodes.push(cursor.point2("triangulation UV node")?);
+                uv_nodes.push(cursor.finite_point2("triangulation UV node")?);
             }
             Some(uv_nodes)
         } else {
@@ -4402,14 +4408,14 @@ fn parse_triangulations(
             let mut normals =
                 Vec::with_capacity(cursor.bounded(node_count, 3, "triangulation normal")?);
             for _ in 0..node_count {
-                normals.push(cursor.vector("triangulation normal")?);
+                normals.push(cursor.finite_vector("triangulation normal")?);
             }
             Some(normals)
         } else {
             None
         };
         triangulations.push(
-            TextTriangulation::try_new(deflection, nodes, uv_nodes, triangles, normals)
+            TextTriangulation::from_admitted_parts(deflection, nodes, uv_nodes, triangles, normals)
                 .map_err(CodecError::Malformed)?,
         );
     }
@@ -5545,6 +5551,21 @@ impl<'a> TokenCursor<'a> {
 
     fn finite_point(&mut self, label: &str) -> Result<FinitePoint3, CodecError> {
         Ok(FinitePoint3::from_coordinates(
+            self.finite_real(label)?,
+            self.finite_real(label)?,
+            self.finite_real(label)?,
+        ))
+    }
+
+    fn finite_point2(&mut self, label: &str) -> Result<FinitePoint2, CodecError> {
+        Ok(FinitePoint2::from_coordinates(
+            self.finite_real(label)?,
+            self.finite_real(label)?,
+        ))
+    }
+
+    fn finite_vector(&mut self, label: &str) -> Result<FiniteVector3, CodecError> {
+        Ok(FiniteVector3::from_components(
             self.finite_real(label)?,
             self.finite_real(label)?,
             self.finite_real(label)?,

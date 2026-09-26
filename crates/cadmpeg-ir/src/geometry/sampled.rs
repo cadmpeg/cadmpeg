@@ -87,12 +87,45 @@ impl PolygonalSurface {
         })
     }
 
+    /// Build from admitted vertices, source deflection and placement scale.
+    /// Only triangle relationships and scaled deflection remain to check.
+    pub fn from_admitted_scaled_deflection(
+        vertices: Vec<FinitePoint3>,
+        triangles: Vec<[u32; 3]>,
+        chordal_deflection: NonNegativeReal,
+        scale: crate::scalar::PositiveReal,
+    ) -> Result<Self, GeometryLayoutError> {
+        Self::check_layout(vertices.len(), &triangles)?;
+        let chordal_deflection = chordal_deflection.scaled(scale).ok_or_else(|| {
+            geometry_layout_error("chordal_deflection must be finite and non-negative")
+        })?;
+        Ok(Self {
+            vertices,
+            triangles,
+            chordal_deflection,
+        })
+    }
+
     fn build(
         vertices: Vec<Point3>,
         triangles: Vec<[u32; 3]>,
         deflection: impl FnOnce() -> Result<NonNegativeReal, GeometryLayoutError>,
     ) -> Result<Self, GeometryLayoutError> {
-        if vertices.len() < 3 {
+        Self::check_layout(vertices.len(), &triangles)?;
+        let vertices = admit_finite_vertices(vertices)?;
+        let chordal_deflection = deflection()?;
+        Ok(Self {
+            vertices,
+            triangles,
+            chordal_deflection,
+        })
+    }
+
+    fn check_layout(
+        vertex_count: usize,
+        triangles: &[[u32; 3]],
+    ) -> Result<(), GeometryLayoutError> {
+        if vertex_count < 3 {
             return Err(geometry_layout_error(
                 "polygonal surface must contain at least three vertices",
             ));
@@ -105,19 +138,13 @@ impl PolygonalSurface {
         if triangles
             .iter()
             .flatten()
-            .any(|index| *index as usize >= vertices.len())
+            .any(|index| usize::try_from(*index).map_or(true, |index| index >= vertex_count))
         {
             return Err(geometry_layout_error(
                 "polygonal surface contains an out-of-range triangle index",
             ));
         }
-        let vertices = admit_finite_vertices(vertices)?;
-        let chordal_deflection = deflection()?;
-        Ok(Self {
-            vertices,
-            triangles,
-            chordal_deflection,
-        })
+        Ok(())
     }
 
     /// Edit finite vertices transactionally.

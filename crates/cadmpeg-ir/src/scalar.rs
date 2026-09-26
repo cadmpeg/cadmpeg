@@ -407,6 +407,16 @@ impl PositiveReal {
 }
 
 impl NonNegativeReal {
+    /// Admit a finite scalar as nonnegative. Only its sign remains to check.
+    #[must_use]
+    pub const fn from_finite(value: FiniteReal) -> Option<Self> {
+        if value.get() >= 0.0 {
+            Some(Self(value.get()))
+        } else {
+            None
+        }
+    }
+
     /// The value times `scale`.
     ///
     /// A positive scale keeps the sign of a nonnegative value: zero stays

@@ -255,6 +255,57 @@ fn scaled_deflection_constructors_preserve_output_and_refusal_order() {
 }
 
 #[test]
+fn admitted_polygonal_surface_path_preserves_geometry_and_layout_refusal() {
+    use crate::features::FinitePoint3;
+    use crate::geometry::sampled::PolygonalSurface;
+    use crate::scalar::{NonNegativeReal, PositiveReal};
+
+    let vertices = vec![
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(1.0, 0.0, 0.0),
+        Point3::new(0.0, 1.0, 0.0),
+    ];
+    let admitted = vertices
+        .iter()
+        .copied()
+        .map(|point| FinitePoint3::new(point).unwrap())
+        .collect::<Vec<_>>();
+    let deflection = NonNegativeReal::new(0.25).unwrap();
+    let scale = PositiveReal::new(2.0).unwrap();
+    assert_eq!(
+        PolygonalSurface::from_admitted_scaled_deflection(
+            admitted.clone(),
+            vec![[0, 1, 2]],
+            deflection,
+            scale,
+        )
+        .unwrap(),
+        PolygonalSurface::from_scaled_deflection(vertices, vec![[0, 1, 2]], deflection, scale)
+            .unwrap()
+    );
+    let overflow = PositiveReal::new(f64::MAX).unwrap();
+    let deflection = NonNegativeReal::new(2.0).unwrap();
+    assert!(PolygonalSurface::from_admitted_scaled_deflection(
+        admitted.clone(),
+        vec![[0, 1, 3]],
+        deflection,
+        overflow,
+    )
+    .unwrap_err()
+    .to_string()
+    .contains("out-of-range triangle index"));
+    assert!(PolygonalSurface::from_admitted_scaled_deflection(
+        admitted,
+        vec![[0, 1, 2]],
+        deflection,
+        overflow,
+    )
+    .unwrap_err()
+    .to_string()
+    .contains("chordal_deflection must be finite and non-negative"));
+}
+
+#[test]
 fn a_polyline_holds_its_admitted_samples() {
     use crate::features::FinitePoint3;
     use crate::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
