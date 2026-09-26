@@ -600,6 +600,7 @@ fn deferred_boundary_closure_refuses_matching_collection_limits() {
 
 #[test]
 fn deferred_anchored_runs_propagate_forced_adjacencies() {
+    catia_test_context!(ctx);
     let use_ = |edge, start| MeshBoundaryEdgeCandidate {
         edge,
         start,
@@ -622,11 +623,13 @@ fn deferred_anchored_runs_propagate_forced_adjacencies() {
     let budget = WorkBudget::new(100);
 
     crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
+        &ctx,
         &domains,
         &candidates,
         &mut quotient,
         &budget,
     )
+    .expect("service resource budget")
     .expect("forced deferred quotient");
 
     assert_eq!(quotient.find(0), quotient.find(3));
@@ -635,6 +638,7 @@ fn deferred_anchored_runs_propagate_forced_adjacencies() {
 
 #[test]
 fn deferred_quotient_retains_unknown_exact_run_direction() {
+    catia_test_context!(ctx);
     let use_ = |edge, start| MeshBoundaryEdgeCandidate {
         edge,
         start,
@@ -657,11 +661,13 @@ fn deferred_quotient_retains_unknown_exact_run_direction() {
     let budget = WorkBudget::new(100);
 
     crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
+        &ctx,
         &domains,
         &candidates,
         &mut quotient,
         &budget,
     )
+    .expect("service resource budget")
     .expect("unknown exact direction is deferred");
 
     assert_ne!(quotient.find(0), quotient.find(3));
@@ -669,6 +675,7 @@ fn deferred_quotient_retains_unknown_exact_run_direction() {
 
 #[test]
 fn deferred_gap_search_propagates_quotient_forced_edge_order() {
+    catia_test_context!(ctx);
     let use_ = |edge, start| MeshBoundaryEdgeCandidate {
         edge,
         start,
@@ -693,11 +700,13 @@ fn deferred_gap_search_propagates_quotient_forced_edge_order() {
     let budget = WorkBudget::new(10_000);
 
     crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
+        &ctx,
         &domains,
         &candidates,
         &mut quotient,
         &budget,
     )
+    .expect("service resource budget")
     .expect("deferred gap quotient");
 
     assert_eq!(quotient.find(1), quotient.find(4));
@@ -708,6 +717,7 @@ fn deferred_gap_search_propagates_quotient_forced_edge_order() {
 
 #[test]
 fn ordered_structural_equations_propagate_without_direction_enumeration() {
+    catia_test_context!(ctx);
     let domains = [MeshFaceBoundaryDomain::Ordered(vec![
         MeshFaceBoundaryAssignment {
             boundaries: vec![vec![
@@ -733,11 +743,13 @@ fn ordered_structural_equations_propagate_without_direction_enumeration() {
     let budget = WorkBudget::new(100);
 
     crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
+        &ctx,
         &domains,
         &candidates,
         &mut quotient,
         &budget,
     )
+    .expect("service resource budget")
     .expect("structural quotient");
 
     assert_eq!(quotient.find(0), quotient.find(2));
@@ -745,6 +757,7 @@ fn ordered_structural_equations_propagate_without_direction_enumeration() {
 
 #[test]
 fn ordered_face_options_preflight_exact_signature_work() {
+    catia_test_context!(ctx);
     let use_ = |edge| MeshBoundaryEdgeCandidate {
         edge,
         start: 0,
@@ -765,11 +778,13 @@ fn ordered_face_options_preflight_exact_signature_work() {
     let budget = WorkBudget::new(100);
 
     crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
+        &ctx,
         &domains,
         &candidates,
         &mut quotient,
         &budget,
     )
+    .expect("service resource budget")
     .expect("bounded common quotient propagation");
 
     assert_eq!(quotient.root_count(), 4);
@@ -778,6 +793,7 @@ fn ordered_face_options_preflight_exact_signature_work() {
 
 #[test]
 fn ordered_cycle_support_propagates_domain_forced_directions() {
+    catia_test_context!(ctx);
     let domains = [MeshFaceBoundaryDomain::Ordered(vec![
         MeshFaceBoundaryAssignment {
             boundaries: vec![vec![
@@ -806,11 +822,13 @@ fn ordered_cycle_support_propagates_domain_forced_directions() {
     let budget = WorkBudget::new(100);
 
     crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
+        &ctx,
         &domains,
         &candidates,
         &mut quotient,
         &budget,
     )
+    .expect("service resource budget")
     .expect("supported cycle quotient");
 
     assert_eq!(quotient.find(0), quotient.find(3));
