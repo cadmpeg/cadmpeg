@@ -435,7 +435,7 @@ pub(super) fn type126_declared_control_points(
                     let index = pole_start
                         .checked_add(point.checked_mul(3)?)?
                         .checked_add(coordinate)?;
-                    let value = record.number(index).filter(|value| value.is_finite())?;
+                    let value = record.number(index)?;
                     Some(DeclaredInterval::around(
                         value,
                         record.number_uncertainty(index, value, precision),
@@ -1650,8 +1650,8 @@ pub(crate) fn project_geometry(
             ));
             continue;
         };
-        let required_real = |index| record.number(index).is_some_and(f64::is_finite);
-        let optional_real = |index| record.number_or(index, 0.0).is_some_and(f64::is_finite);
+        let required_real = |index| record.number(index).is_some();
+        let optional_real = |index| record.number_or(index, 0.0).is_some();
         let shape_parameters_valid = match entry.form {
             0 => true,
             1 => required_real(3) && optional_real(4) && optional_real(5),

@@ -277,15 +277,13 @@ pub(super) fn project(
                     .is_some_and(|value| value.is_finite() && value >= 0.0)
             })
             && font_valid
-            && record
-                .number_or(4, std::f64::consts::FRAC_PI_2)
-                .is_some_and(f64::is_finite)
-            && record.number_or(5, 0.0).is_some_and(f64::is_finite)
+            && record.number_or(4, std::f64::consts::FRAC_PI_2).is_some()
+            && record.number_or(5, 0.0).is_some()
             && record.integer_or(6, 0).is_some_and(mirror_flag_valid)
             && record
                 .integer_or(7, 0)
                 .is_some_and(vertical_text_flag_valid)
-            && (8..=10).all(|index| record.number_or(index, 0.0).is_some_and(f64::is_finite));
+            && (8..=10).all(|index| record.number_or(index, 0.0).is_some());
         if directory_valid && fields_valid {
             decoded.insert(entry.sequence);
         } else {

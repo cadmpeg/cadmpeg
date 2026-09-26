@@ -8,6 +8,7 @@ use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::{bounded_len, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::SourceProvenance;
 use serde::{Serialize, Serializer};
 use std::collections::{BTreeMap, BTreeSet};
@@ -19,8 +20,15 @@ use std::ops::Range;
 pub(crate) enum TokenValue {
     Omitted,
     Integer(i64),
-    Real(f64),
+    Real(FiniteReal),
     String(Vec<u8>),
+}
+
+#[cfg(test)]
+impl TokenValue {
+    pub(crate) fn real(value: f64) -> Self {
+        Self::Real(FiniteReal::new(value).expect("finite real token fixture"))
+    }
 }
 
 /// Typed value and its half-open offset in the assembled 64-column stream.
@@ -268,7 +276,7 @@ impl ParameterRecord {
     pub(crate) fn number(&self, index: usize) -> Option<f64> {
         match self.value(index)? {
             TokenValue::Integer(value) => Some(*value as f64),
-            TokenValue::Real(value) => Some(*value),
+            TokenValue::Real(value) => Some(value.get()),
             TokenValue::Omitted | TokenValue::String(_) => None,
         }
     }
@@ -282,7 +290,7 @@ impl ParameterRecord {
         match &token.value {
             TokenValue::Omitted => Some(default),
             TokenValue::Integer(value) => Some(*value as f64),
-            TokenValue::Real(value) => Some(*value),
+            TokenValue::Real(value) => Some(value.get()),
             TokenValue::String(_) => None,
         }
     }
@@ -3217,7 +3225,7 @@ fn numeric_with_limits(
             normalized
                 .parse::<f64>()
                 .ok()
-                .filter(|value| value.is_finite())
+                .and_then(FiniteReal::new)
                 .ok_or_else(not_a_number)?,
         )
     } else {

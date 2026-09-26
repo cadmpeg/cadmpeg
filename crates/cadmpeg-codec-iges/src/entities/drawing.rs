@@ -205,8 +205,7 @@ pub(super) fn project(
             continue;
         };
         let valid = if entry.form == 16 {
-            record.integer(1) == Some(2)
-                && (2..=3).all(|index| record.number(index).is_some_and(f64::is_finite))
+            record.integer(1) == Some(2) && (2..=3).all(|index| record.number(index).is_some())
         } else {
             record.integer(1) == Some(2)
                 && record
@@ -261,12 +260,11 @@ pub(super) fn project(
                     .is_some_and(|view| {
                         view.entity_type == 410 && view.status.is_logically_dependent()
                     })
-                    && (start + 1..=start + 2)
-                        .all(|index| record.number(index).is_some_and(f64::is_finite))
+                    && (start + 1..=start + 2).all(|index| record.number(index).is_some())
                     && (entry.form == 0
                         || match record.value(start + 3) {
                             None | Some(crate::parameter::TokenValue::Omitted) => true,
-                            _ => record.number(start + 3).is_some_and(f64::is_finite),
+                            _ => record.number(start + 3).is_some(),
                         })
             })
         });
@@ -348,8 +346,7 @@ pub(super) fn project(
             let vectors_valid = normal
                 .zip(up)
                 .is_some_and(|(normal, up)| has_in_plane_component(normal.get(), up.get()));
-            let window_valid = (15..=19)
-                .all(|index| record.number_or(index, 0.0).is_some_and(f64::is_finite))
+            let window_valid = (15..=19).all(|index| record.number_or(index, 0.0).is_some())
                 && record
                     .number_or(16, 0.0)
                     .zip(record.number_or(17, 0.0))
@@ -361,8 +358,7 @@ pub(super) fn project(
             let depth = record
                 .integer_or(20, 0)
                 .filter(|value| depth_clipping_valid(*value));
-            let depth_values_valid = (21..=22)
-                .all(|index| record.number_or(index, 0.0).is_some_and(f64::is_finite))
+            let depth_values_valid = (21..=22).all(|index| record.number_or(index, 0.0).is_some())
                 && (depth != Some(3)
                     || record
                         .number_or(21, 0.0)

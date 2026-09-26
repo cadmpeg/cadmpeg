@@ -70,12 +70,12 @@ fn numeric_record(values: &[(usize, f64)]) -> ParameterRecord {
     let length = values.iter().map(|(index, _)| index + 1).max().unwrap_or(0);
     let mut tokens = (0..length)
         .map(|_| Token {
-            value: TokenValue::Real(0.0),
+            value: TokenValue::real(0.0),
             span: 0..0,
         })
         .collect::<Vec<_>>();
     for (index, value) in values {
-        tokens[*index].value = TokenValue::Real(*value);
+        tokens[*index].value = TokenValue::real(*value);
     }
     let parameter_end = tokens.len();
     ParameterRecord::from_test_tokens(1, 1..2, Vec::new(), parameter_end, tokens, Vec::new())

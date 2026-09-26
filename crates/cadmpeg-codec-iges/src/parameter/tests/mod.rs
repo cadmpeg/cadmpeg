@@ -59,8 +59,16 @@ impl From<i64> for TokenValue {
 
 impl From<f64> for TokenValue {
     fn from(value: f64) -> Self {
-        Self::Real(value)
+        Self::real(value)
     }
+}
+
+#[test]
+fn finite_real_token_keeps_native_json_shape() {
+    assert_eq!(
+        serde_json::to_string(&TokenValue::real(1.5)).expect("token JSON"),
+        r#"{"kind":"real","value":1.5}"#
+    );
 }
 
 #[test]
