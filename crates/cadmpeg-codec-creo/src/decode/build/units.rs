@@ -8,6 +8,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::decode::source_carriers::SourceUnitCarriers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
@@ -28,6 +29,7 @@ use cadmpeg_ir::transform::Transform;
 pub(super) fn normalize_model_lengths(
     ir: &mut CadIr,
     scale: PositiveReal,
+    source_carriers: &SourceUnitCarriers,
 ) -> Result<(), CodecError> {
     if scale.get() == 1.0 {
         return Ok(());
@@ -45,6 +47,9 @@ pub(super) fn normalize_model_lengths(
     }
 
     for surface in &mut ir.model.surfaces {
+        if source_carriers.contains_surface(&surface.id) {
+            continue;
+        }
         if let SurfaceGeometry::Solved(geometry) = &mut surface.geometry {
             scale_surface_geometry(geometry, scale)?;
         }
@@ -1137,7 +1142,7 @@ fn scale_pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages + Clone
     Ok(())
 }
 
-fn scale_surface_geometry(
+pub(super) fn scale_surface_geometry(
     geometry: &mut SolvedSurfaceGeometry,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
@@ -1528,9 +1533,13 @@ mod tests {
             link: None,
             native_ref: None,
         });
-        let error = normalize_model_lengths(&mut ir, positive(1000.0))
-            .expect_err("a non-finite translation has no transform")
-            .to_string();
+        let error = normalize_model_lengths(
+            &mut ir,
+            positive(1000.0),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+        .expect_err("a non-finite translation has no transform")
+        .to_string();
         assert!(error.contains("transform translation"), "{error}");
     }
 
@@ -1599,7 +1608,12 @@ mod tests {
                 pmi: None,
                 native_ref: None,
             });
-        normalize_model_lengths(&mut ir, positive(25.4)).expect("valid unit scaling");
+        normalize_model_lengths(
+            &mut ir,
+            positive(25.4),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+        .expect("valid unit scaling");
 
         let FeatureDefinition::Operation(FeatureOperation::Extrude { start, extent, .. }) =
             ir.model.features[0].evaluation.definition()
@@ -1644,16 +1658,25 @@ mod tests {
     #[test]
     fn model_points_of_an_inch_model_are_converted_to_millimetres() {
         let mut ir = model_point_ir(Point3::new(1.0, -2.0, 0.5));
-        normalize_model_lengths(&mut ir, positive(25.4)).expect("valid unit scaling");
+        normalize_model_lengths(
+            &mut ir,
+            positive(25.4),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+        .expect("valid unit scaling");
         assert_point3(ir.model.points[0].position().get(), [25.4, -50.8, 12.7]);
     }
 
     #[test]
     fn a_model_point_that_overflows_in_millimetres_is_refused() {
         let mut ir = model_point_ir(Point3::new(0.0, f64::MAX, 0.0));
-        let error = normalize_model_lengths(&mut ir, positive(25.4))
-            .expect_err("an overflowing point has no position")
-            .to_string();
+        let error = normalize_model_lengths(
+            &mut ir,
+            positive(25.4),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+        .expect_err("an overflowing point has no position")
+        .to_string();
         assert!(
             error.contains("scaled model point must be finite"),
             "{error}"
@@ -1679,8 +1702,12 @@ mod tests {
             source_object: None,
         });
 
-        let error =
-            normalize_model_lengths(&mut ir, positive(25.4)).expect_err("overflow must refuse");
+        let error = normalize_model_lengths(
+            &mut ir,
+            positive(25.4),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+        .expect_err("overflow must refuse");
         assert!(matches!(error, CodecError::Malformed(_)));
         let Some(SolvedCurveGeometry::Nurbs(curve)) = ir.model.curves[0].geometry.solved() else {
             panic!("test curve changed family");
@@ -1865,7 +1892,12 @@ mod tests {
         );
         ir.model.add_procedural_curve(curve_id, curve).unwrap();
 
-        normalize_model_lengths(&mut ir, positive(25.4)).expect("valid unit scaling");
+        normalize_model_lengths(
+            &mut ir,
+            positive(25.4),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+        .expect("valid unit scaling");
 
         let surface = &ir.model.procedural_surfaces[0];
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload) =
@@ -2001,9 +2033,13 @@ mod tests {
             ir.model
                 .add_procedural_surface(surface_id, surface)
                 .unwrap();
-            let error = normalize_model_lengths(&mut ir, positive(25.4))
-                .expect_err("an overflowing scaled vector has no payload")
-                .to_string();
+            let error = normalize_model_lengths(
+                &mut ir,
+                positive(25.4),
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+            .expect_err("an overflowing scaled vector has no payload")
+            .to_string();
             assert!(error.contains(refusal), "{error}");
         }
     }

@@ -15,6 +15,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
 use crate::container::ContainerScan;
+use crate::decode::source_carriers::SourceUnitCarriers;
 use crate::legacy_geometry::LegacySurfaceNamespace;
 use crate::topology::HalfEdgeId;
 
@@ -65,8 +66,9 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     nurbs_endpoint_witnesses: &BTreeSet<CurveId>,
+    source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
-    let carriers = placed_carriers(scan, ir);
+    let carriers = placed_carriers(scan, ir, source_carriers);
     let solved_vertices =
         solved_topological_vertices(scan, ir, &carriers, nurbs_endpoint_witnesses);
     let vertex_faces =
@@ -129,11 +131,15 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
                     .iter()
                     .find(|surface| surface.id == id)
                     .is_some_and(|surface| {
-                        existing_plane_agrees_with_topology(&surface.geometry, plane) == Some(false)
+                        existing_plane_agrees_with_topology(
+                            source_carriers.surface_geometry(surface),
+                            plane,
+                        ) == Some(false)
                     });
             if !conflict {
                 continue;
             }
+            source_carriers.remove_surface(&id);
             for surface in ir
                 .model
                 .surfaces
@@ -302,6 +308,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
 pub(in crate::decode) fn placed_carriers(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &SourceUnitCarriers,
 ) -> BTreeMap<u32, CarrierEquation> {
     let mut carriers = placed_planes(scan)
         .into_iter()
@@ -329,7 +336,9 @@ pub(in crate::decode) fn placed_carriers(
             .iter()
             .filter(|row| row_counts.get(&row.id) == Some(&1))
         {
-            if let Some(carrier) = positional_cylinder_carrier(scan, row, parameters, ir) {
+            if let Some(carrier) =
+                positional_cylinder_carrier(scan, row, parameters, ir, source_carriers)
+            {
                 carriers.insert(row.id, carrier);
                 continue;
             }
@@ -349,7 +358,7 @@ pub(in crate::decode) fn placed_carriers(
                 }
             };
             if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
-                &surface.geometry
+                source_carriers.surface_geometry(surface)
             {
                 let origin = plane_surface.origin().get();
                 let normal = plane_surface.frame().axis().as_raw();
@@ -367,7 +376,8 @@ pub(in crate::decode) fn placed_carriers(
                 } else {
                     carriers.remove(&row.id);
                 }
-            } else if let Some(carrier) = surface_carrier(&surface.geometry) {
+            } else if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface))
+            {
                 carriers.insert(row.id, carrier);
             }
         }
@@ -384,7 +394,7 @@ pub(in crate::decode) fn placed_carriers(
             carriers.remove(&datum.id);
             continue;
         };
-        if let Some(carrier) = surface_carrier(&surface.geometry) {
+        if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface)) {
             carriers.insert(datum.id, carrier);
         } else {
             carriers.remove(&datum.id);
@@ -411,7 +421,7 @@ pub(in crate::decode) fn placed_carriers(
             carriers.remove(&id);
             continue;
         };
-        if let Some(carrier) = surface_carrier(&surface.geometry) {
+        if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface)) {
             carriers.insert(id, carrier);
         }
     }
@@ -423,6 +433,7 @@ fn positional_cylinder_carrier(
     row: &crate::surface::SurfaceRow,
     parameters: &[crate::surface::SurfaceParameterRecord],
     ir: &CadIr,
+    source_carriers: &SourceUnitCarriers,
 ) -> Option<CarrierEquation> {
     (row.kind == crate::surface::SurfaceKind::Cylinder).then_some(())?;
     let record = crate::surface::unique_surface_parameter(parameters, row.id)?;
@@ -447,7 +458,7 @@ fn positional_cylinder_carrier(
             .filter(|surface| surface.id == id)
             .collect::<Vec<_>>();
         if let [surface] = model_surfaces.as_slice() {
-            if let Some(carrier) = surface_carrier(&surface.geometry) {
+            if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface)) {
                 return Some(carrier);
             }
         }

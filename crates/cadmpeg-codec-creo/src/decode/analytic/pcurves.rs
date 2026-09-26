@@ -791,18 +791,20 @@ fn pcurve_mismatch_detail(
 pub(in crate::decode) fn pcurve_edge_endpoint_evidence(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> BTreeMap<u32, PcurveEndpointEvidence> {
-    pcurve_edge_endpoint_evidence_with_diagnostics(scan, ir).0
+    pcurve_edge_endpoint_evidence_with_diagnostics(scan, ir, source_carriers).0
 }
 
 fn pcurve_edge_endpoint_evidence_with_diagnostics(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> (
     BTreeMap<u32, PcurveEndpointEvidence>,
     PcurveEndpointDiagnostics,
 ) {
-    let carriers = placed_carriers(scan, ir);
+    let carriers = placed_carriers(scan, ir, source_carriers);
     pcurve_edge_endpoint_evidence_with_carriers(scan, ir, &carriers)
 }
 
@@ -1059,8 +1061,12 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
     (evidence, diagnostics)
 }
 
-fn pcurve_edge_endpoints(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, [[f64; 3]; 2]> {
-    pcurve_edge_endpoint_evidence(scan, ir)
+fn pcurve_edge_endpoints(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
+) -> BTreeMap<u32, [[f64; 3]; 2]> {
+    pcurve_edge_endpoint_evidence(scan, ir, source_carriers)
         .into_iter()
         .map(|(curve_id, evidence)| (curve_id, evidence.points))
         .collect()
@@ -1317,8 +1323,9 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<BTreeSet<CurveId>, cadmpeg_core::CodecError> {
-    let reconciled_endpoints = pcurve_edge_endpoints(scan, ir);
+    let reconciled_endpoints = pcurve_edge_endpoints(scan, ir, source_carriers);
     let ignored_surface_ids =
         topology_ignored_surface_ids(&scan.framing.layout, &scan.surfaces.rows);
     let mut candidates = BTreeMap::<u32, Vec<(CurveGeometry, usize)>>::new();
@@ -1337,17 +1344,18 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             let Some(surface) = unique_model_surface(&ir.model.surfaces, face_id) else {
                 return;
             };
+            let geometry = source_carriers.surface_geometry(surface);
             // A path whose endpoint evaluates to a non-finite point is
             // evaluable; only an endpoint with no value is not.
             if endpoints.iter().all(|uv| {
                 !matches!(
-                    cadmpeg_ir::eval::surface_point(&surface.geometry, uv[0], uv[1]),
+                    cadmpeg_ir::eval::surface_point(geometry, uv[0], uv[1]),
                     Err(cadmpeg_ir::eval::EvaluationFailure::NoValue)
                 )
             }) {
                 *evaluable_path_counts.entry(curve_id).or_default() += 1;
             }
-            if let Some(carrier) = linear_pcurve_carrier(&surface.geometry, endpoints) {
+            if let Some(carrier) = linear_pcurve_carrier(geometry, endpoints) {
                 candidates
                     .entry(curve_id)
                     .or_default()
@@ -2224,7 +2232,11 @@ mod tests {
             },
         ]);
 
-        let (evidence, diagnostics) = pcurve_edge_endpoint_evidence_with_diagnostics(&scan, &ir);
+        let (evidence, diagnostics) = pcurve_edge_endpoint_evidence_with_diagnostics(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        );
         assert_eq!(
             evidence.get(&7).map(|value| (value.points, value.complete)),
             Some(([[1.0, 2.0, 0.0], [3.0, 4.0, 0.0]], true))
@@ -2312,7 +2324,11 @@ mod tests {
             source_object: None,
         });
 
-        let (evidence, diagnostics) = pcurve_edge_endpoint_evidence_with_diagnostics(&scan, &ir);
+        let (evidence, diagnostics) = pcurve_edge_endpoint_evidence_with_diagnostics(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        );
         assert_eq!(
             evidence
                 .get(&846)
@@ -2328,7 +2344,13 @@ mod tests {
 
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
         let transferred = crate::decode::with_test_decode_ctx(|ctx| {
-            transfer_analytic_pcurve_carriers(ctx, &scan, &mut ir, &mut annotations)
+            transfer_analytic_pcurve_carriers(
+                ctx,
+                &scan,
+                &mut ir,
+                &mut annotations,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
         })
         .expect("valid source object identity");
         assert_eq!(
@@ -2448,7 +2470,11 @@ mod tests {
             },
         ]);
 
-        let (evidence, diagnostics) = pcurve_edge_endpoint_evidence_with_diagnostics(&scan, &ir);
+        let (evidence, diagnostics) = pcurve_edge_endpoint_evidence_with_diagnostics(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        );
         assert_eq!(
             evidence.get(&7).map(|value| (value.points, value.complete)),
             Some(([[0.0, 0.0, 0.0], [0.0, 1.0, 0.0]], false)),
@@ -2661,13 +2687,23 @@ mod tests {
         ir.model
             .surfaces
             .extend([unit_plane_surface(10), overflowing_plane_surface(11)]);
-        let (evidence, diagnostics) = pcurve_edge_endpoint_evidence_with_diagnostics(&scan, &ir);
+        let (evidence, diagnostics) = pcurve_edge_endpoint_evidence_with_diagnostics(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        );
         assert_eq!(diagnostics.mapped_paths, 2);
         assert_eq!(diagnostics.unevaluable_paths, 0);
         assert!(!evidence.contains_key(&7));
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
         let transferred = crate::decode::with_test_decode_ctx(|ctx| {
-            transfer_analytic_pcurve_carriers(ctx, &scan, &mut ir, &mut annotations)
+            transfer_analytic_pcurve_carriers(
+                ctx,
+                &scan,
+                &mut ir,
+                &mut annotations,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
         })
         .expect("valid source object identity");
         assert!(transferred.is_empty(), "{transferred:?}");
@@ -2680,7 +2716,13 @@ mod tests {
             .extend([unit_plane_surface(10), unit_plane_surface(11)]);
         scan.curves.pcurves[0].face_1_endpoints = [[1.0, 2.0], [3.0, 4.0]];
         let transferred = crate::decode::with_test_decode_ctx(|ctx| {
-            transfer_analytic_pcurve_carriers(ctx, &scan, &mut finite, &mut annotations)
+            transfer_analytic_pcurve_carriers(
+                ctx,
+                &scan,
+                &mut finite,
+                &mut annotations,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
         })
         .expect("valid source object identity");
         assert_eq!(
@@ -2820,13 +2862,23 @@ mod tests {
         ir.model
             .surfaces
             .extend([unit_plane_surface(10), overflowing_placed_plane_surface(11)]);
-        let (evidence, diagnostics) = pcurve_edge_endpoint_evidence_with_diagnostics(&scan, &ir);
+        let (evidence, diagnostics) = pcurve_edge_endpoint_evidence_with_diagnostics(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        );
         assert_eq!(diagnostics.mapped_paths, 2);
         assert_eq!(diagnostics.unevaluable_paths, 0);
         assert!(!evidence.contains_key(&7));
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
         let transferred = crate::decode::with_test_decode_ctx(|ctx| {
-            transfer_analytic_pcurve_carriers(ctx, &scan, &mut ir, &mut annotations)
+            transfer_analytic_pcurve_carriers(
+                ctx,
+                &scan,
+                &mut ir,
+                &mut annotations,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
         })
         .expect("valid source object identity");
         assert!(transferred.is_empty(), "{transferred:?}");
