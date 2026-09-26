@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions, Decoded};
 
 use crate::container::InventorContainer;
@@ -16,6 +18,29 @@ use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
 use crate::test_support::test_fixtures::{fixture_with_ufrx, primary_envelope_fixture};
 use crate::test_support::test_fixtures::{push_u16, push_u32, push_utf16};
 use crate::InventorCodec;
+
+#[test]
+fn native_validation_propagates_collection_refusal_from_assembly_projection() {
+    let bytes = fixture_with_ufrx(&external_references_stream());
+    let decoded = InventorCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("Inventor fixture decodes");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("validation context");
+    assert!(matches!(
+        InventorCodec.validate_native(&ctx, decoded.ir()),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "index Inventor external references"
+    ));
+
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service validation context");
+    assert!(InventorCodec.validate_native(&ctx, decoded.ir()).is_ok());
+}
 
 #[test]
 fn empty_external_identity_does_not_fail_file_decode() {
@@ -150,7 +175,7 @@ fn nonfinite_assembly_placement_transform_is_rejected_at_parse() {
         .arena_as::<serde_json::Value>("assembly_placements")
         .expect("placements")
         .is_empty());
-    assert!(crate::validate::validate_native(&decoded.ir)
+    assert!(super::validation_findings(&decoded.ir)
         .iter()
         .any(|finding| finding.message.contains(&issues[0].detail)));
 }
@@ -190,7 +215,7 @@ fn assert_ufrx_issue(ir: &cadmpeg_ir::document::CadIr, scope: &str, field: &str)
         .find(|issue| issue.scope == scope)
         .expect("rejected record has an issue");
     assert!(issue.detail.contains(field), "{}", issue.detail);
-    assert!(crate::validate::validate_native(ir)
+    assert!(super::validation_findings(ir)
         .iter()
         .any(|finding| finding.message.contains(scope) && finding.message.contains(field)));
 }

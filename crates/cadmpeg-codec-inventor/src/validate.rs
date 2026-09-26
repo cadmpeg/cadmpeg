@@ -4,6 +4,8 @@
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_asm::brep::records::FaceNativeKey;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::{
     report::{
         check::{Check, Finding},
@@ -107,9 +109,12 @@ const ARENAS: &[&str] = &[
     "wire_topologies",
 ];
 
-pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
+pub(crate) fn validate_native(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<Vec<Finding>, CodecError> {
     let Some(namespace) = ir.native.namespace("inventor") else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let actual_arenas = namespace
         .arenas()
@@ -128,22 +133,22 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
             .collect::<Vec<_>>();
         missing.sort_unstable();
         unexpected.sort_unstable();
-        return vec![finding(
+        return Ok(vec![finding(
             Check::NativeLinks,
             format!(
                 "Inventor native namespace has missing arenas {missing:?} and unexpected arenas {unexpected:?}"
             ),
             None,
-        )];
+        )]);
     }
     let data = match NativeData::load(namespace) {
         Ok(data) => data,
         Err(error) => {
-            return vec![finding(
+            return Ok(vec![finding(
                 Check::NativeLinks,
                 format!("Inventor native arenas are invalid: {error}"),
                 None,
-            )];
+            )]);
         }
     };
 
@@ -170,7 +175,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     validate_protein_rejections(&data, &mut findings);
     validate_protein_record_coverage(&data, &mut findings);
     validate_ufrx(ir, &data, &mut findings);
-    validate_assembly(ir, &data, &mut findings);
+    validate_assembly(ctx, ir, &data, &mut findings)?;
     validate_presentation(ir, &data, &mut findings);
     for issue in &data.structural_issues {
         findings.push(finding(
@@ -186,7 +191,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
             Some(issue.id.clone()),
         ));
     }
-    findings
+    Ok(findings)
 }
 
 fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
@@ -2024,7 +2029,12 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
     }
 }
 
-fn validate_assembly(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
+fn validate_assembly(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    data: &NativeData,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
     unique(
         findings,
         data.assembly_occurrences
@@ -2082,11 +2092,12 @@ fn validate_assembly(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         ));
     }
     let mut projected = crate::assembly::project_occurrences(
+        ctx,
         data.ufrx.occurrences(),
         data.ufrx.external_references(),
         &data.assembly_occurrences,
         &data.assembly_placements,
-    );
+    )?;
     projected
         .occurrences
         .sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
@@ -2097,6 +2108,7 @@ fn validate_assembly(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             None,
         ));
     }
+    Ok(())
 }
 
 fn is_assembly_document(ir: &CadIr) -> bool {

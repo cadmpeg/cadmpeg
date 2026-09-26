@@ -431,9 +431,12 @@ pub(crate) fn u32_list(
 }
 
 pub(crate) fn unique_by<'a, T, K: Eq + std::hash::Hash>(
+    ctx: &DecodeContext<'_>,
     records: &'a [T],
+    operation: &'static str,
     key: impl Fn(&'a T) -> K,
-) -> std::collections::HashMap<K, &'a T> {
+) -> Result<std::collections::HashMap<K, &'a T>, CodecError> {
+    ctx.charge_collection_items(records.len() as u64, operation)?;
     let mut unique = std::collections::HashMap::new();
     for record in records {
         unique
@@ -441,10 +444,14 @@ pub(crate) fn unique_by<'a, T, K: Eq + std::hash::Hash>(
             .and_modify(|value| *value = None)
             .or_insert(Some(record));
     }
-    unique
+    ctx.charge_collection_items(
+        unique.values().filter(|value| value.is_some()).count() as u64,
+        "index distinct Inventor records",
+    )?;
+    Ok(unique
         .into_iter()
         .filter_map(|(key, value)| value.map(|value| (key, value)))
-        .collect()
+        .collect())
 }
 
 type PairedMapItems<V> = ([u32; 2], Vec<(PmDcReference, V)>);
@@ -520,12 +527,36 @@ impl<V> TryFrom<PmDcPairedMapWire<V>> for PmDcPairedMap<V> {
 
 #[cfg(test)]
 mod tests {
-    use super::{content_header, reference_list, Cursor};
+    use super::{content_header, reference_list, unique_by, Cursor};
     use crate::test_support::truncation::displayed_truncation;
     use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     use cadmpeg_core::decode::{DecodeContext, View};
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn unique_by_refuses_collection_limit_before_second_map() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty source fits policy");
+        assert!(matches!(
+            unique_by(&ctx, &[7_u32], "index test record", |value| *value),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "index distinct Inventor records"
+        ));
+
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("empty source fits service policy");
+        assert_eq!(
+            unique_by(&ctx, &[7_u32], "index test record", |value| *value)
+                .expect("two maps fit service policy")
+                .get(&7),
+            Some(&&7)
+        );
+    }
 
     #[test]
     fn pmdc_utf16_refuses_exact_utf8_retained_limit_before_decode() {

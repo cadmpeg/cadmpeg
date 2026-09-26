@@ -82,7 +82,7 @@ fn decode_container<'a>(
     let (design_parameters, unresolved_design_parameters) =
         crate::design::project_parameters(ctx, &design_inventory, &mut admitted_entities)?;
     ir.model.parameters = design_parameters;
-    let sketch_projection = crate::sketch::project(&sketch_inventory, &ir.model.parameters);
+    let sketch_projection = crate::sketch::project(ctx, &sketch_inventory, &ir.model.parameters)?;
     let unresolved_sketches = sketch_projection.unresolved_sketches;
     let unresolved_sketch_entities = sketch_projection.unresolved_entities;
     let unresolved_sketch_constraints = sketch_projection.unresolved_constraints;
@@ -90,23 +90,18 @@ fn decode_container<'a>(
     ir.model.sketch_entities = sketch_projection.entities;
     ir.model.sketch_constraints = sketch_projection.constraints;
     let feature_projection = crate::feature::project(
+        ctx,
         &feature_inventory,
         &design_inventory,
         &sketch_inventory,
         &ir.model.parameters,
         &ir.model.sketches,
-    );
+    )?;
     let unresolved_features = feature_projection.unresolved_features;
     let unresolved_feature_states = feature_projection.unresolved_states;
     ir.model.features = feature_projection.features;
     ir.model.feature_result_topologies = feature_projection.result_topologies;
-    // Charge semantic IR before native-arena materialization and kernel BREP
-    // transfer so max_entities refuses that work.
-    ctx.admit_entities(
-        ir.model.entity_count() as u64,
-        &mut admitted_entities,
-        "admit Inventor semantic entities",
-    )?;
+    admitted_entities = ir.model.entity_count() as u64;
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "cfb_major_version".into(),
@@ -1086,12 +1081,18 @@ fn decode_container<'a>(
             terminal_state: style.terminal_state,
         })
         .collect::<Vec<_>>();
+    ctx.admit_entities(
+        ir.model.entity_count() as u64,
+        &mut admitted_entities,
+        "admit Inventor pre-assembly entities",
+    )?;
     let assembly_projection = crate::assembly::project_occurrences(
+        ctx,
         ufrx_occurrences,
         external_references,
         &assembly_occurrences,
         &assembly_placements,
-    );
+    )?;
     ir.model.occurrences = assembly_projection.occurrences;
     ctx.charge_collection_items(
         storage_bands
@@ -1212,11 +1213,6 @@ fn decode_container<'a>(
     namespace.set_arena("segment_bulk_issues", &segment_bulk_issues)?;
     namespace.set_arena("unpaired_segments", &unpaired_segments)?;
     namespace.set_arena("active_carrier", std::slice::from_ref(&active_carrier))?;
-    ctx.admit_entities(
-        ir.model.entity_count() as u64,
-        &mut admitted_entities,
-        "admit Inventor entities",
-    )?;
 
     let mut geometry_failure = None;
     let kernel_brep = match &container.rse.active_carrier {
@@ -1277,20 +1273,22 @@ fn decode_container<'a>(
         .map(|body| body.id.clone())
         .collect::<Vec<_>>();
     let presentation_projection = crate::presentation::project_bindings(
+        ctx,
         &presentation_inventory,
         &ir.model.appearances,
         &body_ids,
         &face_keys,
-    );
-    ir.model
-        .appearances
-        .extend(presentation_projection.appearances.clone());
-    ir.model.appearance_bindings = presentation_projection.bindings;
+    )?;
+    let face_color_appearance_count = presentation_projection.appearances.len();
     let projected_colors = presentation_projection
         .appearances
         .iter()
         .filter_map(|appearance| Some((appearance.id.clone(), appearance.base_color?)))
         .collect::<std::collections::HashMap<_, _>>();
+    ir.model
+        .appearances
+        .extend(presentation_projection.appearances);
+    ir.model.appearance_bindings = presentation_projection.bindings;
     let face_colors = ir
         .model
         .appearance_bindings
@@ -1526,7 +1524,6 @@ fn decode_container<'a>(
         }
     }
     let preview_asset_count = ir.model.assets.len();
-    let face_color_appearance_count = presentation_projection.appearances.len();
     let mut source_fidelity = SourceFidelity::default();
     let mut annotations = AnnotationBuilder::new();
     for record in kernel_annotations {

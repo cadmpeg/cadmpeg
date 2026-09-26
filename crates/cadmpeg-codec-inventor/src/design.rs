@@ -415,33 +415,34 @@ pub(crate) fn project_parameters(
     inventory: &DesignInventory,
     admitted_entities: &mut u64,
 ) -> Result<(Vec<DesignParameter>, usize), CodecError> {
-    ctx.charge_collection_items(
-        inventory.expressions.len() as u64,
+    let expressions = unique_by(
+        ctx,
+        &inventory.expressions,
         "index Inventor expressions",
+        |record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        },
     )?;
-    let expressions = unique_by(&inventory.expressions, |record| {
+    let units = unique_by(ctx, &inventory.units, "index Inventor units", |record| {
         (
             record.identity.segment_token.as_str(),
             record.identity.record_ordinal,
         )
-    });
-    ctx.charge_collection_items(inventory.units.len() as u64, "index Inventor units")?;
-    let units = unique_by(&inventory.units, |record| {
-        (
-            record.identity.segment_token.as_str(),
-            record.identity.record_ordinal,
-        )
-    });
-    ctx.charge_collection_items(
-        inventory.parameters.len() as u64,
+    })?;
+    let parameters = unique_by(
+        ctx,
+        &inventory.parameters,
         "index Inventor parameters",
+        |record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        },
     )?;
-    let parameters = unique_by(&inventory.parameters, |record| {
-        (
-            record.identity.segment_token.as_str(),
-            record.identity.record_ordinal,
-        )
-    });
     let mut projected = Vec::new();
     let mut unresolved = 0usize;
     for parameter in &inventory.parameters {
@@ -1900,7 +1901,7 @@ mod tests {
             issues: Vec::new(),
         };
         let mut limited_policy = DecodePolicy::service();
-        limited_policy.limits.max_collection_items = 19;
+        limited_policy.limits.max_collection_items = 25;
         let limited_arena = DecodeArena::new();
         let (limited_ctx, _) = DecodeContext::from_root_bytes(&[], &limited_arena, &limited_policy)
             .expect("empty fixture view");

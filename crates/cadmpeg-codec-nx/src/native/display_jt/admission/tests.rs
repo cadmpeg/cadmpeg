@@ -1,10 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::CodecBackend;
 use cadmpeg_ir::native::NativeNamespace;
 use serde_json::{json, Value};
 
 use super::{DisplayJtGraph, DisplayJtGraphWire};
+
+fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::check::Finding> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("validation context");
+    crate::NxCodec::validate_native(&ctx, ir).expect("validation fits service policy")
+}
 
 fn graph_wire() -> Value {
     json!({
@@ -56,7 +64,7 @@ fn aggregate_admission_preserves_native_json() {
     assert_eq!(serde_json::to_value(&namespace).unwrap(), wire);
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.native.0.insert("nx".into(), namespace);
-    assert!(crate::NxCodec::validate_native(&ir).is_empty());
+    assert!(validate_native(&ir).is_empty());
 }
 
 #[test]
@@ -186,7 +194,7 @@ fn aggregate_admission_rejects_missing_owners_and_repeated_field_disagreement() 
         );
         let mut ir = cadmpeg_ir::CadIr::empty();
         ir.native.0.insert("nx".into(), namespace);
-        let findings = crate::NxCodec::validate_native(&ir);
+        let findings = validate_native(&ir);
         assert_eq!(findings.len(), 1, "{path}");
         assert!(findings[0].message.contains(field), "{path}");
     }
