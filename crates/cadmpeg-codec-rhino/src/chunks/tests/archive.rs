@@ -671,7 +671,12 @@ fn invalid_extrusion_profile_is_one_unknown_surface_and_later_point_recovers() {
 fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances() {
     let payload = brep_payload(false);
     assert_eq!(payload[13], 0x10);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+        .expect("Brep fixture fits service profile");
     crate::brep::parse(
+        &ctx,
         &payload,
         0..payload.len(),
         crate::chunks::ArchiveVersion::V5,

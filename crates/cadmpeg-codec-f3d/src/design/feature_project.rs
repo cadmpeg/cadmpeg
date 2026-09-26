@@ -1176,7 +1176,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                             bodies,
                                             native,
                                         } => {
-                                            inserted_bodies = bodies;
+                                            inserted_bodies = bodies.as_slice().to_vec();
                                             cadmpeg_ir::features::InsertedBodies::Resolved {
                                                 native,
                                             }
@@ -1245,7 +1245,12 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-                evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs),
+                evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                    definition,
+                    outputs
+                        .try_into()
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                ),
                 native_ref: Some(scope.id.clone()),
             })
         })
@@ -2387,13 +2392,14 @@ fn design_body_selection(
         })
         .collect::<Vec<_>>();
     if bodies.len() == expected_count {
-        BodySelection::Resolved {
-            bodies,
-            native: scope.id.clone(),
+        if let Ok(bodies) = bodies.try_into() {
+            return BodySelection::Resolved {
+                bodies,
+                native: scope.id.clone(),
+            };
         }
-    } else {
-        BodySelection::Native(scope.id.clone())
     }
+    BodySelection::Native(scope.id.clone())
 }
 
 /// Bind each Sketch history node to geometry in exactly one neutral sketch arena.

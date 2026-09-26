@@ -4897,6 +4897,7 @@ mod tests {
                     len: data_len,
                 },
             }],
+            fastload_table: None,
             indexed_section_layouts: std::sync::OnceLock::new(),
             om_section_cache: std::sync::OnceLock::new(),
         };
@@ -5015,6 +5016,7 @@ mod tests {
                     len: data_len,
                 },
             }],
+            fastload_table: None,
             indexed_section_layouts: std::sync::OnceLock::new(),
             om_section_cache: std::sync::OnceLock::new(),
         };
@@ -5122,6 +5124,7 @@ mod tests {
                     len: data_len,
                 },
             }],
+            fastload_table: None,
             indexed_section_layouts: std::sync::OnceLock::new(),
             om_section_cache: std::sync::OnceLock::new(),
         };
@@ -6099,6 +6102,7 @@ mod tests {
                     len: data_len,
                 },
             }],
+            fastload_table: None,
             indexed_section_layouts: std::sync::OnceLock::new(),
             om_section_cache: std::sync::OnceLock::new(),
         };

@@ -909,9 +909,11 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
         construction,
         CoilResult::Boolean {
             operation: cadmpeg_ir::features::BooleanKind::Cut,
-            targets: BodySelection::Bodies(vec![
-                BodyId::mint("test:model:body#1").expect("identity grammar")
-            ]),
+            targets: BodySelection::Bodies(
+                vec![BodyId::mint("test:model:body#1").expect("identity grammar")]
+                    .try_into()
+                    .expect("distinct bodies")
+            ),
         },
     )));
 }
@@ -1060,7 +1062,9 @@ fn body_copy_features_require_resolved_body_selection() {
     use cadmpeg_ir::ids::BodyId;
 
     let resolved = BodySelection::Resolved {
-        bodies: vec![BodyId::mint("test:model:body#result").expect("identity grammar")],
+        bodies: vec![BodyId::mint("test:model:body#result").expect("identity grammar")]
+            .try_into()
+            .expect("distinct bodies"),
         native: "native:body-selection".into(),
     };
     assert!(!feature_definition_is_incomplete(
@@ -1088,7 +1092,9 @@ fn split_body_requires_resolved_target_and_tool_selections() {
     use cadmpeg_ir::ids::{BodyId, FaceId};
 
     let resolved_target = BodySelection::Resolved {
-        bodies: vec![BodyId::mint("test:model:body#target").expect("identity grammar")],
+        bodies: vec![BodyId::mint("test:model:body#target").expect("identity grammar")]
+            .try_into()
+            .expect("distinct bodies"),
         native: "native:target".into(),
     };
     let resolved_tool = FaceSelection::Resolved {

@@ -69,7 +69,7 @@ fn complete_sphere_rederives_a_new_body() {
                 radius: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
                 op: BooleanOp::NewBody,
             }),
-            vec![body.clone()],
+            (vec![body.clone()]).try_into().unwrap(),
         ),
         native_ref: None,
     });
@@ -101,7 +101,7 @@ fn exact_empty_replay_input_precedes_a_new_body_construction() {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                     bodies: BodySelection::Resolved {
-                        bodies: Vec::new(),
+                        bodies: cadmpeg_ir::features::DistinctMembers::default(),
                         native: "nx:segment-body-bindings".to_string(),
                     },
                 }),
@@ -190,7 +190,7 @@ fn curve_construction_family_cannot_claim_a_body_output() {
         }),
     );
     section.evaluation.edit(|_, outputs| {
-        outputs.push(body);
+        outputs.insert(body);
     });
     ir.model.features.push(section);
 
@@ -649,7 +649,9 @@ fn base_feature_introduces_its_complete_selected_outputs() {
         .evaluation
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
-                bodies: BodySelection::Bodies(vec![body.clone()]),
+                bodies: BodySelection::Bodies(
+                    vec![body.clone()].try_into().expect("distinct bodies"),
+                ),
             },
         ));
 
@@ -679,9 +681,9 @@ fn extract_body_copies_each_existing_source_to_one_new_output() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::ExtractBody {
-                source: BodySelection::Bodies(vec![source]),
+                source: BodySelection::Bodies(vec![source].try_into().expect("distinct bodies")),
             }),
-            vec![extracted.clone()],
+            (vec![extracted.clone()]).try_into().unwrap(),
         ),
         native_ref: None,
     });
@@ -748,7 +750,7 @@ fn delete_body_removes_an_existing_selected_body() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DeleteBody {
-                bodies: BodySelection::Bodies(vec![body]),
+                bodies: BodySelection::Bodies(vec![body].try_into().expect("distinct bodies")),
                 mode: BodyRetentionMode::DeleteSelected,
             }),
         ),
@@ -814,7 +816,7 @@ fn unresolved_suppression_of_a_resolved_delete_remains_a_boundary() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DeleteBody {
-                bodies: BodySelection::Bodies(vec![body]),
+                bodies: BodySelection::Bodies(vec![body].try_into().expect("distinct bodies")),
                 mode: BodyRetentionMode::DeleteSelected,
             }),
         ),
@@ -842,20 +844,26 @@ fn keep_selected_removes_every_unselected_body() {
     let retained = ir.model.bodies[0].id.clone();
     let removed = BodyId::mint("test:model:entity#removed".to_string()).expect("identity grammar");
     ir.model.features[0].evaluation.edit(|_, outputs| {
-        outputs.push(removed.clone());
+        outputs.insert(removed.clone());
     });
     ir.model.features[0]
         .evaluation
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
-                bodies: BodySelection::Bodies(vec![retained.clone(), removed.clone()]),
+                bodies: BodySelection::Bodies(
+                    vec![retained.clone(), removed.clone()]
+                        .try_into()
+                        .expect("distinct bodies"),
+                ),
             },
         ));
     ir.model.features.push(body_neutral_feature(
         "retain",
         1,
         FeatureDefinition::Operation(FeatureOperation::DeleteBody {
-            bodies: BodySelection::Bodies(vec![retained.clone()]),
+            bodies: BodySelection::Bodies(
+                vec![retained.clone()].try_into().expect("distinct bodies"),
+            ),
             mode: BodyRetentionMode::KeepSelected,
         }),
     ));

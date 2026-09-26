@@ -310,19 +310,50 @@ macro_rules! sorted_model_value {
     };
 }
 
+#[cfg(feature = "schema")]
+macro_rules! model_schema_type {
+    (features, $ty:ty) => { Vec<FeatureRowWire> };
+    ($field:ident, $ty:ty) => { Vec<$ty> };
+}
+
 macro_rules! declare_model {
     ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
         /// Format-neutral entity arenas connected by typed IDs.
         #[derive(Debug, Clone, Default, PartialEq)]
-        #[cfg_attr(feature = "schema", derive(JsonSchema))]
         pub struct Model {
             $(
-                $(#[cfg_attr(feature = "schema", $attribute)])*
                 #[doc = $doc]
                 pub $field: Vec<$ty>,
             )*
-            #[cfg_attr(feature = "schema", schemars(skip))]
             pub(crate) feature_regeneration_parents: FeatureRegenerationParents,
+        }
+
+        /// Format-neutral entity arenas connected by typed IDs.
+        #[cfg(feature = "schema")]
+        #[derive(JsonSchema)]
+        #[schemars(rename = "Model")]
+        #[expect(dead_code, reason = "schema-only row fields have no value readers")]
+        struct ModelSchemaWire {
+            $(
+                $(#[$attribute])*
+                #[doc = $doc]
+                $field: model_schema_type!($field, $ty),
+            )*
+        }
+
+        #[cfg(feature = "schema")]
+        impl JsonSchema for Model {
+            fn schema_name() -> std::borrow::Cow<'static, str> {
+                "Model".into()
+            }
+
+            fn schema_id() -> std::borrow::Cow<'static, str> {
+                concat!(module_path!(), "::Model").into()
+            }
+
+            fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+                ModelSchemaWire::json_schema(generator)
+            }
         }
 
         #[derive(Serialize)]

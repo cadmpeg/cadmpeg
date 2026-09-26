@@ -1059,7 +1059,9 @@ fn extrusion_cap_admission_error_is_not_reported_as_ir_validation() {
         let mut context = DecodeContext::new(&scan, expand);
         let mut extrusion = cap_extrusion([true, false]);
         extrusion.cap_normals[0] = Vector3::new(0.0, 0.0, 0.0);
-        assert!(!context.commit_extrusion(0, extrusion));
+        assert!(!context
+            .commit_extrusion(0, extrusion)
+            .expect("candidate validation completes"));
         assert!(context.report.phase_warnings.iter().any(|warning| {
             warning.contains("extrusion cap staging: PlaneSurface.normal/u_axis")
         }));
@@ -1077,7 +1079,8 @@ fn candidate_rejections_distinguish_admission_from_validation() {
     let scan = scan_with_objects(&[]);
     with_expand(&scan, |expand| {
         let mut context = DecodeContext::new(&scan, expand);
-        let admission = context.validate_candidate_fallible::<()>(|_, _| Err("admission".into()));
+        let admission =
+            context.validate_candidate_fallible::<(), String>(|_, _| Err("admission".into()));
         assert!(
             matches!(admission, Err(CandidateError::Admission(message)) if message == "admission")
         );
@@ -1091,7 +1094,7 @@ fn candidate_rejections_distinguish_admission_from_validation() {
                 None,
             );
             candidate.model.points.extend([point.clone(), point]);
-            Ok(())
+            Ok::<(), String>(())
         });
         assert!(matches!(validation, Err(CandidateError::Validation(_))));
         assert!(context.ir.model.points.is_empty());
@@ -1130,7 +1133,7 @@ fn candidate_rejection_restores_native_records_annotations_and_all_model_arenas(
                 );
                 set_exactness(annotations, "rhino:test:asset#rejected", Exactness::Derived);
                 if admission_failure {
-                    return Err("source admission refusal".into());
+                    return Err::<(), String>("source admission refusal".into());
                 }
                 let point = Point::new(
                     "rhino:test:point#duplicate".try_into().unwrap(),

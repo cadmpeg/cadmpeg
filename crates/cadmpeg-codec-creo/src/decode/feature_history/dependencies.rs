@@ -385,22 +385,27 @@ pub(in super::super) fn reconcile_feature_links(
     ir: &mut CadIr,
     prototype_dependencies: &BTreeMap<u32, Vec<u32>>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let output_updates = ir
-        .model
-        .features
-        .iter()
-        .filter_map(|feature| {
-            let feature_id = feature
-                .id
-                .as_str()
-                .strip_prefix("creo:model:feature#")
-                .and_then(|value| value.parse::<u32>().ok())?;
-            Some((
-                feature.id.clone(),
-                super::outputs::feature_output_bodies(scan, ir, feature_id),
-            ))
-        })
-        .collect::<BTreeMap<_, _>>();
+    let output_updates =
+        ir.model
+            .features
+            .iter()
+            .filter_map(|feature| {
+                let feature_id = feature
+                    .id
+                    .as_str()
+                    .strip_prefix("creo:model:feature#")
+                    .and_then(|value| value.parse::<u32>().ok())?;
+                Some(
+                    super::outputs::feature_output_bodies(scan, ir, feature_id)
+                        .try_into()
+                        .map(|outputs| (feature.id.clone(), outputs))
+                        .map_err(cadmpeg_core::CodecError::malformed),
+                )
+            })
+            .collect::<Result<
+                BTreeMap<_, cadmpeg_ir::features::DistinctMembers<cadmpeg_ir::ids::BodyId>>,
+                _,
+            >>()?;
     let emitted = ir
         .model
         .features

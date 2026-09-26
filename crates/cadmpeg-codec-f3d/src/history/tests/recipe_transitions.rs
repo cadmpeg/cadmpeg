@@ -577,7 +577,7 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
         color: None,
         visible: None,
     };
-    let sweep = |id: &str, outputs| Feature {
+    let sweep = |id: &str, outputs: Vec<BodyId>| Feature {
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -610,7 +610,7 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
                 scale: None,
                 allow_multi_profile_faces: None,
             }),
-            outputs,
+            (outputs).try_into().unwrap(),
         ),
         native_ref: None,
     };

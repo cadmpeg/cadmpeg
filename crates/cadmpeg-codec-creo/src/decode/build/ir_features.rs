@@ -42,28 +42,37 @@ use crate::decode::sketch_transfer::recipe::{
     feature_schema_class, row_feature_schema_classes,
 };
 
-fn refresh_feature_outputs(scan: &ContainerScan, ir: &mut CadIr) {
-    let output_updates = ir
-        .model
-        .features
-        .iter()
-        .filter_map(|feature| {
-            let feature_id = feature
-                .id
-                .as_str()
-                .strip_prefix("creo:model:feature#")
-                .and_then(|value| value.parse::<u32>().ok())?;
-            Some((
-                feature.id.clone(),
-                feature_output_bodies(scan, ir, feature_id),
-            ))
-        })
-        .collect::<BTreeMap<_, _>>();
+fn refresh_feature_outputs(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let output_updates =
+        ir.model
+            .features
+            .iter()
+            .filter_map(|feature| {
+                let feature_id = feature
+                    .id
+                    .as_str()
+                    .strip_prefix("creo:model:feature#")
+                    .and_then(|value| value.parse::<u32>().ok())?;
+                Some(
+                    feature_output_bodies(scan, ir, feature_id)
+                        .try_into()
+                        .map(|outputs| (feature.id.clone(), outputs))
+                        .map_err(cadmpeg_core::CodecError::malformed),
+                )
+            })
+            .collect::<Result<
+                BTreeMap<_, cadmpeg_ir::features::DistinctMembers<cadmpeg_ir::ids::BodyId>>,
+                _,
+            >>()?;
     for feature in &mut ir.model.features {
         if let Some(outputs) = output_updates.get(&feature.id) {
             feature.evaluation.set_outputs(outputs.clone());
         }
     }
+    Ok(())
 }
 
 fn ordered_row_feature_ids(rows: &[crate::feature::rows::FeatureRow]) -> Vec<u32> {
@@ -172,11 +181,13 @@ pub(super) fn emit_model_features(
                 } else {
                     IrFeatureDefinition::Operation(IrFeatureOperation::StoredGeometry {})
                 },
-                feature_output_bodies(scan, ir, feature_id),
+                feature_output_bodies(scan, ir, feature_id)
+                    .try_into()
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
             native_ref: None,
         });
-        refresh_feature_outputs(scan, ir);
+        refresh_feature_outputs(scan, ir)?;
         geometry_generator_feature_count += 1;
     }
     let operation_ordinal_base = ir.model.features.len();
@@ -335,8 +346,12 @@ pub(super) fn emit_model_features(
                     combined_outputs.push(output);
                 }
             }
-            existing.evaluation.set_outputs(combined_outputs);
-            refresh_feature_outputs(scan, ir);
+            existing.evaluation.set_outputs(
+                combined_outputs
+                    .try_into()
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+            );
+            refresh_feature_outputs(scan, ir)?;
             continue;
         }
         let (operation_annotation_kind, operation_exactness) = if operation.display_state_conflict {
@@ -368,10 +383,15 @@ pub(super) fn emit_model_features(
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                definition,
+                outputs
+                    .try_into()
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+            ),
             native_ref,
         });
-        refresh_feature_outputs(scan, ir);
+        refresh_feature_outputs(scan, ir)?;
     }
     for feature_id in row_feature_ids {
         let id = IrFeatureId::compose(&crate::identity::MODEL_FEATURE, feature_id);
@@ -472,11 +492,13 @@ pub(super) fn emit_model_features(
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 definition,
-                feature_output_bodies(scan, ir, feature_id),
+                feature_output_bodies(scan, ir, feature_id)
+                    .try_into()
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
             native_ref: owning_feature_definition_ref(scan, feature_id),
         });
-        refresh_feature_outputs(scan, ir);
+        refresh_feature_outputs(scan, ir)?;
     }
     for (child, parent) in regeneration_edges {
         ir.model

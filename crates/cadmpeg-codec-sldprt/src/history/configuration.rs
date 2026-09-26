@@ -29,7 +29,7 @@ fn apply_configuration_state(
 ) {
     let evaluation = cadmpeg_ir::features::FeatureEvaluation::new(
         state.definition.clone(),
-        state.evaluation.outputs().to_vec(),
+        state.evaluation.outputs().iter().cloned().collect(),
     );
     feature.suppressed = Some(state.evaluation.is_suppressed());
     feature.dependencies.clone_from(&state.dependencies);

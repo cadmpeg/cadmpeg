@@ -387,7 +387,7 @@ fn decode_exchange_mode(
         &topology.value,
         &mut session.ir,
         Some(session.ctx),
-    );
+    )?;
     session.charge_stage("step_presentation_decode")?;
     let mut presentation = presentation::decode(
         exchange,

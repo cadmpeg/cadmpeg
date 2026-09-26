@@ -14,7 +14,10 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_core::decode::{
+    DecodeArena, DecodeContext, DecodePolicy, InspectOptions, ResourceDimension,
+};
+use cadmpeg_core::CodecError;
 
 use crate::container;
 use crate::container::{test_modern_layout, Container, ContainerLayout, DirEntry, Region};
@@ -23,7 +26,8 @@ use crate::NxCodec;
 #[test]
 fn ug_part_segment_index_uses_row_one_self_boundary() {
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_index_payload())]);
-    let container = container::scan_bytes(file).unwrap();
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file)).unwrap();
     let (_, index) = container.segment_index().expect("segment index");
     assert_eq!(index.rows.len() * 12 + index.padding.len(), 28);
     assert_eq!(index.rows.len(), 2);
@@ -38,7 +42,10 @@ fn ug_part_segment_index_uses_row_one_self_boundary() {
 
 #[test]
 fn container_parses_header_and_directory() {
-    let c = container::scan_bytes(single_part_prt()).unwrap();
+    let c = crate::test_support::with_decode_context(|ctx| {
+        container::scan_bytes(ctx, single_part_prt())
+    })
+    .unwrap();
     assert_eq!(c.layout.version(), 0x06);
     let ContainerLayout::Modern {
         file_tag,
@@ -77,6 +84,7 @@ fn container_bounded_entry_tail_stops_at_the_next_stream() {
                 body: crate::container::DirEntryBody::File { offset: 3, len: 3 },
             },
         ],
+        fastload_table: None,
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
@@ -103,6 +111,7 @@ fn container_cached_operation_labels_preserve_section_materialization() {
                 len: payload.len() as u64,
             },
         }],
+        fastload_table: None,
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
@@ -146,6 +155,7 @@ fn container_caches_owned_section_layouts() {
                 len: payload_len,
             },
         }],
+        fastload_table: None,
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
@@ -165,7 +175,9 @@ fn container_caches_owned_section_layouts() {
 #[test]
 fn container_reuses_materialized_indexed_sections_for_borrowed_input() {
     let file = prt_with_indexed_om_section();
-    let container = container::scan_bytes(file.as_slice()).unwrap();
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.as_slice()))
+            .unwrap();
     let first = container.indexed_om_sections();
     let second = container.indexed_om_sections();
     assert!(!first.is_empty());
@@ -201,7 +213,9 @@ fn container_reuses_materialized_indexed_sections_for_borrowed_input() {
 fn container_reuses_borrowed_offset_store_block_index() {
     let section = offset_only_indexed_om_section_with_index_values();
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", section)]);
-    let container = container::scan_bytes(file.as_slice()).unwrap();
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.as_slice()))
+            .unwrap();
     let _ = container.indexed_om_sections();
     let first = container
         .cached_offset_data_block_bytes()
@@ -224,17 +238,93 @@ fn container_counts_admitted_entries_in_each_region() {
     file.extend_from_slice(b"/Root/");
     file.extend_from_slice(&[0; 16]);
     file.extend_from_slice(&[0; 4]);
-    let container = container::scan_bytes(file).expect("one entry in each counted region");
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
+            .expect("one entry in each counted region");
     assert_eq!(container.entry_count(Region::Header), 1);
     assert_eq!(container.entry_count(Region::Footer), 1);
     assert_eq!(container.entries.len(), 2);
 }
 
 #[test]
+fn service_profile_admits_both_directory_regions() {
+    let mut file = single_part_prt();
+    file.truncate(file.len() - 8);
+    file.extend_from_slice(&1_u32.to_le_bytes());
+    file.extend_from_slice(&6_u32.to_le_bytes());
+    file.extend_from_slice(b"/Root/");
+    file.extend_from_slice(&[0; 16]);
+    file.extend_from_slice(&[0; 4]);
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &DecodePolicy::service()).unwrap();
+    let container =
+        container::scan_bytes(&ctx, file.as_slice()).expect("service directory admission");
+    assert_eq!(container.entry_count(Region::Header), 1);
+    assert_eq!(container.entry_count(Region::Footer), 1);
+}
+
+#[test]
+fn header_directory_refuses_collection_limit_before_entry_reserve() {
+    let file = single_part_prt();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &policy).unwrap();
+    let error =
+        container::scan_bytes(&ctx, file.as_slice()).expect_err("header entry needs one item");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("directory must return a resource refusal: {error}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.operation, "admit NX directory entries");
+}
+
+#[test]
+fn footer_directory_refuses_collection_limit_before_entry_reserve() {
+    let mut file = single_part_prt();
+    file.truncate(file.len() - 8);
+    file.extend_from_slice(&1_u32.to_le_bytes());
+    file.extend_from_slice(&6_u32.to_le_bytes());
+    file.extend_from_slice(b"/Root/");
+    file.extend_from_slice(&[0; 16]);
+    file.extend_from_slice(&[0; 4]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &policy).unwrap();
+    let error =
+        container::scan_bytes(&ctx, file.as_slice()).expect_err("footer entry needs second item");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("directory must return a resource refusal: {error}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.operation, "admit NX directory entries");
+}
+
+#[test]
+fn header_directory_refuses_retained_name_limit_before_copy() {
+    let file = single_part_prt();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes =
+        (std::mem::size_of::<DirEntry>() + "/Root/UG_PART/UG_PART".len() - 1) as u64;
+    let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &policy).unwrap();
+    let error =
+        container::scan_bytes(&ctx, file.as_slice()).expect_err("name copy needs one more byte");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("directory name must return a resource refusal: {error}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, "retain NX directory name");
+}
+
+#[test]
 fn container_rejects_incomplete_counted_directories() {
     let mut header = single_part_prt();
     header[0x1f..0x23].copy_from_slice(&2_u32.to_le_bytes());
-    assert!(container::scan_bytes(header).is_err());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, header)).is_err()
+    );
 
     let mut footer = single_part_prt();
     let footer_offset = usize::try_from(u64::from_le_bytes([
@@ -249,14 +339,19 @@ fn container_rejects_incomplete_counted_directories() {
     ]))
     .expect("synthetic footer offset");
     footer[footer_offset + 6..footer_offset + 10].copy_from_slice(&1_u32.to_le_bytes());
-    assert!(container::scan_bytes(footer).is_err());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, footer)).is_err()
+    );
 }
 
 #[test]
 fn container_rejects_trailing_or_overlapping_footer_data() {
     let mut trailing = single_part_prt();
     trailing.push(0);
-    assert!(container::scan_bytes(trailing).is_err());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, trailing))
+            .is_err()
+    );
 
     let mut overlap = single_part_prt();
     let name_len = usize::try_from(u32::from_le_bytes(
@@ -282,14 +377,18 @@ fn container_rejects_trailing_or_overlapping_footer_data() {
         0,
     ]);
     overlap[span + 8..span + 16].copy_from_slice(&(footer_offset - offset + 1).to_le_bytes());
-    assert!(container::scan_bytes(overlap).is_err());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, overlap))
+            .is_err()
+    );
 }
 
 #[test]
 fn container_rejects_footer_offset_beyond_the_file_image() {
     let mut bytes = single_part_prt();
     bytes[0x11..0x17].copy_from_slice(&[0xff; 6]);
-    let error = container::scan_bytes(bytes).expect_err("required invariant");
+    let error = crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, bytes))
+        .expect_err("required invariant");
     assert_eq!(
         error.to_string(),
         "malformed container: FOOTER offset exceeds the file image"
@@ -298,7 +397,10 @@ fn container_rejects_footer_offset_beyond_the_file_image() {
 
 #[test]
 fn container_reads_rmfastload_active_ids() {
-    let container = container::scan_bytes(rmfastload_prt()).unwrap();
+    let container = crate::test_support::with_decode_context(|ctx| {
+        container::scan_bytes(ctx, rmfastload_prt())
+    })
+    .unwrap();
     let (entry, table) = container
         .rmfastload_object_id_table()
         .expect("RMFastLoad object-id table");
@@ -320,6 +422,60 @@ fn container_reads_rmfastload_active_ids() {
         table.object_ids.as_slice()[49].to_le_bytes(),
         50u32.to_le_bytes()
     );
+    let (_, same_table) = container
+        .rmfastload_object_id_table()
+        .expect("shared RMFastLoad table");
+    assert!(std::ptr::eq(table, same_table));
+}
+
+#[test]
+fn fastload_id_table_refuses_collection_limit_before_reserve() {
+    let file = rmfastload_prt();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 50;
+    let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &policy).unwrap();
+    let error = container::scan_bytes(&ctx, file.as_slice())
+        .expect_err("fifty IDs need a second collection charge");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("FastLoad IDs must return a resource refusal: {error}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.operation, "admit NX FastLoad object IDs");
+}
+
+#[test]
+fn fastload_candidate_scan_refuses_work_limit_before_reading_count() {
+    let file = rmfastload_prt();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &policy).unwrap();
+    let error = container::scan_bytes(&ctx, file.as_slice())
+        .expect_err("candidate scan needs one work unit");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("FastLoad scan must return a resource refusal: {error}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "scan NX FastLoad table candidates");
+}
+
+#[test]
+fn fastload_id_table_refuses_retained_limit_before_reserve() {
+    let file = rmfastload_prt();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    let directory_bytes = std::mem::size_of::<DirEntry>() + "/Root/FastLoad/RMFastLoad".len();
+    policy.limits.max_retained_bytes =
+        (directory_bytes + 50 * std::mem::size_of::<u32>() - 1) as u64;
+    let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &policy).unwrap();
+    let error =
+        container::scan_bytes(&ctx, file.as_slice()).expect_err("ID copy needs one more byte");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("FastLoad IDs must return a resource refusal: {error}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, "retain NX FastLoad object IDs");
 }
 
 #[test]
@@ -327,7 +483,8 @@ fn container_reads_rmfastload_table_from_product_boundary_without_range_floor() 
     let mut payload = b"UGS::Solid::Topol".to_vec();
     append_rmfastload_table(&mut payload, [0, u32::MAX, 7]);
     let file = prt_with_named_payloads(&[("/Root/FastLoad/RMFastLoad", payload)]);
-    let container = container::scan_bytes(file).unwrap();
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file)).unwrap();
     let (_, table) = container
         .rmfastload_object_id_table()
         .expect("product-bounded RMFastLoad table");
@@ -345,7 +502,10 @@ fn fuzz_oom_splmsstr_header_is_rejected_without_count_allocation() {
         0x52, 0x20, 0x00, 0x00, 0x6f, 0x2f, 0xf9, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x04, 0x00, 0x04,
     ];
-    assert!(container::scan_bytes(bytes.to_vec()).is_err());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, bytes.to_vec()))
+            .is_err()
+    );
     let _ = NxCodec.detect(bytes);
     let _probe = NxCodec.inspect(&mut Cursor::new(bytes), &InspectOptions::default());
     let _probe = NxCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default());
@@ -357,7 +517,8 @@ fn container_bounds_rmfastload_table_at_its_first_product_record() {
     append_rmfastload_table(&mut payload, [1, 2, 3]);
     append_rmfastload_table(&mut payload, [4, 5]);
     let file = prt_with_named_payloads(&[("/Root/FastLoad/RMFastLoad", payload)]);
-    let container = container::scan_bytes(file).unwrap();
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file)).unwrap();
     let (_, table) = container
         .rmfastload_object_id_table()
         .expect("first product-bounded table");
