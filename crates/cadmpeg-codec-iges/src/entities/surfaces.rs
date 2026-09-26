@@ -12,7 +12,7 @@ use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::nurbs::bezier::{
     boundaries_within_resolution, homogeneous_spans, positive_controls, HomogeneousBezierSpan,
 };
@@ -30,7 +30,7 @@ use cadmpeg_ir::scalar::{
     FiniteReal, NonNegativeLength, NonZeroLength, NonZeroReal, PositiveLength, PositiveReal,
 };
 use cadmpeg_ir::topology::IncreasingParameterInterval;
-use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
+use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1425,21 +1425,24 @@ pub(super) fn project(
                 losses.push(entity_loss(entry, "placement produces a non-finite point"));
                 continue;
             };
-            let Some(target) = transform
-                .apply_point(Point3::new(x * factor, y * factor, z * factor))
-                .map(cadmpeg_ir::features::FinitePoint3::get)
+            let Some(target) =
+                transform.apply_point(Point3::new(x * factor, y * factor, z * factor))
             else {
                 losses.push(entity_loss(entry, "placement produces a non-finite point"));
                 continue;
             };
-            let direction = target.vector_from(start.get());
-            if !direction.norm().is_finite() || direction.norm() <= 0.0 {
+            let Some(direction) =
+                FiniteVector3::new(target.get().vector_from(start.get())).filter(|direction| {
+                    let length = direction.get().norm();
+                    length.is_finite() && length > 0.0
+                })
+            else {
                 losses.push(entity_loss(
                     entry,
                     "tabulated direction is zero or non-finite",
                 ));
                 continue;
-            }
+            };
             let procedural_directrix = if entry.transform == 0 {
                 directrix_id
             } else {
@@ -1473,35 +1476,37 @@ pub(super) fn project(
                 },
                 source_object: Some(source_object(entry)?),
             });
+            let parameter_interval = FiniteVector::new(source_interval).ok_or_else(|| {
+                CodecError::malformed(cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
+                    "Extrusion.parameter_interval is not finite",
+                ))
+            })?;
+            let bounds = RecordBounds::try_new([
+                Some(carrier_interval[0]),
+                Some(carrier_interval[1]),
+                None,
+                None,
+            ])
+            .map_err(|_| {
+                CodecError::malformed(cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
+                    "record bounds must be finite",
+                ))
+            })?;
             let _attached = ir.model.add_procedural_surface(
                 surface_id,
-                cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
-                    procedural_directrix,
-                    Some(source_interval),
-                    direction,
-                    Some(target),
-                    cadmpeg_ir::geometry::CacheContract::from_form(None),
-                )
-                .and_then(|admitted_payload| {
-                    Ok(ProceduralSurface::new(
-                        procedural_id,
-                        ProceduralSurfaceDefinition::Extrusion(admitted_payload),
-                        Some(
-                            RecordBounds::try_new([
-                                Some(carrier_interval[0]),
-                                Some(carrier_interval[1]),
-                                None,
-                                None,
-                            ])
-                            .map_err(|_| {
-                                cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
-                                    "record bounds must be finite",
-                                )
-                            })?,
+                ProceduralSurface::new(
+                    procedural_id,
+                    ProceduralSurfaceDefinition::Extrusion(
+                        cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
+                            procedural_directrix,
+                            Some(parameter_interval),
+                            direction,
+                            Some(target),
+                            None,
                         ),
-                    ))
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+                    ),
+                    Some(bounds),
+                ),
             );
             decoded.insert(entry.sequence);
             continue;
@@ -1542,26 +1547,28 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "directrix start cannot be evaluated"));
             continue;
         };
-        let Some(target) = transform
-            .apply_point(Point3::new(x * factor, y * factor, z * factor))
-            .map(cadmpeg_ir::features::FinitePoint3::get)
+        let Some(target) = transform.apply_point(Point3::new(x * factor, y * factor, z * factor))
         else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
         };
-        let direction = target.vector_from(start.get());
-        if !direction.norm().is_finite() || direction.norm() <= 0.0 {
+        let Some(direction) =
+            FiniteVector3::new(target.get().vector_from(start.get())).filter(|direction| {
+                let length = direction.get().norm();
+                length.is_finite() && length > 0.0
+            })
+        else {
             losses.push(entity_loss(
                 entry,
                 "tabulated direction is zero or non-finite",
             ));
             continue;
-        }
+        };
         let control_points = placed_directrix
             .pole_rows()
             .raw_points()
             .into_iter()
-            .flat_map(|point| [point, point.translated(direction, 1.0)])
+            .flat_map(|point| [point, point.translated(direction.get(), 1.0)])
             .collect::<Vec<_>>();
         let Ok(_) = u32::try_from(placed_directrix.control_points().len()) else {
             losses.push(entity_loss(entry, "directrix pole count exceeds u32"));
@@ -1619,35 +1626,37 @@ pub(super) fn project(
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry)?),
         });
+        let parameter_interval = FiniteVector::new(source_interval).ok_or_else(|| {
+            CodecError::malformed(cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
+                "Extrusion.parameter_interval is not finite",
+            ))
+        })?;
+        let bounds = RecordBounds::try_new([
+            Some(carrier_interval[0]),
+            Some(carrier_interval[1]),
+            None,
+            None,
+        ])
+        .map_err(|_| {
+            CodecError::malformed(cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
+                "record bounds must be finite",
+            ))
+        })?;
         let _attached = ir.model.add_procedural_surface(
             surface_id,
-            cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
-                procedural_directrix,
-                Some(source_interval),
-                direction,
-                Some(target),
-                cadmpeg_ir::geometry::CacheContract::from_form(None),
-            )
-            .and_then(|admitted_payload| {
-                Ok(ProceduralSurface::new(
-                    crate::ids::procedural_surface(&crate::ids::Stem::directory(entry.sequence)),
-                    ProceduralSurfaceDefinition::Extrusion(admitted_payload),
-                    Some(
-                        RecordBounds::try_new([
-                            Some(carrier_interval[0]),
-                            Some(carrier_interval[1]),
-                            None,
-                            None,
-                        ])
-                        .map_err(|_| {
-                            cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
-                                "record bounds must be finite",
-                            )
-                        })?,
+            ProceduralSurface::new(
+                crate::ids::procedural_surface(&crate::ids::Stem::directory(entry.sequence)),
+                ProceduralSurfaceDefinition::Extrusion(
+                    cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
+                        procedural_directrix,
+                        Some(parameter_interval),
+                        direction,
+                        Some(target),
+                        None,
                     ),
-                ))
-            })
-            .map_err(cadmpeg_core::CodecError::malformed)?,
+                ),
+                Some(bounds),
+            ),
         );
         decoded.insert(entry.sequence);
     }
