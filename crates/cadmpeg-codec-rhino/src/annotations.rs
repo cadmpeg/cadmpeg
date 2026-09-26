@@ -4,7 +4,7 @@
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
@@ -101,7 +101,7 @@ struct AnnotationRecord {
     legacy_user_text: Option<String>,
     legacy_user_positioned_text: Option<bool>,
     legacy_style_index: Option<i32>,
-    legacy_text_height: Option<FiniteReal>,
+    legacy_text_height: Option<NonNegativeReal>,
     legacy_justification: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     v2_default_text: Option<String>,
@@ -1677,7 +1677,7 @@ mod tests {
         assert_eq!(value.user_text, "formula");
         assert_eq!(value.plane.origin.get(), [10.0, 35.0, 30.0]);
         assert_eq!(value.points, [[10.0, 20.0], [40.0, 80.0]]);
-        assert_eq!(value.text_height, crate::test_support::finite(15.0));
+        assert_eq!(value.text_height.get(), 15.0);
         assert_eq!(value.dimstyle_index, 12);
         assert_eq!(value.justification, (1 << 18) | 1);
     }
@@ -1707,7 +1707,7 @@ mod tests {
         assert_eq!(value.user_text, "legacy");
         assert_eq!(value.plane.origin.get(), [10.0, 35.0, 30.0]);
         assert_eq!(value.points, [[10.0, 20.0], [40.0, 80.0]]);
-        assert_eq!(value.text_height, crate::test_support::finite(15.0));
+        assert_eq!(value.text_height.get(), 15.0);
         assert_eq!(value.dimstyle_index, -1);
         assert_eq!(value.justification, (1 << 18) | 1);
         assert!(!value.allow_text_scaling);
