@@ -30,8 +30,7 @@ pub(super) fn project_rib(
     let direction = feature
         .properties
         .get("Direction")
-        .and_then(|value| parse_valid_direction(value))
-        .and_then(cadmpeg_ir::features::FeatureDirection3::new);
+        .and_then(|value| parse_valid_direction(value));
     let draft = match feature.parameters.get("Draft") {
         Some(value) => parse_angle_rad(value)
             .and_then(|angle| cadmpeg_ir::scalar::SlopeAngle::try_from(angle).ok())
@@ -316,7 +315,7 @@ pub(super) fn project_revolve(
         .and_then(|(origin, direction)| {
             Some(RevolutionAxis {
                 origin,
-                direction: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
+                direction,
                 reference: None,
             })
         });

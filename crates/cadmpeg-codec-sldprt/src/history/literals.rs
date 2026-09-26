@@ -172,8 +172,30 @@ pub(crate) fn parse_vector3(value: &str) -> Option<Vector3> {
     (values.len() == 3).then(|| Vector3::new(values[0], values[1], values[2]))
 }
 
-pub(super) fn parse_valid_direction(value: &str) -> Option<Vector3> {
-    parse_vector3(value).filter(|value| valid_direction(*value))
+pub(super) fn parse_valid_direction(
+    value: &str,
+) -> Option<cadmpeg_ir::features::FeatureDirection3> {
+    parse_vector3(value)
+        .filter(|value| valid_direction(*value))
+        .and_then(cadmpeg_ir::features::FeatureDirection3::new)
+}
+
+#[cfg(test)]
+mod direction_tests {
+    use super::parse_valid_direction;
+    use cadmpeg_ir::math::Vector3;
+
+    #[test]
+    fn parsed_direction_retains_codec_threshold_and_components() {
+        assert_eq!(
+            parse_valid_direction("2,0,-3").map(|direction| direction.get()),
+            Some(Vector3::new(2.0, 0.0, -3.0))
+        );
+        assert!(parse_valid_direction("0,0,0").is_none());
+        assert!(parse_valid_direction("NaN,0,0").is_none());
+        assert!(parse_valid_direction(&format!("{},0,0", f64::EPSILON)).is_none());
+        assert!(parse_valid_direction(&format!("{},0,0", f64::EPSILON * 2.0)).is_some());
+    }
 }
 
 pub(super) fn parse_boolean_op(value: &str) -> Option<BooleanOp> {

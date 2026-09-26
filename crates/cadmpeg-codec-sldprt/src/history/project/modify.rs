@@ -368,16 +368,12 @@ pub(super) fn project_move_face(feature: &Feature) -> Option<FeatureDefinition> 
             distance: distance()?,
         },
         "translate" => FaceMotion::Translate {
-            direction: cadmpeg_ir::features::FeatureDirection3::new(parse_valid_direction(
-                feature.properties.get("Direction")?,
-            )?)?,
+            direction: parse_valid_direction(feature.properties.get("Direction")?)?,
             distance: distance()?,
         },
         "rotate" => FaceMotion::Rotate {
             axis_origin: parse_point3_mm(feature.properties.get("AxisOrigin")?)?,
-            axis_dir: cadmpeg_ir::features::FeatureDirection3::new(parse_valid_direction(
-                feature.properties.get("AxisDirection")?,
-            )?)?,
+            axis_dir: parse_valid_direction(feature.properties.get("AxisDirection")?)?,
             angle: feature
                 .parameters
                 .get("Angle")
@@ -405,9 +401,7 @@ pub(super) fn project_move_body(feature: &Feature) -> Option<FeatureDefinition> 
     let rotation = match feature.parameters.get("Rotation") {
         Some(angle) => Some(AxisAngle {
             origin: parse_point3_mm(feature.properties.get("RotationOrigin")?)?,
-            direction: cadmpeg_ir::features::FeatureDirection3::new(parse_valid_direction(
-                feature.properties.get("RotationAxis")?,
-            )?)?,
+            direction: parse_valid_direction(feature.properties.get("RotationAxis")?)?,
             angle: parse_angle_rad(angle)?,
         }),
         None => None,
@@ -452,8 +446,7 @@ pub(super) fn project_flex(feature: &Feature) -> FeatureDefinition {
         .properties
         .get("Axis")
         .or_else(|| feature.properties.get("AxisDirection"))
-        .and_then(|value| parse_valid_direction(value))
-        .and_then(cadmpeg_ir::features::FeatureDirection3::new);
+        .and_then(|value| parse_valid_direction(value));
     let angle = feature
         .parameters
         .get("Angle")
