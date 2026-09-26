@@ -10,6 +10,7 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::{
     features::{DesignParameter, ParameterId, ParameterValue},
+    ids::IdentityKey,
     scalar::{Angle, Length},
 };
 use serde::{Deserialize, Serialize};
@@ -287,94 +288,151 @@ pub(crate) fn inventory(
             continue;
         };
         for record in &table.records {
+            ctx.charge_work(1, "scan Inventor PmDc design record")?;
             let result = if record.type_id == PARAMETER_FULL_TYPE {
-                parse_parameter(ctx, record.payload, version).map(|value| {
-                    inventory.parameters.push(Located::new(
+                parse_parameter(ctx, record.payload, version).and_then(|value| {
+                    push_design_record(
+                        ctx,
+                        &mut inventory.parameters,
                         value,
-                        type_id_string(record.type_id),
+                        record.type_id,
                         segment.pair.token.key(),
                         record.ordinal,
-                    ));
+                        "admit Inventor PmDc parameter record",
+                    )
                 })
             } else if let Some(operation) = binary_operation(record.type_id) {
-                parse_binary_expression(record.payload, version, operation).map(|value| {
-                    inventory.expressions.push(Located::new(
+                parse_binary_expression(record.payload, version, operation).and_then(|value| {
+                    push_design_record(
+                        ctx,
+                        &mut inventory.expressions,
                         value,
-                        type_id_string(record.type_id),
+                        record.type_id,
                         segment.pair.token.key(),
                         record.ordinal,
-                    ));
+                        "admit Inventor PmDc expression record",
+                    )
                 })
             } else if let Some(operation) = unary_operation(record.type_id) {
-                parse_unary_expression(record.payload, version, operation).map(|value| {
-                    inventory.expressions.push(Located::new(
+                parse_unary_expression(record.payload, version, operation).and_then(|value| {
+                    push_design_record(
+                        ctx,
+                        &mut inventory.expressions,
                         value,
-                        type_id_string(record.type_id),
+                        record.type_id,
                         segment.pair.token.key(),
                         record.ordinal,
-                    ));
+                        "admit Inventor PmDc expression record",
+                    )
                 })
             } else if record.type_id == EXPRESSION_VALUE_TYPE {
-                parse_value_expression(record.payload, version).map(|value| {
-                    inventory.expressions.push(Located::new(
+                parse_value_expression(record.payload, version).and_then(|value| {
+                    push_design_record(
+                        ctx,
+                        &mut inventory.expressions,
                         value,
-                        type_id_string(record.type_id),
+                        record.type_id,
                         segment.pair.token.key(),
                         record.ordinal,
-                    ));
+                        "admit Inventor PmDc expression record",
+                    )
                 })
             } else if record.type_id == EXPRESSION_REFERENCE_TYPE {
-                parse_reference_expression(record.payload, version).map(|value| {
-                    inventory.expressions.push(Located::new(
+                parse_reference_expression(record.payload, version).and_then(|value| {
+                    push_design_record(
+                        ctx,
+                        &mut inventory.expressions,
                         value,
-                        type_id_string(record.type_id),
+                        record.type_id,
                         segment.pair.token.key(),
                         record.ordinal,
-                    ));
+                        "admit Inventor PmDc expression record",
+                    )
                 })
             } else if record.type_id == UNIT_TYPE {
-                parse_unit_definition(ctx, record.payload, version).map(|value| {
-                    inventory.units.push(Located::new(
+                parse_unit_definition(ctx, record.payload, version).and_then(|value| {
+                    push_design_record(
+                        ctx,
+                        &mut inventory.units,
                         value,
-                        type_id_string(record.type_id),
+                        record.type_id,
                         segment.pair.token.key(),
                         record.ordinal,
-                    ));
+                        "admit Inventor PmDc unit record",
+                    )
                 })
             } else if let Some((dimension, symbol, scale)) = base_unit(record.type_id) {
-                parse_base_unit(record.payload, version, dimension, symbol, scale).map(|value| {
-                    inventory.units.push(Located::new(
-                        value,
-                        type_id_string(record.type_id),
-                        segment.pair.token.key(),
-                        record.ordinal,
-                    ));
-                })
+                parse_base_unit(ctx, record.payload, version, dimension, symbol, scale).and_then(
+                    |value| {
+                        push_design_record(
+                            ctx,
+                            &mut inventory.units,
+                            value,
+                            record.type_id,
+                            segment.pair.token.key(),
+                            record.ordinal,
+                            "admit Inventor PmDc unit record",
+                        )
+                    },
+                )
             } else {
                 continue;
             };
             if let Err(error) = result {
+                if matches!(error, CodecError::ResourceLimit(_)) {
+                    return Err(error);
+                }
+                ctx.charge_collection_items(1, "admit Inventor PmDc design issue")?;
+                let mut detail_len = ByteCounter::default();
+                write!(&mut detail_len, "{error}").map_err(|_| {
+                    ctx.refuse_codec_limit(
+                        "Inventor issue detail byte count",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?;
+                ctx.charge_retained(detail_len.0 as u64, "retain Inventor PmDc issue detail")?;
+                ctx.charge_retained(32, "retain Inventor PmDc issue type id")?;
+                ctx.charge_retained(
+                    segment.pair.token.as_str().len() as u64,
+                    "retain Inventor PmDc issue segment token",
+                )?;
                 inventory.issues.push(RecordIssue {
                     family: RecordIssueFamily::Design {
                         type_id: type_id_string(record.type_id),
                     },
                     segment_token: segment.pair.token.as_str().into(),
                     record_ordinal: record.ordinal,
-                    detail: crate::issue_detail(error)?,
+                    detail: error.to_string(),
                 });
             }
         }
     }
-    ctx.charge_collection_items(
-        inventory
-            .parameters
-            .len()
-            .saturating_add(inventory.expressions.len())
-            .saturating_add(inventory.units.len())
-            .saturating_add(inventory.issues.len()) as u64,
-        "admit Inventor PmDc design records",
-    )?;
     Ok(inventory)
+}
+
+fn push_design_record<T>(
+    ctx: &DecodeContext<'_>,
+    records: &mut Vec<Located<T>>,
+    value: T,
+    type_id: [u8; 16],
+    segment_token: &IdentityKey,
+    ordinal: u32,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, operation)?;
+    ctx.charge_retained(32, "retain Inventor PmDc record type id")?;
+    ctx.charge_retained(
+        segment_token.as_str().len() as u64,
+        "retain Inventor PmDc record segment token",
+    )?;
+    records.push(Located::new(
+        value,
+        type_id_string(type_id),
+        segment_token,
+        ordinal,
+    ));
+    Ok(())
 }
 
 pub(crate) fn project_parameters(
@@ -848,9 +906,9 @@ fn admit_cached_expression_depth(
 }
 
 #[derive(Default)]
-struct ScalarByteCounter(usize);
+struct ByteCounter(usize);
 
-impl std::fmt::Write for ScalarByteCounter {
+impl std::fmt::Write for ByteCounter {
     fn write_str(&mut self, text: &str) -> std::fmt::Result {
         self.0 = self.0.checked_add(text.len()).ok_or(std::fmt::Error)?;
         Ok(())
@@ -861,7 +919,7 @@ fn scalar_display_len(ctx: &DecodeContext<'_>, scalar: f64) -> Result<usize, Cod
     if scalar == 0.0 {
         return Ok(1);
     }
-    let mut counter = ScalarByteCounter::default();
+    let mut counter = ByteCounter::default();
     write!(&mut counter, "{scalar}").map_err(|_| {
         ctx.refuse_codec_limit("Inventor scalar byte count", u64::MAX - 1, u64::MAX)
     })?;
@@ -1024,6 +1082,7 @@ fn parse_unit_definition(
 }
 
 fn parse_base_unit(
+    ctx: &DecodeContext<'_>,
     source: View<'_>,
     version: u8,
     dimension: PmDcUnitDimension,
@@ -1036,6 +1095,7 @@ fn parse_base_unit(
     let magnitude = cursor.f64("base-unit magnitude")?;
     let factor = cursor.f64("base-unit factor")?;
     cursor.finish("base unit")?;
+    ctx.charge_retained(symbol.len() as u64, "retain Inventor PmDc base unit symbol")?;
     Ok(PmDcUnitPayload {
         save_version_major: version,
         header_value,
@@ -1150,16 +1210,21 @@ impl RecordPayload for PmDcUnitPayload {
 #[cfg(test)]
 mod tests {
     use super::{
-        base_unit, close_parameter_graph, parse_binary_expression, parse_parameter,
+        base_unit, close_parameter_graph, inventory, parse_binary_expression, parse_parameter,
         parse_unary_expression, parse_unit_definition, parse_value_expression, project_parameters,
         render_expression, DesignInventory, PmDcBinaryOperation, PmDcExpressionKind,
         PmDcExpressionPayload, PmDcParameterPayload, PmDcUnaryOperation, PmDcUnitDimension,
-        PmDcUnitKind, PmDcUnitPayload, GRAD_TYPE,
+        PmDcUnitKind, PmDcUnitPayload, DIMENSIONLESS_TYPE, EXPRESSION_ADD_TYPE,
+        EXPRESSION_NEGATE_TYPE, EXPRESSION_REFERENCE_TYPE, EXPRESSION_VALUE_TYPE, GRAD_TYPE,
+        MILLIMETRE_TYPE, PARAMETER_FULL_TYPE, UNIT_TYPE,
     };
+    use crate::container::InventorContainer;
     use crate::pmdc::{PmDcContentHeader, PmDcPairedReferenceList, PmDcReference};
     use crate::record_identity::Located;
-    use cadmpeg_core::decode::DecodeContext;
+    use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
+    use crate::test_support::test_fixtures::primary_envelope_fixture;
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodeContext, View};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
     use cadmpeg_ir::scalar::Length;
@@ -1167,6 +1232,306 @@ mod tests {
 
     const fn reference(index: u32, qualified: bool) -> PmDcReference {
         PmDcReference { index, qualified }
+    }
+
+    #[test]
+    fn pmdc_expression_record_refuses_collection_limit_before_first_push() {
+        let payload = [0_u8; 14];
+        let admitted =
+            inventory_with_record(EXPRESSION_REFERENCE_TYPE, &payload, DecodePolicy::service())
+                .expect("expression is admitted");
+        assert_eq!(admitted.expressions.len(), 1);
+        assert!(admitted.issues.is_empty());
+
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        assert!(matches!(
+            inventory_with_record(EXPRESSION_REFERENCE_TYPE, &payload, policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "admit Inventor PmDc expression record"
+                    && limit.used == 0
+        ));
+    }
+
+    fn inventory_with_record(
+        type_id: [u8; 16],
+        payload: &[u8],
+        policy: DecodePolicy,
+    ) -> Result<DesignInventory, CodecError> {
+        let bytes = primary_envelope_fixture();
+        let payload = payload.to_vec();
+        let arena = DecodeArena::new();
+        let (setup_ctx, source) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("envelope view");
+        let mut container = InventorContainer::open(&setup_ctx, source).expect("framed envelope");
+        let segment = &mut container.rse.segments[0];
+        segment.kind = SegmentKind::PmDc;
+        let SegmentBulkState::Framed(bulk) = &mut segment.bulk else {
+            panic!("framed bulk fixture");
+        };
+        let RecordFrameState::Framed(table) = &mut bulk.records else {
+            panic!("framed record fixture");
+        };
+        table.records[0].type_id = type_id;
+        table.records[0].payload = View::over_retained(&payload);
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input view");
+        inventory(&ctx, &container.rse)
+    }
+
+    #[test]
+    fn pmdc_parameter_record_refuses_collection_limit_before_push() {
+        let payload = [0_u8; 58];
+        assert_eq!(
+            inventory_with_record(PARAMETER_FULL_TYPE, &payload, DecodePolicy::service())
+                .expect("parameter is admitted")
+                .parameters
+                .len(),
+            1
+        );
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        assert!(matches!(
+            inventory_with_record(PARAMETER_FULL_TYPE, &payload, policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "admit Inventor PmDc parameter record"
+                    && limit.used == 0
+        ));
+    }
+
+    #[test]
+    fn pmdc_expression_forms_refuse_collection_limit_before_push() {
+        for (type_id, len) in [
+            (EXPRESSION_REFERENCE_TYPE, 14),
+            (EXPRESSION_NEGATE_TYPE, 14),
+            (EXPRESSION_ADD_TYPE, 18),
+            (EXPRESSION_VALUE_TYPE, 24),
+        ] {
+            let payload = vec![0_u8; len];
+            assert_eq!(
+                inventory_with_record(type_id, &payload, DecodePolicy::service())
+                    .expect("expression is admitted")
+                    .expressions
+                    .len(),
+                1
+            );
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = 0;
+            assert!(matches!(
+                inventory_with_record(type_id, &payload, policy),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::CollectionItems
+                        && limit.operation == "admit Inventor PmDc expression record"
+                        && limit.used == 0
+            ));
+        }
+    }
+
+    #[test]
+    fn pmdc_unit_forms_refuse_collection_limit_before_push() {
+        let mut definition = [0_u8; 27];
+        definition[6..10].copy_from_slice(&[3, 0, 0, 0x30]);
+        definition[14..18].copy_from_slice(&[3, 0, 0, 0x30]);
+        for (type_id, payload) in [
+            (UNIT_TYPE, definition.as_slice()),
+            (DIMENSIONLESS_TYPE, &[0_u8; 22]),
+        ] {
+            assert_eq!(
+                inventory_with_record(type_id, payload, DecodePolicy::service())
+                    .expect("unit is admitted")
+                    .units
+                    .len(),
+                1
+            );
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = 0;
+            assert!(matches!(
+                inventory_with_record(type_id, payload, policy),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::CollectionItems
+                        && limit.operation == "admit Inventor PmDc unit record"
+                        && limit.used == 0
+            ));
+        }
+    }
+
+    #[test]
+    fn pmdc_issue_refuses_collection_limit_before_push() {
+        let payload = [];
+        let admitted =
+            inventory_with_record(EXPRESSION_REFERENCE_TYPE, &payload, DecodePolicy::service())
+                .expect("invalid expression becomes an issue");
+        assert_eq!(admitted.issues.len(), 1);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        assert!(matches!(
+            inventory_with_record(EXPRESSION_REFERENCE_TYPE, &payload, policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "admit Inventor PmDc design issue"
+                    && limit.used == 0
+        ));
+    }
+
+    #[test]
+    fn pmdc_record_scan_refuses_work_limit_before_parsing() {
+        let payload = [0_u8; 14];
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        assert!(matches!(
+            inventory_with_record(EXPRESSION_REFERENCE_TYPE, &payload, policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "scan Inventor PmDc design record"
+                    && limit.used == 0
+        ));
+    }
+
+    #[test]
+    fn pmdc_record_type_id_refuses_retained_limit_before_copy() {
+        let payload = [0_u8; 14];
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 31;
+        assert!(matches!(
+            inventory_with_record(EXPRESSION_REFERENCE_TYPE, &payload, policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor PmDc record type id"
+                    && limit.used == 0
+        ));
+    }
+
+    #[test]
+    fn pmdc_record_segment_token_refuses_retained_limit_before_copy() {
+        let payload = [0_u8; 14];
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 32;
+        assert!(matches!(
+            inventory_with_record(EXPRESSION_REFERENCE_TYPE, &payload, policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor PmDc record segment token"
+                    && limit.used == 32
+        ));
+    }
+
+    #[test]
+    fn pmdc_base_unit_symbol_refuses_retained_limit_before_copy() {
+        let payload = [0_u8; 22];
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 1;
+        assert!(matches!(
+            inventory_with_record(MILLIMETRE_TYPE, &payload, policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor PmDc base unit symbol"
+                    && limit.used == 0
+        ));
+    }
+
+    fn pmdc_issue_detail_len() -> usize {
+        inventory_with_record(EXPRESSION_REFERENCE_TYPE, &[], DecodePolicy::service())
+            .expect("invalid expression becomes an issue")
+            .issues[0]
+            .detail
+            .len()
+    }
+
+    #[test]
+    fn pmdc_issue_detail_refuses_retained_limit_before_copy() {
+        let detail_len = pmdc_issue_detail_len();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = (detail_len - 1) as u64;
+        assert!(matches!(
+            inventory_with_record(EXPRESSION_REFERENCE_TYPE, &[], policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor PmDc issue detail"
+                    && limit.used == 0
+        ));
+    }
+
+    #[test]
+    fn pmdc_issue_type_id_refuses_retained_limit_before_copy() {
+        let detail_len = pmdc_issue_detail_len();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = detail_len as u64;
+        assert!(matches!(
+            inventory_with_record(EXPRESSION_REFERENCE_TYPE, &[], policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor PmDc issue type id"
+                    && limit.used == detail_len as u64
+        ));
+    }
+
+    #[test]
+    fn pmdc_issue_segment_token_refuses_retained_limit_before_copy() {
+        let detail_len = pmdc_issue_detail_len();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = (detail_len + 32) as u64;
+        assert!(matches!(
+            inventory_with_record(EXPRESSION_REFERENCE_TYPE, &[], policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor PmDc issue segment token"
+                    && limit.used == (detail_len + 32) as u64
+        ));
+    }
+
+    #[test]
+    fn pmdc_parameter_name_resource_refusal_does_not_become_issue() {
+        let mut payload = [0_u8; 60];
+        payload[22..26].copy_from_slice(&1_u32.to_le_bytes());
+        payload[26..28].copy_from_slice(&97_u16.to_le_bytes());
+        assert_eq!(
+            inventory_with_record(PARAMETER_FULL_TYPE, &payload, DecodePolicy::service())
+                .expect("named parameter is admitted")
+                .parameters
+                .len(),
+            1
+        );
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 1;
+        assert!(matches!(
+            inventory_with_record(PARAMETER_FULL_TYPE, &payload, policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor PmDc string"
+                    && limit.used == 0
+        ));
+    }
+
+    #[test]
+    fn pmdc_unit_reference_arrays_refuse_collection_limit_before_allocation() {
+        let mut numerator = [0_u8; 35];
+        numerator[6..10].copy_from_slice(&[3, 0, 0, 0x30]);
+        numerator[10..14].copy_from_slice(&1_u32.to_le_bytes());
+        numerator[22..26].copy_from_slice(&[3, 0, 0, 0x30]);
+        let mut denominator = [0_u8; 35];
+        denominator[6..10].copy_from_slice(&[3, 0, 0, 0x30]);
+        denominator[14..18].copy_from_slice(&[3, 0, 0, 0x30]);
+        denominator[18..22].copy_from_slice(&1_u32.to_le_bytes());
+        for payload in [&numerator, &denominator] {
+            assert_eq!(
+                inventory_with_record(UNIT_TYPE, payload, DecodePolicy::service())
+                    .expect("unit reference list is admitted")
+                    .units
+                    .len(),
+                1
+            );
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = 0;
+            assert!(matches!(
+                inventory_with_record(UNIT_TYPE, payload, policy),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::CollectionItems
+                        && limit.operation == "admit Inventor PmDc unit references"
+                        && limit.used == 0
+            ));
+        }
     }
 
     #[test]
