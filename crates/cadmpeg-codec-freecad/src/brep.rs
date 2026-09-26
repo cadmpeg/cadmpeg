@@ -2665,15 +2665,13 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion)
         let kind = cursor.u8("binary location kind")?;
         let location = match kind {
             1 => {
-                let mut rows = Transform::identity().affine_rows();
+                let mut rows = [[FiniteReal::ZERO; 4]; 3];
                 for row in &mut rows {
                     for value in row {
-                        *value = cursor.f64("binary location transform")?;
+                        *value = cursor.finite_f64("binary location transform")?;
                     }
                 }
-                let transform = Transform::affine(rows).ok_or_else(|| {
-                    CodecError::Malformed("location transform must be finite".into())
-                })?;
+                let transform = Transform::from_finite_rows(rows);
                 invert_affine(transform)?;
                 TextLocation {
                     factors: Vec::new(),
@@ -3384,66 +3382,66 @@ fn parse_binary_surface(
             let origin = cursor.finite_point3("binary plane origin")?;
             let axis = cursor.finite_vector3("binary plane axis")?;
             let u_axis = cursor.finite_vector3("binary plane u axis")?;
-            let v_axis = cursor.vector3("binary plane v axis")?;
+            let v_axis = cursor.finite_vector3("binary plane v axis")?;
             TextSurface::Plane {
                 origin,
                 axis,
                 u_axis,
-                v_reversed: frame_v_reversed(axis.get(), u_axis.get(), v_axis),
+                v_reversed: frame_v_reversed(axis.get(), u_axis.get(), v_axis.get()),
             }
         }
         2 => {
             let origin = cursor.finite_point3("binary cylinder origin")?;
             let axis = cursor.finite_vector3("binary cylinder axis")?;
             let ref_direction = cursor.finite_vector3("binary cylinder reference direction")?;
-            let y_direction = cursor.vector3("binary cylinder v direction")?;
+            let y_direction = cursor.finite_vector3("binary cylinder v direction")?;
             TextSurface::Cylinder {
                 origin,
                 axis,
                 ref_direction,
                 radius: cursor.finite_f64("binary cylinder radius")?,
-                u_reversed: frame_v_reversed(axis.get(), ref_direction.get(), y_direction),
+                u_reversed: frame_v_reversed(axis.get(), ref_direction.get(), y_direction.get()),
             }
         }
         3 => {
             let origin = cursor.finite_point3("binary cone origin")?;
             let axis = cursor.finite_vector3("binary cone axis")?;
             let ref_direction = cursor.finite_vector3("binary cone reference direction")?;
-            let y_direction = cursor.vector3("binary cone v direction")?;
+            let y_direction = cursor.finite_vector3("binary cone v direction")?;
             TextSurface::Cone {
                 origin,
                 axis,
                 ref_direction,
                 radius: cursor.finite_f64("binary cone reference radius")?,
                 half_angle: cursor.finite_f64("binary cone half angle")?,
-                u_reversed: frame_v_reversed(axis.get(), ref_direction.get(), y_direction),
+                u_reversed: frame_v_reversed(axis.get(), ref_direction.get(), y_direction.get()),
             }
         }
         4 => {
             let center = cursor.finite_point3("binary sphere center")?;
             let axis = cursor.finite_vector3("binary sphere axis")?;
             let ref_direction = cursor.finite_vector3("binary sphere reference direction")?;
-            let y_direction = cursor.vector3("binary sphere v direction")?;
+            let y_direction = cursor.finite_vector3("binary sphere v direction")?;
             TextSurface::Sphere {
                 center,
                 axis,
                 ref_direction,
                 radius: cursor.finite_f64("binary sphere radius")?,
-                u_reversed: frame_v_reversed(axis.get(), ref_direction.get(), y_direction),
+                u_reversed: frame_v_reversed(axis.get(), ref_direction.get(), y_direction.get()),
             }
         }
         5 => {
             let center = cursor.finite_point3("binary torus center")?;
             let axis = cursor.finite_vector3("binary torus axis")?;
             let ref_direction = cursor.finite_vector3("binary torus reference direction")?;
-            let y_direction = cursor.vector3("binary torus v direction")?;
+            let y_direction = cursor.finite_vector3("binary torus v direction")?;
             TextSurface::Torus {
                 center,
                 axis,
                 ref_direction,
                 major_radius: cursor.finite_f64("binary torus major radius")?,
                 minor_radius: cursor.finite_f64("binary torus minor radius")?,
-                u_reversed: frame_v_reversed(axis.get(), ref_direction.get(), y_direction),
+                u_reversed: frame_v_reversed(axis.get(), ref_direction.get(), y_direction.get()),
             }
         }
         6 => TextSurface::Extrusion {
@@ -3592,7 +3590,7 @@ fn parse_binary_curve(
             let center = cursor.finite_point3("binary circle center")?;
             let axis = cursor.finite_vector3("binary circle axis")?;
             let ref_direction = cursor.finite_vector3("binary circle reference direction")?;
-            cursor.vector3("binary circle y axis")?;
+            cursor.finite_vector3("binary circle y axis")?;
             TextCurve::Circle {
                 center,
                 axis,
@@ -3604,7 +3602,7 @@ fn parse_binary_curve(
             let center = cursor.finite_point3("binary ellipse center")?;
             let axis = cursor.finite_vector3("binary ellipse axis")?;
             let major_direction = cursor.finite_vector3("binary ellipse major direction")?;
-            cursor.vector3("binary ellipse minor direction")?;
+            cursor.finite_vector3("binary ellipse minor direction")?;
             TextCurve::Ellipse {
                 center,
                 axis,
@@ -3617,7 +3615,7 @@ fn parse_binary_curve(
             let vertex = cursor.finite_point3("binary parabola vertex")?;
             let axis = cursor.finite_vector3("binary parabola axis")?;
             let major_direction = cursor.finite_vector3("binary parabola major direction")?;
-            cursor.vector3("binary parabola minor direction")?;
+            cursor.finite_vector3("binary parabola minor direction")?;
             TextCurve::Parabola {
                 vertex,
                 axis,
@@ -3629,7 +3627,7 @@ fn parse_binary_curve(
             let center = cursor.finite_point3("binary hyperbola center")?;
             let axis = cursor.finite_vector3("binary hyperbola axis")?;
             let major_direction = cursor.finite_vector3("binary hyperbola major direction")?;
-            cursor.vector3("binary hyperbola minor direction")?;
+            cursor.finite_vector3("binary hyperbola minor direction")?;
             TextCurve::Hyperbola {
                 center,
                 axis,
@@ -3921,10 +3919,6 @@ impl<'a> BinaryCursor<'a> {
             .ok_or_else(|| CodecError::malformed(format_args!("invalid {label}")))
     }
 
-    fn f64(&mut self, label: &str) -> Result<f64, CodecError> {
-        self.finite_f64(label).map(FiniteReal::get)
-    }
-
     fn finite_f64(&mut self, label: &str) -> Result<FiniteReal, CodecError> {
         let value = self.view.f64_le().ok_or_else(|| Self::truncated(label))?;
         FiniteReal::new(value)
@@ -3957,14 +3951,6 @@ impl<'a> BinaryCursor<'a> {
             self.finite_f64(label)?,
             self.finite_f64(label)?,
             self.finite_f64(label)?,
-        ))
-    }
-
-    fn vector3(&mut self, label: &str) -> Result<Vector3, CodecError> {
-        Ok(Vector3::new(
-            self.f64(label)?,
-            self.f64(label)?,
-            self.f64(label)?,
         ))
     }
 
@@ -4018,15 +4004,13 @@ fn parse_locations(
         let kind = cursor.integer("location type")?;
         let location = match kind {
             1 => {
-                let mut rows = Transform::identity().affine_rows();
+                let mut rows = [[FiniteReal::ZERO; 4]; 3];
                 for row in &mut rows {
                     for value in row {
-                        *value = cursor.real("location transform value")?;
+                        *value = cursor.finite_real("location transform value")?;
                     }
                 }
-                let transform = Transform::affine(rows).ok_or_else(|| {
-                    CodecError::Malformed("location transform must be finite".into())
-                })?;
+                let transform = Transform::from_finite_rows(rows);
                 invert_affine(transform)?;
                 TextLocation {
                     factors: Vec::new(),
@@ -5015,8 +4999,8 @@ fn parse_analytic_surface(
     let origin = cursor.finite_point("surface origin")?;
     let axis = cursor.finite_vector("surface axis")?;
     let ref_direction = cursor.finite_vector("surface reference direction")?;
-    let y_direction = cursor.vector("surface y direction")?;
-    let reversed = frame_v_reversed(axis.get(), ref_direction.get(), y_direction);
+    let y_direction = cursor.finite_vector("surface y direction")?;
+    let reversed = frame_v_reversed(axis.get(), ref_direction.get(), y_direction.get());
     Ok(match kind {
         AnalyticSurfaceKind::Plane => TextSurface::Plane {
             origin,
@@ -5351,7 +5335,7 @@ fn parse_curve(
             let center = cursor.finite_point("circle center")?;
             let axis = cursor.finite_vector("circle axis")?;
             let ref_direction = cursor.finite_vector("circle reference direction")?;
-            let _y_direction = cursor.vector("circle y direction")?;
+            cursor.finite_vector("circle y direction")?;
             TextCurve::Circle {
                 center,
                 axis,
@@ -5363,7 +5347,7 @@ fn parse_curve(
             let center = cursor.finite_point("ellipse center")?;
             let axis = cursor.finite_vector("ellipse axis")?;
             let major_direction = cursor.finite_vector("ellipse major direction")?;
-            let _y_direction = cursor.vector("ellipse y direction")?;
+            cursor.finite_vector("ellipse y direction")?;
             TextCurve::Ellipse {
                 center,
                 axis,
@@ -5376,7 +5360,7 @@ fn parse_curve(
             let vertex = cursor.finite_point("parabola vertex")?;
             let axis = cursor.finite_vector("parabola axis")?;
             let major_direction = cursor.finite_vector("parabola major direction")?;
-            let _y_direction = cursor.vector("parabola y direction")?;
+            cursor.finite_vector("parabola y direction")?;
             TextCurve::Parabola {
                 vertex,
                 axis,
@@ -5388,7 +5372,7 @@ fn parse_curve(
             let center = cursor.finite_point("hyperbola center")?;
             let axis = cursor.finite_vector("hyperbola axis")?;
             let major_direction = cursor.finite_vector("hyperbola major direction")?;
-            let _y_direction = cursor.vector("hyperbola y direction")?;
+            cursor.finite_vector("hyperbola y direction")?;
             TextCurve::Hyperbola {
                 center,
                 axis,
@@ -5545,10 +5529,6 @@ impl<'a> TokenCursor<'a> {
         }
     }
 
-    fn real(&mut self, label: &str) -> Result<f64, CodecError> {
-        self.finite_real(label).map(FiniteReal::get)
-    }
-
     fn finite_real(&mut self, label: &str) -> Result<FiniteReal, CodecError> {
         let value = self.next(label)?.parse::<f64>().map_err(|_| {
             CodecError::malformed(format_args!("invalid {label} in text B-rep Curves table"))
@@ -5580,14 +5560,6 @@ impl<'a> TokenCursor<'a> {
             self.finite_real(label)?,
             self.finite_real(label)?,
             self.finite_real(label)?,
-        ))
-    }
-
-    fn vector(&mut self, label: &str) -> Result<Vector3, CodecError> {
-        Ok(Vector3::new(
-            self.real(label)?,
-            self.real(label)?,
-            self.real(label)?,
         ))
     }
 
@@ -6949,6 +6921,44 @@ pub(crate) mod tests {
         assert_eq!(facts.locations[1].transform.rows()[0][3], 10.0);
         assert_eq!(facts.locations[2].transform.rows()[0][3], 5.0);
         assert_eq!(facts.locations[2].factors[0].power, -1);
+    }
+
+    #[test]
+    fn checked_location_rows_keep_signed_zero_and_source_refusals() {
+        let text = "CASCADE Topology V1, (c) Matra-Datavision\nLocations 1\n1 1 -0 0 5 0 1 0 0 0 0 1 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
+        let facts = parse_text(text.as_bytes()).expect("finite text location").0;
+        assert_eq!(
+            facts.locations[0].transform.affine_rows()[0][1].to_bits(),
+            (-0.0_f64).to_bits()
+        );
+        let invalid = text.replace("1 -0 0 5", "1 NaN 0 5");
+        let error = parse_text(invalid.as_bytes()).expect_err("non-finite text location");
+        assert!(error
+            .to_string()
+            .contains("non-finite location transform value"));
+
+        let binary = |first: f64| {
+            let mut bytes = b"\nOpen CASCADE Topology V3 (c)\nLocations 1\n".to_vec();
+            bytes.push(1);
+            for value in [
+                first, -0.0, 0.0, 5.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+            ] {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+            bytes.extend_from_slice(b"Curve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n");
+            bytes
+        };
+        let facts = parse_binary_prefix(&binary(1.0))
+            .expect("finite binary location")
+            .0;
+        assert_eq!(
+            facts.locations[0].transform.affine_rows()[0][1].to_bits(),
+            (-0.0_f64).to_bits()
+        );
+        let error = parse_binary_prefix(&binary(f64::NAN)).expect_err("non-finite binary location");
+        assert!(error
+            .to_string()
+            .contains("non-finite binary location transform"));
     }
 
     #[test]
