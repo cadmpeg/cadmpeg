@@ -63,6 +63,7 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::dialect::{DialectId, DialectMatch, Grammar};
 use cadmpeg_core::CodecError;
@@ -72,6 +73,7 @@ use crate::container::InventorContainer;
 use crate::database::RseSchema;
 use crate::kernel::{ActiveCarrierState, KernelFamily};
 use crate::loss::InventorLossCode;
+use crate::record_issue::admit_formatted;
 use crate::rse::{DatabaseDescriptor, DatabaseState, MetaStreamDeclaration};
 
 include!("dialect/registry_ids.rs");
@@ -100,9 +102,46 @@ const DECLARED_META_STREAM_MARKER: &str = "meta_stream_marker";
 /// [`DECLARED_META_STREAM_MARKER`].
 const DECLARED_META_STREAM_VERSION: &str = "meta_stream_version";
 
-/// Joins declaration values into one `declared` entry.
-fn join(values: impl IntoIterator<Item = String>) -> String {
-    values.into_iter().collect::<Vec<_>>().join(",")
+fn retained_format(
+    ctx: &DecodeContext<'_>,
+    value: std::fmt::Arguments<'_>,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    admit_formatted(ctx, value, operation)?;
+    Ok(value.to_string())
+}
+
+fn u64_len(ctx: &DecodeContext<'_>, len: usize) -> Result<u64, CodecError> {
+    u64::try_from(len)
+        .map_err(|_| ctx.refuse_codec_limit("Inventor dialect length", u64::MAX - 1, u64::MAX))
+}
+
+fn join(
+    ctx: &DecodeContext<'_>,
+    values: impl IntoIterator<Item = Result<String, CodecError>>,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let mut parts = Vec::new();
+    let mut bytes = 0_u64;
+    for value in values {
+        let value = value?;
+        ctx.charge_collection_items(1, "collect Inventor dialect join parts")?;
+        bytes = bytes
+            .checked_add(u64_len(ctx, value.len())?)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("Inventor dialect joined bytes", u64::MAX - 1, u64::MAX)
+            })?;
+        parts.push(value);
+    }
+    if !parts.is_empty() {
+        bytes = bytes
+            .checked_add(u64_len(ctx, parts.len() - 1)?)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("Inventor dialect joined bytes", u64::MAX - 1, u64::MAX)
+            })?;
+    }
+    ctx.charge_retained(bytes, operation)?;
+    Ok(parts.join(","))
 }
 
 /// One row of `docs/dialects.toml` under the `inventor` namespace.
@@ -152,59 +191,76 @@ pub(crate) struct DialectRecovery {
 
 impl DialectRecovery {
     /// Collects every version declaration the decode read from `container`.
-    pub(crate) fn of(container: &InventorContainer<'_>) -> Self {
-        let mut schemas = container
-            .rse
-            .databases
-            .iter()
-            .filter_map(DatabaseDescriptor::declared_schema)
-            .collect::<Vec<_>>();
+    pub(crate) fn of(
+        ctx: &DecodeContext<'_>,
+        container: &InventorContainer<'_>,
+    ) -> Result<Self, CodecError> {
+        let mut schemas = Vec::new();
+        for descriptor in &container.rse.databases {
+            if let Some(schema) = DatabaseDescriptor::declared_schema(descriptor) {
+                ctx.charge_collection_items(1, "collect Inventor dialect schemas")?;
+                schemas.push(schema);
+            }
+        }
         schemas.sort_unstable_by_key(|schema| schema.value());
         schemas.dedup();
-        let mut unframed_schemas = container
-            .rse
-            .databases
-            .iter()
-            .filter_map(|descriptor| match &descriptor.state {
-                DatabaseState::Unframed { schema, .. } => Some(*schema),
-                DatabaseState::Parsed(_) | DatabaseState::Unreadable(_) => None,
-            })
-            .collect::<Vec<_>>();
+        let mut unframed_schemas = Vec::new();
+        for descriptor in &container.rse.databases {
+            if let DatabaseState::Unframed { schema, .. } = &descriptor.state {
+                ctx.charge_collection_items(1, "collect Inventor unframed dialect schemas")?;
+                unframed_schemas.push(*schema);
+            }
+        }
         unframed_schemas.sort_unstable_by_key(|schema| schema.value());
         unframed_schemas.dedup();
-        let mut meta_streams = container
-            .rse
-            .segments
-            .iter()
-            .filter_map(|segment| segment.meta.declaration())
-            .collect::<Vec<_>>();
+        let mut meta_streams = Vec::new();
+        for segment in &container.rse.segments {
+            if let Some(declaration) = segment.meta.declaration(ctx)? {
+                ctx.charge_collection_items(1, "collect Inventor dialect metadata declarations")?;
+                meta_streams.push(declaration);
+            }
+        }
         meta_streams.sort();
         meta_streams.dedup();
-        let mut unframed_meta_streams = container
-            .rse
-            .segments
-            .iter()
-            .filter_map(|segment| match &segment.meta {
-                crate::rse::SegmentMetaState::Malformed {
-                    declared: Some(declared),
-                    ..
-                } => Some(declared.clone()),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
+        let mut unframed_meta_streams = Vec::new();
+        for segment in &container.rse.segments {
+            if let crate::rse::SegmentMetaState::Malformed {
+                declared: Some(declared),
+                ..
+            } = &segment.meta
+            {
+                ctx.charge_collection_items(1, "collect Inventor unframed dialect metadata")?;
+                ctx.charge_retained(
+                    u64_len(ctx, declared.marker.len())?,
+                    "retain Inventor unframed dialect marker",
+                )?;
+                unframed_meta_streams.push(declared.clone());
+            }
+        }
         unframed_meta_streams.sort();
         unframed_meta_streams.dedup();
-        Self {
+        Ok(Self {
             cfb_major_version: container.snapshot.major_version(),
             schemas,
             unframed_schemas,
             meta_streams,
             unframed_meta_streams,
-        }
+        })
     }
 
     /// Evaluate identity and admission once from the parsed facts.
-    pub(crate) fn classify(&self) -> DialectMatch {
+    pub(crate) fn classify(&self, ctx: &DecodeContext<'_>) -> Result<DialectMatch, CodecError> {
+        let declaration_count = self
+            .schemas
+            .len()
+            .checked_add(self.meta_streams.len())
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("Inventor dialect declaration count", u64::MAX - 1, u64::MAX)
+            })?;
+        ctx.charge_work(
+            u64_len(ctx, declaration_count)?,
+            "classify Inventor dialect declarations",
+        )?;
         let identity_verified = !self.schemas.is_empty()
             && self
                 .schemas
@@ -224,35 +280,65 @@ impl DialectRecovery {
         };
         let admitted = identity_verified && framing_verified;
         let mut declared = BTreeMap::new();
+        ctx.charge_collection_items(1, "record Inventor dialect declaration")?;
         declared.insert(
             cadmpeg_core::nonblank_const!(DECLARED_CFB_MAJOR_VERSION),
-            self.cfb_major_version.to_string(),
+            retained_format(
+                ctx,
+                format_args!("{}", self.cfb_major_version),
+                "retain Inventor CFB version declaration",
+            )?,
         );
         if !self.schemas.is_empty() {
+            ctx.charge_collection_items(1, "record Inventor dialect declaration")?;
             declared.insert(
                 cadmpeg_core::nonblank_const!(DECLARED_RSE_DB_SCHEMA),
-                join(self.schemas.iter().map(|schema| schema.value().to_string())),
+                join(
+                    ctx,
+                    self.schemas.iter().map(|schema| {
+                        retained_format(
+                            ctx,
+                            format_args!("{}", schema.value()),
+                            "retain Inventor RSe schema declaration part",
+                        )
+                    }),
+                    "retain Inventor RSe schema declaration",
+                )?,
             );
         }
         if !self.meta_streams.is_empty() {
+            ctx.charge_collection_items(1, "record Inventor dialect declaration")?;
             declared.insert(
                 cadmpeg_core::nonblank_const!(DECLARED_META_STREAM_MARKER),
                 join(
-                    self.meta_streams
-                        .iter()
-                        .map(|declared| declared.marker.clone()),
-                ),
+                    ctx,
+                    self.meta_streams.iter().map(|declared| {
+                        ctx.charge_retained(
+                            u64_len(ctx, declared.marker.len())?,
+                            "retain Inventor metadata marker declaration part",
+                        )?;
+                        Ok(declared.marker.clone())
+                    }),
+                    "retain Inventor metadata marker declaration",
+                )?,
             );
+            ctx.charge_collection_items(1, "record Inventor dialect declaration")?;
             declared.insert(
                 cadmpeg_core::nonblank_const!(DECLARED_META_STREAM_VERSION),
                 join(
-                    self.meta_streams
-                        .iter()
-                        .map(|declared| declared.version.to_string()),
-                ),
+                    ctx,
+                    self.meta_streams.iter().map(|declared| {
+                        retained_format(
+                            ctx,
+                            format_args!("{}", declared.version),
+                            "retain Inventor metadata version declaration part",
+                        )
+                    }),
+                    "retain Inventor metadata version declaration",
+                )?,
             );
         }
-        if admitted {
+        Ok(if admitted {
             DialectMatch::admitted(dialect.id())
         } else {
             DialectMatch::unverified(
@@ -260,84 +346,189 @@ impl DialectRecovery {
                 Grammar::of(&InventorDialect::Cfb3Rse31Meta8.id()),
             )
         }
-        .with_declared(declared)
+        .with_declared(declared))
     }
 
     /// The loss charged when the document's declarations do not select the
     /// grammar this codec read it with.
-    fn unverified_loss(&self) -> LossNote {
+    fn unverified_loss(&self, ctx: &DecodeContext<'_>) -> Result<LossNote, CodecError> {
         let mut reasons = Vec::new();
         if !self.unframed_schemas.is_empty() {
-            reasons.push(format!(
-                "RSe database schema {} is declared but its body does not frame under the schema-31 grammar",
-                join(
-                    self.unframed_schemas
-                        .iter()
-                        .map(|schema| schema.value().to_string())
-                )
-            ));
+            ctx.charge_collection_items(1, "collect Inventor dialect reasons")?;
+            let schemas = join(
+                ctx,
+                self.unframed_schemas.iter().map(|schema| {
+                    retained_format(
+                        ctx,
+                        format_args!("{}", schema.value()),
+                        "retain Inventor unframed schema reason part",
+                    )
+                }),
+                "retain Inventor unframed schema reason list",
+            )?;
+            reasons.push(retained_format(ctx, format_args!(
+                "RSe database schema {schemas} is declared but its body does not frame under the schema-31 grammar"
+            ), "retain Inventor unframed schema reason")?);
         }
         if self.schemas.is_empty() {
+            ctx.charge_collection_items(1, "collect Inventor dialect reasons")?;
+            ctx.charge_retained(
+                u64_len(ctx, "no RSe database stream declares a schema".len())?,
+                "retain Inventor absent schema reason",
+            )?;
             reasons.push("no RSe database stream declares a schema".to_owned());
         } else {
-            let foreign = self
+            ctx.charge_work(
+                u64_len(ctx, self.schemas.len())?,
+                "scan Inventor foreign schemas",
+            )?;
+            if self
                 .schemas
                 .iter()
-                .copied()
-                .filter(|schema| *schema != RseSchema::SCHEMA_31)
-                .collect::<Vec<_>>();
-            if !foreign.is_empty() {
-                reasons.push(format!(
-                    "RSe database schema {} is declared",
-                    join(foreign.iter().map(|schema| schema.value().to_string()))
-                ));
+                .any(|schema| *schema != RseSchema::SCHEMA_31)
+            {
+                ctx.charge_collection_items(1, "collect Inventor dialect reasons")?;
+                let foreign = join(
+                    ctx,
+                    self.schemas
+                        .iter()
+                        .filter(|schema| **schema != RseSchema::SCHEMA_31)
+                        .map(|schema| {
+                            retained_format(
+                                ctx,
+                                format_args!("{}", schema.value()),
+                                "retain Inventor foreign schema reason part",
+                            )
+                        }),
+                    "retain Inventor foreign schema reason list",
+                )?;
+                reasons.push(retained_format(
+                    ctx,
+                    format_args!("RSe database schema {foreign} is declared"),
+                    "retain Inventor foreign schema reason",
+                )?);
             }
         }
         if !self.unframed_meta_streams.is_empty() {
-            reasons.push(format!(
-                "RSe segment metadata marker {} version {} is declared but its body does not frame under the version-8 grammar",
-                join(
-                    self.unframed_meta_streams
-                        .iter()
-                        .map(|declared| format!("{:?}", declared.marker))
-                ),
-                join(
-                    self.unframed_meta_streams
-                        .iter()
-                        .map(|declared| declared.version.to_string())
-                )
-            ));
+            ctx.charge_collection_items(1, "collect Inventor dialect reasons")?;
+            let markers = join(
+                ctx,
+                self.unframed_meta_streams.iter().map(|declared| {
+                    retained_format(
+                        ctx,
+                        format_args!("{:?}", declared.marker),
+                        "retain Inventor unframed marker reason part",
+                    )
+                }),
+                "retain Inventor unframed marker reason list",
+            )?;
+            let versions = join(
+                ctx,
+                self.unframed_meta_streams.iter().map(|declared| {
+                    retained_format(
+                        ctx,
+                        format_args!("{}", declared.version),
+                        "retain Inventor unframed version reason part",
+                    )
+                }),
+                "retain Inventor unframed version reason list",
+            )?;
+            reasons.push(retained_format(ctx, format_args!(
+                "RSe segment metadata marker {markers} version {versions} is declared but its body does not frame under the version-8 grammar"
+            ), "retain Inventor unframed metadata reason")?);
         }
         if self.meta_streams.is_empty() {
+            ctx.charge_collection_items(1, "collect Inventor dialect reasons")?;
+            ctx.charge_retained(
+                u64_len(
+                    ctx,
+                    "no RSe segment metadata stream declares a marker and version".len(),
+                )?,
+                "retain Inventor absent metadata reason",
+            )?;
             reasons.push("no RSe segment metadata stream declares a marker and version".to_owned());
         } else {
-            let foreign = self
+            ctx.charge_work(
+                u64_len(ctx, self.meta_streams.len())?,
+                "scan Inventor foreign metadata",
+            )?;
+            if self
                 .meta_streams
                 .iter()
-                .filter(|declared| !declared.is_verified())
-                .collect::<Vec<_>>();
-            if !foreign.is_empty() {
-                reasons.push(format!(
-                    "RSe segment metadata marker {} version {} is declared",
-                    join(
-                        foreign
-                            .iter()
-                            .map(|declared| format!("{:?}", declared.marker))
+                .any(|declared| !declared.is_verified())
+            {
+                ctx.charge_collection_items(1, "collect Inventor dialect reasons")?;
+                let markers = join(
+                    ctx,
+                    self.meta_streams
+                        .iter()
+                        .filter(|declared| !declared.is_verified())
+                        .map(|declared| {
+                            retained_format(
+                                ctx,
+                                format_args!("{:?}", declared.marker),
+                                "retain Inventor foreign marker reason part",
+                            )
+                        }),
+                    "retain Inventor foreign marker reason list",
+                )?;
+                let versions = join(
+                    ctx,
+                    self.meta_streams
+                        .iter()
+                        .filter(|declared| !declared.is_verified())
+                        .map(|declared| {
+                            retained_format(
+                                ctx,
+                                format_args!("{}", declared.version),
+                                "retain Inventor foreign version reason part",
+                            )
+                        }),
+                    "retain Inventor foreign version reason list",
+                )?;
+                reasons.push(retained_format(
+                    ctx,
+                    format_args!(
+                        "RSe segment metadata marker {markers} version {versions} is declared"
                     ),
-                    join(foreign.iter().map(|declared| declared.version.to_string()))
-                ));
+                    "retain Inventor foreign metadata reason",
+                )?);
             }
         }
-        InventorLossCode::SourceDialectUnverified.note(format!(
+        let separator_count = if reasons.is_empty() {
+            0
+        } else {
+            reasons.len() - 1
+        };
+        let mut reason_bytes = separator_count.checked_mul(2).ok_or_else(|| {
+            ctx.refuse_codec_limit("Inventor dialect reason bytes", u64::MAX - 1, u64::MAX)
+        })?;
+        for reason in &reasons {
+            reason_bytes = reason_bytes.checked_add(reason.len()).ok_or_else(|| {
+                ctx.refuse_codec_limit("Inventor dialect reason bytes", u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        ctx.charge_retained(
+            u64_len(ctx, reason_bytes)?,
+            "retain Inventor joined dialect reasons",
+        )?;
+        let joined_reasons = reasons.join("; ");
+        Ok(
+            InventorLossCode::SourceDialectUnverified.note(retained_format(
+                ctx,
+                format_args!(
             "{}; this decode applied the only Inventor grammars this codec implements — RSe \
              database schema {} and RSe segment metadata marker {:?} version {} — to those \
              streams, and what they did not frame is reported as an unavailable stream with its \
              own issue record",
-            reasons.join("; "),
+            joined_reasons,
             RseSchema::SCHEMA_31.value(),
             MetaStreamDeclaration::VERIFIED_MARKER,
             MetaStreamDeclaration::VERIFIED_VERSION
-        ))
+        ),
+                "retain Inventor dialect loss message",
+            )?),
+        )
     }
 }
 
@@ -345,12 +536,19 @@ impl DialectRecovery {
 ///
 /// Presence is derived from `matched`; recovery evidence supplies only the
 /// message detail and cannot independently select whether a loss exists.
-pub(crate) fn dialect_loss(matched: &DialectMatch, recovery: &DialectRecovery) -> Option<LossNote> {
-    (!matches!(
+pub(crate) fn dialect_loss(
+    ctx: &DecodeContext<'_>,
+    matched: &DialectMatch,
+    recovery: &DialectRecovery,
+) -> Result<Option<LossNote>, CodecError> {
+    if matches!(
         matched.admission(),
         cadmpeg_core::dialect::Admission::Admitted
-    ))
-    .then(|| recovery.unverified_loss())
+    ) {
+        Ok(None)
+    } else {
+        Ok(Some(recovery.unverified_loss(ctx)?))
+    }
 }
 
 /// The `acis:` kernel-layer match for one parsed active carrier.
