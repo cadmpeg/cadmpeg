@@ -104,25 +104,56 @@ pub(super) fn transfer_and_record_scanned_geometry(
         })
         .count();
     let paired_envelope_sphere_count =
-        transfer_paired_envelope_spheres(ctx, scan, ir, annotations)?;
-    let positional_torus_count = transfer_positional_tori(ctx, scan, ir, annotations)?;
+        transfer_paired_envelope_spheres(ctx, scan, ir, annotations, source_carriers)?;
+    let positional_torus_count =
+        transfer_positional_tori(ctx, scan, ir, annotations, source_carriers)?;
     let positional_line_extrusion_plane_count =
-        transfer_positional_line_extrusion_planes(ctx, scan, ir, annotations)?;
-    let tabulated_cylinder_spline_extrusion_count =
-        transfer_tabulated_cylinder_spline_extrusions(ctx, scan, ir, annotations, transfer_losses)?;
+        transfer_positional_line_extrusion_planes(ctx, scan, ir, annotations, source_carriers)?;
+    let tabulated_cylinder_spline_extrusion_count = transfer_tabulated_cylinder_spline_extrusions(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
     transfer_fc05_cap_circles(ctx, scan, ir, annotations)?;
     transfer_cap_pair_cylinders(ctx, scan, ir, annotations)?;
     let saved_spline_curve_count =
-        transfer_saved_spline_curves(ctx, scan, ir, annotations, transfer_losses)?;
+        transfer_saved_spline_curves(ctx, scan, ir, annotations, transfer_losses, source_carriers)?;
     let sketch_segment_coverage = transfer_sketches(ctx, scan, ir, annotations, transfer_losses)?;
-    let feature_revolution_surface_count =
-        transfer_resolved_revolution_surfaces(ctx, scan, ir, annotations, transfer_losses)?;
+    let feature_revolution_surface_count = transfer_resolved_revolution_surfaces(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
     let feature_revolution_vertex_orbit_curve_count =
-        transfer_resolved_revolution_vertex_orbit_curves(ctx, scan, ir, annotations)?;
-    let feature_extrusion_surface_count =
-        transfer_feature_extrusion_surfaces(ctx, scan, ir, annotations, transfer_losses)?;
+        transfer_resolved_revolution_vertex_orbit_curves(
+            ctx,
+            scan,
+            ir,
+            annotations,
+            source_carriers,
+        )?;
+    let feature_extrusion_surface_count = transfer_feature_extrusion_surfaces(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
     let feature_extrusion_vertex_orbit_curve_count =
-        transfer_resolved_extrusion_vertex_orbit_curves(ctx, scan, ir, annotations)?;
+        transfer_resolved_extrusion_vertex_orbit_curves(
+            ctx,
+            scan,
+            ir,
+            annotations,
+            source_carriers,
+        )?;
     let active_datum_cylinder_count =
         transfer_active_datum_cylinders(ctx, scan, ir, annotations, source_carriers)?;
     let circular_sweep_cylinder_count =

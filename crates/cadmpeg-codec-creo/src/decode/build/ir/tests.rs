@@ -2,7 +2,8 @@
 
 use super::{
     transfer_datum_plane_surfaces, transfer_display_tessellations,
-    transfer_placed_plane_surfaces_into_ir,
+    transfer_placed_plane_surfaces_into_ir, transfer_reference_circles,
+    transfer_reference_ellipses, transfer_reference_lines,
 };
 use crate::container::{scan_bytes_ok, ContainerScan};
 use crate::decode::source_carriers::SourceUnitCarriers;
@@ -12,6 +13,7 @@ use crate::scalar::PlaneSupportFrameLayout;
 use crate::surface::{LocalSystemClassification, PlaneLocalSystem};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::units::FiniteVector;
@@ -352,4 +354,163 @@ fn datum_plane_scaled_origin_overflow_refuses_unrepresentable_ir() {
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
     });
     assert!(ir.model.surfaces.is_empty());
+}
+
+#[test]
+fn reference_line_origin_is_in_millimeters_at_ir_admission() {
+    let mut scan = scan_bytes_ok(crate::test_support::build_prt("reference", &[]));
+    scan.references.lines.push(crate::reference::ReferenceLine {
+        kind: crate::reference::ReferenceLineKind::Line,
+        start: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+            .expect("finite source point"),
+        end: cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
+            .expect("finite source point"),
+        offset: 0,
+    });
+    let mut ir = CadIr::empty();
+    let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+    crate::decode::with_test_decode_ctx(|ctx| {
+        transfer_reference_lines(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &mut carriers,
+        )
+        .expect("reference line transfer");
+    });
+    let curve = ir.model.curves.first().expect("reference line");
+    let CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) = &curve.geometry else {
+        panic!("reference line changed family");
+    };
+    assert_eq!(line.origin().get(), Point3::new(25.4, 0.0, 0.0));
+    let CurveGeometry::Solved(SolvedCurveGeometry::Line(source_line)) =
+        carriers.curve_geometry(curve)
+    else {
+        panic!("source reference line changed family");
+    };
+    assert_eq!(source_line.origin().get(), Point3::new(1.0, 0.0, 0.0));
+    super::super::units::normalize_model_lengths(
+        &mut ir,
+        PositiveReal::new(25.4).expect("inch scale"),
+        &carriers,
+    )
+    .expect("remaining unit normalization");
+    let CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) = &ir.model.curves[0].geometry
+    else {
+        panic!("reference line changed family");
+    };
+    assert_eq!(line.origin().get(), Point3::new(25.4, 0.0, 0.0));
+}
+
+#[test]
+fn reference_line_scaled_origin_overflow_refuses_before_ir_admission() {
+    let mut scan = scan_bytes_ok(crate::test_support::build_prt("reference", &[]));
+    scan.references.lines.push(crate::reference::ReferenceLine {
+        kind: crate::reference::ReferenceLineKind::Line,
+        start: cadmpeg_ir::features::FinitePoint3::new(Point3::new(f64::MAX, 0.0, 0.0))
+            .expect("finite source point"),
+        end: cadmpeg_ir::features::FinitePoint3::new(Point3::new(f64::MAX, 1.0, 0.0))
+            .expect("finite source point"),
+        offset: 0,
+    });
+    let mut ir = CadIr::empty();
+    let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let error = transfer_reference_lines(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &mut carriers,
+        )
+        .expect_err("millimeter origin cannot be represented");
+        assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
+    });
+    assert!(ir.model.curves.is_empty());
+}
+
+#[test]
+fn reference_circle_radius_is_in_millimeters_at_ir_admission() {
+    let mut scan = scan_bytes_ok(crate::test_support::build_prt("reference", &[]));
+    scan.references
+        .circles
+        .push(crate::reference::ReferenceCircle {
+            entity_id: 7,
+            center: [1.0, 0.0, 0.0],
+            center_stored: true,
+            radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
+            axis: cadmpeg_ir::units::UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"),
+            start: cadmpeg_ir::features::FinitePoint3::new(Point3::new(3.0, 0.0, 0.0))
+                .expect("finite start"),
+            end: cadmpeg_ir::features::FinitePoint3::ZERO,
+            offset: 0,
+        });
+    let mut ir = CadIr::empty();
+    let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+    crate::decode::with_test_decode_ctx(|ctx| {
+        transfer_reference_circles(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &mut carriers,
+        )
+        .expect("reference circle transfer");
+    });
+    let curve = ir.model.curves.first().expect("reference circle");
+    let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) = &curve.geometry else {
+        panic!("reference circle changed family");
+    };
+    assert_eq!(circle.center().get(), Point3::new(25.4, 0.0, 0.0));
+    assert_eq!(circle.radius().get(), 50.8);
+    let CurveGeometry::Solved(SolvedCurveGeometry::Circle(source_circle)) =
+        carriers.curve_geometry(curve)
+    else {
+        panic!("source reference circle changed family");
+    };
+    assert_eq!(source_circle.radius().get(), 2.0);
+}
+
+#[test]
+fn reference_ellipse_radii_are_in_millimeters_at_ir_admission() {
+    let mut scan = scan_bytes_ok(crate::test_support::build_prt("reference", &[]));
+    scan.references
+        .ellipses
+        .push(crate::reference::ReferenceEllipse {
+            source_entity_id: 8,
+            center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                .expect("finite center"),
+            axis: cadmpeg_ir::units::UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"),
+            major_direction: cadmpeg_ir::units::UnitVector3::new([1.0, 0.0, 0.0].into())
+                .expect("unit direction"),
+            major_radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
+            minor_radius: cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("positive radius"),
+            offset: 0,
+        });
+    let mut ir = CadIr::empty();
+    let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+    crate::decode::with_test_decode_ctx(|ctx| {
+        transfer_reference_ellipses(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &mut carriers,
+        )
+        .expect("reference ellipse transfer");
+    });
+    let curve = ir.model.curves.first().expect("reference ellipse");
+    let CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse)) = &curve.geometry else {
+        panic!("reference ellipse changed family");
+    };
+    assert_eq!(ellipse.center().get(), Point3::new(25.4, 0.0, 0.0));
+    assert_eq!(ellipse.major_radius().get(), 50.8);
+    assert_eq!(ellipse.minor_radius().get(), 25.4);
+    let CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(source_ellipse)) =
+        carriers.curve_geometry(curve)
+    else {
+        panic!("source reference ellipse changed family");
+    };
+    assert_eq!(source_ellipse.major_radius().get(), 2.0);
 }
