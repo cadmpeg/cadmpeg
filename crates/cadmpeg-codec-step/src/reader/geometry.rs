@@ -11,8 +11,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_parameter_near_point};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
-    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
+    nurbs::{KnotVector, NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis},
+    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles},
     sampled::{PolylineCurve, PolylineSamples},
     CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, ProceduralCurve,
     ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
@@ -4179,7 +4179,7 @@ enum DefaultNurbsKnotKind {
 struct NurbsCurveDefinition {
     degree: u32,
     control_points: Vec<u64>,
-    knots: Vec<f64>,
+    knots: KnotVector,
     weights: Option<Vec<f64>>,
     periodic: bool,
 }
@@ -4255,7 +4255,7 @@ fn default_nurbs_knots(
     control_point_count: usize,
     degree: u32,
     kind: DefaultNurbsKnotKind,
-) -> Option<Vec<f64>> {
+) -> Option<KnotVector> {
     let degree = usize::try_from(degree).ok()?;
     let expected = control_point_count.checked_add(degree)?.checked_add(1)?;
     let mut knots = Vec::new();
@@ -4295,7 +4295,14 @@ fn default_nurbs_knots(
             }
         }
     }
-    (knots.len() == expected).then_some(knots)
+    (knots.len() == expected).then_some(())?;
+    KnotVector::from_finite_lanes(
+        knots
+            .into_iter()
+            .map(FiniteReal::new)
+            .collect::<Option<Vec<_>>>()?,
+    )
+    .ok()
 }
 
 fn nurbs_curve(
@@ -4308,15 +4315,17 @@ fn nurbs_curve(
     let control_points = definition
         .control_points
         .into_iter()
-        .map(|id| points.get(&id).copied().map(FinitePoint3::get))
+        .map(|id| points.get(&id).copied())
         .collect::<Option<Vec<_>>>()?;
-    match NurbsCurve::from_lanes(
-        definition.degree,
-        definition.knots,
-        control_points,
-        definition.weights,
-        definition.periodic,
-    ) {
+    let curve = NurbsPoles3::from_lanes(control_points, definition.weights).and_then(|poles| {
+        NurbsCurve::new(
+            definition.degree,
+            definition.knots,
+            poles,
+            definition.periodic,
+        )
+    });
+    match curve {
         Ok(curve) => Some(curve),
         Err(error) => {
             losses.push(StepLossCode::DecodeWarning.note(format!(
@@ -4339,13 +4348,16 @@ fn nurbs_pcurve(
         .into_iter()
         .map(|id| points.get(&id).copied())
         .collect::<Option<Vec<_>>>()?;
-    match PcurveNurbs::from_lanes(
-        definition.degree,
-        definition.knots,
-        control_points,
-        definition.weights,
-        definition.periodic,
-    ) {
+    let pcurve =
+        PcurveNurbsPoles::from_lanes(control_points, definition.weights).and_then(|poles| {
+            PcurveNurbs::new(
+                definition.degree,
+                definition.knots,
+                poles,
+                definition.periodic,
+            )
+        });
+    match pcurve {
         Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
         Err(error) => {
             losses.push(StepLossCode::DecodeWarning.note(format!(
@@ -4670,11 +4682,15 @@ fn pcurve_periodic_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
     }
 }
 
-fn pcurve_nurbs_parameter_domain(degree: u32, knots: &[f64], count: usize) -> Option<[f64; 2]> {
+fn pcurve_nurbs_parameter_domain(
+    degree: u32,
+    knots: &KnotVector,
+    count: usize,
+) -> Option<[f64; 2]> {
     let degree = usize::try_from(degree).ok()?;
     let lower = *knots.get(degree)?;
     let upper = *knots.get(count)?;
-    (lower.is_finite() && upper.is_finite() && upper > lower).then_some([lower, upper])
+    (upper > lower).then_some([lower, upper])
 }
 
 fn shift_periodic_parameter(value: f64, [lower, upper]: [f64; 2]) -> f64 {
@@ -4983,11 +4999,15 @@ pub(super) fn surface_periodic_domains(geometry: &SolvedSurfaceGeometry) -> [Opt
     }
 }
 
-fn nurbs_surface_parameter_domain(degree: u32, knots: &[f64], count: usize) -> Option<[f64; 2]> {
+fn nurbs_surface_parameter_domain(
+    degree: u32,
+    knots: &KnotVector,
+    count: usize,
+) -> Option<[f64; 2]> {
     let degree = usize::try_from(degree).ok()?;
     let lower = *knots.get(degree)?;
     let upper = *knots.get(count)?;
-    (lower.is_finite() && upper.is_finite() && upper > lower).then_some([lower, upper])
+    (upper > lower).then_some([lower, upper])
 }
 
 fn polyline_pcurve(
@@ -5183,12 +5203,15 @@ fn nurbs_surface(
     } else {
         None
     };
-    match NurbsSurface::from_lanes(
-        NurbsSurfaceAxis::new(u_degree, u_knots, u_periodic),
-        NurbsSurfaceAxis::new(v_degree, v_knots, v_periodic),
-        NurbsSurfaceLanes::new(control_points, weights),
-        false,
-    ) {
+    let surface = NurbsPoleGrid::from_lanes(control_points, weights).and_then(|poles| {
+        NurbsSurface::new(
+            NurbsSurfaceAxis::new(u_degree, u_knots, u_periodic),
+            NurbsSurfaceAxis::new(v_degree, v_knots, v_periodic),
+            poles,
+            false,
+        )
+    });
+    match surface {
         Ok(surface) => Some(surface),
         Err(error) => {
             losses.push(StepLossCode::DecodeWarning.note(format!(
@@ -5199,7 +5222,7 @@ fn nurbs_surface(
     }
 }
 
-fn expand_knots(multiplicities: &Value, distinct: &Value, expected: usize) -> Option<Vec<f64>> {
+fn expand_knots(multiplicities: &Value, distinct: &Value, expected: usize) -> Option<KnotVector> {
     let multiplicities = multiplicities.list()?;
     let distinct = distinct.list()?;
     if multiplicities.len() != distinct.len() {
@@ -5209,8 +5232,8 @@ fn expand_knots(multiplicities: &Value, distinct: &Value, expected: usize) -> Op
     knots.try_reserve_exact(expected).ok()?;
     for (multiplicity, knot) in multiplicities.iter().zip(distinct) {
         let count = usize::try_from(multiplicity.integer()?).ok()?;
-        let knot = knot.number()?;
-        if count == 0 || !knot.is_finite() {
+        let knot = knot.number().and_then(FiniteReal::new)?;
+        if count == 0 {
             return None;
         }
         if knots.len().checked_add(count)? > expected {
@@ -5218,10 +5241,7 @@ fn expand_knots(multiplicities: &Value, distinct: &Value, expected: usize) -> Op
         }
         knots.extend(std::iter::repeat_n(knot, count));
     }
-    knots
-        .windows(2)
-        .all(|pair| pair[0] <= pair[1])
-        .then_some(knots)
+    KnotVector::from_finite_lanes(knots).ok()
 }
 
 fn references(value: &Value) -> Option<Vec<u64>> {
