@@ -11,7 +11,7 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::units::FiniteVector;
+use cadmpeg_ir::units::{FiniteVector, UnitVector3};
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, ChecksumStatus, Chunk};
 use crate::curves::{decode_embedded_curve_2d, error, exact_nurbs, DecodedCurve, GeometryError};
@@ -78,9 +78,9 @@ pub(crate) struct DecodedExtrusion {
     /// Effective cap origins.
     pub(crate) cap_origins: [Point3; 2],
     /// Effective cap normals.
-    pub(crate) cap_normals: [Vector3; 2],
+    pub(crate) cap_normals: [UnitVector3; 2],
     /// Effective cap U axes.
-    pub(crate) cap_u_axes: [Vector3; 2],
+    pub(crate) cap_u_axes: [UnitVector3; 2],
     /// Independent cap flags.
     pub(crate) caps: [bool; 2],
     /// Valid optional display meshes.
@@ -259,7 +259,7 @@ pub(crate) fn decode(
         let start_nurbs = transform_nurbs(
             &source_nurbs,
             cap_origins[0],
-            xaxis,
+            xaxis.into(),
             up,
             tangent,
             active_miters[0],
@@ -268,7 +268,7 @@ pub(crate) fn decode(
         let end_nurbs = transform_nurbs(
             &source_nurbs,
             cap_origins[1],
-            xaxis,
+            xaxis.into(),
             up,
             tangent,
             active_miters[1],
@@ -278,8 +278,8 @@ pub(crate) fn decode(
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(start_nurbs.clone())),
             source.warnings().clone(),
         );
-        let start_frame = cap_frame(xaxis, up, tangent, active_miters[0], version_offset)?;
-        let end_frame = cap_frame(xaxis, up, tangent, active_miters[1], version_offset)?;
+        let start_frame = cap_frame(xaxis.into(), up, tangent, active_miters[0], version_offset)?;
+        let end_frame = cap_frame(xaxis.into(), up, tangent, active_miters[1], version_offset)?;
         let start_pcurve = cap_pcurve(&start_nurbs, cap_origins[0], start_frame, version_offset)?;
         let end_pcurve = cap_pcurve(&end_nurbs, cap_origins[1], end_frame, version_offset)?;
         let lateral = crate::surfaces::extrusion_nurbs(
@@ -323,8 +323,8 @@ pub(crate) fn decode(
         ));
     }
     let cap_frames = [
-        cap_frame(xaxis, up, tangent, active_miters[0], version_offset)?,
-        cap_frame(xaxis, up, tangent, active_miters[1], version_offset)?,
+        cap_frame(xaxis.into(), up, tangent, active_miters[0], version_offset)?,
+        cap_frame(xaxis.into(), up, tangent, active_miters[1], version_offset)?,
     ];
     Ok(DecodedExtrusion {
         boundaries,
@@ -527,7 +527,7 @@ fn transform_nurbs(
     xaxis: Vector3,
     yaxis: Vector3,
     zaxis: Vector3,
-    miter: Option<Vector3>,
+    miter: Option<UnitVector3>,
     offset: usize,
 ) -> Result<NurbsCurve, GeometryError> {
     let mut result = curve.clone();
@@ -554,7 +554,7 @@ fn transform_local(
     xaxis: Vector3,
     yaxis: Vector3,
     zaxis: Vector3,
-    miter: Option<Vector3>,
+    miter: Option<UnitVector3>,
     offset: usize,
 ) -> Result<Point3, GeometryError> {
     if point.z != 0.0 {
@@ -574,26 +574,35 @@ fn cap_frame(
     xaxis: Vector3,
     yaxis: Vector3,
     zaxis: Vector3,
-    miter: Option<Vector3>,
+    miter: Option<UnitVector3>,
     offset: usize,
-) -> Result<(Vector3, Vector3, Vector3), GeometryError> {
+) -> Result<(UnitVector3, UnitVector3, UnitVector3), GeometryError> {
     let local_x = mitered_local(Vector3::new(1.0, 0.0, 0.0), miter, offset)?;
     let local_y = mitered_local(Vector3::new(0.0, 1.0, 0.0), miter, offset)?;
     let world_x = local_to_world_vector(local_x, xaxis, yaxis, zaxis);
     let world_y = local_to_world_vector(local_y, xaxis, yaxis, zaxis);
     let u = normalize(world_x, offset, "extrusion cap U axis")?;
     let normal = normalize(world_x.cross(world_y), offset, "extrusion cap normal")?;
-    let v = normalize(normal.cross(u), offset, "extrusion cap V axis")?;
+    let v = normalize(
+        Vector3::from(normal).cross(u.into()),
+        offset,
+        "extrusion cap V axis",
+    )?;
     Ok((u, v, normal))
 }
 
 fn cap_pcurve(
     curve: &NurbsCurve,
     origin: Point3,
-    frame: (Vector3, Vector3, Vector3),
+    frame: (UnitVector3, UnitVector3, UnitVector3),
     offset: usize,
 ) -> Result<CapPcurve, GeometryError> {
     let control_points = curve.pole_rows().raw_points();
+    let frame = (
+        Vector3::from(frame.0),
+        Vector3::from(frame.1),
+        Vector3::from(frame.2),
+    );
     let mut points = Vec::with_capacity(control_points.len());
     for point in control_points {
         let delta = point.vector_from(origin);
@@ -614,20 +623,22 @@ fn cap_pcurve(
 
 fn mitered_local(
     point: Vector3,
-    normal: Option<Vector3>,
+    normal: Option<UnitVector3>,
     offset: usize,
 ) -> Result<Vector3, GeometryError> {
     let Some(normal) = normal else {
         return Ok(point);
     };
+    let normal: Vector3 = normal.into();
     if normal.x == 0.0 && normal.y == 0.0 {
         return Ok(point);
     }
-    let axis = normalize(
+    let axis: Vector3 = normalize(
         Vector3::new(-normal.y, normal.x, 0.0),
         offset,
         "extrusion miter rotation axis",
-    )?;
+    )?
+    .into();
     let c = 1.0 - 1.0 / normal.z;
     let scaled = Vector3::new(
         (1.0 - c * axis.y * axis.y) * point.x + c * axis.x * axis.y * point.y,
@@ -886,17 +897,17 @@ fn require_unit(value: Vector3, offset: usize, name: &str) -> Result<(), Geometr
     }
 }
 
-fn active_miter(present: bool, value: Vector3) -> Option<Vector3> {
+fn active_miter(present: bool, value: Vector3) -> Option<UnitVector3> {
     if !present {
         return None;
     }
-    let unit = FiniteVector3::new(value)?.unit_nonzero()?;
-    (unit.z > MITER_Z_MINIMUM).then_some(unit)
+    let unit = UnitVector3::normalized_nonzero(FiniteVector3::new(value)?)?;
+    (Vector3::from(unit).z > MITER_Z_MINIMUM).then_some(unit)
 }
 
-fn normalize(value: Vector3, offset: usize, name: &str) -> Result<Vector3, GeometryError> {
+fn normalize(value: Vector3, offset: usize, name: &str) -> Result<UnitVector3, GeometryError> {
     FiniteVector3::new(value)
-        .and_then(FiniteVector3::unit_nonzero)
+        .and_then(UnitVector3::normalized_nonzero)
         .ok_or_else(|| error(offset, format!("{name} is invalid")))
 }
 
@@ -1527,14 +1538,14 @@ pub(crate) mod tests {
     #[test]
     fn active_miter_unitizes_and_applies_only_above_the_z_threshold() {
         assert_eq!(
-            active_miter(true, Vector3::new(0.0, 1.2, 1.6)),
+            active_miter(true, Vector3::new(0.0, 1.2, 1.6)).map(Vector3::from),
             Some(Vector3::new(0.0, 0.6, 0.8))
         );
         assert_eq!(active_miter(true, Vector3::new(1.0, 0.0, 0.01)), None);
         assert_eq!(active_miter(true, Vector3::new(0.0, 0.0, 0.0)), None);
         assert!(mitered_local(
             Vector3::new(1.0, 0.0, 0.0),
-            Some(Vector3::new(0.0, 0.6, 0.8)),
+            active_miter(true, Vector3::new(0.0, 1.2, 1.6)),
             0
         )
         .is_ok());
@@ -1550,13 +1561,15 @@ pub(crate) mod tests {
             Vector3::new(1.0, 0.0, 0.0),
             Vector3::new(0.0, 1.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
-            Some(Vector3::new(0.0, 0.6, 0.8)),
+            active_miter(true, Vector3::new(0.0, 1.2, 1.6)),
             0,
         )
         .expect("required invariant");
-        assert_eq!(plain.2, Vector3::new(0.0, 0.0, 1.0));
-        assert!((mitered.2.y - 0.6).abs() < 1.0e-12);
-        assert!((mitered.2.z - 0.8).abs() < 1.0e-12);
+        assert_eq!(Vector3::from(plain.2), Vector3::new(0.0, 0.0, 1.0));
+        let mitered_normal: Vector3 = mitered.2.into();
+        const EPS_MITER_DIRECTION: f64 = 1.0e-12;
+        assert!((mitered_normal.y - 0.6).abs() < EPS_MITER_DIRECTION);
+        assert!((mitered_normal.z - 0.8).abs() < EPS_MITER_DIRECTION);
     }
 
     #[test]
@@ -1687,6 +1700,6 @@ pub(crate) mod tests {
         let normal = super::active_miter(true, Vector3::new(SMALL_MITER_TILT, 0.0, 1.0)).unwrap();
         let point = super::mitered_local(Vector3::new(1.0e8, 0.0, 0.0), Some(normal), 0).unwrap();
         assert!((point.z + 1.0).abs() <= 8.0 * f64::EPSILON);
-        assert!(normal.dot(point).abs() <= 8.0 * f64::EPSILON);
+        assert!(Vector3::from(normal).dot(point).abs() <= 8.0 * f64::EPSILON);
     }
 }

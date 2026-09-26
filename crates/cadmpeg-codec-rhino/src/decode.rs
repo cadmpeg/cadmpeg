@@ -3545,17 +3545,22 @@ fn stage_extrusion_caps(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "face"),
             cap_key.clone(),
         );
+        let frame = cadmpeg_ir::units::OrthonormalFrame3::from_units(
+            extrusion.cap_normals[cap],
+            extrusion.cap_u_axes[cap],
+        )
+        .ok_or_else(|| {
+            "extrusion cap staging: PlaneSurface.normal/u_axis must form an orthonormal frame"
+                .to_string()
+        })?;
+        let origin = cadmpeg_ir::features::FinitePoint3::new(extrusion.cap_origins[cap])
+            .ok_or_else(|| {
+                "extrusion cap staging: PlaneSurface.origin must be finite".to_string()
+            })?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                match cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    extrusion.cap_origins[cap],
-                    extrusion.cap_normals[cap],
-                    extrusion.cap_u_axes[cap],
-                ) {
-                    Ok(plane) => plane,
-                    Err(error) => return Err(format!("extrusion cap staging: {error}")),
-                },
+                cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, frame),
             )),
             source_object: Some(association.clone()),
         });
