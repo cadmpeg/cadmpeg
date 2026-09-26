@@ -105,11 +105,13 @@ pub(super) fn scan(
             continue;
         };
         let geometry = &source.carrier().geometry;
-        let mut values = [0.0_f64; 8];
+        let mut values = [cadmpeg_ir::scalar::FiniteReal::ZERO; 8];
         let mut valid = true;
         for (index, value) in values.iter_mut().enumerate() {
-            match View::f64_be_at(bytes, marker_at + 3 + index * 8) {
-                Some(parsed) if parsed.is_finite() => *value = parsed,
+            match View::f64_be_at(bytes, marker_at + 3 + index * 8)
+                .and_then(cadmpeg_ir::scalar::FiniteReal::new)
+            {
+                Some(parsed) => *value = parsed,
                 _ => {
                     valid = false;
                     break;
@@ -120,19 +122,19 @@ pub(super) fn scan(
             continue;
         }
         let start = Point3::new(
-            values[0] * LEN_TO_MM,
-            values[1] * LEN_TO_MM,
-            values[2] * LEN_TO_MM,
+            values[0].get() * LEN_TO_MM,
+            values[1].get() * LEN_TO_MM,
+            values[2].get() * LEN_TO_MM,
         );
         let end = Point3::new(
-            values[3] * LEN_TO_MM,
-            values[4] * LEN_TO_MM,
-            values[5] * LEN_TO_MM,
+            values[3].get() * LEN_TO_MM,
+            values[4].get() * LEN_TO_MM,
+            values[5].get() * LEN_TO_MM,
         );
-        let Some(evaluated_start) = point_at(geometry, values[6]) else {
+        let Some(evaluated_start) = point_at(geometry, values[6].get()) else {
             continue;
         };
-        let Some(evaluated_end) = point_at(geometry, values[7]) else {
+        let Some(evaluated_end) = point_at(geometry, values[7].get()) else {
             continue;
         };
         if !close(start, evaluated_start) || !close(end, evaluated_end) {
@@ -153,7 +155,9 @@ pub(super) fn scan(
             offset: off,
             end: marker_at + 1 + PAYLOAD_LEN,
             geometry: geometry.clone(),
-            parameter_range: Some([values[6], values[7]]),
+            parameter_range: Some(cadmpeg_ir::units::FiniteVector::from([
+                values[6], values[7],
+            ])),
         });
     }
     Ok(out)
@@ -274,7 +278,10 @@ mod tests {
             decoded[0].geometry,
             CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
         ));
-        assert_eq!(decoded[0].parameter_range, Some([0.0, 0.005]));
+        assert_eq!(
+            decoded[0].parameter_range.map(cadmpeg_ir::units::FiniteVector::get),
+            Some([0.0, 0.005])
+        );
     }
 
     #[test]
