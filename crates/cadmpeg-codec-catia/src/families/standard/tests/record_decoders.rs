@@ -43,6 +43,54 @@ fn standard_torus_major_sign_selects_the_axis_hemisphere() {
 }
 
 #[test]
+fn standard_analytic_scalar_refusals_preserve_source_bounds() {
+    let decode = |kind: AnalyticSurfaceKind, values: &[f32]| {
+        let mut bytes = vec![0x00, 0x33, kind.marker()];
+        for value in values {
+            bytes.extend_from_slice(&value.to_be_bytes());
+        }
+        crate::families::standard::records::decode_curved(
+            &bytes,
+            &crate::families::standard::records::SurfacePrefix {
+                pos: 0,
+                target: 0,
+                kind,
+            },
+        )
+    };
+    assert!(decode(AnalyticSurfaceKind::Sphere, &[0.0, 0.0, 0.0, 1.0]).is_some());
+    for radius in [0.0, -1.0, f32::INFINITY] {
+        assert!(decode(AnalyticSurfaceKind::Sphere, &[0.0, 0.0, 0.0, radius]).is_none());
+    }
+    assert!(decode(
+        AnalyticSurfaceKind::Cylinder,
+        &[0.0, 0.0, 0.0, 0.0, 0.0, -2.0]
+    )
+    .is_some());
+    assert!(decode(
+        AnalyticSurfaceKind::Cylinder,
+        &[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    )
+    .is_none());
+    assert!(decode(AnalyticSurfaceKind::Cone, &[0.0, 0.0, 0.0, 0.0, 0.0, -0.5]).is_some());
+    for angle in [0.0, std::f32::consts::FRAC_PI_2, f32::NAN] {
+        assert!(decode(AnalyticSurfaceKind::Cone, &[0.0, 0.0, 0.0, 0.0, 0.0, angle]).is_none());
+    }
+    assert!(decode(
+        AnalyticSurfaceKind::Torus,
+        &[0.0, 0.0, 0.0, 0.0, 0.0, -2.0, 1.0]
+    )
+    .is_some());
+    for minor in [0.0, -1.0, f32::INFINITY] {
+        assert!(decode(
+            AnalyticSurfaceKind::Torus,
+            &[0.0, 0.0, 0.0, 0.0, 0.0, 2.0, minor]
+        )
+        .is_none());
+    }
+}
+
+#[test]
 fn standard_analytic_carriers_have_no_model_size_cutoff() {
     for (kind, values, expected_radius) in [
         (0x35, vec![0.0_f32, 0.0, 0.0, 2_000_000.0], 2_000_000.0),
@@ -764,7 +812,33 @@ fn standard_circle_parser_has_no_model_size_cutoff() {
     else {
         panic!("circle row");
     };
-    assert_eq!(radius, 2_000_000.0);
+    assert_eq!(radius.get(), 2_000_000.0);
+}
+
+#[test]
+fn standard_circle_parser_admits_finite_center_and_positive_radius() {
+    let circle_row = |values: [f32; 4]| {
+        let mut bytes = vec![0x60, 1, 2, 3, 0x00, 0x12, 0x00, 0x33, 0x37];
+        for value in values {
+            bytes.extend_from_slice(&value.to_be_bytes());
+        }
+        bytes.extend_from_slice(&[0, 1]);
+        crate::families::standard::records::standard_curve_supports(&bytes, 2, Some(1))
+    };
+    let valid = circle_row([1.0, -2.0, 3.0, 4.0]);
+    let StandardCurveGeometry::Circle { center, radius } = valid[0].geometry else {
+        panic!("circle row");
+    };
+    assert_eq!(center.get(), Point3::new(1.0, -2.0, 3.0));
+    assert_eq!(radius.get(), 4.0);
+    for values in [
+        [f32::NAN, -2.0, 3.0, 4.0],
+        [1.0, -2.0, 3.0, f32::INFINITY],
+        [1.0, -2.0, 3.0, 0.0],
+        [1.0, -2.0, 3.0, -4.0],
+    ] {
+        assert!(circle_row(values).is_empty());
+    }
 }
 
 #[test]
@@ -1172,10 +1246,14 @@ fn standard_face_witness_requires_an_analytic_marker() {
         record[32 + index * 4..36 + index * 4].copy_from_slice(&value.to_le_bytes());
     }
     assert_eq!(
-        crate::families::standard::records::standard_face_witness(&record, 5),
+        crate::families::standard::records::standard_face_witness(&record, 5)
+            .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
     );
     record[6] = 0x32;
+    assert!(crate::families::standard::records::standard_face_witness(&record, 5).is_none());
+    record[6] = 0x33;
+    record[32..36].copy_from_slice(&f32::NAN.to_le_bytes());
     assert!(crate::families::standard::records::standard_face_witness(&record, 5).is_none());
 }
 

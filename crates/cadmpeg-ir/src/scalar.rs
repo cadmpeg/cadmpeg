@@ -320,6 +320,14 @@ impl PositiveAngle {
     pub const THREE_QUARTER_TURN: Self = Self(3.0 * std::f64::consts::FRAC_PI_2);
 }
 
+impl NonZeroAngle {
+    /// The positive magnitude of a finite nonzero angle.
+    #[must_use]
+    pub const fn abs(self) -> PositiveAngle {
+        PositiveAngle(self.0.abs())
+    }
+}
+
 /// State one subset edge inside a quantity family.
 ///
 /// `$from` accepts a subset of what `$to` accepts, so the widening carries the

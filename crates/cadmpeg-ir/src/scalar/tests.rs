@@ -1,4 +1,15 @@
 #[test]
+fn nonzero_angle_magnitude_carries_positive_admission() {
+    use crate::scalar::NonZeroAngle;
+
+    for source in [0.25, -0.25, f64::MIN_POSITIVE, -f64::MIN_POSITIVE] {
+        let angle = NonZeroAngle::new(source).unwrap();
+        assert_eq!(angle.abs().get().to_bits(), source.abs().to_bits());
+    }
+    assert!(NonZeroAngle::new(0.0).is_none());
+}
+
+#[test]
 fn feature_scalars_reject_nonfinite_constructor_and_serde_values() {
     use crate::scalar::{Angle, Length};
     use serde::de::value::{Error, F64Deserializer};
