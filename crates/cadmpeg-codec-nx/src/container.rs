@@ -1244,11 +1244,6 @@ fn directory_region(
                 "directory entry {ordinal} is truncated or malformed"
             )));
         };
-        if next > region_end {
-            return Err(CodecError::malformed(format_args!(
-                "directory entry {ordinal} extends beyond its bounded region"
-            )));
-        }
         entries.push(entry);
         at = next;
     }
