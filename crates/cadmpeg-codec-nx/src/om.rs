@@ -43,7 +43,8 @@ use std::num::NonZeroU8;
 use std::sync::Arc;
 
 use crate::printable_string::PrintableString;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{alloc_filled, DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
 pub(crate) mod compact;
@@ -1126,18 +1127,27 @@ impl<'a> Section<'a> {
 
     /// Decode the field-declared `m_rollForwardStates` group table before the
     /// bounded operation-state counter map.
-    pub(crate) fn operation_state_group_table(&self) -> Option<OperationStateGroupTable> {
+    pub(crate) fn operation_state_group_table(
+        &self,
+        ctx: Option<&DecodeContext<'_>>,
+    ) -> Result<Option<OperationStateGroupTable>, CodecError> {
         if !self
             .fields
             .iter()
             .any(|definition| definition.name == "m_rollForwardStates")
         {
-            return None;
+            return Ok(None);
         }
-        let map = self.operation_state_counter_map()?;
-        let (base_offset, bytes) = self.record_area_parts()?;
-        let map_start = map.offset().checked_sub(base_offset)?;
-        operation_state_group_table_before_counter_map(bytes, map_start, base_offset)
+        let Some(map) = self.operation_state_counter_map() else {
+            return Ok(None);
+        };
+        let Some((base_offset, bytes)) = self.record_area_parts() else {
+            return Ok(None);
+        };
+        let Some(map_start) = map.offset().checked_sub(base_offset) else {
+            return Ok(None);
+        };
+        operation_state_group_table_before_counter_map(ctx, bytes, map_start, base_offset)
     }
 
     /// Decode anchored state-journal groups from a feature-history record area.
@@ -1168,40 +1178,69 @@ impl<'a> Section<'a> {
         operation_state_journal_groups_before_boundary(bytes, start, end, base_offset)
     }
 
-    fn operation_state_block(&self) -> Option<OperationStateBlock<'a>> {
-        let map = self.operation_state_counter_map()?;
-        let (base_offset, bytes) = self.record_area_parts()?;
-        let (_, last_record) = self
+    fn operation_state_block(
+        &self,
+        ctx: Option<&DecodeContext<'_>>,
+    ) -> Result<Option<OperationStateBlock<'a>>, CodecError> {
+        let Some(map) = self.operation_state_counter_map() else {
+            return Ok(None);
+        };
+        let Some((base_offset, bytes)) = self.record_area_parts() else {
+            return Ok(None);
+        };
+        let Some((_, last_record)) = self
             .operation_records_with_label_ordinals()
             .into_iter()
-            .last()?;
+            .last()
+        else {
+            return Ok(None);
+        };
         let start_offset = last_record.payload_offset();
-        let start = start_offset.checked_sub(base_offset)?;
-        let group = self.operation_state_group_table();
-        let terminal = group
+        let Some(start) = start_offset.checked_sub(base_offset) else {
+            return Ok(None);
+        };
+        let group = self.operation_state_group_table(ctx)?;
+        let Some(terminal) = group
             .as_ref()
             .map_or(map.offset(), OperationStateGroupTable::offset)
-            .checked_sub(base_offset)?;
+            .checked_sub(base_offset)
+        else {
+            return Ok(None);
+        };
         let mut ends = Vec::with_capacity(2);
         if let Some(table) = &group {
-            let overlap_end =
-                terminal.checked_add(table.groups().first().opener().bytes().len())?;
+            let Some(overlap_end) =
+                terminal.checked_add(table.groups().first().opener().bytes().len())
+            else {
+                return Ok(None);
+            };
             ends.push(overlap_end);
         }
         ends.push(terminal);
-        ends.into_iter()
-            .find_map(|end| operation_state_block_before_boundary(bytes, start, end, base_offset))
+        Ok(ends
+            .into_iter()
+            .find_map(|end| operation_state_block_before_boundary(bytes, start, end, base_offset)))
     }
 
     /// Decode the bounded per-object status lane after the operation records.
-    pub(crate) fn operation_state_status_table(&self) -> Option<OperationStateStatusTable<'a>> {
-        self.operation_state_block()?.into_status_table()
+    pub(crate) fn operation_state_status_table(
+        &self,
+        ctx: Option<&DecodeContext<'_>>,
+    ) -> Result<Option<OperationStateStatusTable<'a>>, CodecError> {
+        Ok(self
+            .operation_state_block(ctx)?
+            .and_then(OperationStateBlock::into_status_table))
     }
 
     /// Decode the contiguous standalone message records immediately before
     /// the roll-forward table or counter-map boundary.
-    pub(crate) fn operation_state_messages(&self) -> Option<Vec<OperationStateMessage<'a>>> {
-        self.operation_state_block()?.into_messages()
+    pub(crate) fn operation_state_messages(
+        &self,
+        ctx: Option<&DecodeContext<'_>>,
+    ) -> Result<Option<Vec<OperationStateMessage<'a>>>, CodecError> {
+        Ok(self
+            .operation_state_block(ctx)?
+            .and_then(OperationStateBlock::into_messages))
     }
 
     /// Decode complete rows in an audit-trail record area.
@@ -2627,10 +2666,11 @@ fn operation_state_messages(bytes: &[u8], base_offset: usize) -> Vec<OperationSt
 }
 
 fn operation_state_group_table_before_counter_map(
+    ctx: Option<&DecodeContext<'_>>,
     bytes: &[u8],
     map_start: usize,
     base_offset: usize,
-) -> Option<OperationStateGroupTable> {
+) -> Result<Option<OperationStateGroupTable>, CodecError> {
     #[derive(Clone, Copy)]
     struct GroupPath {
         last_candidate: usize,
@@ -2639,7 +2679,7 @@ fn operation_state_group_table_before_counter_map(
     }
 
     if map_start > bytes.len() {
-        return None;
+        return Ok(None);
     }
     let mut candidates = Vec::new();
     for at in 0..map_start.saturating_sub(2) {
@@ -2649,16 +2689,25 @@ fn operation_state_group_table_before_counter_map(
         let Some(end) = operation_state_group_end_at(bytes, at, map_start, base_offset) else {
             continue;
         };
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "nx operation-state group candidates")?;
+        }
         candidates.push((at, end));
     }
     candidates.sort_by_key(|(start, end)| (*end, *start));
 
-    let mut predecessors = cadmpeg_core::decode::alloc_filled(
-        candidates.len(),
-        None,
-        "nx operation-state group predecessors",
-    )
-    .ok()?;
+    let mut predecessors = match ctx {
+        Some(ctx) => ctx.alloc_filled(
+            candidates.len(),
+            None,
+            "nx operation-state group predecessors",
+        )?,
+        None => alloc_filled(
+            candidates.len(),
+            None,
+            "nx operation-state group predecessors",
+        )?,
+    };
     let mut best_by_end = BTreeMap::<usize, GroupPath>::new();
     for (candidate_index, (start, end)) in candidates.iter().enumerate() {
         let previous = best_by_end.get(start).copied();
@@ -2673,6 +2722,11 @@ fn operation_state_group_table_before_counter_map(
                 || (path.length == current.length && path.first_start < current.first_start)
         });
         if replace {
+            if let Some(ctx) = ctx {
+                if !best_by_end.contains_key(end) {
+                    ctx.charge_collection_items(1, "nx operation-state group paths")?;
+                }
+            }
             best_by_end.insert(*end, path);
         }
     }
@@ -2683,7 +2737,12 @@ fn operation_state_group_table_before_counter_map(
         } else {
             map_start
         };
-    let terminal = best_by_end.get(&trailing_start).copied()?;
+    let Some(terminal) = best_by_end.get(&trailing_start).copied() else {
+        return Ok(None);
+    };
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(terminal.length as u64, "nx operation-state group path")?;
+    }
     let mut path = Vec::with_capacity(terminal.length);
     let mut candidate = Some(terminal.last_candidate);
     while let Some(candidate_index) = candidate {
@@ -2691,14 +2750,25 @@ fn operation_state_group_table_before_counter_map(
         candidate = predecessors[candidate_index];
     }
     path.reverse();
-    let last = *path.last()?;
+    let Some(&last) = path.last() else {
+        return Ok(None);
+    };
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(path.len() as u64, "nx operation-state groups")?;
+    }
     let groups = path
         .into_iter()
         .map(|candidate| {
             operation_state_group_at(bytes, candidates[candidate].0, map_start, base_offset)
         })
-        .collect::<Option<Vec<_>>>()?;
-    OperationStateGroupTable::new(groups, bytes.get(candidates[last].1..map_start)?)
+        .collect::<Option<Vec<_>>>();
+    let Some(groups) = groups else {
+        return Ok(None);
+    };
+    let Some(trailing) = bytes.get(candidates[last].1..map_start) else {
+        return Ok(None);
+    };
+    Ok(OperationStateGroupTable::new(groups, trailing))
 }
 
 /// Decode a complete bounded `m_rollForwardStates` group table.

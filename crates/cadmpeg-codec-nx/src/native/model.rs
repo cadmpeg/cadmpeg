@@ -738,10 +738,10 @@ impl NativeModel {
         let audit_trail_rows = audit_trail_rows(container);
         let operation_state_journal_groups = operation_state_journal_groups(container);
         let operation_state_counters = operation_state_counters(container);
-        let operation_state_groups = operation_state_groups(container)?;
-        let operation_state_messages = operation_state_messages(container);
-        let operation_state_statuses = operation_state_statuses(container);
-        let operation_state_slot_lanes = operation_state_slot_lanes(container);
+        let operation_state_groups = operation_state_groups(Some(ctx), container)?;
+        let operation_state_messages = operation_state_messages(Some(ctx), container)?;
+        let operation_state_statuses = operation_state_statuses(Some(ctx), container)?;
+        let operation_state_slot_lanes = operation_state_slot_lanes(Some(ctx), container)?;
         let feature_operation_records = feature_operation_records(container);
         let feature_unlabeled_operation_records = feature_unlabeled_operation_records(container);
         let feature_unlabeled_operation_body_writes =
