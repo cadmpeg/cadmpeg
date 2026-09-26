@@ -813,6 +813,22 @@ struct SilhouetteCurveConstructionWire {
 }
 
 impl SilhouetteCurveConstruction {
+    /// Build a silhouette from a unit light direction without checking it again.
+    #[must_use]
+    pub fn from_unit_direction(
+        context: IntcurveSupportContext,
+        silhouette: SilhouetteKind,
+        cast_surface: SurfaceId,
+        light_direction: crate::units::UnitVector3,
+    ) -> Self {
+        Self {
+            context,
+            silhouette,
+            cast_surface,
+            light_direction: light_direction.into(),
+        }
+    }
+
     /// Admit the construction parameters.
     pub fn try_new(
         context: IntcurveSupportContext,

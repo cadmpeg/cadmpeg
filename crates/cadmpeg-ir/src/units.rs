@@ -312,6 +312,11 @@ impl UnitVector3 {
     pub fn normalized_finite_nonzero(value: FiniteVector3) -> Option<Self> {
         value.unit_nonzero().map(Self)
     }
+    /// Reverse an admitted unit direction. Negation preserves its length.
+    #[must_use]
+    pub fn negated(self) -> Self {
+        Self(Vector3::new(-self.0.x, -self.0.y, -self.0.z))
+    }
     /// Divide each component by the Euclidean length computed with
     /// [`Vector3::norm`]. A positive finite length can still produce a
     /// non-unit rounded quotient for subnormal components; admit the

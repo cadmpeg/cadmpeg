@@ -4290,7 +4290,7 @@ pub(super) fn helix_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> 
             return None;
         }
     }
-    let path = cadmpeg_ir::geometry::HelixPathConstruction::try_new(
+    let path = cadmpeg_ir::geometry::HelixPathConstruction::try_with_unit_axis(
         path_angle_range,
         cadmpeg_ir::geometry::HelixFrame {
             center: Point3::new(
