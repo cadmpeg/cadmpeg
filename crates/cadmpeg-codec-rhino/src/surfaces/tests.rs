@@ -35,7 +35,10 @@ fn decode(
     with_test_context(|ctx| super::decode(ctx, data, class, range, scale, archive, depth))
 }
 
-fn read_knots(reader: &mut BoundedReader<'_>, count: usize) -> Result<Vec<f64>, GeometryError> {
+fn read_knots(
+    reader: &mut BoundedReader<'_>,
+    count: usize,
+) -> Result<Vec<cadmpeg_ir::scalar::FiniteReal>, GeometryError> {
     with_test_context(|ctx| super::read_knots(ctx, reader, count))
 }
 
@@ -789,6 +792,30 @@ fn an_invalid_knot_is_refused_at_the_knot_first_byte() {
                 if offset == third_knot && message == "NURBS knots are invalid"
         ));
     }
+}
+
+#[test]
+fn checked_source_knots_reconstruct_without_scalar_readmission() {
+    let stored = [0.0_f64, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+    let bytes = stored
+        .into_iter()
+        .flat_map(f64::to_le_bytes)
+        .collect::<Vec<_>>();
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("knot reader");
+    let checked = read_knots(&mut reader, stored.len()).expect("finite ordered source knots");
+    assert_eq!(
+        checked
+            .iter()
+            .copied()
+            .map(cadmpeg_ir::scalar::FiniteReal::get)
+            .collect::<Vec<_>>()
+            .as_slice(),
+        stored
+    );
+    let reconstructed = super::reconstruct_checked_knots(&checked, 3, 6)
+        .expect("reconstructed checked knot vector");
+    let expected = reconstruct_knots(&stored, 3, 6).expect("raw reference reconstruction");
+    assert_eq!(reconstructed.as_slice(), expected.as_slice());
 }
 
 /// `read_poles` refuses a pole whose scaled coordinate overflows at the pole's
