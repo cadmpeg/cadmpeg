@@ -1992,54 +1992,23 @@ fn bool_selector(properties: &[&PropertyRecord], name: &str, absent_default: boo
     direct_bool_value(property)
 }
 
-fn float_selector(properties: &[&PropertyRecord], name: &str, absent_default: f64) -> Option<f64> {
-    let Some(property) = property(properties, name) else {
-        return Some(absent_default);
-    };
-    if property.type_name != "App::PropertyFloat" {
-        return None;
-    }
-    let value = direct_root_attributes(property, "Float")?
-        .get("value")?
-        .parse::<f64>()
-        .ok()?;
-    value.is_finite().then_some(value)
-}
-
-fn float_constraint_selector(
+fn finite_float_selector(
     properties: &[&PropertyRecord],
     name: &str,
-    absent_default: f64,
-) -> Option<f64> {
+    runtime_type: &str,
+    absent_default: FiniteReal,
+) -> Option<FiniteReal> {
     let Some(property) = property(properties, name) else {
         return Some(absent_default);
     };
-    if property.type_name != "App::PropertyFloatConstraint" {
+    if property.type_name != runtime_type {
         return None;
     }
     let value = direct_root_attributes(property, "Float")?
         .get("value")?
         .parse::<f64>()
         .ok()?;
-    value.is_finite().then_some(value)
-}
-
-fn quantity_constraint_selector(
-    properties: &[&PropertyRecord],
-    name: &str,
-    absent_default: f64,
-) -> Option<f64> {
-    let Some(property) = property(properties, name) else {
-        return Some(absent_default);
-    };
-    if property.type_name != "App::PropertyQuantityConstraint" {
-        return None;
-    }
-    let value = direct_root_attributes(property, "Float")?
-        .get("value")?
-        .parse::<f64>()
-        .ok()?;
-    value.is_finite().then_some(value)
+    FiniteReal::new(value)
 }
 
 fn direct_bool_value(property: &PropertyRecord) -> Option<bool> {
@@ -3858,14 +3827,16 @@ fn parametric_helix_definition(
     } else {
         0.0
     };
-    let segment_value = quantity_constraint_selector(properties, "SegmentLength", segment_default)?;
-    if segment_value < 0.0 {
+    let segment_value = finite_float_selector(
+        properties,
+        "SegmentLength",
+        "App::PropertyQuantityConstraint",
+        FiniteReal::new(segment_default)?,
+    )?;
+    if segment_value.get() < 0.0 {
         return None;
     }
-    let segment_turns = (segment_value > 0.0)
-        .then(|| cadmpeg_ir::scalar::PositiveReal::try_from(segment_value))
-        .transpose()
-        .ok()?;
+    let segment_turns = cadmpeg_ir::scalar::PositiveReal::from_finite(segment_value);
     let (shape, revolutions, clockwise, construction_style) = if kind == "Part::Helix" {
         let pitch = scalar_named(properties, "Pitch").filter(|value| *value > 0.0)?;
         let height = scalar_named(properties, "Height").filter(|value| *value > 0.0)?;
@@ -5577,8 +5548,13 @@ fn helical_sweep_definition(
         )?,
         left_handed: bool_selector(properties, "LeftHanded", false)?,
         reversed: bool_selector(properties, "Reversed", false)?,
-        tolerance: Some(cadmpeg_ir::scalar::PositiveReal::new(
-            float_constraint_selector(properties, "Tolerance", DEFAULT_HELICAL_SWEEP_TOLERANCE)?,
+        tolerance: Some(cadmpeg_ir::scalar::PositiveReal::from_finite(
+            finite_float_selector(
+                properties,
+                "Tolerance",
+                "App::PropertyFloatConstraint",
+                FiniteReal::new(DEFAULT_HELICAL_SWEEP_TOLERANCE)?,
+            )?,
         )?),
         allow_multi_profile_faces: Some(bool_selector(properties, "AllowMultiFace", false)?),
     };
@@ -5620,16 +5596,17 @@ fn binder_definition(
             trace_support: bool_selector(properties, "TraceSupport", false)?,
         }
     } else {
-        let distance = float_selector(properties, "Offset", 0.0)?;
+        let distance =
+            finite_float_selector(properties, "Offset", "App::PropertyFloat", FiniteReal::ZERO)?;
         let offset_join = enumeration_selector(properties, "OffsetJoinType", 0)?;
         let offset_fill = bool_selector(properties, "OffsetFill", false)?;
         let offset_open_result = bool_selector(properties, "OffsetOpenResult", false)?;
         let offset_intersection = bool_selector(properties, "OffsetIntersection", false)?;
-        let offset = if distance == 0.0 {
+        let offset = if distance.get() == 0.0 {
             None
         } else {
             Some(BinderOffset {
-                distance: cadmpeg_ir::scalar::NonZeroLength::new(distance)?,
+                distance: cadmpeg_ir::scalar::NonZeroLength::from_assigned_real(distance)?,
                 join: match offset_join {
                     0 => BinderOffsetJoin::Arcs,
                     1 => BinderOffsetJoin::Tangent,

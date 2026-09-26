@@ -612,3 +612,25 @@ fn a_unit_component_below_the_normal_range_is_one_quotient_of_its_component() {
     assert_eq!(unit.y.to_bits(), tiny.to_bits());
     assert_eq!(unit.z, 0.0);
 }
+
+#[test]
+fn admitted_scalar_narrowing_keeps_raw_constructor_values_and_signs() {
+    use crate::scalar::{FiniteReal, NonZeroLength, PositiveReal};
+
+    for value in [f64::MIN_POSITIVE, 1.0, f64::MAX] {
+        let finite = FiniteReal::new(value).unwrap();
+        assert_eq!(PositiveReal::from_finite(finite), PositiveReal::new(value));
+        assert_eq!(
+            NonZeroLength::from_assigned_real(finite),
+            NonZeroLength::new(value)
+        );
+    }
+    for value in [-f64::MAX, -f64::MIN_POSITIVE, -0.0, 0.0] {
+        let finite = FiniteReal::new(value).unwrap();
+        assert_eq!(PositiveReal::from_finite(finite), PositiveReal::new(value));
+        assert_eq!(
+            NonZeroLength::from_assigned_real(finite),
+            NonZeroLength::new(value)
+        );
+    }
+}
