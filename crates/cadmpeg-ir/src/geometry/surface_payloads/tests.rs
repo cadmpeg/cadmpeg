@@ -966,7 +966,15 @@ fn the_blend_admissions_hold_ordered_ranges_and_refuse_non_finite_scalars() {
         })
     };
 
-    let definition = ProceduralSurfaceDefinition::VariableBlend(variable_new(admitted).unwrap());
+    let admitted_variable = variable_new(admitted).unwrap();
+    assert_eq!(
+        admitted_variable
+            .slice_range()
+            .endpoints()
+            .map(|value| value.map(|value| value.get())),
+        [Some(3.0), None]
+    );
+    let definition = ProceduralSurfaceDefinition::VariableBlend(admitted_variable);
     let wire = serde_json::to_value(&definition).unwrap();
     assert_positive_revision_lane(&wire, "/construction/revision");
     let first_side = &wire["construction"]["sides"][0];
@@ -995,6 +1003,12 @@ fn the_blend_admissions_hold_ordered_ranges_and_refuse_non_finite_scalars() {
         definition
     );
     assert!(variable_wire(admitted).is_ok());
+    let reversed_slice = Fields {
+        slice_range: [Some(4.0), Some(3.0)],
+        ..admitted
+    };
+    assert!(variable_new(reversed_slice).is_err());
+    assert!(variable_wire(reversed_slice).is_err());
     assert!(blend_new(admitted).is_ok());
     assert!(blend_wire(admitted).is_ok());
     let blend = ProceduralSurfaceDefinition::Blend(blend_new(admitted).unwrap());

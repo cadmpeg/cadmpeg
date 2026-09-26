@@ -1892,6 +1892,8 @@ impl TryFrom<G2BlendSurfacePayloadWire> for G2BlendSurfacePayload {
 #[serde(try_from = "VariableBlendSurfacePayloadWire")]
 pub struct VariableBlendSurfacePayload {
     construction: Box<VariableBlendConstruction<FiniteReal, FiniteVector3, FinitePoint3>>,
+    #[serde(skip)]
+    slice_range: OrderedOptionalRange,
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1905,25 +1907,25 @@ impl VariableBlendSurfacePayload {
     pub fn try_new(
         construction: Box<VariableBlendConstruction>,
     ) -> Result<Self, ProceduralGeometryError> {
+        const INVALID: &str = "variable blend construction payload is invalid";
         let construction = (*construction)
             .admit()
-            .filter(|construction| {
-                ordered(&construction.u_range)
-                    && [&construction.post_range, &construction.slice_range]
-                        .into_iter()
-                        .chain(
-                            construction
-                                .secondary_curve
-                                .as_ref()
-                                .map(|curve| &curve.parameter_range),
-                        )
-                        .all(optional_ordered)
-            })
-            .ok_or(ProceduralGeometryError::Payload(
-                "variable blend construction payload is invalid",
-            ))?;
+            .ok_or(ProceduralGeometryError::Payload(INVALID))?;
+        if !ordered(&construction.u_range) || !optional_ordered(&construction.post_range) {
+            return Err(ProceduralGeometryError::Payload(INVALID));
+        }
+        let slice_range = OrderedOptionalRange::new(construction.slice_range)
+            .ok_or(ProceduralGeometryError::Payload(INVALID))?;
+        if construction
+            .secondary_curve
+            .as_ref()
+            .is_some_and(|curve| !optional_ordered(&curve.parameter_range))
+        {
+            return Err(ProceduralGeometryError::Payload(INVALID));
+        }
         Ok(Self {
             construction: Box::new(construction),
+            slice_range,
         })
     }
     /// Return the construction.
@@ -1931,6 +1933,11 @@ impl VariableBlendSurfacePayload {
         &self,
     ) -> &VariableBlendConstruction<FiniteReal, FiniteVector3, FinitePoint3> {
         &self.construction
+    }
+
+    /// Return the admitted slice interval.
+    pub(crate) fn slice_range(&self) -> OrderedOptionalRange {
+        self.slice_range
     }
 }
 impl TryFrom<VariableBlendSurfacePayloadWire> for VariableBlendSurfacePayload {
