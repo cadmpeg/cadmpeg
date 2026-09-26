@@ -13,6 +13,7 @@ use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::EdgeId;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -125,7 +126,7 @@ pub(super) fn project(
             continue;
         };
         let Some(values) = (1..=11)
-            .map(|index| record.number(index).filter(|value| value.is_finite()))
+            .map(|index| record.number(index).and_then(FiniteReal::new))
             .collect::<Option<Vec<_>>>()
         else {
             losses.push(entity_loss(
@@ -140,6 +141,12 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "conic parameter count is invalid"));
             continue;
         };
+        let [coeff_a, coeff_b, coeff_c, coeff_d, coeff_e, coeff_f, plane_z, start_x, start_y, end_x, end_y] =
+            [
+                coeff_a, coeff_b, coeff_c, coeff_d, coeff_e, coeff_f, plane_z, start_x, start_y,
+                end_x, end_y,
+            ]
+            .map(|value| value.get());
         let coefficient_scale = coeff_a
             .abs()
             .max(coeff_b.abs())
@@ -150,7 +157,7 @@ pub(super) fn project(
         let zero = |value: f64| {
             value.abs() <= coefficient_scale * CONIC_STANDARD_POSITION_RELATIVE_EPSILON
         };
-        if !zero(*coeff_b) || (!zero(*coeff_d) && !zero(*coeff_e)) {
+        if !zero(coeff_b) || (!zero(coeff_d) && !zero(coeff_e)) {
             losses.push(entity_loss(
                 entry,
                 "conic axes or center are not in the required standard position",
@@ -210,24 +217,24 @@ pub(super) fn project(
             continue;
         };
         let Some(plane_origin) = transform
-            .apply_point(Point3::new(0.0, 0.0, *plane_z * factor))
+            .apply_point(Point3::new(0.0, 0.0, plane_z * factor))
             .map(cadmpeg_ir::features::FinitePoint3::get)
         else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
         };
         let Some(start_position) = transform.apply_point(Point3::new(
-            *start_x * factor,
-            *start_y * factor,
-            *plane_z * factor,
+            start_x * factor,
+            start_y * factor,
+            plane_z * factor,
         )) else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
         };
         let Some(end_position) = transform.apply_point(Point3::new(
-            *end_x * factor,
-            *end_y * factor,
-            *plane_z * factor,
+            end_x * factor,
+            end_y * factor,
+            plane_z * factor,
         )) else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
@@ -235,9 +242,9 @@ pub(super) fn project(
         let start = start_position.get();
         let end = end_position.get();
 
-        let geometry_and_range = if zero(*coeff_e)
-            && *coeff_a != 0.0
-            && *coeff_c != 0.0
+        let geometry_and_range = if zero(coeff_e)
+            && coeff_a != 0.0
+            && coeff_c != 0.0
             && coeff_a.is_sign_positive() == coeff_c.is_sign_positive()
         {
             let radius_x = if coeff_f.is_sign_positive() == coeff_a.is_sign_positive() {
@@ -298,9 +305,9 @@ pub(super) fn project(
                     [start_parameter, start_parameter + sweep],
                 ))
             }
-        } else if zero(*coeff_e)
-            && *coeff_a != 0.0
-            && *coeff_c != 0.0
+        } else if zero(coeff_e)
+            && coeff_a != 0.0
+            && coeff_c != 0.0
             && coeff_a.is_sign_positive() != coeff_c.is_sign_positive()
         {
             let (major, minor, major_radius, minor_radius) =
@@ -369,16 +376,12 @@ pub(super) fn project(
                     [start_parameter, end_parameter],
                 ))
             }
-        } else if zero(*coeff_c) && zero(*coeff_f) && !zero(*coeff_a) && !zero(*coeff_e) {
-            let opening = if -*coeff_a / *coeff_e >= 0.0 {
-                1.0
-            } else {
-                -1.0
-            };
+        } else if zero(coeff_c) && zero(coeff_f) && !zero(coeff_a) && !zero(coeff_e) {
+            let opening = if -coeff_a / coeff_e >= 0.0 { 1.0 } else { -1.0 };
             let major_direction = basis_y.scale(opening);
             let Some(focal) = cadmpeg_ir::math::product_quotient(
-                [*coeff_e, factor, scale_x, scale_x],
-                [4.0, *coeff_a, scale_y],
+                [coeff_e, factor, scale_x, scale_x],
+                [4.0, coeff_a, scale_y],
             )
             .map(cadmpeg_ir::scalar::FiniteReal::abs) else {
                 losses.push(entity_loss(
@@ -430,16 +433,12 @@ pub(super) fn project(
                 CurveGeometry::Solved(SolvedCurveGeometry::Parabola(payload)),
                 [start_parameter, end_parameter],
             ))
-        } else if zero(*coeff_a) && zero(*coeff_f) && !zero(*coeff_c) && !zero(*coeff_d) {
-            let opening = if -*coeff_c / *coeff_d >= 0.0 {
-                1.0
-            } else {
-                -1.0
-            };
+        } else if zero(coeff_a) && zero(coeff_f) && !zero(coeff_c) && !zero(coeff_d) {
+            let opening = if -coeff_c / coeff_d >= 0.0 { 1.0 } else { -1.0 };
             let major_direction = basis_x.scale(opening);
             let Some(focal) = cadmpeg_ir::math::product_quotient(
-                [*coeff_d, factor, scale_y, scale_y],
-                [4.0, *coeff_c, scale_x],
+                [coeff_d, factor, scale_y, scale_y],
+                [4.0, coeff_c, scale_x],
             )
             .map(cadmpeg_ir::scalar::FiniteReal::abs) else {
                 losses.push(entity_loss(
