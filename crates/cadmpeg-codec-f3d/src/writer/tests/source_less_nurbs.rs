@@ -805,7 +805,9 @@ fn generated_source_less_unit_cube_writes_closed_shared_edge_shell() {
     assert_eq!(round_trip.ir().model.vertices.len(), 8);
     assert_eq!(round_trip.ir().model.points.len(), 8);
     assert_eq!(
-        f3d_native(round_trip.ir()).tolerant_coedge_parameters[0].parameter_range,
+        f3d_native(round_trip.ir()).tolerant_coedge_parameters[0]
+            .parameter_range
+            .get(),
         [-1.5, 2.25]
     );
     assert!(round_trip.ir().model.edges.iter().all(|edge| {

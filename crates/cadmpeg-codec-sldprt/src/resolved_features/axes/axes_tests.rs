@@ -9,8 +9,9 @@ use super::{
     bounded_profile_axis_endpoints, common_generated_surface_axis,
     compact_line_reference_directions, enrich_history_revolution_inputs,
     profile_roster_construction_axis, profile_roster_origin_axis_endpoints,
-    profile_roster_principal_axis_endpoints, revolution_line_reference_inputs,
-    temporary_axis_reference,
+    profile_roster_principal_axis_endpoints,
+    revolution_line_reference_inputs as typed_revolution_line_reference_inputs,
+    temporary_axis_reference as typed_temporary_axis_reference,
 };
 use crate::layout::temporary_axis_reference_nine_scalar as temporary_axis;
 use crate::records::FeatureSource;
@@ -24,6 +25,25 @@ use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchId};
 use std::collections::{BTreeMap, HashSet};
+
+fn revolution_line_reference_inputs(
+    payload: &[u8],
+    object_start: usize,
+    object_end: usize,
+    profile_sources: &HashSet<u32>,
+) -> Option<(u32, Point3, Vector3)> {
+    typed_revolution_line_reference_inputs(payload, object_start, object_end, profile_sources)
+        .map(|(source, origin, direction)| (source, origin.get(), *direction.as_raw()))
+}
+
+fn temporary_axis_reference(
+    payload: &[u8],
+    object_start: usize,
+    object_end: usize,
+) -> Option<(Point3, Vector3)> {
+    typed_temporary_axis_reference(payload, object_start, object_end)
+        .map(|(origin, direction)| (origin.get(), *direction.as_raw()))
+}
 
 #[test]
 fn compact_line_reference_rejects_conflicting_eight_and_nine_scalar_directions() {
@@ -454,7 +474,8 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
             constructed_marker.feature_ref = Some("profile-native".into());
             constructed_marker = constructed_marker.with_test_identity(object_index, None);
             constructed_marker.state_value = None;
-            constructed_marker.coordinates_m = coordinates_m;
+            constructed_marker.coordinates_m =
+                coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
             constructed_marker.links = None;
             constructed_marker
         };
@@ -628,7 +649,8 @@ fn compact_profile_construction_role_places_a_revolution_axis() {
             constructed_marker.feature_ref = Some("profile-native".into());
             constructed_marker = constructed_marker.with_test_identity(object_index, None);
             constructed_marker.state_value = None;
-            constructed_marker.coordinates_m = coordinates_m;
+            constructed_marker.coordinates_m =
+                coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
             constructed_marker.links = None;
             constructed_marker
         };
@@ -711,7 +733,8 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
             constructed_marker.feature_ref = Some("profile-native".into());
             constructed_marker = constructed_marker.with_test_identity(object_index, None);
             constructed_marker.state_value = None;
-            constructed_marker.coordinates_m = coordinates_m;
+            constructed_marker.coordinates_m =
+                coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
             constructed_marker.links = None;
             constructed_marker
         };
@@ -790,7 +813,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
     assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]).is_some());
 
     lane.sketch_entities[2].reclassify(SketchInputKind::Point);
-    lane.sketch_entities[2].coordinates_m = Some([-0.01, 0.01]);
+    lane.sketch_entities[2].coordinates_m = cadmpeg_ir::units::FiniteVector::new([-0.01, 0.01]);
 
     lane.native_payload[curve + 56..curve + 60].fill(0);
     lane.native_payload[curve + 64..curve + 66].copy_from_slice(&0u16.to_le_bytes());
@@ -840,8 +863,8 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
     assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]).is_some());
 
     lane.native_payload[curve + 17..curve + 21].copy_from_slice(&1u32.to_le_bytes());
-    lane.sketch_entities[0].coordinates_m = Some([-0.01, 0.0]);
-    lane.sketch_entities[1].coordinates_m = Some([-0.01, 0.02]);
+    lane.sketch_entities[0].coordinates_m = cadmpeg_ir::units::FiniteVector::new([-0.01, 0.0]);
+    lane.sketch_entities[1].coordinates_m = cadmpeg_ir::units::FiniteVector::new([-0.01, 0.02]);
     lane.sketch_entities[2].reclassify(SketchInputKind::LineOrCircle);
     lane.sketch_entities
         .push(marker("axis-start", 450, None, Some([0.0, 0.0])));
@@ -858,8 +881,8 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
     );
 
     lane.sketch_entities.truncate(4);
-    lane.sketch_entities[0].coordinates_m = Some([0.0, 0.0]);
-    lane.sketch_entities[1].coordinates_m = Some([-0.01, 0.01]);
+    lane.sketch_entities[0].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]);
+    lane.sketch_entities[1].coordinates_m = cadmpeg_ir::units::FiniteVector::new([-0.01, 0.01]);
     lane.sketch_entities
         .push(marker("selected-axis-end", 50, None, Some([0.0, 0.02])));
     lane.native_payload[126..130].copy_from_slice(&1u32.to_le_bytes());
@@ -943,7 +966,7 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
     curve(&mut payload, 400, 0, 1);
     curve(&mut payload, 484, 1, 2);
     curve(&mut payload, 568, 2, 0);
-    let marker = |id: &str, offset, object_index, coordinates_m| {
+    let marker = |id: &str, offset, object_index, coordinates_m: Option<[f64; 2]>| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
         let mut constructed_marker = SketchInputEntity::new(
@@ -956,7 +979,8 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
         constructed_marker.feature_ref = Some("profile-native".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = None;
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };

@@ -51,6 +51,7 @@ const EXTERNAL_GEO_AXIS_COUNT: usize = 2;
 const EXTERNAL_GEOMETRY_MISSING_FLAG: u64 = 1 << 3;
 const DEFAULT_HELICAL_SWEEP_TOLERANCE: f64 = 0.1;
 const DEFAULT_PART_SPIRAL_SEGMENT_TURNS: f64 = 1.0;
+const U64_UPPER_EXCLUSIVE: f64 = 18_446_744_073_709_551_616.0;
 
 pub(crate) fn transfer(
     ctx: &DecodeContext<'_>,
@@ -1235,7 +1236,7 @@ fn append_operation_parameters(
             value: if is_angle {
                 cadmpeg_ir::scalar::Angle::new(value.get().to_radians()).map(ParameterValue::Angle)
             } else {
-                Some(ParameterValue::Length(Length::from(value)))
+                Some(ParameterValue::Length(Length::from_assigned_real(value)))
             },
             dependencies: DistinctMembers::default(),
             properties: retained,
@@ -3701,9 +3702,9 @@ fn part_construction_geometry_definition(
 ) -> Option<FeatureDefinition> {
     let point = |x: &str, y: &str, z: &str| {
         Some(cadmpeg_ir::features::FinitePoint3::from_coordinates(
-            scalar_value(property(properties, x)?)?,
-            scalar_value(property(properties, y)?)?,
-            scalar_value(property(properties, z)?)?,
+            scalar_named(properties, x)?,
+            scalar_named(properties, y)?,
+            scalar_named(properties, z)?,
         ))
     };
     let angle = |name: &str| {
@@ -3834,7 +3835,10 @@ fn parametric_helix_definition(
     if segment_value.get() < 0.0 {
         return None;
     }
-    let segment_turns = cadmpeg_ir::scalar::PositiveReal::from_finite(segment_value);
+    let segment_turns = (segment_value.get() > 0.0)
+        .then(|| cadmpeg_ir::scalar::PositiveReal::try_from(segment_value))
+        .transpose()
+        .ok()?;
     let (shape, revolutions, clockwise, construction_style) = if kind == "Part::Helix" {
         let pitch = cadmpeg_ir::scalar::PositiveLength::from_assigned_real(scalar_named(
             properties, "Pitch",
@@ -3868,7 +3872,7 @@ fn parametric_helix_definition(
         };
         (
             shape,
-            height.get() / pitch.get(),
+            cadmpeg_ir::scalar::PositiveReal::new(height.get() / pitch.get())?,
             clockwise,
             construction_style,
         )
@@ -3882,7 +3886,7 @@ fn parametric_helix_definition(
             cadmpeg_ir::features::HelixShape::Spiral {
                 radial_growth: growth.into(),
             },
-            revolutions.get(),
+            revolutions,
             false,
             None,
         )
@@ -3892,7 +3896,7 @@ fn parametric_helix_definition(
         axis_direction: cadmpeg_ir::features::FeatureDirection3::Z_AXIS,
         radius,
         shape,
-        revolutions: cadmpeg_ir::scalar::PositiveReal::new(revolutions)?,
+        revolutions,
         start_angle: cadmpeg_ir::scalar::Angle::ZERO,
         clockwise,
         segment_turns,
@@ -4930,7 +4934,7 @@ fn primitive_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Fe
     let length = |name: &str| {
         property(properties, name)
             .and_then(scalar_value)
-            .map(Length::from)
+            .map(Length::from_assigned_real)
     };
     let angle = |name: &str| {
         property(properties, name)
@@ -6089,7 +6093,10 @@ fn linear_pattern_axis(
         Some(
             PatternKind::new(PatternTransform::LinearOffsets {
                 direction,
-                offsets: offsets.into_iter().map(Length::from).collect(),
+                offsets: offsets
+                    .into_iter()
+                    .map(Length::from_assigned_real)
+                    .collect(),
             })
             .ok()?,
         )
@@ -6322,14 +6329,16 @@ fn string_property_value(property: &PropertyRecord) -> Option<String> {
 }
 
 fn integer_property(properties: &[&PropertyRecord], name: &str) -> Option<u64> {
-    let value = scalar_named(properties, name)?.get();
+    let value = scalar_named(properties, name)?;
+    let value = value.get();
     if value < 0.0 || value.fract() != 0.0 {
         return None;
     }
-    if value >= u64::MAX as f64 {
-        return Some(u64::MAX);
-    }
-    Some(value as u64)
+    Some(if value >= U64_UPPER_EXCLUSIVE {
+        u64::MAX
+    } else {
+        value as u64
+    })
 }
 
 fn integer_selector(

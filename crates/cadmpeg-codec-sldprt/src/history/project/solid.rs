@@ -84,9 +84,7 @@ pub(super) fn project_extrude(
     let sole_length = || {
         let mut values = feature.parameters.values();
         let sole = values.next().filter(|_| values.next().is_none())?;
-        parse_positive_length_mm(sole)
-            .or_else(|| parse_positive_dimension_length_mm(sole))
-            .and_then(cadmpeg_ir::scalar::PositiveLength::new)
+        parse_positive_length_mm(sole).or_else(|| parse_positive_dimension_length_mm(sole))
     };
     let legacy_length = || {
         source_depth
@@ -95,7 +93,6 @@ pub(super) fn project_extrude(
                 parse_positive_length_mm(value)
                     .or_else(|| parse_positive_dimension_length_mm(value))
             })
-            .and_then(cadmpeg_ir::scalar::PositiveLength::new)
     };
     let length = |name| {
         feature
@@ -108,12 +105,11 @@ pub(super) fn project_extrude(
                     .flatten()
                     .and_then(|value| parse_positive_dimension_length_mm(value))
             })
-            .and_then(cadmpeg_ir::scalar::PositiveLength::new)
     };
     let draft = match feature.parameters.get("Draft") {
-        Some(value) => Some(cadmpeg_ir::scalar::SlopeAngle::new(parse_angle_rad(
-            value,
-        )?)?),
+        Some(value) => {
+            Some(cadmpeg_ir::scalar::SlopeAngle::try_from(parse_angle_rad(value)?).ok()?)
+        }
         None => None,
     };
     let one_sided = |termination| ExtrudeExtent::OneSided {
@@ -245,7 +241,6 @@ pub(super) fn project_hole(
         .parameters
         .get("Diameter")
         .and_then(|value| parse_positive_length_mm(value))
-        .and_then(cadmpeg_ir::scalar::PositiveLength::new)
         .or_else(|| profile.as_ref().map(|profile| profile.diameter));
     let has_counterbore = feature.parameters.contains_key("CounterboreDiameter")
         || feature.parameters.contains_key("CounterboreDepth");
@@ -254,39 +249,32 @@ pub(super) fn project_hole(
     let counterbore_diameter = feature
         .parameters
         .get("CounterboreDiameter")
-        .and_then(|value| parse_positive_length_mm(value))
-        .and_then(cadmpeg_ir::scalar::PositiveLength::new);
+        .and_then(|value| parse_positive_length_mm(value));
     let counterbore_depth = feature
         .parameters
         .get("CounterboreDepth")
-        .and_then(|value| parse_positive_length_mm(value))
-        .and_then(cadmpeg_ir::scalar::PositiveLength::new);
+        .and_then(|value| parse_positive_length_mm(value));
     let countersink_diameter = feature
         .parameters
         .get("CountersinkDiameter")
-        .and_then(|value| parse_positive_length_mm(value))
-        .and_then(cadmpeg_ir::scalar::PositiveLength::new);
+        .and_then(|value| parse_positive_length_mm(value));
     let countersink_angle = feature
         .parameters
         .get("CountersinkAngle")
-        .and_then(|value| parse_bounded_angle_rad(value))
-        .and_then(cadmpeg_ir::scalar::InteriorAngle::new);
+        .and_then(|value| parse_bounded_angle_rad(value));
     let drill_point_angle = feature
         .parameters
         .get("DrillPointAngle")
-        .and_then(|value| parse_bounded_angle_rad(value))
-        .and_then(cadmpeg_ir::scalar::InteriorAngle::new);
+        .and_then(|value| parse_bounded_angle_rad(value));
     let thread = feature
         .parameters
         .get("ThreadMajorDiameter")
         .and_then(|value| parse_positive_length_mm(value))
-        .and_then(cadmpeg_ir::scalar::PositiveLength::new)
         .zip(
             feature
                 .parameters
                 .get("ThreadDepth")
-                .and_then(|value| parse_positive_length_mm(value))
-                .and_then(cadmpeg_ir::scalar::PositiveLength::new),
+                .and_then(|value| parse_positive_length_mm(value)),
         )
         .zip(drill_point_angle)
         .map(|((major_diameter, thread_depth), drill_point_angle)| {
@@ -296,8 +284,7 @@ pub(super) fn project_hole(
                 pitch: feature
                     .parameters
                     .get("ThreadPitch")
-                    .and_then(|value| parse_positive_length_mm(value))
-                    .and_then(cadmpeg_ir::scalar::PositiveLength::new),
+                    .and_then(|value| parse_positive_length_mm(value)),
                 drill_point_angle,
             }
         });
@@ -358,7 +345,6 @@ pub(super) fn project_hole(
             .parameters
             .get("Depth")
             .and_then(|value| parse_positive_length_mm(value))
-            .and_then(PositiveLength::new)
             .or_else(|| profile.as_ref().and_then(|profile| profile.depth))
             .map(|length| LinearTermination::Blind {
                 length: NonZeroLength::from(length),
@@ -388,7 +374,7 @@ pub(super) fn project_hole(
             )
             .and_then(|(position, direction)| {
                 Some(vec![cadmpeg_ir::features::holes::HolePlacement::Directed {
-                    position: cadmpeg_ir::features::FinitePoint3::new(position)?,
+                    position,
                     direction: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
                 }])
             }),
@@ -507,18 +493,14 @@ pub(super) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
     };
     for expression in expressions {
         if strip_diameter_modifier(expression).is_some() {
-            if let Some(value) =
-                parse_dimension_display_length(expression).and_then(PositiveLength::new)
+            if let Some(value) = parse_dimension_display_length(expression)
+                .and_then(|value| PositiveLength::try_from(value).ok())
             {
                 dimensions.push(ParsedDimension::Diameter(value));
             }
-        } else if let Some(value) =
-            parse_bounded_angle_rad(expression).and_then(cadmpeg_ir::scalar::InteriorAngle::new)
-        {
+        } else if let Some(value) = parse_bounded_angle_rad(expression) {
             dimensions.push(ParsedDimension::Angle(value));
-        } else if let Some(value) =
-            parse_positive_dimension_length_mm(expression).and_then(PositiveLength::new)
-        {
+        } else if let Some(value) = parse_positive_dimension_length_mm(expression) {
             dimensions.push(ParsedDimension::Length(value));
         }
     }

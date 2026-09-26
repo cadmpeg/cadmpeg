@@ -2164,9 +2164,11 @@ fn decode_tessellated_curve_sets(
             let Ok(points) = points.try_into() else {
                 continue;
             };
-            let Some(polyline) =
-                PolylineCurve::new(PolylineSamples::Unparameterized { points }, 0.0).ok()
-            else {
+            let Some(polyline) = PolylineCurve::from_checked_samples(
+                PolylineSamples::Unparameterized { points },
+                0.0,
+            )
+            .ok() else {
                 continue;
             };
             ir.model.curves.push(Curve {
@@ -4058,7 +4060,7 @@ fn periodic_value(
     }
 }
 
-pub(super) fn coordinate_rows(record: &RawRecord, scale: f64) -> Option<Vec<Point3>> {
+pub(super) fn coordinate_rows(record: &RawRecord, scale: f64) -> Option<Vec<FinitePoint3>> {
     record
         .partials
         .iter()
@@ -4076,7 +4078,7 @@ pub(super) fn coordinate_rows(record: &RawRecord, scale: f64) -> Option<Vec<Poin
                         values[1].number()? * scale,
                         values[2].number()? * scale,
                     );
-                    point.is_finite().then_some(point)
+                    FinitePoint3::new(point)
                 })
                 .collect::<Option<Vec<_>>>()
                 .filter(|vertices| !vertices.is_empty())

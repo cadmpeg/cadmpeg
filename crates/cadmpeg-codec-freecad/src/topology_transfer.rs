@@ -364,7 +364,7 @@ impl<'a> Builder<'a> {
             ir.model.tessellations.push(
                 Tessellation::from_parts(
                     crate::native::model_id("tessellation", &self.payload.id, index.to_string()),
-                    cadmpeg_ir::tessellation::TessellationMesh::from_admitted_list_lanes(
+                    cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
                         triangulation.nodes().to_vec(),
                         triangulation.triangles().to_vec(),
                         triangulation.normals().map(<[_]>::to_vec),
@@ -924,7 +924,7 @@ impl<'a> Builder<'a> {
                         &self.payload.id,
                         format!("{index}@{face_key}"),
                     ),
-                    cadmpeg_ir::tessellation::TessellationMesh::from_admitted_list_lanes(
+                    cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
                         vertices, triangles, normals,
                     )?,
                     Vec::new(),
@@ -1218,7 +1218,7 @@ impl<'a> Builder<'a> {
             id: id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
                 place_polyline_samples(&mut samples, carrier_transform)?;
-                PolylineCurve::from_admitted_scaled_deflection(samples, deflection, scale)
+                PolylineCurve::from_scaled_deflection(samples, deflection, scale)
                     .map_err(|error| CodecError::Malformed(error.to_string()))?
             })),
             source_object: Some(self.source_association()),
@@ -1243,7 +1243,7 @@ impl<'a> Builder<'a> {
                 ),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
                     place_polyline_samples(&mut samples, carrier_transform)?;
-                    PolylineCurve::from_admitted_scaled_deflection(samples, deflection, scale)
+                    PolylineCurve::from_scaled_deflection(samples, deflection, scale)
                         .map_err(|error| CodecError::Malformed(error.to_string()))?
                 })),
                 source_object: Some(self.source_association()),
@@ -1910,7 +1910,7 @@ fn place_polyline_samples(
 }
 
 fn transform_normalized_vector(transform: Transform, vector: Vector3) -> Option<FiniteVector3> {
-    UnitVector3::normalized_finite_nonzero(transform.apply_vector(vector)?).map(FiniteVector3::from)
+    UnitVector3::normalized_nonzero(transform.apply_vector(vector)?).map(FiniteVector3::from)
 }
 
 fn occurrence_label(shape: usize, transform: Transform) -> String {

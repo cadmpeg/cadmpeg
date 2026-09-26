@@ -14,8 +14,8 @@ use super::{
     admitted_face_components, component_is_closed, is_neutral_face_reference,
     legacy_body_ownership_is_unambiguous, merge_body_components, native_parameter_loop_polygon,
     ordered_native_parameter_face_loops, split_neutral_component_shells, transfer_native_brep,
-    BrepTransferDiagnostics, FaceAdmissionDetail, FaceAdmissionRejection, NativeCurveEvidence,
-    NeutralShellSpec,
+    BrepTransferDiagnostics, FaceAdmissionDetail, FaceAdmissionRejection, NativeBrepCurveEvidence,
+    NativeCurveEvidence, NeutralShellSpec,
 };
 
 #[test]
@@ -485,6 +485,7 @@ fn native_parameter_loops_order_non_planar_cylindrical_face() {
         NativeCurveEvidence {
             typed_nonlinear_curve_ids: &BTreeSet::new(),
             model_curves: &[],
+            source_carriers: &crate::decode::source_carriers::SourceUnitCarriers::default(),
         },
     )
     .expect("one parameter-space outer loop");
@@ -605,6 +606,7 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
         NativeCurveEvidence {
             typed_nonlinear_curve_ids: &typed_nonlinear_curve_ids,
             model_curves: &model_curves,
+            source_carriers: &crate::decode::source_carriers::SourceUnitCarriers::default(),
         },
     )
     .expect("concentric two-edge circles have a proven outer loop");
@@ -779,9 +781,12 @@ fn native_brep_rejects_ambiguous_model_carriers() {
             &scan,
             &mut ir,
             &mut AnnotationBuilder::new(),
-            &BTreeSet::new(),
-            &BTreeSet::new(),
+            NativeBrepCurveEvidence {
+                derived_intersections: &BTreeSet::new(),
+                nurbs_endpoints: &BTreeSet::new(),
+            },
             &mut Vec::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     })
     .expect("valid source object identity");
@@ -869,9 +874,12 @@ fn native_brep_rejects_ambiguous_model_carriers() {
             &scan,
             &mut ir,
             &mut AnnotationBuilder::new(),
-            &BTreeSet::new(),
-            &BTreeSet::new(),
+            NativeBrepCurveEvidence {
+                derived_intersections: &BTreeSet::new(),
+                nurbs_endpoints: &BTreeSet::new(),
+            },
             &mut Vec::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     })
     .expect("valid source object identity");

@@ -188,11 +188,11 @@ fn drawing_size_accepts_finite_zero_extents() {
                 span: 0..0,
             },
             Token {
-                value: TokenValue::Real(0.0),
+                value: TokenValue::real(0.0),
                 span: 0..0,
             },
             Token {
-                value: TokenValue::Real(0.0),
+                value: TokenValue::real(0.0),
                 span: 0..0,
             },
         ],
@@ -201,7 +201,9 @@ fn drawing_size_accepts_finite_zero_extents() {
 
     assert_eq!(
         drawing_property_value(16, &record),
-        Some(DrawingPropertyValue::Size([0.0, 0.0]))
+        Some(DrawingPropertyValue::Size(
+            cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]).expect("finite size")
+        ))
     );
 }
 

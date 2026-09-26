@@ -37,7 +37,7 @@ use cadmpeg_ir::{
         BodySelection, DesignParameter, DimensionDisplay, EdgeSelection, FaceSelection,
         FeatureDefinition, FeatureOperation, ParameterId, ParameterValue, UnresolvedFamily,
     },
-    scalar::{Angle, Length},
+    scalar::{Angle, Length, PositiveLength},
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -255,9 +255,9 @@ pub(crate) fn bind_parameter_scalars<'a>(
                             if length_scalars.contains(scalar.id.as_str())
                                 || angle_scalars.contains(scalar.id.as_str())
                             {
-                                same_dimension_length(scalar.value * 1000.0, expected)
+                                same_dimension_length(scalar.value.get() * 1000.0, expected)
                             } else {
-                                scalar.value == expected
+                                scalar.value.get() == expected
                             }
                         }
                         Some(cadmpeg_ir::features::ParameterValue::Boolean(expected)) => {
@@ -265,9 +265,9 @@ pub(crate) fn bind_parameter_scalars<'a>(
                             if length_scalars.contains(scalar.id.as_str())
                                 || angle_scalars.contains(scalar.id.as_str())
                             {
-                                same_dimension_length(scalar.value * 1000.0, expected)
+                                same_dimension_length(scalar.value.get() * 1000.0, expected)
                             } else {
-                                scalar.value == expected
+                                scalar.value.get() == expected
                             }
                         }
                         _ => true,
@@ -282,49 +282,39 @@ pub(crate) fn bind_parameter_scalars<'a>(
                     ) && !scalar_is_detached;
                     if scalar_is_detached && length_scalars.contains(scalar.id.as_str()) {
                         parameter.expression = crate::history::literals::format_length_mm(
-                            cadmpeg_ir::scalar::Length::new(scalar.value * 1000.0).ok_or_else(
-                                || {
+                            cadmpeg_ir::scalar::Length::new(scalar.value.get() * 1000.0)
+                                .ok_or_else(|| {
                                     cadmpeg_core::CodecError::Malformed(
                                         "SolidWorks projected length must be finite".into(),
                                     )
-                                },
-                            )?,
+                                })?,
                         );
                     } else if scalar_is_detached && angle_scalars.contains(scalar.id.as_str()) {
                         parameter.expression = crate::history::literals::format_angle_rad(
-                            cadmpeg_ir::scalar::Angle::new(scalar.value).ok_or_else(|| {
-                                cadmpeg_core::CodecError::Malformed(
-                                    "SolidWorks projected angle must be finite".into(),
-                                )
-                            })?,
+                            cadmpeg_ir::scalar::Angle::from_assigned_real(scalar.value),
                         );
                     }
                     let evaluated = if length_scalars.contains(scalar.id.as_str())
                         && !scalar_is_untyped_real
                     {
                         Some(cadmpeg_ir::features::ParameterValue::Length(
-                            cadmpeg_ir::scalar::Length::new(scalar.value * 1000.0).ok_or_else(
-                                || {
+                            cadmpeg_ir::scalar::Length::new(scalar.value.get() * 1000.0)
+                                .ok_or_else(|| {
                                     cadmpeg_core::CodecError::Malformed(
                                         "SolidWorks projected length must be finite".into(),
                                     )
-                                },
-                            )?,
+                                })?,
                         ))
                     } else if angle_scalars.contains(scalar.id.as_str()) && !scalar_is_untyped_real
                     {
                         Some(cadmpeg_ir::features::ParameterValue::Angle(
-                            cadmpeg_ir::scalar::Angle::new(scalar.value).ok_or_else(|| {
-                                cadmpeg_core::CodecError::Malformed(
-                                    "SolidWorks projected angle must be finite".into(),
-                                )
-                            })?,
+                            cadmpeg_ir::scalar::Angle::from_assigned_real(scalar.value),
                         ))
                     } else {
                         match parameter.value.as_ref() {
                             Some(cadmpeg_ir::features::ParameterValue::Length(_)) => {
                                 Some(cadmpeg_ir::features::ParameterValue::Length(
-                                    cadmpeg_ir::scalar::Length::new(scalar.value * 1000.0)
+                                    cadmpeg_ir::scalar::Length::new(scalar.value.get() * 1000.0)
                                         .ok_or_else(|| {
                                             cadmpeg_core::CodecError::Malformed(
                                                 "SolidWorks projected length must be finite".into(),
@@ -334,25 +324,11 @@ pub(crate) fn bind_parameter_scalars<'a>(
                             }
                             Some(cadmpeg_ir::features::ParameterValue::Angle(_)) => {
                                 Some(cadmpeg_ir::features::ParameterValue::Angle(
-                                    cadmpeg_ir::scalar::Angle::new(scalar.value).ok_or_else(
-                                        || {
-                                            cadmpeg_core::CodecError::Malformed(
-                                                "SolidWorks projected angle must be finite".into(),
-                                            )
-                                        },
-                                    )?,
+                                    cadmpeg_ir::scalar::Angle::from_assigned_real(scalar.value),
                                 ))
                             }
                             Some(cadmpeg_ir::features::ParameterValue::Real(_)) => {
-                                Some(cadmpeg_ir::features::ParameterValue::Real(
-                                    cadmpeg_ir::scalar::FiniteReal::new(scalar.value).ok_or_else(
-                                        || {
-                                            cadmpeg_core::CodecError::Malformed(
-                                                "SolidWorks projected real must be finite".into(),
-                                            )
-                                        },
-                                    )?,
-                                ))
+                                Some(cadmpeg_ir::features::ParameterValue::Real(scalar.value))
                             }
                             _ => None,
                         }
@@ -428,9 +404,6 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
             let Some(scalar) = relation_display_scalar_for_parameter(relation, lane) else {
                 continue;
             };
-            if !scalar.value.is_finite() {
-                continue;
-            }
             let Some(feature) = features_by_native_ref.get(relation.feature_ref.as_str()) else {
                 continue;
             };
@@ -444,7 +417,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                 continue;
             };
             let Some((value, display, expression)) =
-                relation_display_parameter_value(relation.family, scalar.value)
+                relation_display_parameter_value(relation.family, scalar.value.get())
             else {
                 continue;
             };
@@ -892,7 +865,7 @@ fn variable_fillet_radius_groups<'a>(
                 .map(|(parameter, (_, radius))| {
                     Some(VariableRadius {
                         parameter: parameter as f64,
-                        radius: Length::new(radius)?,
+                        radius: Length::from(radius),
                     })
                 })
                 .collect::<Option<Vec<_>>>()?;
@@ -906,7 +879,7 @@ fn variable_fillet_radius_groups<'a>(
         }
     }
 
-    let mut vertex_radii = HashMap::<[u8; 12], f64>::new();
+    let mut vertex_radii = HashMap::<[u8; 12], PositiveLength>::new();
     let mut control_names = HashSet::<String>::new();
     let mut non_vertex_control_names = HashSet::<String>::new();
     let mut non_vertex_control_references = Vec::new();
@@ -949,7 +922,7 @@ fn variable_fillet_radius_groups<'a>(
                             entry.insert(radius);
                         }
                         std::collections::hash_map::Entry::Occupied(entry)
-                            if !same_dimension_length(*entry.get(), radius) =>
+                            if !same_dimension_length(entry.get().get(), radius.get()) =>
                         {
                             return None;
                         }
@@ -1020,7 +993,7 @@ fn variable_fillet_radius_groups<'a>(
             .map(|(parameter, (_, radius))| {
                 Some(VariableRadius {
                     parameter: parameter as f64,
-                    radius: Length::new(radius)?,
+                    radius: Length::from(radius),
                 })
             })
             .collect::<Option<Vec<_>>>()?;
@@ -1059,16 +1032,16 @@ fn variable_fillet_radius_groups<'a>(
         return None;
     }
 
-    let mut groups = Vec::<((u64, u64), Vec<&FeatureInputEdgeSelection>)>::new();
+    let mut groups = Vec::<(
+        (PositiveLength, PositiveLength),
+        Vec<&FeatureInputEdgeSelection>,
+    )>::new();
     let mut unassigned = Vec::new();
     for &selection in selections {
         let endpoints = endpoint_signatures(selection);
         match endpoints.as_slice() {
             [first, second] => {
-                let pair = (
-                    vertex_radii.get(first)?.to_bits(),
-                    vertex_radii.get(second)?.to_bits(),
-                );
+                let pair = (*vertex_radii.get(first)?, *vertex_radii.get(second)?);
                 if let Some((_, grouped)) =
                     groups.iter_mut().find(|(candidate, _)| *candidate == pair)
                 {
@@ -1100,11 +1073,11 @@ fn variable_fillet_radius_groups<'a>(
                     points: cadmpeg_ir::features::edge_treatments::VariableRadii::new(vec![
                         VariableRadius {
                             parameter: 0.0,
-                            radius: Length::new(f64::from_bits(first))?,
+                            radius: Length::from(first),
                         },
                         VariableRadius {
                             parameter: 1.0,
-                            radius: Length::new(f64::from_bits(second))?,
+                            radius: Length::from(second),
                         },
                     ])
                     .ok()?,
@@ -1767,11 +1740,7 @@ pub(crate) fn project_draft_operands(
             else {
                 break 'feature_edit;
             };
-            let Some(pull_direction) =
-                cadmpeg_ir::features::FeatureDirection3::new(first.pull_direction)
-            else {
-                break 'feature_edit;
-            };
+            let pull_direction = first.pull_direction;
 
             let FeatureDefinition::Operation(FeatureOperation::Draft { faces, anchor, .. }) =
                 &mut definition

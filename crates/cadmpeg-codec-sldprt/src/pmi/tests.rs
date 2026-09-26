@@ -54,7 +54,7 @@ fn dimension(subtype: &str, value: f64) -> PmiDimension {
         cad_text: "D1@Pattern1".into(),
         item_count: 1,
         subtype: subtype.into(),
-        value,
+        value: cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite test dimension"),
         value_offset: 0,
         precision: 0,
         precision_offset: 0,
@@ -346,7 +346,7 @@ fn parses_array16_dim_items() {
     assert!(losses.is_empty(), "{losses:?}");
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].item_count, 16);
-    assert_eq!(records[0].value, 0.025);
+    assert_eq!(records[0].value.get(), 0.025);
 }
 
 #[test]
@@ -461,7 +461,7 @@ fn invalid_utf8_auxiliary_string_does_not_drop_dimension() {
     assert!(losses.is_empty(), "{losses:?}");
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].cad_text, "D1@Sketch1");
-    assert_eq!(records[0].value, 0.025);
+    assert_eq!(records[0].value.get(), 0.025);
 }
 
 #[test]
@@ -526,7 +526,7 @@ fn patch_payload_offsets_round_trip_through_reparse() {
     let [edited_record] = again.as_slice() else {
         panic!("one edited record");
     };
-    assert_eq!(edited_record.value, 0.05);
+    assert_eq!(edited_record.value.get(), 0.05);
     assert_eq!(edited_record.precision, 4);
     assert!(!edited_record.basic);
     assert!(edited_record.inspection);
@@ -561,7 +561,7 @@ fn decode_extracts_pmi_semantic_dimension() {
     assert_eq!(dimension.guid, "01234567-89ab-cdef-0123-456789abcdef");
     assert_eq!(dimension.cad_text, "D1@Sketch1");
     assert_eq!(dimension.subtype, "Linear");
-    assert_eq!(dimension.value, 0.025);
+    assert_eq!(dimension.value.get(), 0.025);
     assert_eq!(dimension.precision, 3);
     assert_eq!(dimension.display_text(), Some("25.000 mm"));
     assert!(dimension.basic);
@@ -632,7 +632,7 @@ fn decode_extracts_pmi_semantic_dimension() {
     let [dimension] = native.pmi_dimensions.as_slice() else {
         panic!("one regenerated PMI dimension");
     };
-    assert_eq!(dimension.value, 0.05);
+    assert_eq!(dimension.value.get(), 0.05);
     assert_eq!(dimension.precision, 4);
     assert_eq!(dimension.display_text(), Some("50.000 mm"));
     assert!(!dimension.basic);
@@ -679,7 +679,7 @@ fn decode_extracts_array16_and_reordered_pmi_maps() {
             .iter()
             .find(|record| record.guid == guid)
             .expect("PMI dimension");
-        assert_eq!(dimension.value, value);
+        assert_eq!(dimension.value.get(), value);
         assert_eq!(dimension.item_count, item_count);
         assert!(decoded.report().losses.iter().all(|loss| {
             !loss.message.contains("semantic-record-malformed")
@@ -824,7 +824,7 @@ fn duplicate_pmi_records_share_one_parameter_and_round_trip_edits() {
     assert!(native
         .pmi_dimensions
         .iter()
-        .all(|dimension| dimension.value == 0.05));
+        .all(|dimension| dimension.value.get() == 0.05));
 }
 
 #[test]
@@ -917,7 +917,7 @@ fn ordinate_pmi_dimensions_round_trip_typed_values() {
             .pmi_dimensions
             .iter()
             .find(|dimension| dimension.cad_text == "D1@Sketch1")
-            .map(|dimension| dimension.value),
+            .map(|dimension| dimension.value.get()),
         Some(0.05)
     );
 }

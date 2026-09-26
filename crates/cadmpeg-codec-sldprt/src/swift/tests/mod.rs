@@ -5,12 +5,21 @@ use super::RelatedObject;
 use super::ROOT_CLASS;
 use cadmpeg_ir::pmi::PmiAnnotation;
 use cadmpeg_ir::pmi::PmiDefinition;
+use cadmpeg_ir::pmi::PmiQuantity;
 use cadmpeg_ir::pmi::PmiValue;
 use std::collections::BTreeMap;
 
 mod identity;
 mod nominals;
 mod parsing;
+
+fn length(value: f64) -> Option<PmiValue> {
+    pmi_value(value, PmiQuantity::Length)
+}
+
+fn pmi_value(value: f64, quantity: PmiQuantity) -> Option<PmiValue> {
+    PmiValue::new(value, quantity)
+}
 
 fn dimension_nominal(annotations: &[PmiAnnotation], id: &str) -> Option<PmiValue> {
     let PmiDefinition::Dimension(relation) = &annotations

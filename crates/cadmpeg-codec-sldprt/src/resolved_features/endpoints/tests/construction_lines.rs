@@ -22,14 +22,15 @@ fn compact_84_construction_line_prefers_points_and_accepts_one_curve_marker() {
     payload[80..84].copy_from_slice(&4u32.to_le_bytes());
     payload[84..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
-    let entity = |id: &str, object_index, coordinates_m, kind| {
+    let entity = |id: &str, object_index, coordinates_m: Option<[f64; 2]>, kind| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
         let mut constructed_marker = SketchInputEntity::new(marker_id, marker_parent, 0, 0, kind);
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };

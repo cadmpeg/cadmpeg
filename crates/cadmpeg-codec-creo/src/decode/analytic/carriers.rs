@@ -15,6 +15,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
 use crate::container::ContainerScan;
+use crate::decode::source_carriers::SourceUnitCarriers;
 use crate::legacy_geometry::LegacySurfaceNamespace;
 use crate::topology::HalfEdgeId;
 
@@ -65,10 +66,16 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     nurbs_endpoint_witnesses: &BTreeSet<CurveId>,
+    source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
-    let carriers = placed_carriers(scan, ir);
-    let solved_vertices =
-        solved_topological_vertices(scan, ir, &carriers, nurbs_endpoint_witnesses);
+    let carriers = placed_carriers(scan, ir, source_carriers);
+    let solved_vertices = solved_topological_vertices(
+        scan,
+        ir,
+        &carriers,
+        nurbs_endpoint_witnesses,
+        source_carriers,
+    );
     let vertex_faces =
         crate::topology::vertex_incident_faces(&scan.topology.vertices, &scan.topology.half_edges);
     let unique_rows = crate::surface::uniquely_identified_rows(&scan.surfaces.rows);
@@ -103,7 +110,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
                     .then_some(())?;
                 let id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, half_edge.curve_id);
                 let curve = exactly_one(ir.model.curves.iter().filter(|curve| curve.id == id))?;
-                Some(&curve.geometry)
+                Some(source_carriers.curve_geometry(curve))
             })
             .collect::<Vec<_>>();
         let curve_planes = boundary_curves
@@ -129,11 +136,15 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
                     .iter()
                     .find(|surface| surface.id == id)
                     .is_some_and(|surface| {
-                        existing_plane_agrees_with_topology(&surface.geometry, plane) == Some(false)
+                        existing_plane_agrees_with_topology(
+                            source_carriers.surface_geometry(surface),
+                            plane,
+                        ) == Some(false)
                     });
             if !conflict {
                 continue;
             }
+            source_carriers.remove_surface(&id);
             for surface in ir
                 .model
                 .surfaces
@@ -175,22 +186,28 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
-        ir.model.surfaces.push(Surface {
-            id,
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_core::text::NonBlankString::new(format!("VisibGeom:{}", row.id))
+        source_carriers.admit_surface(
+            ir,
+            Surface {
+                id,
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
+                source_object: Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        "VisibGeom:{}",
+                        row.id
+                    ))
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            },
+        )?;
         transferred += 1;
     }
     Ok(transferred)
@@ -201,6 +218,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    source_carriers: &mut SourceUnitCarriers,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for (rows, namespace) in [
         (&scan.surfaces.rows, LegacySurfaceNamespace::Visible),
@@ -235,32 +253,37 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                 Exactness::Unknown,
             );
             ctx.charge_entities(1, "admit Creo model surfaces")?;
-            ir.model.surfaces.push(Surface {
-                id,
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                    record: geometry_section_record(scan, row.offset),
-                }),
-                source_object: Some(SourceObjectAssociation {
-                    format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                        "{}{}",
-                        namespace.source_prefix(),
-                        row.id
-                    ))
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                    })?,
-                    name: None,
-                    color: None,
-                    visible: if namespace.is_visible() {
-                        None
-                    } else {
-                        Some(false)
-                    },
-                    layer: None,
-                    instance_path: Vec::new(),
-                }),
-            });
+            source_carriers.admit_surface(
+                ir,
+                Surface {
+                    id,
+                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+                        record: geometry_section_record(scan, row.offset),
+                    }),
+                    source_object: Some(SourceObjectAssociation {
+                        format: cadmpeg_ir::CodecFormat::Creo,
+                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                            "{}{}",
+                            namespace.source_prefix(),
+                            row.id
+                        ))
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "source object_id must not be empty",
+                            )
+                        })?,
+                        name: None,
+                        color: None,
+                        visible: if namespace.is_visible() {
+                            None
+                        } else {
+                            Some(false)
+                        },
+                        layer: None,
+                        instance_path: Vec::new(),
+                    }),
+                },
+            )?;
         }
     }
     for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
@@ -277,24 +300,30 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             Exactness::Unknown,
         );
         ctx.charge_entities(1, "admit Creo model curves")?;
-        ir.model.curves.push(Curve {
-            id,
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                record: geometry_section_record(scan, row.offset),
-            }),
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_core::text::NonBlankString::new(format!("VisibGeom:{}", row.id))
+        source_carriers.admit_curve(
+            ir,
+            Curve {
+                id,
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+                    record: geometry_section_record(scan, row.offset),
+                }),
+                source_object: Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        "VisibGeom:{}",
+                        row.id
+                    ))
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            },
+        )?;
     }
     Ok(())
 }
@@ -302,6 +331,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
 pub(in crate::decode) fn placed_carriers(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &SourceUnitCarriers,
 ) -> BTreeMap<u32, CarrierEquation> {
     let mut carriers = placed_planes(scan)
         .into_iter()
@@ -329,7 +359,9 @@ pub(in crate::decode) fn placed_carriers(
             .iter()
             .filter(|row| row_counts.get(&row.id) == Some(&1))
         {
-            if let Some(carrier) = positional_cylinder_carrier(scan, row, parameters, ir) {
+            if let Some(carrier) =
+                positional_cylinder_carrier(scan, row, parameters, ir, source_carriers)
+            {
                 carriers.insert(row.id, carrier);
                 continue;
             }
@@ -349,7 +381,7 @@ pub(in crate::decode) fn placed_carriers(
                 }
             };
             if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
-                &surface.geometry
+                source_carriers.surface_geometry(surface)
             {
                 let origin = plane_surface.origin().get();
                 let normal = plane_surface.frame().axis().as_raw();
@@ -367,7 +399,8 @@ pub(in crate::decode) fn placed_carriers(
                 } else {
                     carriers.remove(&row.id);
                 }
-            } else if let Some(carrier) = surface_carrier(&surface.geometry) {
+            } else if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface))
+            {
                 carriers.insert(row.id, carrier);
             }
         }
@@ -384,7 +417,7 @@ pub(in crate::decode) fn placed_carriers(
             carriers.remove(&datum.id);
             continue;
         };
-        if let Some(carrier) = surface_carrier(&surface.geometry) {
+        if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface)) {
             carriers.insert(datum.id, carrier);
         } else {
             carriers.remove(&datum.id);
@@ -411,7 +444,7 @@ pub(in crate::decode) fn placed_carriers(
             carriers.remove(&id);
             continue;
         };
-        if let Some(carrier) = surface_carrier(&surface.geometry) {
+        if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface)) {
             carriers.insert(id, carrier);
         }
     }
@@ -423,6 +456,7 @@ fn positional_cylinder_carrier(
     row: &crate::surface::SurfaceRow,
     parameters: &[crate::surface::SurfaceParameterRecord],
     ir: &CadIr,
+    source_carriers: &SourceUnitCarriers,
 ) -> Option<CarrierEquation> {
     (row.kind == crate::surface::SurfaceKind::Cylinder).then_some(())?;
     let record = crate::surface::unique_surface_parameter(parameters, row.id)?;
@@ -447,7 +481,7 @@ fn positional_cylinder_carrier(
             .filter(|surface| surface.id == id)
             .collect::<Vec<_>>();
         if let [surface] = model_surfaces.as_slice() {
-            if let Some(carrier) = surface_carrier(&surface.geometry) {
+            if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface)) {
                 return Some(carrier);
             }
         }

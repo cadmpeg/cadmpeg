@@ -464,7 +464,8 @@ fn read_revolution(
     if !axis_length.is_finite() || axis_length <= 0.0 {
         return Err(error(reader.position(), "revolution axis is invalid"));
     }
-    let axis_direction = UnitVector3::normalized_by_hypot_division(axis_delta);
+    let axis_direction =
+        UnitVector3::normalized_with_length(axis_delta).map(|(direction, _)| direction);
     let raw_axis_direction = Vector3::new(
         axis_delta.x / axis_length,
         axis_delta.y / axis_length,

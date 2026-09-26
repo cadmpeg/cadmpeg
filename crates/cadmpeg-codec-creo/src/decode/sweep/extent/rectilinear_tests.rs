@@ -215,7 +215,13 @@ fn rectilinear_section_offsets_select_all_extent_forms() {
 fn generated_rectilinear_extent_uses_unique_section_origin() {
     let (scan, ir, section) = generated_fixture(&[(31, -6.0, false), (32, 8.0, true)], 0.0);
     assert_eq!(
-        generated_rectilinear_plane_extent(&scan, &ir, 7, Some(&section)),
+        generated_rectilinear_plane_extent(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            7,
+            Some(&section)
+        ),
         Some((
             ExtrudeExtent::TwoSided {
                 first: blind(8.0),
@@ -227,7 +233,13 @@ fn generated_rectilinear_extent_uses_unique_section_origin() {
 
     let (scan, ir, section) = generated_fixture(&[(31, -7.0, false), (32, 7.0, true)], 0.0);
     assert_eq!(
-        generated_rectilinear_plane_extent(&scan, &ir, 7, Some(&section)),
+        generated_rectilinear_plane_extent(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            7,
+            Some(&section)
+        ),
         Some((
             ExtrudeExtent::Symmetric { side: blind(14.0) },
             [0.0, 1.0, 0.0],
@@ -249,11 +261,25 @@ fn generated_rectilinear_extent_rejects_ambiguous_or_missing_section_flags() {
             row_offset: 1,
             offset: 1,
         });
-    assert!(generated_rectilinear_plane_extent(&scan, &ir, 7, Some(&section)).is_none());
+    assert!(generated_rectilinear_plane_extent(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        7,
+        Some(&section)
+    )
+    .is_none());
 
     let (scan, ir, mut section) = generated_fixture(&[(31, -6.0, false), (32, 8.0, true)], 0.0);
     section.orientation.section_flip = None;
-    assert!(generated_rectilinear_plane_extent(&scan, &ir, 7, Some(&section)).is_none());
+    assert!(generated_rectilinear_plane_extent(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        7,
+        Some(&section)
+    )
+    .is_none());
 }
 
 #[test]
@@ -308,7 +334,13 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
         plane(35, Point3::new(0.0, 48.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
     ]);
     assert_eq!(
-        generated_rectilinear_plane_extent(&scan, &ir, 7, Some(&section())),
+        generated_rectilinear_plane_extent(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            7,
+            Some(&section())
+        ),
         Some(expected_extent())
     );
 
@@ -324,7 +356,13 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
             offset: 0,
         });
     assert_eq!(
-        generated_rectilinear_plane_extent(&scan, &ir, 7, Some(&section())),
+        generated_rectilinear_plane_extent(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            7,
+            Some(&section())
+        ),
         Some(expected_extent())
     );
 
@@ -341,10 +379,23 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
         .expect("plane surface")
         .geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
     assert_eq!(
-        generated_rectilinear_plane_extent(&scan, &local_only, 7, Some(&section())),
+        generated_rectilinear_plane_extent(
+            &scan,
+            &local_only,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            7,
+            Some(&section())
+        ),
         Some(expected_extent())
     );
 
     scan.planes.local_systems[0].slots[10] = Some(49.0);
-    assert!(generated_rectilinear_plane_extent(&scan, &ir, 7, Some(&section())).is_none());
+    assert!(generated_rectilinear_plane_extent(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        7,
+        Some(&section())
+    )
+    .is_none());
 }

@@ -719,7 +719,7 @@ fn type186_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         (113, &property),
         (115, &source),
     ]);
-    for wrong_field in [TokenValue::String(b"bad".to_vec()), TokenValue::Real(2.5)] {
+    for wrong_field in [TokenValue::String(b"bad".to_vec()), TokenValue::real(2.5)] {
         let wrong = token_parameter_record(
             115,
             vec![
@@ -1391,7 +1391,7 @@ fn type304_forms_use_fixed_and_counted_boundaries() {
                 1.into(),
                 9.into(),
                 2.into(),
-                TokenValue::Real(0.5),
+                TokenValue::real(0.5),
                 1.into(),
                 1.into(),
                 0.into(),
@@ -1564,7 +1564,7 @@ fn type304_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
                 1.into(),
                 9.into(),
                 2.into(),
-                TokenValue::Real(0.5),
+                TokenValue::real(0.5),
                 1.into(),
                 1.into(),
             ],

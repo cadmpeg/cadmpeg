@@ -3,7 +3,7 @@
 
 use super::curve_conversion::angularly_equal;
 use super::geometry::{
-    admit, declared_unit_vector, entity_loss, resolve_transform, source_object, unit_vector,
+    admit, declared_unit_vector, entity_loss, resolve_transform, source_object,
     WireProjectionOutcome,
 };
 use crate::directory::DirectoryEntry;
@@ -17,9 +17,9 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::PositiveLength;
-use cadmpeg_ir::topology::{Edge, Point, Vertex};
-use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
+use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
+use cadmpeg_ir::topology::{Edge, IncreasingParameterInterval, Point, Vertex};
+use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -34,11 +34,13 @@ fn transform_orientation(transform: cadmpeg_ir::transform::Transform) -> Option<
 }
 
 fn placed_offset_normal(
-    normal: Vector3,
+    normal: UnitVector3,
     transform: cadmpeg_ir::transform::Transform,
-) -> Option<Vector3> {
+) -> Option<UnitVector3> {
     let orientation = transform_orientation(transform)?;
-    unit_vector(transform.apply_vector(normal)?.scale(orientation))
+    UnitVector3::normalized_by_reciprocal(
+        transform.apply_vector(*normal.as_raw())?.scale(orientation),
+    )
 }
 
 fn placed_offset_source(
@@ -52,25 +54,30 @@ fn placed_offset_source(
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::new(
                     transform.apply_point(line_curve.origin().get())?,
-                    UnitVector3::new(unit_vector(transform.apply_vector(direction)?.get())?)?,
+                    UnitVector3::normalized_by_reciprocal(
+                        transform.apply_vector(direction)?.get(),
+                    )?,
                 ),
             )))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = transform.apply_point(circle_curve.center().get())?;
-            let frame = OrthonormalFrame3::new(
-                unit_vector(
-                    transform
-                        .apply_vector(*circle_curve.frame().axis().as_raw())?
-                        .get(),
-                )?
-                .scale(orientation),
-                unit_vector(
-                    transform
-                        .apply_vector(*circle_curve.frame().reference().as_raw())?
-                        .get(),
-                )?,
+            let axis = UnitVector3::normalized_by_reciprocal(
+                transform
+                    .apply_vector(*circle_curve.frame().axis().as_raw())?
+                    .get(),
             )?;
+            let axis = if orientation < 0.0 {
+                axis.reversed()
+            } else {
+                axis
+            };
+            let reference = UnitVector3::normalized_by_reciprocal(
+                transform
+                    .apply_vector(*circle_curve.frame().reference().as_raw())?
+                    .get(),
+            )?;
+            let frame = OrthonormalFrame3::from_units(axis, reference)?;
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::new(
                     center,
@@ -107,56 +114,47 @@ fn omitted_or_integer_zero(record: &ParameterRecord, index: usize) -> bool {
 fn omitted_or_numeric_zero(record: &ParameterRecord, index: usize) -> bool {
     matches!(
         record.value(index),
-        Some(TokenValue::Omitted | TokenValue::Integer(0) | TokenValue::Real(0.0))
-    )
+        Some(TokenValue::Omitted | TokenValue::Integer(0))
+    ) || matches!(record.value(index), Some(TokenValue::Real(value)) if value.get() == 0.0)
 }
 
 #[derive(Clone, Copy)]
 struct SourceParameterMap {
-    native: [f64; 2],
-    neutral: [f64; 2],
-    wide_coefficients: Option<(f64, f64)>,
+    native: IncreasingParameterInterval,
+    neutral: IncreasingParameterInterval,
+    wide_coefficients: Option<(FiniteReal, FiniteReal)>,
 }
 
 impl SourceParameterMap {
-    fn new(native: [f64; 2], neutral: [f64; 2]) -> Option<Self> {
-        if !native
-            .iter()
-            .chain(neutral.iter())
-            .all(|value| value.is_finite())
-            || native[0] >= native[1]
-            || neutral[0] >= neutral[1]
+    fn new(native: IncreasingParameterInterval, neutral: IncreasingParameterInterval) -> Self {
+        let wide_coefficients = if (native.upper() - native.lower()).is_finite()
+            && (neutral.upper() - neutral.lower()).is_finite()
         {
-            return None;
-        }
-        let wide_coefficients =
-            if (native[1] - native[0]).is_finite() && (neutral[1] - neutral[0]).is_finite() {
-                None
-            } else {
-                let source = cadmpeg_ir::topology::IncreasingParameterInterval::new(native)?;
-                let target = cadmpeg_ir::topology::IncreasingParameterInterval::new(neutral)?;
-                source
-                    .affine_coefficients_to(target)
-                    .map(|(scale, offset)| (scale.get(), offset.get()))
-            };
-        Some(Self {
+            None
+        } else {
+            native.affine_coefficients_to(neutral)
+        };
+        Self {
             native,
             neutral,
             wide_coefficients,
-        })
+        }
     }
 
     fn scale(self) -> f64 {
         self.wide_coefficients.map_or_else(
-            || (self.neutral[1] - self.neutral[0]) / (self.native[1] - self.native[0]),
-            |(scale, _)| scale,
+            || {
+                (self.neutral.upper() - self.neutral.lower())
+                    / (self.native.upper() - self.native.lower())
+            },
+            |(scale, _)| scale.get(),
         )
     }
 
     fn to_neutral(self, value: f64) -> f64 {
         self.wide_coefficients.map_or_else(
-            || self.neutral[0] + (value - self.native[0]) * self.scale(),
-            |(scale, offset)| scale.mul_add(value, offset),
+            || self.neutral.lower() + (value - self.native.lower()) * self.scale(),
+            |(scale, offset)| scale.get().mul_add(value, offset.get()),
         )
     }
 }
@@ -164,7 +162,7 @@ impl SourceParameterMap {
 fn source_parameter_map(
     entry: &DirectoryEntry,
     record: &ParameterRecord,
-    neutral: [f64; 2],
+    neutral: FiniteVector<2>,
 ) -> Option<SourceParameterMap> {
     let native = match (entry.entity_type, entry.form) {
         (100, 0) => {
@@ -192,10 +190,13 @@ fn source_parameter_map(
         // parameter bounds explicitly. Type 104 is not listed because the
         // neutral hyperbola carrier uses a different analytic parameter than
         // the IGES secant/tangent parameter and cannot use an affine map.
-        (102 | 112, 0) | (106, 11..=13 | 63) | (126, 0..=5) => neutral,
+        (102 | 112, 0) | (106, 11..=13 | 63) | (126, 0..=5) => neutral.get(),
         _ => return None,
     };
-    SourceParameterMap::new(native, neutral)
+    Some(SourceParameterMap::new(
+        IncreasingParameterInterval::new(native)?,
+        IncreasingParameterInterval::from_finite_endpoints(neutral)?,
+    ))
 }
 
 fn source_parameter_range(
@@ -203,7 +204,7 @@ fn source_parameter_range(
     source_id: &CurveId,
     geometry: &SolvedCurveGeometry,
     tolerance: f64,
-) -> Option<[f64; 2]> {
+) -> Option<FiniteVector<2>> {
     let point_position = |vertex: &VertexId| {
         let point_id = ir
             .model
@@ -238,7 +239,7 @@ fn source_parameter_range(
     candidates
         .iter()
         .all(|candidate| *candidate == range)
-        .then_some(range.get())
+        .then_some(range)
 }
 
 #[allow(clippy::many_single_char_names)]
@@ -289,11 +290,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "offset plane normal is not numeric"));
             continue;
         };
-        let Some(mut normal) = ({
-            let v = Vector3::new(x, y, z);
-            let n = v.norm();
-            (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
-        }) else {
+        let Some(mut normal) = UnitVector3::normalized_by_reciprocal(Vector3::new(x, y, z)) else {
             losses.push(entity_loss(
                 entry,
                 "offset plane normal is zero or non-finite",
@@ -317,13 +314,14 @@ pub(super) fn project(
             ));
             continue;
         };
-        if !native_start.is_finite() || !native_end.is_finite() || native_start >= native_end {
+        let Some(native_interval) = IncreasingParameterInterval::new([native_start, native_end])
+        else {
             losses.push(entity_loss(
                 entry,
                 "offset parameter interval is not increasing",
             ));
             continue;
-        }
+        };
         let source_id = crate::ids::curve(&crate::ids::Stem::directory(source_sequence));
         let Some(source_geometry) = ir
             .model
@@ -370,7 +368,9 @@ pub(super) fn project(
             ));
             continue;
         };
-        if native_start < parameter_map.native[0] || native_end > parameter_map.native[1] {
+        if native_interval.lower() < parameter_map.native.lower()
+            || native_interval.upper() > parameter_map.native.upper()
+        {
             losses.push(entity_loss(
                 entry,
                 "offset parameter interval lies outside the source curve domain",
@@ -424,8 +424,9 @@ pub(super) fn project(
             };
             offset_source_geometry = placed_solved.clone();
         }
-        let start = parameter_map.to_neutral(native_start);
-        let end = parameter_map.to_neutral(native_end);
+        let normal_direction = *normal.as_raw();
+        let start = parameter_map.to_neutral(native_interval.lower());
+        let end = parameter_map.to_neutral(native_interval.upper());
         let parameter_origin = parameter_map.to_neutral(0.0);
         let parameter_factor = parameter_map.scale();
         let (distance, distance_law, geometry) = match flag {
@@ -447,29 +448,31 @@ pub(super) fn project(
                     ));
                     continue;
                 }
-                let Some(distance) = record.number(6).filter(|value| value.is_finite()) else {
+                let Some(distance) = record.number(6).and_then(FiniteReal::new) else {
                     losses.push(entity_loss(entry, "uniform offset distance is not finite"));
                     continue;
                 };
-                let distance = distance * factor;
+                let distance = distance.get() * factor;
                 let geometry = match &offset_source_geometry {
                     SolvedCurveGeometry::Line(line_curve)
                         if {
                             let direction = *line_curve.direction().as_raw();
-                            normal.dot(direction).abs() <= EPS_OFFSET_FRAME
+                            normal_direction.dot(direction).abs() <= EPS_OFFSET_FRAME
                         } =>
                     {
                         let origin = line_curve.origin().get();
                         let direction = *line_curve.direction().as_raw();
                         let Some(payload) = admit(
-                            FinitePoint3::new(origin.translated(normal.cross(direction), distance))
-                                .ok_or("LineCurve.origin must be finite")
-                                .map(|origin| {
-                                    cadmpeg_ir::geometry::analytic::LineCurve::new(
-                                        origin,
-                                        line_curve.direction(),
-                                    )
-                                }),
+                            FinitePoint3::new(
+                                origin.translated(normal_direction.cross(direction), distance),
+                            )
+                            .ok_or("LineCurve.origin must be finite")
+                            .map(|origin| {
+                                cadmpeg_ir::geometry::analytic::LineCurve::new(
+                                    origin,
+                                    line_curve.direction(),
+                                )
+                            }),
                             entry,
                             &mut losses,
                         ) else {
@@ -480,12 +483,13 @@ pub(super) fn project(
                     SolvedCurveGeometry::Circle(circle_curve)
                         if {
                             let axis = circle_curve.frame().axis().as_raw();
-                            normal.dot(*axis).abs() >= 1.0 - EPS_OFFSET_FRAME
+                            normal_direction.dot(*axis).abs() >= 1.0 - EPS_OFFSET_FRAME
                         } =>
                     {
                         let axis = circle_curve.frame().axis().as_raw();
                         let radius = circle_curve.radius().get();
-                        let offset_radius = radius - distance * normal.dot(*axis).signum();
+                        let offset_radius =
+                            radius - distance * normal_direction.dot(*axis).signum();
                         if offset_radius <= 0.0 {
                             losses.push(entity_loss(
                                 entry,
@@ -553,14 +557,24 @@ pub(super) fn project(
                     losses.push(entity_loss(entry, "linear offset controls are not numeric"));
                     continue;
                 };
-                if [d1, td1, d2, td2].iter().any(|value| !value.is_finite()) || td1 >= td2 {
+                let [Some(d1), Some(td1), Some(d2), Some(td2)] =
+                    [d1, td1, d2, td2].map(FiniteReal::new)
+                else {
                     losses.push(entity_loss(
                         entry,
                         "linear offset control range is not increasing and finite",
                     ));
                     continue;
-                }
-                let distances = [d1 * factor, d2 * factor];
+                };
+                let Some(native_control_range) = IncreasingParameterInterval::between(td1, td2)
+                else {
+                    losses.push(entity_loss(
+                        entry,
+                        "linear offset control range is not increasing and finite",
+                    ));
+                    continue;
+                };
+                let distances = [d1.get() * factor, d2.get() * factor];
                 let control_factor = match basis {
                     CurveOffsetLawBasis::ArcLength => factor,
                     CurveOffsetLawBasis::Parameter => parameter_factor,
@@ -570,8 +584,8 @@ pub(super) fn project(
                     CurveOffsetLawBasis::Parameter => parameter_origin,
                 };
                 let control_range = [
-                    control_origin + td1 * control_factor,
-                    control_origin + td2 * control_factor,
+                    control_origin + native_control_range.lower() * control_factor,
+                    control_origin + native_control_range.upper() * control_factor,
                 ];
                 let SolvedCurveGeometry::Line(line_curve) = &offset_source_geometry else {
                     losses.push(entity_loss(
@@ -581,7 +595,7 @@ pub(super) fn project(
                     continue;
                 };
                 let direction = *line_curve.direction().as_raw();
-                if normal.dot(direction).abs() > EPS_OFFSET_FRAME {
+                if normal_direction.dot(direction).abs() > EPS_OFFSET_FRAME {
                     losses.push(entity_loss(
                         entry,
                         "offset normal is not perpendicular to the line",
@@ -616,7 +630,7 @@ pub(super) fn project(
                             .map_or(ordinary, cadmpeg_ir::scalar::FiniteReal::get)
                     }
                 };
-                let offset_direction = normal.cross(direction);
+                let offset_direction = normal_direction.cross(direction);
                 let Ok(source_start) = cadmpeg_ir::eval::curve_point(
                     &CurveGeometry::Solved(offset_source_geometry.clone()),
                     start,
@@ -732,7 +746,7 @@ pub(super) fn project(
                     continue;
                 };
                 let direction = *line_curve.direction().as_raw();
-                if normal.dot(direction).abs() > EPS_OFFSET_FRAME {
+                if normal_direction.dot(direction).abs() > EPS_OFFSET_FRAME {
                     losses.push(entity_loss(
                         entry,
                         "offset normal is not perpendicular to the line",
@@ -777,7 +791,7 @@ pub(super) fn project(
                     CurveOffsetLawBasis::ArcLength => start + independent,
                     CurveOffsetLawBasis::Parameter => independent,
                 };
-                let offset_direction = normal.cross(direction);
+                let offset_direction = normal_direction.cross(direction);
                 let mut controls = Vec::with_capacity(function_nurbs.control_points().len());
                 for (index, function_control) in
                     function_nurbs.control_points().iter().copied().enumerate()
@@ -905,10 +919,10 @@ pub(super) fn project(
                 None => cadmpeg_ir::geometry::CurveOffsetRange::uniform([start, end]),
             })
             .and_then(|range| {
-                cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::try_new(
+                cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::with_unit_plane_normal(
                     offset_source_id.clone(),
                     distance,
-                    cadmpeg_ir::geometry::OffsetSide::PlaneNormal { normal },
+                    normal,
                     Some(range),
                 )
             })
