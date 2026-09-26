@@ -52,17 +52,14 @@ const ON_UNSET_POSITIVE_VALUE: f64 = -ON_UNSET_VALUE;
 /// A Brep tolerance admitted with both exact source unset sentinels.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum BrepTolerance {
-    UnsetLow,
-    UnsetHigh,
+    Unset,
     NonNegative(NonNegativeReal),
 }
 
 impl BrepTolerance {
     pub(crate) fn new(value: f64) -> Option<Self> {
-        if value == ON_UNSET_VALUE {
-            Some(Self::UnsetLow)
-        } else if value == ON_UNSET_POSITIVE_VALUE {
-            Some(Self::UnsetHigh)
+        if value == ON_UNSET_VALUE || value == ON_UNSET_POSITIVE_VALUE {
+            Some(Self::Unset)
         } else {
             NonNegativeReal::new(value).map(Self::NonNegative)
         }
@@ -71,7 +68,7 @@ impl BrepTolerance {
     pub(crate) fn positive(self) -> Option<PositiveReal> {
         match self {
             Self::NonNegative(value) => value.positive(),
-            Self::UnsetLow | Self::UnsetHigh => None,
+            Self::Unset => None,
         }
     }
 
@@ -80,7 +77,7 @@ impl BrepTolerance {
             Self::NonNegative(value) => value
                 .positive()
                 .map(|_| cadmpeg_ir::geometry::FitTolerance::from(value)),
-            Self::UnsetLow | Self::UnsetHigh => None,
+            Self::Unset => None,
         }
     }
 }
