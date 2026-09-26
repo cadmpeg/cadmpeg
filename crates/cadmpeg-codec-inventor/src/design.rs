@@ -10,7 +10,6 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::{
     features::{DesignParameter, ParameterId, ParameterValue},
-    ids::IdentityKey,
     scalar::{Angle, Length},
 };
 use serde::{Deserialize, Serialize};
@@ -18,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use crate::pmdc::{
     inventor_id, type_id_string, Cursor, PmDcContentHeader, PmDcPairedReferenceList, PmDcReference,
 };
-use crate::record_identity::{Located, RecordPayload};
+use crate::record_identity::{push_record, Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
@@ -291,7 +290,7 @@ pub(crate) fn inventory(
             ctx.charge_work(1, "scan Inventor PmDc design record")?;
             let result = if record.type_id == PARAMETER_FULL_TYPE {
                 parse_parameter(ctx, record.payload, version).and_then(|value| {
-                    push_design_record(
+                    push_record(
                         ctx,
                         &mut inventory.parameters,
                         value,
@@ -303,7 +302,7 @@ pub(crate) fn inventory(
                 })
             } else if let Some(operation) = binary_operation(record.type_id) {
                 parse_binary_expression(record.payload, version, operation).and_then(|value| {
-                    push_design_record(
+                    push_record(
                         ctx,
                         &mut inventory.expressions,
                         value,
@@ -315,7 +314,7 @@ pub(crate) fn inventory(
                 })
             } else if let Some(operation) = unary_operation(record.type_id) {
                 parse_unary_expression(record.payload, version, operation).and_then(|value| {
-                    push_design_record(
+                    push_record(
                         ctx,
                         &mut inventory.expressions,
                         value,
@@ -327,7 +326,7 @@ pub(crate) fn inventory(
                 })
             } else if record.type_id == EXPRESSION_VALUE_TYPE {
                 parse_value_expression(record.payload, version).and_then(|value| {
-                    push_design_record(
+                    push_record(
                         ctx,
                         &mut inventory.expressions,
                         value,
@@ -339,7 +338,7 @@ pub(crate) fn inventory(
                 })
             } else if record.type_id == EXPRESSION_REFERENCE_TYPE {
                 parse_reference_expression(record.payload, version).and_then(|value| {
-                    push_design_record(
+                    push_record(
                         ctx,
                         &mut inventory.expressions,
                         value,
@@ -351,7 +350,7 @@ pub(crate) fn inventory(
                 })
             } else if record.type_id == UNIT_TYPE {
                 parse_unit_definition(ctx, record.payload, version).and_then(|value| {
-                    push_design_record(
+                    push_record(
                         ctx,
                         &mut inventory.units,
                         value,
@@ -364,7 +363,7 @@ pub(crate) fn inventory(
             } else if let Some((dimension, symbol, scale)) = base_unit(record.type_id) {
                 parse_base_unit(ctx, record.payload, version, dimension, symbol, scale).and_then(
                     |value| {
-                        push_design_record(
+                        push_record(
                             ctx,
                             &mut inventory.units,
                             value,
@@ -409,30 +408,6 @@ pub(crate) fn inventory(
         }
     }
     Ok(inventory)
-}
-
-fn push_design_record<T>(
-    ctx: &DecodeContext<'_>,
-    records: &mut Vec<Located<T>>,
-    value: T,
-    type_id: [u8; 16],
-    segment_token: &IdentityKey,
-    ordinal: u32,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
-    ctx.charge_retained(32, "retain Inventor PmDc record type id")?;
-    ctx.charge_retained(
-        segment_token.as_str().len() as u64,
-        "retain Inventor PmDc record segment token",
-    )?;
-    records.push(Located::new(
-        value,
-        type_id_string(type_id),
-        segment_token,
-        ordinal,
-    ));
-    Ok(())
 }
 
 pub(crate) fn project_parameters(
@@ -524,8 +499,20 @@ pub(crate) fn project_parameters(
             parameter.name.len() as u64,
             "retain Inventor parameter name",
         )?;
+        let id = parameter_id(ctx, parameter)?;
+        ctx.charge_retained(
+            ("inventor:pmdc:parameter#".len()
+                + parameter.identity.segment_token.as_str().len()
+                + 1
+                + decimal_len(parameter.identity.record_ordinal)) as u64,
+            "retain Inventor parameter native reference",
+        )?;
+        ctx.charge_collection_items(
+            dependencies.len() as u64,
+            "collect Inventor parameter dependencies",
+        )?;
         projected.push(DesignParameter {
-            id: parameter_id(parameter),
+            id,
             owner: None,
             ordinal: parameter.header.source_index,
             name: parameter.name.clone(),
@@ -611,11 +598,33 @@ fn close_parameter_graph(
     ))
 }
 
-fn parameter_id(parameter: &PmDcParameter) -> ParameterId {
-    ParameterId::compose(
+fn parameter_id(
+    ctx: &DecodeContext<'_>,
+    parameter: &PmDcParameter,
+) -> Result<ParameterId, CodecError> {
+    let token_len = parameter.identity.segment_token.as_str().len();
+    let key_len = token_len + 1 + decimal_len(parameter.identity.record_ordinal);
+    ctx.charge_retained(
+        ("inventor:design:parameter#".len() + key_len) as u64,
+        "retain Inventor parameter id",
+    )?;
+    let _key_bytes = ctx.reserve_scoped(
+        (token_len + key_len + decimal_len(parameter.identity.record_ordinal)) as u64,
+        "compose Inventor parameter id key",
+    )?;
+    Ok(ParameterId::compose(
         &cadmpeg_ir::identity_namespace!("inventor", "design", "parameter"),
         parameter.identity.key(),
-    )
+    ))
+}
+
+fn decimal_len(mut value: u32) -> usize {
+    let mut len = 1;
+    while value >= 10 {
+        value /= 10;
+        len += 1;
+    }
+    len
 }
 
 struct ResolvedUnit<'a> {
@@ -686,7 +695,7 @@ fn render_expression<'a>(
         lengths: HashMap::new(),
         visiting: HashSet::new(),
         order: Vec::new(),
-        dependencies,
+        dependency_ordinals: Vec::new(),
         seen_dependencies: HashSet::new(),
     };
     let Some((root_length, _)) = plan.measure(reference)? else {
@@ -769,6 +778,11 @@ fn render_expression<'a>(
         CodecError::Malformed("Inventor expression root missing after render".into())
     })?;
     drop(reserved);
+    for ordinal in plan.dependency_ordinals {
+        ctx.charge_collection_items(1, "collect Inventor expression dependency ids")?;
+        let target = parameters[&(token, ordinal)];
+        dependencies.push(parameter_id(ctx, target)?);
+    }
     Ok(Some(result))
 }
 
@@ -781,7 +795,7 @@ struct ExpressionRenderPlan<'a, 'b> {
     lengths: HashMap<u32, (usize, usize)>,
     visiting: HashSet<u32>,
     order: Vec<u32>,
-    dependencies: &'b mut Vec<ParameterId>,
+    dependency_ordinals: Vec<u32>,
     seen_dependencies: HashSet<u32>,
 }
 
@@ -844,7 +858,7 @@ impl ExpressionRenderPlan<'_, '_> {
                     self.ctx
                         .charge_collection_items(2, "track Inventor expression dependencies")?;
                     self.seen_dependencies.insert(target_ordinal);
-                    self.dependencies.push(parameter_id(target));
+                    self.dependency_ordinals.push(target_ordinal);
                 }
                 (target.name.len(), 1)
             }
@@ -1761,7 +1775,7 @@ mod tests {
     }
 
     #[test]
-    fn projects_closed_parameter_dependencies_and_units() {
+    fn parameter_dependencies_refuse_collection_limit_before_distinct_members_creation() {
         let token = cadmpeg_ir::identity_key!("segment");
         let base = Located::new(
             PmDcUnitPayload {
@@ -1885,6 +1899,18 @@ mod tests {
             units: vec![base, unit],
             issues: Vec::new(),
         };
+        let mut limited_policy = DecodePolicy::service();
+        limited_policy.limits.max_collection_items = 19;
+        let limited_arena = DecodeArena::new();
+        let (limited_ctx, _) = DecodeContext::from_root_bytes(&[], &limited_arena, &limited_policy)
+            .expect("empty fixture view");
+        let mut limited_entities = 0;
+        assert!(matches!(
+            project_parameters(&limited_ctx, &inventory, &mut limited_entities),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "collect Inventor parameter dependencies"
+        ));
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("empty fixture view");
@@ -1906,8 +1932,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn parameter_projection_refuses_entity_limit_before_output_creation() {
+    fn single_parameter_inventory() -> DesignInventory {
         let token = cadmpeg_ir::identity_key!("segment");
         let base = Located::new(
             PmDcUnitPayload {
@@ -1987,24 +2012,71 @@ mod tests {
             &token,
             3,
         );
-        let inventory = DesignInventory {
+        DesignInventory {
             parameters: vec![parameter],
             expressions: vec![literal],
             units: vec![base, unit],
             issues: Vec::new(),
-        };
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_entities = 0;
+        }
+    }
+
+    fn project_single_parameter(policy: DecodePolicy) -> Result<Vec<DesignParameter>, CodecError> {
+        let inventory = single_parameter_inventory();
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty fixture view");
         let mut admitted_entities = 0;
+        project_parameters(&ctx, &inventory, &mut admitted_entities)
+            .map(|(parameters, _)| parameters)
+    }
+
+    #[test]
+    fn parameter_projection_refuses_entity_limit_before_output_creation() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_entities = 0;
         assert!(matches!(
-            project_parameters(&ctx, &inventory, &mut admitted_entities),
+            project_single_parameter(policy),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
                     && limit.operation == "project Inventor parameter"
                     && limit.used == 0
+        ));
+    }
+
+    #[test]
+    fn parameter_projection_identity_strings_refuse_retained_limit_before_creation() {
+        let admitted = project_single_parameter(DecodePolicy::service())
+            .expect("parameter is admitted under service limits");
+        assert_eq!(admitted.len(), 1);
+        let parameter = &admitted[0];
+        assert_eq!(parameter.id.as_str(), "inventor:design:parameter#segment-3");
+        assert_eq!(
+            parameter.native_ref.as_deref(),
+            Some("inventor:pmdc:parameter#segment-3")
+        );
+
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes =
+            (parameter.expression.len() + parameter.name.len() + parameter.id.as_str().len() - 1)
+                as u64;
+        assert!(matches!(
+            project_single_parameter(policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor parameter id"
+        ));
+
+        policy.limits.max_retained_bytes += 1 + parameter
+            .native_ref
+            .as_deref()
+            .expect("native reference")
+            .len() as u64
+            - 1;
+        assert!(matches!(
+            project_single_parameter(policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor parameter native reference"
         ));
     }
 
@@ -2391,6 +2463,46 @@ mod tests {
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.operation == "retain Inventor expression text"
+        ));
+    }
+
+    #[test]
+    fn expression_dependency_id_refuses_retained_limit_before_creation() {
+        let admitted = render_graph(&DecodePolicy::service(), vec![reference_leaf()], 1)
+            .expect("graph is admitted")
+            .expect("graph is closed");
+        assert_eq!(admitted.0, "x");
+        assert_eq!(admitted.1.len(), 1);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes =
+            (admitted.0.len() + admitted.1[0].as_str().len() - 1) as u64;
+        assert!(matches!(
+            render_graph(&policy, vec![reference_leaf()], 1),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor parameter id"
+                    && limit.used == admitted.0.len() as u64
+        ));
+    }
+
+    #[test]
+    fn expression_dependency_ids_refuse_collection_limit_before_push() {
+        assert_eq!(
+            render_graph(&DecodePolicy::service(), vec![reference_leaf()], 1)
+                .expect("graph is admitted")
+                .expect("graph is closed")
+                .1
+                .len(),
+            1
+        );
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 6;
+        assert!(matches!(
+            render_graph(&policy, vec![reference_leaf()], 1),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "collect Inventor expression dependency ids"
+                    && limit.used == 6
         ));
     }
 

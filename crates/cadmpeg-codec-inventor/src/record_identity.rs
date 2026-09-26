@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Record identities and located payloads with flat wire fields.
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::IdentityKey;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+use crate::pmdc::type_id_string;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RecordIdentity {
@@ -51,6 +55,30 @@ impl<T> Located<T> {
             payload: value,
         }
     }
+}
+
+pub(crate) fn push_record<T>(
+    ctx: &DecodeContext<'_>,
+    records: &mut Vec<Located<T>>,
+    value: T,
+    type_id: [u8; 16],
+    segment_token: &IdentityKey,
+    ordinal: u32,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, operation)?;
+    ctx.charge_retained(32, "retain Inventor PmDc record type id")?;
+    ctx.charge_retained(
+        segment_token.as_str().len() as u64,
+        "retain Inventor PmDc record segment token",
+    )?;
+    records.push(Located::new(
+        value,
+        type_id_string(type_id),
+        segment_token,
+        ordinal,
+    ));
+    Ok(())
 }
 
 impl<T: RecordPayload> Located<T> {
