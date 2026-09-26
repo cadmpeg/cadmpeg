@@ -12,6 +12,7 @@ use cadmpeg_ir::geometry::analytic::CylinderSurface;
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::PositiveLength;
 
 use crate::container::ContainerScan;
 
@@ -183,43 +184,44 @@ pub(in crate::decode) fn counterbore_dimension_values<'a>(
 
 pub(in crate::decode) fn counterbore_envelope_dimension_values<'a>(
     tables: impl Iterator<Item = &'a crate::feature::definitions::FeatureDimensionTable>,
-    source_spans: &[Option<[[Option<f64>; 2]; 3]>],
+    source_spans: &[Option<[[Option<PositiveLength>; 2]; 3]>],
 ) -> Option<(f64, f64, f64)> {
     let [first_source, second_source] = source_spans else {
         return None;
     };
-    let cylinder_diameter_matches = |diameter: f64, spans: [[Option<f64>; 2]; 3]| {
+    let cylinder_diameter_matches = |diameter: f64, spans: [[Option<PositiveLength>; 2]; 3]| {
         (0..3)
             .filter(|axis| {
                 spans[*axis]
                     .into_iter()
                     .flatten()
-                    .any(|span| approximately_equal(span, diameter))
+                    .any(|span| approximately_equal(span.get(), diameter))
             })
             .count()
             == 2
     };
-    let counterbore_matches = |diameter: f64, depth: f64, spans: [[Option<f64>; 2]; 3]| {
-        let diameter_axes = (0..3)
-            .filter(|axis| {
-                spans[*axis]
-                    .into_iter()
-                    .flatten()
-                    .any(|span| approximately_equal(span, diameter))
-            })
-            .collect::<Vec<_>>();
-        let [first_axis, second_axis] = diameter_axes.as_slice() else {
-            return false;
+    let counterbore_matches =
+        |diameter: f64, depth: f64, spans: [[Option<PositiveLength>; 2]; 3]| {
+            let diameter_axes = (0..3)
+                .filter(|axis| {
+                    spans[*axis]
+                        .into_iter()
+                        .flatten()
+                        .any(|span| approximately_equal(span.get(), diameter))
+                })
+                .collect::<Vec<_>>();
+            let [first_axis, second_axis] = diameter_axes.as_slice() else {
+                return false;
+            };
+            (0..3)
+                .find(|axis| axis != first_axis && axis != second_axis)
+                .is_some_and(|axis| {
+                    spans[axis]
+                        .into_iter()
+                        .flatten()
+                        .any(|span| approximately_equal(span.get(), depth))
+                })
         };
-        (0..3)
-            .find(|axis| axis != first_axis && axis != second_axis)
-            .is_some_and(|axis| {
-                spans[axis]
-                    .into_iter()
-                    .flatten()
-                    .any(|span| approximately_equal(span, depth))
-            })
-    };
     let candidates = tables
         .filter_map(|table| {
             let (bore_diameter, counterbore_diameter, counterbore_depth) =
