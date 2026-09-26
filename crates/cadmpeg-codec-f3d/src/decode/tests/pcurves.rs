@@ -218,13 +218,11 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
     else {
         panic!("expected spring construction")
     };
-    let layout = definition_payload.layout();
     let direction = definition_payload.direction();
 
     assert_eq!(*direction, -3);
-    assert!(layout
+    assert!(definition_payload
         .support_context()
-        .unwrap()
         .sides()
         .iter()
         .all(|side| side.surface.is_some() && side.pcurve.is_some()));
