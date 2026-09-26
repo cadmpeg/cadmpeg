@@ -82,6 +82,16 @@ pub(crate) fn push_record<T>(
 }
 
 impl<T: RecordPayload> Located<T> {
+    pub(crate) fn id_len(&self) -> usize {
+        "inventor:pmdc:".len()
+            + T::KIND.len()
+            + 1
+            + self.identity.segment_token.as_str().len()
+            + 1
+            + self.identity.record_ordinal.max(1).ilog10() as usize
+            + 1
+    }
+
     pub(crate) fn id(&self) -> String {
         self.identity.id(T::KIND)
     }
