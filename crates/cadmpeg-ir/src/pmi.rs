@@ -98,11 +98,20 @@ impl PmiValue {
 pub struct PmiMagnitude(PmiValue);
 
 impl PmiMagnitude {
+    /// Build a tolerance from an admitted nonnegative value and its quantity.
+    #[must_use]
+    pub fn from_parts(value: crate::scalar::NonNegativeReal, quantity: PmiQuantity) -> Self {
+        Self(PmiValue {
+            value: crate::scalar::FiniteReal::from(value),
+            quantity,
+        })
+    }
+
     /// Construct a nonnegative tolerance magnitude.
     pub fn new(value: PmiValue) -> Option<Self> {
         crate::scalar::NonNegativeReal::try_from(value.value)
             .ok()
-            .map(|_| Self(value))
+            .map(|magnitude| Self::from_parts(magnitude, value.quantity))
     }
 
     /// Return the finite semantic quantity.
@@ -936,6 +945,10 @@ mod tests {
         assert!(PmiValue::new(f64::INFINITY, PmiQuantity::Length).is_none());
         let zero = PmiMagnitude::new(PmiValue::new(0.0, PmiQuantity::Angle).expect("zero angle"))
             .expect("zero magnitude");
+        assert_eq!(
+            PmiMagnitude::from_parts(crate::scalar::NonNegativeReal::ZERO, PmiQuantity::Angle),
+            zero
+        );
         let wire = serde_json::to_string(&zero).expect("serialize");
         assert_eq!(wire, r#"{"value":0.0,"quantity":"angle"}"#);
         assert_eq!(
