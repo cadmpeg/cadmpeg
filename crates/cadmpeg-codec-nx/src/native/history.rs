@@ -311,7 +311,7 @@ mod tests {
                     role: FeatureTreeNodeRole::History,
                     children: cadmpeg_ir::features::TreeChildren::default(),
                 }),
-                outputs,
+                outputs.try_into().unwrap(),
             ),
             native_ref: native.then(|| format!("native:{id}")),
         }
@@ -576,11 +576,11 @@ mod tests {
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                     FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                         bodies: BodySelection::Resolved {
-                            bodies: vec![body.clone()],
+                            bodies: vec![body.clone()].try_into().expect("distinct bodies"),
                             native: "test".into(),
                         },
                     }),
-                    vec![body.clone()],
+                    vec![body.clone()].try_into().unwrap(),
                 ),
                 native_ref: None,
             },
@@ -663,11 +663,11 @@ mod tests {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                     bodies: BodySelection::Resolved {
-                        bodies: vec![body.clone()],
+                        bodies: vec![body.clone()].try_into().expect("distinct bodies"),
                         native: "test".into(),
                     },
                 }),
-                vec![body.clone()],
+                vec![body.clone()].try_into().unwrap(),
             ),
             native_ref: None,
         }]);

@@ -200,7 +200,11 @@ pub(crate) fn bind_topology_selections(
                 .and_then(|record| record.properties.get("Scope"))
             {
                 if let Some(outputs) = resolve_ids(scope, &body_ids) {
-                    feature.evaluation.set_outputs(outputs);
+                    feature.evaluation.set_outputs(
+                        outputs
+                            .try_into()
+                            .map_err(cadmpeg_core::CodecError::malformed)?,
+                    );
                 }
             }
             match &mut definition {
@@ -657,7 +661,7 @@ fn resolve_body_selection(
     ids: &HashMap<String, Option<cadmpeg_ir::ids::BodyId>>,
 ) {
     if let BodySelection::Native(native) = selection {
-        if let Some(bodies) = resolve_ids(native, ids) {
+        if let Some(bodies) = resolve_ids(native, ids).and_then(|bodies| bodies.try_into().ok()) {
             *selection = BodySelection::Resolved {
                 bodies,
                 native: native.clone(),

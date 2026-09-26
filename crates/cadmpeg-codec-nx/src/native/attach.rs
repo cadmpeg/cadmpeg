@@ -1217,11 +1217,11 @@ fn attach_initial_segment_bodies(
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Resolved {
-                    bodies: outputs.clone(),
+                    bodies: outputs.iter().cloned().collect(),
                     native: "nx:segment-body-bindings".to_string(),
                 },
             }),
-            outputs.clone(),
+            outputs.iter().cloned().collect(),
         ),
         native_ref: None,
     });
@@ -3791,7 +3791,10 @@ fn attach_feature_operations(
             source_text: None,
             source_content,
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                definition,
+                outputs.try_into().map_err(CodecError::malformed)?,
+            ),
             native_ref: Some(label.id.clone()),
         });
         if !deletes_body && !operation_body_writes.is_empty() {
@@ -8194,7 +8197,10 @@ impl FeatureBodySelection {
         match self {
             Self::Native(native) => BodySelection::Native(native),
             Self::Local { bodies, native, .. } => local_body_selection(bodies, native),
-            Self::Resolved { bodies, native, .. } => BodySelection::Resolved { bodies, native },
+            Self::Resolved { bodies, native, .. } => match bodies.try_into() {
+                Ok(bodies) => BodySelection::Resolved { bodies, native },
+                Err(_) => BodySelection::Native(native),
+            },
         }
     }
 
@@ -8347,7 +8353,9 @@ fn feature_body_set_selection(
     if let Some(bodies) =
         resolved.filter(|bodies| bodies.iter().collect::<BTreeSet<_>>().len() == bodies.len())
     {
-        return BodySelection::Resolved { bodies, native };
+        if let Ok(bodies) = bodies.try_into() {
+            return BodySelection::Resolved { bodies, native };
+        }
     }
     local_body_selection(
         roots
