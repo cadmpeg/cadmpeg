@@ -6831,7 +6831,7 @@ impl MeshSelectionSearch<'_, '_> {
         true
     }
 
-    fn selection_orientable(&self, selection: &[MeshFaceSelection]) -> bool {
+    fn selection_orientable(&self, selection: &[MeshFaceSelection]) -> Result<bool, CodecError> {
         let mut constraints = Vec::<Vec<(usize, bool)>>::new();
         let mut edge_uses = HashMap::<usize, Vec<(usize, bool)>>::new();
         for (face, selected) in selection.iter().enumerate() {
@@ -6839,26 +6839,34 @@ impl MeshSelectionSearch<'_, '_> {
                 continue;
             };
             let Some(assignment) = self.assignments[face].get(*assignment_index) else {
-                return false;
+                return Ok(false);
             };
             if assignment.boundaries.len() != directions.len() {
-                return false;
+                return Ok(false);
             }
             for (boundary, directions) in assignment.boundaries.iter().zip(directions) {
                 if boundary.len() != directions.len() {
-                    return false;
+                    return Ok(false);
                 }
                 let node = constraints.len();
+                self.ctx
+                    .charge_collection_items(1, "catia_selection_constraint_nodes")?;
                 constraints.push(Vec::new());
                 for (use_, &direction) in boundary.iter().zip(directions) {
                     let reversed = use_.reversed.unwrap_or(direction);
                     if use_.reversed.is_some() && reversed != direction {
-                        return false;
+                        return Ok(false);
+                    }
+                    if !edge_uses.contains_key(&use_.edge) {
+                        self.ctx
+                            .charge_collection_items(1, "catia_selection_edge_keys")?;
                     }
                     let uses = edge_uses.entry(use_.edge).or_default();
                     if uses.len() == 2 {
-                        return false;
+                        return Ok(false);
                     }
+                    self.ctx
+                        .charge_collection_items(1, "catia_selection_edge_uses")?;
                     uses.push((node, reversed));
                 }
             }
@@ -6870,47 +6878,62 @@ impl MeshSelectionSearch<'_, '_> {
             let parity = left_reversed == right_reversed;
             if left_node == right_node {
                 if parity {
-                    return false;
+                    return Ok(false);
                 }
             } else {
+                self.ctx
+                    .charge_collection_items(2, "catia_selection_adjacent_constraints")?;
                 constraints[*left_node].push((*right_node, parity));
                 constraints[*right_node].push((*left_node, parity));
             }
         }
-        let Ok(mut flips) = alloc_filled(constraints.len(), None, "catia_selection_flips") else {
-            return false;
-        };
+        let mut flips = self
+            .ctx
+            .alloc_filled(constraints.len(), None, "catia_selection_flips")?;
         for root in 0..constraints.len() {
             if flips[root].is_some() {
                 continue;
             }
             flips[root] = Some(false);
+            self.ctx
+                .charge_collection_items(1, "catia_selection_orientation_stack")?;
             let mut stack = vec![root];
             while let Some(node) = stack.pop() {
+                self.ctx
+                    .charge_work(1, "catia_selection_orientation_work")?;
                 let Some(flip) = flips[node] else {
-                    return false;
+                    return Ok(false);
                 };
                 for &(neighbor, parity) in &constraints[node] {
                     let required = flip ^ parity;
                     match flips[neighbor] {
-                        Some(existing) if existing != required => return false,
+                        Some(existing) if existing != required => return Ok(false),
                         Some(_) => {}
                         None => {
                             flips[neighbor] = Some(required);
+                            self.ctx
+                                .charge_collection_items(1, "catia_selection_orientation_stack")?;
                             stack.push(neighbor);
                         }
                     }
                 }
             }
         }
-        true
+        Ok(true)
     }
 
-    fn selected_orientable(&self) -> bool {
+    fn selected_orientable(&self) -> Result<bool, CodecError> {
         self.selection_orientable(&self.selected)
     }
 
-    fn fixed_remaining_faces_are_orientable(&self) -> bool {
+    fn fixed_remaining_faces_are_orientable(&self) -> Result<bool, CodecError> {
+        self.ctx.charge_collection_items(
+            u64::try_from(self.selected.len()).map_err(|_| {
+                self.ctx
+                    .refuse_codec_limit("catia_selection_completion", u64::MAX, u64::MAX)
+            })?,
+            "catia_selection_completion",
+        )?;
         let mut completion = self.selected.clone();
         for (face, selected) in completion.iter_mut().enumerate() {
             if selected.is_some() {
@@ -6919,6 +6942,28 @@ impl MeshSelectionSearch<'_, '_> {
             let [assignment] = self.assignments[face].as_slice() else {
                 continue;
             };
+            self.ctx.charge_collection_items(
+                u64::try_from(assignment.boundaries.len()).map_err(|_| {
+                    self.ctx.refuse_codec_limit(
+                        "catia_selection_completion_boundaries",
+                        u64::MAX,
+                        u64::MAX,
+                    )
+                })?,
+                "catia_selection_completion_boundaries",
+            )?;
+            for boundary in &assignment.boundaries {
+                self.ctx.charge_collection_items(
+                    u64::try_from(boundary.len()).map_err(|_| {
+                        self.ctx.refuse_codec_limit(
+                            "catia_selection_completion_directions",
+                            u64::MAX,
+                            u64::MAX,
+                        )
+                    })?,
+                    "catia_selection_completion_directions",
+                )?;
+            }
             let Some(directions) = assignment
                 .boundaries
                 .iter()
@@ -6971,9 +7016,12 @@ impl MeshSelectionSearch<'_, '_> {
         {
             return Ok(None);
         }
-        Ok((self.has_exact_singleton_endpoint_domains()
-            || self.fixed_remaining_faces_are_orientable())
-        .then_some(measured))
+        let orientable = if self.has_exact_singleton_endpoint_domains() {
+            true
+        } else {
+            self.fixed_remaining_faces_are_orientable()?
+        };
+        Ok(orientable.then_some(measured))
     }
 
     #[cfg(test)]
@@ -7341,7 +7389,7 @@ impl MeshSelectionSearch<'_, '_> {
                 return Ok(());
             }
             if !self.has_exact_singleton_endpoint_domains()
-                && !self.fixed_remaining_faces_are_orientable()
+                && !self.fixed_remaining_faces_are_orientable()?
             {
                 return Ok(());
             }
@@ -7664,7 +7712,7 @@ impl MeshSelectionSearch<'_, '_> {
         if let [(assignment_index, directions, next_quotient)] = options.as_slice() {
             let changed_edges = changed_quotient_edges(&measured, next_quotient);
             self.selected[face] = Some((*assignment_index, directions.clone()));
-            if self.selected_orientable() {
+            if self.selected_orientable()? {
                 if let Some(next_quotient) =
                     self.prepare_selected_branch(next_quotient, &changed_edges, propagation_budget)?
                 {
@@ -7690,7 +7738,7 @@ impl MeshSelectionSearch<'_, '_> {
         for (assignment_index, directions, next_quotient) in options {
             let changed_edges = changed_quotient_edges(&measured, &next_quotient);
             self.selected[face] = Some((assignment_index, directions));
-            if self.selected_orientable() {
+            if self.selected_orientable()? {
                 if let Some(next_quotient) = self.prepare_selected_branch(
                     &next_quotient,
                     &changed_edges,

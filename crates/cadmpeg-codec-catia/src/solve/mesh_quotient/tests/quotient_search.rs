@@ -50,6 +50,108 @@ fn edge_class_constraint_refuses_normalized_row_collection_limit() {
 }
 
 #[test]
+fn mesh_selection_orientation_refuses_constraint_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    catia_test_context!(service_ctx);
+    let assignments = vec![vec![MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0,
+            start: 0,
+            end: 1,
+            reversed: None,
+        }]],
+    }]];
+    let equations = possible_face_equations(&assignments);
+    let mut search = MeshSelectionSearch {
+        ctx: &service_ctx,
+        assignments: &assignments,
+        possible_face_equations: equations.clone(),
+        possible_face_choices: possible_face_choices(&assignments, &equations),
+        face_work: vec![Some(1)],
+        edge_candidates: &[],
+        edge_rows: &[],
+        vertex_points: &[],
+        candidate_gauge: None,
+        port_identities: None,
+        fixed_face_directions: Vec::new(),
+        fixed_edge_orientations: Vec::new(),
+        edge_has_fixed_direction: Vec::new(),
+        selected: vec![Some((0, vec![vec![false]]))],
+        visited_states: HashSet::new(),
+        outcome: SearchOutcome::Open,
+        face_equation_cache: RefCell::default(),
+    };
+    assert!(search.selected_orientable().expect("service decode"));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    search.ctx = &ctx;
+    let error = search
+        .selected_orientable()
+        .expect_err("the selected boundary exceeds the collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_selection_constraint_nodes"));
+}
+
+#[test]
+fn mesh_selection_completion_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    catia_test_context!(service_ctx);
+    let assignments = vec![vec![MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0,
+            start: 0,
+            end: 1,
+            reversed: Some(false),
+        }]],
+    }]];
+    let equations = possible_face_equations(&assignments);
+    let mut search = MeshSelectionSearch {
+        ctx: &service_ctx,
+        assignments: &assignments,
+        possible_face_equations: equations.clone(),
+        possible_face_choices: possible_face_choices(&assignments, &equations),
+        face_work: vec![Some(1)],
+        edge_candidates: &[],
+        edge_rows: &[],
+        vertex_points: &[],
+        candidate_gauge: None,
+        port_identities: None,
+        fixed_face_directions: Vec::new(),
+        fixed_edge_orientations: Vec::new(),
+        edge_has_fixed_direction: Vec::new(),
+        selected: vec![None],
+        visited_states: HashSet::new(),
+        outcome: SearchOutcome::Open,
+        face_equation_cache: RefCell::default(),
+    };
+    assert!(search
+        .fixed_remaining_faces_are_orientable()
+        .expect("service decode"));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    search.ctx = &ctx;
+    let error = search
+        .fixed_remaining_faces_are_orientable()
+        .expect_err("completion exceeds the collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_selection_completion"));
+}
+
+#[test]
 fn quotient_assignments_ignore_span_allocation_with_identical_edge_order() {
     let use_ = |edge, start, end| MeshBoundaryEdgeCandidate {
         edge,
@@ -748,9 +850,9 @@ fn mesh_selection_rejects_an_odd_boundary_orientation_cycle() {
         face_equation_cache: RefCell::default(),
     };
 
-    assert!(!search.selected_orientable());
+    assert!(!search.selected_orientable().expect("service decode"));
     search.selected[2] = Some((0, vec![vec![false, true]]));
-    assert!(search.selected_orientable());
+    assert!(search.selected_orientable().expect("service decode"));
 }
 
 #[test]
@@ -838,9 +940,13 @@ fn mesh_selection_rejects_a_branch_with_no_orientable_remaining_face() {
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
-    assert!(!search.fixed_remaining_faces_are_orientable());
+    assert!(!search
+        .fixed_remaining_faces_are_orientable()
+        .expect("service decode"));
     search.selected[1] = Some((0, vec![vec![false, true]]));
-    assert!(search.fixed_remaining_faces_are_orientable());
+    assert!(search
+        .fixed_remaining_faces_are_orientable()
+        .expect("service decode"));
 }
 
 #[test]
@@ -887,7 +993,9 @@ fn mesh_selection_checks_all_fixed_remaining_faces_together() {
         face_equation_cache: RefCell::default(),
     };
 
-    assert!(!search.fixed_remaining_faces_are_orientable());
+    assert!(!search
+        .fixed_remaining_faces_are_orientable()
+        .expect("service decode"));
 }
 
 #[test]
