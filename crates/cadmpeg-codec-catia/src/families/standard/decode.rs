@@ -4247,8 +4247,8 @@ fn attach_standard_topology(
                 radius,
             } => standard_circle_endpoint_candidates(
                 &ir.model.points,
-                *center,
-                *radius,
+                center.get(),
+                radius.get(),
                 Some([
                     (
                         &surface0.geometry,
@@ -5918,6 +5918,8 @@ fn resolve_standard_endpoint_pairs(
         else {
             continue;
         };
+        let center = center.get();
+        let radius = radius.get();
         let count = candidates[edge].len();
         if count < 2 {
             continue;
@@ -6114,7 +6116,7 @@ fn standard_curve_edge_classes(
                             left_center.x.to_bits() == right_center.x.to_bits()
                                 && left_center.y.to_bits() == right_center.y.to_bits()
                                 && left_center.z.to_bits() == right_center.z.to_bits()
-                                && left_radius.to_bits() == right_radius.to_bits()
+                                && left_radius.get().to_bits() == right_radius.get().to_bits()
                         }
                         (
                             crate::families::standard::records::StandardCurveGeometry::Line,
@@ -6143,7 +6145,7 @@ fn standard_curve_geometry_gauge_keys(
                 radius,
             } => MeshEdgeGeometry::Circle {
                 center: [center.x.to_bits(), center.y.to_bits(), center.z.to_bits()],
-                radius: radius.to_bits(),
+                radius: radius.get().to_bits(),
             },
             crate::families::standard::records::StandardCurveGeometry::Bspline => {
                 MeshEdgeGeometry::Bspline
@@ -7549,7 +7551,7 @@ fn standard_endpoint_pair_supports_topology(
     support: &crate::families::standard::records::StandardCurveSupport,
     start: Point3,
     end: Point3,
-    witness: Option<Point3>,
+    witness: Option<FinitePoint3>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> bool {
     let endpoint_is_supported = |point| match surface {
@@ -7577,8 +7579,8 @@ fn standard_endpoint_pair_supports_topology(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)),
         crate::families::standard::records::StandardCurveGeometry::Circle { center, radius },
     ) if {
-        (start.distance(*center) - *radius).abs() <= SPHERE_SECTION_ENDPOINT_TOLERANCE
-            && (end.distance(*center) - *radius).abs() <= SPHERE_SECTION_ENDPOINT_TOLERANCE
+        (start.distance(center.get()) - radius.get()).abs() <= SPHERE_SECTION_ENDPOINT_TOLERANCE
+            && (end.distance(center.get()) - radius.get()).abs() <= SPHERE_SECTION_ENDPOINT_TOLERANCE
     })
 }
 
@@ -7587,7 +7589,7 @@ fn standard_pcurve_geometry(
     support: &crate::families::standard::records::StandardCurveSupport,
     start: Point3,
     end: Point3,
-    witness: Option<Point3>,
+    witness: Option<FinitePoint3>,
     edge_curve: Option<&CurveGeometry>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<(PcurveGeometry, [f64; 2])> {
@@ -7635,7 +7637,9 @@ fn standard_pcurve_geometry(
         Some(witness),
     ) = (&support.geometry, witness)
     {
-        if let Some(end) = witnessed_surface_circle_end(surface, *center, *radius, uv, witness) {
+        if let Some(end) =
+            witnessed_surface_circle_end(surface, center.get(), radius.get(), uv, witness.get())
+        {
             uv[1] = end;
         }
     }
@@ -7645,24 +7649,26 @@ fn standard_pcurve_geometry(
         crate::families::standard::records::StandardCurveGeometry::Circle { center, radius },
     ) = (surface, &support.geometry)
     {
+        let center = center.get();
+        let radius = radius.get();
         const CIRCLE_TOLERANCE: f64 = 2e-3;
         let normal = plane_surface.frame().axis().as_raw();
-        let contained_carrier = point_on_surface(*center, surface)
-            && (start.distance(*center) - *radius).abs() <= CIRCLE_TOLERANCE
-            && (end.distance(*center) - *radius).abs() <= CIRCLE_TOLERANCE
+        let contained_carrier = point_on_surface(center, surface)
+            && (start.distance(center) - radius).abs() <= CIRCLE_TOLERANCE
+            && (end.distance(center) - radius).abs() <= CIRCLE_TOLERANCE
             && edge_curve.is_none_or(|curve| {
                 matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
                                 if {
                                     let axis = circle_curve.frame().axis().as_raw();
                 let curve_radius = circle_curve.radius().get();
                                     axis.cross(*normal).norm() <= CIRCLE_TOLERANCE
-                                        && (curve_radius - *radius).abs() <= CIRCLE_TOLERANCE
+                                    && (curve_radius - radius).abs() <= CIRCLE_TOLERANCE
                                 })
             });
         if !contained_carrier {
             return None;
         }
-        let center_uv = analytic_surface_uv(surface, *center)?;
+        let center_uv = analytic_surface_uv(surface, center)?;
         let range = if start == end {
             let angle = (uv[0].v - center_uv.v).atan2(uv[0].u - center_uv.u);
             [angle, angle + std::f64::consts::TAU]
@@ -7672,7 +7678,7 @@ fn standard_pcurve_geometry(
         };
         let geometry = rational_pcurve_arc(
             [center_uv.u, center_uv.v],
-            *radius,
+            radius,
             range,
             refusal,
             "standard arc pcurve derived from its support",
@@ -7694,7 +7700,7 @@ fn standard_pcurve_geometry(
                 <= STANDARD_FACE_BOUNDS_TOLERANCE
         }
         crate::families::standard::records::StandardCurveGeometry::Circle { center, radius } => {
-            (midpoint.distance_squared(*center).sqrt() - radius).abs() <= 2e-3
+            (midpoint.distance_squared(center.get()).sqrt() - radius.get()).abs() <= 2e-3
         }
         crate::families::standard::records::StandardCurveGeometry::Bspline => match edge_curve {
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))) => {
@@ -8490,6 +8496,10 @@ fn build_standard_edge_curve(
             )
         }
         crate::families::standard::records::StandardCurveGeometry::Circle { center, radius } => {
+            let admitted_center = *center;
+            let admitted_radius = *radius;
+            let center = admitted_center.get();
+            let radius = admitted_radius.get();
             let start = ir.model.points[points[0]].position().get();
             let end = ir.model.points[points[1]].position().get();
             let mut axes: Vec<Vector3> = support
@@ -8497,7 +8507,7 @@ fn build_standard_edge_curve(
                 .iter()
                 .filter_map(|face| face_surface(ir, bindings, surface_indices, *face))
                 .filter_map(|surface| {
-                    standard_circle_axis_from_carrier(*center, *radius, &surface.geometry)
+                    standard_circle_axis_from_carrier(center, radius, &surface.geometry)
                 })
                 .collect();
             axes.extend(native_support.into_iter().flat_map(|native| {
@@ -8507,11 +8517,11 @@ fn build_standard_edge_curve(
                     else {
                         return None;
                     };
-                    standard_circle_axis_from_carrier(*center, *radius, surface)
+                    standard_circle_axis_from_carrier(center, radius, surface)
                 })
             }));
             if axes.is_empty() {
-                axes.extend(circle_axis_from_endpoints(*center, *radius, start, end));
+                axes.extend(circle_axis_from_endpoints(center, radius, start, end));
             }
             let axis = axes.first().copied();
             let conflicting_axes = axis.is_some_and(|axis| {
@@ -8521,21 +8531,22 @@ fn build_standard_edge_curve(
             });
             match axis.filter(|_| !conflicting_axes) {
                 Some(axis) if points[0] == points[1] => {
-                    match full_circle_frame(*center, *radius, axis, start) {
-                        Some((axis, ref_direction)) => (
-                            CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                                match cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                                    *center,
-                                    axis,
-                                    ref_direction,
-                                    *radius,
-                                ) {
-                                    Ok(payload) => payload,
-                                    Err(_) => return Ok((None, None)),
-                                },
-                            )),
-                            Some([0.0, std::f64::consts::TAU]),
-                        ),
+                    match full_circle_frame(center, radius, axis, start) {
+                        Some((axis, ref_direction)) => {
+                            let Some(frame) = OrthonormalFrame3::new(axis, ref_direction) else {
+                                return Ok((None, None));
+                            };
+                            (
+                                CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                                    cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                                        admitted_center,
+                                        frame,
+                                        admitted_radius,
+                                    ),
+                                )),
+                                Some([0.0, std::f64::consts::TAU]),
+                            )
+                        }
                         None => (
                             CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                                 record: Some(UnknownId::compose(
@@ -8559,8 +8570,8 @@ fn build_standard_edge_curve(
                                 surface_indices,
                                 brep,
                                 support,
-                                *center,
-                                *radius,
+                                center,
+                                radius,
                                 axis,
                                 ref_direction,
                                 start,
@@ -8571,8 +8582,8 @@ fn build_standard_edge_curve(
                                 native_support.and_then(|native| {
                                     native_support_circle_param_range(
                                         native,
-                                        *center,
-                                        *radius,
+                                        center,
+                                        radius,
                                         axis,
                                         ref_direction,
                                         start,
@@ -8595,17 +8606,16 @@ fn build_standard_edge_curve(
                             None,
                         ),
                     };
+                    let Some(frame) = OrthonormalFrame3::new(axis, ref_direction) else {
+                        return Ok((None, None));
+                    };
                     (
                         CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                            match cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                                *center,
-                                axis,
-                                ref_direction,
-                                *radius,
-                            ) {
-                                Ok(payload) => payload,
-                                Err(_) => return Ok((None, None)),
-                            },
+                            cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                                admitted_center,
+                                frame,
+                                admitted_radius,
+                            ),
                         )),
                         param_range,
                     )
@@ -8996,6 +9006,8 @@ fn standard_circle_pair_solution_is_simple(
         else {
             continue;
         };
+        let center = center.get();
+        let radius = radius.get();
         let Some(start) = ir
             .model
             .points
@@ -9017,7 +9029,7 @@ fn standard_circle_pair_solution_is_simple(
             .iter()
             .filter_map(|face| face_surface(ir, bindings, surface_indices, *face))
             .filter_map(|surface| {
-                standard_circle_axis_from_carrier(*center, *radius, &surface.geometry)
+                standard_circle_axis_from_carrier(center, radius, &surface.geometry)
             })
             .collect::<Vec<_>>();
         let Some(axis) = axes.first().copied().and_then(canonical_unoriented_axis) else {
@@ -9028,8 +9040,7 @@ fn standard_circle_pair_solution_is_simple(
         }) {
             return false;
         }
-        let Some(choices) = circle_endpoint_range_choices(*center, *radius, axis, start, end)
-        else {
+        let Some(choices) = circle_endpoint_range_choices(center, radius, axis, start, end) else {
             continue;
         };
         for &face in &support.faces {
@@ -9640,6 +9651,10 @@ fn attach_standard_circles(
         else {
             continue;
         };
+        let admitted_center = center;
+        let admitted_radius = radius;
+        let center = center.get();
+        let radius = radius.get();
         let axes: Vec<Vector3> = support
             .faces
             .iter()
@@ -9669,14 +9684,16 @@ fn attach_standard_circles(
             &cadmpeg_ir::identity_namespace!("catia", "standard", "circle"),
             index,
         );
-        let Ok(payload) = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-            center,
-            axis,
-            cadmpeg_ir::geometry::derive_reference_direction(axis),
-            radius,
-        ) else {
+        let Some(frame) =
+            OrthonormalFrame3::new(axis, cadmpeg_ir::geometry::derive_reference_direction(axis))
+        else {
             continue;
         };
+        let payload = cadmpeg_ir::geometry::analytic::CircleCurve::new(
+            admitted_center,
+            frame,
+            admitted_radius,
+        );
         annotate(
             annotations,
             &id,

@@ -8,8 +8,10 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::{FiniteReal, NonNegativeLength};
-use cadmpeg_ir::units::FiniteVector;
+use cadmpeg_ir::scalar::{
+    FiniteReal, NonNegativeLength, NonZeroAngle, NonZeroLength, PositiveLength, PositiveReal,
+};
+use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::families::standard::fbb::FbbPopulationLayout;
@@ -626,9 +628,9 @@ pub(super) enum StandardCurveGeometry {
     /// Inline circle parameters.
     Circle {
         /// Circle center in millimetres.
-        center: Point3,
+        center: FinitePoint3,
         /// Circle radius in millimetres.
-        radius: f64,
+        radius: PositiveLength,
     },
     /// A separately allocated spline carrier.
     Bspline,
@@ -747,19 +749,10 @@ fn standard_curve_support_row_at(
         let cy = View::f32_be_at(brep, position + 13)?;
         let cz = View::f32_be_at(brep, position + 17)?;
         let radius = View::f32_be_at(brep, position + 21)?;
-        if !cx.is_finite()
-            || !cy.is_finite()
-            || !cz.is_finite()
-            || !radius.is_finite()
-            || radius <= 0.0
-        {
-            return None;
-        }
+        let center = FinitePoint3::new(Point3::new(f64::from(cx), f64::from(cy), f64::from(cz)))?;
+        let radius = PositiveLength::new(f64::from(radius))?;
         (
-            StandardCurveGeometry::Circle {
-                center: Point3::new(f64::from(cx), f64::from(cy), f64::from(cz)),
-                radius: f64::from(radius),
-            },
+            StandardCurveGeometry::Circle { center, radius },
             position + 25,
         )
     } else if brep.get(position + 4..position + 7) == Some(&[0, 0, 0]) {
@@ -806,17 +799,14 @@ pub(super) fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<Surfa
                 view.f32_be()?,
                 view.f32_be()?,
             );
-            if !all_finite(&[cx, cy, cz, r]) || r <= 0.0 {
-                return None;
-            }
+            let center = pt(cx, cy, cz)?;
+            let radius = PositiveLength::new(f64::from(r))?;
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                    pt(cx, cy, cz),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    r as f64,
-                )
-                .ok()?,
+                cadmpeg_ir::geometry::analytic::SphereSurface::new(
+                    center,
+                    OrthonormalFrame3::IDENTITY,
+                    NonZeroLength::from(radius),
+                ),
             )))
         }
         AnalyticSurfaceKind::Torus => {
@@ -830,22 +820,25 @@ pub(super) fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<Surfa
                 view.f32_be()?,
                 view.f32_be()?,
             );
-            if !all_finite(&[cx, cy, cz, ax, ay, major, minor]) {
+            let center = pt(cx, cy, cz)?;
+            let signed_major = NonZeroLength::new(f64::from(major))?;
+            let major_radius = signed_major.abs();
+            let minor_radius = PositiveLength::new(f64::from(minor))?;
+            if ax * ax + ay * ay > 1.0 + 1e-4 {
                 return None;
             }
-            if !(major.abs() > 0.0 && minor > 0.0 && ax * ax + ay * ay <= 1.0 + 1e-4) {
-                return None;
-            }
-            let axis = axis_from_xy(ax, ay, major)?;
+            let axis = axis_from_xy(ax, ay, signed_major.get())?;
+            let frame = OrthonormalFrame3::new(
+                *axis.as_raw(),
+                cadmpeg_ir::geometry::derive_reference_direction(*axis.as_raw()),
+            )?;
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-                cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-                    pt(cx, cy, cz),
-                    axis,
-                    cadmpeg_ir::geometry::derive_reference_direction(axis),
-                    major.abs() as f64,
-                    minor as f64,
-                )
-                .ok()?,
+                cadmpeg_ir::geometry::analytic::TorusSurface::new(
+                    center,
+                    frame,
+                    major_radius,
+                    NonZeroLength::from(minor_radius),
+                ),
             )))
         }
         AnalyticSurfaceKind::Cylinder => {
@@ -858,21 +851,22 @@ pub(super) fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<Surfa
                 view.f32_be()?,
                 view.f32_be()?,
             );
-            if !all_finite(&[px, py, pz, ax, ay, radius]) {
+            let origin = pt(px, py, pz)?;
+            let signed_radius = NonZeroLength::new(f64::from(radius))?;
+            if ax * ax + ay * ay > 1.0 + 1e-4 {
                 return None;
             }
-            if radius == 0.0 || ax * ax + ay * ay > 1.0 + 1e-4 {
-                return None;
-            }
-            let axis = axis_from_xy(ax, ay, radius)?;
+            let axis = axis_from_xy(ax, ay, signed_radius.get())?;
+            let frame = OrthonormalFrame3::new(
+                *axis.as_raw(),
+                cadmpeg_ir::geometry::derive_reference_direction(*axis.as_raw()),
+            )?;
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                    pt(px, py, pz),
-                    axis,
-                    cadmpeg_ir::geometry::derive_reference_direction(axis),
-                    radius.abs() as f64,
-                )
-                .ok()?,
+                cadmpeg_ir::geometry::analytic::CylinderSurface::new(
+                    origin,
+                    frame,
+                    signed_radius.abs(),
+                ),
             )))
         }
         AnalyticSurfaceKind::Cone => {
@@ -885,23 +879,25 @@ pub(super) fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<Surfa
                 view.f32_be()?,
                 view.f32_be()?,
             );
-            if !all_finite(&[x, y, z, ax, ay, semi]) {
+            let origin = pt(x, y, z)?;
+            let signed_semi = NonZeroAngle::new(f64::from(semi))?;
+            let half_angle = signed_semi.abs();
+            if half_angle.get() >= f64::from(std::f32::consts::FRAC_PI_2) {
                 return None;
             }
-            if !(semi.abs() > 0.0 && semi.abs() < std::f32::consts::FRAC_PI_2) {
-                return None;
-            }
-            let axis = axis_from_xy(ax, ay, semi)?;
+            let axis = axis_from_xy(ax, ay, signed_semi.get())?;
+            let frame = OrthonormalFrame3::new(
+                *axis.as_raw(),
+                cadmpeg_ir::geometry::derive_reference_direction(*axis.as_raw()),
+            )?;
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                    pt(x, y, z),
-                    axis,
-                    cadmpeg_ir::geometry::derive_reference_direction(axis),
-                    0.0,
-                    1.0,
-                    semi.abs() as f64,
-                )
-                .ok()?,
+                cadmpeg_ir::geometry::analytic::ConeSurface::new(
+                    origin,
+                    frame,
+                    NonNegativeLength::ZERO,
+                    PositiveReal::ONE,
+                    half_angle.into(),
+                ),
             )))
         }
         AnalyticSurfaceKind::Plane => None, // plane: parameters in a separate bridged record.
@@ -911,7 +907,7 @@ pub(super) fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<Surfa
 /// Read the face-side witness point following a standard cylinder or torus
 /// carrier's big-endian parameter block.
 #[must_use]
-pub(super) fn standard_face_witness(brep: &[u8], marker_pos: usize) -> Option<Point3> {
+pub(super) fn standard_face_witness(brep: &[u8], marker_pos: usize) -> Option<FinitePoint3> {
     if brep.get(marker_pos..marker_pos + 2) != Some(&[0x00, 0x33]) {
         return None;
     }
@@ -926,28 +922,25 @@ pub(super) fn standard_face_witness(brep: &[u8], marker_pos: usize) -> Option<Po
         f32_le(brep, marker_pos + offset + 4)?,
         f32_le(brep, marker_pos + offset + 8)?,
     ];
-    values
-        .iter()
-        .all(|value| value.is_finite())
-        .then(|| pt(values[0], values[1], values[2]))
+    pt(values[0], values[1], values[2])
 }
 
-fn pt(x: f32, y: f32, z: f32) -> Point3 {
-    Point3::new(x as f64, y as f64, z as f64)
+fn pt(x: f32, y: f32, z: f32) -> Option<FinitePoint3> {
+    FinitePoint3::new(Point3::new(f64::from(x), f64::from(y), f64::from(z)))
 }
 
 /// Recover the third axis component from the unit-norm constraint, taking its
 /// sign from a companion signed field (the cone/cylinder store `sign(az)` in the
 /// sign of the semi-angle / radius).
-fn axis_from_xy(ax: f32, ay: f32, signed: f32) -> Option<Vector3> {
+fn axis_from_xy(ax: f32, ay: f32, signed: f64) -> Option<UnitVector3> {
     let norm2 = f64::from(ax).mul_add(f64::from(ax), f64::from(ay) * f64::from(ay));
     let residual = 1.0 - norm2;
     let az = if residual > F32_UNIT_NORM2_ROUNDING_TOLERANCE {
-        residual.sqrt().copysign(signed as f64)
+        residual.sqrt().copysign(signed)
     } else {
         0.0
     };
-    unit_vector(Vector3::new(ax as f64, ay as f64, az))
+    UnitVector3::normalized_by_largest_component(Vector3::new(f64::from(ax), f64::from(ay), az))
 }
 
 fn f32_le(bytes: &[u8], at: usize) -> Option<f32> {
@@ -965,10 +958,6 @@ fn face_ref(bytes: &[u8], at: usize) -> Option<(usize, usize)> {
 
 fn u24_le(bytes: &[u8], at: usize) -> u32 {
     bytes[at] as u32 | ((bytes[at + 1] as u32) << 8) | ((bytes[at + 2] as u32) << 16)
-}
-
-fn all_finite(vs: &[f32]) -> bool {
-    vs.iter().all(|v| v.is_finite())
 }
 
 #[cfg(test)]
@@ -1000,6 +989,7 @@ mod tests {
     fn axis_from_xy_discards_binary32_equatorial_norm_roundoff() {
         const AXIS_COMPONENT_TOLERANCE: f64 = 1e-7;
         let axis = axis_from_xy(0.707_106_77_f32, -0.707_106_77_f32, 1.0).expect("axis");
+        let axis = axis.as_raw();
 
         assert_eq!(axis.z, 0.0);
         assert!((axis.x - std::f64::consts::FRAC_1_SQRT_2).abs() < AXIS_COMPONENT_TOLERANCE);
@@ -1012,6 +1002,7 @@ mod tests {
         let x = 0.8_f32;
         let y = 0.5_f32;
         let axis = axis_from_xy(x, y, -1.0).expect("axis");
+        let axis = axis.as_raw();
         let x = f64::from(x);
         let y = f64::from(y);
         let expected = (1.0 - x * x - y * y).sqrt();
