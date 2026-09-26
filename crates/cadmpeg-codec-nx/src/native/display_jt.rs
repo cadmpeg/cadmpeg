@@ -21,7 +21,7 @@ use cadmpeg_core::bytes::{assemble_f32_le, assemble_u32_le, assemble_u64_le};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::FiniteBinary32;
+use cadmpeg_ir::scalar::{FiniteBinary32, UnitBinary32};
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
 use cadmpeg_ir::units::UnitVector3;
 use cadmpeg_ir::{topology::Color, SourceObjectAssociation};
@@ -851,6 +851,162 @@ impl From<JtRangeLimits> for Vec<f32> {
     }
 }
 
+/// Finite bounds whose minimum does not exceed the matching maximum.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct JtBounds([[FiniteBinary32; 3]; 2]);
+
+impl JtBounds {
+    fn from_finite(bounds: [[FiniteBinary32; 3]; 2]) -> Option<Self> {
+        bounds[0]
+            .iter()
+            .zip(bounds[1])
+            .all(|(minimum, maximum)| minimum.get() <= maximum.get())
+            .then_some(Self(bounds))
+    }
+
+    fn get(self) -> [[f32; 3]; 2] {
+        self.0.map(|row| row.map(FiniteBinary32::get))
+    }
+}
+
+impl TryFrom<[[f32; 3]; 2]> for JtBounds {
+    type Error = &'static str;
+
+    fn try_from(bounds: [[f32; 3]; 2]) -> Result<Self, Self::Error> {
+        let [[x0, y0, z0], [x1, y1, z1]] = bounds;
+        let finite =
+            |value| FiniteBinary32::new(value).ok_or("bounds: expected finite ordered corners");
+        let bounds = [
+            [finite(x0)?, finite(y0)?, finite(z0)?],
+            [finite(x1)?, finite(y1)?, finite(z1)?],
+        ];
+        Self::from_finite(bounds).ok_or("bounds: expected finite ordered corners")
+    }
+}
+
+impl From<JtBounds> for [[f32; 3]; 2] {
+    fn from(bounds: JtBounds) -> Self {
+        bounds.get()
+    }
+}
+
+/// A finite nonnegative JT binary32 area.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct JtArea(FiniteBinary32);
+
+impl JtArea {
+    fn new(value: f32) -> Option<Self> {
+        FiniteBinary32::new(value)
+            .filter(|_| value >= 0.0)
+            .map(Self)
+    }
+
+    fn get(self) -> f32 {
+        self.0.get()
+    }
+}
+
+impl TryFrom<f32> for JtArea {
+    type Error = &'static str;
+
+    fn try_from(value: f32) -> Result<Self, Self::Error> {
+        Self::new(value).ok_or("area: expected finite nonnegative value")
+    }
+}
+
+/// A finite JT specular exponent in the inclusive range one through 128.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct JtShininess(FiniteBinary32);
+
+impl JtShininess {
+    fn new(value: f32) -> Option<Self> {
+        FiniteBinary32::new(value)
+            .filter(|_| (1.0..=128.0).contains(&value))
+            .map(Self)
+    }
+
+    fn get(self) -> f32 {
+        self.0.get()
+    }
+}
+
+impl TryFrom<f32> for JtShininess {
+    type Error = &'static str;
+
+    fn try_from(value: f32) -> Result<Self, Self::Error> {
+        Self::new(value).ok_or("shininess: expected finite value in [1, 128]")
+    }
+}
+
+fn jt_rgba_from_wire(raw: [f32; 4]) -> Result<[UnitBinary32; 4], &'static str> {
+    let [r, g, b, a] = raw;
+    let unit = |value| UnitBinary32::new(value).ok_or("color: expected unit fractions");
+    Ok([unit(r)?, unit(g)?, unit(b)?, unit(a)?])
+}
+
+/// A finite JT affine matrix with nonzero mutually orthogonal spatial rows.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "[[f32; 4]; 4]", into = "[[f32; 4]; 4]")]
+struct JtTransformMatrix([[FiniteBinary32; 4]; 4]);
+
+impl JtTransformMatrix {
+    fn from_finite(matrix: [[FiniteBinary32; 4]; 4]) -> Option<Self> {
+        let raw = matrix.map(|row| row.map(FiniteBinary32::get));
+        if raw[0][3] != 0.0 || raw[1][3] != 0.0 || raw[2][3] != 0.0 || raw[3][3] != 1.0 {
+            return None;
+        }
+        let rows = [&raw[0][..3], &raw[1][..3], &raw[2][..3]];
+        let lengths = rows.map(|row| {
+            row.iter()
+                .fold(0.0_f64, |length, value| length.hypot(f64::from(*value)))
+        });
+        if lengths
+            .iter()
+            .any(|length| !length.is_finite() || *length == 0.0)
+        {
+            return None;
+        }
+        for first in 0..3 {
+            for second in first + 1..3 {
+                let dot = rows[first]
+                    .iter()
+                    .zip(rows[second])
+                    .map(|(left, right)| f64::from(*left) * f64::from(*right))
+                    .sum::<f64>();
+                if dot.abs() > 1.0e-5 * lengths[first] * lengths[second] {
+                    return None;
+                }
+            }
+        }
+        Some(Self(matrix))
+    }
+
+    fn get(self) -> [[f32; 4]; 4] {
+        self.0.map(|row| row.map(FiniteBinary32::get))
+    }
+}
+
+impl TryFrom<[[f32; 4]; 4]> for JtTransformMatrix {
+    type Error = &'static str;
+
+    fn try_from(raw: [[f32; 4]; 4]) -> Result<Self, Self::Error> {
+        let mut matrix = [[FiniteBinary32::ZERO; 4]; 4];
+        for (row, values) in raw.into_iter().enumerate() {
+            for (column, value) in values.into_iter().enumerate() {
+                matrix[row][column] = FiniteBinary32::new(value)
+                    .ok_or("matrix: expected finite affine orthogonal rows")?;
+            }
+        }
+        Self::from_finite(matrix).ok_or("matrix: expected finite affine orthogonal rows")
+    }
+}
+
+impl From<JtTransformMatrix> for [[f32; 4]; 4] {
+    fn from(matrix: JtTransformMatrix) -> Self {
+        matrix.get()
+    }
+}
+
 /// Complete JT 9 tri-strip shape node controlling one late-loaded mesh.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(
@@ -865,11 +1021,11 @@ pub(super) struct DisplayJtTriStripShapeNode {
     /// Serialized node object identifier.
     object_id: u32,
     /// Reserved model-coordinate bounds.
-    reserved_bounds: [[f32; 3]; 2],
+    reserved_bounds: JtBounds,
     /// Untransformed model-coordinate bounds.
-    untransformed_bounds: [[f32; 3]; 2],
+    untransformed_bounds: JtBounds,
     /// Surface area in normalized coordinate space.
-    area: f32,
+    area: JtArea,
     /// Minimum and maximum vertex counts.
     vertex_count_range: [i32; 2],
     /// Minimum and maximum scene-node counts.
@@ -927,9 +1083,9 @@ impl TryFrom<DisplayJtTriStripShapeNodeWire> for DisplayJtTriStripShapeNode {
             id: wire.id,
             base_node: wire.base_node,
             object_id: wire.object_id,
-            reserved_bounds: wire.reserved_bounds,
-            untransformed_bounds: wire.untransformed_bounds,
-            area: wire.area,
+            reserved_bounds: wire.reserved_bounds.try_into()?,
+            untransformed_bounds: wire.untransformed_bounds.try_into()?,
+            area: wire.area.try_into()?,
             vertex_count_range: wire.vertex_count_range,
             node_count_range: wire.node_count_range,
             polygon_count_range: wire.polygon_count_range,
@@ -954,9 +1110,9 @@ impl From<DisplayJtTriStripShapeNode> for DisplayJtTriStripShapeNodeWire {
             id: value.id,
             base_node: value.base_node,
             object_id: value.object_id,
-            reserved_bounds: value.reserved_bounds,
-            untransformed_bounds: value.untransformed_bounds,
-            area: value.area,
+            reserved_bounds: value.reserved_bounds.into(),
+            untransformed_bounds: value.untransformed_bounds.into(),
+            area: value.area.get(),
             vertex_count_range: value.vertex_count_range,
             node_count_range: value.node_count_range,
             polygon_count_range: value.polygon_count_range,
@@ -1335,7 +1491,7 @@ pub(super) struct DisplayJtGeometricTransformAttribute {
     /// Sparse-matrix stored-values mask in row-major bit order.
     stored_values_mask: u16,
     /// Complete row-major local-to-parent homogeneous matrix.
-    matrix: [[f32; 4]; 4],
+    matrix: JtTransformMatrix,
     /// Absolute source offset of the owning compressed envelope.
     pub(super) source_offset: u64,
 }
@@ -1362,15 +1518,15 @@ pub(super) struct DisplayJtMaterialAttribute {
     /// Material blending and vertex-color override flags.
     data_flags: u16,
     /// Ambient RGBA components.
-    ambient: [f32; 4],
+    ambient: [UnitBinary32; 4],
     /// Diffuse RGBA components.
-    diffuse: [f32; 4],
+    diffuse: [UnitBinary32; 4],
     /// Specular RGBA components.
-    specular: [f32; 4],
+    specular: [UnitBinary32; 4],
     /// Emission RGBA components.
-    emission: [f32; 4],
+    emission: [UnitBinary32; 4],
     /// Specular exponent in the inclusive range 1 through 128.
-    shininess: f32,
+    shininess: JtShininess,
     /// Absolute source offset of the owning compressed envelope.
     pub(super) source_offset: u64,
 }
@@ -1409,11 +1565,11 @@ impl TryFrom<DisplayJtMaterialAttributeWire> for DisplayJtMaterialAttribute {
             field_inhibit_flags: wire.field_inhibit_flags,
             version,
             data_flags: wire.data_flags,
-            ambient: wire.ambient,
-            diffuse: wire.diffuse,
-            specular: wire.specular,
-            emission: wire.emission,
-            shininess: wire.shininess,
+            ambient: jt_rgba_from_wire(wire.ambient)?,
+            diffuse: jt_rgba_from_wire(wire.diffuse)?,
+            specular: jt_rgba_from_wire(wire.specular)?,
+            emission: jt_rgba_from_wire(wire.emission)?,
+            shininess: wire.shininess.try_into()?,
             source_offset: wire.source_offset,
         })
     }
@@ -1429,11 +1585,11 @@ impl From<DisplayJtMaterialAttribute> for DisplayJtMaterialAttributeWire {
             field_inhibit_flags: value.field_inhibit_flags,
             version,
             data_flags: value.data_flags,
-            ambient: value.ambient,
-            diffuse: value.diffuse,
-            specular: value.specular,
-            emission: value.emission,
-            shininess: value.shininess,
+            ambient: value.ambient.map(UnitBinary32::get),
+            diffuse: value.diffuse.map(UnitBinary32::get),
+            specular: value.specular.map(UnitBinary32::get),
+            emission: value.emission.map(UnitBinary32::get),
+            shininess: value.shininess.get(),
             reflectivity,
             source_offset: value.source_offset,
         }
@@ -1444,9 +1600,9 @@ impl From<DisplayJtMaterialAttribute> for DisplayJtMaterialAttributeWire {
 #[derive(Debug, Clone, PartialEq)]
 enum DisplayJtPartitionBounds {
     /// Reserved bounds when partition flag bit zero is clear.
-    Reserved([[f32; 3]; 2]),
+    Reserved(JtBounds),
     /// Untransformed bounds when partition flag bit zero is set.
-    Untransformed([[f32; 3]; 2]),
+    Untransformed(JtBounds),
 }
 
 /// Complete JT 9 partition node linking an LSG branch to a partition file.
@@ -1469,9 +1625,9 @@ pub(super) struct DisplayJtPartitionNode {
     /// Decoded partition filename.
     file_name: String,
     /// Transformed axis-aligned bounds as minimum and maximum XYZ corners.
-    transformed_bounds: [[f32; 3]; 2],
+    transformed_bounds: JtBounds,
     /// Total descendant surface area in normalized coordinate space.
-    area: f32,
+    area: JtArea,
     /// Minimum and maximum descendant vertex counts.
     vertex_count_range: [i32; 2],
     /// Minimum and maximum descendant node counts.
@@ -1507,8 +1663,8 @@ struct DisplayJtPartitionNodeWire {
 impl From<DisplayJtPartitionNode> for DisplayJtPartitionNodeWire {
     fn from(value: DisplayJtPartitionNode) -> Self {
         let (partition_flags, untransformed_bounds, reserved_bounds) = match value.bounds {
-            DisplayJtPartitionBounds::Reserved(bounds) => (0, None, Some(bounds)),
-            DisplayJtPartitionBounds::Untransformed(bounds) => (1, Some(bounds), None),
+            DisplayJtPartitionBounds::Reserved(bounds) => (0, None, Some(bounds.into())),
+            DisplayJtPartitionBounds::Untransformed(bounds) => (1, Some(bounds.into()), None),
         };
         Self {
             id: value.id,
@@ -1519,8 +1675,8 @@ impl From<DisplayJtPartitionNode> for DisplayJtPartitionNodeWire {
             partition_flags,
             file_name_code_units: value.file_name.encode_utf16().collect(),
             file_name: value.file_name,
-            transformed_bounds: value.transformed_bounds,
-            area: value.area,
+            transformed_bounds: value.transformed_bounds.into(),
+            area: value.area.get(),
             vertex_count_range: value.vertex_count_range,
             node_count_range: value.node_count_range,
             polygon_count_range: value.polygon_count_range,
@@ -1549,8 +1705,10 @@ impl TryFrom<DisplayJtPartitionNodeWire> for DisplayJtPartitionNode {
             wire.untransformed_bounds,
             wire.reserved_bounds,
         ) {
-            (0, None, Some(bounds)) => DisplayJtPartitionBounds::Reserved(bounds),
-            (1, Some(bounds), None) => DisplayJtPartitionBounds::Untransformed(bounds),
+            (0, None, Some(bounds)) => DisplayJtPartitionBounds::Reserved(bounds.try_into()?),
+            (1, Some(bounds), None) => {
+                DisplayJtPartitionBounds::Untransformed(bounds.try_into()?)
+            }
             _ => {
                 return Err(
                     "JT partition bounds are reserved when flag bit 0 is clear and untransformed when it is set"
@@ -1565,8 +1723,8 @@ impl TryFrom<DisplayJtPartitionNodeWire> for DisplayJtPartitionNode {
             group_version: wire.group_version,
             child_object_ids: wire.child_object_ids,
             file_name: wire.file_name,
-            transformed_bounds: wire.transformed_bounds,
-            area: wire.area,
+            transformed_bounds: wire.transformed_bounds.try_into()?,
+            area: wire.area.try_into()?,
             vertex_count_range: wire.vertex_count_range,
             node_count_range: wire.node_count_range,
             polygon_count_range: wire.polygon_count_range,
@@ -1771,9 +1929,9 @@ fn parse_jt9_instance_node_body(body: &[u8]) -> Option<(u16, u32)> {
 }
 
 struct ParsedJtTriStripShapeNode {
-    reserved_bounds: [[f32; 3]; 2],
-    untransformed_bounds: [[f32; 3]; 2],
-    area: f32,
+    reserved_bounds: JtBounds,
+    untransformed_bounds: JtBounds,
+    area: JtArea,
     vertex_count_range: [i32; 2],
     node_count_range: [i32; 2],
     polygon_count_range: [i32; 2],
@@ -1792,7 +1950,7 @@ fn parse_jt9_tri_strip_shape_node_body(body: &[u8]) -> Option<ParsedJtTriStripSh
     if family.len() < jt_family::LEN || View::u16_le_at(family, jt_family::SHAPE_VERSION)? != 1 {
         return None;
     }
-    let f32_at = |offset: usize| View::f32_le_at(family, offset).filter(|value| value.is_finite());
+    let f32_at = |offset: usize| FiniteBinary32::new(View::f32_le_at(family, offset)?);
     let bounds_at = |offset: usize| {
         let bounds = [
             [f32_at(offset)?, f32_at(offset + 4)?, f32_at(offset + 8)?],
@@ -1802,11 +1960,7 @@ fn parse_jt9_tri_strip_shape_node_body(body: &[u8]) -> Option<ParsedJtTriStripSh
                 f32_at(offset + 20)?,
             ],
         ];
-        bounds[0]
-            .iter()
-            .zip(bounds[1])
-            .all(|(minimum, maximum)| minimum <= &maximum)
-            .then_some(bounds)
+        JtBounds::from_finite(bounds)
     };
     let range_at = |offset: usize| {
         let range = [
@@ -1817,7 +1971,7 @@ fn parse_jt9_tri_strip_shape_node_body(body: &[u8]) -> Option<ParsedJtTriStripSh
     };
     let compression_level =
         JtUnitFraction::try_from(View::f32_le_at(family, jt_family::COMPRESSION_LEVEL)?).ok()?;
-    let area = f32_at(jt_family::AREA).filter(|value| *value >= 0.0)?;
+    let area = JtArea::new(View::f32_le_at(family, jt_family::AREA)?)?;
     let vertex_version = View::u16_le_at(family, jt_family::VERTEX_VERSION)?;
     if !matches!(vertex_version, 1 | 2) {
         return None;
@@ -1871,8 +2025,8 @@ struct ParsedJtPartitionNode {
     group_version: u16,
     child_object_ids: Vec<u32>,
     file_name: String,
-    transformed_bounds: [[f32; 3]; 2],
-    area: f32,
+    transformed_bounds: JtBounds,
+    area: JtArea,
     vertex_count_range: [i32; 2],
     node_count_range: [i32; 2],
     polygon_count_range: [i32; 2],
@@ -1906,7 +2060,7 @@ fn parse_jt9_partition_node_body(body: &[u8]) -> Option<ParsedJtPartitionNode> {
         return None;
     }
     let name_end = view.position();
-    let f32_at = |offset: usize| View::f32_le_at(family, offset).filter(|value| value.is_finite());
+    let f32_at = |offset: usize| FiniteBinary32::new(View::f32_le_at(family, offset)?);
     let bounds_at = |offset: usize| {
         let bounds = [
             [f32_at(offset)?, f32_at(offset + 4)?, f32_at(offset + 8)?],
@@ -1916,11 +2070,7 @@ fn parse_jt9_partition_node_body(body: &[u8]) -> Option<ParsedJtPartitionNode> {
                 f32_at(offset + 20)?,
             ],
         ];
-        bounds[0]
-            .iter()
-            .zip(bounds[1])
-            .all(|(minimum, maximum)| *minimum <= maximum)
-            .then_some(bounds)
+        JtBounds::from_finite(bounds)
     };
     let first_bounds = bounds_at(name_end)?;
     let mut cursor = name_end.checked_add(24)?;
@@ -1931,10 +2081,7 @@ fn parse_jt9_partition_node_body(body: &[u8]) -> Option<ParsedJtPartitionNode> {
     } else {
         first_bounds
     };
-    let area = f32_at(cursor)?;
-    if area < 0.0 {
-        return None;
-    }
+    let area = JtArea::new(View::f32_le_at(family, cursor)?)?;
     cursor = cursor.checked_add(4)?;
     let count_range = |offset: usize| {
         let minimum = View::i32_le_at(family, offset)?;
@@ -2018,7 +2165,7 @@ fn parse_jt9_range_lod_node_body(body: &[u8]) -> Option<ParsedJtRangeLodNode> {
     })
 }
 
-fn parse_jt9_geometric_transform_body(body: &[u8]) -> Option<(u8, u32, u16, [[f32; 4]; 4])> {
+fn parse_jt9_geometric_transform_body(body: &[u8]) -> Option<(u8, u32, u16, JtTransformMatrix)> {
     let mut view = View::over_retained(body);
     let base_version = view.u16_le()?;
     let state_flags = view.u8()?;
@@ -2029,56 +2176,57 @@ fn parse_jt9_geometric_transform_body(body: &[u8]) -> Option<(u8, u32, u16, [[f3
         return None;
     }
     let mut matrix = [
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
+        [
+            FiniteBinary32::ONE,
+            FiniteBinary32::ZERO,
+            FiniteBinary32::ZERO,
+            FiniteBinary32::ZERO,
+        ],
+        [
+            FiniteBinary32::ZERO,
+            FiniteBinary32::ONE,
+            FiniteBinary32::ZERO,
+            FiniteBinary32::ZERO,
+        ],
+        [
+            FiniteBinary32::ZERO,
+            FiniteBinary32::ZERO,
+            FiniteBinary32::ONE,
+            FiniteBinary32::ZERO,
+        ],
+        [
+            FiniteBinary32::ZERO,
+            FiniteBinary32::ZERO,
+            FiniteBinary32::ZERO,
+            FiniteBinary32::ONE,
+        ],
     ];
     for index in 0..16 {
         if stored_values_mask & (0x8000 >> index) == 0 {
             continue;
         }
-        let value = view.f32_le()?;
-        if !value.is_finite() {
-            return None;
-        }
+        let value = FiniteBinary32::new(view.f32_le()?)?;
         matrix[index / 4][index % 4] = value;
     }
-    if !view.is_empty()
-        || matrix[0][3] != 0.0
-        || matrix[1][3] != 0.0
-        || matrix[2][3] != 0.0
-        || matrix[3][3] != 1.0
-    {
+    if !view.is_empty() {
         return None;
     }
-    let rows = [&matrix[0][..3], &matrix[1][..3], &matrix[2][..3]];
-    let lengths = rows.map(|row| {
-        row.iter()
-            .fold(0.0_f64, |length, value| length.hypot(f64::from(*value)))
-    });
-    if lengths
-        .iter()
-        .any(|length| !length.is_finite() || *length == 0.0)
-    {
-        return None;
-    }
-    for first in 0..3 {
-        for second in first + 1..3 {
-            let dot = rows[first]
-                .iter()
-                .zip(rows[second])
-                .map(|(left, right)| f64::from(*left) * f64::from(*right))
-                .sum::<f64>();
-            if dot.abs() > 1.0e-5 * lengths[first] * lengths[second] {
-                return None;
-            }
-        }
-    }
-    Some((state_flags, field_inhibit_flags, stored_values_mask, matrix))
+    Some((
+        state_flags,
+        field_inhibit_flags,
+        stored_values_mask,
+        JtTransformMatrix::from_finite(matrix)?,
+    ))
 }
 
-type ParsedJt9Material = (u8, u32, JtMaterialVersion, u16, [[f32; 4]; 4], f32);
+type ParsedJt9Material = (
+    u8,
+    u32,
+    JtMaterialVersion,
+    u16,
+    [[UnitBinary32; 4]; 4],
+    JtShininess,
+);
 
 fn parse_jt9_material_body(body: &[u8]) -> Option<ParsedJt9Material> {
     let base_version = View::u16_le_at(body, 0)?;
@@ -2103,28 +2251,27 @@ fn parse_jt9_material_body(body: &[u8]) -> Option<ParsedJt9Material> {
     {
         return None;
     }
-    let scalar = |offset: usize| View::f32_le_at(body, offset).filter(|value| value.is_finite());
+    let scalar = |offset: usize| UnitBinary32::new(View::f32_le_at(body, offset)?);
     let rgba = |offset: usize| {
-        let color = [
+        Some([
             scalar(offset)?,
             scalar(offset + 4)?,
             scalar(offset + 8)?,
             scalar(offset + 12)?,
-        ];
-        color
-            .iter()
-            .all(|component| (0.0..=1.0).contains(component))
-            .then_some(color)
+        ])
     };
     let colors = [rgba(11)?, rgba(27)?, rgba(43)?, rgba(59)?];
-    let shininess = scalar(75)?;
-    if !(1.0..=128.0).contains(&shininess) {
-        return None;
-    }
-    let reflectivity = (version == 2)
-        .then(|| scalar(79).filter(|value| (0.0..=1.0).contains(value)))
-        .flatten();
-    let version = JtMaterialVersion::try_from((version, reflectivity)).ok()?;
+    let shininess = JtShininess::new(View::f32_le_at(body, 75)?)?;
+    let reflectivity = if version == 2 {
+        Some(JtUnitFraction::try_from(View::f32_le_at(body, 79)?).ok()?)
+    } else {
+        None
+    };
+    let version = match (version, reflectivity) {
+        (1, None) => JtMaterialVersion::One,
+        (2, Some(value)) => JtMaterialVersion::Two(value),
+        _ => return None,
+    };
     Some((
         state_flags,
         field_inhibit_flags,
@@ -4062,7 +4209,7 @@ type DisplayJtMatrix = [[f64; 4]; 4];
 struct DisplayJtPath {
     matrix: DisplayJtMatrix,
     final_transform: bool,
-    diffuse: [Option<f32>; 4],
+    diffuse: [Option<UnitBinary32>; 4],
     override_vertex_colors: Option<bool>,
     final_material: bool,
     node_path: Vec<u32>,
@@ -4125,12 +4272,12 @@ fn accumulate_display_jt_material(
 }
 
 fn display_jt_path_color(path: &DisplayJtPath) -> Option<Color> {
-    Color::new(
+    Some(Color::from_unit_binary32([
         path.diffuse[0]?,
         path.diffuse[1]?,
         path.diffuse[2]?,
         path.diffuse[3]?,
-    )
+    ]))
 }
 
 fn multiply_jt_matrices(left: DisplayJtMatrix, right: DisplayJtMatrix) -> Option<DisplayJtMatrix> {
@@ -4222,7 +4369,7 @@ fn resolve_display_jt_node_paths(
                 if attribute.state_flags & 0x04 == 0
                     && (!path.final_transform || attribute.state_flags & 0x02 != 0)
                 {
-                    let local = attribute.matrix.map(|row| row.map(f64::from));
+                    let local = attribute.matrix.get().map(|row| row.map(f64::from));
                     path.matrix = multiply_jt_matrices(local, path.matrix)?;
                     path.final_transform |= attribute.state_flags & 0x01 != 0;
                 }
@@ -4764,6 +4911,7 @@ mod tests {
                 body.extend(scale.to_le_bytes());
             }
             let (_, _, _, matrix) = super::parse_jt9_geometric_transform_body(&body).unwrap();
+            let matrix = matrix.get();
             assert_eq!([matrix[0][0], matrix[1][1], matrix[2][2]], [scale; 3]);
         }
     }
@@ -4869,7 +5017,7 @@ mod tests {
     use flate2::Compression;
 
     use super::super::hex::Sha256Hex;
-    use super::{DisplayJtMaterialAttribute, DisplayJtPartitionBounds};
+    use super::{DisplayJtMaterialAttribute, DisplayJtPartitionBounds, UnitBinary32};
     use cadmpeg_ir::topology::Color;
 
     const EPS_JT_TRANSFORMED_VERTEX: f64 = 1.0e-6;
@@ -5480,12 +5628,13 @@ mod tests {
             state_flags: 0,
             field_inhibit_flags: 0,
             stored_values_mask: 0xffff,
-            matrix: [
+            matrix: super::JtTransformMatrix::try_from([
                 [2.0, 0.0, 0.0, 0.0],
                 [0.0, 3.0, 0.0, 0.0],
                 [0.0, 0.0, 4.0, 0.0],
                 [0.01, 0.02, 0.03, 1.0],
-            ],
+            ])
+            .unwrap(),
             source_offset: 121,
         };
         let material_element: DisplayJtCompressedElement = super::DisplayJtCompressedElementWire {
@@ -5511,11 +5660,11 @@ mod tests {
             field_inhibit_flags: 0,
             version: super::JtMaterialVersion::One,
             data_flags: 0x20,
-            ambient: [0.1, 0.1, 0.1, 1.0],
-            diffuse: [0.2, 0.3, 0.4, 0.5],
-            specular: [0.0, 0.0, 0.0, 1.0],
-            emission: [0.0, 0.0, 0.0, 1.0],
-            shininess: 1.0,
+            ambient: super::jt_rgba_from_wire([0.1, 0.1, 0.1, 1.0]).unwrap(),
+            diffuse: super::jt_rgba_from_wire([0.2, 0.3, 0.4, 0.5]).unwrap(),
+            specular: super::jt_rgba_from_wire([0.0, 0.0, 0.0, 1.0]).unwrap(),
+            emission: super::jt_rgba_from_wire([0.0, 0.0, 0.0, 1.0]).unwrap(),
+            shininess: super::JtShininess::new(1.0).unwrap(),
             source_offset: 126,
         };
         let material_wire = serde_json::to_value(&material).unwrap();
@@ -5533,9 +5682,9 @@ mod tests {
             id: "shape-node".into(),
             base_node: "base".into(),
             object_id: 9,
-            reserved_bounds: [[0.0; 3]; 2],
-            untransformed_bounds: [[0.0; 3]; 2],
-            area: 0.0,
+            reserved_bounds: super::JtBounds::try_from([[0.0; 3]; 2]).unwrap(),
+            untransformed_bounds: super::JtBounds::try_from([[0.0; 3]; 2]).unwrap(),
+            area: super::JtArea::new(0.0).unwrap(),
             vertex_count_range: [0, 0],
             node_count_range: [0, 0],
             polygon_count_range: [0, 0],
@@ -5872,12 +6021,15 @@ mod tests {
         body.extend_from_slice(&0x304_u64.to_le_bytes());
 
         let node = super::parse_jt9_tri_strip_shape_node_body(&body).expect("required invariant");
-        assert_eq!(node.reserved_bounds, [[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]]);
         assert_eq!(
-            node.untransformed_bounds,
+            node.reserved_bounds.get(),
+            [[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]]
+        );
+        assert_eq!(
+            node.untransformed_bounds.get(),
             [[-3.0, -2.0, -1.0], [0.0, 1.0, 2.0]]
         );
-        assert_eq!(node.area, 6.0);
+        assert_eq!(node.area.get(), 6.0);
         assert_eq!(node.vertex_count_range, [7, 8]);
         assert_eq!(node.node_count_range, [9, 10]);
         assert_eq!(node.polygon_count_range, [11, 12]);
@@ -5916,8 +6068,8 @@ mod tests {
         assert_eq!(state, 0x08);
         assert_eq!(inhibit, 0);
         assert_eq!(mask, 0x000e);
-        assert_eq!(matrix[0], [1.0, 0.0, 0.0, 0.0]);
-        assert_eq!(matrix[3], [1.25, -2.5, 4.0, 1.0]);
+        assert_eq!(matrix.get()[0], [1.0, 0.0, 0.0, 0.0]);
+        assert_eq!(matrix.get()[3], [1.25, -2.5, 4.0, 1.0]);
 
         body[2] = 0x10;
         assert!(super::parse_jt9_geometric_transform_body(&body).is_none());
@@ -5958,8 +6110,8 @@ mod tests {
         assert_eq!(inhibit, 0x41);
         assert_eq!(version, 2);
         assert_eq!(flags, 0x3990);
-        assert_eq!(colors[1], [0.4, 0.5, 0.6, 0.75]);
-        assert_eq!(shininess, 64.0);
+        assert_eq!(colors[1].map(UnitBinary32::get), [0.4, 0.5, 0.6, 0.75]);
+        assert_eq!(shininess.get(), 64.0);
         assert_eq!(reflectivity, Some(0.25));
 
         let mut invalid = body.clone();
@@ -5985,11 +6137,11 @@ mod tests {
             field_inhibit_flags,
             version: super::JtMaterialVersion::try_from((2, Some(0.0))).unwrap(),
             data_flags: 0,
-            ambient: [0.0, 0.0, 0.0, 1.0],
-            diffuse,
-            specular: [0.0, 0.0, 0.0, 1.0],
-            emission: [0.0, 0.0, 0.0, 1.0],
-            shininess: 1.0,
+            ambient: super::jt_rgba_from_wire([0.0, 0.0, 0.0, 1.0]).unwrap(),
+            diffuse: super::jt_rgba_from_wire(diffuse).unwrap(),
+            specular: super::jt_rgba_from_wire([0.0, 0.0, 0.0, 1.0]).unwrap(),
+            emission: super::jt_rgba_from_wire([0.0, 0.0, 0.0, 1.0]).unwrap(),
+            shininess: super::JtShininess::new(1.0).unwrap(),
             source_offset: 0,
         };
         let mut path = super::DisplayJtPath {
@@ -6005,24 +6157,36 @@ mod tests {
             &mut path,
             &material([0.1, 0.2, 0.3, 0.4], 0x01, 1 << 8),
         );
-        assert_eq!(path.diffuse, [Some(0.1), Some(0.2), Some(0.3), None]);
+        assert_eq!(
+            path.diffuse.map(|value| value.map(UnitBinary32::get)),
+            [Some(0.1), Some(0.2), Some(0.3), None]
+        );
         assert!(path.final_material);
 
         super::accumulate_display_jt_material(&mut path, &material([0.5, 0.6, 0.7, 0.8], 0, 0));
-        assert_eq!(path.diffuse, [Some(0.1), Some(0.2), Some(0.3), None]);
+        assert_eq!(
+            path.diffuse.map(|value| value.map(UnitBinary32::get)),
+            [Some(0.1), Some(0.2), Some(0.3), None]
+        );
 
         super::accumulate_display_jt_material(
             &mut path,
             &material([0.5, 0.6, 0.7, 0.8], 0x02, 1 << 7),
         );
-        assert_eq!(path.diffuse, [Some(0.1), Some(0.2), Some(0.3), Some(0.8)]);
+        assert_eq!(
+            path.diffuse.map(|value| value.map(UnitBinary32::get)),
+            [Some(0.1), Some(0.2), Some(0.3), Some(0.8)]
+        );
         assert_eq!(
             super::display_jt_path_color(&path),
             Some(Color::new(0.1, 0.2, 0.3, 0.8).expect("valid color"))
         );
 
         super::accumulate_display_jt_material(&mut path, &material([1.0; 4], 0x06, 0));
-        assert_eq!(path.diffuse, [Some(0.1), Some(0.2), Some(0.3), Some(0.8)]);
+        assert_eq!(
+            path.diffuse.map(|value| value.map(UnitBinary32::get)),
+            [Some(0.1), Some(0.2), Some(0.3), Some(0.8)]
+        );
     }
 
     #[test]
@@ -6051,14 +6215,19 @@ mod tests {
         assert_eq!(node.group_version, 1);
         assert_eq!(node.child_object_ids, [2]);
         assert_eq!(node.file_name, "x");
-        assert_eq!(node.transformed_bounds, [[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]]);
-        assert_eq!(node.area, 6.0);
+        assert_eq!(
+            node.transformed_bounds.get(),
+            [[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]]
+        );
+        assert_eq!(node.area.get(), 6.0);
         assert_eq!(node.vertex_count_range, [1, 2]);
         assert_eq!(node.node_count_range, [3, 4]);
         assert_eq!(node.polygon_count_range, [5, 6]);
         assert_eq!(
             node.bounds,
-            DisplayJtPartitionBounds::Untransformed([[-3.0, -2.0, -1.0], [0.0, 1.0, 2.0]])
+            DisplayJtPartitionBounds::Untransformed(
+                super::JtBounds::try_from([[-3.0, -2.0, -1.0], [0.0, 1.0, 2.0]]).unwrap()
+            )
         );
 
         body.pop();
