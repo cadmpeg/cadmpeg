@@ -1890,11 +1890,14 @@ pub(crate) enum TextCurve2d {
     Nurbs(NurbsCurve2d),
     /// Parameter restriction of an inline basis curve.
     Trimmed {
-        parameter_range: [f64; 2],
+        parameter_range: [FiniteReal; 2],
         basis: NestedCurve2d,
     },
     /// Signed planar offset of an inline basis curve.
-    Offset { distance: f64, basis: NestedCurve2d },
+    Offset {
+        distance: FiniteReal,
+        basis: NestedCurve2d,
+    },
 }
 
 impl TextCurve2d {
@@ -3807,14 +3810,14 @@ fn parse_binary_curve2d(
         }
         8 => TextCurve2d::Trimmed {
             parameter_range: [
-                cursor.f64("binary trim start")?,
-                cursor.f64("binary trim end")?,
+                cursor.finite_f64("binary trim start")?,
+                cursor.finite_f64("binary trim end")?,
             ],
             basis: NestedCurve2d::try_new(parse_binary_curve2d(cursor, depth + 1)?)
                 .map_err(CodecError::malformed)?,
         },
         9 => TextCurve2d::Offset {
-            distance: cursor.f64("binary offset distance")?,
+            distance: cursor.finite_f64("binary offset distance")?,
             basis: NestedCurve2d::try_new(parse_binary_curve2d(cursor, depth + 1)?)
                 .map_err(CodecError::malformed)?,
         },
@@ -4175,8 +4178,8 @@ fn parse_curve2d(
         6 => TextCurve2d::Nurbs(parse_bezier_curve2d(cursor)?),
         7 => TextCurve2d::Nurbs(parse_nurbs_curve2d(cursor)?),
         8 => {
-            let first = cursor.real("trimmed 2D curve first parameter")?;
-            let last = cursor.real("trimmed 2D curve last parameter")?;
+            let first = cursor.finite_real("trimmed 2D curve first parameter")?;
+            let last = cursor.finite_real("trimmed 2D curve last parameter")?;
             if first > last {
                 return Err(CodecError::Malformed(
                     "trimmed 2D curve parameter range is reversed".into(),
@@ -4189,7 +4192,7 @@ fn parse_curve2d(
             }
         }
         9 => TextCurve2d::Offset {
-            distance: cursor.real("offset 2D curve distance")?,
+            distance: cursor.finite_real("offset 2D curve distance")?,
             basis: NestedCurve2d::try_new(parse_curve2d(cursor, depth + 1, table_index)?)
                 .map_err(CodecError::malformed)?,
         },
@@ -7050,7 +7053,7 @@ pub(crate) mod tests {
         else {
             panic!("expected trimmed 2D curve")
         };
-        assert_eq!(*parameter_range, [0.0, 314.0 / 50.0]);
+        assert_eq!(parameter_range.map(FiniteReal::get), [0.0, 314.0 / 50.0]);
         assert!(matches!(basis.curve(), TextCurve2d::Offset { .. }));
     }
 
@@ -7194,9 +7197,12 @@ pub(crate) mod tests {
     #[test]
     pub(crate) fn transfers_recursive_exact_parameter_curve_geometry() {
         let source = crate::brep::TextCurve2d::Offset {
-            distance: 0.25,
+            distance: FiniteReal::new(0.25).unwrap(),
             basis: super::NestedCurve2d::try_new(crate::brep::TextCurve2d::Trimmed {
-                parameter_range: [0.0, std::f64::consts::PI],
+                parameter_range: [
+                    FiniteReal::new(0.0).unwrap(),
+                    FiniteReal::new(std::f64::consts::PI).unwrap(),
+                ],
                 basis: super::NestedCurve2d::try_new(crate::brep::TextCurve2d::Circle {
                     center: cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
                         1.0, 2.0,

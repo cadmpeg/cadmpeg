@@ -1804,7 +1804,7 @@ pub(crate) fn pcurve_geometry(
             let Some(basis) = pcurve_geometry(basis.curve())? else {
                 return Ok(None);
             };
-            cadmpeg_ir::geometry::pcurve::TrimmedPcurve::try_new(
+            cadmpeg_ir::geometry::pcurve::TrimmedPcurve::from_finite_parts(
                 *parameter_range,
                 true,
                 Box::new(basis),
@@ -1816,9 +1816,12 @@ pub(crate) fn pcurve_geometry(
             let Some(basis) = pcurve_geometry(basis.curve())? else {
                 return Ok(None);
             };
-            cadmpeg_ir::geometry::pcurve::OffsetPcurve::try_new(*distance, Box::new(basis))
-                .ok()
-                .map(PcurveGeometry::Offset)
+            cadmpeg_ir::geometry::pcurve::OffsetPcurve::from_finite_parts(
+                *distance,
+                Box::new(basis),
+            )
+            .ok()
+            .map(PcurveGeometry::Offset)
         }
     })
 }
