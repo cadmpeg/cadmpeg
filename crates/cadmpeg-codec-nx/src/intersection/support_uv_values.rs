@@ -3,6 +3,7 @@
 
 use super::{SupportUv, SupportUvLane};
 use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::units::FiniteVector;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SupportUvPacking {
@@ -76,20 +77,20 @@ impl SupportUvValues {
         let first = self
             .values()
             .chunks_exact(self.packing.width())
-            .map(|row| [row[0].get(), row[1].get()])
+            .map(|row| FiniteVector::from([row[0], row[1]]))
             .collect();
         let second = match self.packing {
             SupportUvPacking::Form2 | SupportUvPacking::Form3 => None,
             SupportUvPacking::Form4 => Some(
                 self.values()
                     .chunks_exact(4)
-                    .map(|row| [row[2].get(), row[3].get()])
+                    .map(|row| FiniteVector::from([row[2], row[3]]))
                     .collect(),
             ),
         };
         [
-            SupportUvLane::new(first, sample_count),
-            second.and_then(|values| SupportUvLane::new(values, sample_count)),
+            SupportUvLane::from_checked(first, sample_count),
+            second.and_then(|values| SupportUvLane::from_checked(values, sample_count)),
         ]
     }
 }

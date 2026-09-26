@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked physical chart layouts and paired samples for solved charts.
 
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::FitTolerance;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{FiniteReal, Magnification, NonNegativeReal, NonZeroReal, PositiveReal};
@@ -8,11 +9,29 @@ use cadmpeg_ir::scalar::{FiniteReal, Magnification, NonNegativeReal, NonZeroReal
 /// At least two chart points, each with one native parameter.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ChartSamples {
-    samples: crate::om::nonempty::NonEmpty<(Point3, f64)>,
+    samples: crate::om::nonempty::NonEmpty<(FinitePoint3, ChartParameter)>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ChartParameter {
+    Source(FiniteReal),
+    Derived(f64),
+}
+
+impl ChartParameter {
+    fn get(self) -> f64 {
+        match self {
+            Self::Source(value) => value.get(),
+            Self::Derived(value) => value,
+        }
+    }
 }
 
 impl ChartSamples {
-    fn new(points: Vec<Point3>, parameters: Vec<f64>) -> Result<Self, &'static str> {
+    fn new(
+        points: Vec<FinitePoint3>,
+        parameters: Vec<ChartParameter>,
+    ) -> Result<Self, &'static str> {
         if points.len() != parameters.len() {
             return Err("native_parameters: one value per point required");
         }
@@ -27,28 +46,41 @@ impl ChartSamples {
         points: Vec<Point3>,
         parameters: Vec<f64>,
     ) -> Result<Self, &'static str> {
-        Self::new(points, parameters)
+        let points = points
+            .into_iter()
+            .map(|point| FinitePoint3::new(point).ok_or("points: coordinates must be finite"))
+            .collect::<Result<Vec<_>, _>>()?;
+        Self::new(
+            points,
+            parameters
+                .into_iter()
+                .map(ChartParameter::Derived)
+                .collect(),
+        )
     }
 
     pub(crate) fn points(&self) -> Vec<Point3> {
-        self.samples.iter().map(|sample| sample.0).collect()
+        self.samples.iter().map(|sample| sample.0.get()).collect()
     }
 
     pub(crate) fn parameters(&self) -> Vec<f64> {
-        self.samples.iter().map(|sample| sample.1).collect()
+        self.samples.iter().map(|sample| sample.1.get()).collect()
     }
 
     pub(crate) fn endpoints(&self) -> [Point3; 2] {
-        [self.samples.first().0, self.samples.last().0]
+        [self.samples.first().0.get(), self.samples.last().0.get()]
     }
 
     pub(crate) fn parameter_range(&self) -> [f64; 2] {
-        [self.samples.first().1, self.samples.last().1]
+        [self.samples.first().1.get(), self.samples.last().1.get()]
     }
 
     /// Replace the parameterization when both charts have the same sample count.
     pub(super) fn replace_parameters_from(&mut self, other: &Self) -> bool {
-        let Ok(replacement) = Self::new(self.points(), other.parameters()) else {
+        let Ok(replacement) = Self::new(
+            self.samples.iter().map(|sample| sample.0).collect(),
+            other.samples.iter().map(|sample| sample.1).collect(),
+        ) else {
             return false;
         };
         *self = replacement;
@@ -113,7 +145,7 @@ impl ChartPreamble {
 #[derive(Debug, Clone, PartialEq)]
 enum SourceEncoding {
     Xyz3 {
-        points: Vec<Point3>,
+        points: Vec<FinitePoint3>,
     },
     Ext11 {
         samples: ChartSamples,
@@ -127,22 +159,22 @@ pub(crate) struct SourceChartData {
     encoding: SourceEncoding,
 }
 impl SourceChartData {
-    fn checked_points(points: &[Point3]) -> Result<(), &'static str> {
+    fn checked_points(points: Vec<Point3>) -> Result<Vec<FinitePoint3>, &'static str> {
         u32::try_from(points.len()).map_err(|_| "points: count exceeds u32")?;
         if points.len() < 2 {
             return Err("points: at least two points required");
         }
-        if !points.iter().all(Point3::is_finite) {
-            return Err("points: coordinates must be finite");
-        }
-        Ok(())
+        points
+            .into_iter()
+            .map(|point| FinitePoint3::new(point).ok_or("points: coordinates must be finite"))
+            .collect()
     }
 
     pub(crate) fn xyz3(points: Vec<Point3>) -> Result<Self, &'static str> {
         if !points.windows(2).any(|pair| pair[0] != pair[1]) {
             return Err("points: xyz3 requires distinct points");
         }
-        Self::checked_points(&points)?;
+        let points = Self::checked_points(points)?;
         Ok(Self {
             encoding: SourceEncoding::Xyz3 { points },
         })
@@ -153,31 +185,37 @@ impl SourceChartData {
         parameters: Vec<f64>,
         support_uv: [Option<Vec<[f64; 2]>>; 2],
     ) -> Result<Self, &'static str> {
-        if !parameters.iter().all(|value| value.is_finite())
-            || parameters.windows(2).any(|pair| pair[1] <= pair[0])
-        {
+        let parameters = parameters
+            .into_iter()
+            .map(|value| {
+                FiniteReal::new(value)
+                    .ok_or("native_parameters: finite strictly increasing values required")
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if parameters.windows(2).any(|pair| pair[1] <= pair[0]) {
             return Err("native_parameters: finite strictly increasing values required");
+        }
+        if support_uv
+            .iter()
+            .flatten()
+            .any(|lane| lane.len() != points.len())
+        {
+            return Err("ext_support_uv: one pair per point required");
         }
         let support_uv = support_uv.map(|lane| {
             lane.map(|values| {
-                super::SupportUvLane::new(values, points.len())
-                    .ok_or("ext_support_uv: one pair per point required")
+                super::SupportUvLane::from_present_values(values)
+                    .ok_or("ext_support_uv: finite present parameter values required")
             })
             .transpose()
         });
         let [first, second] = support_uv;
         let support_uv = [first?, second?];
-        for lane in support_uv.iter().flatten() {
-            if !lane
-                .iter()
-                .flatten()
-                .all(|value| value.is_finite() && *value != MISSING_PARAMETER)
-            {
-                return Err("ext_support_uv: finite present parameter values required");
-            }
-        }
-        Self::checked_points(&points)?;
-        let samples = ChartSamples::new(points, parameters)?;
+        let points = Self::checked_points(points)?;
+        let samples = ChartSamples::new(
+            points,
+            parameters.into_iter().map(ChartParameter::Source).collect(),
+        )?;
         Ok(Self {
             encoding: SourceEncoding::Ext11 {
                 samples,
@@ -188,7 +226,7 @@ impl SourceChartData {
 
     pub(crate) fn points(&self) -> Vec<Point3> {
         match &self.encoding {
-            SourceEncoding::Xyz3 { points } => points.clone(),
+            SourceEncoding::Xyz3 { points } => points.iter().map(|point| point.get()).collect(),
             SourceEncoding::Ext11 { samples, .. } => samples.points(),
         }
     }
@@ -226,10 +264,11 @@ impl SourceChartData {
                 let mut parameter = preamble.base_parameter();
                 let parameters = std::iter::once(parameter)
                     .chain(points.windows(2).map(|pair| {
-                        let chord_m = pair[0].distance(pair[1]) / 1000.0;
+                        let chord_m = pair[0].get().distance(pair[1].get()) / 1000.0;
                         parameter += chord_m * preamble.base_scale();
                         parameter
                     }))
+                    .map(ChartParameter::Derived)
                     .collect();
                 Some((ChartSamples::new(points, parameters).ok()?, [None, None]))
             }
@@ -299,11 +338,11 @@ mod tests {
             Point3::new(2.0, 0.0, 0.0),
         ];
         assert_eq!(
-            ChartSamples::new(points.clone(), vec![0.0, 1.0]),
+            ChartSamples::from_test_values(points.clone(), vec![0.0, 1.0]),
             Err("native_parameters: one value per point required")
         );
         assert_eq!(
-            ChartSamples::new(points[..2].to_vec(), vec![0.0, 1.0, 2.0]),
+            ChartSamples::from_test_values(points[..2].to_vec(), vec![0.0, 1.0, 2.0]),
             Err("native_parameters: one value per point required")
         );
     }
