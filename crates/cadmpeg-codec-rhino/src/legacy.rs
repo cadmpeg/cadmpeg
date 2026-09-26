@@ -1790,7 +1790,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                     geometry: PcurveGeometry::Nurbs {
                         nurbs: PcurveNurbs::from_checked_lanes(
                             trim.pcurve.degree(),
-                            trim.pcurve.knots().to_vec(),
+                            trim.pcurve.knots().clone(),
                             trim.pcurve
                                 .control_points()
                                 .iter()

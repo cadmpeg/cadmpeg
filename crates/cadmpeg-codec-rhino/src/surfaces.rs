@@ -700,8 +700,8 @@ fn sum_nurbs(
     }
     let row_len = v_count;
     NurbsSurface::from_checked_lanes(
-        NurbsSurfaceAxis::new(first.degree(), first.knots().to_vec(), first.periodic()),
-        NurbsSurfaceAxis::new(second.degree(), second.knots().to_vec(), second.periodic()),
+        NurbsSurfaceAxis::new(first.degree(), first.knots().clone(), first.periodic()),
+        NurbsSurfaceAxis::new(second.degree(), second.knots().clone(), second.periodic()),
         NurbsSurfaceLanes::new(
             control_points.chunks(row_len).map(<[_]>::to_vec).collect(),
             weights.map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
@@ -748,24 +748,28 @@ pub(crate) fn extrusion_nurbs(
             target.push(source[index]);
         }
     }
-    let mut surface = NurbsSurface::from_checked_lanes(
-        NurbsSurfaceAxis::new(start.degree(), start.knots().to_vec(), start.periodic()),
-        NurbsSurfaceAxis::new(
-            1,
-            vec![
-                path_domain[0],
-                path_domain[0],
-                path_domain[1],
-                path_domain[1],
-            ],
-            false,
-        ),
-        NurbsSurfaceLanes::new(
-            control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
-            weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-        ),
-        false,
+    let mut surface = NurbsSurfaceLanes::new(
+        control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
+        weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
     )
+    .into_poles()
+    .and_then(|poles| {
+        NurbsSurface::new(
+            NurbsSurfaceAxis::new(start.degree(), start.knots().clone(), start.periodic()),
+            NurbsSurfaceAxis::new(
+                1,
+                vec![
+                    path_domain[0],
+                    path_domain[0],
+                    path_domain[1],
+                    path_domain[1],
+                ],
+                false,
+            ),
+            poles,
+            false,
+        )
+    })
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
     if transposed {
         surface.transpose_parameter_axes();

@@ -1500,20 +1500,20 @@ impl PolarPcurveNurbs {
     /// Refuses a pole or knot count that does not follow from the degree, a
     /// zero degree, a non-finite raw pole value and then a non-finite or
     /// decreasing knot.
-    pub fn new<P: PoleValue<FinitePoint2>, S: PoleValue<FiniteReal>>(
+    pub fn new<P: PoleValue<FinitePoint2>, S: PoleValue<FiniteReal>, K: super::nurbs::KnotValue>(
         degree: u32,
-        knots: Vec<f64>,
+        knots: K,
         poles: PolarNurbsPoles<P, S>,
         periodic: bool,
     ) -> Result<Self, NurbsError> {
-        require_curve_cardinality(degree, knots.len(), poles.count(), "poles")?;
+        require_curve_cardinality(degree, knots.knot_count(), poles.count(), "poles")?;
         if degree == 0 {
             return Err(NurbsError::Structure(
                 "polar NURBS degree must be positive".into(),
             ));
         }
         let poles = poles.admit()?;
-        let knots = KnotVector::new(knots)?;
+        let knots = knots.admit()?;
         Ok(Self {
             degree,
             knots,
@@ -1544,15 +1544,15 @@ impl PolarPcurveNurbs {
         Self::new(degree, knots, poles, periodic)
     }
 
-    /// Build a polar NURBS from a pole lane and an admitted weight lane.
+    /// Build a polar NURBS from admitted knots, a pole lane and an admitted weight lane.
     ///
     /// # Errors
     ///
-    /// Refuses a weight lane that does not cover the poles and what
-    /// [`Self::new`] refuses.
+    /// Refuses a weight lane that does not cover the poles, invalid
+    /// cardinalities, or a non-finite raw pole value.
     pub fn from_checked_lanes<P: PoleValue<FinitePoint2>, S: PoleValue<FiniteReal>>(
         degree: u32,
-        knots: Vec<f64>,
+        knots: KnotVector,
         poles: Vec<PolarNurbsPole<P, S>>,
         weights: Option<Vec<NonZeroReal>>,
         periodic: bool,
@@ -1661,20 +1661,20 @@ impl PcurveNurbs {
     /// Refuses a pole or knot count that does not follow from the degree, a
     /// zero degree, a non-finite raw pole coordinate and then a non-finite or
     /// decreasing knot.
-    pub fn new<P: PoleValue<FinitePoint2>>(
+    pub fn new<P: PoleValue<FinitePoint2>, K: super::nurbs::KnotValue>(
         degree: u32,
-        knots: Vec<f64>,
+        knots: K,
         poles: PcurveNurbsPoles<P>,
         periodic: bool,
     ) -> Result<Self, NurbsError> {
-        require_curve_cardinality(degree, knots.len(), poles.count(), "control_points")?;
+        require_curve_cardinality(degree, knots.knot_count(), poles.count(), "control_points")?;
         if degree == 0 {
             return Err(NurbsError::Structure(
                 "pcurve NURBS degree must be positive".into(),
             ));
         }
         let poles = poles.admit()?;
-        let knots = KnotVector::new(knots)?;
+        let knots = knots.admit()?;
         Ok(Self {
             degree,
             knots,
@@ -1697,7 +1697,7 @@ impl PcurveNurbs {
             .collect();
         NurbsCurve::from_checked_lanes(
             self.degree,
-            self.knots.to_vec(),
+            self.knots.clone(),
             points,
             self.weights(),
             self.periodic,
@@ -1726,16 +1726,16 @@ impl PcurveNurbs {
         Self::new(degree, knots, poles, periodic)
     }
 
-    /// Build a parameter-space NURBS from a pole lane and an admitted weight
-    /// lane.
+    /// Build a parameter-space NURBS from admitted knots, a pole lane and an
+    /// admitted weight lane.
     ///
     /// # Errors
     ///
-    /// Refuses a weight lane that does not cover the poles and what
-    /// [`Self::new`] refuses.
+    /// Refuses a weight lane that does not cover the poles, invalid
+    /// cardinalities, or a non-finite raw pole coordinate.
     pub fn from_checked_lanes<P: PoleValue<FinitePoint2>>(
         degree: u32,
-        knots: Vec<f64>,
+        knots: KnotVector,
         control_points: Vec<P>,
         weights: Option<Vec<NonZeroReal>>,
         periodic: bool,

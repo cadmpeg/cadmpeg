@@ -142,23 +142,36 @@ fn decode_surfaces(
                     weights.push(weight);
                 }
             }
-            let surface = NurbsSurface::from_checked_lanes(
-                NurbsSurfaceAxis::new(descriptor.u_degree as u32, full_u, descriptor.u_periodic),
-                NurbsSurfaceAxis::new(descriptor.v_degree as u32, full_v, descriptor.v_periodic),
-                NurbsSurfaceLanes::new(
-                    control_points
+            let normal_reversed = node.byte_at(18)? == b'-';
+            let surface = NurbsSurfaceLanes::new(
+                control_points
+                    .chunks(descriptor.v_count as u32 as usize)
+                    .map(<[_]>::to_vec)
+                    .collect(),
+                weights.map(|values| {
+                    values
                         .chunks(descriptor.v_count as u32 as usize)
                         .map(<[_]>::to_vec)
-                        .collect(),
-                    weights.map(|values| {
-                        values
-                            .chunks(descriptor.v_count as u32 as usize)
-                            .map(<[_]>::to_vec)
-                            .collect()
-                    }),
-                ),
-                node.byte_at(18)? == b'-',
-            );
+                        .collect()
+                }),
+            )
+            .into_poles()
+            .and_then(|poles| {
+                NurbsSurface::new(
+                    NurbsSurfaceAxis::new(
+                        descriptor.u_degree as u32,
+                        full_u,
+                        descriptor.u_periodic,
+                    ),
+                    NurbsSurfaceAxis::new(
+                        descriptor.v_degree as u32,
+                        full_v,
+                        descriptor.v_periodic,
+                    ),
+                    poles,
+                    normal_reversed,
+                )
+            });
             let surface = match surface {
                 Ok(surface) => surface,
                 Err(error) => {
@@ -242,13 +255,18 @@ fn decode_pcurves(
                     weights.push(weight);
                 }
             }
-            let nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
-                descriptor.basis.degree as u32,
-                knots,
+            let nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::from_checked_lanes(
                 control_points,
                 weights,
-                descriptor.basis.periodic,
-            );
+            )
+            .and_then(|poles| {
+                cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
+                    descriptor.basis.degree as u32,
+                    knots,
+                    poles,
+                    descriptor.basis.periodic,
+                )
+            });
             let nurbs = match nurbs {
                 Ok(nurbs) => nurbs,
                 Err(error) => {
@@ -337,13 +355,18 @@ fn decode_curves(
                     weights.push(weight);
                 }
             }
-            let curve = NurbsCurve::from_checked_lanes(
-                descriptor.basis.degree as u32,
-                knots,
+            let curve = cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_checked_lanes(
                 control_points,
                 weights,
-                descriptor.basis.periodic,
-            );
+            )
+            .and_then(|poles| {
+                NurbsCurve::new(
+                    descriptor.basis.degree as u32,
+                    knots,
+                    poles,
+                    descriptor.basis.periodic,
+                )
+            });
             let curve = match curve {
                 Ok(curve) => curve,
                 Err(error) => {
