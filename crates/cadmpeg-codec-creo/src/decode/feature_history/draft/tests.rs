@@ -28,8 +28,8 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
         .push(crate::surface::OutlinePlane {
             surface_id: 6,
             origin: [0.0, 1.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [0.0, 0.0, 1.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Z_AXIS,
             offset: 1,
         });
     let mut ir = CadIr::empty();
@@ -106,8 +106,8 @@ fn placed_plane() -> crate::surface::OutlinePlane {
     crate::surface::OutlinePlane {
         surface_id: 6,
         origin: [0.0, 1.0, 0.0],
-        normal: [0.0, 1.0, 0.0],
-        u_axis: [0.0, 0.0, 1.0],
+        normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::Z_AXIS,
         offset: 1,
     }
 }

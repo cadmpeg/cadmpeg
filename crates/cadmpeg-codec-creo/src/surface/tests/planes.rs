@@ -66,8 +66,8 @@ fn derives_one_held_coordinate_outline_plane() {
         vec![OutlinePlane {
             surface_id: 42,
             origin: [3.0, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: 20,
         }]
     );
@@ -115,8 +115,8 @@ fn derives_plane_from_unique_six_scalar_positional_frame() {
         vec![OutlinePlane {
             surface_id: 41,
             origin: [8.0, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: 14,
         }]
     );
@@ -191,8 +191,8 @@ fn derives_plane_from_auxiliary_corner_frame() {
         vec![OutlinePlane {
             surface_id: 41,
             origin: [0.0, 1.75, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 32,
         }]
     );
@@ -252,8 +252,8 @@ fn derives_plane_from_auxiliary_corner_frame() {
         vec![OutlinePlane {
             surface_id: 41,
             origin: [0.0, 0.0, 7.5],
-            normal: [0.0, 0.0, 1.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 37,
         }]
     );
@@ -262,8 +262,8 @@ fn derives_plane_from_auxiliary_corner_frame() {
         vec![OutlinePlane {
             surface_id: 41,
             origin: [0.0, 0.0, 7.5],
-            normal: [0.0, 0.0, 1.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 37,
         }]
     );
@@ -286,8 +286,8 @@ fn derives_plane_from_auxiliary_corner_frame() {
         vec![OutlinePlane {
             surface_id: 41,
             origin: [2.479_564_003_064_99, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: 23,
         }]
     );
@@ -332,8 +332,8 @@ fn derives_plane_from_terminal_corner_frame() {
         vec![OutlinePlane {
             surface_id: record.surface_id,
             origin: [-92.0, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: record.body_offset + 27,
         }]
     );
@@ -356,8 +356,8 @@ fn derives_plane_from_terminal_corner_frame() {
         vec![OutlinePlane {
             surface_id: unprefixed.surface_id,
             origin: [0.0, -5.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: unprefixed.body_offset + 22,
         }]
     );
@@ -412,8 +412,8 @@ fn derives_plane_from_split_terminal_corner_frame() {
         vec![OutlinePlane {
             surface_id: record.surface_id,
             origin: [0.0, 0.0, 7.0],
-            normal: [0.0, 0.0, 1.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: record.body_offset + 27,
         }]
     );
@@ -474,8 +474,8 @@ fn derives_plane_from_marker_bounded_corner_frames() {
         vec![OutlinePlane {
             surface_id: 41,
             origin: [3.326_456_464_841_722_7, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: 24,
         }]
     );
@@ -498,8 +498,8 @@ fn derives_plane_from_marker_bounded_corner_frames() {
         vec![OutlinePlane {
             surface_id: 41,
             origin: [7.560_920_554_712_176, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: 24,
         }]
     );
@@ -522,8 +522,8 @@ fn derives_plane_from_marker_bounded_corner_frames() {
         vec![OutlinePlane {
             surface_id: 41,
             origin: [6.290_581_268_384_813, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: 24,
         }]
     );
@@ -541,8 +541,8 @@ fn derives_plane_from_marker_bounded_corner_frames() {
         vec![OutlinePlane {
             surface_id: 41,
             origin: [3.326_456_464_841_722_7, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: 24,
         }]
     );
@@ -565,8 +565,8 @@ fn derives_plane_from_marker_bounded_corner_frames() {
         vec![OutlinePlane {
             surface_id: 41,
             origin: [0.0, 6.777_498_012_261_868, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 23,
         }]
     );
@@ -589,8 +589,8 @@ fn derives_plane_from_marker_bounded_corner_frames() {
         vec![OutlinePlane {
             surface_id: 41,
             origin: [0.0, 6.540_998_686_777_831, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 23,
         }]
     );
@@ -738,8 +738,8 @@ fn decodes_named_plane_outline_with_zero_boundary_type() {
         vec![OutlinePlane {
             surface_id: 7,
             origin: [1.0, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: 104,
         }]
     );
@@ -771,7 +771,7 @@ fn derives_plane_with_unresolved_distinct_corner_coordinates() {
         offset: 20,
     }];
     assert_eq!(outline_planes(&records)[0].origin, [0.0, -4.0, 0.0]);
-    assert_eq!(outline_planes(&records)[0].normal, [0.0, 1.0, 0.0]);
+    assert_eq!(outline_planes(&records)[0].normal(), [0.0, 1.0, 0.0]);
 }
 
 #[test]
@@ -809,8 +809,8 @@ fn support_frame_selects_held_axis_with_unresolved_other_coordinate() {
         [OutlinePlane {
             surface_id: 42,
             origin: [0.0, -4.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [0.0, 0.0, 1.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Z_AXIS,
             offset: 20,
         }]
     );
@@ -887,8 +887,8 @@ fn positional_plane_frame_decodes_terminal_zero_before_null_tail() {
     );
     let frame = plane_frame(&slots.map(Some));
     assert_eq!(frame.origin, Some([6.0, -12.62, 0.0]));
-    assert_eq!(frame.u_axis, Some([0.0, 1.0, 0.0]));
-    assert_eq!(frame.normal, Some([1.0, 0.0, 0.0]));
+    assert_eq!(frame.u_axis(), Some([0.0, 1.0, 0.0]));
+    assert_eq!(frame.normal(), Some([1.0, 0.0, 0.0]));
 }
 
 #[test]
@@ -902,8 +902,8 @@ fn explicit_plane_frame_uses_the_stored_normal_triple() {
 
     let frame = plane_direct_frame(&slots.map(Some));
     assert_eq!(frame.origin, Some([2.0, 3.0, 4.0]));
-    assert_eq!(frame.u_axis, Some([0.6, 0.0, 0.8]));
-    assert_eq!(frame.normal, Some([0.8, 0.0, -0.6]));
+    assert_eq!(frame.u_axis(), Some([0.6, 0.0, 0.8]));
+    assert_eq!(frame.normal(), Some([0.8, 0.0, -0.6]));
 }
 
 #[test]
@@ -967,8 +967,8 @@ fn positional_plane_frame_decodes_rank_two_image_before_null_tail() {
     );
     let frame = plane_frame(&slots.map(Some));
     assert_eq!(frame.origin, Some([0.0, 0.0, 0.0]));
-    assert_eq!(frame.u_axis, Some([0.0, 1.0, 0.0]));
-    assert_eq!(frame.normal, Some([0.0, 0.0, -1.0]));
+    assert_eq!(frame.u_axis(), Some([0.0, 1.0, 0.0]));
+    assert_eq!(frame.normal(), Some([0.0, 0.0, -1.0]));
 }
 
 #[test]
@@ -982,7 +982,7 @@ fn positional_plane_frame_classifies_rank_two_image_before_null_tail() {
     let systems = plane_local_systems(&payload);
     assert_eq!(systems.len(), 1);
     assert_eq!(systems[0].classification, LocalSystemClassification::Simple);
-    assert_eq!(systems[0].frame().normal, Some([0.0, 0.0, -1.0]));
+    assert_eq!(systems[0].frame().normal(), Some([0.0, 0.0, -1.0]));
 }
 
 #[test]
@@ -1005,20 +1005,20 @@ fn positional_plane_frame_requires_one_unique_orthogonal_support_pair() {
         plane_frame(&options([
             1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
         ]))
-        .normal,
+        .normal(),
         Some([0.0, 0.0, 1.0])
     );
     let first_rank_zero = plane_frame(&options([
         0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -3.0, 0.0,
     ]));
     assert_eq!(first_rank_zero.origin, Some([0.0, -3.0, 0.0]));
-    assert_eq!(first_rank_zero.u_axis, Some([1.0, 0.0, 0.0]));
-    assert_eq!(first_rank_zero.normal, Some([0.0, -1.0, 0.0]));
+    assert_eq!(first_rank_zero.u_axis(), Some([1.0, 0.0, 0.0]));
+    assert_eq!(first_rank_zero.normal(), Some([0.0, -1.0, 0.0]));
     assert_eq!(
         plane_frame(&options([
             1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
         ]))
-        .normal,
+        .normal(),
         Some([0.0, 0.0, 1.0])
     );
     assert!(plane_frame(&options([
@@ -1034,6 +1034,29 @@ fn positional_plane_frame_requires_one_unique_orthogonal_support_pair() {
 }
 
 #[test]
+fn positional_plane_frame_keeps_large_orthogonal_support_normal_unit() {
+    let slots = [
+        1.0e100, 0.0, 0.0, 0.0, 1.0e100, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    ];
+    let frame = plane_frame(&slots.map(Some));
+
+    assert_eq!(frame.u_axis(), Some([1.0, 0.0, 0.0]));
+    assert_eq!(frame.normal(), Some([0.0, 0.0, 1.0]));
+}
+
+#[test]
+fn positional_plane_frame_refuses_overflowed_cross_component() {
+    let a = f64::from_bits(0x5fed_817d_bb14_96d1);
+    let b = f64::from_bits(0x5fd8_c57e_64a4_a42f);
+    let slots = [a, b, 0.0, -b, a, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    let frame = plane_frame(&slots.map(Some));
+
+    assert_eq!(frame.origin, Some([0.0, 0.0, 0.0]));
+    assert!(frame.u_axis.is_none());
+    assert!(frame.normal.is_none());
+}
+
+#[test]
 fn matrix_plane_frame_uses_stored_direction_and_normal_columns() {
     let slots = [
         1.0, 0.0, 0.0, // x components of the three columns
@@ -1044,8 +1067,8 @@ fn matrix_plane_frame_uses_stored_direction_and_normal_columns() {
 
     let frame = plane_matrix_frame(&slots.map(Some));
     assert_eq!(frame.origin, Some([2.0, 3.0, 4.0]));
-    assert_eq!(frame.u_axis, Some([1.0, 0.0, 0.0]));
-    assert_eq!(frame.normal, Some([0.0, 0.0, 1.0]));
+    assert_eq!(frame.u_axis(), Some([1.0, 0.0, 0.0]));
+    assert_eq!(frame.normal(), Some([0.0, 0.0, 1.0]));
 }
 
 #[test]

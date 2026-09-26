@@ -170,8 +170,11 @@ impl F3dCodec {
 impl CodecBackend for F3dCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
-    fn validate_native(ir: &CadIr) -> Vec<cadmpeg_ir::report::check::Finding> {
-        validate::validate_native(ir)
+    fn validate_native(
+        _ctx: &DecodeContext<'_>,
+        ir: &CadIr,
+    ) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
+        Ok(validate::validate_native(ir))
     }
 
     fn detect_impl(&self, prefix: &[u8]) -> Confidence {

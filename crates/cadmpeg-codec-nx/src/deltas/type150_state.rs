@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Complete type-150 state payload.
 
+use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 
 use super::packet_marker::Type150Marker;
@@ -10,7 +11,7 @@ use super::packet_marker::Type150Marker;
 pub(crate) struct Type150State {
     references: [u32; 4],
     pub(crate) marker: Type150Marker,
-    values: [f64; 9],
+    values: [FiniteReal; 9],
 }
 
 impl Type150State {
@@ -23,13 +24,15 @@ impl Type150State {
         if null != 1 || [a, b, c, d].iter().any(|reference| *reference <= 1) {
             return Err("references: require one null followed by four non-null references");
         }
-        if values.iter().any(|value| !value.is_finite()) {
+        let [Some(a0), Some(a1), Some(a2), Some(a3), Some(a4), Some(a5), Some(a6), Some(a7), Some(a8)] =
+            values.map(FiniteReal::new)
+        else {
             return Err("values: require nine finite state values");
-        }
+        };
         Ok(Self {
             references: [a, b, c, d],
             marker,
-            values,
+            values: [a0, a1, a2, a3, a4, a5, a6, a7, a8],
         })
     }
 
@@ -38,8 +41,8 @@ impl Type150State {
         [1, a, b, c, d]
     }
 
-    pub(crate) fn values(&self) -> &[f64; 9] {
-        &self.values
+    pub(crate) fn values(&self) -> [f64; 9] {
+        self.values.map(FiniteReal::get)
     }
 }
 
@@ -55,7 +58,7 @@ impl From<Type150State> for StateWire {
         Self {
             references: value.references(),
             marker: value.marker,
-            values: *value.values(),
+            values: value.values(),
         }
     }
 }

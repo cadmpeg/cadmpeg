@@ -147,8 +147,8 @@ fn e5_plane_solver_uses_known_normal_and_canonical_sign_for_rank_one_uv() {
         Some(Vector3::new(0.0, 1.0, 0.0)),
     )
     .expect("rank-one plane frame");
-    assert!(normal.dot(Vector3::new(0.0, 1.0, 0.0)) > 1.0 - EPS_E5_DECODE_EXACT_GEOMETRY);
-    assert!(u_axis.dot(Vector3::new(0.0, 0.0, 1.0)) > 1.0 - EPS_E5_DECODE_EXACT_GEOMETRY);
+    assert!(normal.as_raw().dot(Vector3::new(0.0, 1.0, 0.0)) > 1.0 - EPS_E5_DECODE_EXACT_GEOMETRY);
+    assert!(u_axis.as_raw().dot(Vector3::new(0.0, 0.0, 1.0)) > 1.0 - EPS_E5_DECODE_EXACT_GEOMETRY);
     assert_eq!(uv_scale, finite_pair([-1.0, -1.0]));
 }
 
@@ -216,10 +216,10 @@ fn e5_plane_solver_rechecks_the_returned_unit_frame() {
         );
         if scale == 1.0 {
             let (normal, u_axis, uv_scale) = result.expect("unit plane chart");
-            let v_axis = normal.cross(u_axis);
+            let v_axis = normal.as_raw().cross(*u_axis.as_raw());
             for ([u, v], expected) in sites.into_iter().zip(points) {
-                let mapped =
-                    u_axis.scale(u * uv_scale[0].get()) + v_axis.scale(v * uv_scale[1].get());
+                let mapped = u_axis.as_raw().scale(u * uv_scale[0].get())
+                    + v_axis.scale(v * uv_scale[1].get());
                 assert!(
                     crate::math::distance(<[f64; 3]>::from(mapped), expected.get().into())
                         < EPS_E5_DECODE_EXACT_GEOMETRY

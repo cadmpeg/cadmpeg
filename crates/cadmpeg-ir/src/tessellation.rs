@@ -377,7 +377,36 @@ impl TessellationMesh {
         triangles: Vec<[u32; 3]>,
         normals: Option<Vec<Vector3>>,
     ) -> Result<Self, TessellationLaneError> {
-        pair_list_lanes(positions, triangles, normals)
+        Self::pair_list_lanes(positions, triangles, normals)
+    }
+}
+
+impl<P, N> TessellationMesh<P, N> {
+    fn pair_list_lanes(
+        positions: Vec<P>,
+        triangles: Vec<[u32; 3]>,
+        normals: Option<Vec<N>>,
+    ) -> Result<Self, TessellationLaneError> {
+        let Some(normals) = normals else {
+            return Ok(Self::List {
+                vertices: positions,
+                triangles,
+            });
+        };
+        if normals.len() != positions.len() {
+            return Err(TessellationLaneError::VertexNormalLane {
+                vertices: positions.len(),
+                normals: normals.len(),
+            });
+        }
+        Ok(Self::ShadedList {
+            vertices: positions
+                .into_iter()
+                .zip(normals)
+                .map(|(position, normal)| ShadedVertex { position, normal })
+                .collect(),
+            triangles,
+        })
     }
 }
 
@@ -389,35 +418,8 @@ impl TessellationMesh<FinitePoint3, FiniteVector3> {
         triangles: Vec<[u32; 3]>,
         normals: Option<Vec<FiniteVector3>>,
     ) -> Result<Self, TessellationLaneError> {
-        pair_list_lanes(positions, triangles, normals)
+        Self::pair_list_lanes(positions, triangles, normals)
     }
-}
-
-fn pair_list_lanes<P, N>(
-    positions: Vec<P>,
-    triangles: Vec<[u32; 3]>,
-    normals: Option<Vec<N>>,
-) -> Result<TessellationMesh<P, N>, TessellationLaneError> {
-    let Some(normals) = normals else {
-        return Ok(TessellationMesh::List {
-            vertices: positions,
-            triangles,
-        });
-    };
-    if normals.len() != positions.len() {
-        return Err(TessellationLaneError::VertexNormalLane {
-            vertices: positions.len(),
-            normals: normals.len(),
-        });
-    }
-    Ok(TessellationMesh::ShadedList {
-        vertices: positions
-            .into_iter()
-            .zip(normals)
-            .map(|(position, normal)| ShadedVertex { position, normal })
-            .collect(),
-        triangles,
-    })
 }
 
 impl<P: Copy, N: Copy> TessellationMesh<P, N> {
@@ -774,6 +776,15 @@ impl<P, N> TessellationMesh<P, N> {
 }
 
 impl TessellationMesh<FinitePoint3, FiniteVector3> {
+    /// Pair admitted triangle-list positions and normals without checking
+    /// their scalar values again.
+    pub fn from_checked_list_lanes(
+        positions: Vec<FinitePoint3>,
+        triangles: Vec<[u32; 3]>,
+        normals: Option<Vec<FiniteVector3>>,
+    ) -> Result<Self, TessellationLaneError> {
+        Self::pair_list_lanes(positions, triangles, normals)
+    }
     /// The mesh with raw positions and normals, for a reader that edits or
     /// writes them.
     #[must_use]

@@ -4891,7 +4891,7 @@ mod tests {
         let packet = &events.type_150_state_packets[0];
         assert_eq!(packet.state.references(), [1, 3, 6_192, 6_193, 6_194]);
         assert_eq!(u8::from(packet.state.marker), 0x2b);
-        assert_eq!(*packet.state.values(), values);
+        assert_eq!(packet.state.values(), values);
         assert_eq!(packet.inflated_offset, packet_offset as u64);
         assert_eq!(packet.byte_len, (packet_end - packet_offset) as u64);
         assert_eq!(

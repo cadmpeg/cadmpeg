@@ -61,8 +61,8 @@ pub struct InventorCodec;
 impl CodecBackend for InventorCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
-    fn validate_native(ir: &CadIr) -> Vec<Finding> {
-        validate::validate_native(ir)
+    fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, CodecError> {
+        validate::validate_native(ctx, ir)
     }
 
     fn detect_impl(&self, prefix: &[u8]) -> Confidence {
@@ -82,7 +82,7 @@ impl CodecBackend for InventorCodec {
         ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        container::InventorContainer::open(ctx, root)?.summary()
+        container::InventorContainer::open(ctx, root)?.summary(ctx)
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {

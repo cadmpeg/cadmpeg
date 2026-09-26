@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature scaling routes test only what a positive scale can break.
 
-use crate::features::{FeatureEllipticArc, FinitePoint3, PrimitiveSolid, PrimitiveSolidKind};
+use crate::features::{
+    FeatureEllipticArc, FinitePoint3, PrimitiveSolid, PrimitiveSolidKind, PrimitiveSolidScaleError,
+};
 use crate::geometry::DirectedParameterRange;
 use crate::math::{Point3, Vector3};
 use crate::scalar::{Angle, Length, PositiveLength, PositiveReal};
@@ -95,12 +97,13 @@ fn a_scaled_primitive_keeps_signs_non_strict_orders_and_angles() {
     .expect("a cone fixture");
     assert_eq!(
         cone.scaled(scale(25.4)),
-        Some(PrimitiveSolid::new(PrimitiveSolidKind::Cone {
+        Ok(PrimitiveSolid::new(PrimitiveSolidKind::Cone {
             radius1: length(0.0),
             radius2: length(2.0 * 25.4),
             height: length(3.0 * 25.4),
             angle: quarter,
-        }))
+        })
+        .expect("scaled cone fixture"))
     );
 
     let sphere = PrimitiveSolid::new(PrimitiveSolidKind::Sphere {
@@ -110,7 +113,7 @@ fn a_scaled_primitive_keeps_signs_non_strict_orders_and_angles() {
         longitude: quarter,
     })
     .expect("a sphere fixture");
-    let Some(Ok(scaled)) = sphere.scaled(scale(0.5)) else {
+    let Ok(scaled) = sphere.scaled(scale(0.5)) else {
         panic!("a scaled sphere stays admitted");
     };
     let PrimitiveSolidKind::Sphere {
@@ -127,7 +130,7 @@ fn a_scaled_primitive_keeps_signs_non_strict_orders_and_angles() {
     assert_eq!(longitude.get(), quarter.get());
 
     let equal_upper = wedge([0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 2.0, 1.0, 1.0]);
-    assert!(matches!(equal_upper.scaled(scale(3.0e-7)), Some(Ok(_))));
+    assert!(equal_upper.scaled(scale(3.0e-7)).is_ok());
 }
 
 /// A strict wedge extent whose bounds round to one value is refused with the
@@ -140,7 +143,9 @@ fn a_scaled_primitive_refuses_a_collapsed_extent_and_an_overflowing_length() {
     let thin = wedge([low, 0.0, 0.0, 0.0, 0.0, high, 1.0, 1.0, 0.0, 0.0]);
     assert_eq!(
         thin.scaled(scale(25.4)),
-        Some(Err("primitive dimensions are invalid"))
+        Err(PrimitiveSolidScaleError::Admission(
+            "primitive dimensions are invalid"
+        ))
     );
 
     let tiny = PrimitiveSolid::new(PrimitiveSolidKind::Box {
@@ -151,9 +156,14 @@ fn a_scaled_primitive_refuses_a_collapsed_extent_and_an_overflowing_length() {
     .expect("a box fixture");
     assert_eq!(
         tiny.scaled(scale(1.0e-10)),
-        Some(Err("primitive dimensions are invalid"))
+        Err(PrimitiveSolidScaleError::Admission(
+            "primitive dimensions are invalid"
+        ))
     );
 
     let collapsed_and_huge = wedge([low, 0.0, 0.0, 0.0, 0.0, high, f64::MAX, 1.0, 0.0, 0.0]);
-    assert_eq!(collapsed_and_huge.scaled(scale(25.4)), None);
+    assert_eq!(
+        collapsed_and_huge.scaled(scale(25.4)),
+        Err(PrimitiveSolidScaleError::NonFinite)
+    );
 }

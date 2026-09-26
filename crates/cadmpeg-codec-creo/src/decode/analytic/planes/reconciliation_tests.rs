@@ -480,17 +480,17 @@ fn frame_bound_outline_supplies_the_plane_chart_origin() {
     let outline = OutlinePlane {
         surface_id: 52,
         origin: [0.0, -4.0, 0.0],
-        normal: [0.0, 1.0, 0.0],
-        u_axis: [0.0, 0.0, 1.0],
+        normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::Z_AXIS,
         offset: 15,
     };
     let candidate = frame_bound_outline_plane_candidate(&frame, &outline).expect("composite chart");
     assert_eq!(candidate.equation.origin, outline.origin);
-    assert_eq!(candidate.equation.normal, outline.normal);
+    assert_eq!(candidate.equation.normal, outline.normal());
     assert_eq!(candidate.chart.expect("chart").origin, [-9.0, -4.0, 0.0]);
 
     let mut conflicting = outline;
-    conflicting.u_axis = [1.0, 0.0, 0.0];
+    conflicting.u_axis = cadmpeg_ir::units::UnitVector3::X_AXIS;
     assert!(frame_bound_outline_plane_candidate(&frame, &conflicting).is_none());
 }
 
@@ -630,15 +630,15 @@ fn fc05_cap_pair_tangency_selects_one_stored_plane_branch() {
         OutlinePlane {
             surface_id: 1,
             origin: [0.0, 0.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 10,
         },
         OutlinePlane {
             surface_id: 2,
             origin: [0.0, 38.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 20,
         },
     ]);
@@ -719,15 +719,15 @@ fn fc05_cap_pair_frame_reconstructs_parameter_origin_from_cap_spans() {
         OutlinePlane {
             surface_id: 1,
             origin: [0.0, 0.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 10,
         },
         OutlinePlane {
             surface_id: 2,
             origin: [0.0, 38.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 20,
         },
     ]);
@@ -806,15 +806,15 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
         OutlinePlane {
             surface_id: 1,
             origin: [0.0, 0.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 10,
         },
         OutlinePlane {
             surface_id: 2,
             origin: [0.0, 38.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 20,
         },
     ]);
@@ -823,7 +823,11 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
             curve_id: 11,
             center_row_frame: [2.0, 3.0],
             radius_mm: 0.5,
-            sample_direction_row_frame: [1.0, 0.0],
+            sample_direction_row_frame: cadmpeg_ir::units::HypotDirection2::normalized_with_length(
+                [1.0, 0.0],
+            )
+            .expect("unit sample direction")
+            .0,
             angle_parameter: crate::curve::Fc05AngleParameterRelation::Consistent {
                 sense: crate::curve::ParameterSense::Increasing,
                 reference_direction_row_frame: [1.0, 0.0],
@@ -837,7 +841,11 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
             curve_id: 12,
             center_row_frame: [2.0, 3.0],
             radius_mm: 0.5,
-            sample_direction_row_frame: [1.0, 0.0],
+            sample_direction_row_frame: cadmpeg_ir::units::HypotDirection2::normalized_with_length(
+                [1.0, 0.0],
+            )
+            .expect("unit sample direction")
+            .0,
             angle_parameter: crate::curve::Fc05AngleParameterRelation::Consistent {
                 sense: crate::curve::ParameterSense::Increasing,
                 reference_direction_row_frame: [1.0, 0.0],
@@ -906,9 +914,11 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
             center: [2.0, 0.0, -3.0],
             center_stored: true,
             radius: cadmpeg_ir::scalar::PositiveLength::new(0.5).expect("positive radius"),
-            axis: [0.0, 1.0, 0.0],
-            start: [2.5, 0.0, -3.0],
-            end: [2.0, 0.0, -2.5],
+            axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            start: cadmpeg_ir::features::FinitePoint3::new([2.5, 0.0, -3.0].into())
+                .expect("finite start"),
+            end: cadmpeg_ir::features::FinitePoint3::new([2.0, 0.0, -2.5].into())
+                .expect("finite end"),
             offset: 50,
         },
         crate::reference::ReferenceCircle {
@@ -916,9 +926,11 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
             center: [2.0, 38.0, -3.0],
             center_stored: true,
             radius: cadmpeg_ir::scalar::PositiveLength::new(0.5).expect("positive radius"),
-            axis: [0.0, 1.0, 0.0],
-            start: [2.5, 38.0, -3.0],
-            end: [2.0, 38.0, -2.5],
+            axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            start: cadmpeg_ir::features::FinitePoint3::new([2.5, 38.0, -3.0].into())
+                .expect("finite start"),
+            end: cadmpeg_ir::features::FinitePoint3::new([2.0, 38.0, -2.5].into())
+                .expect("finite end"),
             offset: 51,
         },
     ]);
@@ -982,7 +994,11 @@ fn fc05_model_witness_uses_a_unique_reference_when_tangency_improves() {
         curve_id: 7,
         center_row_frame: [0.0, 0.0],
         radius_mm: 1.0,
-        sample_direction_row_frame: [1.0, 0.0],
+        sample_direction_row_frame: cadmpeg_ir::units::HypotDirection2::normalized_with_length([
+            1.0, 0.0,
+        ])
+        .expect("unit sample direction")
+        .0,
         angle_parameter: crate::curve::Fc05AngleParameterRelation::Consistent {
             sense: crate::curve::ParameterSense::Increasing,
             reference_direction_row_frame: [1.0, 0.0],
@@ -999,9 +1015,11 @@ fn fc05_model_witness_uses_a_unique_reference_when_tangency_improves() {
             center: [1.0, 0.0, 0.5],
             center_stored: true,
             radius: cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("positive radius"),
-            axis: [0.0, 1.0, 0.0],
-            start: [2.0, 0.0, 0.5],
-            end: [1.0, 0.0, 1.5],
+            axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            start: cadmpeg_ir::features::FinitePoint3::new([2.0, 0.0, 0.5].into())
+                .expect("finite start"),
+            end: cadmpeg_ir::features::FinitePoint3::new([1.0, 0.0, 1.5].into())
+                .expect("finite end"),
             offset: 8,
         });
     scan.curves

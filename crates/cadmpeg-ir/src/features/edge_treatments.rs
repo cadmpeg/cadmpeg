@@ -194,6 +194,15 @@ pub struct ChamferGroup {
 
 const INVALID_VARIABLE_RADII: &str = "variable radius points require at least two ordered parameters in [0, 1] and nonnegative radii with one positive radius";
 
+/// Which condition refuses a mapped variable-radius law.
+#[derive(Debug, Clone, PartialEq)]
+pub enum VariableRadiiMapError<E> {
+    /// A radius conversion failed.
+    Radius(E),
+    /// Every mapped radius is zero.
+    Admission(&'static str),
+}
+
 /// An ordered variable-radius law with at least two samples and a positive radius.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -244,27 +253,26 @@ impl VariableRadii {
     ///
     /// The sample count and the parameter order are kept, and each mapped
     /// radius is nonnegative by type, so only the one positive radius is
-    /// tested again. A refusal of `map` is the outer error and discards the
-    /// whole map; the inner error is the admission's own text.
+    /// tested again. The error identifies conversion or admission failure.
     pub fn try_map_radii<E>(
         &self,
         mut map: impl FnMut(NonNegativeLength) -> Result<NonNegativeLength, E>,
-    ) -> Result<Result<Self, &'static str>, E> {
+    ) -> Result<Self, VariableRadiiMapError<E>> {
         let points = self
             .0
             .iter()
             .map(|point| {
                 Ok(VariableRadius {
                     parameter: point.parameter,
-                    radius: map(point.radius)?,
+                    radius: map(point.radius).map_err(VariableRadiiMapError::Radius)?,
                 })
             })
-            .collect::<Result<Vec<_>, E>>()?;
-        Ok(points
+            .collect::<Result<Vec<_>, VariableRadiiMapError<E>>>()?;
+        points
             .iter()
             .any(|point| point.radius.get() > 0.0)
             .then_some(Self(points))
-            .ok_or(INVALID_VARIABLE_RADII))
+            .ok_or(VariableRadiiMapError::Admission(INVALID_VARIABLE_RADII))
     }
 }
 

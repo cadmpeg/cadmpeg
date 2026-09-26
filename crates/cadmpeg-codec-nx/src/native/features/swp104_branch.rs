@@ -153,7 +153,7 @@ impl From<FeatureSwp104LeadingBranch> for FeatureSwp104LeadingBranchWire {
             id: value.id,
             operation_label: value.operation_label,
             discriminator: value.discriminator,
-            scalars: value.scalars.map(ShiftedBinary64::value),
+            scalars: value.scalars.map(|scalar| scalar.value().get()),
             raw_scalars: value.scalars.map(ShiftedBinary64::raw),
             leading_zero: value.leading_zero,
             mode: value.mode,

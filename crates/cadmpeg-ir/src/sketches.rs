@@ -14,6 +14,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+pub mod scaling;
+
 crate::ids::id_type!(
     /// Identifies a neutral planar sketch.
     SketchId, compose, into_string

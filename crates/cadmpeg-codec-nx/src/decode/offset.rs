@@ -103,7 +103,7 @@ pub(super) fn saved_offset_carriers(
             let key = (
                 support_id.clone(),
                 (*candidate_id).clone(),
-                offset.state.distance().to_bits(),
+                offset.state.distance().get().to_bits(),
                 tolerance.get().to_bits(),
             );
             let fit = if let Some(fit) = fit_cache.get(&key).copied() {
@@ -112,7 +112,7 @@ pub(super) fn saved_offset_carriers(
                 let fit = certified_offset_cache_fit_with_budget(
                     support,
                     candidate,
-                    offset.state.distance(),
+                    offset.state.distance().get(),
                     NonNegativeLength::from(tolerance),
                     geometry_budget,
                 );
@@ -2248,7 +2248,7 @@ pub(super) fn intersection_side(
     ir: &CadIr,
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
     surface_xmt: Option<crate::framing::xmt_reference::NonNullXmt>,
-    uv: Option<(&[[f64; 2]], &[f64])>,
+    uv: Option<(&[cadmpeg_ir::units::FiniteVector<2>], &[f64])>,
 ) -> Result<IntcurveSupportSide, cadmpeg_ir::geometry::nurbs::NurbsError> {
     let surface = surface_xmt.and_then(|xmt| surfaces_by_xmt.get(&u32::from(xmt)).cloned());
     let lanes = surface.as_ref().and_then(|surface_id| {
@@ -2261,14 +2261,14 @@ pub(super) fn intersection_side(
         let (uv, parameters) = uv?;
         if uv
             .iter()
-            .flatten()
+            .flat_map(|pair| pair.iter())
             .any(|value| missing_support_parameter(*value))
         {
             return None;
         }
         let control_points = uv
             .iter()
-            .map(|pair| surface_parameters(geometry, *pair).map(FinitePoint2::get))
+            .map(|pair| surface_parameters(geometry, **pair).map(FinitePoint2::get))
             .collect::<Option<Vec<_>>>()?;
         Some((control_points, linear_knots(parameters)))
     });

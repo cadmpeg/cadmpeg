@@ -505,7 +505,7 @@ fn scan_validates_fc05_circle_from_record_points() {
         carrier.angle_parameter,
         crate::curve::Fc05AngleParameterRelation::Inconsistent
     );
-    assert_eq!(carrier.sample_direction_row_frame, [1.0, 0.0]);
+    assert_eq!(carrier.sample_direction_row_frame.get(), [1.0, 0.0]);
     let mut trailing = scan.curves.parameters[0].clone();
     trailing.body.push(0xfe);
     assert!(crate::curve::fc05_circles(&[trailing]).is_empty());

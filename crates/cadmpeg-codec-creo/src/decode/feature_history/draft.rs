@@ -751,6 +751,7 @@ pub(in super::super) fn schema_feature_definition(
             .collect::<Vec<_>>();
         if let [definition] = definitions.as_slice() {
             if let Some(values) = crate::placement::unique_complete_local_system(definition) {
+                let values = values.get();
                 let raw_normal = [values[6], values[7], values[8]];
                 let raw_u_axis = [values[0], values[1], values[2]];
                 if let (Some(normal), Some(u_axis)) = (normalize(raw_normal), normalize(raw_u_axis))
@@ -788,6 +789,7 @@ pub(in super::super) fn schema_feature_definition(
             .collect::<Vec<_>>();
         if let [definition] = definitions.as_slice() {
             if let Some(values) = crate::placement::unique_complete_local_system(definition) {
+                let values = values.get();
                 let x_axis = normalize([values[0], values[1], values[2]]);
                 let y_axis = normalize([values[3], values[4], values[5]]);
                 let z_axis = normalize([values[6], values[7], values[8]]);

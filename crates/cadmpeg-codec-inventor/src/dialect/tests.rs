@@ -10,16 +10,19 @@
 
 use cadmpeg_test_support::wire;
 
-use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_core::decode::{
+    DecodeArena, DecodeContext, DecodePolicy, InspectOptions, ResourceDimension,
+};
 use cadmpeg_core::dialect::{Admission, DialectMatch};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::loss::LossNote;
 
 use super::{
-    dialect_loss, kernel_dialect_loss, DialectRecovery, InventorDialect,
+    dialect_loss, join, kernel_dialect_loss, DialectRecovery, InventorDialect,
     DECLARED_CFB_MAJOR_VERSION, DECLARED_META_STREAM_MARKER, DECLARED_META_STREAM_VERSION,
     DECLARED_RSE_DB_SCHEMA, FORMAT,
 };
+use crate::container::InventorContainer;
 use crate::database::RseSchema;
 use crate::loss::InventorLossCode;
 use crate::rse::MetaStreamDeclaration;
@@ -29,6 +32,151 @@ use crate::test_support::test_fixtures::{
     primary_envelope_fixture_with_unavailable_carrier, EnvelopeDeclarations,
 };
 use crate::InventorCodec;
+
+fn empty_recovery() -> DialectRecovery {
+    DialectRecovery {
+        cfb_major_version: 3,
+        schemas: Vec::new(),
+        unframed_schemas: Vec::new(),
+        meta_streams: Vec::new(),
+        unframed_meta_streams: Vec::new(),
+    }
+}
+
+#[test]
+fn dialect_classification_refuses_collection_limit_before_declared_map_entry() {
+    let recovery = empty_recovery();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        recovery.classify(&ctx),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "record Inventor dialect declaration"
+    ));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    assert_eq!(
+        recovery
+            .classify(&ctx)
+            .expect("admitted classification")
+            .dialect()
+            .as_str(),
+        "inventor:unknown"
+    );
+}
+
+#[test]
+fn dialect_classification_refuses_retained_limit_before_cfb_value() {
+    let recovery = empty_recovery();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        recovery.classify(&ctx),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor CFB version declaration"
+    ));
+}
+
+#[test]
+fn dialect_join_refuses_collection_and_retained_limits_before_join() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        join(&ctx, [Ok("a".to_owned())], "retain Inventor test join"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "collect Inventor dialect join parts"
+    ));
+    policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        join(&ctx, [Ok("a".to_owned())], "retain Inventor test join"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor test join"
+    ));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    assert_eq!(
+        join(&ctx, [Ok("a".to_owned())], "retain Inventor test join").expect("admitted join"),
+        "a"
+    );
+}
+
+#[test]
+fn dialect_loss_refuses_retained_limit_before_absent_schema_reason() {
+    let recovery = empty_recovery();
+    let arena = DecodeArena::new();
+    let (setup_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    let matched = recovery
+        .classify(&setup_ctx)
+        .expect("admitted classification");
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        dialect_loss(&ctx, &matched, &recovery),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor absent schema reason"
+    ));
+    assert!(dialect_loss(&setup_ctx, &matched, &recovery)
+        .expect("service admission")
+        .is_some());
+}
+
+#[test]
+fn dialect_schema_collection_refuses_before_first_declaration_push() {
+    let bytes = primary_envelope_fixture_with(EnvelopeDeclarations::default());
+    let arena = DecodeArena::new();
+    let (setup_ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("dialect fixture context");
+    let container = InventorContainer::open(&setup_ctx, root).expect("dialect fixture");
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (limited_ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+    assert!(matches!(
+        DialectRecovery::of(&limited_ctx, &container),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "collect Inventor dialect schemas"
+    ));
+    assert!(DialectRecovery::of(&setup_ctx, &container).is_ok());
+}
+
+#[test]
+fn dialect_unframed_marker_refuses_retained_limit_before_clone() {
+    let bytes = primary_envelope_fixture_with_broken_metadata();
+    let arena = DecodeArena::new();
+    let (setup_ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("dialect fixture context");
+    let container = InventorContainer::open(&setup_ctx, root).expect("dialect fixture");
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        (MetaStreamDeclaration::VERIFIED_MARKER.len() * 2 - 1) as u64;
+    let (limited_ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+    assert!(matches!(
+        DialectRecovery::of(&limited_ctx, &container),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor unframed dialect marker"
+    ));
+    assert!(DialectRecovery::of(&setup_ctx, &container).is_ok());
+}
 
 #[test]
 fn enum_and_registry_rows_are_closed_bidirectionally() -> Result<(), Box<dyn std::error::Error>> {
@@ -409,8 +557,12 @@ fn mixed_unframed_and_foreign_declarations_report_every_admission_cause() {
         unframed_meta_streams: vec![verified_meta],
     };
 
-    let matched = recovery.classify();
-    let note = dialect_loss(&matched, &recovery)
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("dialect context");
+    let matched = recovery.classify(&ctx).expect("service admission");
+    let note = dialect_loss(&ctx, &matched, &recovery)
+        .expect("service admission")
         .expect("mixed admission failures charge one complete dialect loss");
     assert!(note
         .message

@@ -13,6 +13,7 @@ use cadmpeg_protein::appearance::{
 };
 
 use crate::protein::ProteinInstanceRecords;
+use crate::record_issue::admit_formatted;
 
 const NO_ASSET_LIB_ID: &str = "00000000-0000-0000-0000-000000000000";
 
@@ -156,10 +157,7 @@ pub(crate) fn project_catalog(
                 )?;
             }
             appearances.push(Appearance {
-                id: AppearanceId::compose(
-                    &cadmpeg_ir::identity_namespace!("inventor", "protein", "appearance"),
-                    cadmpeg_ir::ids::IdentityKey::from(instance_ordinal).dash(record.ordinal),
-                ),
+                id: appearance_id(ctx, instance_ordinal, record.ordinal)?,
                 name: Some(record.base.clone()),
                 asset_guid: Some(record.guid.clone()),
                 library_id: library_id(&record.asset_lib_id),
@@ -184,6 +182,56 @@ pub(crate) fn project_catalog(
         duplicate_guids,
         untyped_distance_properties,
     })
+}
+
+fn appearance_id(
+    ctx: &DecodeContext<'_>,
+    instance_ordinal: usize,
+    record_ordinal: u64,
+) -> Result<AppearanceId, CodecError> {
+    admit_formatted(
+        ctx,
+        format_args!("{instance_ordinal}"),
+        "retain Inventor appearance instance key",
+    )?;
+    admit_formatted(
+        ctx,
+        format_args!("{record_ordinal}"),
+        "retain Inventor appearance record key",
+    )?;
+    let instance_key = cadmpeg_ir::ids::IdentityKey::from(instance_ordinal);
+    let record_key = cadmpeg_ir::ids::IdentityKey::from(record_ordinal);
+    let key_len = instance_key
+        .as_str()
+        .len()
+        .checked_add(record_key.as_str().len())
+        .and_then(|len| len.checked_add(1))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("Inventor appearance key length", u64::MAX - 1, u64::MAX)
+        })?;
+    let key_len = u64::try_from(key_len).map_err(|_| {
+        ctx.refuse_codec_limit("Inventor appearance key length", u64::MAX - 1, u64::MAX)
+    })?;
+    ctx.charge_retained(key_len, "retain Inventor appearance key")?;
+    let key = instance_key.dash(record_key);
+    let namespace = cadmpeg_ir::identity_namespace!("inventor", "protein", "appearance");
+    let id_len = namespace
+        .format()
+        .len()
+        .checked_add(namespace.scope().len())
+        .and_then(|len| len.checked_add(namespace.kind().len()))
+        .and_then(|len| len.checked_add(key.as_str().len()))
+        .and_then(|len| len.checked_add(4))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("Inventor appearance id length", u64::MAX - 1, u64::MAX)
+        })?;
+    ctx.charge_retained(
+        u64::try_from(id_len).map_err(|_| {
+            ctx.refuse_codec_limit("Inventor appearance id length", u64::MAX - 1, u64::MAX)
+        })?,
+        "retain Inventor appearance id",
+    )?;
+    Ok(AppearanceId::compose(&namespace, key))
 }
 
 fn library_id(value: &str) -> Option<String> {
@@ -220,9 +268,39 @@ mod tests {
     use cadmpeg_protein::property::{DecodedProperty, PropertyValue};
     use cadmpeg_protein::DecodedRecord;
 
-    use super::project_catalog;
+    use super::{appearance_id, project_catalog};
     use crate::protein::ProteinInstanceRecords;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn appearance_identity_refuses_retained_limits_before_each_copy() {
+        let arena = DecodeArena::new();
+        let bytes = b"fixture";
+        let (service, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
+            .expect("service context");
+        let id = appearance_id(&service, 0, 1).expect("identity admitted");
+        assert_eq!(id.as_str(), "inventor:protein:appearance#0-1");
+        for (cap, operation) in [
+            (0, "retain Inventor appearance instance key"),
+            (1, "retain Inventor appearance record key"),
+            (3, "retain Inventor appearance key"),
+            (
+                4 + id.as_str().len() as u64 - 1,
+                "retain Inventor appearance id",
+            ),
+        ] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (limited, _) =
+                DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("limited context");
+            assert!(matches!(
+                appearance_id(&limited, 0, 1),
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::RetainedBytes
+                        && limit.operation == operation
+            ));
+        }
+    }
 
     fn project_fixture(
         instances: &[ProteinInstanceRecords],

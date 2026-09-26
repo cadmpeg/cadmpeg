@@ -139,12 +139,10 @@ struct TaperSurfaceConstructionWire {
 impl TaperSurfaceConstruction {
     pub(super) fn write_revision_fit_tolerance(
         &mut self,
-        value: super::FitTolerance,
         write: super::ToleranceWrite,
     ) -> super::RevisionCacheWrite {
         super::write_revision_form_tolerance(
             self.cache.form_mut().map(|form| &mut form.cache),
-            value,
             write,
         )
     }
@@ -279,12 +277,10 @@ struct ExtrusionSurfaceConstructionWire {
 impl ExtrusionSurfaceConstruction {
     pub(super) fn write_revision_fit_tolerance(
         &mut self,
-        value: super::FitTolerance,
         write: super::ToleranceWrite,
     ) -> super::RevisionCacheWrite {
         super::write_revision_form_tolerance(
             self.cache.form_mut().map(|form| &mut form.cache),
-            value,
             write,
         )
     }
@@ -491,12 +487,10 @@ struct RevolutionSurfaceConstructionWire {
 impl RevolutionSurfaceConstruction {
     pub(super) fn write_revision_fit_tolerance(
         &mut self,
-        value: super::FitTolerance,
         write: super::ToleranceWrite,
     ) -> super::RevisionCacheWrite {
         super::write_revision_form_tolerance(
             self.cache.form_mut().map(|form| &mut form.cache),
-            value,
             write,
         )
     }
@@ -700,7 +694,6 @@ impl OffsetSurfaceConstruction {
     }
     pub(super) fn write_revision_fit_tolerance(
         &mut self,
-        value: super::FitTolerance,
         write: super::ToleranceWrite,
     ) -> super::RevisionCacheWrite {
         super::write_revision_form_tolerance(
@@ -708,7 +701,6 @@ impl OffsetSurfaceConstruction {
                 OffsetExtension::Revision { form } => Some(&mut form.cache),
                 OffsetExtension::Legacy { .. } => None,
             },
-            value,
             write,
         )
     }
@@ -1156,12 +1148,10 @@ struct SumSurfaceConstructionWire {
 impl SumSurfaceConstruction {
     pub(super) fn write_revision_fit_tolerance(
         &mut self,
-        value: super::FitTolerance,
         write: super::ToleranceWrite,
     ) -> super::RevisionCacheWrite {
         super::write_revision_form_tolerance(
             self.cache.form_mut().map(|form| &mut form.cache),
-            value,
             write,
         )
     }
@@ -2142,7 +2132,6 @@ impl ExactSurfacePayload {
     }
     pub(super) fn write_revision_fit_tolerance(
         &mut self,
-        value: super::FitTolerance,
         write: super::ToleranceWrite,
     ) -> super::RevisionCacheWrite {
         super::write_revision_form_tolerance(
@@ -2150,7 +2139,6 @@ impl ExactSurfacePayload {
                 ExactSpline::Revision { form, .. } => Some(&mut form.cache),
                 ExactSpline::Legacy { .. } => None,
             },
-            value,
             write,
         )
     }
@@ -2164,12 +2152,10 @@ impl LoftSurfacePayload {
     }
     pub(super) fn write_revision_fit_tolerance(
         &mut self,
-        value: super::FitTolerance,
         write: super::ToleranceWrite,
     ) -> super::RevisionCacheWrite {
         super::write_revision_form_tolerance(
             self.cache.form_mut().map(|form| &mut form.cache),
-            value,
             write,
         )
     }
@@ -2186,7 +2172,6 @@ impl SweepSurfacePayload {
     }
     pub(super) fn write_revision_fit_tolerance(
         &mut self,
-        value: super::FitTolerance,
         write: super::ToleranceWrite,
     ) -> super::RevisionCacheWrite {
         super::write_revision_form_tolerance(
@@ -2194,7 +2179,6 @@ impl SweepSurfacePayload {
                 .as_mut()
                 .and_then(|construction| construction.cache.form_mut())
                 .map(|form| &mut form.cache),
-            value,
             write,
         )
     }
@@ -2208,7 +2192,6 @@ impl DeformableSurfacePayload {
     }
     pub(super) fn write_revision_fit_tolerance(
         &mut self,
-        value: super::FitTolerance,
         write: super::ToleranceWrite,
     ) -> super::RevisionCacheWrite {
         super::write_revision_form_tolerance(
@@ -2216,7 +2199,6 @@ impl DeformableSurfacePayload {
                 .cache
                 .form_mut()
                 .map(|form| &mut form.cache),
-            value,
             write,
         )
     }
@@ -2230,14 +2212,12 @@ impl BlendSurfacePayload {
     }
     pub(super) fn write_revision_fit_tolerance(
         &mut self,
-        value: super::FitTolerance,
         write: super::ToleranceWrite,
     ) -> super::RevisionCacheWrite {
         super::write_revision_form_tolerance(
             self.cache
                 .form_mut()
                 .map(|construction| &mut construction.cache),
-            value,
             write,
         )
     }
@@ -2253,6 +2233,13 @@ impl VariableBlendSurfacePayload {
         value: Option<super::FitTolerance>,
     ) -> Result<(), super::CacheContractError> {
         super::set_variable_blend_cache(&mut self.construction.cache, value)
+    }
+
+    pub(super) fn scale_cache_fit_tolerance(
+        &mut self,
+        scale: crate::scalar::PositiveReal,
+    ) -> Result<(), super::CacheContractError> {
+        self.construction.cache.scale_fit_tolerance(scale)
     }
 }
 

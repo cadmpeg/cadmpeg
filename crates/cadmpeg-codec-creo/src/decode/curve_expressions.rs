@@ -45,7 +45,7 @@ fn curve_expression_helix_definition(
     record: &crate::curve::CurveExpressionRecord,
 ) -> Option<ProceduralCurveDefinition> {
     let helix = crate::curve::expression_helix(record)?;
-    let slots = record.local_system.as_ref()?.explicit_slots?;
+    let slots = record.local_system.as_ref()?.explicit_slots?.get();
     let u = Vector3::new(slots[0], slots[1], slots[2]);
     let v = Vector3::new(slots[6], slots[7], slots[8]);
     let u_norm = u.norm();
@@ -70,10 +70,6 @@ fn curve_expression_helix_definition(
         u.z * v.x - u.x * v.z,
         u.x * v.y - u.y * v.x,
     );
-    slots[9..12]
-        .iter()
-        .all(|value| value.is_finite())
-        .then_some(())?;
     let origin = Point3::new(slots[9], slots[10], slots[11]);
     let (sin, cos) = helix.start_angle.get().sin_cos();
     let major_direction = Vector3::new(
