@@ -9,7 +9,8 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::topology::{Edge, Point, Vertex};
+use cadmpeg_ir::topology::{Edge, IncreasingParameterInterval, Point, Vertex};
+use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::CadIr;
 
 use crate::parameter::{Token, TokenValue};
@@ -29,7 +30,8 @@ const EPS_PLACED_OFFSET: f64 = 1.0e-12;
 
 #[test]
 fn source_parameter_map_preserves_a_finite_ratio_of_wide_intervals() {
-    let map = SourceParameterMap::new([-f64::MAX, f64::MAX], [-f64::MAX, f64::MAX]).unwrap();
+    let interval = IncreasingParameterInterval::new([-f64::MAX, f64::MAX]).unwrap();
+    let map = SourceParameterMap::new(interval, interval);
     assert_eq!(map.scale(), 1.0);
     assert_eq!(map.to_neutral(0.0), 0.0);
     assert_eq!(map.to_neutral(f64::MAX), f64::MAX);
@@ -96,10 +98,14 @@ fn source_parameter_map_uses_the_iges_domain_for_each_bounded_curve_form() {
         let map = super::source_parameter_map(
             &source_entry(entity_type, form),
             &numeric_record(&[]),
-            neutral,
+            FiniteVector::new(neutral).unwrap(),
         )
         .expect("bounded source domain");
-        assert_eq!(map.native, native, "Type {entity_type} Form {form}");
+        assert_eq!(
+            map.native.endpoints(),
+            native,
+            "Type {entity_type} Form {form}"
+        );
         assert!((map.to_neutral(native[0]) - neutral[0]).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
         assert!((map.to_neutral(native[1]) - neutral[1]).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
     }
@@ -110,23 +116,26 @@ fn source_parameter_map_preserves_absolute_and_explicit_native_domains() {
     let circle = super::source_parameter_map(
         &source_entry(100, 0),
         &numeric_record(&[(4, 0.0), (5, -1.0), (6, 1.0), (7, 0.0)]),
-        [10.0, 20.0],
+        FiniteVector::new([10.0, 20.0]).unwrap(),
     )
     .expect("circular-arc domain");
     assert!(
-        (circle.native[0] - 3.0 * std::f64::consts::FRAC_PI_2).abs() < EPS_SOURCE_PARAMETER_DOMAIN
+        (circle.native.lower() - 3.0 * std::f64::consts::FRAC_PI_2).abs()
+            < EPS_SOURCE_PARAMETER_DOMAIN
     );
-    assert!((circle.native[1] - 2.0 * std::f64::consts::PI).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
-    assert!((circle.to_neutral(circle.native[0]) - 10.0).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
-    assert!((circle.to_neutral(circle.native[1]) - 20.0).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
+    assert!(
+        (circle.native.upper() - 2.0 * std::f64::consts::PI).abs() < EPS_SOURCE_PARAMETER_DOMAIN
+    );
+    assert!((circle.to_neutral(circle.native.lower()) - 10.0).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
+    assert!((circle.to_neutral(circle.native.upper()) - 20.0).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
 
     let explicit = super::source_parameter_map(
         &source_entry(130, 0),
         &numeric_record(&[(13, -4.0), (14, 6.0)]),
-        [10.0, 20.0],
+        FiniteVector::new([10.0, 20.0]).unwrap(),
     )
     .expect("offset-curve domain");
-    assert_eq!(explicit.native, [-4.0, 6.0]);
+    assert_eq!(explicit.native.endpoints(), [-4.0, 6.0]);
     assert!((explicit.to_neutral(-4.0) - 10.0).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
     assert!((explicit.to_neutral(6.0) - 20.0).abs() < EPS_SOURCE_PARAMETER_DOMAIN);
 }
@@ -137,7 +146,7 @@ fn source_parameter_map_rejects_unbounded_line_forms() {
         assert!(super::source_parameter_map(
             &source_entry(110, form),
             &numeric_record(&[]),
-            [0.0, 1.0],
+            FiniteVector::new([0.0, 1.0]).unwrap(),
         )
         .is_none());
     }
@@ -159,7 +168,7 @@ fn source_parameter_map_rejects_non_affine_curve_and_non_curve_domains() {
         assert!(super::source_parameter_map(
             &source_entry(entity_type, form),
             &numeric_record(&[]),
-            [0.0, 1.0],
+            FiniteVector::new([0.0, 1.0]).unwrap(),
         )
         .is_none());
     }
@@ -261,7 +270,8 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
             &source_id,
             source.geometry.solved().expect("solved carrier"),
             EPS_OFFSET_ENDPOINT_MATCH,
-        ),
+        )
+        .map(FiniteVector::get),
         Some([0.0, 2.0])
     );
 }

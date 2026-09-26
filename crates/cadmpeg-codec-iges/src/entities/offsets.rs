@@ -17,9 +17,9 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::PositiveLength;
-use cadmpeg_ir::topology::{Edge, Point, Vertex};
-use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
+use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
+use cadmpeg_ir::topology::{Edge, IncreasingParameterInterval, Point, Vertex};
+use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -113,50 +113,41 @@ fn omitted_or_numeric_zero(record: &ParameterRecord, index: usize) -> bool {
 
 #[derive(Clone, Copy)]
 struct SourceParameterMap {
-    native: [f64; 2],
-    neutral: [f64; 2],
-    wide_coefficients: Option<(f64, f64)>,
+    native: IncreasingParameterInterval,
+    neutral: IncreasingParameterInterval,
+    wide_coefficients: Option<(FiniteReal, FiniteReal)>,
 }
 
 impl SourceParameterMap {
-    fn new(native: [f64; 2], neutral: [f64; 2]) -> Option<Self> {
-        if !native
-            .iter()
-            .chain(neutral.iter())
-            .all(|value| value.is_finite())
-            || native[0] >= native[1]
-            || neutral[0] >= neutral[1]
+    fn new(native: IncreasingParameterInterval, neutral: IncreasingParameterInterval) -> Self {
+        let wide_coefficients = if (native.upper() - native.lower()).is_finite()
+            && (neutral.upper() - neutral.lower()).is_finite()
         {
-            return None;
-        }
-        let wide_coefficients =
-            if (native[1] - native[0]).is_finite() && (neutral[1] - neutral[0]).is_finite() {
-                None
-            } else {
-                let source = cadmpeg_ir::topology::IncreasingParameterInterval::new(native)?;
-                let target = cadmpeg_ir::topology::IncreasingParameterInterval::new(neutral)?;
-                source
-                    .affine_coefficients_to(target)
-                    .map(|(scale, offset)| (scale.get(), offset.get()))
-            };
-        Some(Self {
+            None
+        } else {
+            native.affine_coefficients_to(neutral)
+        };
+        Self {
             native,
             neutral,
             wide_coefficients,
-        })
+        }
     }
 
     fn scale(self) -> f64 {
         self.wide_coefficients.map_or_else(
-            || (self.neutral[1] - self.neutral[0]) / (self.native[1] - self.native[0]),
-            |(scale, _)| scale,
+            || {
+                (self.neutral.upper() - self.neutral.lower())
+                    / (self.native.upper() - self.native.lower())
+            },
+            |(scale, _)| scale.get(),
         )
     }
 
     fn to_neutral(self, value: f64) -> f64 {
         self.wide_coefficients.map_or_else(
-            || self.neutral[0] + (value - self.native[0]) * self.scale(),
-            |(scale, offset)| scale.mul_add(value, offset),
+            || self.neutral.lower() + (value - self.native.lower()) * self.scale(),
+            |(scale, offset)| scale.get().mul_add(value, offset.get()),
         )
     }
 }
@@ -164,7 +155,7 @@ impl SourceParameterMap {
 fn source_parameter_map(
     entry: &DirectoryEntry,
     record: &ParameterRecord,
-    neutral: [f64; 2],
+    neutral: FiniteVector<2>,
 ) -> Option<SourceParameterMap> {
     let native = match (entry.entity_type, entry.form) {
         (100, 0) => {
@@ -192,10 +183,13 @@ fn source_parameter_map(
         // parameter bounds explicitly. Type 104 is not listed because the
         // neutral hyperbola carrier uses a different analytic parameter than
         // the IGES secant/tangent parameter and cannot use an affine map.
-        (102 | 112, 0) | (106, 11..=13 | 63) | (126, 0..=5) => neutral,
+        (102 | 112, 0) | (106, 11..=13 | 63) | (126, 0..=5) => neutral.get(),
         _ => return None,
     };
-    SourceParameterMap::new(native, neutral)
+    Some(SourceParameterMap::new(
+        IncreasingParameterInterval::new(native)?,
+        IncreasingParameterInterval::from_finite_endpoints(neutral)?,
+    ))
 }
 
 fn source_parameter_range(
@@ -203,7 +197,7 @@ fn source_parameter_range(
     source_id: &CurveId,
     geometry: &SolvedCurveGeometry,
     tolerance: f64,
-) -> Option<[f64; 2]> {
+) -> Option<FiniteVector<2>> {
     let point_position = |vertex: &VertexId| {
         let point_id = ir
             .model
@@ -238,7 +232,7 @@ fn source_parameter_range(
     candidates
         .iter()
         .all(|candidate| *candidate == range)
-        .then_some(range.get())
+        .then_some(range)
 }
 
 #[allow(clippy::many_single_char_names)]
@@ -317,13 +311,14 @@ pub(super) fn project(
             ));
             continue;
         };
-        if !native_start.is_finite() || !native_end.is_finite() || native_start >= native_end {
+        let Some(native_interval) = IncreasingParameterInterval::new([native_start, native_end])
+        else {
             losses.push(entity_loss(
                 entry,
                 "offset parameter interval is not increasing",
             ));
             continue;
-        }
+        };
         let source_id = crate::ids::curve(&crate::ids::Stem::directory(source_sequence));
         let Some(source_geometry) = ir
             .model
@@ -370,7 +365,9 @@ pub(super) fn project(
             ));
             continue;
         };
-        if native_start < parameter_map.native[0] || native_end > parameter_map.native[1] {
+        if native_interval.lower() < parameter_map.native.lower()
+            || native_interval.upper() > parameter_map.native.upper()
+        {
             losses.push(entity_loss(
                 entry,
                 "offset parameter interval lies outside the source curve domain",
@@ -424,8 +421,8 @@ pub(super) fn project(
             };
             offset_source_geometry = placed_solved.clone();
         }
-        let start = parameter_map.to_neutral(native_start);
-        let end = parameter_map.to_neutral(native_end);
+        let start = parameter_map.to_neutral(native_interval.lower());
+        let end = parameter_map.to_neutral(native_interval.upper());
         let parameter_origin = parameter_map.to_neutral(0.0);
         let parameter_factor = parameter_map.scale();
         let (distance, distance_law, geometry) = match flag {
@@ -447,11 +444,11 @@ pub(super) fn project(
                     ));
                     continue;
                 }
-                let Some(distance) = record.number(6).filter(|value| value.is_finite()) else {
+                let Some(distance) = record.number(6).and_then(FiniteReal::new) else {
                     losses.push(entity_loss(entry, "uniform offset distance is not finite"));
                     continue;
                 };
-                let distance = distance * factor;
+                let distance = distance.get() * factor;
                 let geometry = match &offset_source_geometry {
                     SolvedCurveGeometry::Line(line_curve)
                         if {
@@ -553,14 +550,24 @@ pub(super) fn project(
                     losses.push(entity_loss(entry, "linear offset controls are not numeric"));
                     continue;
                 };
-                if [d1, td1, d2, td2].iter().any(|value| !value.is_finite()) || td1 >= td2 {
+                let [Some(d1), Some(td1), Some(d2), Some(td2)] =
+                    [d1, td1, d2, td2].map(FiniteReal::new)
+                else {
                     losses.push(entity_loss(
                         entry,
                         "linear offset control range is not increasing and finite",
                     ));
                     continue;
-                }
-                let distances = [d1 * factor, d2 * factor];
+                };
+                let Some(native_control_range) = IncreasingParameterInterval::between(td1, td2)
+                else {
+                    losses.push(entity_loss(
+                        entry,
+                        "linear offset control range is not increasing and finite",
+                    ));
+                    continue;
+                };
+                let distances = [d1.get() * factor, d2.get() * factor];
                 let control_factor = match basis {
                     CurveOffsetLawBasis::ArcLength => factor,
                     CurveOffsetLawBasis::Parameter => parameter_factor,
@@ -570,8 +577,8 @@ pub(super) fn project(
                     CurveOffsetLawBasis::Parameter => parameter_origin,
                 };
                 let control_range = [
-                    control_origin + td1 * control_factor,
-                    control_origin + td2 * control_factor,
+                    control_origin + native_control_range.lower() * control_factor,
+                    control_origin + native_control_range.upper() * control_factor,
                 ];
                 let SolvedCurveGeometry::Line(line_curve) = &offset_source_geometry else {
                     losses.push(entity_loss(
