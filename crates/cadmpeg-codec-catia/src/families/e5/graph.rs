@@ -427,7 +427,6 @@ struct RawLoop {
 
 /// Resolve E5 face→loop→edge-use references and determine each serialized
 /// loop occurrence's unique head-to-tail traversal from stored vertex refs.
-#[must_use]
 pub(crate) fn parse_topology(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],

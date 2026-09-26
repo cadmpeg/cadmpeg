@@ -974,7 +974,7 @@ mod allocation_tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
             .expect("fixture fits the input limit");
         let error = run(&ctx).expect_err("boundary coverage exceeds the collection limit");
         match error {

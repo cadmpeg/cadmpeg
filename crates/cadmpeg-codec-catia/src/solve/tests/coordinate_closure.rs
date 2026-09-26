@@ -274,8 +274,8 @@ fn quotient_coordinate_closure_declines_when_its_work_budget_is_exhausted() {
 
 #[test]
 fn quotient_coordinate_closure_does_not_rescan_assigned_roots() {
-    catia_test_context!(ctx);
     const ROOT_COUNT: usize = 100;
+    catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), ROOT_COUNT));
     let budget = WorkBudget::new(2 * ROOT_COUNT + 1);
 
@@ -291,8 +291,8 @@ fn quotient_coordinate_closure_does_not_rescan_assigned_roots() {
 
 #[test]
 fn quotient_incidence_closure_updates_face_degrees_incrementally() {
-    catia_test_context!(ctx);
     const EDGE_COUNT: usize = 64;
+    catia_test_context!(ctx);
     let singleton = |point| Arc::new(HashSet::from([point]));
     let mut quotient = MeshQuotient::new(
         (0..EDGE_COUNT)
@@ -328,8 +328,8 @@ fn quotient_incidence_closure_updates_face_degrees_incrementally() {
 
 #[test]
 fn quotient_coordinate_closure_enforces_sparse_endpoint_membership_before_search() {
-    catia_test_context!(ctx);
     const EDGE_COUNT: usize = 50;
+    catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1]), EDGE_COUNT * 2));
     let candidates = (0..EDGE_COUNT)
         .map(|edge| vec![[edge % 2, edge % 2]])
@@ -656,8 +656,8 @@ fn quotient_coordinate_closure_enforces_ordered_face_cycles() {
 
 #[test]
 fn quotient_closes_independent_coordinate_components_with_local_budgets() {
-    catia_test_context!(ctx);
     const COMPONENT_COUNT: usize = 100;
+    catia_test_context!(ctx);
     let point_count = COMPONENT_COUNT * 3;
     let mut quotient = MeshQuotient::new(
         (0..COMPONENT_COUNT)
@@ -699,8 +699,8 @@ fn quotient_closes_independent_coordinate_components_with_local_budgets() {
 
 #[test]
 fn quotient_counts_global_face_incidence_once_across_coordinate_components() {
-    catia_test_context!(ctx);
     const COMPONENT_COUNT: usize = 40;
+    catia_test_context!(ctx);
     let point_count = COMPONENT_COUNT * 3;
     let mut quotient = MeshQuotient::new(
         (0..COMPONENT_COUNT)
@@ -761,8 +761,8 @@ fn quotient_counts_global_face_incidence_once_across_coordinate_components() {
 
 #[test]
 fn quotient_closure_does_not_budget_forced_component_depth() {
-    catia_test_context!(ctx);
     const ROOT_COUNT: usize = 10_000;
+    catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), ROOT_COUNT));
     let candidates = vec![vec![[0, 0]]; ROOT_COUNT / 2];
 
@@ -1096,9 +1096,7 @@ fn mesh_assignment_endpoint_cycle_support_refuses_suffix_collection_limit() {
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
-    let error = run(&ctx)
-        .err()
-        .expect("suffix array exceeds the collection limit");
+    let error = run(&ctx).expect_err("suffix array exceeds the collection limit");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "catia_endpoint_suffixes"));
@@ -1714,6 +1712,7 @@ fn duplicate_coordinate_rows_have_one_geometric_bijection() {
 
 #[test]
 fn forced_coordinate_bijection_has_no_recursive_depth_limit() {
+    const POINT_COUNT: usize = 10_000;
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[0],
@@ -1721,7 +1720,6 @@ fn forced_coordinate_bijection_has_no_recursive_depth_limit() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("matching fixture fits the service profile");
-    const POINT_COUNT: usize = 10_000;
     let domains = (0..POINT_COUNT)
         .map(|point| HashSet::from([point]))
         .collect::<Vec<_>>();

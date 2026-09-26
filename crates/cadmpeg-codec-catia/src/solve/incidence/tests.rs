@@ -146,10 +146,10 @@ fn endpoint_candidate_fallback_honors_caller_budget() {
 
 #[test]
 fn endpoint_candidate_validation_charges_full_incidence_work() {
-    catia_test_context!(ctx);
     use crate::solve::incidence::{visit_incidence_endpoint_pair_solutions, IncidenceSolve};
     use std::ops::ControlFlow;
 
+    catia_test_context!(ctx);
     let rows = vec![
         EdgeRow {
             kind: 1,
@@ -341,8 +341,8 @@ fn incidence_component_rejects_a_choice_that_strands_a_degree_one_vertex() {
 
 #[test]
 fn incidence_component_indexes_and_revalidates_frontier_support() {
-    catia_test_context!(ctx);
     const IRRELEVANT_EDGES: usize = 32;
+    catia_test_context!(ctx);
     let mut choices = vec![vec![[0, 1]], vec![[0, 1]]];
     choices.extend((0..IRRELEVANT_EDGES).map(|edge| vec![[edge + 2, edge + 3]]));
     let edge_faces = vec![[0, 0]; choices.len()];
@@ -684,8 +684,8 @@ fn incidence_branch_stops_ranking_at_a_singleton_domain() {
 
 #[test]
 fn incidence_component_uses_operation_budget_for_a_wide_rejected_frontier() {
-    catia_test_context!(ctx);
     const EDGE_COUNT: usize = 9;
+    catia_test_context!(ctx);
     let choices = (0..EDGE_COUNT)
         .map(|edge| vec![[edge * 2, edge * 2], [edge * 2 + 1, edge * 2 + 1]])
         .collect::<Vec<_>>();
@@ -1397,7 +1397,7 @@ fn incidence_face_factor_allocations_refuse_collection_limits() {
     };
     let assignments = vec![
         MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
-            boundaries: vec![vec![edge.clone()]],
+            boundaries: vec![vec![edge]],
         }]),
         MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
             boundaries: vec![vec![edge]],

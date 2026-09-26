@@ -428,8 +428,8 @@ fn endpoint_degree_closure_retains_symmetric_face_swaps() {
 
 #[test]
 fn candidate_contexts_share_edge_row_storage() {
-    catia_test_context!(ctx);
     const CANDIDATES: usize = 1024;
+    catia_test_context!(ctx);
     let bytes = crate::test_support::test_topology::standard_quad_topology_stream();
     let faces = [[0, 0]; 4];
     let base = StandardMeshBoundaryContext::parse(&ctx, &bytes, &faces)
