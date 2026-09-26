@@ -200,7 +200,7 @@ fn support_uv_lane_matches_surface_with_budget(
         if uv.iter().any(|value| missing_support_parameter(*value)) {
             return false;
         }
-        let Some(uv) = surface_parameters(geometry, *uv) else {
+        let Some(uv) = surface_parameters(geometry, **uv) else {
             return false;
         };
         let Some(candidate) = decoded_surface_point_with_geometry_and_budget(
@@ -445,7 +445,7 @@ fn serialized_support_uv_seed_candidates(
             &serialized.ext11
         };
         let lane = lane_order[candidate % 2];
-        let [u, v] = *lanes[lane].as_deref()?.get(point_index)?;
+        let [u, v] = **lanes[lane].as_deref()?.get(point_index)?;
         (!missing_support_parameter(u) && !missing_support_parameter(v))
             .then(|| surface_parameters(geometry, [u, v]).map(FinitePoint2::get))?
     })
@@ -530,7 +530,7 @@ fn serialized_support_uv_seed_for_side(
     ]
     .into_iter()
     .find_map(|(lanes, lane)| {
-        let [u, v] = *lanes[lane].as_deref()?.first()?;
+        let [u, v] = **lanes[lane].as_deref()?.first()?;
         (!missing_support_parameter(u) && !missing_support_parameter(v))
             .then(|| surface_parameters(geometry, [u, v]).map(FinitePoint2::get))?
     })
@@ -598,14 +598,14 @@ pub(super) fn complete_ext11_support_uv_with_budget(
             let values = assigned[side].as_ref()?;
             if values
                 .iter()
-                .flatten()
+                .flat_map(|pair| pair.iter())
                 .any(|value| missing_support_parameter(*value))
             {
                 return None;
             }
             values
                 .iter()
-                .map(|uv| surface_parameters(surface_geometry, *uv).map(FinitePoint2::get))
+                .map(|uv| surface_parameters(surface_geometry, **uv).map(FinitePoint2::get))
                 .collect::<Option<Vec<_>>>()
         });
         for (side, control_points) in side_lanes.into_iter().enumerate() {

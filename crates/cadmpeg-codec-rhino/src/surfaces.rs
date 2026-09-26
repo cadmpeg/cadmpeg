@@ -8,12 +8,15 @@ use cadmpeg_core::decode::{alloc_filled, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
+    nurbs::{
+        KnotVector, NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis,
+        NurbsSurfaceLanes,
+    },
     SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal};
-use cadmpeg_ir::units::FiniteVector;
+use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader};
 use crate::curves::{decode_embedded_curve, error, exact_nurbs, DecodedCurve, GeometryError};
@@ -130,9 +133,9 @@ pub(crate) enum DecodedProceduralSurface {
     Revolution {
         children: Box<[DecodedCurve; 1]>,
         /// Scaled axis origin.
-        axis_origin: Point3,
+        axis_origin: FinitePoint3,
         /// Unit axis direction.
-        axis_direction: Vector3,
+        axis_direction: Option<UnitVector3>,
         /// Native angular interval.
         angular_interval: [f64; 2],
         /// Native revolution parameter interval.
@@ -172,14 +175,14 @@ impl DecodedProceduralSurface {
                 let [directrix] = *children;
                 let directrix = commit_child(0, "directrix", directrix)?;
                 ProceduralSurfaceDefinition::Revolution(
-                    cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis(
-                        axis_origin,
-                        axis_direction,
-                    )
-                    .and_then(|axis| {
+                    axis_direction
+                    .ok_or(cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
+                        "revolution axis_origin and axis_direction must be finite, with unit axis_direction",
+                    ))
+                    .and_then(|axis_direction| {
                         cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
                             directrix,
-                            axis,
+                            (axis_origin, axis_direction),
                             angular_interval,
                             None,
                             Some(parameter_interval),
@@ -418,8 +421,7 @@ fn read_revolution(
         ));
     }
     let from = crate::wire::scaled_point(point(reader)?.0.get(), scale)
-        .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?
-        .get();
+        .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?;
     let to = crate::wire::scaled_point(point(reader)?.0.get(), scale)
         .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?
         .get();
@@ -462,7 +464,9 @@ fn read_revolution(
     if !axis_length.is_finite() || axis_length <= 0.0 {
         return Err(error(reader.position(), "revolution axis is invalid"));
     }
-    let axis_direction = Vector3::new(
+    let axis_direction =
+        UnitVector3::normalized_with_length(axis_delta).map(|(direction, _)| direction);
+    let raw_axis_direction = Vector3::new(
         axis_delta.x / axis_length,
         axis_delta.y / axis_length,
         axis_delta.z / axis_length,
@@ -472,8 +476,8 @@ fn read_revolution(
     let geometry = revolution_nurbs(
         ctx,
         &profile,
-        from,
-        axis_direction,
+        from.get(),
+        raw_axis_direction,
         RevolutionIntervals {
             angle: angular_interval,
             parameter: parameter_interval,
@@ -820,8 +824,8 @@ fn sum_nurbs(
         .as_deref()
         .map(|values| copy_rows(ctx, values, row_len, "Rhino sum surface weight grid"))
         .transpose()?;
-    let u_knots = copy_axis_knots(ctx, first.knots(), "Rhino sum surface U knots")?;
-    let v_knots = copy_axis_knots(ctx, second.knots(), "Rhino sum surface V knots")?;
+    let u_knots = copy_checked_axis_knots(ctx, first.knots(), "Rhino sum surface U knots")?;
+    let v_knots = copy_checked_axis_knots(ctx, second.knots(), "Rhino sum surface V knots")?;
     admit_nurbs_pole_conversion(ctx, product_count, rational)?;
     NurbsSurface::from_checked_lanes(
         NurbsSurfaceAxis::new(first.degree(), u_knots, first.periodic()),
@@ -918,12 +922,12 @@ fn copy_rows<T: Clone>(
     Ok(rows)
 }
 
-fn copy_axis_knots(
+fn charge_axis_knots(
     ctx: &DecodeContext<'_>,
-    source: &[f64],
+    count: usize,
     operation: &'static str,
-) -> Result<Vec<f64>, GeometryError> {
-    let count = u64::try_from(source.len()).map_err(|_| {
+) -> Result<u64, GeometryError> {
+    let count = u64::try_from(count).map_err(|_| {
         GeometryError::not_implemented("Rhino surface knot count exceeds address space")
     })?;
     let bytes = count.checked_mul(8).ok_or_else(|| {
@@ -931,12 +935,32 @@ fn copy_axis_knots(
     })?;
     ctx.charge_collection_items(count, operation)?;
     ctx.charge_retained(bytes, operation)?;
+    Ok(bytes)
+}
+
+fn copy_axis_knots(
+    ctx: &DecodeContext<'_>,
+    source: &[f64],
+    operation: &'static str,
+) -> Result<Vec<f64>, GeometryError> {
+    let bytes = charge_axis_knots(ctx, source.len(), operation)?;
     let mut knots = Vec::new();
     knots
         .try_reserve_exact(source.len())
         .map_err(|_| crate::curves::allocation_failed(operation, bytes))?;
     knots.extend_from_slice(source);
     Ok(knots)
+}
+
+fn copy_checked_axis_knots(
+    ctx: &DecodeContext<'_>,
+    source: &KnotVector,
+    operation: &'static str,
+) -> Result<KnotVector, GeometryError> {
+    let bytes = charge_axis_knots(ctx, source.len(), operation)?;
+    source
+        .try_clone()
+        .map_err(|_| crate::curves::allocation_failed(operation, bytes))
 }
 
 fn admit_nurbs_pole_conversion(
@@ -1013,24 +1037,27 @@ pub(crate) fn extrusion_nurbs(
             target.push(source[index]);
         }
     }
-    let mut surface = NurbsSurface::from_checked_lanes(
-        NurbsSurfaceAxis::new(start.degree(), start.knots().to_vec(), start.periodic()),
-        NurbsSurfaceAxis::new(
-            1,
-            vec![
-                path_domain[0],
-                path_domain[0],
-                path_domain[1],
-                path_domain[1],
-            ],
-            false,
-        ),
-        NurbsSurfaceLanes::new(
-            control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
-            weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-        ),
-        false,
+    let mut surface = NurbsPoleGrid::from_checked_lanes(
+        control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
+        weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
     )
+    .and_then(|poles| {
+        NurbsSurface::new(
+            NurbsSurfaceAxis::new(start.degree(), start.knots().clone(), start.periodic()),
+            NurbsSurfaceAxis::new(
+                1,
+                vec![
+                    path_domain[0],
+                    path_domain[0],
+                    path_domain[1],
+                    path_domain[1],
+                ],
+                false,
+            ),
+            poles,
+            false,
+        )
+    })
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
     if transposed {
         surface.transpose_parameter_axes();
@@ -1121,11 +1148,12 @@ fn read_nurbs_curve_inner(
     let full_knots = reconstruct_knots(&knots, order, cv_count)?;
     reader.skip_remaining()?;
     admit_nurbs_pole_conversion(ctx, stored_cv_count, rational != 0)?;
-    NurbsCurve::from_lanes(
+    let poles = NurbsPoles3::from_checked_lanes(control_points, weights)
+        .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))?;
+    NurbsCurve::new(
         u32::try_from(order - 1).map_err(|_| error(reader.position(), "NURBS order overflow"))?,
         full_knots,
-        control_points,
-        weights,
+        poles,
         periodic,
     )
     .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
@@ -1224,7 +1252,9 @@ pub(crate) fn read_nurbs_surface_prefix(
         .map(|values| copy_rows(ctx, values, row_len, "Rhino NURBS surface weight grid"))
         .transpose()?;
     admit_nurbs_pole_conversion(ctx, stored_cv_count, rational != 0)?;
-    NurbsSurface::from_lanes(
+    let poles = NurbsPoleGrid::from_checked_lanes(point_rows, weight_rows)
+        .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))?;
+    NurbsSurface::new(
         NurbsSurfaceAxis::new(
             u32::try_from(u_order - 1)
                 .map_err(|_| error(reader.position(), "surface U order overflow"))?,
@@ -1237,7 +1267,7 @@ pub(crate) fn read_nurbs_surface_prefix(
             v_knots,
             v_periodic,
         ),
-        NurbsSurfaceLanes::new(point_rows, weight_rows),
+        poles,
         false,
     )
     .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
@@ -1256,7 +1286,7 @@ fn read_plane_surface_with_parameterization(
         ));
     }
     let native_plane = plane(reader)?;
-    validate_plane(native_plane, reader.position())?;
+    let frame = validate_plane(native_plane, reader.position())?;
     let domain = increasing_interval(interval(reader)?.0, reader.position(), "plane U domain")?;
     let v_domain = increasing_interval(interval(reader)?.0, reader.position(), "plane V domain")?;
     let (u_extents, v_extents) = if version & 0x0f == 1 {
@@ -1268,14 +1298,11 @@ fn read_plane_surface_with_parameterization(
         (domain, v_domain)
     };
     let geometry = TypedSurface::Plane {
-        plane: cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+        plane: cadmpeg_ir::geometry::analytic::PlaneSurface::new(
             crate::wire::scaled_point(native_plane.origin, scale)
-                .ok_or_else(|| error(reader.position(), "scaled plane origin is invalid"))?
-                .get(),
-            vector(native_plane.zaxis),
-            vector(native_plane.xaxis),
-        )
-        .map_err(|message| error(reader.position(), message))?,
+                .ok_or_else(|| error(reader.position(), "scaled plane origin is invalid"))?,
+            frame,
+        ),
         parameterization: PlaneParameterization {
             u_domain: domain,
             v_domain,
@@ -1374,7 +1401,7 @@ fn read_poles(
     rational: bool,
     dimension: i32,
     scale: MillimeterScale,
-) -> Result<(Vec<Point3>, Option<Vec<f64>>), GeometryError> {
+) -> Result<(Vec<FinitePoint3>, Option<Vec<NonZeroReal>>), GeometryError> {
     let count_u64 = u64::try_from(count)
         .map_err(|_| GeometryError::not_implemented("NURBS pole count exceeds address space"))?;
     let point_bytes = count_u64
@@ -1420,7 +1447,7 @@ fn read_poles(
             let Some(weight) = NonZeroReal::new(weight) else {
                 return Err(error(reader.position(), "NURBS weight is invalid"));
             };
-            target.push(weight.get());
+            target.push(weight);
             FiniteReal::from(weight)
         } else {
             FiniteReal::ONE
@@ -1429,10 +1456,10 @@ fn read_poles(
             cadmpeg_ir::math::multiply_divide(value, scale.real(), weight)
                 .ok_or_else(|| error(pole_offset, "scaled NURBS pole is invalid"))
         };
-        points.push(Point3::new(
-            coordinate(x)?.get(),
-            coordinate(y)?.get(),
-            coordinate(z)?.get(),
+        points.push(FinitePoint3::from_coordinates(
+            coordinate(x)?,
+            coordinate(y)?,
+            coordinate(z)?,
         ));
     }
     Ok((points, weights))
@@ -1550,7 +1577,7 @@ fn increasing_interval(
     }
 }
 
-fn validate_plane(value: Plane, offset: usize) -> Result<(), GeometryError> {
+fn validate_plane(value: Plane, offset: usize) -> Result<OrthonormalFrame3, GeometryError> {
     let x = vector(value.xaxis);
     let y = vector(value.yaxis);
     let z = vector(value.zaxis);
@@ -1571,7 +1598,8 @@ fn validate_plane(value: Plane, offset: usize) -> Result<(), GeometryError> {
             "plane frame is not orthonormal and right-handed",
         ));
     }
-    Ok(())
+    OrthonormalFrame3::new(z, x)
+        .ok_or_else(|| error(offset, "plane frame is not orthonormal and right-handed"))
 }
 
 #[cfg(test)]

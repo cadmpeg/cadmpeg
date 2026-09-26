@@ -1774,7 +1774,8 @@ pub(crate) fn project_geometry(
             ));
             continue;
         }
-        let direction = UnitVector3::normalized_by_component_division(delta)
+        let direction = UnitVector3::normalized_with_length(delta)
+            .map(|(direction, _)| direction)
             .ok_or_else(|| CodecError::malformed("LineCurve.direction must have unit length"))?;
         let stem = crate::ids::Stem::directory(entry.sequence);
         let curve = crate::ids::curve(&stem);
@@ -1902,7 +1903,7 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "knot vector is truncated or non-finite"));
             continue;
         };
-        let Ok(knots) = KnotVector::from_finite_values(finite_knots.clone()) else {
+        let Ok(knots) = KnotVector::from_finite_lanes(finite_knots.clone()) else {
             losses.push(entity_loss(entry, "knot vector is decreasing"));
             continue;
         };
@@ -2110,7 +2111,7 @@ pub(crate) fn project_geometry(
             match NurbsPoles3::from_checked_lanes(control_points, weights).and_then(|poles| {
                 // IGES PROP4 is informational; neutral evaluation uses the
                 // serialized active carrier without periodic parameter wrapping.
-                NurbsCurve::from_parts(degree, knots, poles, false)
+                NurbsCurve::new(degree, knots, poles, false)
             }) {
                 Ok(nurbs) => nurbs,
                 Err(error) => {

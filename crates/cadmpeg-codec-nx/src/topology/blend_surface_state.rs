@@ -2,7 +2,7 @@
 //! Checked rolling-ball supports and source-admitted offset pairs.
 
 use crate::framing::xmt_reference::{NonNullXmt, XmtTarget};
-use cadmpeg_ir::scalar::{Magnification, NonZeroLength};
+use cadmpeg_ir::scalar::{FiniteReal, Magnification, NonZeroLength, NonZeroReal};
 use serde::{Deserialize, Serialize};
 
 const EPS_SOURCE_OFFSET_METRES: f64 = 1.0e-9;
@@ -13,19 +13,18 @@ const METRES_TO_MM: f64 = Magnification::MILLIMETERS_PER_METER.get();
 struct BlendOffsets([NonZeroLength; 2]);
 
 impl BlendOffsets {
-    /// Admit the metre offsets as nonzero lengths in the source unit, then
-    /// convert them. A factor of at least one cannot round a nonzero offset to
-    /// zero, so the conversion refuses only an offset that overflows.
+    /// Admit the metre offsets as unit-free nonzero scalars, then convert them
+    /// to model lengths. The scale cannot round a nonzero offset to zero.
     fn from_metres(offsets: [f64; 2]) -> Result<Self, &'static str> {
         const SOURCE: &str = "offsets: require finite nonzero offsets with equal source magnitudes";
-        let [Some(first), Some(second)] = offsets.map(NonZeroLength::new) else {
+        let [Some(first), Some(second)] = offsets.map(NonZeroReal::new) else {
             return Err(SOURCE);
         };
         if (first.get().abs() - second.get().abs()).abs() > EPS_SOURCE_OFFSET_METRES {
             return Err(SOURCE);
         }
         let [Some(first), Some(second)] =
-            [first, second].map(|offset| offset.magnified(Magnification::MILLIMETERS_PER_METER))
+            [first, second].map(|offset| NonZeroLength::new(offset.get() * METRES_TO_MM))
         else {
             return Err("offsets: model distances must be finite");
         };
@@ -102,7 +101,7 @@ pub(crate) struct BlendSurfaceState {
     supports: [NonNullXmt; 2],
     spine: Option<XmtTarget>,
     offsets: BlendOffsets,
-    thumb_weights: [f64; 2],
+    thumb_weights: [FiniteReal; 2],
 }
 
 impl BlendSurfaceState {
@@ -132,14 +131,14 @@ impl BlendSurfaceState {
             NonNullXmt::try_from(supports[1])
                 .map_err(|_| "support_xmts: second support must be non-null")?,
         ];
-        if thumb_weights.iter().any(|value| !value.is_finite()) {
+        let [Some(first), Some(second)] = thumb_weights.map(FiniteReal::new) else {
             return Err("thumb_weights: must be finite");
-        }
+        };
         Ok(Self {
             supports,
             spine: XmtTarget::from_wire(spine),
             offsets,
-            thumb_weights,
+            thumb_weights: [first, second],
         })
     }
 
@@ -159,7 +158,7 @@ impl BlendSurfaceState {
     }
     #[cfg(test)]
     pub(crate) fn thumb_weights(&self) -> [f64; 2] {
-        self.thumb_weights
+        self.thumb_weights.map(FiniteReal::get)
     }
 }
 
@@ -177,7 +176,7 @@ impl From<BlendSurfaceState> for StateWire {
             support_xmts: state.support_xmts(),
             spine_xmt: state.spine_xmt(),
             offsets: state.offsets,
-            thumb_weights: state.thumb_weights,
+            thumb_weights: state.thumb_weights.map(FiniteReal::get),
         }
     }
 }

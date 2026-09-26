@@ -568,9 +568,9 @@ pub(super) fn project(
             knots.extend([*breakpoint; 3]);
         }
         knots.extend([breakpoints[segment_count]; 4]);
-        let nurbs = match KnotVector::from_finite_values(knots).and_then(|knots| {
+        let nurbs = match KnotVector::from_finite_lanes(knots).and_then(|knots| {
             NurbsPoles3::from_checked_lanes(control_points, None)
-                .and_then(|poles| NurbsCurve::from_parts(3, knots, poles, false))
+                .and_then(|poles| NurbsCurve::new(3, knots, poles, false))
         }) {
             Ok(nurbs) => nurbs,
             Err(error) => {
@@ -877,8 +877,8 @@ pub(super) fn project(
             ));
             continue;
         };
-        let nurbs = match KnotVector::from_finite_values(u_knots).and_then(|u_knots| {
-            KnotVector::from_finite_values(v_knots).and_then(|v_knots| {
+        let nurbs = match KnotVector::from_finite_lanes(u_knots).and_then(|u_knots| {
+            KnotVector::from_finite_lanes(v_knots).and_then(|v_knots| {
                 NurbsPoleGrid::from_checked_lanes(
                     control_points
                         .chunks(v_count as usize)
@@ -887,7 +887,7 @@ pub(super) fn project(
                     None,
                 )
                 .and_then(|poles| {
-                    NurbsSurface::from_parts(
+                    NurbsSurface::new(
                         NurbsSurfaceAxis::new(3, u_knots, false),
                         NurbsSurfaceAxis::new(3, v_knots, false),
                         poles,

@@ -7,6 +7,7 @@ use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal};
@@ -60,7 +61,8 @@ fn direction(
             "points to D{sequence}, whose direction components are not numeric"
         ));
     };
-    UnitVector3::normalized_nonzero(Vector3::new(x, y, z))
+    FiniteVector3::new(Vector3::new(x, y, z))
+        .and_then(UnitVector3::normalized_nonzero)
         .ok_or_else(|| format!("points to D{sequence}, whose direction is zero or non-finite"))
 }
 
@@ -87,7 +89,7 @@ fn transformed_direction(
     let direction = required_direction(record, index, role, entries, records)?;
     transform
         .apply_vector(*direction.as_raw())
-        .and_then(|direction| UnitVector3::normalized_nonzero(direction.get()))
+        .and_then(UnitVector3::normalized_nonzero)
         .ok_or_else(|| format!("{role} collapses under the surface transformation"))
 }
 
@@ -404,7 +406,7 @@ pub(super) fn project(
                 } else {
                     transform
                         .apply_vector(Vector3::new(0.0, 0.0, 1.0))
-                        .and_then(|axis| UnitVector3::normalized_nonzero(axis.get()))
+                        .and_then(UnitVector3::normalized_nonzero)
                         .ok_or_else(|| "sphere axis collapses under its transformation".to_owned())
                 };
                 let axis = match axis {

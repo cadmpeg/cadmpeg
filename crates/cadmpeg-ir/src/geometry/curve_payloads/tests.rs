@@ -1,17 +1,45 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{
     DeformableCurveConstruction, ProceduralGeometryError, ProjectionCurvePayload,
-    SpringCurvePayload, SurfaceOffsetCurveConstruction, ThreeSurfaceIntersectionCurvePayload,
+    SilhouetteCurveConstruction, SpatialOffsetCurveConstruction, SpringCurvePayload,
+    SurfaceOffsetCurveConstruction, ThreeSurfaceIntersectionCurvePayload,
 };
 use crate::geometry::{
     pcurve::{LinePcurve, PcurveGeometry},
     CacheContract, CacheFirstCurveForm, CacheFirstCurveParameterization, DeformableCurveData,
     DeformableCurveSource, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
-    ProceduralCurveDefinition, ProjectionRole, ProjectionTail, RevisionCacheForm, SpringLayout,
-    SpringPcurve, SpringSupport, SupportPcurve,
+    ProceduralCurveDefinition, ProjectionRole, ProjectionTail, RevisionCacheForm, SilhouetteKind,
+    SpringLayout, SpringPcurve, SpringSupport, SupportPcurve,
 };
-use crate::ids::CurveId;
-use crate::math::Point2;
+use crate::ids::{CurveId, SurfaceId};
+use crate::math::{Point2, Vector3};
+use crate::units::UnitVector3;
+
+#[test]
+fn spatial_offset_keeps_its_admitted_unit_reference_direction() {
+    let source = CurveId::mint("synthetic:test:curve#spatial-offset").unwrap();
+    let direction = Vector3::new(0.0, 0.0, 1.0);
+    let payload = SpatialOffsetCurveConstruction::try_new(source, 2.0, direction, None).unwrap();
+    let held: &UnitVector3 = payload.reference_direction();
+    assert_eq!(held.as_raw(), &direction);
+    let wire = serde_json::to_value(&payload).unwrap();
+    assert_eq!(
+        wire["reference_direction"],
+        serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0})
+    );
+    assert_eq!(
+        serde_json::from_value::<SpatialOffsetCurveConstruction>(wire).unwrap(),
+        payload
+    );
+    assert!(SpatialOffsetCurveConstruction::try_new(
+        CurveId::mint("synthetic:test:curve#spatial-offset").unwrap(),
+        2.0,
+        Vector3::new(0.0, 0.0, 2.0),
+        None,
+    )
+    .is_err());
+}
+
 fn context(range: [f64; 2]) -> IntcurveSupportContext {
     IntcurveSupportContext::try_new(
         std::array::from_fn(|_| IntcurveSupportSide {
@@ -22,6 +50,30 @@ fn context(range: [f64; 2]) -> IntcurveSupportContext {
         std::array::from_fn(|_| Vec::new()),
     )
     .unwrap()
+}
+
+#[test]
+fn silhouette_unit_light_direction_keeps_the_raw_construction_and_wire() {
+    let cast_surface = SurfaceId::mint("synthetic:test:surface#silhouette").unwrap();
+    let light = Vector3::new(0.0, 0.0, 1.0);
+    let raw = SilhouetteCurveConstruction::try_new(
+        context([0.0, 1.0]),
+        SilhouetteKind::Standard {},
+        cast_surface.clone(),
+        light,
+    )
+    .unwrap();
+    let typed = SilhouetteCurveConstruction::from_unit_direction(
+        context([0.0, 1.0]),
+        SilhouetteKind::Standard {},
+        cast_surface,
+        UnitVector3::Z_AXIS,
+    );
+    assert_eq!(raw, typed);
+    assert_eq!(
+        serde_json::to_vec(&raw).unwrap(),
+        serde_json::to_vec(&typed).unwrap()
+    );
 }
 
 #[test]

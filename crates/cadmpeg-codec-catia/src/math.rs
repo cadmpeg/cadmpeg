@@ -1,29 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared numerical operations for CATIA geometry.
 
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::units::UnitVector3;
+
 /// Normalize a finite, nonzero direction, retaining its representation.
 ///
-/// Scale by the largest component before measuring length. This avoids
-/// overflow and subnormal rounding of the length, including when the true
-/// length exceeds `f64::MAX`. Component division avoids reciprocal overflow.
-pub(crate) fn unit_vector<V>(value: V) -> Option<V>
+/// Scale by the largest component before measuring length. The IR route
+/// keeps the exact component-division order used by CATIA readers.
+pub(crate) fn unit_vector<V>(value: V) -> Option<UnitVector3>
 where
-    V: Into<[f64; 3]> + From<[f64; 3]>,
+    V: Into<[f64; 3]>,
 {
-    let components = value.into();
-    if !components.iter().all(|component| component.is_finite()) {
-        return None;
-    }
-    let scale = components[0]
-        .abs()
-        .max(components[1].abs())
-        .max(components[2].abs());
-    if scale == 0.0 {
-        return None;
-    }
-    let scaled = components.map(|component| component / scale);
-    let length = scaled[0].hypot(scaled[1]).hypot(scaled[2]);
-    Some(V::from(scaled.map(|component| component / length)))
+    UnitVector3::normalized_by_largest_component(Vector3::from(value.into()))
 }
 
 /// Euclidean distance without squaring large or tiny coordinate differences.
@@ -73,15 +62,15 @@ mod tests {
                 ([magnitude, 0.0, 0.0], [1.0, 0.0, 0.0]),
             ] {
                 let result = unit_vector(value).expect("finite nonzero direction");
-                for (actual, expected) in result.into_iter().zip(expected) {
+                for (actual, expected) in
+                    <[f64; 3]>::from(*result.as_raw()).into_iter().zip(expected)
+                {
                     assert!((actual - expected).abs() <= EPS_UNIT_ROUNDING);
                 }
-                assert!(
-                    (result[0].hypot(result[1]).hypot(result[2]) - 1.0).abs() <= EPS_UNIT_ROUNDING
-                );
+                assert!((result.as_raw().norm() - 1.0).abs() <= EPS_UNIT_ROUNDING);
                 let vector_result =
                     unit_vector(Vector3::from(value)).expect("finite nonzero vector direction");
-                assert_eq!(vector_result, Vector3::from(result));
+                assert_eq!(vector_result, result);
             }
         }
     }

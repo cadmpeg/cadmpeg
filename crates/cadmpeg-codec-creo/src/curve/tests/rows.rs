@@ -340,7 +340,8 @@ fn decodes_only_complete_explicit_curve_expression_frames() {
         expression_records(complete)[0]
             .local_system
             .as_ref()
-            .and_then(|frame| frame.explicit_slots),
+            .and_then(|frame| frame.explicit_slots)
+            .map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     );
 
@@ -351,7 +352,8 @@ fn decodes_only_complete_explicit_curve_expression_frames() {
         expression_records(inherited)[0]
             .local_system
             .as_ref()
-            .and_then(|frame| frame.explicit_slots),
+            .and_then(|frame| frame.explicit_slots)
+            .map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     );
 }
@@ -647,7 +649,11 @@ fn binds_agreeing_fc05_caps_to_one_typed_cylinder() {
         curve_id,
         center_row_frame: [3.0, 4.0],
         radius_mm: 2.0,
-        sample_direction_row_frame: [1.0, 0.0],
+        sample_direction_row_frame: cadmpeg_ir::units::HypotDirection2::normalized_with_length([
+            1.0, 0.0,
+        ])
+        .expect("unit sample direction")
+        .0,
         angle_parameter: crate::curve::Fc05AngleParameterRelation::Consistent {
             sense: crate::curve::ParameterSense::Increasing,
             reference_direction_row_frame: [1.0, 0.0],
@@ -720,7 +726,11 @@ fn fc05_cap_pairs_require_unique_topology_and_surface_identities() {
         curve_id,
         center_row_frame: [3.0, 4.0],
         radius_mm: 2.0,
-        sample_direction_row_frame: [1.0, 0.0],
+        sample_direction_row_frame: cadmpeg_ir::units::HypotDirection2::normalized_with_length([
+            1.0, 0.0,
+        ])
+        .expect("unit sample direction")
+        .0,
         angle_parameter: crate::curve::Fc05AngleParameterRelation::Consistent {
             sense: crate::curve::ParameterSense::Increasing,
             reference_direction_row_frame: [1.0, 0.0],
@@ -809,7 +819,11 @@ fn withholds_fc05_caps_without_distinct_ordinates() {
         curve_id: 20,
         center_row_frame: [3.0, 4.0],
         radius_mm: 2.0,
-        sample_direction_row_frame: [1.0, 0.0],
+        sample_direction_row_frame: cadmpeg_ir::units::HypotDirection2::normalized_with_length([
+            1.0, 0.0,
+        ])
+        .expect("unit sample direction")
+        .0,
         angle_parameter: crate::curve::Fc05AngleParameterRelation::Consistent {
             sense: crate::curve::ParameterSense::Increasing,
             reference_direction_row_frame: [1.0, 0.0],
@@ -828,7 +842,11 @@ fn numerical_ranges_fc05_cap_agreement_separates_lengths_and_directions() {
         curve_id,
         center_row_frame: [0.0, 0.0],
         radius_mm: 2.0,
-        sample_direction_row_frame: [1.0, 0.0],
+        sample_direction_row_frame: cadmpeg_ir::units::HypotDirection2::normalized_with_length([
+            1.0, 0.0,
+        ])
+        .expect("unit sample direction")
+        .0,
         angle_parameter: crate::curve::Fc05AngleParameterRelation::Consistent {
             sense: crate::curve::ParameterSense::Increasing,
             reference_direction_row_frame: [1.0, 0.0],

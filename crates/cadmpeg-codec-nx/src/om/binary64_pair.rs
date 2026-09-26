@@ -244,9 +244,7 @@ mod tests {
         assert_eq!(pairs[0].offset(), 4);
         assert_eq!(pairs[0].value_offsets(), [22, 31]);
         assert_eq!(
-            pairs[0]
-                .atoms()
-                .map(crate::om::scalar::ShiftedBinary64::value),
+            pairs[0].atoms().map(|scalar| scalar.value().get()),
             [10.0, -20.0]
         );
         assert_eq!(pairs[0].atoms()[0].raw(), [0x30, 0x24, 0, 0, 0, 0, 0, 0]);
@@ -270,9 +268,7 @@ mod tests {
         assert_eq!(pairs[0].offset(), 6);
         assert_eq!(pairs[0].value_offsets(), [21, 30]);
         assert_eq!(
-            pairs[0]
-                .atoms()
-                .map(crate::om::scalar::ShiftedBinary64::value),
+            pairs[0].atoms().map(|scalar| scalar.value().get()),
             [10.0, -20.0]
         );
         assert_eq!(pairs[0].atoms()[0].raw(), [0x30, 0x24, 0, 0, 0, 0, 0, 0]);
@@ -318,8 +314,8 @@ mod tests {
         assert_eq!(pairs.len(), 1);
         assert_eq!(pairs[0].offset(), discriminator_offset);
         assert_eq!(pairs[0].value_offsets(), [first_offset, second_offset]);
-        assert!((pairs[0].atoms()[0].value() - 10.0).abs() < EPS_SKETCH_SCALAR);
-        assert!((pairs[0].atoms()[1].value() + 20.0).abs() < EPS_SKETCH_SCALAR);
+        assert!((pairs[0].atoms()[0].value().get() - 10.0).abs() < EPS_SKETCH_SCALAR);
+        assert!((pairs[0].atoms()[1].value().get() + 20.0).abs() < EPS_SKETCH_SCALAR);
         assert_eq!(
             pairs[0].discriminator(),
             bytes[discriminator_offset..first_offset].to_vec()

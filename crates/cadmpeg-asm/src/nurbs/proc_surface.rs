@@ -25,6 +25,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveI64;
+use cadmpeg_ir::units::UnitVector3;
 use std::num::NonZeroI64;
 
 /// The legacy and revision offset surface layouts.
@@ -221,7 +222,7 @@ pub enum DecodedProceduralSurfaceDefinition {
         /// Point on the axis in model space.
         axis_origin: Point3,
         /// Unit axis direction.
-        axis_direction: Vector3,
+        axis_direction: UnitVector3,
         /// Angular interval from the solved surface cache.
         angular_interval: [f64; 2],
         /// Native profile parameter interval.
@@ -3626,7 +3627,9 @@ fn rot_spl_sur(
                     origin[1] * LEN_TO_MM,
                     origin[2] * LEN_TO_MM,
                 ),
-                axis_direction: normalized(axis)?,
+                axis_direction: UnitVector3::normalized_nonzero(
+                    cadmpeg_ir::features::FiniteVector3::new(Vector3::from(axis))?,
+                )?,
                 angular_interval,
                 parameter_interval,
                 revision_form: Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
@@ -3653,7 +3656,9 @@ fn rot_spl_sur(
         origin[2] * LEN_TO_MM,
     );
     let axis = cur.take_vector3()?;
-    let axis_direction = normalized(axis)?;
+    let axis_direction = UnitVector3::normalized_nonzero(
+        cadmpeg_ir::features::FiniteVector3::new(Vector3::from(axis))?,
+    )?;
     let (cache, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
     let angular_interval = [*cache.v_knots().first()?, *cache.v_knots().last()?];
@@ -4285,7 +4290,7 @@ pub(super) fn helix_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> 
             return None;
         }
     }
-    let path = cadmpeg_ir::geometry::HelixPathConstruction::try_new(
+    let path = cadmpeg_ir::geometry::HelixPathConstruction::try_with_unit_axis(
         path_angle_range,
         cadmpeg_ir::geometry::HelixFrame {
             center: Point3::new(

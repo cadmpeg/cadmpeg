@@ -404,7 +404,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .any(|surface| matches!(
             surface.definition(),
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::LinearSweep(definition_payload)
-                if definition_payload.direction().z == 2.0
+                if definition_payload.direction().get().z == 2.0
         )));
     assert!(result
         .ir()

@@ -1,18 +1,37 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked physical chart layouts and paired samples for solved charts.
 
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::FitTolerance;
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::scalar::{Magnification, NonNegativeReal, PositiveReal};
+use cadmpeg_ir::scalar::{FiniteReal, Magnification, NonNegativeReal, NonZeroReal, PositiveReal};
 
 /// At least two chart points, each with one native parameter.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ChartSamples {
-    samples: crate::om::nonempty::NonEmpty<(Point3, f64)>,
+    samples: crate::om::nonempty::NonEmpty<(FinitePoint3, ChartParameter)>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ChartParameter {
+    Source(FiniteReal),
+    Derived(f64),
+}
+
+impl ChartParameter {
+    fn get(self) -> f64 {
+        match self {
+            Self::Source(value) => value.get(),
+            Self::Derived(value) => value,
+        }
+    }
 }
 
 impl ChartSamples {
-    fn new(points: Vec<Point3>, parameters: Vec<f64>) -> Result<Self, &'static str> {
+    fn new(
+        points: Vec<FinitePoint3>,
+        parameters: Vec<ChartParameter>,
+    ) -> Result<Self, &'static str> {
         if points.len() != parameters.len() {
             return Err("native_parameters: one value per point required");
         }
@@ -27,28 +46,41 @@ impl ChartSamples {
         points: Vec<Point3>,
         parameters: Vec<f64>,
     ) -> Result<Self, &'static str> {
-        Self::new(points, parameters)
+        let points = points
+            .into_iter()
+            .map(|point| FinitePoint3::new(point).ok_or("points: coordinates must be finite"))
+            .collect::<Result<Vec<_>, _>>()?;
+        Self::new(
+            points,
+            parameters
+                .into_iter()
+                .map(ChartParameter::Derived)
+                .collect(),
+        )
     }
 
     pub(crate) fn points(&self) -> Vec<Point3> {
-        self.samples.iter().map(|sample| sample.0).collect()
+        self.samples.iter().map(|sample| sample.0.get()).collect()
     }
 
     pub(crate) fn parameters(&self) -> Vec<f64> {
-        self.samples.iter().map(|sample| sample.1).collect()
+        self.samples.iter().map(|sample| sample.1.get()).collect()
     }
 
     pub(crate) fn endpoints(&self) -> [Point3; 2] {
-        [self.samples.first().0, self.samples.last().0]
+        [self.samples.first().0.get(), self.samples.last().0.get()]
     }
 
     pub(crate) fn parameter_range(&self) -> [f64; 2] {
-        [self.samples.first().1, self.samples.last().1]
+        [self.samples.first().1.get(), self.samples.last().1.get()]
     }
 
     /// Replace the parameterization when both charts have the same sample count.
     pub(super) fn replace_parameters_from(&mut self, other: &Self) -> bool {
-        let Ok(replacement) = Self::new(self.points(), other.parameters()) else {
+        let Ok(replacement) = Self::new(
+            self.samples.iter().map(|sample| sample.0).collect(),
+            other.samples.iter().map(|sample| sample.1).collect(),
+        ) else {
             return false;
         };
         *self = replacement;
@@ -62,10 +94,10 @@ pub(crate) const MISSING_PARAMETER: f64 = -31_415_800_000_000.0;
 /// Finite chart preamble with a nonzero scale and positive chordal error.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct ChartPreamble {
-    base_parameter: f64,
-    base_scale: f64,
+    base_parameter: FiniteReal,
+    base_scale: NonZeroReal,
     chordal_error: PositiveReal,
-    angular_error: f64,
+    angular_error: FiniteReal,
 }
 impl ChartPreamble {
     pub(crate) fn new(
@@ -74,17 +106,14 @@ impl ChartPreamble {
         chordal_error: f64,
         angular_error: f64,
     ) -> Result<Self, &'static str> {
-        if !base_parameter.is_finite() {
-            return Err("base_parameter: must be finite");
-        }
-        if !base_scale.is_finite() || base_scale == 0.0 {
-            return Err("base_scale: must be finite and nonzero");
-        }
+        let base_parameter =
+            FiniteReal::new(base_parameter).ok_or("base_parameter: must be finite")?;
+        let base_scale =
+            NonZeroReal::new(base_scale).ok_or("base_scale: must be finite and nonzero")?;
         let chordal_error =
             PositiveReal::new(chordal_error).ok_or("chordal_error: must be finite and positive")?;
-        if !angular_error.is_finite() {
-            return Err("angular_error: must be finite");
-        }
+        let angular_error =
+            FiniteReal::new(angular_error).ok_or("angular_error: must be finite")?;
         Ok(Self {
             base_parameter,
             base_scale,
@@ -93,10 +122,10 @@ impl ChartPreamble {
         })
     }
     pub(crate) fn base_parameter(self) -> f64 {
-        self.base_parameter
+        self.base_parameter.get()
     }
     pub(crate) fn base_scale(self) -> f64 {
-        self.base_scale
+        self.base_scale.get()
     }
     pub(crate) fn chordal_error(self) -> PositiveReal {
         self.chordal_error
@@ -109,14 +138,14 @@ impl ChartPreamble {
             .scaled(PositiveReal::from(Magnification::MILLIMETERS_PER_METER))
     }
     pub(crate) fn angular_error(self) -> f64 {
-        self.angular_error
+        self.angular_error.get()
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 enum SourceEncoding {
     Xyz3 {
-        points: Vec<Point3>,
+        points: Vec<FinitePoint3>,
     },
     Ext11 {
         samples: ChartSamples,
@@ -130,22 +159,22 @@ pub(crate) struct SourceChartData {
     encoding: SourceEncoding,
 }
 impl SourceChartData {
-    fn checked_points(points: &[Point3]) -> Result<(), &'static str> {
+    fn checked_points(points: Vec<Point3>) -> Result<Vec<FinitePoint3>, &'static str> {
         u32::try_from(points.len()).map_err(|_| "points: count exceeds u32")?;
         if points.len() < 2 {
             return Err("points: at least two points required");
         }
-        if !points.iter().all(Point3::is_finite) {
-            return Err("points: coordinates must be finite");
-        }
-        Ok(())
+        points
+            .into_iter()
+            .map(|point| FinitePoint3::new(point).ok_or("points: coordinates must be finite"))
+            .collect()
     }
 
     pub(crate) fn xyz3(points: Vec<Point3>) -> Result<Self, &'static str> {
         if !points.windows(2).any(|pair| pair[0] != pair[1]) {
             return Err("points: xyz3 requires distinct points");
         }
-        Self::checked_points(&points)?;
+        let points = Self::checked_points(points)?;
         Ok(Self {
             encoding: SourceEncoding::Xyz3 { points },
         })
@@ -156,31 +185,37 @@ impl SourceChartData {
         parameters: Vec<f64>,
         support_uv: [Option<Vec<[f64; 2]>>; 2],
     ) -> Result<Self, &'static str> {
-        if !parameters.iter().all(|value| value.is_finite())
-            || parameters.windows(2).any(|pair| pair[1] <= pair[0])
-        {
+        let parameters = parameters
+            .into_iter()
+            .map(|value| {
+                FiniteReal::new(value)
+                    .ok_or("native_parameters: finite strictly increasing values required")
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if parameters.windows(2).any(|pair| pair[1] <= pair[0]) {
             return Err("native_parameters: finite strictly increasing values required");
+        }
+        if support_uv
+            .iter()
+            .flatten()
+            .any(|lane| lane.len() != points.len())
+        {
+            return Err("ext_support_uv: one pair per point required");
         }
         let support_uv = support_uv.map(|lane| {
             lane.map(|values| {
-                super::SupportUvLane::new(values, points.len())
-                    .ok_or("ext_support_uv: one pair per point required")
+                super::SupportUvLane::from_present_values(values)
+                    .ok_or("ext_support_uv: finite present parameter values required")
             })
             .transpose()
         });
         let [first, second] = support_uv;
         let support_uv = [first?, second?];
-        for lane in support_uv.iter().flatten() {
-            if !lane
-                .iter()
-                .flatten()
-                .all(|value| value.is_finite() && *value != MISSING_PARAMETER)
-            {
-                return Err("ext_support_uv: finite present parameter values required");
-            }
-        }
-        Self::checked_points(&points)?;
-        let samples = ChartSamples::new(points, parameters)?;
+        let points = Self::checked_points(points)?;
+        let samples = ChartSamples::new(
+            points,
+            parameters.into_iter().map(ChartParameter::Source).collect(),
+        )?;
         Ok(Self {
             encoding: SourceEncoding::Ext11 {
                 samples,
@@ -191,7 +226,7 @@ impl SourceChartData {
 
     pub(crate) fn points(&self) -> Vec<Point3> {
         match &self.encoding {
-            SourceEncoding::Xyz3 { points } => points.clone(),
+            SourceEncoding::Xyz3 { points } => points.iter().map(|point| point.get()).collect(),
             SourceEncoding::Ext11 { samples, .. } => samples.points(),
         }
     }
@@ -229,10 +264,11 @@ impl SourceChartData {
                 let mut parameter = preamble.base_parameter();
                 let parameters = std::iter::once(parameter)
                     .chain(points.windows(2).map(|pair| {
-                        let chord_m = pair[0].distance(pair[1]) / 1000.0;
+                        let chord_m = pair[0].get().distance(pair[1].get()) / 1000.0;
                         parameter += chord_m * preamble.base_scale();
                         parameter
                     }))
+                    .map(ChartParameter::Derived)
                     .collect();
                 Some((ChartSamples::new(points, parameters).ok()?, [None, None]))
             }
@@ -247,6 +283,26 @@ impl SourceChartData {
 mod tests {
     use super::{ChartPreamble, ChartSamples, SourceChartData, MISSING_PARAMETER};
     use cadmpeg_ir::math::Point3;
+
+    #[test]
+    fn chart_preamble_retains_finite_parameter_scale_and_angle() {
+        let preamble = ChartPreamble::new(-0.0, -2.0, 0.25, 0.125).unwrap();
+        assert_eq!(preamble.base_parameter().to_bits(), (-0.0_f64).to_bits());
+        assert_eq!(preamble.base_scale(), -2.0);
+        assert_eq!(preamble.angular_error(), 0.125);
+        assert_eq!(
+            ChartPreamble::new(f64::NAN, 1.0, 0.25, 0.0),
+            Err("base_parameter: must be finite")
+        );
+        assert_eq!(
+            ChartPreamble::new(0.0, 0.0, 0.25, 0.0),
+            Err("base_scale: must be finite and nonzero")
+        );
+        assert_eq!(
+            ChartPreamble::new(0.0, 1.0, 0.25, f64::INFINITY),
+            Err("angular_error: must be finite")
+        );
+    }
 
     /// The chordal error is admitted positive once; its millimetre fit
     /// tolerance is refused only when the conversion overflows.
@@ -282,11 +338,11 @@ mod tests {
             Point3::new(2.0, 0.0, 0.0),
         ];
         assert_eq!(
-            ChartSamples::new(points.clone(), vec![0.0, 1.0]),
+            ChartSamples::from_test_values(points.clone(), vec![0.0, 1.0]),
             Err("native_parameters: one value per point required")
         );
         assert_eq!(
-            ChartSamples::new(points[..2].to_vec(), vec![0.0, 1.0, 2.0]),
+            ChartSamples::from_test_values(points[..2].to_vec(), vec![0.0, 1.0, 2.0]),
             Err("native_parameters: one value per point required")
         );
     }

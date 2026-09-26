@@ -547,6 +547,13 @@ enum ExternalReferenceIdentity {
 }
 
 impl ExternalReferenceRecord {
+    pub(crate) fn document_copy_len(&self) -> usize {
+        match &self.identity {
+            ExternalReferenceIdentity::Path { path, .. } => path.as_str().len(),
+            ExternalReferenceIdentity::DocumentId(document_id) => document_id.as_str().len(),
+        }
+    }
+
     pub(crate) fn document(&self) -> cadmpeg_ir::products::ExternalDocument {
         use cadmpeg_ir::products::ExternalDocument;
         match &self.identity {

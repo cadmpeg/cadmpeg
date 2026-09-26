@@ -113,7 +113,12 @@ fn om_numeric_expression_retains_identity_name_unit_and_value() {
     );
     assert_eq!(expressions[0].unit, ExpressionUnit::Degree);
     assert_eq!(expressions[0].expression, "120");
-    assert_eq!(expressions[0].constant_value(), Some(120.0));
+    assert_eq!(
+        expressions[0]
+            .constant_value()
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        Some(120.0)
+    );
     let declaration =
         expression_declaration_name(section.as_fixed().expect("fixed store")[1].bytes).unwrap();
     assert_eq!(

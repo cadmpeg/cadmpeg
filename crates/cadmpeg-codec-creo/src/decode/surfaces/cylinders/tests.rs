@@ -118,43 +118,43 @@ fn slot_fillet_scan() -> crate::container::ContainerScan<'static> {
         crate::surface::OutlinePlane {
             surface_id: 1,
             origin: [0.0, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: 1,
         },
         crate::surface::OutlinePlane {
             surface_id: 2,
             origin: [1.0, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: 2,
         },
         crate::surface::OutlinePlane {
             surface_id: 3,
             origin: [0.0, -1.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 3,
         },
         crate::surface::OutlinePlane {
             surface_id: 4,
             origin: [0.0, 1.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 4,
         },
         crate::surface::OutlinePlane {
             surface_id: 5,
             origin: [0.0, 0.0, -1.0],
-            normal: [0.0, 0.0, 1.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 5,
         },
         crate::surface::OutlinePlane {
             surface_id: 6,
             origin: [0.0, 0.0, 1.0],
-            normal: [0.0, 0.0, 1.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 6,
         },
     ]);
@@ -271,8 +271,8 @@ fn split_outline_scan() -> crate::container::ContainerScan<'static> {
         .push(crate::surface::OutlinePlane {
             surface_id: 1,
             origin: [0.0, 0.0, -1.0],
-            normal: [0.0, 0.0, 1.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 1,
         });
     scan
@@ -1022,16 +1022,18 @@ fn rowless_round_cylinder_rejects_duplicate_materialized_source_rows() {
 
 #[test]
 fn round_envelope_rejects_an_extra_reference_circle() {
-    let circle = |entity_id, axis, start, end| crate::reference::ReferenceCircle {
-        entity_id,
-        center: [0.0; 3],
-        center_stored: true,
-        radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
-        axis,
-        start,
-        end,
-        offset: 0,
-    };
+    let circle =
+        |entity_id, axis, start: [f64; 3], end: [f64; 3]| crate::reference::ReferenceCircle {
+            entity_id,
+            center: [0.0; 3],
+            center_stored: true,
+            radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
+            axis: cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
+                .expect("unit axis"),
+            start: cadmpeg_ir::features::FinitePoint3::new(start.into()).expect("finite start"),
+            end: cadmpeg_ir::features::FinitePoint3::new(end.into()).expect("finite end"),
+            offset: 0,
+        };
     let envelope = crate::surface::Type24RoundEnvelope {
         diameter: 2.0,
         extent_endpoints: [[3.5, 8.0, -6.0], [5.5, 10.0, -4.0]],

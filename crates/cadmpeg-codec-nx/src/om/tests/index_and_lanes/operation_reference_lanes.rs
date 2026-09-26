@@ -27,7 +27,7 @@ impl PatternPayloadTransformLane {
                     (
                         vec![ObservedPatternScalar {
                             encoding,
-                            value: row.values.scalar.value(),
+                            value: row.values.scalar.value().get(),
                             offset: row.values.offset,
                         }],
                         &row.selector,
@@ -44,13 +44,13 @@ impl PatternPayloadTransformLane {
                         .iter()
                         .map(|value| ObservedPatternScalar {
                             encoding: PatternScalarEncoding::Binary64,
-                            value: value.scalar.value(),
+                            value: value.scalar.value().get(),
                             offset: value.offset,
                         })
                         .collect::<Vec<_>>();
                     values.push(ObservedPatternScalar {
                         encoding: row.values.terminal.scalar.encoding(),
-                        value: row.values.terminal.scalar.value(),
+                        value: row.values.terminal.scalar.value().get(),
                         offset: row.values.terminal.offset,
                     });
                     (values, &row.selector)

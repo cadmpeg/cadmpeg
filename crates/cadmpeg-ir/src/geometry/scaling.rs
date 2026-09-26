@@ -15,10 +15,9 @@ use super::analytic::{
 use super::nurbs::NurbsError;
 use super::sampled::GeometryLayoutError;
 use super::{PlacedCurve, PlacedSurface, SolvedCurveGeometry, SolvedSurfaceGeometry};
-use crate::features::{FinitePoint3, FiniteVector3};
-use crate::math::{Point3, Vector3};
+use crate::features::FinitePoint3;
+use crate::math::Point3;
 use crate::scalar::{NonZeroLength, PositiveLength, PositiveReal};
-use crate::transform::Transform;
 
 /// A unit scaling that a solved carrier refuses.
 #[derive(Debug, Clone, PartialEq)]
@@ -62,16 +61,6 @@ fn scaled_nonzero(
     field: &'static str,
 ) -> Result<NonZeroLength, ScaleRefusal> {
     NonZeroLength::new(length.get() * scale.get()).ok_or(ScaleRefusal::Field(field))
-}
-
-/// `transform` with its translation times `scale`. The linear rows are kept.
-fn scaled_translation(
-    transform: &Transform,
-    scale: PositiveReal,
-) -> Result<Transform, ScaleRefusal> {
-    let [x, y, z] = transform.affine_rows().map(|row| row[3] * scale.get());
-    let translation = FiniteVector3::new(Vector3::new(x, y, z)).ok_or(ScaleRefusal::Translation)?;
-    Ok(transform.with_translation(translation))
 }
 
 /// Multiply one raw control point by `scale`; the carrier admits the result.
@@ -169,7 +158,10 @@ impl SolvedSurfaceGeometry {
             }
             Self::Transformed(placed) => Self::Transformed(PlacedSurface {
                 basis: Box::new(placed.basis.scaled(scale)?),
-                transform: scaled_translation(&placed.transform, scale)?,
+                transform: placed
+                    .transform
+                    .scaled_translation(scale)
+                    .ok_or(ScaleRefusal::Translation)?,
                 depth: placed.depth,
             }),
             Self::Unknown { .. } => self.clone(),
@@ -268,7 +260,10 @@ impl SolvedCurveGeometry {
             }
             Self::Transformed(placed) => Self::Transformed(PlacedCurve {
                 basis: Box::new(placed.basis.scaled(scale)?),
-                transform: scaled_translation(&placed.transform, scale)?,
+                transform: placed
+                    .transform
+                    .scaled_translation(scale)
+                    .ok_or(ScaleRefusal::Translation)?,
                 depth: placed.depth,
             }),
             Self::Composite { .. } | Self::Unknown { .. } => self.clone(),

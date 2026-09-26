@@ -7,14 +7,14 @@ returns typed asset-instance records and preserves connection identifiers for
 the format codec that owns appearance or material binding.
 
 This crate is not an outer-container reader. The calling codec selects and
-opens the Protein package and supplies the package bytes and the
-`InstanceProperties` entry bytes. This crate does not resolve library paths,
+opens the Protein package and supplies both views through one `DecodeContext`.
+This crate does not resolve library paths,
 decode image files, or infer assignments to bodies and faces.
 
 ## Install
 
 ```sh
-cargo add cadmpeg-protein
+cargo add cadmpeg-protein cadmpeg-core
 ```
 
 ## Decode an instance stream
@@ -25,12 +25,25 @@ records that have valid page framing but invalid headers or property values:
 ```rust,no_run
 use std::fs;
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_protein::decode_detailed;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let protein = fs::read("appearance.protein")?;
     let instance_properties = fs::read("InstanceProperties.bin")?;
-    let outcome = decode_detailed(&protein, &instance_properties)?;
+    let protein_len = protein.len();
+    let mut input = protein;
+    input.extend_from_slice(&instance_properties);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, root) = DecodeContext::from_root_bytes(&input, &arena, &policy)?;
+    let protein_view = root.child(0, protein_len).ok_or_else(|| {
+        std::io::Error::other("Protein range is outside the input")
+    })?;
+    let instance_view = root.child(protein_len, input.len()).ok_or_else(|| {
+        std::io::Error::other("instance range is outside the input")
+    })?;
+    let outcome = decode_detailed(&ctx, protein_view, instance_view)?;
 
     for record in &outcome.records {
         println!(
@@ -76,9 +89,10 @@ bytes are retained only by the caller. The numbers are tabulated in
 | Continuation | `80 00 00 00` at bytes 4..8 | Extends the current record with its complete body.                                                                |
 | Terminal     | `ff ff ff ff` at bytes 0..4 | Closes the current record; bytes 8..`8 + used` contribute, where `used` is the little-endian `u16` at bytes 4..6. |
 
-A new start page, continuation page, or terminal page without the required
-current-record state is invalid. A stream ending with an open record is
-valid: the last open record is complete. A valid logical record begins with four length-prefixed UTF-8 strings:
+A start page closes any open record. A terminal page can close an open record
+or carry a standalone record. A continuation page requires an open record.
+A stream ending with an open record is valid: the last open record is complete.
+A valid logical record begins with four length-prefixed UTF-8 strings:
 schema identifier, asset GUID, base asset identifier, and `AssetLibID`.
 
 ## Schema resolution and values
@@ -125,11 +139,12 @@ trailing bytes in a logical record are rejected.
 
 ## Rejection and ownership model
 
-Package ZIP errors, malformed schema XML, duplicate schema definitions, broken
-inheritance, and invalid page framing return `CodecError::Malformed`.
-Record-level failures are represented by [`RejectedRecord`][rejected-record]
+Package ZIP errors, malformed schema XML, duplicate schema definitions, and
+invalid page framing return `CodecError::Malformed`. Invalid inheritance and
+other record-level failures are represented by [`RejectedRecord`][rejected-record]
 and do not prevent later correctly framed records from decoding through
 `decode_detailed`.
+Resource-limit refusals return `CodecError::ResourceLimit`.
 
 The format codec owns the higher-level joins:
 

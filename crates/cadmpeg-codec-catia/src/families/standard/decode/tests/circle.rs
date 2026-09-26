@@ -1,6 +1,5 @@
 use crate::families::standard::decode::build_standard_edge_curve;
 use crate::families::standard::decode::standard_pcurve_geometry;
-use crate::families::standard::records::StandardCurveGeometry;
 use crate::families::standard::records::StandardCurveSupport;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::Curve;
@@ -67,7 +66,7 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
         pos: 12,
         tag: 7,
         faces: [0, 1],
-        geometry: StandardCurveGeometry::Circle { center, radius },
+        geometry: super::checked_circle(center, radius),
     };
 
     let (curve, range) = crate::test_support::with_service_context(|ctx| {
@@ -118,7 +117,7 @@ fn unknown_standard_circle_carrier_does_not_create_a_sphere_pcurve() {
         pos: 12,
         tag: 7,
         faces: [0, 1],
-        geometry: StandardCurveGeometry::Circle { center, radius },
+        geometry: super::checked_circle(center, radius),
     };
     let unknown = CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None });
 
@@ -176,7 +175,8 @@ fn sphere_section_axis_preserves_a_subnormal_center_offset() {
         .expect("unit sphere frame is valid"),
     ));
     assert_eq!(
-        circle_axis_from_carrier(Point3::new(0.0, 0.0, 1e-310), 1.0, &sphere),
+        circle_axis_from_carrier(Point3::new(0.0, 0.0, 1e-310), 1.0, &sphere)
+            .map(cadmpeg_ir::math::Vector3::from),
         Some(Vector3::new(0.0, 0.0, 1.0))
     );
 }

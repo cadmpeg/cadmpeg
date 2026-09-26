@@ -10,7 +10,7 @@ use crate::product::{
 };
 use crate::test_support::test_archive::{archive, archive_entries, assert_valid_document};
 use crate::FcstdCodec;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::collections::HashSet;
 use std::io::Cursor;
@@ -1452,7 +1452,13 @@ fn visibility_cardinality_matches_when_element_count_is_absent() {
         occurrence["element_visibility"],
         serde_json::json!([true, false])
     );
-    assert!(FcstdCodec.validate_native(result.ir()).is_empty());
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("validation context");
+    assert!(FcstdCodec
+        .validate_native(&ctx, result.ir())
+        .expect("validation fits service policy")
+        .is_empty());
 }
 
 #[test]

@@ -5,6 +5,7 @@ use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result as AnyResult};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext};
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::report::{check::ValidationReport, decode::DecodeReport, export::ExportReport};
@@ -341,14 +342,19 @@ pub(crate) fn prepare(
         return Err(refusal.into());
     }
 
+    let validation_arena = DecodeArena::new();
+    let (validation_ctx, _) =
+        DecodeContext::from_root_bytes(&[], &validation_arena, &source.options.policy)?;
     let validation = validate_ir(
+        &validation_ctx,
         inputs,
         &loaded.ir,
         loaded.fidelity(),
         decode_report
             .as_ref()
             .map_or_else(Vec::new, |report| report.losses.clone()),
-    );
+    )?;
+    validation_ctx.finish_session()?;
     if !validation.is_ok() && !policy.allow_errors {
         return Err(ConversionRefusal::CheckFailed {
             operation: super::refusal::CheckOperation::Export,

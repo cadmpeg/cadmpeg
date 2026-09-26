@@ -18,37 +18,36 @@ fn admitted_nurbs_parts_preserve_the_existing_curve_and_surface_wire() {
             .collect::<Vec<_>>()
     };
     let curve = curve();
-    let knots = KnotVector::from_finite_values(finite_knots(curve.knots())).unwrap();
-    let from_parts =
-        NurbsCurve::from_parts(1, knots.clone(), curve.pole_rows().clone(), true).unwrap();
+    let knots = KnotVector::from_finite_lanes(finite_knots(curve.knots())).unwrap();
+    let from_parts = NurbsCurve::new(1, knots.clone(), curve.pole_rows().clone(), true).unwrap();
     assert_eq!(from_parts, curve);
     assert_eq!(
         serde_json::to_vec(&from_parts).unwrap(),
         serde_json::to_vec(&curve).unwrap()
     );
     assert_eq!(
-        NurbsCurve::from_parts(2, knots, curve.pole_rows().clone(), true),
+        NurbsCurve::new(2, knots, curve.pole_rows().clone(), true),
         Err(NurbsError::Structure(
             "control_points must contain more than degree 2 poles, found 2".into()
         ))
     );
     assert_eq!(
-        KnotVector::from_finite_values(finite_knots(&[0.0, 1.0, 0.5])),
+        KnotVector::from_finite_lanes(finite_knots(&[0.0, 1.0, 0.5])),
         Err(NurbsError::Structure("knots must be non-decreasing".into()))
     );
 
     let surface = surface();
     let u = NurbsSurfaceAxis::new(
         1,
-        KnotVector::from_finite_values(finite_knots(surface.u_knots())).unwrap(),
+        KnotVector::from_finite_lanes(finite_knots(surface.u_knots())).unwrap(),
         true,
     );
     let v = NurbsSurfaceAxis::new(
         1,
-        KnotVector::from_finite_values(finite_knots(surface.v_knots())).unwrap(),
+        KnotVector::from_finite_lanes(finite_knots(surface.v_knots())).unwrap(),
         false,
     );
-    let from_parts = NurbsSurface::from_parts(u, v, surface.pole_grid().clone(), true).unwrap();
+    let from_parts = NurbsSurface::new(u, v, surface.pole_grid().clone(), true).unwrap();
     assert_eq!(from_parts, surface);
     assert_eq!(
         serde_json::to_vec(&from_parts).unwrap(),
@@ -301,6 +300,32 @@ fn nurbs_stores_hand_out_their_admitted_poles_knots_and_weights() {
 }
 
 #[test]
+fn finite_knot_lanes_keep_the_raw_wire_and_order_refusal() {
+    use crate::geometry::nurbs::KnotVector;
+    use crate::scalar::FiniteReal;
+
+    let raw = vec![0.0, 0.0, 1.0, 1.0];
+    let admitted = raw
+        .iter()
+        .copied()
+        .map(FiniteReal::new)
+        .collect::<Option<Vec<_>>>()
+        .unwrap();
+    let from_finite = KnotVector::from_finite_lanes(admitted).unwrap();
+    let from_raw = KnotVector::new(raw).unwrap();
+    assert_eq!(from_finite, from_raw);
+    assert_eq!(
+        serde_json::to_vec(&from_finite).unwrap(),
+        serde_json::to_vec(&from_raw).unwrap()
+    );
+    assert!(KnotVector::from_finite_lanes(vec![
+        FiniteReal::new(1.0).unwrap(),
+        FiniteReal::new(0.0).unwrap(),
+    ])
+    .is_err());
+}
+
+#[test]
 fn a_bspline_surface_holds_its_admitted_knots_and_poles() {
     use crate::features::FinitePoint3;
     use crate::geometry::nurbs::{BsplineSurface, KnotVector};
@@ -349,7 +374,7 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
     assert_eq!(
         NurbsCurve::from_checked_lanes(
             1,
-            curve.knots().to_vec(),
+            curve.knots().clone(),
             curve.control_points(),
             curve.weights(),
             true,
@@ -360,7 +385,7 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
     assert_eq!(
         NurbsCurve::from_checked_lanes(
             1,
-            curve.knots().to_vec(),
+            curve.knots().clone(),
             curve.control_points(),
             Some(vec![weight]),
             true,
@@ -376,13 +401,19 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
         NurbsCurve::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0], non_finite.clone(), None, false)
             .unwrap_err();
     assert_eq!(
-        NurbsCurve::from_checked_lanes(1, vec![0.0, 0.0, 1.0, 1.0], non_finite, None, false),
+        NurbsCurve::from_checked_lanes(
+            1,
+            super::KnotVector::new(vec![0.0, 0.0, 1.0, 1.0]).unwrap(),
+            non_finite,
+            None,
+            false,
+        ),
         Err(raw_refusal)
     );
     assert_eq!(
         NurbsCurve::from_checked_lanes(
             4,
-            vec![0.0, 0.0, 1.0, 1.0],
+            super::KnotVector::new(vec![0.0, 0.0, 1.0, 1.0]).unwrap(),
             vec![Point3::new(f64::NAN, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
@@ -420,8 +451,8 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
     );
     assert_eq!(
         crate::geometry::nurbs::NurbsSurface::from_checked_lanes(
-            u(),
-            v(),
+            NurbsSurfaceAxis::new(1, surface.u_knots().clone(), true),
+            NurbsSurfaceAxis::new(1, surface.v_knots().clone(), false),
             NurbsSurfaceLanes::new(surface.control_grid(), surface.weights()),
             true,
         ),
@@ -457,7 +488,7 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
     assert_eq!(
         PcurveNurbs::from_checked_lanes(
             1,
-            pcurve.knots().to_vec(),
+            pcurve.knots().clone(),
             pcurve.control_points(),
             pcurve.weights(),
             true,
@@ -491,7 +522,7 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
     assert_eq!(
         PolarPcurveNurbs::from_checked_lanes(
             1,
-            polar.knots().to_vec(),
+            polar.knots().clone(),
             polar.poles(),
             polar.weights(),
             true,

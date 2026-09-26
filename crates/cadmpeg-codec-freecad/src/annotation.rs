@@ -153,12 +153,7 @@ pub(crate) fn transfer_neutral(
                 }
                 _ => None,
             },
-            position: annotation_position(&owned, schema.position)?
-                .map(|value| {
-                    cadmpeg_ir::units::FiniteVector::new(value)
-                        .ok_or_else(|| CodecError::malformed("annotation position must be finite"))
-                })
-                .transpose()?,
+            position: annotation_position(&owned, schema.position)?,
             parameters: cadmpeg_core::text::named_entries(
                 &record.object,
                 record.parameters.clone(),
@@ -328,18 +323,19 @@ fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
 fn annotation_position(
     properties: &[&PropertyRecord],
     carrier: PositionCarrier,
-) -> Result<Option<[f64; 3]>, CodecError> {
+) -> Result<Option<cadmpeg_ir::units::FiniteVector<3>>, CodecError> {
     match carrier {
         PositionCarrier::Vector { name, type_name } => {
             let position = optional_vector_property(properties, name, &[type_name])?;
-            if position
-                .is_some_and(|position| position.iter().any(|component| !component.is_finite()))
-            {
-                return Err(CodecError::Malformed(
-                    "annotation position contains a non-finite coordinate".into(),
-                ));
-            }
-            Ok(position)
+            position
+                .map(|position| {
+                    cadmpeg_ir::units::FiniteVector::new(position).ok_or_else(|| {
+                        CodecError::Malformed(
+                            "annotation position contains a non-finite coordinate".into(),
+                        )
+                    })
+                })
+                .transpose()
         }
         PositionCarrier::Coordinates {
             x_name,
@@ -350,10 +346,13 @@ fn annotation_position(
             let y = optional_scalar_property(properties, y_name, type_names)?;
             match (x, y) {
                 (None, None) => Ok(None),
-                (Some(x), Some(y)) if x.is_finite() && y.is_finite() => Ok(Some([x, y, 0.0])),
-                (Some(_), Some(_)) => Err(CodecError::Malformed(
-                    "annotation position contains a non-finite coordinate".into(),
-                )),
+                (Some(x), Some(y)) => cadmpeg_ir::units::FiniteVector::new([x, y, 0.0])
+                    .map(Some)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(
+                            "annotation position contains a non-finite coordinate".into(),
+                        )
+                    }),
                 _ => Err(CodecError::malformed(format_args!(
                     "annotation position requires both {x_name} and {y_name}"
                 ))),

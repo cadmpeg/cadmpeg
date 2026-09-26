@@ -225,11 +225,11 @@ fn small_shears_are_not_similarities() {
         ])
         .unwrap();
         let shear2 = Transform2::affine([[a, 0.5 * a, 0.], [0., 0.75_f64.sqrt() * a, 0.]]).unwrap();
-        assert!(!super::similarity_transform(&shear));
+        assert!(super::similarity_transform(&shear).is_none());
         assert!(!super::similarity_transform_2d(&shear2));
         let uniform =
             Transform::affine([[a, 0., 0., 0.], [0., a, 0., 0.], [0., 0., a, 0.]]).unwrap();
-        assert!(super::similarity_transform(&uniform));
+        assert!(super::similarity_transform(&uniform).is_some());
     }
 }
 
@@ -239,7 +239,10 @@ fn small_shears_are_not_similarities() {
 fn a_direction_whose_length_overflows_keeps_its_orientation() {
     const EPS_UNIT_COMPONENT: f64 = 1.0e-15;
     let mut emitter = crate::writer::Emitter::new();
-    super::direction(&mut emitter, Vector3::new(1.3e308, 1.3e308, 0.0));
+    let direction =
+        cadmpeg_ir::units::DirectionAboveEpsilon::new(Vector3::new(1.3e308, 1.3e308, 0.0))
+            .expect("finite nonzero direction");
+    super::direction(&mut emitter, direction);
     let lines = emitter.into_lines().expect("finite reals");
     let [line] = lines.as_slice() else {
         panic!("one DIRECTION record: {lines:?}");

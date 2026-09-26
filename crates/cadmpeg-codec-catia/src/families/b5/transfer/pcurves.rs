@@ -15,7 +15,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveLength, PositiveReal};
-use cadmpeg_ir::units::{FiniteVector, UnitVector3};
+use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::{
@@ -70,14 +70,10 @@ pub(super) fn sphere_great_circle_geometry(
         scale(direction_x, -phase.sin()),
         scale(direction_y, phase.cos()),
     );
+    let frame =
+        OrthonormalFrame3::from_units(plane_axis, UnitVector3::new(vector(ref_direction))?)?;
     Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-            center.get(),
-            vector(plane_axis),
-            vector(ref_direction),
-            radius.get(),
-        )
-        .ok()?,
+        cadmpeg_ir::geometry::analytic::CircleCurve::new(*center, frame, *radius),
     )))
 }
 
