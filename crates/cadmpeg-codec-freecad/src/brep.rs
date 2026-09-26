@@ -17,10 +17,13 @@ use cadmpeg_ir::geometry::{
     SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
+use cadmpeg_ir::math::{Point2, Vector3};
+use cadmpeg_ir::scalar::{
+    Angle, FiniteBinary32, FiniteReal, NonNegativeLength, NonNegativeReal, NonZeroLength,
+    PositiveLength, PositiveReal,
+};
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::units::FinitePoint2;
+use cadmpeg_ir::units::{FinitePoint2, OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::SourceObjectAssociation;
 use serde::{Deserialize, Serialize};
 
@@ -840,7 +843,7 @@ pub(crate) enum TextPointRepresentation {
     /// Kind 1: point on a 3D curve.
     Curve3d {
         /// Curve parameter.
-        parameter: f64,
+        parameter: FiniteReal,
         /// One-based 3D curve index.
         curve: usize,
         /// Location index, or zero for identity.
@@ -849,7 +852,7 @@ pub(crate) enum TextPointRepresentation {
     /// Kind 2: point on a parameter-space curve of a surface.
     Pcurve {
         /// Parameter-curve parameter.
-        parameter: f64,
+        parameter: FiniteReal,
         /// One-based 2D curve index.
         curve: usize,
         /// One-based surface index.
@@ -860,9 +863,9 @@ pub(crate) enum TextPointRepresentation {
     /// Kind 3: point on a surface.
     Surface {
         /// First surface parameter.
-        parameter: f64,
+        parameter: FiniteReal,
         /// Second surface parameter.
-        second_parameter: f64,
+        second_parameter: FiniteReal,
         /// One-based surface index.
         surface: usize,
         /// Location index, or zero for identity.
@@ -883,8 +886,8 @@ impl TextPointRepresentation {
 
 #[derive(Serialize, Deserialize)]
 struct TextPointRepresentationWire {
-    parameter: f64,
-    second_parameter: Option<f64>,
+    parameter: FiniteReal,
+    second_parameter: Option<FiniteReal>,
     kind: u8,
     curve: Option<usize>,
     surface: Option<usize>,
@@ -984,7 +987,7 @@ pub(crate) enum TextEdgeRepresentation {
         /// Location index, or zero for identity.
         location: usize,
         /// Curve parameter range.
-        parameter_range: [f64; 2],
+        parameter_range: [FiniteReal; 2],
     },
     /// Kind 2: one parameter-space curve on a surface.
     Pcurve {
@@ -995,9 +998,9 @@ pub(crate) enum TextEdgeRepresentation {
         /// Surface location index, or zero for identity.
         location: usize,
         /// Parameter-curve range.
-        parameter_range: [f64; 2],
+        parameter_range: [FiniteReal; 2],
         /// Optional V2 cached UV endpoints.
-        uv_endpoints: Option<[Point2; 2]>,
+        uv_endpoints: Option<[FinitePoint2; 2]>,
     },
     /// Kind 3: a pair of parameter-space curves on one surface.
     PcurvePair {
@@ -1010,9 +1013,9 @@ pub(crate) enum TextEdgeRepresentation {
         /// Surface location index, or zero for identity.
         location: usize,
         /// Parameter-curve range.
-        parameter_range: [f64; 2],
+        parameter_range: [FiniteReal; 2],
         /// Optional V2 cached UV endpoints.
-        uv_endpoints: Option<[Point2; 2]>,
+        uv_endpoints: Option<[FinitePoint2; 2]>,
     },
     /// Kind 4: regularity between two surfaces.
     Regularity {
@@ -1081,7 +1084,7 @@ impl TextEdgeRepresentation {
     }
 
     /// Parameter range when the representation carries one.
-    pub(crate) const fn parameter_range(&self) -> Option<[f64; 2]> {
+    pub(crate) const fn parameter_range(&self) -> Option<[FiniteReal; 2]> {
         match *self {
             Self::Curve3d {
                 parameter_range, ..
@@ -1106,9 +1109,9 @@ struct TextEdgeRepresentationWire {
     second_surface: Option<usize>,
     location: usize,
     second_location: Option<usize>,
-    parameter_range: Option<[f64; 2]>,
+    parameter_range: Option<[FiniteReal; 2]>,
     continuity: Option<String>,
-    uv_endpoints: Option<[Point2; 2]>,
+    uv_endpoints: Option<[FinitePoint2; 2]>,
 }
 
 /// The retained wire shape, borrowed from the representation it states.
@@ -1151,7 +1154,7 @@ impl<'a> TextEdgeRepresentationOut<'a> {
                 second_surface: None,
                 location,
                 second_location: None,
-                parameter_range: Some(parameter_range),
+                parameter_range: Some(parameter_range.map(FiniteReal::get)),
                 continuity: None,
                 uv_endpoints: None,
             },
@@ -1169,9 +1172,9 @@ impl<'a> TextEdgeRepresentationOut<'a> {
                 second_surface: None,
                 location,
                 second_location: None,
-                parameter_range: Some(parameter_range),
+                parameter_range: Some(parameter_range.map(FiniteReal::get)),
                 continuity: None,
-                uv_endpoints,
+                uv_endpoints: uv_endpoints.map(|points| points.map(FinitePoint2::get)),
             },
             TextEdgeRepresentation::PcurvePair {
                 curves,
@@ -1188,9 +1191,9 @@ impl<'a> TextEdgeRepresentationOut<'a> {
                 second_surface: None,
                 location,
                 second_location: None,
-                parameter_range: Some(parameter_range),
+                parameter_range: Some(parameter_range.map(FiniteReal::get)),
                 continuity: Some(continuity),
-                uv_endpoints,
+                uv_endpoints: uv_endpoints.map(|points| points.map(FinitePoint2::get)),
             },
             TextEdgeRepresentation::Regularity {
                 ref continuity,
@@ -1367,12 +1370,12 @@ impl TryFrom<TextEdgeRepresentationWire> for TextEdgeRepresentation {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum TextTShapeGeometry {
     Vertex {
-        tolerance: f64,
+        tolerance: FiniteReal,
         point: FinitePoint3,
         representations: Vec<TextPointRepresentation>,
     },
     Edge {
-        tolerance: f64,
+        tolerance: FiniteReal,
         same_parameter: bool,
         same_range: bool,
         degenerated: bool,
@@ -1380,7 +1383,7 @@ pub(crate) enum TextTShapeGeometry {
     },
     Face {
         natural_restriction: bool,
-        tolerance: f64,
+        tolerance: FiniteReal,
         surface: Option<TableRef<TextSurface>>,
         location: LocationRef,
         triangulation: Option<TableRef<TextTriangulation>>,
@@ -1532,12 +1535,12 @@ struct TextTShapeWire {
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum TextTShapeGeometryWire {
     Vertex {
-        tolerance: f64,
+        tolerance: FiniteReal,
         point: FinitePoint3,
         representations: Vec<TextPointRepresentation>,
     },
     Edge {
-        tolerance: f64,
+        tolerance: FiniteReal,
         same_parameter: bool,
         same_range: bool,
         degenerated: bool,
@@ -1545,7 +1548,7 @@ enum TextTShapeGeometryWire {
     },
     Face {
         natural_restriction: bool,
-        tolerance: f64,
+        tolerance: FiniteReal,
         surface: usize,
         location: usize,
         triangulation: Option<usize>,
@@ -1599,7 +1602,7 @@ impl<'a> TextTShapeOut<'a> {
                 point,
                 representations,
             } => TextTShapeGeometryOut::Vertex {
-                tolerance: *tolerance,
+                tolerance: tolerance.get(),
                 point: *point,
                 representations,
             },
@@ -1610,7 +1613,7 @@ impl<'a> TextTShapeOut<'a> {
                 degenerated,
                 representations,
             } => TextTShapeGeometryOut::Edge {
-                tolerance: *tolerance,
+                tolerance: tolerance.get(),
                 same_parameter: *same_parameter,
                 same_range: *same_range,
                 degenerated: *degenerated,
@@ -1624,7 +1627,7 @@ impl<'a> TextTShapeOut<'a> {
                 triangulation,
             } => TextTShapeGeometryOut::Face {
                 natural_restriction: *natural_restriction,
-                tolerance: *tolerance,
+                tolerance: tolerance.get(),
                 surface: surface.map_or(0, TableRef::index),
                 location: location.index(),
                 triangulation: triangulation.map(TableRef::index),
@@ -1800,8 +1803,8 @@ pub(crate) struct TextPolygonOnTriangulation {
     pub(crate) parameters: Option<Vec<FiniteReal>>,
 }
 
-fn admit_polygon_deflection(value: f64) -> Result<NonNegativeReal, CodecError> {
-    NonNegativeReal::new(value).ok_or_else(|| {
+fn admit_polygon_deflection(value: FiniteReal) -> Result<NonNegativeReal, CodecError> {
+    NonNegativeReal::from_finite(value).ok_or_else(|| {
         CodecError::Malformed("polygon deflection must be finite and non-negative".into())
     })
 }
@@ -1812,11 +1815,11 @@ pub(crate) struct NurbsCurve2d {
     /// Curve degree.
     pub(crate) degree: u32,
     /// Full knot vector.
-    pub(crate) knots: Vec<f64>,
+    pub(crate) knots: Vec<FiniteReal>,
     /// Ordered parameter-space poles.
-    pub(crate) control_points: Vec<Point2>,
+    pub(crate) control_points: Vec<FinitePoint2>,
     /// Optional rational weights.
-    pub(crate) weights: Option<Vec<f64>>,
+    pub(crate) weights: Option<Vec<FiniteReal>>,
     /// Periodicity flag.
     pub(crate) periodic: bool,
 }
@@ -1849,46 +1852,52 @@ const MAX_GEOMETRY_NESTING_DEPTH: usize = 64;
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum TextCurve2d {
     /// Infinite line.
-    Line { origin: Point2, direction: Point2 },
+    Line {
+        origin: FinitePoint2,
+        direction: FinitePoint2,
+    },
     /// Full circle with its oriented parameter frame.
     Circle {
-        center: Point2,
-        x_axis: Point2,
-        y_axis: Point2,
-        radius: f64,
+        center: FinitePoint2,
+        x_axis: FinitePoint2,
+        y_axis: FinitePoint2,
+        radius: FiniteReal,
     },
     /// Full ellipse.
     Ellipse {
-        center: Point2,
-        x_axis: Point2,
-        y_axis: Point2,
-        major_radius: f64,
-        minor_radius: f64,
+        center: FinitePoint2,
+        x_axis: FinitePoint2,
+        y_axis: FinitePoint2,
+        major_radius: FiniteReal,
+        minor_radius: FiniteReal,
     },
     /// Parabola.
     Parabola {
-        vertex: Point2,
-        x_axis: Point2,
-        y_axis: Point2,
-        focal_distance: f64,
+        vertex: FinitePoint2,
+        x_axis: FinitePoint2,
+        y_axis: FinitePoint2,
+        focal_distance: FiniteReal,
     },
     /// Hyperbola.
     Hyperbola {
-        center: Point2,
-        x_axis: Point2,
-        y_axis: Point2,
-        major_radius: f64,
-        minor_radius: f64,
+        center: FinitePoint2,
+        x_axis: FinitePoint2,
+        y_axis: FinitePoint2,
+        major_radius: FiniteReal,
+        minor_radius: FiniteReal,
     },
     /// Rational or non-rational B-spline.
     Nurbs(NurbsCurve2d),
     /// Parameter restriction of an inline basis curve.
     Trimmed {
-        parameter_range: [f64; 2],
+        parameter_range: [FiniteReal; 2],
         basis: NestedCurve2d,
     },
     /// Signed planar offset of an inline basis curve.
-    Offset { distance: f64, basis: NestedCurve2d },
+    Offset {
+        distance: FiniteReal,
+        basis: NestedCurve2d,
+    },
 }
 
 impl TextCurve2d {
@@ -1972,48 +1981,51 @@ pub(crate) struct TextLocation {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum TextCurve {
     /// Infinite line.
-    Line { origin: Point3, direction: Vector3 },
+    Line {
+        origin: FinitePoint3,
+        direction: FiniteVector3,
+    },
     /// Full circle.
     Circle {
-        center: Point3,
-        axis: Vector3,
-        ref_direction: Vector3,
-        radius: f64,
+        center: FinitePoint3,
+        axis: FiniteVector3,
+        ref_direction: FiniteVector3,
+        radius: FiniteReal,
     },
     /// Full ellipse.
     Ellipse {
-        center: Point3,
-        axis: Vector3,
-        major_direction: Vector3,
-        major_radius: f64,
-        minor_radius: f64,
+        center: FinitePoint3,
+        axis: FiniteVector3,
+        major_direction: FiniteVector3,
+        major_radius: FiniteReal,
+        minor_radius: FiniteReal,
     },
     /// Parabola.
     Parabola {
-        vertex: Point3,
-        axis: Vector3,
-        major_direction: Vector3,
-        focal_distance: f64,
+        vertex: FinitePoint3,
+        axis: FiniteVector3,
+        major_direction: FiniteVector3,
+        focal_distance: FiniteReal,
     },
     /// Hyperbola.
     Hyperbola {
-        center: Point3,
-        axis: Vector3,
-        major_direction: Vector3,
-        major_radius: f64,
-        minor_radius: f64,
+        center: FinitePoint3,
+        axis: FiniteVector3,
+        major_direction: FiniteVector3,
+        major_radius: FiniteReal,
+        minor_radius: FiniteReal,
     },
     /// Rational or non-rational B-spline curve.
     Nurbs(NurbsCurve),
     /// A parameter sub-range of an inline basis curve.
     Trimmed {
-        parameter_range: [f64; 2],
+        parameter_range: [FiniteReal; 2],
         basis: NestedCurve,
     },
     /// A signed offset from an inline basis curve in a fixed direction.
     Offset {
-        distance: f64,
-        direction: Vector3,
+        distance: FiniteReal,
+        direction: FiniteVector3,
         basis: NestedCurve,
     },
 }
@@ -2082,65 +2094,68 @@ impl Serialize for NestedCurve {
 pub(crate) enum TextSurface {
     /// Infinite plane.
     Plane {
-        origin: Point3,
-        axis: Vector3,
-        u_axis: Vector3,
+        origin: FinitePoint3,
+        axis: FiniteVector3,
+        u_axis: FiniteVector3,
         v_reversed: bool,
     },
     /// Circular cylinder.
     Cylinder {
-        origin: Point3,
-        axis: Vector3,
-        ref_direction: Vector3,
-        radius: f64,
+        origin: FinitePoint3,
+        axis: FiniteVector3,
+        ref_direction: FiniteVector3,
+        radius: FiniteReal,
         u_reversed: bool,
     },
     /// Circular cone.
     Cone {
-        origin: Point3,
-        axis: Vector3,
-        ref_direction: Vector3,
-        radius: f64,
-        half_angle: f64,
+        origin: FinitePoint3,
+        axis: FiniteVector3,
+        ref_direction: FiniteVector3,
+        radius: FiniteReal,
+        half_angle: FiniteReal,
         u_reversed: bool,
     },
     /// Sphere.
     Sphere {
-        center: Point3,
-        axis: Vector3,
-        ref_direction: Vector3,
-        radius: f64,
+        center: FinitePoint3,
+        axis: FiniteVector3,
+        ref_direction: FiniteVector3,
+        radius: FiniteReal,
         u_reversed: bool,
     },
     /// Torus.
     Torus {
-        center: Point3,
-        axis: Vector3,
-        ref_direction: Vector3,
-        major_radius: f64,
-        minor_radius: f64,
+        center: FinitePoint3,
+        axis: FiniteVector3,
+        ref_direction: FiniteVector3,
+        major_radius: FiniteReal,
+        minor_radius: FiniteReal,
         u_reversed: bool,
     },
     /// Rational or non-rational tensor-product B-spline surface.
     Nurbs(NurbsSurface),
     /// Translation of an inline directrix curve.
     Extrusion {
-        direction: Vector3,
+        direction: FiniteVector3,
         directrix: NestedCurve,
     },
     /// Revolution of an inline directrix around an axis.
     Revolution {
-        axis_origin: Point3,
-        axis_direction: Vector3,
+        axis_origin: FinitePoint3,
+        axis_direction: FiniteVector3,
         directrix: NestedCurve,
     },
     /// Rectangular parameter sub-range of an inline basis surface.
     Trimmed {
-        parameter_ranges: [[f64; 2]; 2],
+        parameter_ranges: [[FiniteReal; 2]; 2],
         basis: NestedSurface,
     },
     /// Signed normal offset from an inline basis surface.
-    Offset { distance: f64, basis: NestedSurface },
+    Offset {
+        distance: FiniteReal,
+        basis: NestedSurface,
+    },
 }
 
 impl TextSurface {
@@ -2244,7 +2259,7 @@ pub(crate) fn surface_parameter_affine(surface: &TextSurface) -> SurfaceParamete
             ..
         } => SurfaceParameterAffine {
             u_scale: if *u_reversed { -1.0 } else { 1.0 },
-            v_scale: half_angle.cos(),
+            v_scale: half_angle.get().cos(),
             ..identity
         },
         TextSurface::Trimmed {
@@ -2256,9 +2271,9 @@ pub(crate) fn surface_parameter_affine(surface: &TextSurface) -> SurfaceParamete
             let v_scale = basis.v_scale.abs();
             SurfaceParameterAffine {
                 u_scale,
-                u_offset: -parameter_ranges[0][0] * u_scale,
+                u_offset: -parameter_ranges[0][0].get() * u_scale,
                 v_scale,
-                v_offset: -parameter_ranges[1][0] * v_scale,
+                v_offset: -parameter_ranges[1][0].get() * v_scale,
             }
         }
         TextSurface::Offset { basis, .. } => surface_parameter_affine(basis.surface()),
@@ -2650,15 +2665,13 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion)
         let kind = cursor.u8("binary location kind")?;
         let location = match kind {
             1 => {
-                let mut rows = Transform::identity().affine_rows();
+                let mut rows = [[FiniteReal::ZERO; 4]; 3];
                 for row in &mut rows {
                     for value in row {
-                        *value = cursor.f64("binary location transform")?;
+                        *value = cursor.finite_f64("binary location transform")?;
                     }
                 }
-                let transform = Transform::affine(rows).ok_or_else(|| {
-                    CodecError::Malformed("location transform must be finite".into())
-                })?;
+                let transform = Transform::from_finite_rows(rows);
                 invert_affine(transform)?;
                 TextLocation {
                     factors: Vec::new(),
@@ -2739,7 +2752,7 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion)
             })
             .transpose()?;
         polygons3d.push(TextPolygon3d {
-            deflection: admit_polygon_deflection(deflection.get())?,
+            deflection: admit_polygon_deflection(deflection)?,
             nodes,
             parameters,
         });
@@ -2777,7 +2790,7 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion)
             .transpose()?;
         polygons_on_triangulations.push(TextPolygonOnTriangulation {
             nodes,
-            deflection: admit_polygon_deflection(deflection.get())?,
+            deflection: admit_polygon_deflection(deflection)?,
             parameters,
         });
     }
@@ -2827,7 +2840,7 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion)
             })
             .transpose()?;
         triangulations.push(
-            TextTriangulation::try_new(deflection, nodes, uv_nodes, triangles, normals)
+            TextTriangulation::from_admitted_parts(deflection, nodes, uv_nodes, triangles, normals)
                 .map_err(CodecError::Malformed)?,
         );
     }
@@ -2925,7 +2938,7 @@ fn parse_binary_tshape(
     };
     let geometry = match kind {
         TextShapeKind::Vertex => {
-            let tolerance = cursor.f64("binary vertex tolerance")?;
+            let tolerance = cursor.finite_f64("binary vertex tolerance")?;
             let point = cursor.finite_point3("binary vertex point")?;
             let mut representations = Vec::new();
             loop {
@@ -2938,7 +2951,7 @@ fn parse_binary_tshape(
                         "binary vertex representation-count limit exceeded".into(),
                     ));
                 }
-                let parameter = cursor.f64("binary vertex parameter")?;
+                let parameter = cursor.finite_f64("binary vertex parameter")?;
                 let representation = match representation_kind {
                     1 => TextPointRepresentation::Curve3d {
                         parameter,
@@ -2978,7 +2991,8 @@ fn parse_binary_tshape(
                     },
                     3 => TextPointRepresentation::Surface {
                         parameter,
-                        second_parameter: cursor.f64("binary vertex second surface parameter")?,
+                        second_parameter: cursor
+                            .finite_f64("binary vertex second surface parameter")?,
                         surface: checked_binary_reference(
                             cursor.i32("binary vertex surface")?,
                             surface_count,
@@ -3007,7 +3021,7 @@ fn parse_binary_tshape(
             }
         }
         TextShapeKind::Edge => {
-            let tolerance = cursor.f64("binary edge tolerance")?;
+            let tolerance = cursor.finite_f64("binary edge tolerance")?;
             let same_parameter = cursor.bool("binary edge same-parameter flag")?;
             let same_range = cursor.bool("binary edge same-range flag")?;
             let degenerated = cursor.bool("binary edge degenerated flag")?;
@@ -3045,7 +3059,7 @@ fn parse_binary_tshape(
         }
         TextShapeKind::Face => {
             let natural_restriction = cursor.bool("binary face natural-restriction flag")?;
-            let tolerance = cursor.f64("binary face tolerance")?;
+            let tolerance = cursor.finite_f64("binary face tolerance")?;
             let surface = checked_binary_reference(
                 cursor.i32("binary face surface")?,
                 surface_count,
@@ -3158,8 +3172,8 @@ fn parse_binary_edge_representation(
                 "edge curve location",
             )?;
             let parameter_range = [
-                cursor.f64("binary edge curve start")?,
-                cursor.f64("binary edge curve end")?,
+                cursor.finite_f64("binary edge curve start")?,
+                cursor.finite_f64("binary edge curve end")?,
             ];
             Ok(TextEdgeRepresentation::Curve3d {
                 curve,
@@ -3200,13 +3214,13 @@ fn parse_binary_edge_representation(
                 "edge surface location",
             )?;
             let parameter_range = [
-                cursor.f64("binary edge pcurve start")?,
-                cursor.f64("binary edge pcurve end")?,
+                cursor.finite_f64("binary edge pcurve start")?,
+                cursor.finite_f64("binary edge pcurve end")?,
             ];
             let uv_endpoints = if matches!(version, 2 | 3) {
                 Some([
-                    cursor.point2("binary edge first UV endpoint")?,
-                    cursor.point2("binary edge last UV endpoint")?,
+                    cursor.finite_point2("binary edge first UV endpoint")?,
+                    cursor.finite_point2("binary edge last UV endpoint")?,
                 ])
             } else {
                 None
@@ -3365,79 +3379,79 @@ fn parse_binary_surface(
     }
     Ok(match cursor.u8("binary surface kind")? {
         1 => {
-            let origin = cursor.point3("binary plane origin")?;
-            let axis = cursor.vector3("binary plane axis")?;
-            let u_axis = cursor.vector3("binary plane u axis")?;
-            let v_axis = cursor.vector3("binary plane v axis")?;
+            let origin = cursor.finite_point3("binary plane origin")?;
+            let axis = cursor.finite_vector3("binary plane axis")?;
+            let u_axis = cursor.finite_vector3("binary plane u axis")?;
+            let v_axis = cursor.finite_vector3("binary plane v axis")?;
             TextSurface::Plane {
                 origin,
                 axis,
                 u_axis,
-                v_reversed: frame_v_reversed(axis, u_axis, v_axis),
+                v_reversed: frame_v_reversed(axis.get(), u_axis.get(), v_axis.get()),
             }
         }
         2 => {
-            let origin = cursor.point3("binary cylinder origin")?;
-            let axis = cursor.vector3("binary cylinder axis")?;
-            let ref_direction = cursor.vector3("binary cylinder reference direction")?;
-            let y_direction = cursor.vector3("binary cylinder v direction")?;
+            let origin = cursor.finite_point3("binary cylinder origin")?;
+            let axis = cursor.finite_vector3("binary cylinder axis")?;
+            let ref_direction = cursor.finite_vector3("binary cylinder reference direction")?;
+            let y_direction = cursor.finite_vector3("binary cylinder v direction")?;
             TextSurface::Cylinder {
                 origin,
                 axis,
                 ref_direction,
-                radius: cursor.f64("binary cylinder radius")?,
-                u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
+                radius: cursor.finite_f64("binary cylinder radius")?,
+                u_reversed: frame_v_reversed(axis.get(), ref_direction.get(), y_direction.get()),
             }
         }
         3 => {
-            let origin = cursor.point3("binary cone origin")?;
-            let axis = cursor.vector3("binary cone axis")?;
-            let ref_direction = cursor.vector3("binary cone reference direction")?;
-            let y_direction = cursor.vector3("binary cone v direction")?;
+            let origin = cursor.finite_point3("binary cone origin")?;
+            let axis = cursor.finite_vector3("binary cone axis")?;
+            let ref_direction = cursor.finite_vector3("binary cone reference direction")?;
+            let y_direction = cursor.finite_vector3("binary cone v direction")?;
             TextSurface::Cone {
                 origin,
                 axis,
                 ref_direction,
-                radius: cursor.f64("binary cone reference radius")?,
-                half_angle: cursor.f64("binary cone half angle")?,
-                u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
+                radius: cursor.finite_f64("binary cone reference radius")?,
+                half_angle: cursor.finite_f64("binary cone half angle")?,
+                u_reversed: frame_v_reversed(axis.get(), ref_direction.get(), y_direction.get()),
             }
         }
         4 => {
-            let center = cursor.point3("binary sphere center")?;
-            let axis = cursor.vector3("binary sphere axis")?;
-            let ref_direction = cursor.vector3("binary sphere reference direction")?;
-            let y_direction = cursor.vector3("binary sphere v direction")?;
+            let center = cursor.finite_point3("binary sphere center")?;
+            let axis = cursor.finite_vector3("binary sphere axis")?;
+            let ref_direction = cursor.finite_vector3("binary sphere reference direction")?;
+            let y_direction = cursor.finite_vector3("binary sphere v direction")?;
             TextSurface::Sphere {
                 center,
                 axis,
                 ref_direction,
-                radius: cursor.f64("binary sphere radius")?,
-                u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
+                radius: cursor.finite_f64("binary sphere radius")?,
+                u_reversed: frame_v_reversed(axis.get(), ref_direction.get(), y_direction.get()),
             }
         }
         5 => {
-            let center = cursor.point3("binary torus center")?;
-            let axis = cursor.vector3("binary torus axis")?;
-            let ref_direction = cursor.vector3("binary torus reference direction")?;
-            let y_direction = cursor.vector3("binary torus v direction")?;
+            let center = cursor.finite_point3("binary torus center")?;
+            let axis = cursor.finite_vector3("binary torus axis")?;
+            let ref_direction = cursor.finite_vector3("binary torus reference direction")?;
+            let y_direction = cursor.finite_vector3("binary torus v direction")?;
             TextSurface::Torus {
                 center,
                 axis,
                 ref_direction,
-                major_radius: cursor.f64("binary torus major radius")?,
-                minor_radius: cursor.f64("binary torus minor radius")?,
-                u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
+                major_radius: cursor.finite_f64("binary torus major radius")?,
+                minor_radius: cursor.finite_f64("binary torus minor radius")?,
+                u_reversed: frame_v_reversed(axis.get(), ref_direction.get(), y_direction.get()),
             }
         }
         6 => TextSurface::Extrusion {
-            direction: cursor.vector3("binary extrusion direction")?,
+            direction: cursor.finite_vector3("binary extrusion direction")?,
             directrix: NestedCurve::try_new(parse_binary_curve(cursor, depth + 1)?)
                 .map_err(CodecError::malformed)?,
         },
         7 => TextSurface::Revolution {
-            axis_origin: cursor.point3("binary revolution axis origin")?,
-            axis_direction: cursor.vector3("binary revolution axis direction")?,
+            axis_origin: cursor.finite_point3("binary revolution axis origin")?,
+            axis_direction: cursor.finite_vector3("binary revolution axis direction")?,
             directrix: NestedCurve::try_new(parse_binary_curve(cursor, depth + 1)?)
                 .map_err(CodecError::malformed)?,
         },
@@ -3459,13 +3473,13 @@ fn parse_binary_surface(
             let mut control_points = Vec::with_capacity(capacity);
             let mut weights = rational.then(|| Vec::with_capacity(capacity));
             for _ in 0..pole_count {
-                control_points.push(cursor.point3("binary Bezier surface pole")?);
+                control_points.push(cursor.finite_point3("binary Bezier surface pole")?);
                 if let Some(weights) = &mut weights {
-                    weights.push(cursor.f64("binary Bezier surface weight")?);
+                    weights.push(cursor.finite_f64("binary Bezier surface weight")?);
                 }
             }
             TextSurface::Nurbs(
-                NurbsSurface::from_lanes(
+                NurbsSurface::from_finite_lanes(
                     NurbsSurfaceAxis::new(
                         u32::try_from(u_degree).map_err(|_| {
                             CodecError::Malformed("binary Bezier u degree exceeds u32".into())
@@ -3507,9 +3521,9 @@ fn parse_binary_surface(
             let mut control_points = Vec::with_capacity(capacity);
             let mut weights = rational.then(|| Vec::with_capacity(capacity));
             for _ in 0..pole_count {
-                control_points.push(cursor.point3("binary B-spline surface pole")?);
+                control_points.push(cursor.finite_point3("binary B-spline surface pole")?);
                 if let Some(weights) = &mut weights {
-                    weights.push(cursor.f64("binary B-spline surface weight")?);
+                    weights.push(cursor.finite_f64("binary B-spline surface weight")?);
                 }
             }
             TextSurface::Nurbs(normalize_periodic_surface(
@@ -3527,19 +3541,19 @@ fn parse_binary_surface(
         10 => TextSurface::Trimmed {
             parameter_ranges: [
                 [
-                    cursor.f64("binary surface u trim start")?,
-                    cursor.f64("binary surface u trim end")?,
+                    cursor.finite_f64("binary surface u trim start")?,
+                    cursor.finite_f64("binary surface u trim end")?,
                 ],
                 [
-                    cursor.f64("binary surface v trim start")?,
-                    cursor.f64("binary surface v trim end")?,
+                    cursor.finite_f64("binary surface v trim start")?,
+                    cursor.finite_f64("binary surface v trim end")?,
                 ],
             ],
             basis: NestedSurface::try_new(parse_binary_surface(cursor, depth + 1)?)
                 .map_err(CodecError::malformed)?,
         },
         11 => TextSurface::Offset {
-            distance: cursor.f64("binary surface offset")?,
+            distance: cursor.finite_f64("binary surface offset")?,
             basis: NestedSurface::try_new(parse_binary_surface(cursor, depth + 1)?)
                 .map_err(CodecError::malformed)?,
         },
@@ -3569,57 +3583,57 @@ fn parse_binary_curve(
     }
     Ok(match cursor.u8("binary 3D curve kind")? {
         1 => TextCurve::Line {
-            origin: cursor.point3("binary line origin")?,
-            direction: cursor.vector3("binary line direction")?,
+            origin: cursor.finite_point3("binary line origin")?,
+            direction: cursor.finite_vector3("binary line direction")?,
         },
         2 => {
-            let center = cursor.point3("binary circle center")?;
-            let axis = cursor.vector3("binary circle axis")?;
-            let ref_direction = cursor.vector3("binary circle reference direction")?;
-            cursor.vector3("binary circle y axis")?;
+            let center = cursor.finite_point3("binary circle center")?;
+            let axis = cursor.finite_vector3("binary circle axis")?;
+            let ref_direction = cursor.finite_vector3("binary circle reference direction")?;
+            cursor.finite_vector3("binary circle y axis")?;
             TextCurve::Circle {
                 center,
                 axis,
                 ref_direction,
-                radius: cursor.f64("binary circle radius")?,
+                radius: cursor.finite_f64("binary circle radius")?,
             }
         }
         3 => {
-            let center = cursor.point3("binary ellipse center")?;
-            let axis = cursor.vector3("binary ellipse axis")?;
-            let major_direction = cursor.vector3("binary ellipse major direction")?;
-            cursor.vector3("binary ellipse minor direction")?;
+            let center = cursor.finite_point3("binary ellipse center")?;
+            let axis = cursor.finite_vector3("binary ellipse axis")?;
+            let major_direction = cursor.finite_vector3("binary ellipse major direction")?;
+            cursor.finite_vector3("binary ellipse minor direction")?;
             TextCurve::Ellipse {
                 center,
                 axis,
                 major_direction,
-                major_radius: cursor.f64("binary ellipse major radius")?,
-                minor_radius: cursor.f64("binary ellipse minor radius")?,
+                major_radius: cursor.finite_f64("binary ellipse major radius")?,
+                minor_radius: cursor.finite_f64("binary ellipse minor radius")?,
             }
         }
         4 => {
-            let vertex = cursor.point3("binary parabola vertex")?;
-            let axis = cursor.vector3("binary parabola axis")?;
-            let major_direction = cursor.vector3("binary parabola major direction")?;
-            cursor.vector3("binary parabola minor direction")?;
+            let vertex = cursor.finite_point3("binary parabola vertex")?;
+            let axis = cursor.finite_vector3("binary parabola axis")?;
+            let major_direction = cursor.finite_vector3("binary parabola major direction")?;
+            cursor.finite_vector3("binary parabola minor direction")?;
             TextCurve::Parabola {
                 vertex,
                 axis,
                 major_direction,
-                focal_distance: cursor.f64("binary parabola focal distance")?,
+                focal_distance: cursor.finite_f64("binary parabola focal distance")?,
             }
         }
         5 => {
-            let center = cursor.point3("binary hyperbola center")?;
-            let axis = cursor.vector3("binary hyperbola axis")?;
-            let major_direction = cursor.vector3("binary hyperbola major direction")?;
-            cursor.vector3("binary hyperbola minor direction")?;
+            let center = cursor.finite_point3("binary hyperbola center")?;
+            let axis = cursor.finite_vector3("binary hyperbola axis")?;
+            let major_direction = cursor.finite_vector3("binary hyperbola major direction")?;
+            cursor.finite_vector3("binary hyperbola minor direction")?;
             TextCurve::Hyperbola {
                 center,
                 axis,
                 major_direction,
-                major_radius: cursor.f64("binary hyperbola major radius")?,
-                minor_radius: cursor.f64("binary hyperbola minor radius")?,
+                major_radius: cursor.finite_f64("binary hyperbola major radius")?,
+                minor_radius: cursor.finite_f64("binary hyperbola minor radius")?,
             }
         }
         6 => {
@@ -3633,13 +3647,13 @@ fn parse_binary_curve(
             let mut control_points = Vec::with_capacity(capacity);
             let mut weights = rational.then(|| Vec::with_capacity(capacity));
             for _ in 0..pole_count {
-                control_points.push(cursor.point3("binary Bezier pole")?);
+                control_points.push(cursor.finite_point3("binary Bezier pole")?);
                 if let Some(weights) = &mut weights {
-                    weights.push(cursor.f64("binary Bezier weight")?);
+                    weights.push(cursor.finite_f64("binary Bezier weight")?);
                 }
             }
             TextCurve::Nurbs(
-                NurbsCurve::from_lanes(
+                NurbsCurve::from_finite_lanes(
                     u32::try_from(degree).map_err(|_| {
                         CodecError::Malformed("binary Bezier degree exceeds u32".into())
                     })?,
@@ -3662,30 +3676,30 @@ fn parse_binary_curve(
             let mut control_points = Vec::with_capacity(capacity);
             let mut weights = rational.then(|| Vec::with_capacity(capacity));
             for _ in 0..pole_count {
-                control_points.push(cursor.point3("binary B-spline pole")?);
+                control_points.push(cursor.finite_point3("binary B-spline pole")?);
                 if let Some(weights) = &mut weights {
-                    weights.push(cursor.f64("binary B-spline weight")?);
+                    weights.push(cursor.finite_f64("binary B-spline weight")?);
                 }
             }
             let knots = cursor.expanded_knots(knot_count, "binary B-spline")?;
             let (knots, padding) = normalize_periodic_knots(knots, degree, periodic)?;
             append_periodic_curve_poles(&mut control_points, weights.as_mut(), padding)?;
             TextCurve::Nurbs(
-                NurbsCurve::from_lanes(degree, knots, control_points, weights, periodic)
+                NurbsCurve::from_finite_lanes(degree, knots, control_points, weights, periodic)
                     .map_err(|error| CodecError::Malformed(error.to_string()))?,
             )
         }
         8 => TextCurve::Trimmed {
             parameter_range: [
-                cursor.f64("binary trim start")?,
-                cursor.f64("binary trim end")?,
+                cursor.finite_f64("binary trim start")?,
+                cursor.finite_f64("binary trim end")?,
             ],
             basis: NestedCurve::try_new(parse_binary_curve(cursor, depth + 1)?)
                 .map_err(CodecError::malformed)?,
         },
         9 => TextCurve::Offset {
-            distance: cursor.f64("binary offset distance")?,
-            direction: cursor.vector3("binary offset direction")?,
+            distance: cursor.finite_f64("binary offset distance")?,
+            direction: cursor.finite_vector3("binary offset direction")?,
             basis: NestedCurve::try_new(parse_binary_curve(cursor, depth + 1)?)
                 .map_err(CodecError::malformed)?,
         },
@@ -3706,39 +3720,36 @@ fn parse_binary_curve2d(
             "binary parameter-curve nesting exceeds {MAX_GEOMETRY_NESTING_DEPTH}"
         )));
     }
-    let point = |cursor: &mut BinaryCursor<'_>, label| -> Result<Point2, CodecError> {
-        Ok(Point2::new(cursor.f64(label)?, cursor.f64(label)?))
-    };
     Ok(match cursor.u8("binary parameter-curve kind")? {
         1 => TextCurve2d::Line {
-            origin: point(cursor, "binary line origin")?,
-            direction: point(cursor, "binary line direction")?,
+            origin: cursor.finite_point2("binary line origin")?,
+            direction: cursor.finite_point2("binary line direction")?,
         },
         2 => TextCurve2d::Circle {
-            center: point(cursor, "binary circle center")?,
-            x_axis: point(cursor, "binary circle x axis")?,
-            y_axis: point(cursor, "binary circle y axis")?,
-            radius: cursor.f64("binary circle radius")?,
+            center: cursor.finite_point2("binary circle center")?,
+            x_axis: cursor.finite_point2("binary circle x axis")?,
+            y_axis: cursor.finite_point2("binary circle y axis")?,
+            radius: cursor.finite_f64("binary circle radius")?,
         },
         3 => TextCurve2d::Ellipse {
-            center: point(cursor, "binary ellipse center")?,
-            x_axis: point(cursor, "binary ellipse x axis")?,
-            y_axis: point(cursor, "binary ellipse y axis")?,
-            major_radius: cursor.f64("binary ellipse major radius")?,
-            minor_radius: cursor.f64("binary ellipse minor radius")?,
+            center: cursor.finite_point2("binary ellipse center")?,
+            x_axis: cursor.finite_point2("binary ellipse x axis")?,
+            y_axis: cursor.finite_point2("binary ellipse y axis")?,
+            major_radius: cursor.finite_f64("binary ellipse major radius")?,
+            minor_radius: cursor.finite_f64("binary ellipse minor radius")?,
         },
         4 => TextCurve2d::Parabola {
-            vertex: point(cursor, "binary parabola vertex")?,
-            x_axis: point(cursor, "binary parabola x axis")?,
-            y_axis: point(cursor, "binary parabola y axis")?,
-            focal_distance: cursor.f64("binary parabola focal distance")?,
+            vertex: cursor.finite_point2("binary parabola vertex")?,
+            x_axis: cursor.finite_point2("binary parabola x axis")?,
+            y_axis: cursor.finite_point2("binary parabola y axis")?,
+            focal_distance: cursor.finite_f64("binary parabola focal distance")?,
         },
         5 => TextCurve2d::Hyperbola {
-            center: point(cursor, "binary hyperbola center")?,
-            x_axis: point(cursor, "binary hyperbola x axis")?,
-            y_axis: point(cursor, "binary hyperbola y axis")?,
-            major_radius: cursor.f64("binary hyperbola major radius")?,
-            minor_radius: cursor.f64("binary hyperbola minor radius")?,
+            center: cursor.finite_point2("binary hyperbola center")?,
+            x_axis: cursor.finite_point2("binary hyperbola x axis")?,
+            y_axis: cursor.finite_point2("binary hyperbola y axis")?,
+            major_radius: cursor.finite_f64("binary hyperbola major radius")?,
+            minor_radius: cursor.finite_f64("binary hyperbola minor radius")?,
         },
         6 => {
             let rational = cursor.bool("binary Bezier rational flag")?;
@@ -3751,9 +3762,9 @@ fn parse_binary_curve2d(
             let mut control_points = Vec::with_capacity(capacity);
             let mut weights = rational.then(|| Vec::with_capacity(capacity));
             for _ in 0..pole_count {
-                control_points.push(point(cursor, "binary Bezier pole")?);
+                control_points.push(cursor.finite_point2("binary Bezier pole")?);
                 if let Some(weights) = &mut weights {
-                    weights.push(cursor.f64("binary Bezier weight")?);
+                    weights.push(cursor.finite_f64("binary Bezier weight")?);
                 }
             }
             TextCurve2d::Nurbs(NurbsCurve2d {
@@ -3777,9 +3788,9 @@ fn parse_binary_curve2d(
             let mut control_points = Vec::with_capacity(capacity);
             let mut weights = rational.then(|| Vec::with_capacity(capacity));
             for _ in 0..pole_count {
-                control_points.push(point(cursor, "binary B-spline pole")?);
+                control_points.push(cursor.finite_point2("binary B-spline pole")?);
                 if let Some(weights) = &mut weights {
-                    weights.push(cursor.f64("binary B-spline weight")?);
+                    weights.push(cursor.finite_f64("binary B-spline weight")?);
                 }
             }
             let knots = cursor.expanded_knots(knot_count, "binary B-spline")?;
@@ -3795,14 +3806,14 @@ fn parse_binary_curve2d(
         }
         8 => TextCurve2d::Trimmed {
             parameter_range: [
-                cursor.f64("binary trim start")?,
-                cursor.f64("binary trim end")?,
+                cursor.finite_f64("binary trim start")?,
+                cursor.finite_f64("binary trim end")?,
             ],
             basis: NestedCurve2d::try_new(parse_binary_curve2d(cursor, depth + 1)?)
                 .map_err(CodecError::malformed)?,
         },
         9 => TextCurve2d::Offset {
-            distance: cursor.f64("binary offset distance")?,
+            distance: cursor.finite_f64("binary offset distance")?,
             basis: NestedCurve2d::try_new(parse_binary_curve2d(cursor, depth + 1)?)
                 .map_err(CodecError::malformed)?,
         },
@@ -3908,33 +3919,22 @@ impl<'a> BinaryCursor<'a> {
             .ok_or_else(|| CodecError::malformed(format_args!("invalid {label}")))
     }
 
-    fn f64(&mut self, label: &str) -> Result<f64, CodecError> {
-        self.finite_f64(label).map(FiniteReal::get)
-    }
-
     fn finite_f64(&mut self, label: &str) -> Result<FiniteReal, CodecError> {
         let value = self.view.f64_le().ok_or_else(|| Self::truncated(label))?;
         FiniteReal::new(value)
             .ok_or_else(|| CodecError::malformed(format_args!("non-finite {label}")))
     }
 
-    fn f32(&mut self, label: &str) -> Result<f32, CodecError> {
+    fn f32(&mut self, label: &str) -> Result<FiniteBinary32, CodecError> {
         let value = self.view.f32_le().ok_or_else(|| Self::truncated(label))?;
-        value
-            .is_finite()
-            .then_some(value)
+        FiniteBinary32::new(value)
             .ok_or_else(|| CodecError::malformed(format_args!("non-finite {label}")))
     }
 
-    fn point2(&mut self, label: &str) -> Result<Point2, CodecError> {
-        Ok(Point2::new(self.f64(label)?, self.f64(label)?))
-    }
-
-    fn point3(&mut self, label: &str) -> Result<Point3, CodecError> {
-        Ok(Point3::new(
-            self.f64(label)?,
-            self.f64(label)?,
-            self.f64(label)?,
+    fn finite_point2(&mut self, label: &str) -> Result<FinitePoint2, CodecError> {
+        Ok(FinitePoint2::from_coordinates(
+            self.finite_f64(label)?,
+            self.finite_f64(label)?,
         ))
     }
 
@@ -3946,40 +3946,26 @@ impl<'a> BinaryCursor<'a> {
         ))
     }
 
-    fn finite_point2(&mut self, label: &str) -> Result<FinitePoint2, CodecError> {
-        Ok(FinitePoint2::from_coordinates(
+    fn finite_vector3(&mut self, label: &str) -> Result<FiniteVector3, CodecError> {
+        Ok(FiniteVector3::from_components(
             self.finite_f64(label)?,
             self.finite_f64(label)?,
-        ))
-    }
-
-    fn vector3(&mut self, label: &str) -> Result<Vector3, CodecError> {
-        Ok(Vector3::new(
-            self.f64(label)?,
-            self.f64(label)?,
-            self.f64(label)?,
+            self.finite_f64(label)?,
         ))
     }
 
     fn finite_vector3_f32(&mut self, label: &str) -> Result<FiniteVector3, CodecError> {
-        let x = self.f32(label)?;
-        let y = self.f32(label)?;
-        let z = self.f32(label)?;
-        let finite = |value| {
-            FiniteReal::new(f64::from(value))
-                .ok_or_else(|| CodecError::malformed(format_args!("non-finite {label}")))
-        };
         Ok(FiniteVector3::from_components(
-            finite(x)?,
-            finite(y)?,
-            finite(z)?,
+            self.f32(label)?.into(),
+            self.f32(label)?.into(),
+            self.f32(label)?.into(),
         ))
     }
 
-    fn expanded_knots(&mut self, count: usize, label: &str) -> Result<Vec<f64>, CodecError> {
+    fn expanded_knots(&mut self, count: usize, label: &str) -> Result<Vec<FiniteReal>, CodecError> {
         let mut knots = Vec::new();
         for _ in 0..count {
-            let knot = self.f64(label)?;
+            let knot = self.finite_f64(label)?;
             let multiplicity = self.count(label)?;
             if knots
                 .len()
@@ -4018,15 +4004,13 @@ fn parse_locations(
         let kind = cursor.integer("location type")?;
         let location = match kind {
             1 => {
-                let mut rows = Transform::identity().affine_rows();
+                let mut rows = [[FiniteReal::ZERO; 4]; 3];
                 for row in &mut rows {
                     for value in row {
-                        *value = cursor.real("location transform value")?;
+                        *value = cursor.finite_real("location transform value")?;
                     }
                 }
-                let transform = Transform::affine(rows).ok_or_else(|| {
-                    CodecError::Malformed("location transform must be finite".into())
-                })?;
+                let transform = Transform::from_finite_rows(rows);
                 invert_affine(transform)?;
                 TextLocation {
                     factors: Vec::new(),
@@ -4132,40 +4116,40 @@ fn parse_curve2d(
     let kind = cursor.integer("2D curve type")?;
     Ok(match kind {
         1 => TextCurve2d::Line {
-            origin: cursor.point2("2D line origin")?,
-            direction: cursor.point2("2D line direction")?,
+            origin: cursor.finite_point2("2D line origin")?,
+            direction: cursor.finite_point2("2D line direction")?,
         },
         2 => TextCurve2d::Circle {
-            center: cursor.point2("2D circle center")?,
-            x_axis: cursor.point2("2D circle x axis")?,
-            y_axis: cursor.point2("2D circle y axis")?,
-            radius: cursor.real("2D circle radius")?,
+            center: cursor.finite_point2("2D circle center")?,
+            x_axis: cursor.finite_point2("2D circle x axis")?,
+            y_axis: cursor.finite_point2("2D circle y axis")?,
+            radius: cursor.finite_real("2D circle radius")?,
         },
         3 => TextCurve2d::Ellipse {
-            center: cursor.point2("2D ellipse center")?,
-            x_axis: cursor.point2("2D ellipse x axis")?,
-            y_axis: cursor.point2("2D ellipse y axis")?,
-            major_radius: cursor.real("2D ellipse major radius")?,
-            minor_radius: cursor.real("2D ellipse minor radius")?,
+            center: cursor.finite_point2("2D ellipse center")?,
+            x_axis: cursor.finite_point2("2D ellipse x axis")?,
+            y_axis: cursor.finite_point2("2D ellipse y axis")?,
+            major_radius: cursor.finite_real("2D ellipse major radius")?,
+            minor_radius: cursor.finite_real("2D ellipse minor radius")?,
         },
         4 => TextCurve2d::Parabola {
-            vertex: cursor.point2("2D parabola vertex")?,
-            x_axis: cursor.point2("2D parabola x axis")?,
-            y_axis: cursor.point2("2D parabola y axis")?,
-            focal_distance: cursor.real("2D parabola focal distance")?,
+            vertex: cursor.finite_point2("2D parabola vertex")?,
+            x_axis: cursor.finite_point2("2D parabola x axis")?,
+            y_axis: cursor.finite_point2("2D parabola y axis")?,
+            focal_distance: cursor.finite_real("2D parabola focal distance")?,
         },
         5 => TextCurve2d::Hyperbola {
-            center: cursor.point2("2D hyperbola center")?,
-            x_axis: cursor.point2("2D hyperbola x axis")?,
-            y_axis: cursor.point2("2D hyperbola y axis")?,
-            major_radius: cursor.real("2D hyperbola major radius")?,
-            minor_radius: cursor.real("2D hyperbola minor radius")?,
+            center: cursor.finite_point2("2D hyperbola center")?,
+            x_axis: cursor.finite_point2("2D hyperbola x axis")?,
+            y_axis: cursor.finite_point2("2D hyperbola y axis")?,
+            major_radius: cursor.finite_real("2D hyperbola major radius")?,
+            minor_radius: cursor.finite_real("2D hyperbola minor radius")?,
         },
         6 => TextCurve2d::Nurbs(parse_bezier_curve2d(cursor)?),
         7 => TextCurve2d::Nurbs(parse_nurbs_curve2d(cursor)?),
         8 => {
-            let first = cursor.real("trimmed 2D curve first parameter")?;
-            let last = cursor.real("trimmed 2D curve last parameter")?;
+            let first = cursor.finite_real("trimmed 2D curve first parameter")?;
+            let last = cursor.finite_real("trimmed 2D curve last parameter")?;
             if first > last {
                 return Err(CodecError::Malformed(
                     "trimmed 2D curve parameter range is reversed".into(),
@@ -4178,7 +4162,7 @@ fn parse_curve2d(
             }
         }
         9 => TextCurve2d::Offset {
-            distance: cursor.real("offset 2D curve distance")?,
+            distance: cursor.finite_real("offset 2D curve distance")?,
             basis: NestedCurve2d::try_new(parse_curve2d(cursor, depth + 1, table_index)?)
                 .map_err(CodecError::malformed)?,
         },
@@ -4197,9 +4181,9 @@ fn parse_bezier_curve2d(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve2d, Co
     let mut control_points = Vec::with_capacity(pole_count);
     let mut weights = rational.then(|| Vec::with_capacity(pole_count));
     for _ in 0..pole_count {
-        control_points.push(cursor.point2("2D Bezier pole")?);
+        control_points.push(cursor.finite_point2("2D Bezier pole")?);
         if let Some(weights) = &mut weights {
-            weights.push(cursor.real("2D Bezier weight")?);
+            weights.push(cursor.finite_real("2D Bezier weight")?);
         }
     }
     Ok(NurbsCurve2d {
@@ -4222,9 +4206,9 @@ fn parse_nurbs_curve2d(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve2d, Cod
     let mut control_points = Vec::with_capacity(capacity);
     let mut weights = rational.then(|| Vec::with_capacity(capacity));
     for _ in 0..pole_count {
-        control_points.push(cursor.point2("2D B-spline pole")?);
+        control_points.push(cursor.finite_point2("2D B-spline pole")?);
         if let Some(weights) = &mut weights {
-            weights.push(cursor.real("2D B-spline weight")?);
+            weights.push(cursor.finite_real("2D B-spline weight")?);
         }
     }
     let knots = parse_knots(cursor, knot_count, degree, "2D B-spline")?;
@@ -4299,7 +4283,7 @@ fn parse_polygons3d(
             None
         };
         polygons.push(TextPolygon3d {
-            deflection: admit_polygon_deflection(deflection.get())?,
+            deflection: admit_polygon_deflection(deflection)?,
             nodes,
             parameters,
         });
@@ -4357,7 +4341,7 @@ fn parse_polygons_on_triangulations(
         };
         polygons.push(TextPolygonOnTriangulation {
             nodes,
-            deflection: admit_polygon_deflection(deflection.get())?,
+            deflection: admit_polygon_deflection(deflection)?,
             parameters,
         });
     }
@@ -4424,7 +4408,7 @@ fn parse_triangulations(
             None
         };
         triangulations.push(
-            TextTriangulation::try_new(deflection, nodes, uv_nodes, triangles, normals)
+            TextTriangulation::from_admitted_parts(deflection, nodes, uv_nodes, triangles, normals)
                 .map_err(CodecError::Malformed)?,
         );
     }
@@ -4554,11 +4538,11 @@ fn parse_vertex_geometry(
     cursor: &mut TokenCursor<'_>,
     counts: &BTreeMap<String, usize>,
 ) -> Result<TextTShapeGeometry, CodecError> {
-    let tolerance = cursor.real("vertex tolerance")?;
+    let tolerance = cursor.finite_real("vertex tolerance")?;
     let point = cursor.finite_point("vertex point")?;
     let mut representations = Vec::new();
     loop {
-        let parameter = cursor.real("vertex representation parameter")?;
+        let parameter = cursor.finite_real("vertex representation parameter")?;
         let kind = cursor.integer("vertex representation kind")?;
         if kind == 0 {
             break;
@@ -4590,7 +4574,7 @@ fn parse_vertex_geometry(
             },
             3 => TextPointRepresentation::Surface {
                 parameter,
-                second_parameter: cursor.real("vertex second surface parameter")?,
+                second_parameter: cursor.finite_real("vertex second surface parameter")?,
                 surface: parse_reference(cursor, "vertex surface", counts["Surfaces"], false)?,
                 location: location_of(cursor)?,
             },
@@ -4614,7 +4598,7 @@ fn parse_edge_geometry(
     counts: &BTreeMap<String, usize>,
     topology_version: u8,
 ) -> Result<TextTShapeGeometry, CodecError> {
-    let tolerance = cursor.real("edge tolerance")?;
+    let tolerance = cursor.finite_real("edge tolerance")?;
     let same_parameter = cursor.boolean("edge same-parameter flag")?;
     let same_range = cursor.boolean("edge same-range flag")?;
     let degenerated = cursor.boolean("edge degenerated flag")?;
@@ -4685,8 +4669,8 @@ fn parse_edge_representation(
             let parameter_range = parse_range(cursor, "edge parameter curve")?;
             let uv_endpoints = if topology_version == 2 {
                 Some([
-                    cursor.point2("edge first UV endpoint")?,
-                    cursor.point2("edge last UV endpoint")?,
+                    cursor.finite_point2("edge first UV endpoint")?,
+                    cursor.finite_point2("edge last UV endpoint")?,
                 ])
             } else {
                 None
@@ -4798,7 +4782,7 @@ fn parse_face_geometry(
     counts: &BTreeMap<String, usize>,
 ) -> Result<TextTShapeGeometry, CodecError> {
     let natural_restriction = cursor.boolean("face natural-restriction flag")?;
-    let tolerance = cursor.real("face tolerance")?;
+    let tolerance = cursor.finite_real("face tolerance")?;
     let surface = parse_reference(cursor, "face surface", counts["Surfaces"], true)?;
     let location = parse_reference(cursor, "face location", counts["Locations"], true)?;
     let triangulation = if cursor.peek() == Some("2") {
@@ -4908,10 +4892,10 @@ fn parse_reference_suffix(
     Ok((value, (!suffix.is_empty()).then(|| suffix.to_owned())))
 }
 
-fn parse_range(cursor: &mut TokenCursor<'_>, label: &str) -> Result<[f64; 2], CodecError> {
+fn parse_range(cursor: &mut TokenCursor<'_>, label: &str) -> Result<[FiniteReal; 2], CodecError> {
     let range = [
-        cursor.real(&format!("{label} first parameter"))?,
-        cursor.real(&format!("{label} last parameter"))?,
+        cursor.finite_real(&format!("{label} first parameter"))?,
+        cursor.finite_real(&format!("{label} last parameter"))?,
     ];
     if range[0] > range[1] {
         return Err(CodecError::malformed(format_args!(
@@ -4939,8 +4923,8 @@ fn parse_surface(
         4 => parse_analytic_surface(AnalyticSurfaceKind::Sphere, cursor)?,
         5 => parse_analytic_surface(AnalyticSurfaceKind::Torus, cursor)?,
         6 => {
-            let direction = cursor.vector("extrusion direction")?;
-            if direction.norm() == 0.0 {
+            let direction = cursor.finite_vector("extrusion direction")?;
+            if direction.get().norm() == 0.0 {
                 return Err(CodecError::Malformed("extrusion direction is zero".into()));
             }
             TextSurface::Extrusion {
@@ -4950,9 +4934,9 @@ fn parse_surface(
             }
         }
         7 => {
-            let axis_origin = cursor.point("revolution axis origin")?;
-            let axis_direction = cursor.vector("revolution axis direction")?;
-            if axis_direction.norm() == 0.0 {
+            let axis_origin = cursor.finite_point("revolution axis origin")?;
+            let axis_direction = cursor.finite_vector("revolution axis direction")?;
+            if axis_direction.get().norm() == 0.0 {
                 return Err(CodecError::Malformed(
                     "revolution axis direction is zero".into(),
                 ));
@@ -4968,12 +4952,12 @@ fn parse_surface(
         9 => TextSurface::Nurbs(parse_nurbs_surface(cursor)?),
         10 => {
             let u_range = [
-                cursor.real("trimmed surface first u parameter")?,
-                cursor.real("trimmed surface last u parameter")?,
+                cursor.finite_real("trimmed surface first u parameter")?,
+                cursor.finite_real("trimmed surface last u parameter")?,
             ];
             let v_range = [
-                cursor.real("trimmed surface first v parameter")?,
-                cursor.real("trimmed surface last v parameter")?,
+                cursor.finite_real("trimmed surface first v parameter")?,
+                cursor.finite_real("trimmed surface last v parameter")?,
             ];
             if u_range[0] > u_range[1] || v_range[0] > v_range[1] {
                 return Err(CodecError::Malformed(
@@ -4987,7 +4971,7 @@ fn parse_surface(
             }
         }
         11 => TextSurface::Offset {
-            distance: cursor.real("offset surface distance")?,
+            distance: cursor.finite_real("offset surface distance")?,
             basis: NestedSurface::try_new(parse_surface(cursor, depth + 1, table_index)?)
                 .map_err(CodecError::malformed)?,
         },
@@ -5012,46 +4996,47 @@ fn parse_analytic_surface(
     kind: AnalyticSurfaceKind,
     cursor: &mut TokenCursor<'_>,
 ) -> Result<TextSurface, CodecError> {
-    let origin = cursor.point("surface origin")?;
-    let axis = cursor.vector("surface axis")?;
-    let ref_direction = cursor.vector("surface reference direction")?;
-    let y_direction = cursor.vector("surface y direction")?;
+    let origin = cursor.finite_point("surface origin")?;
+    let axis = cursor.finite_vector("surface axis")?;
+    let ref_direction = cursor.finite_vector("surface reference direction")?;
+    let y_direction = cursor.finite_vector("surface y direction")?;
+    let reversed = frame_v_reversed(axis.get(), ref_direction.get(), y_direction.get());
     Ok(match kind {
         AnalyticSurfaceKind::Plane => TextSurface::Plane {
             origin,
             axis,
             u_axis: ref_direction,
-            v_reversed: frame_v_reversed(axis, ref_direction, y_direction),
+            v_reversed: reversed,
         },
         AnalyticSurfaceKind::Cylinder => TextSurface::Cylinder {
             origin,
             axis,
             ref_direction,
-            radius: cursor.real("cylinder radius")?,
-            u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
+            radius: cursor.finite_real("cylinder radius")?,
+            u_reversed: reversed,
         },
         AnalyticSurfaceKind::Cone => TextSurface::Cone {
             origin,
             axis,
             ref_direction,
-            radius: cursor.real("cone radius")?,
-            half_angle: cursor.real("cone half angle")?,
-            u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
+            radius: cursor.finite_real("cone radius")?,
+            half_angle: cursor.finite_real("cone half angle")?,
+            u_reversed: reversed,
         },
         AnalyticSurfaceKind::Sphere => TextSurface::Sphere {
             center: origin,
             axis,
             ref_direction,
-            radius: cursor.real("sphere radius")?,
-            u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
+            radius: cursor.finite_real("sphere radius")?,
+            u_reversed: reversed,
         },
         AnalyticSurfaceKind::Torus => TextSurface::Torus {
             center: origin,
             axis,
             ref_direction,
-            major_radius: cursor.real("torus major radius")?,
-            minor_radius: cursor.real("torus minor radius")?,
-            u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
+            major_radius: cursor.finite_real("torus major radius")?,
+            minor_radius: cursor.finite_real("torus minor radius")?,
+            u_reversed: reversed,
         },
     })
 }
@@ -5089,9 +5074,9 @@ fn parse_nurbs_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, Cod
     let mut control_points = Vec::with_capacity(capacity);
     let mut weights = rational.then(|| Vec::with_capacity(capacity));
     for _ in 0..pole_count {
-        control_points.push(cursor.point("B-spline surface pole")?);
+        control_points.push(cursor.finite_point("B-spline surface pole")?);
         if let Some(weights) = &mut weights {
-            weights.push(cursor.real("B-spline surface weight")?);
+            weights.push(cursor.finite_real("B-spline surface weight")?);
         }
     }
     let u_knots = parse_knots(cursor, u_knot_count, u_degree, "B-spline u")?;
@@ -5120,12 +5105,12 @@ fn parse_bezier_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, Co
     let mut control_points = Vec::with_capacity(pole_count);
     let mut weights = rational.then(|| Vec::with_capacity(pole_count));
     for _ in 0..pole_count {
-        control_points.push(cursor.point("Bezier surface pole")?);
+        control_points.push(cursor.finite_point("Bezier surface pole")?);
         if let Some(weights) = &mut weights {
-            weights.push(cursor.real("Bezier surface weight")?);
+            weights.push(cursor.finite_real("Bezier surface weight")?);
         }
     }
-    NurbsSurface::from_lanes(
+    NurbsSurface::from_finite_lanes(
         NurbsSurfaceAxis::new(u_degree as u32, clamped_bezier_knots(u_degree), false),
         NurbsSurfaceAxis::new(v_degree as u32, clamped_bezier_knots(v_degree), false),
         NurbsSurfaceLanes::new(
@@ -5150,10 +5135,10 @@ fn parse_knots(
     knot_count: usize,
     degree: usize,
     label: &str,
-) -> Result<Vec<f64>, CodecError> {
+) -> Result<Vec<FiniteReal>, CodecError> {
     let mut knots = Vec::new();
     for _ in 0..knot_count {
-        let knot = cursor.real(&format!("{label} knot"))?;
+        let knot = cursor.finite_real(&format!("{label} knot"))?;
         let multiplicity = cursor.count(&format!("{label} knot multiplicity"), degree + 1)?;
         let expanded = knots
             .len()
@@ -5168,10 +5153,10 @@ fn parse_knots(
 }
 
 fn normalize_periodic_knots(
-    knots: Vec<f64>,
+    knots: Vec<FiniteReal>,
     degree: u32,
     periodic: bool,
-) -> Result<(Vec<f64>, usize), CodecError> {
+) -> Result<(Vec<FiniteReal>, usize), CodecError> {
     if !periodic {
         return Ok((knots, 0));
     }
@@ -5192,8 +5177,6 @@ fn normalize_periodic_knots(
     if first_multiplicity == 0
         || first_multiplicity > degree
         || last_multiplicity != first_multiplicity
-        || !first.is_finite()
-        || !last.is_finite()
         || first >= last
     {
         return Err(CodecError::Malformed(
@@ -5213,28 +5196,31 @@ fn normalize_periodic_knots(
         Vec::with_capacity(knots.len().checked_add(2 * padding).ok_or_else(|| {
             CodecError::Malformed("periodic B-spline knot limit exceeded".into())
         })?);
+    let overflow =
+        || CodecError::Malformed("periodic B-spline extension exceeds finite knot range".into());
     normalized.extend(
         knots[before_last - padding..before_last]
             .iter()
-            .map(|knot| first - (last - knot)),
+            .map(|knot| {
+                FiniteReal::new(first.get() - (last.get() - knot.get())).ok_or_else(overflow)
+            })
+            .collect::<Result<Vec<_>, _>>()?,
     );
     normalized.extend_from_slice(&knots);
     normalized.extend(
         knots[first_multiplicity..first_multiplicity + padding]
             .iter()
-            .map(|knot| last + (knot - first)),
+            .map(|knot| {
+                FiniteReal::new(last.get() + (knot.get() - first.get())).ok_or_else(overflow)
+            })
+            .collect::<Result<Vec<_>, _>>()?,
     );
-    if normalized.iter().any(|knot| !knot.is_finite()) {
-        return Err(CodecError::Malformed(
-            "periodic B-spline extension exceeds finite knot range".into(),
-        ));
-    }
     Ok((normalized, padding))
 }
 
 fn append_periodic_curve_poles<T: Clone>(
     control_points: &mut Vec<T>,
-    weights: Option<&mut Vec<f64>>,
+    weights: Option<&mut Vec<FiniteReal>>,
     padding: usize,
 ) -> Result<(), CodecError> {
     if padding == 0 {
@@ -5259,10 +5245,10 @@ fn append_periodic_curve_poles<T: Clone>(
 
 fn normalize_periodic_surface(
     degrees: [u32; 2],
-    knots: [Vec<f64>; 2],
+    knots: [Vec<FiniteReal>; 2],
     counts: [usize; 2],
-    control_points: Vec<Point3>,
-    weights: Option<Vec<f64>>,
+    control_points: Vec<FinitePoint3>,
+    weights: Option<Vec<FiniteReal>>,
     periodic: [bool; 2],
 ) -> Result<NurbsSurface, CodecError> {
     let [u_source_knots, v_source_knots] = knots;
@@ -5314,7 +5300,7 @@ fn normalize_periodic_surface(
     };
     let v_count = u32::try_from(new_v)
         .map_err(|_| CodecError::Malformed("periodic B-spline v pole count exceeds u32".into()))?;
-    NurbsSurface::from_lanes(
+    NurbsSurface::from_finite_lanes(
         NurbsSurfaceAxis::new(degrees[0], u_knots, periodic[0]),
         NurbsSurfaceAxis::new(degrees[1], v_knots, periodic[1]),
         NurbsSurfaceLanes::new(
@@ -5342,64 +5328,64 @@ fn parse_curve(
     let kind = cursor.integer("curve type")?;
     Ok(match kind {
         1 => TextCurve::Line {
-            origin: cursor.point("line origin")?,
-            direction: cursor.vector("line direction")?,
+            origin: cursor.finite_point("line origin")?,
+            direction: cursor.finite_vector("line direction")?,
         },
         2 => {
-            let center = cursor.point("circle center")?;
-            let axis = cursor.vector("circle axis")?;
-            let ref_direction = cursor.vector("circle reference direction")?;
-            let _y_direction = cursor.vector("circle y direction")?;
+            let center = cursor.finite_point("circle center")?;
+            let axis = cursor.finite_vector("circle axis")?;
+            let ref_direction = cursor.finite_vector("circle reference direction")?;
+            cursor.finite_vector("circle y direction")?;
             TextCurve::Circle {
                 center,
                 axis,
                 ref_direction,
-                radius: cursor.real("circle radius")?,
+                radius: cursor.finite_real("circle radius")?,
             }
         }
         3 => {
-            let center = cursor.point("ellipse center")?;
-            let axis = cursor.vector("ellipse axis")?;
-            let major_direction = cursor.vector("ellipse major direction")?;
-            let _y_direction = cursor.vector("ellipse y direction")?;
+            let center = cursor.finite_point("ellipse center")?;
+            let axis = cursor.finite_vector("ellipse axis")?;
+            let major_direction = cursor.finite_vector("ellipse major direction")?;
+            cursor.finite_vector("ellipse y direction")?;
             TextCurve::Ellipse {
                 center,
                 axis,
                 major_direction,
-                major_radius: cursor.real("ellipse major radius")?,
-                minor_radius: cursor.real("ellipse minor radius")?,
+                major_radius: cursor.finite_real("ellipse major radius")?,
+                minor_radius: cursor.finite_real("ellipse minor radius")?,
             }
         }
         4 => {
-            let vertex = cursor.point("parabola vertex")?;
-            let axis = cursor.vector("parabola axis")?;
-            let major_direction = cursor.vector("parabola major direction")?;
-            let _y_direction = cursor.vector("parabola y direction")?;
+            let vertex = cursor.finite_point("parabola vertex")?;
+            let axis = cursor.finite_vector("parabola axis")?;
+            let major_direction = cursor.finite_vector("parabola major direction")?;
+            cursor.finite_vector("parabola y direction")?;
             TextCurve::Parabola {
                 vertex,
                 axis,
                 major_direction,
-                focal_distance: cursor.real("parabola focal distance")?,
+                focal_distance: cursor.finite_real("parabola focal distance")?,
             }
         }
         5 => {
-            let center = cursor.point("hyperbola center")?;
-            let axis = cursor.vector("hyperbola axis")?;
-            let major_direction = cursor.vector("hyperbola major direction")?;
-            let _y_direction = cursor.vector("hyperbola y direction")?;
+            let center = cursor.finite_point("hyperbola center")?;
+            let axis = cursor.finite_vector("hyperbola axis")?;
+            let major_direction = cursor.finite_vector("hyperbola major direction")?;
+            cursor.finite_vector("hyperbola y direction")?;
             TextCurve::Hyperbola {
                 center,
                 axis,
                 major_direction,
-                major_radius: cursor.real("hyperbola major radius")?,
-                minor_radius: cursor.real("hyperbola minor radius")?,
+                major_radius: cursor.finite_real("hyperbola major radius")?,
+                minor_radius: cursor.finite_real("hyperbola minor radius")?,
             }
         }
         6 => TextCurve::Nurbs(parse_bezier_curve(cursor)?),
         7 => TextCurve::Nurbs(parse_nurbs_curve(cursor)?),
         8 => {
-            let first = cursor.real("trimmed curve first parameter")?;
-            let last = cursor.real("trimmed curve last parameter")?;
+            let first = cursor.finite_real("trimmed curve first parameter")?;
+            let last = cursor.finite_real("trimmed curve last parameter")?;
             if first > last {
                 return Err(CodecError::Malformed(
                     "trimmed curve parameter range is reversed".into(),
@@ -5412,9 +5398,9 @@ fn parse_curve(
             }
         }
         9 => {
-            let distance = cursor.real("offset curve distance")?;
-            let direction = cursor.vector("offset curve direction")?;
-            if direction.norm() == 0.0 {
+            let distance = cursor.finite_real("offset curve distance")?;
+            let direction = cursor.finite_vector("offset curve direction")?;
+            if direction.get().norm() == 0.0 {
                 return Err(CodecError::Malformed(
                     "offset curve direction is zero".into(),
                 ));
@@ -5445,15 +5431,15 @@ fn parse_nurbs_curve(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve, CodecEr
     let mut control_points = Vec::with_capacity(capacity);
     let mut weights = rational.then(|| Vec::with_capacity(capacity));
     for _ in 0..pole_count {
-        control_points.push(cursor.point("B-spline pole")?);
+        control_points.push(cursor.finite_point("B-spline pole")?);
         if let Some(weights) = &mut weights {
-            weights.push(cursor.real("B-spline weight")?);
+            weights.push(cursor.finite_real("B-spline weight")?);
         }
     }
     let knots = parse_knots(cursor, knot_count, degree, "B-spline")?;
     let (knots, padding) = normalize_periodic_knots(knots, degree as u32, periodic)?;
     append_periodic_curve_poles(&mut control_points, weights.as_mut(), padding)?;
-    NurbsCurve::from_lanes(degree as u32, knots, control_points, weights, periodic)
+    NurbsCurve::from_finite_lanes(degree as u32, knots, control_points, weights, periodic)
         .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
@@ -5464,12 +5450,12 @@ fn parse_bezier_curve(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve, CodecE
     let mut control_points = Vec::with_capacity(pole_count);
     let mut weights = rational.then(|| Vec::with_capacity(pole_count));
     for _ in 0..pole_count {
-        control_points.push(cursor.point("Bezier pole")?);
+        control_points.push(cursor.finite_point("Bezier pole")?);
         if let Some(weights) = &mut weights {
-            weights.push(cursor.real("Bezier weight")?);
+            weights.push(cursor.finite_real("Bezier weight")?);
         }
     }
-    NurbsCurve::from_lanes(
+    NurbsCurve::from_finite_lanes(
         degree as u32,
         clamped_bezier_knots(degree),
         control_points,
@@ -5479,9 +5465,9 @@ fn parse_bezier_curve(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve, CodecE
     .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
-fn clamped_bezier_knots(degree: usize) -> Vec<f64> {
-    std::iter::repeat_n(0.0, degree + 1)
-        .chain(std::iter::repeat_n(1.0, degree + 1))
+fn clamped_bezier_knots(degree: usize) -> Vec<FiniteReal> {
+    std::iter::repeat_n(FiniteReal::ZERO, degree + 1)
+        .chain(std::iter::repeat_n(FiniteReal::ONE, degree + 1))
         .collect()
 }
 
@@ -5543,10 +5529,6 @@ impl<'a> TokenCursor<'a> {
         }
     }
 
-    fn real(&mut self, label: &str) -> Result<f64, CodecError> {
-        self.finite_real(label).map(FiniteReal::get)
-    }
-
     fn finite_real(&mut self, label: &str) -> Result<FiniteReal, CodecError> {
         let value = self.next(label)?.parse::<f64>().map_err(|_| {
             CodecError::malformed(format_args!("invalid {label} in text B-rep Curves table"))
@@ -5578,26 +5560,6 @@ impl<'a> TokenCursor<'a> {
             self.finite_real(label)?,
             self.finite_real(label)?,
             self.finite_real(label)?,
-        ))
-    }
-
-    fn point(&mut self, label: &str) -> Result<Point3, CodecError> {
-        Ok(Point3::new(
-            self.real(label)?,
-            self.real(label)?,
-            self.real(label)?,
-        ))
-    }
-
-    fn point2(&mut self, label: &str) -> Result<Point2, CodecError> {
-        Ok(Point2::new(self.real(label)?, self.real(label)?))
-    }
-
-    fn vector(&mut self, label: &str) -> Result<Vector3, CodecError> {
-        Ok(Vector3::new(
-            self.real(label)?,
-            self.real(label)?,
-            self.real(label)?,
         ))
     }
 
@@ -5661,79 +5623,124 @@ fn append_text_curve(
     transfer: &mut CurveTransfer,
 ) -> Result<CurveGeometry, CodecError> {
     let geometry = match curve {
-        TextCurve::Line { origin, direction } => CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::analytic::LineCurve::try_new(*origin, *direction)
-                .map_err(CodecError::malformed)?,
-        )),
+        TextCurve::Line { origin, direction } => {
+            let direction = UnitVector3::new(direction.get()).ok_or_else(|| {
+                CodecError::malformed("LineCurve.direction must have unit length")
+            })?;
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::analytic::LineCurve::new(*origin, direction),
+            ))
+        }
         TextCurve::Circle {
             center,
             axis: _,
             ref_direction: _,
             radius,
-        } if *radius == 0.0 => CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
-            cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(*center)
-                .map_err(CodecError::malformed)?,
+        } if radius.get() == 0.0 => CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
+            cadmpeg_ir::geometry::analytic::DegenerateCurve::new(*center),
         )),
         TextCurve::Circle {
             center,
             axis,
             ref_direction,
             radius,
-        } => CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                *center,
-                *axis,
-                *ref_direction,
-                *radius,
-            )
-            .map_err(CodecError::malformed)?,
-        )),
+        } => {
+            let frame =
+                OrthonormalFrame3::new(axis.get(), ref_direction.get()).ok_or_else(|| {
+                    CodecError::malformed(
+                        "CircleCurve.axis/ref_direction must form an orthonormal frame",
+                    )
+                })?;
+            let radius = PositiveLength::from_assigned_real(*radius).ok_or_else(|| {
+                CodecError::malformed("CircleCurve.radius must be positive and finite")
+            })?;
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                cadmpeg_ir::geometry::analytic::CircleCurve::new(*center, frame, radius),
+            ))
+        }
         TextCurve::Ellipse {
             center,
             axis,
             major_direction,
             major_radius,
             minor_radius,
-        } => CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-            cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
-                *center,
-                *axis,
-                *major_direction,
-                *major_radius,
-                *minor_radius,
-            )
-            .map_err(CodecError::malformed)?,
-        )),
+        } => {
+            let frame =
+                OrthonormalFrame3::new(axis.get(), major_direction.get()).ok_or_else(|| {
+                    CodecError::malformed(
+                        "EllipseCurve.axis/major_direction must form an orthonormal frame",
+                    )
+                })?;
+            let major_radius =
+                PositiveLength::from_assigned_real(*major_radius).ok_or_else(|| {
+                    CodecError::malformed("EllipseCurve.major_radius must be positive and finite")
+                })?;
+            let minor_radius =
+                PositiveLength::from_assigned_real(*minor_radius).ok_or_else(|| {
+                    CodecError::malformed("EllipseCurve.minor_radius must be positive and finite")
+                })?;
+            CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
+                cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
+                    *center,
+                    frame,
+                    major_radius,
+                    minor_radius,
+                )
+                .map_err(CodecError::malformed)?,
+            ))
+        }
         TextCurve::Parabola {
             vertex,
             axis,
             major_direction,
             focal_distance,
-        } => CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
-            cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
-                *vertex,
-                *axis,
-                *major_direction,
-                *focal_distance,
-            )
-            .map_err(CodecError::malformed)?,
-        )),
+        } => {
+            let frame =
+                OrthonormalFrame3::new(axis.get(), major_direction.get()).ok_or_else(|| {
+                    CodecError::malformed(
+                        "ParabolaCurve.axis/major_direction must form an orthonormal frame",
+                    )
+                })?;
+            let focal_distance =
+                PositiveLength::from_assigned_real(*focal_distance).ok_or_else(|| {
+                    CodecError::malformed(
+                        "ParabolaCurve.focal_distance must be positive and finite",
+                    )
+                })?;
+            CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
+                cadmpeg_ir::geometry::analytic::ParabolaCurve::new(*vertex, frame, focal_distance),
+            ))
+        }
         TextCurve::Hyperbola {
             center,
             axis,
             major_direction,
             major_radius,
             minor_radius,
-        } => CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
-            cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
-                *center,
-                *axis,
-                *major_direction,
-                *major_radius,
-                *minor_radius,
-            )
-            .map_err(CodecError::malformed)?,
-        )),
+        } => {
+            let frame =
+                OrthonormalFrame3::new(axis.get(), major_direction.get()).ok_or_else(|| {
+                    CodecError::malformed(
+                        "HyperbolaCurve.axis/major_direction must form an orthonormal frame",
+                    )
+                })?;
+            let major_radius =
+                PositiveLength::from_assigned_real(*major_radius).ok_or_else(|| {
+                    CodecError::malformed("HyperbolaCurve.major_radius must be positive and finite")
+                })?;
+            let minor_radius =
+                PositiveLength::from_assigned_real(*minor_radius).ok_or_else(|| {
+                    CodecError::malformed("HyperbolaCurve.minor_radius must be positive and finite")
+                })?;
+            CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
+                cadmpeg_ir::geometry::analytic::HyperbolaCurve::new(
+                    *center,
+                    frame,
+                    major_radius,
+                    minor_radius,
+                ),
+            ))
+        }
         TextCurve::Nurbs(nurbs) => CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone())),
         TextCurve::Trimmed {
             parameter_range,
@@ -5756,7 +5763,7 @@ fn append_text_curve(
             .unwrap_or(*parameter_range);
             transfer.procedural.push((
                 id.clone(),
-                cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction::try_new(
+                cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction::from_finite_parts(
                     basis_id,
                     parameter_range,
                     true,
@@ -5787,14 +5794,10 @@ fn append_text_curve(
             append_text_curve(basis.curve(), basis_id.clone(), association, transfer)?;
             transfer.procedural.push((
                 id.clone(),
-                cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::try_new(
+                cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::from_admitted_direction(
                     basis_id,
                     *distance,
-                    cadmpeg_ir::geometry::OffsetSide::Direction {
-                        direction: *direction,
-                        support: None,
-                    },
-                    None,
+                    *direction,
                 )
                 .map(|admitted_payload| {
                     ProceduralCurve::new(
@@ -5881,25 +5884,34 @@ fn append_text_surface(
             axis,
             u_axis,
             ..
-        } => SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(*origin, *axis, *u_axis)
-                .map_err(CodecError::malformed)?,
-        )),
+        } => {
+            let frame = OrthonormalFrame3::new(axis.get(), u_axis.get()).ok_or_else(|| {
+                CodecError::malformed("PlaneSurface.normal/u_axis must form an orthonormal frame")
+            })?;
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::new(*origin, frame),
+            ))
+        }
         TextSurface::Cylinder {
             origin,
             axis,
             ref_direction,
             radius,
             ..
-        } => SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                *origin,
-                *axis,
-                *ref_direction,
-                *radius,
-            )
-            .map_err(CodecError::malformed)?,
-        )),
+        } => {
+            let frame =
+                OrthonormalFrame3::new(axis.get(), ref_direction.get()).ok_or_else(|| {
+                    CodecError::malformed(
+                        "CylinderSurface.axis/ref_direction must form an orthonormal frame",
+                    )
+                })?;
+            let radius = PositiveLength::from_assigned_real(*radius).ok_or_else(|| {
+                CodecError::malformed("CylinderSurface.radius must be positive and finite")
+            })?;
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::new(*origin, frame, radius),
+            ))
+        }
         // The persisted b-rep cone holds a signed half angle in
         // `0 < |half_angle| < pi/2`, and the sign selects the direction the
         // cross-section grows along the frame axis. The reader keeps it: the
@@ -5916,32 +5928,47 @@ fn append_text_surface(
             radius,
             half_angle,
             ..
-        } => SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-            cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                *origin,
-                *axis,
-                *ref_direction,
-                *radius,
-                1.0,
-                *half_angle,
-            )
-            .map_err(CodecError::malformed)?,
-        )),
+        } => {
+            let frame =
+                OrthonormalFrame3::new(axis.get(), ref_direction.get()).ok_or_else(|| {
+                    CodecError::malformed(
+                        "ConeSurface.axis/ref_direction must form an orthonormal frame",
+                    )
+                })?;
+            let radius =
+                NonNegativeLength::from_finite_assigned_real(*radius).ok_or_else(|| {
+                    CodecError::malformed("ConeSurface.radius must be nonnegative and finite")
+                })?;
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+                cadmpeg_ir::geometry::analytic::ConeSurface::new(
+                    *origin,
+                    frame,
+                    radius,
+                    PositiveReal::ONE,
+                    Angle::from_assigned_real(*half_angle),
+                ),
+            ))
+        }
         TextSurface::Sphere {
             center,
             axis,
             ref_direction,
             radius,
             ..
-        } => SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-            cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                *center,
-                *axis,
-                *ref_direction,
-                *radius,
-            )
-            .map_err(CodecError::malformed)?,
-        )),
+        } => {
+            let frame =
+                OrthonormalFrame3::new(axis.get(), ref_direction.get()).ok_or_else(|| {
+                    CodecError::malformed(
+                        "SphereSurface.axis/ref_direction must form an orthonormal frame",
+                    )
+                })?;
+            let radius = NonZeroLength::from_assigned_real(*radius).ok_or_else(|| {
+                CodecError::malformed("SphereSurface.radius must be finite and nonzero")
+            })?;
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+                cadmpeg_ir::geometry::analytic::SphereSurface::new(*center, frame, radius),
+            ))
+        }
         TextSurface::Torus {
             center,
             axis,
@@ -5949,16 +5976,30 @@ fn append_text_surface(
             major_radius,
             minor_radius,
             ..
-        } => SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-            cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-                *center,
-                *axis,
-                *ref_direction,
-                *major_radius,
-                *minor_radius,
-            )
-            .map_err(CodecError::malformed)?,
-        )),
+        } => {
+            let frame =
+                OrthonormalFrame3::new(axis.get(), ref_direction.get()).ok_or_else(|| {
+                    CodecError::malformed(
+                        "TorusSurface.axis/ref_direction must form an orthonormal frame",
+                    )
+                })?;
+            let major_radius =
+                PositiveLength::from_assigned_real(*major_radius).ok_or_else(|| {
+                    CodecError::malformed("TorusSurface.major_radius must be positive and finite")
+                })?;
+            let minor_radius =
+                NonZeroLength::from_assigned_real(*minor_radius).ok_or_else(|| {
+                    CodecError::malformed("TorusSurface.minor_radius must be finite and nonzero")
+                })?;
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+                cadmpeg_ir::geometry::analytic::TorusSurface::new(
+                    *center,
+                    frame,
+                    major_radius,
+                    minor_radius,
+                ),
+            ))
+        }
         TextSurface::Nurbs(nurbs) => {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs.clone()))
         }
@@ -5976,26 +6017,24 @@ fn append_text_surface(
                 association,
                 curve_transfer,
             )?;
-            transfer.procedural.push((
-                id.clone(),
-                cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+            let admitted_payload =
+                cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
                     directrix_id,
                     None,
                     *direction,
                     None,
-                    cadmpeg_ir::geometry::CacheContract::from_form(None),
-                )
-                .map(|admitted_payload| {
-                    ProceduralSurface::new(
-                        ProceduralSurfaceId::compose(
-                            &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
-                            id.key().colon(cadmpeg_ir::identity_key!("construction")),
-                        ),
-                        ProceduralSurfaceDefinition::Extrusion(admitted_payload),
-                        None,
-                    )
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+                    None,
+                );
+            transfer.procedural.push((
+                id.clone(),
+                ProceduralSurface::new(
+                    ProceduralSurfaceId::compose(
+                        &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
+                        id.key().colon(cadmpeg_ir::identity_key!("construction")),
+                    ),
+                    ProceduralSurfaceDefinition::Extrusion(admitted_payload),
+                    None,
+                ),
             ));
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None })
         }
@@ -6016,7 +6055,7 @@ fn append_text_surface(
             )?;
             transfer.procedural.push((
                 id.clone(),
-                cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis(
+                cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis_from_parts(
                     *axis_origin,
                     *axis_direction,
                 )
@@ -6052,10 +6091,14 @@ fn append_text_surface(
             let basis_parameters = surface_parameter_affine(basis.surface());
             let parameter_ranges = [
                 parameter_ranges[0].map(|value| {
-                    value.mul_add(basis_parameters.u_scale, basis_parameters.u_offset)
+                    value
+                        .get()
+                        .mul_add(basis_parameters.u_scale, basis_parameters.u_offset)
                 }),
                 parameter_ranges[1].map(|value| {
-                    value.mul_add(basis_parameters.v_scale, basis_parameters.v_offset)
+                    value
+                        .get()
+                        .mul_add(basis_parameters.v_scale, basis_parameters.v_offset)
                 }),
             ];
             let basis_id = SurfaceId::compose(
@@ -6104,30 +6147,26 @@ fn append_text_surface(
                 curve_transfer,
                 transfer,
             )?;
-            transfer.procedural.push((
-                id.clone(),
-                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+            let admitted_payload =
+                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
                     basis_id,
                     *distance,
                     None,
                     None,
                     false,
-                    cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
-                        cache: None,
-                    },
-                )
-                .map(|admitted_payload| {
-                    ProceduralSurface::new(
-                        ProceduralSurfaceId::compose(
-                            &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
-                            id.key().colon(cadmpeg_ir::identity_key!("construction")),
-                        ),
-                        ProceduralSurfaceDefinition::Offset(admitted_payload),
-                        None,
-                    )
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                    None,
+                );
+            transfer.procedural.push((
+                id.clone(),
+                ProceduralSurface::new(
+                    ProceduralSurfaceId::compose(
+                        &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
+                        id.key().colon(cadmpeg_ir::identity_key!("construction")),
+                    ),
+                    ProceduralSurfaceDefinition::Offset(admitted_payload),
+                    None,
+                ),
             ));
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None })
         }
@@ -6144,8 +6183,10 @@ fn append_text_surface(
 pub(crate) mod tests {
     use std::collections::BTreeMap;
 
+    use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
     use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
     use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::scalar::FiniteReal;
     use cadmpeg_ir::transform::Transform;
 
     use super::{
@@ -6190,10 +6231,9 @@ pub(crate) mod tests {
 
     #[test]
     fn polygon_deflection_is_admitted_on_source_and_native_wire() {
-        assert!(super::admit_polygon_deflection(0.0).is_ok());
-        for value in [-1.0, f64::INFINITY] {
-            assert!(super::admit_polygon_deflection(value).is_err());
-        }
+        assert!(super::admit_polygon_deflection(FiniteReal::ZERO).is_ok());
+        assert!(super::admit_polygon_deflection(FiniteReal::new(-1.0).unwrap()).is_err());
+        assert!(FiniteReal::new(f64::INFINITY).is_none());
 
         for (value, expected) in [
             ("nan", "non-finite 3D polygon deflection"),
@@ -6283,7 +6323,7 @@ pub(crate) mod tests {
                     continuity: "CN".to_owned(),
                     surface: 7,
                     location: 8,
-                    parameter_range: [0.0, 1.0],
+                    parameter_range: [FiniteReal::ZERO, FiniteReal::ONE],
                     uv_endpoints: None,
                 },
                 serde_json::json!({
@@ -6477,8 +6517,14 @@ pub(crate) mod tests {
         let normalized = normalize_periodic_surface(
             [3, 1],
             [
-                vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0],
-                vec![0.0, 0.0, 1.0, 1.0],
+                vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0]
+                    .into_iter()
+                    .map(|value| FiniteReal::new(value).unwrap())
+                    .collect(),
+                vec![0.0, 0.0, 1.0, 1.0]
+                    .into_iter()
+                    .map(|value| FiniteReal::new(value).unwrap())
+                    .collect(),
             ],
             [6, 2],
             (0..6)
@@ -6488,6 +6534,7 @@ pub(crate) mod tests {
                         Point3::new(f64::from(u), 1.0, 0.0),
                     ]
                 })
+                .map(|point| FinitePoint3::new(point).unwrap())
                 .collect(),
             None,
             [true, false],
@@ -6585,11 +6632,11 @@ pub(crate) mod tests {
         assert!(matches!(
             cone,
             TextSurface::Cone {
-                radius: 2.0,
-                half_angle: 0.5,
+                radius,
+                half_angle,
                 u_reversed: true,
                 ..
-            }
+            } if radius.get() == 2.0 && half_angle.get() == 0.5
         ));
 
         let tokens = [
@@ -6601,10 +6648,10 @@ pub(crate) mod tests {
         assert!(matches!(
             sphere,
             TextSurface::Sphere {
-                radius: 2.0,
+                radius,
                 u_reversed: true,
                 ..
-            }
+            } if radius.get() == 2.0
         ));
 
         let tokens = [
@@ -6616,11 +6663,11 @@ pub(crate) mod tests {
         assert!(matches!(
             torus,
             TextSurface::Torus {
-                major_radius: 4.0,
-                minor_radius: 1.0,
+                major_radius,
+                minor_radius,
                 u_reversed: true,
                 ..
-            }
+            } if major_radius.get() == 4.0 && minor_radius.get() == 1.0
         ));
     }
 
@@ -6834,8 +6881,35 @@ pub(crate) mod tests {
         else {
             panic!("expected trimmed surface")
         };
-        assert_eq!(*parameter_ranges, [[0.0, 1.0], [2.0, 3.0]]);
+        assert_eq!(
+            parameter_ranges.map(|range| range.map(FiniteReal::get)),
+            [[0.0, 1.0], [2.0, 3.0]]
+        );
         assert!(matches!(basis.surface(), TextSurface::Offset { .. }));
+    }
+
+    #[test]
+    fn recursive_brep_carriers_retain_checked_fields_across_native_json() {
+        for curve_text in ["8 0 1 1 0 0 0 1 0 0", "9 2 0 0 1 1 0 0 0 1 0 0"] {
+            let input = text_brep(curve_text, 1, "", 0);
+            let facts = parse_text(input.as_bytes()).expect("recursive curve").0;
+            let wire = serde_json::to_value(&facts.curves[0]).unwrap();
+            let admitted: TextCurve = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+        }
+
+        let input = text_brep(
+            "",
+            0,
+            "6 0 0 2 1 0 0 0 1 0 0\n7 0 0 0 0 0 1 1 0 0 0 1 0 0\n10 0 1 2 3 11 4 1 0 0 0 0 0 1 1 0 0 0 1 0",
+            3,
+        );
+        let facts = parse_text(input.as_bytes()).expect("recursive surfaces").0;
+        for surface in facts.surfaces {
+            let wire = serde_json::to_value(&surface).unwrap();
+            let admitted: TextSurface = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+        }
     }
 
     #[test]
@@ -6847,6 +6921,44 @@ pub(crate) mod tests {
         assert_eq!(facts.locations[1].transform.rows()[0][3], 10.0);
         assert_eq!(facts.locations[2].transform.rows()[0][3], 5.0);
         assert_eq!(facts.locations[2].factors[0].power, -1);
+    }
+
+    #[test]
+    fn checked_location_rows_keep_signed_zero_and_source_refusals() {
+        let text = "CASCADE Topology V1, (c) Matra-Datavision\nLocations 1\n1 1 -0 0 5 0 1 0 0 0 0 1 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
+        let facts = parse_text(text.as_bytes()).expect("finite text location").0;
+        assert_eq!(
+            facts.locations[0].transform.affine_rows()[0][1].to_bits(),
+            (-0.0_f64).to_bits()
+        );
+        let invalid = text.replace("1 -0 0 5", "1 NaN 0 5");
+        let error = parse_text(invalid.as_bytes()).expect_err("non-finite text location");
+        assert!(error
+            .to_string()
+            .contains("non-finite location transform value"));
+
+        let binary = |first: f64| {
+            let mut bytes = b"\nOpen CASCADE Topology V3 (c)\nLocations 1\n".to_vec();
+            bytes.push(1);
+            for value in [
+                first, -0.0, 0.0, 5.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+            ] {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+            bytes.extend_from_slice(b"Curve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n");
+            bytes
+        };
+        let facts = parse_binary_prefix(&binary(1.0))
+            .expect("finite binary location")
+            .0;
+        assert_eq!(
+            facts.locations[0].transform.affine_rows()[0][1].to_bits(),
+            (-0.0_f64).to_bits()
+        );
+        let error = parse_binary_prefix(&binary(f64::NAN)).expect_err("non-finite binary location");
+        assert!(error
+            .to_string()
+            .contains("non-finite binary location transform"));
     }
 
     #[test]
@@ -6960,8 +7072,21 @@ pub(crate) mod tests {
             panic!("expected normalized 2D Bezier")
         };
         assert_eq!(nurbs.degree, 2);
-        assert_eq!(nurbs.knots, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
-        assert_eq!(nurbs.weights.as_deref(), Some(&[1.0, 2.0, 1.0][..]));
+        assert_eq!(
+            nurbs
+                .knots
+                .iter()
+                .map(|value| value.get())
+                .collect::<Vec<_>>(),
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+        );
+        assert_eq!(
+            nurbs
+                .weights
+                .as_ref()
+                .map(|values| values.iter().map(|value| value.get()).collect::<Vec<_>>()),
+            Some(vec![1.0, 2.0, 1.0])
+        );
         let TextCurve2d::Trimmed {
             parameter_range,
             basis,
@@ -6969,7 +7094,7 @@ pub(crate) mod tests {
         else {
             panic!("expected trimmed 2D curve")
         };
-        assert_eq!(*parameter_range, [0.0, 314.0 / 50.0]);
+        assert_eq!(parameter_range.map(FiniteReal::get), [0.0, 314.0 / 50.0]);
         assert!(matches!(basis.curve(), TextCurve2d::Offset { .. }));
     }
 
@@ -6987,8 +7112,14 @@ pub(crate) mod tests {
         assert_eq!(nurbs.weights.as_ref().map(Vec::len), Some(7));
         assert_eq!(nurbs.knots.len(), 14);
         assert_eq!(nurbs.control_points.first(), nurbs.control_points.last());
-        assert_eq!(nurbs.weights.as_ref().map(|weights| weights[0]), Some(1.0));
-        assert_eq!(nurbs.weights.as_ref().map(|weights| weights[6]), Some(1.0));
+        assert_eq!(
+            nurbs.weights.as_ref().map(|weights| weights[0].get()),
+            Some(1.0)
+        );
+        assert_eq!(
+            nurbs.weights.as_ref().map(|weights| weights[6].get()),
+            Some(1.0)
+        );
     }
 
     #[test]
@@ -7014,6 +7145,30 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn polygon_source_readers_refuse_nonfinite_nodes_and_parameters() {
+        for (polygon_section, expected) in [
+            (
+                "Polygon3D 1\n1 0 0.1 NaN 0 0\nPolygonOnTriangulations 0",
+                "non-finite 3D polygon node",
+            ),
+            (
+                "Polygon3D 1\n1 1 0.1 0 0 0 NaN\nPolygonOnTriangulations 0",
+                "non-finite 3D polygon parameter",
+            ),
+            (
+                "Polygon3D 0\nPolygonOnTriangulations 1\n1 1 p 0.1 1 NaN",
+                "non-finite polygon-on-triangulation parameter",
+            ),
+        ] {
+            let input = format!(
+                "CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\n{polygon_section}\nSurfaces 0\nTriangulations 0\nTShapes 0\n*"
+            );
+            let error = parse_text(input.as_bytes()).unwrap_err();
+            assert!(error.to_string().contains(expected), "{error}");
+        }
+    }
+
+    #[test]
     fn parses_subshape_first_topology_and_reverse_references() {
         let input = "CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 1\n1 0 0 0 1 0 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 1\n1 0 0 0 0 0 1 1 0 0 0 1 0\nTriangulations 0\nTShapes 8\nVe 0.001 0 0 0 0 0 1001000 *\nVe 0.001 1 0 0 0 0 1001000 *\nEd 0.001 1 1 0 1 1 0 0 1 0 1001000 +8 0 +7 0 *\nWi 1001000 +6 0 *\nFa 0 0.001 1 0 1001000 +5 0 *\nSh 1001000 +4 0 *\nSo 1001000 +3 0 *\nCo 1001000 +2 0 *\n+1 0 *";
         let facts = parse_text(input.as_bytes()).expect("topology table").0;
@@ -7027,7 +7182,12 @@ pub(crate) mod tests {
         else {
             panic!("expected edge geometry")
         };
-        assert_eq!(representations[0].parameter_range(), Some([0.0, 1.0]));
+        assert_eq!(
+            representations[0]
+                .parameter_range()
+                .map(|range| range.map(FiniteReal::get)),
+            Some([0.0, 1.0])
+        );
         assert_eq!(facts.roots.len(), 1);
         assert_eq!(facts.roots[0].shape, 8);
     }
@@ -7088,14 +7248,26 @@ pub(crate) mod tests {
     #[test]
     pub(crate) fn transfers_recursive_exact_parameter_curve_geometry() {
         let source = crate::brep::TextCurve2d::Offset {
-            distance: 0.25,
+            distance: FiniteReal::new(0.25).unwrap(),
             basis: super::NestedCurve2d::try_new(crate::brep::TextCurve2d::Trimmed {
-                parameter_range: [0.0, std::f64::consts::PI],
+                parameter_range: [
+                    FiniteReal::new(0.0).unwrap(),
+                    FiniteReal::new(std::f64::consts::PI).unwrap(),
+                ],
                 basis: super::NestedCurve2d::try_new(crate::brep::TextCurve2d::Circle {
-                    center: cadmpeg_ir::math::Point2::new(1.0, 2.0),
-                    x_axis: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-                    y_axis: cadmpeg_ir::math::Point2::new(0.0, 1.0),
-                    radius: 3.0,
+                    center: cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
+                        1.0, 2.0,
+                    ))
+                    .unwrap(),
+                    x_axis: cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
+                        1.0, 0.0,
+                    ))
+                    .unwrap(),
+                    y_axis: cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
+                        0.0, 1.0,
+                    ))
+                    .unwrap(),
+                    radius: FiniteReal::new(3.0).unwrap(),
                 })
                 .expect("one inline basis is admitted"),
             })
@@ -7229,10 +7401,11 @@ pub(crate) mod tests {
     fn transfers_zero_radius_brep_circles_as_degenerate_curves() {
         let center = cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0);
         let curve = crate::brep::TextCurve::Circle {
-            center,
-            axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            radius: 0.0,
+            center: FinitePoint3::new(center).unwrap(),
+            axis: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)).unwrap(),
+            ref_direction: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
+                .unwrap(),
+            radius: FiniteReal::ZERO,
         };
         let association = cadmpeg_ir::SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Fcstd,
@@ -7263,15 +7436,89 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn native_analytic_curve_fields_remain_checked_and_wire_identical() {
+        let point = serde_json::json!({"x": 1.0, "y": 2.0, "z": 3.0});
+        let axis = serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0});
+        let reference = serde_json::json!({"x": 1.0, "y": 0.0, "z": 0.0});
+        let wires = [
+            serde_json::json!({"kind": "line", "origin": point, "direction": axis}),
+            serde_json::json!({"kind": "circle", "center": point, "axis": axis, "ref_direction": reference, "radius": 2.0}),
+            serde_json::json!({"kind": "ellipse", "center": point, "axis": axis, "major_direction": reference, "major_radius": 3.0, "minor_radius": 2.0}),
+            serde_json::json!({"kind": "parabola", "vertex": point, "axis": axis, "major_direction": reference, "focal_distance": 2.0}),
+            serde_json::json!({"kind": "hyperbola", "center": point, "axis": axis, "major_direction": reference, "major_radius": 2.0, "minor_radius": 3.0}),
+        ];
+        for wire in wires {
+            let curve: TextCurve = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(&curve).unwrap(), wire);
+            if let TextCurve::Line { origin, direction } = curve {
+                let _: FinitePoint3 = origin;
+                let _: FiniteVector3 = direction;
+            }
+        }
+    }
+
+    #[test]
+    fn native_parameter_curve_fields_remain_checked_through_transfer() {
+        let center = serde_json::json!({"u": 1.0, "v": 2.0});
+        let x_axis = serde_json::json!({"u": 1.0, "v": 0.0});
+        let y_axis = serde_json::json!({"u": 0.0, "v": 1.0});
+        let wires = [
+            serde_json::json!({"kind": "line", "origin": center, "direction": x_axis}),
+            serde_json::json!({"kind": "circle", "center": center, "x_axis": x_axis, "y_axis": y_axis, "radius": 3.0}),
+            serde_json::json!({"kind": "ellipse", "center": center, "x_axis": x_axis, "y_axis": y_axis, "major_radius": 3.0, "minor_radius": 2.0}),
+            serde_json::json!({"kind": "parabola", "vertex": center, "x_axis": x_axis, "y_axis": y_axis, "focal_distance": 2.0}),
+            serde_json::json!({"kind": "hyperbola", "center": center, "x_axis": x_axis, "y_axis": y_axis, "major_radius": 3.0, "minor_radius": 2.0}),
+        ];
+        for wire in wires {
+            let curve: TextCurve2d = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(&curve).unwrap(), wire);
+            assert!(crate::topology_transfer::pcurve_geometry(&curve)
+                .unwrap()
+                .is_some());
+        }
+    }
+
+    #[test]
+    fn native_analytic_surface_fields_remain_checked_and_wire_identical() {
+        let point = serde_json::json!({"x": 1.0, "y": 2.0, "z": 3.0});
+        let axis = serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0});
+        let reference = serde_json::json!({"x": 1.0, "y": 0.0, "z": 0.0});
+        let wires = [
+            serde_json::json!({"kind": "plane", "origin": point, "axis": axis, "u_axis": reference, "v_reversed": false}),
+            serde_json::json!({"kind": "cylinder", "origin": point, "axis": axis, "ref_direction": reference, "radius": 2.0, "u_reversed": false}),
+            serde_json::json!({"kind": "cone", "origin": point, "axis": axis, "ref_direction": reference, "radius": 2.0, "half_angle": -0.5, "u_reversed": false}),
+            serde_json::json!({"kind": "sphere", "center": point, "axis": axis, "ref_direction": reference, "radius": -2.0, "u_reversed": false}),
+            serde_json::json!({"kind": "torus", "center": point, "axis": axis, "ref_direction": reference, "major_radius": 4.0, "minor_radius": 1.0, "u_reversed": false}),
+        ];
+        for wire in wires {
+            let surface: TextSurface = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(&surface).unwrap(), wire);
+            if let TextSurface::Plane {
+                origin,
+                axis,
+                u_axis,
+                ..
+            } = surface
+            {
+                let _: FinitePoint3 = origin;
+                let _: FiniteVector3 = axis;
+                let _: FiniteVector3 = u_axis;
+            }
+        }
+    }
+
+    #[test]
     fn transfers_occt_revolution_surface_parameter_order() {
         let surface = crate::brep::TextSurface::Revolution {
-            axis_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            axis_direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            axis_origin: FinitePoint3::ZERO,
+            axis_direction: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))
+                .unwrap(),
             directrix: super::NestedCurve::try_new(crate::brep::TextCurve::Circle {
-                center: cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0),
-                axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-                ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                radius: 1.0,
+                center: FinitePoint3::new(cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0)).unwrap(),
+                axis: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)).unwrap(),
+                ref_direction: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
+                    .unwrap(),
+                radius: FiniteReal::ONE,
             })
             .expect("one inline directrix is admitted"),
         };
@@ -7306,11 +7553,12 @@ pub(crate) mod tests {
     #[test]
     fn transfers_a_signed_cone_half_angle_without_moving_the_frame() {
         let surface = crate::brep::TextSurface::Cone {
-            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
-            ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            radius: 5.0,
-            half_angle: -0.715_584_993_317_674_8,
+            origin: FinitePoint3::ZERO,
+            axis: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)).unwrap(),
+            ref_direction: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
+                .unwrap(),
+            radius: FiniteReal::new(5.0).unwrap(),
+            half_angle: FiniteReal::new(-0.715_584_993_317_674_8).unwrap(),
             u_reversed: false,
         };
         let association = cadmpeg_ir::SourceObjectAssociation {
@@ -7347,12 +7595,27 @@ pub(crate) mod tests {
 
     #[test]
     fn numerical_seventh_periodic_knots_keep_finite_exterior_knots() {
-        let (knots, padding) =
-            super::normalize_periodic_knots(vec![-1e308, -9e307, 9e307, 1e308], 1, true).unwrap();
+        let (knots, padding) = super::normalize_periodic_knots(
+            vec![-1e308, -9e307, 9e307, 1e308]
+                .into_iter()
+                .map(|value| FiniteReal::new(value).unwrap())
+                .collect(),
+            1,
+            true,
+        )
+        .unwrap();
         assert_eq!(padding, 1);
-        assert!((knots[0] / 1e308 + 1.1).abs() <= 4.0 * f64::EPSILON);
-        assert!((knots[5] / 1e308 - 1.1).abs() <= 4.0 * f64::EPSILON);
-        assert!(super::normalize_periodic_knots(vec![-1e308, 0.0, 1e308], 1, true).is_err());
+        assert!((knots[0].get() / 1e308 + 1.1).abs() <= 4.0 * f64::EPSILON);
+        assert!((knots[5].get() / 1e308 - 1.1).abs() <= 4.0 * f64::EPSILON);
+        assert!(super::normalize_periodic_knots(
+            vec![-1e308, 0.0, 1e308]
+                .into_iter()
+                .map(|value| FiniteReal::new(value).unwrap())
+                .collect(),
+            1,
+            true
+        )
+        .is_err());
     }
 
     /// `wrappers` offset surface records over one plane leaf, as text tokens.
@@ -7553,14 +7816,14 @@ pub(crate) mod tests {
     /// carrier.
     fn nested_offset_surface(wrappers: usize) -> Result<TextSurface, String> {
         let mut surface = TextSurface::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            origin: FinitePoint3::ZERO,
+            axis: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)).unwrap(),
+            u_axis: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)).unwrap(),
             v_reversed: false,
         };
         for _ in 0..wrappers {
             surface = TextSurface::Offset {
-                distance: 1.0,
+                distance: FiniteReal::ONE,
                 basis: super::NestedSurface::try_new(surface)?,
             };
         }
@@ -7570,12 +7833,12 @@ pub(crate) mod tests {
     /// `wrappers` trimmed 3D curve records over one line leaf.
     fn nested_trimmed_curve(wrappers: usize) -> Result<TextCurve, String> {
         let mut curve = TextCurve::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            origin: FinitePoint3::ZERO,
+            direction: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)).unwrap(),
         };
         for _ in 0..wrappers {
             curve = TextCurve::Trimmed {
-                parameter_range: [0.0, 1.0],
+                parameter_range: [FiniteReal::ZERO, FiniteReal::ONE],
                 basis: super::NestedCurve::try_new(curve)?,
             };
         }
@@ -7600,7 +7863,7 @@ pub(crate) mod tests {
         let curve = nested_trimmed_curve(super::MAX_GEOMETRY_NESTING_DEPTH - 1)
             .expect("the bound is admitted");
         let surface = TextSurface::Extrusion {
-            direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            direction: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)).unwrap(),
             directrix: super::NestedCurve::try_new(curve)
                 .expect("the directrix is the last admitted record"),
         };

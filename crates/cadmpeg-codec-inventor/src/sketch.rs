@@ -1890,8 +1890,10 @@ fn project_geometry(
                     major_angle: Angle::new(
                         major_direction[1].get().atan2(major_direction[0].get()),
                     )?,
-                    major_radius: Length::new(major_radius.get() * 10.0)?,
-                    minor_radius: Length::new(minor_radius.get() * 10.0)?,
+                    radii: cadmpeg_ir::sketches::EllipseRadii {
+                        major_radius: Length::new(major_radius.get() * 10.0)?,
+                        minor_radius: Length::new(minor_radius.get() * 10.0)?,
+                    },
                     bounds: None,
                 })
                 .ok()?,

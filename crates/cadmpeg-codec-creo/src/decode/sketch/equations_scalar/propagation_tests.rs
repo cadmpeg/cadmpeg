@@ -1,22 +1,48 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests for scalar equality propagation into equation consumers.
 
+use crate::decode::sketch::axis::SectionAxis;
 use crate::decode::sketch::coordinates::resolved_section_coordinates;
 use crate::decode::sketch::equations_coordinate::{
     section_equation_equal_length_constraint_rows, section_equation_point_on_line_constraint_rows,
     section_equation_radius_dimensions, section_equation_unsigned_coordinate_distance_rows,
 };
 use crate::decode::sketch::equations_scalar::{
-    merge_scalar_value_candidate, propagate_section_equation_scalar_equality_values,
-    resolved_section_scalar_values, section_equation_coordinate_equality_rows,
+    append_section_equation_auxiliary_coordinate_constraints, merge_scalar_value_candidate,
+    propagate_section_equation_scalar_equality_values, resolved_section_scalar_values,
+    section_equation_coordinate_equality_rows,
     section_equation_function_forty_three_axis_distance_values,
     section_equation_function_sixteen_angle_difference_values,
     section_equation_radial_constraint_rows, section_equation_scalar_equalities,
     section_equation_scalar_equality_components, section_equation_scalar_seed_values,
     section_equation_scalar_values_from_coordinates, section_relation_radius_scalar_values,
+    SectionEquationAuxiliaryConstraints, SectionEquationMidpointConstraint,
 };
 use crate::feature::definitions::ScalarLane;
+use crate::feature::definitions::VariableType;
 use std::collections::{BTreeMap, BTreeSet};
+
+#[test]
+fn overflowing_midpoint_rhs_is_not_admitted_to_solver() {
+    let result = (VariableType::Dimension, 0);
+    let constraints = SectionEquationAuxiliaryConstraints {
+        midpoints: vec![SectionEquationMidpointConstraint {
+            first: (1, SectionAxis::U),
+            second: (2, SectionAxis::U),
+            result,
+        }],
+        point_bindings: Vec::new(),
+    };
+    let scalar_values = BTreeMap::from([(result, Some(f64::MAX))]);
+    let mut equations = Vec::new();
+    append_section_equation_auxiliary_coordinate_constraints(
+        &constraints,
+        &scalar_values,
+        &BTreeMap::new(),
+        &mut equations,
+    );
+    assert!(equations.is_empty());
+}
 
 fn row(
     variable_type: u32,

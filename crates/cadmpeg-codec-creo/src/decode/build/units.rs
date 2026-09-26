@@ -2,114 +2,18 @@
 //! Conversion of neutral Creo values into the canonical IR length unit.
 //!
 //! The PSB scanner keeps source values in their stored unit so native records
-//! remain faithful to the file. Display tessellation vertices are converted at
-//! transfer; this module converts remaining model fields from source units.
+//! remain faithful to the file. Admission routes use these operations to
+//! convert model lengths before insertion into the IR.
 //! Unit directions, angles, ratios, and source-native arenas are not scaled.
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{
-    FeatureDefinition, FeatureOperation, FiniteVector3, ParameterValue, WrapMode,
-};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, FiniteVector3, WrapMode};
 use cadmpeg_ir::geometry::scaling::ScaleRefusal;
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{Length, PositiveReal};
-use cadmpeg_ir::sketches::{SketchGeometry, SpatialSketchGeometry};
+use cadmpeg_ir::sketches::SketchGeometry;
 use cadmpeg_ir::transform::Transform;
-
-/// Scale neutral model lengths not converted at transfer.
-pub(in crate::decode) fn normalize_model_lengths(
-    ir: &mut CadIr,
-    scale: PositiveReal,
-) -> Result<(), CodecError> {
-    if scale.get() == 1.0 {
-        return Ok(());
-    }
-
-    for body in &mut ir.model.bodies {
-        if let Some(transform) = body.transform.as_mut() {
-            scale_transform_translation(transform, scale)?;
-        }
-    }
-    for occurrence in &mut ir.model.occurrences {
-        scale_transform_translation(&mut occurrence.transform, scale)?;
-        if let Some(transform) = occurrence.linked_prototype.as_mut() {
-            scale_transform_translation(transform, scale)?;
-        }
-    }
-    for feature in &mut ir.model.features {
-        let mut definition = feature.evaluation.definition().clone();
-        scale_feature_definition(&mut definition, scale)?;
-        feature.evaluation.set_definition(definition);
-    }
-
-    for parameter in &mut ir.model.parameters {
-        if let Some(ParameterValue::Length(length)) = parameter.value.as_mut() {
-            scale_length(length, scale)?;
-        }
-    }
-    for configuration in &mut ir.model.configurations {
-        for value in configuration.parameter_values.values_mut() {
-            if let ParameterValue::Length(length) = value {
-                scale_length(length, scale)?;
-            }
-        }
-        for state in configuration.feature_states.values_mut() {
-            scale_feature_definition(&mut state.definition, scale)?;
-        }
-    }
-    for sketch in &mut ir.model.sketches {
-        if let Some((origin, _, _)) = sketch.resolved_placement() {
-            let origin = origin
-                .scaled(scale)
-                .ok_or_else(|| CodecError::malformed("sketch origin must be finite"))?;
-            sketch.placement = sketch.placement.with_origin(origin);
-        }
-    }
-    for entity in &mut ir.model.sketch_entities {
-        scale_sketch_geometry(&mut entity.geometry, scale)?;
-    }
-    for sketch in &mut ir.model.spatial_sketches {
-        for profile in &mut sketch.profiles {
-            let mut origin = profile.origin().get();
-            scale_point3(&mut origin, scale);
-            profile.set_origin(origin).map_err(CodecError::malformed)?;
-        }
-    }
-    for entity in &mut ir.model.spatial_sketch_entities {
-        scale_spatial_sketch_geometry(&mut entity.geometry, scale)?;
-    }
-    for constraint in &mut ir.model.sketch_constraints {
-        constraint
-            .definition
-            .scale_lengths(scale)
-            .map_err(|error| match error {
-                cadmpeg_ir::sketches::scaling::SketchConstraintScaleError::LengthOverflow => {
-                    CodecError::Malformed("Creo scaled length must be finite".into())
-                }
-                cadmpeg_ir::sketches::scaling::SketchConstraintScaleError::InvalidLocalValue => {
-                    CodecError::malformed("invalid sketch constraint local arity or scalar value")
-                }
-            })?;
-    }
-    for constraint in &mut ir.model.spatial_sketch_constraints {
-        constraint
-            .definition
-            .scale_lengths(scale)
-            .map_err(|error| match error {
-                cadmpeg_ir::sketches::scaling::SketchConstraintScaleError::LengthOverflow => {
-                    CodecError::Malformed("Creo scaled length must be finite".into())
-                }
-                cadmpeg_ir::sketches::scaling::SketchConstraintScaleError::InvalidLocalValue => {
-                    CodecError::malformed(
-                        "invalid spatial sketch constraint local arity or scalar value",
-                    )
-                }
-            })?;
-    }
-    Ok(())
-}
 
 fn scale_point2(point: &mut Point2, scale: PositiveReal) {
     point.u *= scale.get();
@@ -142,9 +46,6 @@ fn scale_transform_translation(
     transform: &mut Transform,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
-    // `scale` is the length scale the file states and `transform` comes from
-    // the document, so a scale that drives a translation non-finite is a
-    // source the transform carrier refuses, not an impossible state.
     *transform = transform.scaled_translation(scale).ok_or_else(|| {
         CodecError::malformed(format_args!(
             "Creo length scale {} drives a transform translation the carrier refuses",
@@ -154,7 +55,10 @@ fn scale_transform_translation(
     Ok(())
 }
 
-fn scale_length(length: &mut Length, scale: PositiveReal) -> Result<(), CodecError> {
+pub(in crate::decode) fn scale_length(
+    length: &mut Length,
+    scale: PositiveReal,
+) -> Result<(), CodecError> {
     *length = Length::new(length.get() * scale.get())
         .ok_or_else(|| CodecError::Malformed("Creo scaled length must be finite".into()))?;
     Ok(())
@@ -247,7 +151,7 @@ fn scale_datum_point_construction(
     Ok(())
 }
 
-fn scale_feature_definition(
+pub(in crate::decode) fn scale_feature_definition(
     definition: &mut FeatureDefinition,
     scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -1249,7 +1153,7 @@ pub(in crate::decode) fn surface_parameter_scales(
     }
 }
 
-fn scale_sketch_geometry(
+pub(in crate::decode) fn scale_sketch_geometry(
     geometry: &mut SketchGeometry,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
@@ -1276,27 +1180,6 @@ fn scale_sketch_geometry(
     Ok(())
 }
 
-fn scale_spatial_sketch_geometry(
-    geometry: &mut SpatialSketchGeometry,
-    scale: PositiveReal,
-) -> Result<(), CodecError> {
-    use cadmpeg_ir::sketches::scaling::SketchLengthScaleError;
-
-    *geometry = geometry.scaled_lengths(scale).map_err(|error| match error {
-        SketchLengthScaleError::LengthOverflow => {
-            CodecError::Malformed("Creo scaled length must be finite".into())
-        }
-        SketchLengthScaleError::Field(message) => CodecError::Malformed(message.into()),
-        SketchLengthScaleError::CurveControlPoints(error) => CodecError::malformed(format_args!(
-            "Creo spatial sketch unit normalization produced invalid NURBS control points: {error}"
-        )),
-        SketchLengthScaleError::SurfaceControlPoints(error) => CodecError::malformed(format_args!(
-            "Creo spatial sketch unit normalization produced invalid B-spline control points: {error}"
-        )),
-    })?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
 
@@ -1319,8 +1202,8 @@ mod tests {
     }
 
     use super::{
-        normalize_model_lengths, scale_curve_geometry, scale_face_motion, scale_feature_definition,
-        scale_pattern_kind, scale_surface_geometry,
+        scale_curve_geometry, scale_face_motion, scale_feature_definition, scale_pattern_kind,
+        scale_surface_geometry,
     };
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::document::CadIr;
@@ -1331,7 +1214,6 @@ mod tests {
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::scalar::Length;
-    use cadmpeg_ir::transform::Transform;
     use std::collections::BTreeMap;
 
     const EPS_UNIT_SCALE: f64 = f64::EPSILON * 4096.0;
@@ -1347,106 +1229,99 @@ mod tests {
         ProfileRef,
     };
 
-    /// The length scale and the transform both come from the file, so a scale
-    /// that drives a translation non-finite is a `CodecError`, not a panic.
     #[test]
-    fn a_length_scale_that_overflows_a_translation_is_refused() {
-        let transform = Transform::affine([
-            [1.0, 0.0, 0.0, f64::MAX],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-        ])
-        .expect("a finite affine fixture");
+    fn feature_and_parameter_lengths_are_in_millimeters_at_admission() {
         let mut ir = CadIr::empty();
-        ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
-            id: cadmpeg_ir::ids::OccurrenceId::mint("creo:test:occurrence#0")
-                .expect("identity grammar"),
-            prototype: cadmpeg_ir::products::PrototypeReference::Local {
-                definition: cadmpeg_ir::ids::ProductDefinitionId::mint("creo:test:product#0")
-                    .expect("identity grammar"),
-            },
-            parent: cadmpeg_ir::products::OccurrenceParent::Root {},
-            ordinal: 0,
-            transform,
-            linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-            name: None,
-            visible: None,
-            link: None,
-            native_ref: None,
-        });
-        let error = normalize_model_lengths(&mut ir, positive(1000.0))
-            .expect_err("a non-finite translation has no transform")
-            .to_string();
-        assert!(error.contains("transform translation"), "{error}");
-    }
-
-    #[test]
-    fn scales_model_geometry_and_feature_dimensions() {
-        let mut ir = CadIr::empty();
-        ir.model.features.push(Feature {
-            id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#feature")
-                .expect("identity grammar"),
-            ordinal: 0,
-            name: None,
-            suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-            source_properties: std::collections::BTreeMap::default(),
-            source_tag: None,
-            source_text: None,
-            source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Operation(FeatureOperation::Extrude {
-                    profile: ProfileRef::Planar(PlanarProfileRef::Unresolved("profile".into())),
-                    direction: ExtrudeDirection::ProfileNormal {},
-                    start: ExtrudeStart::OffsetProfilePlane {
-                        offset: Length::new(2.0).expect("finite length fixture"),
-                    },
-                    extent: ExtrudeExtent::TwoSided {
-                        first: ExtrudeSide {
-                            termination: LinearTermination::Blind {
-                                length: cadmpeg_ir::scalar::NonZeroLength::new(3.0)
-                                    .expect("nonzero length fixture"),
+        let carriers =
+            crate::decode::source_carriers::SourceUnitCarriers::new(Some(positive(25.4)));
+        carriers
+            .admit_feature(
+                &mut ir,
+                Feature {
+                    id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#feature")
+                        .expect("identity grammar"),
+                    ordinal: 0,
+                    name: None,
+                    suppressed: None,
+                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                    source_properties: std::collections::BTreeMap::default(),
+                    source_tag: None,
+                    source_text: None,
+                    source_content: cadmpeg_ir::features::FeatureContent::default(),
+                    evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                        FeatureDefinition::Operation(FeatureOperation::Extrude {
+                            profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(
+                                "profile".into(),
+                            )),
+                            direction: ExtrudeDirection::ProfileNormal {},
+                            start: ExtrudeStart::OffsetProfilePlane {
+                                offset: Length::new(2.0).expect("finite length fixture"),
                             },
-                            draft: None,
-                        },
-                        second: ExtrudeSide {
-                            termination: LinearTermination::ToFace {
-                                face: cadmpeg_ir::features::FaceSelection::Native("face".into()),
-                                offset: Some(Length::new(4.0).expect("finite length fixture")),
+                            extent: ExtrudeExtent::TwoSided {
+                                first: ExtrudeSide {
+                                    termination: LinearTermination::Blind {
+                                        length: cadmpeg_ir::scalar::NonZeroLength::new(3.0)
+                                            .expect("nonzero length fixture"),
+                                    },
+                                    draft: None,
+                                },
+                                second: ExtrudeSide {
+                                    termination: LinearTermination::ToFace {
+                                        face: cadmpeg_ir::features::FaceSelection::Native(
+                                            "face".into(),
+                                        ),
+                                        offset: Some(
+                                            Length::new(4.0).expect("finite length fixture"),
+                                        ),
+                                    },
+                                    draft: None,
+                                },
                             },
-                            draft: None,
-                        },
-                    },
-                    op: BooleanOp::NewBody,
-                    solid: None,
-                    face_maker: None,
-                    inner_wire_taper: None,
-                    length_along_profile_normal: None,
-                    allow_multi_profile_faces: None,
-                }),
-            ),
-            native_ref: None,
-        });
-        ir.model
-            .parameters
-            .push(cadmpeg_ir::features::DesignParameter {
-                id: cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#length")
-                    .expect("identity grammar"),
-                owner: None,
-                ordinal: 0,
-                name: "length".into(),
-                expression: "2".into(),
-                display: None,
-                value: Some(ParameterValue::Length(
-                    Length::new(5.0).expect("finite length fixture"),
-                )),
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                properties: BTreeMap::new(),
-                pmi: None,
-                native_ref: None,
-            });
-        normalize_model_lengths(&mut ir, positive(25.4)).expect("valid unit scaling");
+                            op: BooleanOp::NewBody,
+                            solid: None,
+                            face_maker: None,
+                            inner_wire_taper: None,
+                            length_along_profile_normal: None,
+                            allow_multi_profile_faces: None,
+                        }),
+                    ),
+                    native_ref: None,
+                },
+            )
+            .expect("feature admission");
+        carriers
+            .admit_parameter(
+                &mut ir,
+                cadmpeg_ir::features::DesignParameter {
+                    id: cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#length")
+                        .expect("identity grammar"),
+                    owner: None,
+                    ordinal: 0,
+                    name: "length".into(),
+                    expression: "2".into(),
+                    display: None,
+                    value: Some(ParameterValue::Length(
+                        Length::new(5.0).expect("finite length fixture"),
+                    )),
+                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                    properties: BTreeMap::new(),
+                    pmi: None,
+                    native_ref: None,
+                },
+            )
+            .expect("parameter admission");
+        let FeatureDefinition::Operation(FeatureOperation::Extrude {
+            start: ExtrudeStart::OffsetProfilePlane { offset },
+            ..
+        }) = ir.model.features[0].evaluation.definition()
+        else {
+            panic!("admitted feature changed family");
+        };
+        assert_close(offset.get(), 50.8);
+        let Some(ParameterValue::Length(length)) = ir.model.parameters[0].value.as_ref() else {
+            panic!("admitted parameter changed family");
+        };
+        assert_close(length.get(), 127.0);
 
         let FeatureDefinition::Operation(FeatureOperation::Extrude { start, extent, .. }) =
             ir.model.features[0].evaluation.definition()
@@ -1494,9 +1369,8 @@ mod tests {
 
     #[test]
     fn model_points_of_an_inch_model_are_converted_to_millimetres() {
-        let mut ir =
+        let ir =
             model_point_ir(Point3::new(1.0, -2.0, 0.5)).expect("valid millimeter point admission");
-        normalize_model_lengths(&mut ir, positive(25.4)).expect("valid unit scaling");
         assert_point3(ir.model.points[0].position().get(), [25.4, -50.8, 12.7]);
     }
 
@@ -1728,8 +1602,6 @@ mod tests {
         source_carriers
             .admit_procedural_curve(&mut ir, curve_id, curve)
             .expect("curve construction admission");
-
-        normalize_model_lengths(&mut ir, positive(25.4)).expect("valid unit scaling");
 
         let surface = &ir.model.procedural_surfaces[0];
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload) =

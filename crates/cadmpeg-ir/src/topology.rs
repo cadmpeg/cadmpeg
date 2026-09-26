@@ -1177,6 +1177,22 @@ impl EdgeCarrier {
         }
     }
 
+    /// Build a carrier from finite endpoints, checking only their order when
+    /// a curve is present.
+    pub fn from_finite_parts(
+        curve: Option<CurveId>,
+        param_range: Option<[crate::scalar::FiniteReal; 2]>,
+    ) -> Result<Self, &'static str> {
+        match (curve, param_range) {
+            (None, None) => Ok(Self::Free),
+            (Some(curve), None) => Ok(Self::Curve(curve)),
+            (Some(curve), Some(range)) => ParameterInterval::from_finite_endpoints(range.into())
+                .map(|interval| Self::Bounded(curve, interval))
+                .map_err(|_| "edge param_range must be finite and ordered"),
+            (None, Some(range)) => Ok(Self::Endpoints(range)),
+        }
+    }
+
     /// Admit a carrier and finite endpoints, ordered when the carrier is present.
     pub fn new(
         curve: Option<CurveId>,

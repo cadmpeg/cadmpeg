@@ -908,14 +908,16 @@ fn the_offset_parameter_is_one_nested_key_with_an_explicit_sign() {
 fn the_conic_bounds_are_one_nested_pair_or_absent() {
     use crate::math::Point2;
     use crate::scalar::{Angle, Length};
-    use crate::sketches::{SketchGeometry, SketchGeometryDefinition};
+    use crate::sketches::{EllipseRadii, SketchGeometry, SketchGeometryDefinition};
 
     let cases = [
         SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
             center: Point2::new(1.0, 2.0),
             major_angle: Angle::new(0.25).unwrap(),
-            major_radius: Length::new(4.0).unwrap(),
-            minor_radius: Length::new(2.0).unwrap(),
+            radii: EllipseRadii {
+                major_radius: Length::new(4.0).unwrap(),
+                minor_radius: Length::new(2.0).unwrap(),
+            },
             bounds: Some([Angle::new(-0.5).unwrap(), Angle::new(1.5).unwrap()]),
         })
         .unwrap(),
@@ -1261,8 +1263,10 @@ fn planar_geometry_admission_checks_each_numeric_family() {
         Definition::Ellipse {
             center: point,
             major_angle: Angle::new(0.0).unwrap(),
-            major_radius: Length::new(1.0).unwrap(),
-            minor_radius: Length::new(2.0).unwrap(),
+            radii: crate::sketches::EllipseRadii {
+                major_radius: Length::new(1.0).unwrap(),
+                minor_radius: Length::new(2.0).unwrap(),
+            },
             bounds: None,
         },
         Definition::Hyperbola {

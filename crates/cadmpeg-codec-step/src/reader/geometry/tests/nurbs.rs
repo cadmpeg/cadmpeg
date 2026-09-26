@@ -14,6 +14,25 @@ use crate::test_support::exchange::{decode_inline, export};
 use crate::StepSchema;
 
 #[test]
+fn explicit_knot_expansion_retains_admitted_bits_and_refusal() {
+    use crate::parse::Value;
+
+    let counts = Value::List(vec![Value::Integer(2), Value::Integer(1)]);
+    let values = Value::List(vec![Value::Real(-0.0), Value::Real(0.5)]);
+    let knots: cadmpeg_ir::geometry::nurbs::KnotVector =
+        super::super::expand_knots(&counts, &values, 3).expect("finite ordered knots");
+    assert_eq!(knots.as_slice().len(), 3);
+    assert_eq!(knots.as_slice()[0].to_bits(), (-0.0_f64).to_bits());
+    assert_eq!(knots.as_slice()[1].to_bits(), (-0.0_f64).to_bits());
+    assert_eq!(knots.as_slice()[2].to_bits(), 0.5_f64.to_bits());
+
+    let non_finite = Value::List(vec![Value::Real(0.0), Value::Real(f64::NAN)]);
+    assert!(super::super::expand_knots(&counts, &non_finite, 3).is_none());
+    let decreasing = Value::List(vec![Value::Real(1.0), Value::Real(0.5)]);
+    assert!(super::super::expand_knots(&counts, &decreasing, 3).is_none());
+}
+
+#[test]
 fn defaulted_spline_curve_subtypes_derive_knot_vectors() {
     let result = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));

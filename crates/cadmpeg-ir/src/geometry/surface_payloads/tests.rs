@@ -1491,6 +1491,24 @@ fn a_revolution_admits_a_finite_axis_origin_and_a_unit_axis_direction() {
 }
 
 #[test]
+fn admitted_revolution_axis_keeps_its_finite_origin_and_unit_refusal() {
+    use super::{admit_revolution_axis, admit_revolution_axis_from_parts};
+    use crate::features::{FinitePoint3, FiniteVector3};
+    use crate::math::{Point3, Vector3};
+
+    let origin = Point3::new(1.0, 2.0, 3.0);
+    for direction in [Vector3::new(0.0, 0.0, 1.0), Vector3::new(0.0, 0.0, 2.0)] {
+        assert_eq!(
+            admit_revolution_axis_from_parts(
+                FinitePoint3::new(origin).unwrap(),
+                FiniteVector3::new(direction).unwrap(),
+            ),
+            admit_revolution_axis(origin, direction),
+        );
+    }
+}
+
+#[test]
 fn a_revolution_replaces_its_origin_and_keeps_the_admitted_fields() {
     use super::RevolutionSurfaceConstruction;
     use crate::features::FinitePoint3;

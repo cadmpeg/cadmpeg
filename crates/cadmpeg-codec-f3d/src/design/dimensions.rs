@@ -5205,18 +5205,15 @@ fn exact_equal_size(entities: &[&cadmpeg_ir::sketches::SketchEntity]) -> bool {
         ) => close(first.get(), second.get()),
         (
             Geometry::Ellipse {
-                major_radius: first_major,
-                minor_radius: first_minor,
-                ..
+                radii: first_radii, ..
             },
             Geometry::Ellipse {
-                major_radius: second_major,
-                minor_radius: second_minor,
+                radii: second_radii,
                 ..
             },
         ) => {
-            close(first_major.get(), second_major.get())
-                && close(first_minor.get(), second_minor.get())
+            close(first_radii.major().get(), second_radii.major().get())
+                && close(first_radii.minor().get(), second_radii.minor().get())
         }
         _ => false,
     }
@@ -5432,14 +5429,13 @@ pub(super) fn point_lies_on_sketch_geometry(
         SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
-            major_radius,
-            minor_radius,
+            radii,
             bounds,
         } => {
             let relative = Point2::new(point.u - center.u, point.v - center.v);
             let (sin, cos) = major_angle.get().sin_cos();
-            let x = relative.u.mul_add(cos, relative.v * sin) / major_radius.get();
-            let y = (-relative.u).mul_add(sin, relative.v * cos) / minor_radius.get();
+            let x = relative.u.mul_add(cos, relative.v * sin) / radii.major().get();
+            let y = (-relative.u).mul_add(sin, relative.v * cos) / radii.minor().get();
             close(x.mul_add(x, y * y), 1.0)
                 && match bounds {
                     Some([start, end]) => angle_in_sweep(

@@ -312,8 +312,10 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     entity.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
         center: Point2::new(2.0, 3.0),
         major_angle: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
-        major_radius: Length::new(5.0).unwrap(),
-        minor_radius: Length::new(3.0).unwrap(),
+        radii: cadmpeg_ir::sketches::EllipseRadii {
+            major_radius: Length::new(5.0).unwrap(),
+            minor_radius: Length::new(3.0).unwrap(),
+        },
         bounds: None,
     })
     .unwrap();
@@ -778,8 +780,10 @@ fn geometric_membership_rejects_large_residuals_and_short_line_false_positives()
     let ellipse = SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
         center: Point2::new(0.0, 0.0),
         major_angle: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
-        major_radius: Length::new(1.0).unwrap(),
-        minor_radius: Length::new(0.5).unwrap(),
+        radii: cadmpeg_ir::sketches::EllipseRadii {
+            major_radius: Length::new(1.0).unwrap(),
+            minor_radius: Length::new(0.5).unwrap(),
+        },
         bounds: None,
     })
     .unwrap();

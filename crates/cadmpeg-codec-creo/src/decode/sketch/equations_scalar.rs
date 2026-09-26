@@ -4,6 +4,7 @@
 use super::axis::SectionAxis;
 
 use crate::feature::definitions::VariableType;
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::scalar::{Angle, NonNegativeLength, PositiveLength};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -155,8 +156,12 @@ fn section_equation_function_ten_axis_alignment(
     ]
     .into_iter()
     .all(f64::is_finite)
-        || approximately_equal(first_varying, second_varying)
-        || !approximately_equal(first_constant, second_constant)
+        || (FiniteReal::new(first_varying))
+            .zip(FiniteReal::new(second_varying))
+            .is_some_and(|(first, second)| approximately_equal(first, second))
+        || !(FiniteReal::new(first_constant))
+            .zip(FiniteReal::new(second_constant))
+            .is_some_and(|(first, second)| approximately_equal(first, second))
         || target_point[axis.index()].is_none()
         || target_point[constant_axis.index()].is_some()
     {
@@ -410,7 +415,13 @@ pub(super) fn reconcile_equation_value(
         return Err(());
     }
     match (stored, solved) {
-        (Some(stored), Some(solved)) if !approximately_equal(stored, solved) => Err(()),
+        (Some(stored), Some(solved))
+            if !(FiniteReal::new(stored))
+                .zip(FiniteReal::new(solved))
+                .is_some_and(|(first, second)| approximately_equal(first, second)) =>
+        {
+            Err(())
+        }
         (Some(stored), _) => Ok(Some(stored)),
         (_, Some(solved)) => Ok(Some(solved)),
         (None, None) => Ok(None),
@@ -609,7 +620,10 @@ pub(super) fn merge_scalar_value_candidate(
             let Some(stored) = *entry.get() else {
                 return;
             };
-            if !approximately_equal(stored, value) {
+            if !(FiniteReal::new(stored))
+                .zip(FiniteReal::new(value))
+                .is_some_and(|(first, second)| approximately_equal(first, second))
+            {
                 *entry.get_mut() = None;
             }
         }
@@ -748,7 +762,11 @@ pub(super) fn propagate_section_equation_scalar_equality_values(
             };
             match values.get(variable) {
                 Some(Some(value)) if value.is_finite() => {
-                    if variable_value.is_some_and(|stored| !approximately_equal(stored, *value)) {
+                    if variable_value.is_some_and(|stored| {
+                        !(FiniteReal::new(stored))
+                            .zip(FiniteReal::new(*value))
+                            .is_some_and(|(first, second)| approximately_equal(first, second))
+                    }) {
                         conflicting = true;
                         break;
                     }
@@ -761,7 +779,11 @@ pub(super) fn propagate_section_equation_scalar_equality_values(
                 None => {}
             }
             if let Some(value) = variable_value {
-                if component_value.is_some_and(|stored| !approximately_equal(stored, value)) {
+                if component_value.is_some_and(|stored| {
+                    !(FiniteReal::new(stored))
+                        .zip(FiniteReal::new(value))
+                        .is_some_and(|(first, second)| approximately_equal(first, second))
+                }) {
                     conflicting = true;
                     break;
                 }
@@ -801,7 +823,9 @@ pub(super) fn append_section_equation_auxiliary_coordinate_constraints(
             .get(&constraint.first)
             .zip(stored_coordinates.get(&constraint.second))
             .is_some_and(|(first, second)| {
-                !approximately_equal(f64::midpoint(*first, *second), *value)
+                !(FiniteReal::new(f64::midpoint(*first, *second)))
+                    .zip(FiniteReal::new(*value))
+                    .is_some_and(|(first, second)| approximately_equal(first, second))
             })
         {
             continue;
@@ -809,7 +833,10 @@ pub(super) fn append_section_equation_auxiliary_coordinate_constraints(
         let mut equation = SectionCoordinateEquation::default();
         equation.add_point(constraint.first.0, constraint.first.1, 1.0);
         equation.add_point(constraint.second.0, constraint.second.1, 1.0);
-        equation.rhs = 2.0 * value;
+        let Some(rhs) = FiniteReal::new(2.0 * value) else {
+            continue;
+        };
+        equation.rhs = rhs.get();
         equations.push(equation);
     }
     for constraint in &constraints.point_bindings {
@@ -821,7 +848,11 @@ pub(super) fn append_section_equation_auxiliary_coordinate_constraints(
                 Some(Some(value)) => {
                     if stored_coordinates
                         .get(&(constraint.point, coordinate))
-                        .is_some_and(|stored| !approximately_equal(*stored, *value))
+                        .is_some_and(|stored| {
+                            !(FiniteReal::new(*stored))
+                                .zip(FiniteReal::new(*value))
+                                .is_some_and(|(first, second)| approximately_equal(first, second))
+                        })
                     {
                         invalid = true;
                         break;
@@ -868,7 +899,11 @@ pub(super) fn section_equation_scalar_values_from_coordinates(
     let mut derived = BTreeMap::<SectionScalarVariable, Option<f64>>::new();
     let compatible = |variable: SectionScalarVariable, value: f64| {
         !seed_values.contains_key(&variable)
-            || seed_values[&variable].is_some_and(|stored| approximately_equal(stored, value))
+            || seed_values[&variable].is_some_and(|stored| {
+                (FiniteReal::new(stored))
+                    .zip(FiniteReal::new(value))
+                    .is_some_and(|(first, second)| approximately_equal(first, second))
+            })
     };
     for constraint in constraints.midpoints {
         let (Some(Some(first)), Some(Some(second))) = (
@@ -1645,7 +1680,11 @@ pub(in crate::decode) fn section_equation_function_sixteen_angle_difference_rows
                 return None;
             }
             if difference_value.is_some_and(|stored| {
-                !stored.is_finite() || stored < 0.0 || !approximately_equal(stored, value)
+                !stored.is_finite()
+                    || stored < 0.0
+                    || !(FiniteReal::new(stored))
+                        .zip(FiniteReal::new(value))
+                        .is_some_and(|(first, second)| approximately_equal(first, second))
             }) {
                 return None;
             }
