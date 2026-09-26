@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::{alloc_filled, DecodeContext, ScopedReservation};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
@@ -1704,31 +1704,7 @@ fn append_legacy_brep(
         .ok_or_else(|| {
             CodecError::NotImplemented("Rhino V1 Brep trim count exceeds address space".to_string())
         })?;
-    let temporary_count = trim_count
-        .checked_mul(6)
-        .and_then(|count| count.checked_add(brep.faces.len()))
-        .ok_or_else(|| {
-            CodecError::NotImplemented("Rhino V1 Brep workspace exceeds address space".to_string())
-        })?;
-    ctx.charge_collection_items(
-        u64::try_from(temporary_count).map_err(|_| {
-            CodecError::NotImplemented("Rhino V1 Brep workspace exceeds address space".to_string())
-        })?,
-        "Rhino V1 Brep topology workspace",
-    )?;
-    let temporary_bytes = trim_count
-        .checked_mul(
-            std::mem::size_of::<(usize, usize, usize)>() + 5 * std::mem::size_of::<usize>(),
-        )
-        .ok_or_else(|| {
-            CodecError::NotImplemented("Rhino V1 Brep workspace exceeds address space".to_string())
-        })?;
-    let _workspace = ctx.reserve_scoped(
-        u64::try_from(temporary_bytes).map_err(|_| {
-            CodecError::NotImplemented("Rhino V1 Brep workspace exceeds address space".to_string())
-        })?,
-        "Rhino V1 Brep topology workspace",
-    )?;
+    let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
     let mut draft = cadmpeg_ir::draft::ModelDraft::new();
     let model = draft.model_mut();
     let suffix_key = legacy_identity_key(suffix.to_owned())?;
@@ -1744,13 +1720,37 @@ fn append_legacy_brep(
         &cadmpeg_ir::identity_namespace!("rhino", "object", "shell"),
         suffix_key.clone(),
     );
-    let mut trim_paths = Vec::new();
-    let mut face_trim_indices = alloc_filled(
-        brep.faces.len(),
-        Vec::<usize>::new(),
-        "Rhino legacy Brep face trim indices",
+    let mut trim_paths = v1_temporary_values::<(usize, usize, usize)>(
+        ctx,
+        &mut workspace,
+        trim_count,
+        "Rhino V1 Brep trim paths",
     )?;
+    let mut face_trim_indices = v1_temporary_values::<Vec<usize>>(
+        ctx,
+        &mut workspace,
+        brep.faces.len(),
+        "Rhino V1 Brep face trim rows",
+    )?;
+    face_trim_indices.resize_with(brep.faces.len(), Vec::new);
     for (face_index, face) in brep.faces.iter().enumerate() {
+        let face_trim_count = face
+            .loops
+            .iter()
+            .try_fold(0_usize, |total, loop_record| {
+                total.checked_add(loop_record.trims.len())
+            })
+            .ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "Rhino V1 Brep face trim count exceeds address space".to_string(),
+                )
+            })?;
+        face_trim_indices[face_index] = v1_temporary_values::<usize>(
+            ctx,
+            &mut workspace,
+            face_trim_count,
+            "Rhino V1 Brep face trim indices",
+        )?;
         for (loop_index, loop_record) in face.loops.iter().enumerate() {
             for trim_index in 0..loop_record.trims.len() {
                 let global = trim_paths.len();
@@ -1762,7 +1762,13 @@ fn append_legacy_brep(
     if trim_paths.is_empty() {
         return Err(CodecError::Malformed("V1 Brep has no trims".to_string()));
     }
-    let mut parents = (0..trim_paths.len()).collect::<Vec<_>>();
+    let mut parents = v1_temporary_values::<usize>(
+        ctx,
+        &mut workspace,
+        trim_paths.len(),
+        "Rhino V1 Brep trim parents",
+    )?;
+    parents.extend(0..trim_paths.len());
     let has_edge = |index: usize| {
         let (face, loop_index, trim) = trim_paths[index];
         brep.faces[face].loops[loop_index].trims[trim]
@@ -1775,14 +1781,19 @@ fn append_legacy_brep(
         }
     };
     for (face_index, face) in brep.faces.iter().enumerate() {
-        let seams = face_trim_indices[face_index]
-            .iter()
-            .copied()
-            .filter(|index| {
-                let (_, loop_index, trim_index) = trim_paths[*index];
-                face.loops[loop_index].trims[trim_index].mate == Mate::Seam
-            })
-            .collect::<Vec<_>>();
+        let mut seam_workspace = ctx.reserve_scoped(0, "Rhino V1 Brep seams")?;
+        let mut seams = v1_temporary_values::<usize>(
+            ctx,
+            &mut seam_workspace,
+            face_trim_indices[face_index].len(),
+            "Rhino V1 Brep seams",
+        )?;
+        for index in face_trim_indices[face_index].iter().copied() {
+            let (_, loop_index, trim_index) = trim_paths[index];
+            if face.loops[loop_index].trims[trim_index].mate == Mate::Seam {
+                seams.push(index);
+            }
+        }
         if face.seam_glue.len() == seams.len() {
             for (index, mate) in face.seam_glue.iter().copied().enumerate() {
                 if mate < seams.len() {
@@ -1791,14 +1802,18 @@ fn append_legacy_brep(
             }
         }
     }
-    let mates = trim_paths
-        .iter()
-        .enumerate()
-        .filter_map(|(index, (face, loop_index, trim))| {
-            let record = &brep.faces[*face].loops[*loop_index].trims[*trim];
-            (record.mate == Mate::Mated).then_some(index)
-        })
-        .collect::<Vec<_>>();
+    let mut mates = v1_temporary_values::<usize>(
+        ctx,
+        &mut workspace,
+        trim_paths.len(),
+        "Rhino V1 Brep mated trims",
+    )?;
+    for (index, (face, loop_index, trim)) in trim_paths.iter().enumerate() {
+        let record = &brep.faces[*face].loops[*loop_index].trims[*trim];
+        if record.mate == Mate::Mated {
+            mates.push(index);
+        }
+    }
     if brep.shell_glue.len() == mates.len() {
         for (index, mate) in brep.shell_glue.iter().copied().enumerate() {
             if mate < mates.len() {
@@ -1806,9 +1821,15 @@ fn append_legacy_brep(
             }
         }
     }
-    let roots = (0..trim_paths.len())
-        .map(|index| find_root(&mut parents, index))
-        .collect::<Vec<_>>();
+    let mut roots = v1_temporary_values::<usize>(
+        ctx,
+        &mut workspace,
+        trim_paths.len(),
+        "Rhino V1 Brep trim roots",
+    )?;
+    for index in 0..trim_paths.len() {
+        roots.push(find_root(&mut parents, index));
+    }
     let group_roots = roots.iter().copied().collect::<BTreeSet<_>>();
     let mut group_curve = BTreeMap::<usize, NurbsCurve>::new();
     let mut group_tolerance = BTreeMap::<usize, f64>::new();
@@ -1841,7 +1862,14 @@ fn append_legacy_brep(
                 .enumerate()
                 .find_map(|(global, path)| (*path == (face_index, loop_index, 0)).then_some(global))
                 .ok_or_else(|| CodecError::malformed("V1 loop has no indexed trim"))?;
-            let globals = (start..start + loop_record.trims.len()).collect::<Vec<_>>();
+            let mut globals_workspace = ctx.reserve_scoped(0, "Rhino V1 Brep loop globals")?;
+            let mut globals = v1_temporary_values::<usize>(
+                ctx,
+                &mut globals_workspace,
+                loop_record.trims.len(),
+                "Rhino V1 Brep loop globals",
+            )?;
+            globals.extend(start..start + loop_record.trims.len());
             for (position, global) in globals.iter().copied().enumerate() {
                 let root = roots[global];
                 if group_points.contains_key(&root) {
@@ -1874,7 +1902,16 @@ fn append_legacy_brep(
     // corresponding ends of every trim that uses that edge.  Coordinates
     // are only used for the resulting vertex position; they never identify
     // two topologically separate vertices.
-    let mut endpoint_parents = (0..trim_paths.len() * 2).collect::<Vec<_>>();
+    let endpoint_count = trim_paths.len().checked_mul(2).ok_or_else(|| {
+        CodecError::NotImplemented("Rhino V1 Brep endpoint count exceeds address space".to_string())
+    })?;
+    let mut endpoint_parents = v1_temporary_values::<usize>(
+        ctx,
+        &mut workspace,
+        endpoint_count,
+        "Rhino V1 Brep endpoint parents",
+    )?;
+    endpoint_parents.extend(0..endpoint_count);
     for (face_index, face) in brep.faces.iter().enumerate() {
         for (loop_index, loop_record) in face.loops.iter().enumerate() {
             let start = face_trim_indices[face_index]
@@ -1885,9 +1922,14 @@ fn append_legacy_brep(
                 })
                 .map(|position| face_trim_indices[face_index][position])
                 .ok_or_else(|| CodecError::Malformed("V1 loop has no indexed trim".to_string()))?;
-            let globals = (0..loop_record.trims.len())
-                .map(|offset| start + offset)
-                .collect::<Vec<_>>();
+            let mut globals_workspace = ctx.reserve_scoped(0, "Rhino V1 Brep endpoint globals")?;
+            let mut globals = v1_temporary_values::<usize>(
+                ctx,
+                &mut globals_workspace,
+                loop_record.trims.len(),
+                "Rhino V1 Brep endpoint globals",
+            )?;
+            globals.extend((0..loop_record.trims.len()).map(|offset| start + offset));
             for (position, global) in globals.iter().copied().enumerate() {
                 let next = globals[(position + 1) % globals.len()];
                 let (_, _, trim_index) = trim_paths[global];
@@ -3859,6 +3901,72 @@ mod tests {
             matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
         );
+        assert_eq!(
+            decode_v1(&data)
+                .expect("service admits Brep")
+                .ir
+                .model
+                .bodies
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn v1_brep_trim_paths_refuse_materialized_limit_before_reserve() {
+        let data = legacy_face_archive();
+        let header = super::parse_header(&data).expect("valid V1 header");
+        let comment = chunk_at(
+            &data,
+            header.start_offset + crate::layout::file_header::LEN,
+            data.len(),
+            ArchiveVersion::V1,
+            false,
+        )
+        .expect("V1 comment chunk");
+        let face = chunk_at(
+            &data,
+            comment.next_offset(),
+            data.len(),
+            ArchiveVersion::V1,
+            false,
+        )
+        .expect("V1 face chunk");
+        let parse_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (parse_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &data,
+            &parse_arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("V1 Brep fits service input limit");
+        let mut parse_workspace = parse_ctx
+            .reserve_scoped(0, "V1 test parsing workspace")
+            .expect("service parsing workspace");
+        let brep = super::legacy_brep(
+            &parse_ctx,
+            &mut parse_workspace,
+            &data,
+            &face,
+            super::MillimeterScale::IDENTITY,
+        )
+        .expect("valid V1 Brep payload");
+        let trim_count = brep.faces[0].loops[0].trims.len();
+        let first_request = trim_count * std::mem::size_of::<(usize, usize, usize)>();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_materialized_bytes =
+            u64::try_from(first_request - 1).expect("request fits u64");
+        let limited_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (limited_ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &limited_arena, &policy)
+                .expect("V1 Brep fits service input limit");
+        let mut ir = CadIr::empty();
+        let refusal = super::append_legacy_brep(&limited_ctx, &mut ir, brep, "limited")
+            .expect_err("trim path bytes exceed the lowered workspace ceiling");
+        assert!(
+            matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+        );
+        assert!(ir.model.bodies.is_empty());
         assert_eq!(
             decode_v1(&data)
                 .expect("service admits Brep")
