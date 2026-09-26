@@ -60,8 +60,24 @@ impl DimensionedScalars {
 }
 
 impl CountedScalars {
-    /// Allocates the declared count with undecoded slots.
-    pub(super) fn empty(count: u32) -> Option<Self> {
+    /// Admit the declared count before allocating its value slots.
+    pub(super) fn admit_empty(
+        ctx: &DecodeContext<'_>,
+        count: u32,
+    ) -> Result<Option<Self>, CodecError> {
+        let Some(len) = usize::try_from(count).ok() else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
+            shape: count,
+            values: ctx.alloc_filled(len, None, "admit Creo counted scalar array")?,
+            tokens: None,
+        }))
+    }
+
+    /// Allocates a test array with undecoded slots.
+    #[cfg(test)]
+    pub(crate) fn empty(count: u32) -> Option<Self> {
         Some(Self {
             shape: count,
             values: cadmpeg_core::decode::alloc_filled(
