@@ -42,7 +42,7 @@ pub fn topology(data: &[u8]) {
 
 /// Exercise entity record scanning.
 pub fn entity(data: &[u8]) {
-    crate::brep::entity::scan_metadata(data, false);
+    drop(crate::brep::entity::scan_metadata(None, data, false));
 }
 
 /// Exercise `PMISemanticDataDB` `MessagePack` parse/patch/reparse.
