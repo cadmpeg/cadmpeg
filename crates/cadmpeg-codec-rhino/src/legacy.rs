@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rhino V1 flat geometry and direct-record decoding.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
@@ -680,12 +680,12 @@ fn v1_values<T>(
     Ok(values)
 }
 
-fn v1_temporary_values<T>(
+fn admit_v1_temporary_items<T>(
     ctx: &DecodeContext<'_>,
     workspace: &mut ScopedReservation<'_>,
     count: usize,
     operation: &'static str,
-) -> Result<Vec<T>, CodecError> {
+) -> Result<u64, CodecError> {
     let count_u64 = u64::try_from(count).map_err(|_| {
         CodecError::NotImplemented("Rhino V1 workspace exceeds address space".to_string())
     })?;
@@ -697,6 +697,16 @@ fn v1_temporary_values<T>(
         })?;
     ctx.charge_collection_items(count_u64, operation)?;
     workspace.grow(bytes)?;
+    Ok(bytes)
+}
+
+fn v1_temporary_values<T>(
+    ctx: &DecodeContext<'_>,
+    workspace: &mut ScopedReservation<'_>,
+    count: usize,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    let bytes = admit_v1_temporary_items::<T>(ctx, workspace, count, operation)?;
     let mut values = Vec::new();
     values.try_reserve_exact(count).map_err(|_| {
         CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
@@ -824,6 +834,20 @@ fn legacy_spline(
                 z * scale.value(),
             ));
         }
+    }
+    if rational != 0 {
+        admit_v1_values::<cadmpeg_ir::geometry::nurbs::WeightedPole3<Point3>>(
+            ctx,
+            cv_count,
+            "Rhino V1 spline weighted poles",
+        )?;
+        admit_v1_values::<cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>>(
+            ctx,
+            cv_count,
+            "Rhino V1 spline admitted poles",
+        )?;
+    } else {
+        admit_v1_values::<FinitePoint3>(ctx, cv_count, "Rhino V1 spline admitted poles")?;
     }
     NurbsCurve::from_lanes(
         u32::try_from(order - 1)
@@ -1603,6 +1627,29 @@ fn legacy_surface(
     if weights.is_some() {
         admit_v1_values::<Vec<f64>>(ctx, counts[0], "Rhino V1 surface weight rows")?;
         admit_v1_values::<f64>(ctx, pole_count, "Rhino V1 surface weight grid")?;
+        admit_v1_values::<Vec<cadmpeg_ir::geometry::nurbs::WeightedPole3<Point3>>>(
+            ctx,
+            counts[0],
+            "Rhino V1 surface weighted rows",
+        )?;
+        admit_v1_values::<cadmpeg_ir::geometry::nurbs::WeightedPole3<Point3>>(
+            ctx,
+            pole_count,
+            "Rhino V1 surface weighted poles",
+        )?;
+        admit_v1_values::<Vec<cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>>>(
+            ctx,
+            counts[0],
+            "Rhino V1 surface admitted rows",
+        )?;
+        admit_v1_values::<cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>>(
+            ctx,
+            pole_count,
+            "Rhino V1 surface admitted poles",
+        )?;
+    } else {
+        admit_v1_values::<Vec<FinitePoint3>>(ctx, counts[0], "Rhino V1 surface admitted rows")?;
+        admit_v1_values::<FinitePoint3>(ctx, pole_count, "Rhino V1 surface admitted poles")?;
     }
     NurbsSurface::from_lanes(
         NurbsSurfaceAxis::new(
@@ -1830,20 +1877,60 @@ fn append_legacy_brep(
     for index in 0..trim_paths.len() {
         roots.push(find_root(&mut parents, index));
     }
-    let group_roots = roots.iter().copied().collect::<BTreeSet<_>>();
+    let mut group_roots = v1_temporary_values::<usize>(
+        ctx,
+        &mut workspace,
+        roots.len(),
+        "Rhino V1 Brep unique roots",
+    )?;
+    group_roots.extend_from_slice(&roots);
+    group_roots.sort_unstable();
+    group_roots.dedup();
+    admit_v1_temporary_items::<(usize, NurbsCurve)>(
+        ctx,
+        &mut workspace,
+        group_roots.len(),
+        "Rhino V1 Brep grouped curves",
+    )?;
+    admit_v1_temporary_items::<(usize, f64)>(
+        ctx,
+        &mut workspace,
+        group_roots.len(),
+        "Rhino V1 Brep grouped tolerances",
+    )?;
     let mut group_curve = BTreeMap::<usize, NurbsCurve>::new();
     let mut group_tolerance = BTreeMap::<usize, f64>::new();
     for (index, (face, loop_index, trim)) in trim_paths.iter().copied().enumerate() {
         let record = &brep.faces[face].loops[loop_index].trims[trim];
         let root = roots[index];
         if let Some(curve) = &record.curve {
-            group_curve.entry(root).or_insert_with(|| curve.clone());
+            if let std::collections::btree_map::Entry::Vacant(entry) = group_curve.entry(root) {
+                admit_v1_temporary_items::<f64>(
+                    ctx,
+                    &mut workspace,
+                    curve.knots().len(),
+                    "Rhino V1 grouped curve knots",
+                )?;
+                admit_v1_temporary_items::<cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>>(
+                    ctx,
+                    &mut workspace,
+                    curve.pole_count(),
+                    "Rhino V1 grouped curve poles",
+                )?;
+                entry.insert(curve.clone());
+            }
         }
         group_tolerance
             .entry(root)
             .and_modify(|value| *value = value.max(record.tolerance_3d))
             .or_insert(record.tolerance_3d);
     }
+    admit_v1_temporary_items::<(usize, [Point3; 2])>(
+        ctx,
+        &mut workspace,
+        group_roots.len(),
+        "Rhino V1 Brep grouped endpoints",
+    )?;
     let mut group_points = BTreeMap::<usize, [Point3; 2]>::new();
     for (root, curve) in &group_curve {
         let domain = curve_domain(curve)?;
@@ -1961,6 +2048,21 @@ fn append_legacy_brep(
         }
     }
 
+    admit_v1_temporary_items::<(usize, Vec<(Point3, f64)>)>(
+        ctx,
+        &mut workspace,
+        endpoint_count,
+        "Rhino V1 Brep endpoint classes",
+    )?;
+    let sample_count = group_roots.len().checked_mul(2).ok_or_else(|| {
+        CodecError::NotImplemented("Rhino V1 Brep samples exceed address space".to_string())
+    })?;
+    admit_v1_temporary_items::<(Point3, f64)>(
+        ctx,
+        &mut workspace,
+        sample_count,
+        "Rhino V1 Brep endpoint samples",
+    )?;
     let mut class_samples = BTreeMap::<usize, Vec<(Point3, f64)>>::new();
     for root in &group_roots {
         let points = group_points[root];
@@ -1976,6 +2078,12 @@ fn append_legacy_brep(
                 .push((point, tolerance));
         }
     }
+    admit_v1_temporary_items::<(usize, cadmpeg_ir::ids::VertexId)>(
+        ctx,
+        &mut workspace,
+        class_samples.len(),
+        "Rhino V1 Brep vertex classes",
+    )?;
     let mut vertex_by_class = BTreeMap::<usize, cadmpeg_ir::ids::VertexId>::new();
     let vertex_count = class_samples.len();
     let face_count = brep.faces.len();
@@ -2023,7 +2131,12 @@ fn append_legacy_brep(
         })?,
         "Rhino V1 Brep topology storage",
     )?;
-    admit_v1_values::<cadmpeg_ir::ids::CoedgeId>(ctx, trim_count, "Rhino V1 Brep radial coedges")?;
+    admit_v1_temporary_items::<cadmpeg_ir::ids::CoedgeId>(
+        ctx,
+        &mut workspace,
+        trim_count,
+        "Rhino V1 Brep radial coedges",
+    )?;
     admit_v1_values::<PcurveUse>(ctx, trim_count, "Rhino V1 Brep pcurve uses")?;
     for (class, samples) in class_samples {
         let count = samples.len() as f64;
@@ -2064,6 +2177,12 @@ fn append_legacy_brep(
         });
         vertex_by_class.insert(class, vertex_id);
     }
+    admit_v1_temporary_items::<(usize, [cadmpeg_ir::ids::VertexId; 2])>(
+        ctx,
+        &mut workspace,
+        group_roots.len(),
+        "Rhino V1 Brep grouped vertices",
+    )?;
     let mut group_vertices = BTreeMap::new();
     for root in &group_roots {
         let start_class = find_root(&mut endpoint_parents, root * 2);
@@ -2078,9 +2197,21 @@ fn append_legacy_brep(
         let ids = [start, end];
         group_vertices.insert(*root, ids);
     }
+    admit_v1_temporary_items::<(usize, cadmpeg_ir::ids::EdgeId)>(
+        ctx,
+        &mut workspace,
+        group_roots.len(),
+        "Rhino V1 Brep grouped edges",
+    )?;
     let mut group_edges = BTreeMap::new();
     for (edge_index, root) in group_roots.iter().copied().enumerate() {
         let curve_id = if let Some(curve) = group_curve.remove(&root) {
+            admit_v1_values::<f64>(ctx, curve.knots().len(), "Rhino V1 Brep edge curve knots")?;
+            admit_v1_values::<cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>>(
+                ctx,
+                curve.pole_count(),
+                "Rhino V1 Brep edge curve poles",
+            )?;
             let id = cadmpeg_ir::ids::CurveId::compose(
                 &cadmpeg_ir::identity_namespace!("rhino", "object", "curve"),
                 legacy_identity_key(format!("{suffix}.edge-{edge_index}"))?,
@@ -2124,6 +2255,12 @@ fn append_legacy_brep(
     }
     let mut shell_faces =
         v1_values::<cadmpeg_ir::ids::FaceId>(ctx, face_count, "Rhino V1 shell faces")?;
+    admit_v1_temporary_items::<(usize, Vec<cadmpeg_ir::ids::CoedgeId>)>(
+        ctx,
+        &mut workspace,
+        group_roots.len(),
+        "Rhino V1 Brep radial groups",
+    )?;
     let mut coedges_by_root = BTreeMap::<usize, Vec<cadmpeg_ir::ids::CoedgeId>>::new();
     let mut global_trim = 0_usize;
     for (face_index, face_record) in brep.faces.into_iter().enumerate() {
@@ -2174,12 +2311,65 @@ fn append_legacy_brep(
                 pcurve_knots.extend_from_slice(trim.pcurve.knots());
                 let mut pcurve_points = v1_values::<cadmpeg_ir::units::FinitePoint2>(
                     ctx,
-                    trim.pcurve.control_points().len(),
+                    trim.pcurve.pole_count(),
                     "Rhino V1 pcurve controls",
                 )?;
-                for point in trim.pcurve.control_points() {
-                    let [x, y, _] = point.coordinates();
-                    pcurve_points.push(cadmpeg_ir::units::FinitePoint2::from_coordinates(x, y));
+                let mut pcurve_weights = if matches!(
+                    trim.pcurve.pole_rows(),
+                    cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. }
+                ) {
+                    Some(v1_values::<cadmpeg_ir::scalar::NonZeroReal>(
+                        ctx,
+                        trim.pcurve.pole_count(),
+                        "Rhino V1 pcurve weights",
+                    )?)
+                } else {
+                    None
+                };
+                match trim.pcurve.pole_rows() {
+                    cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
+                        for point in points {
+                            let [x, y, _] = point.coordinates();
+                            pcurve_points
+                                .push(cadmpeg_ir::units::FinitePoint2::from_coordinates(x, y));
+                        }
+                    }
+                    cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
+                        for pole in points {
+                            let [x, y, _] = pole.point.coordinates();
+                            pcurve_points
+                                .push(cadmpeg_ir::units::FinitePoint2::from_coordinates(x, y));
+                            if let Some(weights) = pcurve_weights.as_mut() {
+                                weights.push(pole.weight);
+                            }
+                        }
+                    }
+                }
+                if pcurve_weights.is_some() {
+                    admit_v1_values::<
+                        cadmpeg_ir::geometry::pcurve::WeightedPole2<
+                            cadmpeg_ir::units::FinitePoint2,
+                        >,
+                    >(
+                        ctx,
+                        trim.pcurve.pole_count(),
+                        "Rhino V1 pcurve weighted poles",
+                    )?;
+                    admit_v1_values::<
+                        cadmpeg_ir::geometry::pcurve::WeightedPole2<
+                            cadmpeg_ir::units::FinitePoint2,
+                        >,
+                    >(
+                        ctx,
+                        trim.pcurve.pole_count(),
+                        "Rhino V1 pcurve admitted poles",
+                    )?;
+                } else {
+                    admit_v1_values::<cadmpeg_ir::units::FinitePoint2>(
+                        ctx,
+                        trim.pcurve.pole_count(),
+                        "Rhino V1 pcurve admitted poles",
+                    )?;
                 }
                 model.pcurves.push(Pcurve {
                     id: pcurve_id.clone(),
@@ -2188,7 +2378,7 @@ fn append_legacy_brep(
                             trim.pcurve.degree(),
                             pcurve_knots,
                             pcurve_points,
-                            trim.pcurve.weights(),
+                            pcurve_weights,
                             trim.pcurve.periodic(),
                         )
                         .map_err(|error| CodecError::Malformed(error.to_string()))?,
@@ -2301,6 +2491,12 @@ fn append_legacy_brep(
         });
         shell_faces.push(face_id);
     }
+    admit_v1_temporary_items::<(cadmpeg_ir::ids::CoedgeId, usize)>(
+        ctx,
+        &mut workspace,
+        model.coedges.len(),
+        "Rhino V1 Brep radial positions",
+    )?;
     let coedge_positions = model
         .coedges
         .iter()
@@ -2675,8 +2871,7 @@ fn evaluate_nurbs(
     let degree = usize::try_from(curve.degree())
         .map_err(|_| CodecError::Malformed("V1 curve degree overflow".to_string()))?;
     let last = curve
-        .control_points()
-        .len()
+        .pole_count()
         .checked_sub(1)
         .ok_or_else(|| CodecError::Malformed("V1 curve has no control points".to_string()))?;
     let span = if parameter >= curve.knots()[last + 1] {
@@ -2721,10 +2916,15 @@ fn evaluate_nurbs(
             operation: "Rhino V1 curve evaluation",
         })
     })?;
+    let poles = curve.pole_rows();
     for j in 0..count {
         let index = span - degree + j;
-        let point = curve.control_points()[index];
-        let weight = curve.weights().map_or(1.0, |weights| weights[index].get());
+        let (point, weight) = match poles {
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => (points[index], 1.0),
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
+                (points[index].point, points[index].weight.get())
+            }
+        };
         values.push([point.x * weight, point.y * weight, point.z * weight, weight]);
     }
     for level in 1..=degree {
@@ -3380,6 +3580,104 @@ mod tests {
     }
 
     #[test]
+    fn v1_spline_admitted_poles_refuse_collection_limit_before_constructor() {
+        let data = legacy_line([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], 3);
+        let curve =
+            chunk_at(&data, 0, data.len(), ArchiveVersion::V1, false).expect("V1 curve wrapper");
+        let curve_stuff = super::child_with_type(&data, curve.body(), TCODE_LEGACY_CRVSTUFF)
+            .expect("V1 curve child framing")
+            .expect("V1 curve-stuff child");
+        let spline_start = curve_stuff.body().start + 1 + 1 + 2 + 6 * 8;
+        let spline = chunk_at(&data, spline_start, data.len(), ArchiveVersion::V1, false)
+            .expect("V1 spline wrapper");
+        let spline_stuff = super::child_with_type(&data, spline.body(), TCODE_LEGACY_SPLSTUFF)
+            .expect("V1 spline child framing")
+            .expect("V1 spline-stuff child");
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 8;
+        let limited_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (limited_ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &limited_arena, &policy)
+                .expect("V1 line fits service input limit");
+        let refusal = super::legacy_spline(
+            &limited_ctx,
+            &data,
+            spline_stuff.body(),
+            super::MillimeterScale::IDENTITY,
+        )
+        .expect_err("the constructor pole copy needs two more collection items");
+        assert!(
+            matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "Rhino V1 spline admitted poles"
+                && limit.used == 8)
+        );
+        let service_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (service_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &data,
+            &service_arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("V1 line fits service input limit");
+        assert_eq!(
+            super::legacy_spline(
+                &service_ctx,
+                &data,
+                spline_stuff.body(),
+                super::MillimeterScale::IDENTITY,
+            )
+            .expect("service admits spline poles")
+            .pole_count(),
+            2
+        );
+    }
+
+    #[test]
+    fn v1_surface_admitted_rows_refuse_collection_limit_before_constructor() {
+        let data = legacy_surface();
+        let surface =
+            chunk_at(&data, 0, data.len(), ArchiveVersion::V1, false).expect("V1 surface wrapper");
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 22;
+        let limited_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (limited_ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &limited_arena, &policy)
+                .expect("V1 surface fits service input limit");
+        let refusal = super::legacy_surface(
+            &limited_ctx,
+            &data,
+            surface.body(),
+            super::MillimeterScale::IDENTITY,
+        )
+        .expect_err("the constructor needs admitted surface rows");
+        assert!(
+            matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "Rhino V1 surface admitted rows"
+                && limit.used == 22)
+        );
+        let service_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (service_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &data,
+            &service_arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("V1 surface fits service input limit");
+        assert_eq!(
+            super::legacy_surface(
+                &service_ctx,
+                &data,
+                surface.body(),
+                super::MillimeterScale::IDENTITY,
+            )
+            .expect("service admits surface poles")
+            .pole_grid()
+            .u_count(),
+            2
+        );
+    }
+
+    #[test]
     fn v1_annotation_points_refuse_collection_limit_before_reserve() {
         let mut data = archive(&[]);
         data.extend(v1_annotation_records().remove(1));
@@ -3965,6 +4263,75 @@ mod tests {
         assert!(
             matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+        );
+        assert!(ir.model.bodies.is_empty());
+        assert_eq!(
+            decode_v1(&data)
+                .expect("service admits Brep")
+                .ir
+                .model
+                .bodies
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn v1_brep_group_maps_refuse_materialized_limit_before_insert() {
+        let data = legacy_face_archive();
+        let header = super::parse_header(&data).expect("valid V1 header");
+        let comment = chunk_at(
+            &data,
+            header.start_offset + crate::layout::file_header::LEN,
+            data.len(),
+            ArchiveVersion::V1,
+            false,
+        )
+        .expect("V1 comment chunk");
+        let face = chunk_at(
+            &data,
+            comment.next_offset(),
+            data.len(),
+            ArchiveVersion::V1,
+            false,
+        )
+        .expect("V1 face chunk");
+        let parse_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (parse_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &data,
+            &parse_arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("V1 Brep fits service input limit");
+        let mut parse_workspace = parse_ctx
+            .reserve_scoped(0, "V1 test parsing workspace")
+            .expect("service parsing workspace");
+        let brep = super::legacy_brep(
+            &parse_ctx,
+            &mut parse_workspace,
+            &data,
+            &face,
+            super::MillimeterScale::IDENTITY,
+        )
+        .expect("valid V1 Brep payload");
+        let trim_count = brep.faces[0].loops[0].trims.len();
+        let prior_bytes = trim_count * std::mem::size_of::<(usize, usize, usize)>()
+            + std::mem::size_of::<Vec<usize>>()
+            + 5 * trim_count * std::mem::size_of::<usize>();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_materialized_bytes =
+            u64::try_from(prior_bytes).expect("request fits u64");
+        let limited_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (limited_ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &limited_arena, &policy)
+                .expect("V1 Brep fits service input limit");
+        let mut ir = CadIr::empty();
+        let refusal = super::append_legacy_brep(&limited_ctx, &mut ir, brep, "limited")
+            .expect_err("grouped map entries exceed the remaining workspace");
+        assert!(
+            matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && limit.used == policy.limits.max_materialized_bytes)
         );
         assert!(ir.model.bodies.is_empty());
         assert_eq!(
