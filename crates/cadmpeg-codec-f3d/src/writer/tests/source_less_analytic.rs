@@ -396,7 +396,8 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
                 ),
                 coedge: tolerant_coedge,
                 record_index: 0,
-                parameter_range: [0.25, 0.75],
+                parameter_range: cadmpeg_ir::units::FiniteVector::new([0.25, 0.75])
+                    .expect("finite interval"),
                 extension: cadmpeg_asm::brep::records::TolerantCoedgeExtension::None {},
             }];
         native.body_visibilities = vec![crate::records::bodies::BodyVisibility {

@@ -855,16 +855,6 @@ pub(super) fn validate_source_less_design_links(
                 parameters.coedge
             )));
         }
-        if parameters
-            .parameter_range
-            .iter()
-            .any(|value| !value.is_finite())
-        {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D tolerant-coedge metadata {} has non-finite parameters",
-                parameters.id()
-            )));
-        }
         match &parameters.extension {
             cadmpeg_asm::brep::records::TolerantCoedgeExtension::None {}
             | cadmpeg_asm::brep::records::TolerantCoedgeExtension::Empty { target: None } => {}
@@ -899,9 +889,7 @@ pub(super) fn validate_source_less_design_links(
                     )));
                 }
                 let effective_range = parameter_range.unwrap_or(parameters.parameter_range);
-                if effective_range.iter().any(|value| !value.is_finite())
-                    || use_curve.parameter_range.endpoints() != effective_range
-                {
+                if use_curve.parameter_range.endpoints() != effective_range.get() {
                     return Err(CodecError::InvalidInput(format!(
                         "F3D tolerant-coedge extension {} has an inconsistent use-curve parameter range",
                         parameters.id()

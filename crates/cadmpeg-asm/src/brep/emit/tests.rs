@@ -228,6 +228,53 @@ fn tolerant_coedge_extension_retains_the_release_band() {
 }
 
 #[test]
+fn tolerant_coedge_source_refuses_nonfinite_interval() {
+    let records = [Record {
+        index: 0,
+        name: "tcoedge".into(),
+        tokens: vec![
+            Token::Ref(-1),
+            Token::Long(-1),
+            Token::Ref(-1),
+            Token::Ref(0),
+            Token::Ref(0),
+            Token::Ref(-1),
+            Token::Ref(1),
+            Token::False,
+            Token::Ref(2),
+            Token::Long(0),
+            Token::Ref(-1),
+            Token::Double(f64::INFINITY),
+            Token::Double(1.0),
+        ]
+        .into(),
+        offset: 0,
+        len: 0,
+    }];
+    let table = nurbs::toks::SubtypeTable::from_records(&records);
+    let reach = Reachable {
+        coedges: HashSet::from([0]),
+        edges: HashSet::from([1]),
+        loops: HashSet::from([2]),
+        ..Reachable::default()
+    };
+    let mut out = AsmBrep::default();
+    let error = emit_coedges(
+        &mut out,
+        &records,
+        &table,
+        Some(214),
+        &Carriers::default(),
+        &reach,
+        crate::asm_format!("f3d"),
+    )
+    .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("tolerant coedge parameter interval must be finite"));
+}
+
+#[test]
 fn tolerant_vertex_uses_the_third_double_for_evaluation_and_unset_state() {
     for width in [
         crate::kernel_header::RefWidth::Four,

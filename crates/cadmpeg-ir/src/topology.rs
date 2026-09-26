@@ -964,11 +964,19 @@ impl ParameterInterval {
 
     /// Admit finite endpoints in increasing or equal order.
     pub fn new(endpoints: [f64; 2]) -> Result<Self, &'static str> {
-        if endpoints.iter().all(|value| value.is_finite()) && endpoints[0] <= endpoints[1] {
-            Ok(Self(endpoints))
-        } else {
-            Err("parameter_range must be finite and ordered")
-        }
+        let endpoints = crate::units::FiniteVector::new(endpoints)
+            .ok_or("parameter_range must be finite and ordered")?;
+        Self::from_finite_endpoints(endpoints)
+    }
+
+    /// Build from finite endpoints, checking only their order.
+    pub fn from_finite_endpoints(
+        endpoints: crate::units::FiniteVector<2>,
+    ) -> Result<Self, &'static str> {
+        let endpoints = endpoints.get();
+        (endpoints[0] <= endpoints[1])
+            .then_some(Self(endpoints))
+            .ok_or("parameter_range must be finite and ordered")
     }
 
     /// The interval with both endpoints times `scale`.

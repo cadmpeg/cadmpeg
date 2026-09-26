@@ -4314,7 +4314,13 @@ pub(super) fn emit_coedges(
                             Some(_) => Some(TolerantCoedgeExtension::None {}),
                             None => None,
                         };
-                        extension.map(|extension| ([*start, *end], extension))
+                        let parameter_range = cadmpeg_ir::units::FiniteVector::new([*start, *end])
+                            .ok_or_else(|| {
+                                cadmpeg_core::CodecError::malformed(format_args!(
+                                    "tolerant coedge parameter interval must be finite"
+                                ))
+                            })?;
+                        extension.map(|extension| (parameter_range, extension))
                     }
                     _ => None,
                 }
@@ -4376,10 +4382,11 @@ pub(super) fn emit_coedges(
                     .map(|(curve, parameter_range)| {
                         Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::topology::CoedgeUseCurve {
                             curve,
-                            parameter_range: cadmpeg_ir::topology::ParameterInterval::new(
-                                parameter_range,
-                            )
-                            .map_err(cadmpeg_core::CodecError::malformed)?,
+                            parameter_range:
+                                cadmpeg_ir::topology::ParameterInterval::from_finite_endpoints(
+                                    parameter_range,
+                                )
+                                .map_err(cadmpeg_core::CodecError::malformed)?,
                         })
                     })
                     .transpose()?,
