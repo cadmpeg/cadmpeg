@@ -63,10 +63,10 @@ pub fn standard_topology(data: &[u8]) {
     else {
         return;
     };
-    if let Some(topology) = crate::families::standard::fbb::parse_standard(data) {
+    if let Ok(Some(topology)) = crate::families::standard::fbb::parse_standard(&ctx, data) {
         let _probe = topology.edge_vertices(&ctx);
     }
-    let _probe = crate::families::standard::topology::parse_fbb(data);
+    let _probe = crate::families::standard::topology::parse_fbb(&ctx, data);
 }
 
 /// Exercise `7C0B` value-block parsing.

@@ -7999,7 +7999,6 @@ pub(super) fn mesh_edge_points_compatible(
 /// Resolve standard trim assignments through their abstract physical-port
 /// quotient before binding the quotient bijectively to coordinate rows.
 #[cfg(test)]
-#[must_use]
 pub(super) fn parse_standard_mesh_endpoint_candidates(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -8031,7 +8030,8 @@ pub(super) fn parse_standard_mesh_endpoint_candidates(
     deduplicate_mesh_quotient_assignments(&mut assignments);
     // Standard-row occurrence direction is a face-quotient choice. Complete
     // FBB tables retain their scoped handle equalities in these local ports.
-    let Some(port_identities) = crate::solve::missing_edge::edge_port_identities(bytes) else {
+    let Some(port_identities) = crate::solve::missing_edge::edge_port_identities(ctx, bytes)?
+    else {
         return Ok(None);
     };
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
@@ -8888,7 +8888,6 @@ fn resolve_standard_mesh_endpoint_candidates(
 /// `complete_solution_valid` is evaluated only after every endpoint pair has
 /// been assigned. Use it for global preferences whose result cannot be known
 /// from a partial assignment.
-#[must_use]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn parse_standard_mesh_candidate_outcome<FP, FC>(
     ctx: &DecodeContext<'_>,
@@ -8946,7 +8945,7 @@ where
             };
             // Standard-row endpoints are oriented by the complete face quotient.
             let Some(port_identities) =
-                crate::solve::missing_edge::solver_ports(bytes, global_handle_ports)
+                crate::solve::missing_edge::solver_ports(ctx, bytes, global_handle_ports)?
             else {
                 return Ok(None);
             };
@@ -9315,7 +9314,6 @@ where
 /// existing solver, so optional incidences never become required trim uses.
 /// A second solved assignment is semantic ambiguity: no topology gauge may
 /// erase a different edge-to-face incidence graph.
-#[must_use]
 pub(crate) fn parse_standard_mesh_candidate_outcome_with_face_assignments<F>(
     candidates: MeshFaceAssignmentCandidates<'_>,
     budget: &WorkBudget<'_>,
@@ -10330,8 +10328,8 @@ fn coordinate_root_closure_refuses_selected_edge_collection_limit() {
 
 #[test]
 fn coordinate_root_preparation_budgets_independent_components_separately() {
-    catia_test_context!(ctx);
     const COMPONENT_COUNT: usize = 8;
+    catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(
         (0..COMPONENT_COUNT)
             .flat_map(|component| {
@@ -10411,8 +10409,8 @@ fn coordinate_root_preparation_budgets_independent_components_separately() {
 
 #[test]
 fn singleton_mesh_path_handles_many_independent_face_cycles() {
-    catia_test_context!(ctx);
     const FACE_COUNT: usize = 128;
+    catia_test_context!(ctx);
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut edge_rows = Vec::with_capacity(FACE_COUNT * 4);
     let mut edge_candidates = Vec::with_capacity(FACE_COUNT * 4);

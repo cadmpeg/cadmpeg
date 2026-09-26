@@ -218,9 +218,13 @@ fn placement_endpoint_bound_counts_propagate_collection_refusal() {
 
 #[test]
 fn compact_standard_ports_reuse_handles_in_the_global_trim_namespace() {
-    let ports = crate::solve::missing_edge::standard_global_edge_port_identities(
-        &compact_standard_triangle_topology_stream(),
-    )
+    let ports = crate::test_support::with_service_context(|ctx| {
+        crate::solve::missing_edge::standard_global_edge_port_identities(
+            ctx,
+            &compact_standard_triangle_topology_stream(),
+        )
+    })
+    .expect("service resource budget")
     .expect("compact standard ports");
 
     assert_eq!(ports, vec![[0, 1], [1, 2], [2, 0]]);
@@ -240,8 +244,11 @@ fn standard_full_table_reuses_terminal_handles_for_every_row_layout() {
         0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01, 0x06, 0x00,
     ]);
 
-    let ports = crate::solve::missing_edge::standard_global_edge_port_identities(&bytes)
-        .expect("standard full-table ports");
+    let ports = crate::test_support::with_service_context(|ctx| {
+        crate::solve::missing_edge::standard_global_edge_port_identities(ctx, &bytes)
+    })
+    .expect("service resource budget")
+    .expect("standard full-table ports");
     assert_eq!(ports, vec![[0, 1], [1, 2], [1, 3]]);
 }
 
@@ -261,10 +268,16 @@ fn standard_mesh_ports_preserve_global_terminal_handle_identity() {
         ],
     );
 
-    let ports =
-        crate::solve::missing_edge::standard_mesh_edge_ports(&bytes).expect("mesh port collapse");
-    let table_ports = crate::solve::missing_edge::standard_global_edge_port_identities(&bytes)
-        .expect("global terminal-handle ports");
+    let ports = crate::test_support::with_service_context(|ctx| {
+        crate::solve::missing_edge::standard_mesh_edge_ports(ctx, &bytes)
+    })
+    .expect("service resource budget")
+    .expect("mesh port collapse");
+    let table_ports = crate::test_support::with_service_context(|ctx| {
+        crate::solve::missing_edge::standard_global_edge_port_identities(ctx, &bytes)
+    })
+    .expect("service resource budget")
+    .expect("global terminal-handle ports");
     assert_eq!(table_ports[1][1], table_ports[2][0]);
     assert_eq!(
         table_ports
@@ -346,9 +359,11 @@ fn standard_mesh_candidate_quotient_defers_occurrence_direction() {
 
 #[test]
 fn standard_mesh_ports_are_occurrence_components_not_coordinate_indices() {
-    let ports =
-        crate::solve::missing_edge::standard_mesh_edge_ports(&standard_quad_topology_stream())
-            .expect("mesh endpoint components");
+    let ports = crate::test_support::with_service_context(|ctx| {
+        crate::solve::missing_edge::standard_mesh_edge_ports(ctx, &standard_quad_topology_stream())
+    })
+    .expect("service resource budget")
+    .expect("mesh endpoint components");
     assert_eq!(ports.len(), 4);
     assert_eq!(
         ports
@@ -665,9 +680,11 @@ fn unmatched_fbb_complete_row_arity_fixes_trim_span() {
 
 #[test]
 fn standard_mesh_runs_include_flanking_segments() {
-    let runs =
-        crate::solve::missing_edge::standard_mesh_edge_runs(&standard_quad_topology_stream())
-            .expect("mesh edge runs");
+    let runs = crate::test_support::with_service_context(|ctx| {
+        crate::solve::missing_edge::standard_mesh_edge_runs(ctx, &standard_quad_topology_stream())
+    })
+    .expect("service resource budget")
+    .expect("mesh edge runs");
     assert_eq!(runs.len(), 4);
     assert_eq!(
         runs.iter()

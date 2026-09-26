@@ -1606,7 +1606,12 @@ fn decode_object_stream_does_not_promote_unbound_a8_pcurve() {
 fn decode_object_stream_transfers_a8_rolling_ball_jet() {
     let file = object_main_catpart(&a8_freeform_curve_stream());
     assert_eq!(
-        crate::container::scan_bytes(file.clone()).variant,
+        crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(
+            ctx,
+            file.clone()
+        ))
+        .expect("service resource budget")
+        .variant,
         Variant::FloatPackedInnerNoFbb
     );
     let decoded = EditableDecodeResult::from(
@@ -1656,7 +1661,12 @@ fn decode_object_stream_transfers_a8_rolling_ball_jet() {
 #[test]
 fn decode_float_packed_stream_transfers_a8_nurbs() {
     assert_eq!(
-        crate::container::scan_bytes(a8_catpart()).variant,
+        crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(
+            ctx,
+            a8_catpart()
+        ))
+        .expect("service resource budget")
+        .variant,
         Variant::FloatPackedInnerNoFbb
     );
     let mut cur = Cursor::new(a8_catpart());
@@ -1679,7 +1689,12 @@ fn decode_float_packed_stream_transfers_a8_nurbs() {
 #[test]
 fn decode_inner_no_directory_transfers_a8_nurbs() {
     assert_eq!(
-        crate::container::scan_bytes(inner_no_directory_a8_catpart()).variant,
+        crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(
+            ctx,
+            inner_no_directory_a8_catpart()
+        ))
+        .expect("service resource budget")
+        .variant,
         Variant::InnerNoDirectory
     );
     let mut cur = Cursor::new(inner_no_directory_a8_catpart());

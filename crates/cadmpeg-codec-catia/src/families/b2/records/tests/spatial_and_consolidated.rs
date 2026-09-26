@@ -86,7 +86,12 @@ fn b2_composite_parser_reads_the_complete_type_three_group() {
 #[test]
 fn decode_inner_no_directory_transfers_b2_cylinder() {
     assert_eq!(
-        crate::container::scan_bytes(inner_no_directory_b2_catpart()).variant,
+        crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(
+            ctx,
+            inner_no_directory_b2_catpart()
+        ))
+        .expect("service resource budget")
+        .variant,
         Variant::InnerNoDirectory
     );
     let mut cur = Cursor::new(inner_no_directory_b2_catpart());
