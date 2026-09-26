@@ -291,6 +291,16 @@ impl NonNegativeLength {
 impl PositiveReal {
     /// Unit scalar value.
     pub const ONE: Self = Self(1.0);
+
+    /// Admit a finite scalar as positive. Only its sign remains to check.
+    #[must_use]
+    pub const fn from_finite(value: FiniteReal) -> Option<Self> {
+        if value.get() > 0.0 {
+            Some(Self(value.get()))
+        } else {
+            None
+        }
+    }
 }
 
 impl NonNegativeReal {
@@ -445,6 +455,16 @@ impl PositiveLength {
 }
 
 impl NonZeroLength {
+    /// Assign a finite scalar to the length family if it is nonzero.
+    #[must_use]
+    pub const fn from_assigned_real(value: FiniteReal) -> Option<Self> {
+        if value.get() != 0.0 {
+            Some(Self(value.get()))
+        } else {
+            None
+        }
+    }
+
     /// The magnitude. The magnitude of a finite nonzero value is finite and
     /// positive.
     #[must_use]
