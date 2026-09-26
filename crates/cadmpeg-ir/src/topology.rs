@@ -1063,7 +1063,7 @@ pub struct IncreasingParameterInterval([f64; 2]);
 impl IncreasingParameterInterval {
     /// The interval from `lower` to `upper`, absent unless `lower` is
     /// strictly below `upper`. Finite reals need no finiteness test.
-    pub(crate) fn between(
+    pub fn between(
         lower: crate::scalar::FiniteReal,
         upper: crate::scalar::FiniteReal,
     ) -> Option<Self> {

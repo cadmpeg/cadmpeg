@@ -8,7 +8,7 @@ pub mod bounds;
 
 use crate::features::FinitePoint3;
 use crate::math::Point3;
-use crate::scalar::NonZeroReal;
+use crate::scalar::{FiniteReal, NonZeroReal};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -29,6 +29,20 @@ impl KnotVector {
     /// Refuses a non-finite knot, then a decreasing pair.
     pub(crate) fn new(knots: Vec<f64>) -> Result<Self, NurbsError> {
         require_nondecreasing_knots(&knots)?;
+        Ok(Self(knots))
+    }
+
+    /// Admit the ordering of finite knot values. Finiteness is carried by
+    /// each input value and is not checked again.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a decreasing knot pair.
+    pub fn from_finite_values(values: Vec<FiniteReal>) -> Result<Self, NurbsError> {
+        let knots = values.into_iter().map(FiniteReal::get).collect::<Vec<_>>();
+        if !knots_nondecreasing(&knots) {
+            return Err(NurbsError::Structure("knots must be non-decreasing".into()));
+        }
         Ok(Self(knots))
     }
 
@@ -842,16 +856,51 @@ pub(super) fn require_curve_cardinality(
 /// axis: the knot count a source may state depends on the degree, and the
 /// periodicity describes that same knot vector. They travel together.
 #[derive(Debug, Clone, PartialEq)]
-pub struct NurbsSurfaceAxis {
+pub struct NurbsSurfaceAxis<K = Vec<f64>> {
     degree: u32,
-    knots: Vec<f64>,
+    knots: K,
     periodic: bool,
 }
 
-impl NurbsSurfaceAxis {
+fn require_surface_cardinality<P>(
+    u_degree: u32,
+    u_knot_count: usize,
+    v_degree: u32,
+    v_knot_count: usize,
+    poles: &NurbsPoleGrid<P>,
+) -> Result<(), NurbsError> {
+    let u_count = poles.u_count();
+    let v_count = poles.v_count();
+    if u_count <= u_degree as usize {
+        return Err(NurbsError::Structure(format!(
+            "u_count must exceed u_degree {u_degree}, found {u_count}"
+        )));
+    }
+    if v_count <= v_degree as usize {
+        return Err(NurbsError::Structure(format!(
+            "v_count must exceed v_degree {v_degree}, found {v_count}"
+        )));
+    }
+    require_length(
+        "u_knots",
+        u_knot_count,
+        checked_knot_count("u", u_count, u_degree)?,
+    )?;
+    require_length(
+        "v_knots",
+        v_knot_count,
+        checked_knot_count("v", v_count, v_degree)?,
+    )?;
+    match poles {
+        NurbsPoleGrid::Polynomial { rows } => require_rectangular_grid("control_points", rows),
+        NurbsPoleGrid::Rational { rows } => require_rectangular_grid("control_points", rows),
+    }
+}
+
+impl<K> NurbsSurfaceAxis<K> {
     /// One axis of a surface: its degree, its knot vector and its periodicity.
     #[must_use]
-    pub const fn new(degree: u32, knots: Vec<f64>, periodic: bool) -> Self {
+    pub const fn new(degree: u32, knots: K, periodic: bool) -> Self {
         Self {
             degree,
             knots,
@@ -912,37 +961,46 @@ impl NurbsSurface {
             knots: v_knots,
             periodic: v_periodic,
         } = v;
-        let u_count = poles.u_count();
-        let v_count = poles.v_count();
-        if u_count <= u_degree as usize {
-            return Err(NurbsError::Structure(format!(
-                "u_count must exceed u_degree {u_degree}, found {u_count}"
-            )));
-        }
-        if v_count <= v_degree as usize {
-            return Err(NurbsError::Structure(format!(
-                "v_count must exceed v_degree {v_degree}, found {v_count}"
-            )));
-        }
-        require_length(
-            "u_knots",
-            u_knots.len(),
-            checked_knot_count("u", u_count, u_degree)?,
-        )?;
-        require_length(
-            "v_knots",
-            v_knots.len(),
-            checked_knot_count("v", v_count, v_degree)?,
-        )?;
-        match &poles {
-            NurbsPoleGrid::Polynomial { rows } => require_rectangular_grid("control_points", rows)?,
-            NurbsPoleGrid::Rational { rows } => require_rectangular_grid("control_points", rows)?,
-        }
+        require_surface_cardinality(u_degree, u_knots.len(), v_degree, v_knots.len(), &poles)?;
         let poles = poles.admit()?;
         let u_knots = KnotVector::new(u_knots)
             .map_err(|error| NurbsError::Structure(format!("u_{error}")))?;
         let v_knots = KnotVector::new(v_knots)
             .map_err(|error| NurbsError::Structure(format!("v_{error}")))?;
+        Ok(Self {
+            u_degree,
+            v_degree,
+            u_knots,
+            v_knots,
+            poles,
+            normal_reversed,
+            u_periodic,
+            v_periodic,
+        })
+    }
+
+    /// Build a surface from admitted knot vectors, pole positions and weights.
+    ///
+    /// # Errors
+    ///
+    /// Refuses only inconsistent degree, knot count or pole grid shape.
+    pub fn from_parts(
+        u: NurbsSurfaceAxis<KnotVector>,
+        v: NurbsSurfaceAxis<KnotVector>,
+        poles: NurbsPoleGrid<FinitePoint3>,
+        normal_reversed: bool,
+    ) -> Result<Self, NurbsError> {
+        let NurbsSurfaceAxis {
+            degree: u_degree,
+            knots: u_knots,
+            periodic: u_periodic,
+        } = u;
+        let NurbsSurfaceAxis {
+            degree: v_degree,
+            knots: v_knots,
+            periodic: v_periodic,
+        } = v;
+        require_surface_cardinality(u_degree, u_knots.len(), v_degree, v_knots.len(), &poles)?;
         Ok(Self {
             u_degree,
             v_degree,
@@ -1220,6 +1278,26 @@ impl NurbsCurve {
         require_curve_cardinality(degree, knots.len(), poles.count(), "control_points")?;
         let poles = poles.admit()?;
         let knots = KnotVector::new(knots)?;
+        Ok(Self {
+            degree,
+            knots,
+            poles,
+            periodic,
+        })
+    }
+
+    /// Build a curve from admitted knots, pole positions and weights.
+    ///
+    /// # Errors
+    ///
+    /// Refuses only a degree, knot count or pole count mismatch.
+    pub fn from_parts(
+        degree: u32,
+        knots: KnotVector,
+        poles: NurbsPoles3<FinitePoint3>,
+        periodic: bool,
+    ) -> Result<Self, NurbsError> {
+        require_curve_cardinality(degree, knots.len(), poles.count(), "control_points")?;
         Ok(Self {
             degree,
             knots,

@@ -19,7 +19,7 @@ use cadmpeg_ir::geometry::nurbs::bezier::{
 use cadmpeg_ir::geometry::{
     derive_reference_direction,
     nurbs::{
-        knots_nondecreasing, NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes,
+        KnotVector, NurbsCurve, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes,
         SurfaceParameterAxis,
     },
     Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, RecordBounds,
@@ -28,8 +28,9 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{
-    NonNegativeLength, NonZeroLength, NonZeroReal, PositiveLength, PositiveReal,
+    FiniteReal, NonNegativeLength, NonZeroLength, NonZeroReal, PositiveLength, PositiveReal,
 };
+use cadmpeg_ir::topology::IncreasingParameterInterval;
 use cadmpeg_ir::units::UnitVector3;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -2188,29 +2189,32 @@ pub(super) fn project(
             ));
             continue;
         };
-        let collect_numbers = |start: usize, count: usize| -> Option<Vec<f64>> {
+        let collect_numbers = |start: usize, count: usize| -> Option<Vec<FiniteReal>> {
             (start..start.checked_add(count)?)
-                .map(|index| record.number(index).filter(|value| value.is_finite()))
+                .map(|index| record.number(index).and_then(FiniteReal::new))
                 .collect()
         };
-        let Some(u_knots) = collect_numbers(u_knot_start, u_knot_count) else {
+        let Some(finite_u_knots) = collect_numbers(u_knot_start, u_knot_count) else {
             losses.push(entity_loss(
                 entry,
                 "u-knot vector is truncated or non-finite",
             ));
             continue;
         };
-        let Some(v_knots) = collect_numbers(v_knot_start, v_knot_count) else {
+        let Some(finite_v_knots) = collect_numbers(v_knot_start, v_knot_count) else {
             losses.push(entity_loss(
                 entry,
                 "v-knot vector is truncated or non-finite",
             ));
             continue;
         };
-        if !knots_nondecreasing(&u_knots) || !knots_nondecreasing(&v_knots) {
+        let (Ok(u_knots), Ok(v_knots)) = (
+            KnotVector::from_finite_values(finite_u_knots.clone()),
+            KnotVector::from_finite_values(finite_v_knots.clone()),
+        ) else {
             losses.push(entity_loss(entry, "surface knot vector is decreasing"));
             continue;
-        }
+        };
         let Some(native_weights) = collect_numbers(weight_start, pole_count) else {
             losses.push(entity_loss(
                 entry,
@@ -2218,13 +2222,17 @@ pub(super) fn project(
             ));
             continue;
         };
-        if native_weights.iter().any(|weight| *weight <= 0.0) {
+        let Some(native_weights) = native_weights
+            .into_iter()
+            .map(|weight| PositiveReal::try_from(weight).ok())
+            .collect::<Option<Vec<_>>>()
+        else {
             losses.push(entity_loss(
                 entry,
                 "surface weights are not strictly positive",
             ));
             continue;
-        }
+        };
         let precision = global.real_precision();
         let uncertainty =
             |index: usize, value: f64| record.number_uncertainty(index, value, precision);
@@ -2235,7 +2243,12 @@ pub(super) fn project(
             };
         let equal_weights = native_weights.first().is_some_and(|first| {
             native_weights.iter().enumerate().all(|(offset, weight)| {
-                equal_within_significance(weight_start, *first, weight_start + offset, *weight)
+                equal_within_significance(
+                    weight_start,
+                    first.get(),
+                    weight_start + offset,
+                    weight.get(),
+                )
             })
         });
         let polynomial = flags[2] == Some(1);
@@ -2261,31 +2274,34 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "surface parameter ranges are missing"));
             continue;
         };
-        let clamp_range =
-            |start_index: usize, values: [f64; 2], domain: [f64; 2]| -> Option<[f64; 2]> {
-                let mut clamped = values;
-                for (offset, bound) in clamped.iter_mut().enumerate() {
-                    let uncertainty =
-                        record.number_uncertainty(start_index + offset, *bound, precision);
-                    if *bound < domain[0]
-                        && super::geometry::DeclaredInterval::around(*bound, uncertainty)
-                            .contains(domain[0])
-                    {
-                        *bound = domain[0];
-                    } else if *bound > domain[1]
-                        && super::geometry::DeclaredInterval::around(*bound, uncertainty)
-                            .contains(domain[1])
-                    {
-                        *bound = domain[1];
-                    }
+        let clamp_range = |start_index: usize,
+                           values: [FiniteReal; 2],
+                           domain: [FiniteReal; 2]|
+         -> Option<IncreasingParameterInterval> {
+            let mut clamped = values;
+            for (offset, bound) in clamped.iter_mut().enumerate() {
+                let uncertainty =
+                    record.number_uncertainty(start_index + offset, bound.get(), precision);
+                if bound.get() < domain[0].get()
+                    && super::geometry::DeclaredInterval::around(bound.get(), uncertainty)
+                        .contains(domain[0].get())
+                {
+                    *bound = domain[0];
+                } else if bound.get() > domain[1].get()
+                    && super::geometry::DeclaredInterval::around(bound.get(), uncertainty)
+                        .contains(domain[1].get())
+                {
+                    *bound = domain[1];
                 }
-                (clamped[0] < clamped[1] && clamped[0] >= domain[0] && clamped[1] <= domain[1])
-                    .then_some(clamped)
-            };
+            }
+            IncreasingParameterInterval::between(clamped[0], clamped[1]).filter(|_| {
+                clamped[0].get() >= domain[0].get() && clamped[1].get() <= domain[1].get()
+            })
+        };
         let Some(u_range) = clamp_range(
             range_start,
             [ranges[0], ranges[1]],
-            [u_knots[u_degree_usize], u_knots[u_count]],
+            [finite_u_knots[u_degree_usize], finite_u_knots[u_count]],
         ) else {
             losses.push(entity_loss(
                 entry,
@@ -2296,7 +2312,7 @@ pub(super) fn project(
         let Some(v_range) = clamp_range(
             range_start + 2,
             [ranges[2], ranges[3]],
-            [v_knots[v_degree_usize], v_knots[v_count]],
+            [finite_v_knots[v_degree_usize], finite_v_knots[v_count]],
         ) else {
             losses.push(entity_loss(
                 entry,
@@ -2321,7 +2337,13 @@ pub(super) fn project(
         };
         let native_points = native_poles
             .chunks_exact(3)
-            .map(|point| Point3::new(point[0] * factor, point[1] * factor, point[2] * factor))
+            .map(|point| {
+                Point3::new(
+                    point[0].get() * factor,
+                    point[1].get() * factor,
+                    point[2].get() * factor,
+                )
+            })
             .collect::<Vec<_>>();
         let mut control_points = Vec::with_capacity(pole_count);
         let mut weights = (!polynomial).then(|| Vec::with_capacity(pole_count));
@@ -2336,49 +2358,51 @@ pub(super) fn project(
                         })?,
                 );
                 if let Some(weights) = &mut weights {
-                    weights.push(native_weights[native_index]);
+                    weights.push(NonZeroReal::from(native_weights[native_index]));
                 }
             }
         }
-        let surface = match NurbsSurface::from_lanes(
-            NurbsSurfaceAxis::new(u_degree, u_knots, flags[3] == Some(1)),
-            NurbsSurfaceAxis::new(v_degree, v_knots, flags[4] == Some(1)),
-            NurbsSurfaceLanes::new(
-                control_points
-                    .chunks(v_count_u32 as usize)
-                    .map(<[_]>::to_vec)
-                    .collect(),
-                weights.map(|values| {
-                    values
-                        .chunks(v_count_u32 as usize)
-                        .map(<[_]>::to_vec)
-                        .collect()
-                }),
-            ),
-            false,
-        ) {
-            Ok(nurbs) => nurbs,
-            Err(error) => {
-                losses.push(entity_loss(
-                    entry,
-                    format!("spline surface cardinalities are inconsistent: {error}"),
-                ));
-                continue;
-            }
-        };
+        let pole_rows = control_points
+            .chunks(v_count_u32 as usize)
+            .map(<[_]>::to_vec)
+            .collect();
+        let weight_rows = weights.map(|values| {
+            values
+                .chunks(v_count_u32 as usize)
+                .map(<[_]>::to_vec)
+                .collect()
+        });
+        let surface =
+            match NurbsPoleGrid::from_checked_lanes(pole_rows, weight_rows).and_then(|poles| {
+                NurbsSurface::from_parts(
+                    NurbsSurfaceAxis::new(u_degree, u_knots, flags[3] == Some(1)),
+                    NurbsSurfaceAxis::new(v_degree, v_knots, flags[4] == Some(1)),
+                    poles,
+                    false,
+                )
+            }) {
+                Ok(nurbs) => nurbs,
+                Err(error) => {
+                    losses.push(entity_loss(
+                        entry,
+                        format!("spline surface cardinalities are inconsistent: {error}"),
+                    ));
+                    continue;
+                }
+            };
         for (declared, fixed_axis, fixed_range, varying_range, direction) in [
             (
                 flags[0] == Some(1),
                 SurfaceParameterAxis::U,
-                u_range,
-                v_range,
+                u_range.endpoints(),
+                v_range.endpoints(),
                 "U",
             ),
             (
                 flags[1] == Some(1),
                 SurfaceParameterAxis::V,
-                v_range,
-                u_range,
+                v_range.endpoints(),
+                u_range.endpoints(),
                 "V",
             ),
         ] {
@@ -2410,29 +2434,20 @@ pub(super) fn project(
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry)?),
         });
+        let [u_lower, u_upper] = u_range.finite_endpoints();
+        let [v_lower, v_upper] = v_range.finite_endpoints();
         let _attached = ir.model.add_procedural_surface(
             surface_id,
             ProceduralSurface::new(
                 crate::ids::procedural_surface(&crate::ids::Stem::directory(entry.sequence)),
                 ProceduralSurfaceDefinition::Exact(
-                    cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload::try_new(
-                        cadmpeg_ir::geometry::ExactSpline::Legacy {
-                            ranges: [u_range, v_range],
-                            extension: 0,
-                            cache: None,
-                        },
-                    )
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                    cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload::from_legacy_intervals(
+                        u_range, v_range, 0, None,
+                    ),
                 ),
-                Some(
-                    RecordBounds::try_new([
-                        Some(u_range[0]),
-                        Some(u_range[1]),
-                        Some(v_range[0]),
-                        Some(v_range[1]),
-                    ])
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
-                ),
+                Some(RecordBounds::from_finite([
+                    u_lower, u_upper, v_lower, v_upper,
+                ])),
             ),
         );
         decoded.insert(entry.sequence);

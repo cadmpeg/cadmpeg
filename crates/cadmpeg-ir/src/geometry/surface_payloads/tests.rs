@@ -227,6 +227,15 @@ fn an_exact_spline_layout_carries_only_the_keys_its_own_arm_owns() {
         cache: None,
     })
     .unwrap();
+    let interval = crate::topology::IncreasingParameterInterval::between(
+        crate::scalar::FiniteReal::new(0.0).unwrap(),
+        crate::scalar::FiniteReal::new(1.0).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        ExactSurfacePayload::from_legacy_intervals(interval, interval, 0, None),
+        legacy
+    );
     let revision = ExactSurfacePayload::try_new(ExactSpline::Revision {
         intervals: [[Some(0.0), Some(1.0)]; 2],
         extension: 0,
