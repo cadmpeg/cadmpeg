@@ -53,7 +53,8 @@ use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{
     FeatureInputLane, FeatureInputRelationFamily, SketchInputEntity, SketchInputKind,
 };
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -293,13 +294,14 @@ pub(super) fn nested_profile_contains_declared_circular_carriers(
 }
 
 pub(crate) fn project_compact_sketch_profiles(
+    ctx: Option<&DecodeContext<'_>>,
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut Vec<Sketch>,
     sketch_entities: &mut Vec<SketchEntity>,
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) {
+) -> Result<(), CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
     let metadata_ids = history_metadata_ids(histories);
@@ -615,7 +617,7 @@ pub(crate) fn project_compact_sketch_profiles(
                     })
                     .collect::<Vec<_>>();
                 let profile = if let Some(profile) =
-                    complete_ordered_compact_line_profile(&lines, markers.len())
+                    complete_ordered_compact_line_profile(ctx, &lines, markers.len())?
                 {
                     let Some(projected) = lines
                         .into_iter()
@@ -789,6 +791,7 @@ pub(crate) fn project_compact_sketch_profiles(
             );
         }
     }
+    Ok(())
 }
 
 fn terminal_relation_display_carrier(lane: &FeatureInputLane, marker: &SketchInputEntity) -> bool {

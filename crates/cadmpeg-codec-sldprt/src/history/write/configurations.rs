@@ -158,6 +158,7 @@ fn sync_configuration_design_state(
     align_configuration_parameter_kinds(&mut current_projection);
     let mut current_annotations = annotations.clone();
     let projection_losses = project_configuration_sketch_states(
+        None,
         &mut current_projection,
         &native.feature_histories,
         &native.feature_input_lanes,
@@ -236,6 +237,7 @@ fn sync_configuration_design_state(
     align_configuration_parameter_kinds(&mut projected);
     let mut projected_annotations = annotations.clone();
     let projection_losses = project_configuration_sketch_states(
+        None,
         &mut projected,
         &native.feature_histories,
         &native.feature_input_lanes,

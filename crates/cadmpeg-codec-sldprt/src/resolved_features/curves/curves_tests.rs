@@ -16,6 +16,8 @@ use super::{
     unique_dimensioned_rectangle_markers,
 };
 use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{
@@ -796,7 +798,9 @@ fn compact_line_endpoint_pairs_form_one_oriented_cycle() {
         ),
     ];
 
-    let profile = ordered_compact_line_profile(&lines).expect("closed line cycle");
+    let profile = ordered_compact_line_profile(None, &lines)
+        .expect("profile allocation")
+        .expect("closed line cycle");
     assert_eq!(
         profile
             .iter()
@@ -809,7 +813,48 @@ fn compact_line_endpoint_pairs_form_one_oriented_cycle() {
             ("synthetic:test:id#left", true)
         ]
     );
-    assert_eq!(complete_ordered_compact_line_profile(&lines, 5), None);
+    assert_eq!(
+        complete_ordered_compact_line_profile(None, &lines, 5).unwrap(),
+        None
+    );
+}
+
+#[test]
+fn compact_line_profile_reports_collection_limit() {
+    let marker = SketchInputEntity::new("marker", "lane", 0, 0, SketchInputKind::Point);
+    let point = |u, v| Point2::new(u, v);
+    let lines = [
+        (
+            SketchEntityId::mint("synthetic:test:id#a").unwrap(),
+            &marker,
+            &marker,
+            point(0.0, 0.0),
+            point(1.0, 0.0),
+        ),
+        (
+            SketchEntityId::mint("synthetic:test:id#b").unwrap(),
+            &marker,
+            &marker,
+            point(1.0, 0.0),
+            point(0.0, 1.0),
+        ),
+        (
+            SketchEntityId::mint("synthetic:test:id#c").unwrap(),
+            &marker,
+            &marker,
+            point(0.0, 1.0),
+            point(0.0, 0.0),
+        ),
+    ];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+    let error = complete_ordered_compact_line_profile(Some(&ctx), &lines, lines.len())
+        .expect_err("three usage slots exceed the collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "SLDPRT compact line profile usage"));
 }
 
 #[test]
