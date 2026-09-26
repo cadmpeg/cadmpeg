@@ -1740,11 +1740,7 @@ pub(crate) fn project_draft_operands(
             else {
                 break 'feature_edit;
             };
-            let Some(pull_direction) =
-                cadmpeg_ir::features::FeatureDirection3::new(first.pull_direction)
-            else {
-                break 'feature_edit;
-            };
+            let pull_direction = first.pull_direction;
 
             let FeatureDefinition::Operation(FeatureOperation::Draft { faces, anchor, .. }) =
                 &mut definition

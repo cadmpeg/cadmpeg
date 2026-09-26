@@ -9,10 +9,10 @@ use crate::records::{
     FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance,
 };
-use crate::resolved_features::axes::compact_line_reference_direction;
-use crate::resolved_features::axes::declared_line_reference_directions;
-use crate::resolved_features::axes::line_reference_direction;
-use crate::resolved_features::axes::linear_pattern_display_directions;
+use crate::resolved_features::axes::compact_line_reference_direction as typed_compact_line_reference_direction;
+use crate::resolved_features::axes::declared_line_reference_directions as typed_declared_line_reference_directions;
+use crate::resolved_features::axes::line_reference_direction as typed_line_reference_direction;
+use crate::resolved_features::axes::linear_pattern_display_directions as typed_linear_pattern_display_directions;
 use crate::resolved_features::bindings::bind_pattern_inputs;
 use crate::resolved_features::bindings::bind_sweep_adjacent_profiles;
 use crate::resolved_features::relation_geometry::project_relation_bindings;
@@ -36,6 +36,50 @@ use cadmpeg_ir::{
     scalar::Length,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
+
+fn line_reference_direction(payload: &[u8], class_offset: u64) -> Option<Vector3> {
+    typed_line_reference_direction(payload, class_offset).map(|direction| *direction.as_raw())
+}
+
+fn declared_line_reference_directions(
+    payload: &[u8],
+    class_offset: u64,
+    object_end: usize,
+) -> Vec<Vector3> {
+    typed_declared_line_reference_directions(payload, class_offset, object_end)
+        .into_iter()
+        .map(|direction| *direction.as_raw())
+        .collect()
+}
+
+fn compact_line_reference_direction(
+    payload: &[u8],
+    object_start: usize,
+    object_end: usize,
+    excluded_handles: &[usize],
+) -> Option<Vector3> {
+    typed_compact_line_reference_direction(payload, object_start, object_end, excluded_handles)
+        .map(|direction| *direction.as_raw())
+}
+
+fn linear_pattern_display_directions(
+    payload: &[u8],
+    object_start: usize,
+    object_end: usize,
+    names: &[FeatureInputName],
+    expected_spacing_m: [Option<f64>; 2],
+) -> Vec<Vector3> {
+    typed_linear_pattern_display_directions(
+        payload,
+        object_start,
+        object_end,
+        names,
+        expected_spacing_m,
+    )
+    .into_iter()
+    .map(|direction| *direction.as_raw())
+    .collect()
+}
 
 #[test]
 fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {

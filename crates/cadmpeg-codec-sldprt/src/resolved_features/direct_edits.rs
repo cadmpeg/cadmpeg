@@ -1,15 +1,12 @@
 //! Direct face and body edit inputs.
 
-use super::axes::{
-    canonical_unit_direction, compact_line_reference_directions, declared_line_reference_directions,
-};
+use super::axes::{compact_line_reference_directions, declared_line_reference_directions};
 use super::scalars::feature_object_name;
 use crate::classification::{classify, FeatureClass};
 use crate::records::FeatureInputLane;
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::features::FiniteVector3;
-use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::features::{FeatureDirection3, FiniteVector3};
 use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::BTreeMap;
 
@@ -141,7 +138,7 @@ pub(crate) fn enrich_history_move_face_translations(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
-    let mut candidates = BTreeMap::<(usize, usize), Vec<Option<Vector3>>>::new();
+    let mut candidates = BTreeMap::<(usize, usize), Vec<Option<FeatureDirection3>>>::new();
     for lane in lanes {
         let mut starts =
             histories
@@ -229,7 +226,10 @@ pub(crate) fn enrich_history_move_face_translations(
                 &excluded_handles,
             ));
             let mut unique = Vec::new();
-            for direction in directions.into_iter().map(canonical_unit_direction) {
+            for direction in directions
+                .into_iter()
+                .map(FeatureDirection3::from_unit_without_small_components)
+            {
                 if !unique.contains(&direction) {
                     unique.push(direction);
                 }
@@ -249,6 +249,8 @@ pub(crate) fn enrich_history_move_face_translations(
         };
         if rest.iter().any(|candidate| {
             candidate.is_none_or(|candidate| {
+                let candidate = candidate.get();
+                let first = first.get();
                 (candidate.x - first.x).abs()
                     > EPS_DIRECT_EDITS_ENRICH_HISTORY_MOVE_FACE_TRANSLATIONS_E12
                     || (candidate.y - first.y).abs()
@@ -265,7 +267,7 @@ pub(crate) fn enrich_history_move_face_translations(
             .insert(cadmpeg_core::nonblank_literal!("Mode"), "Translate".into());
         feature.properties.insert(
             cadmpeg_core::nonblank_literal!("Direction"),
-            format!("{},{},{}", first.x, first.y, first.z),
+            format!("{},{},{}", first.get().x, first.get().y, first.get().z),
         );
     }
 }

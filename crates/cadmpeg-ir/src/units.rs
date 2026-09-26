@@ -282,6 +282,20 @@ impl SumSquaresUnitVector3 {
     pub const fn as_raw(&self) -> &Vector3 {
         &self.0
     }
+
+    /// Divide the admitted components by their square-sum length. The length
+    /// lies within `1e-9` of one, so it is finite and nonzero. Each quotient
+    /// is finite, and its resulting length is within rounding of one.
+    #[must_use]
+    pub fn normalized(self) -> UnitVector3 {
+        let value = self.0;
+        let length = (value.x * value.x + value.y * value.y + value.z * value.z).sqrt();
+        UnitVector3(Vector3::new(
+            value.x / length,
+            value.y / length,
+            value.z / length,
+        ))
+    }
 }
 
 /// A direction with unit length within the analytic frame tolerance.
@@ -942,7 +956,7 @@ impl FiniteVector<2> {
 
 #[cfg(test)]
 mod tests {
-    use super::{FiniteVector, NonzeroVector, Tolerances, UnitVector3};
+    use super::{FiniteVector, NonzeroVector, SumSquaresUnitVector3, Tolerances, UnitVector3};
     use crate::math::Vector3;
     use crate::scalar::PositiveReal;
     use crate::scalar::{FiniteReal, NonNegativeReal};
@@ -1499,6 +1513,16 @@ mod tests {
             UnitVector3::normalized_by_component_division(Vector3::new(0.0, 0.0, 0.0)),
             None
         );
+    }
+
+    #[test]
+    fn square_sum_admission_normalizes_with_the_source_divisions() {
+        let value = Vector3::new(0.6, 0.8, 0.0);
+        let admitted = SumSquaresUnitVector3::new(value).expect("source unit direction");
+        let length = (value.x * value.x + value.y * value.y + value.z * value.z).sqrt();
+        let expected = Vector3::new(value.x / length, value.y / length, value.z / length);
+        assert_eq!(*admitted.normalized().as_raw(), expected);
+        assert!(SumSquaresUnitVector3::new(Vector3::new(2.0, 0.0, 0.0)).is_none());
     }
 
     #[test]

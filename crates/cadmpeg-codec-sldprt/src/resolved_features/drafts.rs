@@ -1,6 +1,5 @@
 //! Draft-operation plane and face operands.
 
-use super::axes::canonical_unit_direction;
 use super::is_class_token;
 use super::scalars::feature_object_name;
 use super::selections::{
@@ -10,7 +9,9 @@ use super::selections::{
 use crate::classification::{classify, FeatureClass};
 use crate::records::{FeatureInputComponentPathEntry, FeatureInputLane};
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::features::FeatureDirection3;
 use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::units::UnitVector3;
 
 use crate::layout::draft_aligned_direction_frame as aligned_dir;
 use crate::layout::draft_compact_selection_prefix as compact_sel;
@@ -18,7 +19,6 @@ use crate::layout::draft_extended_direction_frame as extended_dir;
 use crate::layout::draft_plane_reference_prefix as draft_plane;
 
 const EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12: f64 = 1.0e-12;
-const EPS_DRAFTS_UNIQUE_DRAFT_DIRECTION_E9: f64 = 1.0e-9;
 
 const DIRECTION_FRAME_PREFIX_LEN: usize = 24;
 const MAX_PATH_CELLS: usize = 65;
@@ -27,7 +27,7 @@ const MAX_PATH_CELLS: usize = 65;
 pub(super) struct DraftOperands {
     pub(super) anchor: DraftAnchor,
     pub(super) faces: Vec<Vec<FeatureInputComponentPathEntry>>,
-    pub(super) pull_direction: Vector3,
+    pub(super) pull_direction: FeatureDirection3,
 }
 
 #[derive(Clone, Debug)]
@@ -37,6 +37,8 @@ pub(super) enum DraftAnchor {
 }
 
 pub(super) fn same_draft_operands(left: &DraftOperands, right: &DraftOperands) -> bool {
+    let left_direction = left.pull_direction.get();
+    let right_direction = right.pull_direction.get();
     same_draft_anchor(&left.anchor, &right.anchor)
         && left.faces.len() == right.faces.len()
         && left
@@ -44,12 +46,9 @@ pub(super) fn same_draft_operands(left: &DraftOperands, right: &DraftOperands) -
             .iter()
             .zip(&right.faces)
             .all(|(left, right)| same_component_path_semantics(left, right))
-        && (left.pull_direction.x - right.pull_direction.x).abs()
-            <= EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12
-        && (left.pull_direction.y - right.pull_direction.y).abs()
-            <= EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12
-        && (left.pull_direction.z - right.pull_direction.z).abs()
-            <= EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12
+        && (left_direction.x - right_direction.x).abs() <= EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12
+        && (left_direction.y - right_direction.y).abs() <= EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12
+        && (left_direction.z - right_direction.z).abs() <= EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12
 }
 
 fn draft_operands(
@@ -286,7 +285,7 @@ fn draft_plane_reference_at(
     (path_start <= object_end).then_some((offset, components, path_start))
 }
 
-fn unique_draft_direction(payload: &[u8], start: usize, end: usize) -> Option<Vector3> {
+fn unique_draft_direction(payload: &[u8], start: usize, end: usize) -> Option<FeatureDirection3> {
     const HANDLES: [u8; 8] = [0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
     let final_frame_start = end
         .checked_sub(aligned_dir::LEN)
@@ -313,13 +312,12 @@ fn unique_draft_direction(payload: &[u8], start: usize, end: usize) -> Option<Ve
             }
             let direction_at = |relative: usize| {
                 let direction = Vector3::new(
-                    scalar(relative)?,
-                    scalar(relative + 8)?,
-                    scalar(relative + 16)?,
+                    View::f64_le_at(frame, relative)?,
+                    View::f64_le_at(frame, relative + 8)?,
+                    View::f64_le_at(frame, relative + 16)?,
                 );
-                let norm = direction.norm();
-                ((norm - 1.0).abs() <= EPS_DRAFTS_UNIQUE_DRAFT_DIRECTION_E9)
-                    .then_some(canonical_unit_direction(direction))
+                UnitVector3::new(direction)
+                    .map(FeatureDirection3::from_unit_without_small_components)
             };
             direction_at(aligned_dir::PULL_DIRECTION).or_else(|| {
                 (frame.len() >= extended_dir::LEN
@@ -365,7 +363,7 @@ mod tests {
     use super::super::selections::COMPACT_EDGE_VECTOR_MARKER;
     use super::{
         compact_draft_selection_at, draft_operands, draft_plane_reference_at,
-        unique_draft_direction, DraftAnchor,
+        unique_draft_direction as typed_unique_draft_direction, DraftAnchor,
     };
     use crate::layout::draft_extended_direction_frame as extended_dir;
     use crate::records::FeatureInputLane;
@@ -375,6 +373,10 @@ mod tests {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::math::Vector3;
     use std::collections::BTreeMap;
+
+    fn unique_draft_direction(payload: &[u8], start: usize, end: usize) -> Option<Vector3> {
+        typed_unique_draft_direction(payload, start, end).map(|direction| direction.get())
+    }
 
     fn component(instance: u16, source: u32, identity: u32, local_id: u32) -> Vec<u8> {
         let mut bytes = instance.to_le_bytes().to_vec();
@@ -561,7 +563,7 @@ mod tests {
             .expect("compact parting-line draft operands");
         assert!(matches!(operands.anchor, DraftAnchor::PartingTool(ref paths) if paths.len() == 2));
         assert_eq!(operands.faces.len(), 2);
-        assert_eq!(operands.pull_direction, Vector3::new(0.0, -1.0, 0.0));
+        assert_eq!(operands.pull_direction.get(), Vector3::new(0.0, -1.0, 0.0));
     }
 
     #[test]
@@ -632,7 +634,7 @@ mod tests {
         ));
         assert_eq!(operands.faces.len(), 1);
         assert_eq!(operands.faces[0].last().unwrap().local_id, Some(8));
-        assert_eq!(operands.pull_direction, Vector3::new(0.0, 0.0, 1.0));
+        assert_eq!(operands.pull_direction.get(), Vector3::new(0.0, 0.0, 1.0));
 
         let mut malformed = lane.clone();
         malformed.native_payload[object_start + 15..object_start + 19]
