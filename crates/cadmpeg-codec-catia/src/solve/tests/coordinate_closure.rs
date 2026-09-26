@@ -955,6 +955,7 @@ fn mesh_assignment_endpoint_cycles_index_incident_candidates() {
 
 #[test]
 fn mesh_assignment_endpoint_cycle_support_removes_open_layered_paths() {
+    catia_test_context!(ctx);
     let candidates = [vec![[0, 1], [0, 2]], vec![[1, 3], [2, 4]], vec![[0, 3]]];
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![(0..3)
@@ -968,6 +969,7 @@ fn mesh_assignment_endpoint_cycle_support_removes_open_layered_paths() {
     };
     let budget = WorkBudget::new(1_000);
     let support = crate::solve::mesh_quotient::mesh_assignment_endpoint_cycle_support_by(
+        &ctx,
         &assignment,
         Some(&budget),
         |edge| {
@@ -977,6 +979,7 @@ fn mesh_assignment_endpoint_cycle_support_removes_open_layered_paths() {
         },
         |_, _| true,
     )
+    .expect("service resource budget")
     .expect("bounded layered-cycle support");
 
     assert_eq!(support[&0], HashSet::from([[0, 1]]));
@@ -987,6 +990,7 @@ fn mesh_assignment_endpoint_cycle_support_removes_open_layered_paths() {
 
 #[test]
 fn mesh_assignment_endpoint_cycle_support_requires_one_complete_traversal() {
+    catia_test_context!(ctx);
     let candidates = [vec![[0, 1]]];
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![MeshBoundaryEdgeCandidate {
@@ -997,6 +1001,7 @@ fn mesh_assignment_endpoint_cycle_support_requires_one_complete_traversal() {
         }]],
     };
     let support = crate::solve::mesh_quotient::mesh_assignment_endpoint_cycle_support_by(
+        &ctx,
         &assignment,
         None,
         |edge| {
@@ -1006,9 +1011,56 @@ fn mesh_assignment_endpoint_cycle_support_requires_one_complete_traversal() {
         },
         |_, _| true,
     )
+    .expect("service resource budget")
     .expect("one-layer support");
 
     assert!(support.is_empty());
+}
+
+#[test]
+fn mesh_assignment_endpoint_cycle_support_refuses_suffix_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let candidates = [vec![[0, 1]]];
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0,
+            start: 0,
+            end: 0,
+            reversed: None,
+        }]],
+    };
+    let run = |ctx: &DecodeContext<'_>| {
+        crate::solve::mesh_quotient::mesh_assignment_endpoint_cycle_support_by(
+            ctx,
+            &assignment,
+            None,
+            |edge| {
+                candidates.get(edge).map(|values| {
+                    crate::solve::mesh_quotient::MeshEndpointCandidates::Explicit(values)
+                })
+            },
+            |_, _| true,
+        )
+    };
+    catia_test_context!(service_ctx);
+    assert!(run(&service_ctx)
+        .expect("service resource budget")
+        .expect("one-layer support")
+        .is_empty());
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let error = run(&ctx)
+        .err()
+        .expect("suffix array exceeds the collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_endpoint_suffixes"));
 }
 
 #[test]
@@ -1040,14 +1092,77 @@ fn ordered_face_cycle_support_materializes_only_supported_implicit_pairs() {
 
     assert!(
         crate::solve::incidence::prune_implicit_ordered_face_endpoint_support(
+            &ctx,
             &domains,
             &mut choices,
             &coordinate_domains,
             &budget,
         )
+        .expect("service resource budget")
     );
     assert_eq!(choices[1], vec![[1, 3], [2, 3]]);
     assert!(!budget.exhausted());
+}
+
+#[test]
+fn implicit_ordered_face_pruning_propagates_suffix_collection_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    catia_test_context!(service_ctx);
+    let choices = vec![vec![[0, 1], [0, 2]], Vec::new(), vec![[0, 3]]];
+    let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &choices,
+        4,
+        &[[10, 11], [12, 13], [14, 15]],
+    )
+    .expect("initial quotient");
+    let coordinate_domains = quotient
+        .prepare_coordinate_root_domains(&service_ctx, 4, &choices, None)
+        .expect("service resource budget")
+        .expect("implicit coordinate domains");
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![(0..3)
+            .map(|edge| MeshBoundaryEdgeCandidate {
+                edge,
+                start: 0,
+                end: 0,
+                reversed: None,
+            })
+            .collect()],
+    };
+    let domains = [MeshFaceBoundaryDomain::Ordered(vec![assignment])];
+    let mut service_choices = choices.clone();
+    let budget = WorkBudget::new(10_000);
+    assert!(
+        crate::solve::incidence::prune_implicit_ordered_face_endpoint_support(
+            &service_ctx,
+            &domains,
+            &mut service_choices,
+            &coordinate_domains,
+            &budget,
+        )
+        .expect("service resource budget")
+    );
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let budget = WorkBudget::new(10_000);
+    let mut limited_choices = choices;
+    let error = crate::solve::incidence::prune_implicit_ordered_face_endpoint_support(
+        &ctx,
+        &domains,
+        &mut limited_choices,
+        &coordinate_domains,
+        &budget,
+    )
+    .expect_err("suffix array exceeds the collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_endpoint_suffixes"));
 }
 
 #[test]

@@ -4189,11 +4189,12 @@ pub(super) fn mesh_assignment_endpoint_cycles_viable_where(
 }
 
 pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
+    ctx: &DecodeContext<'_>,
     assignment: &MeshFaceBoundaryAssignment,
     budget: Option<&WorkBudget<'_>>,
     candidates: impl Fn(usize) -> Option<MeshEndpointCandidates<'a>>,
     allowed: impl Fn(usize, [usize; 2]) -> bool + Copy,
-) -> Option<HashMap<usize, HashSet<[usize; 2]>>> {
+) -> Result<Option<HashMap<usize, HashSet<[usize; 2]>>>, CodecError> {
     const MAX_LOCAL_ENDPOINT_STATES: usize = 65_536;
 
     type EndpointRelation = BTreeMap<usize, BTreeSet<usize>>;
@@ -4233,127 +4234,133 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
             .collect()
     }
 
-    let charge = || budget.is_none_or(WorkBudget::charge);
-    let mut assignment_support = HashMap::<usize, HashSet<[usize; 2]>>::new();
-    for boundary in &assignment.boundaries {
-        if boundary.is_empty() {
-            return Some(HashMap::new());
-        }
-        let mut points = BTreeSet::new();
-        let mut layers = Vec::<(usize, Vec<[usize; 2]>, EndpointRelation)>::new();
-        for use_ in boundary {
-            let values = match candidates(use_.edge)? {
-                MeshEndpointCandidates::Explicit(values) => values.to_vec(),
-                MeshEndpointCandidates::Implicit(values) => values
-                    .take(MAX_LOCAL_ENDPOINT_STATES + 1)
-                    .collect::<Vec<_>>(),
-                MeshEndpointCandidates::Selected(value) => vec![value],
-            };
-            if values.len() > MAX_LOCAL_ENDPOINT_STATES {
-                return None;
+    (|| -> Option<Result<HashMap<usize, HashSet<[usize; 2]>>, CodecError>> {
+        let charge = || budget.is_none_or(WorkBudget::charge);
+        let mut assignment_support = HashMap::<usize, HashSet<[usize; 2]>>::new();
+        for boundary in &assignment.boundaries {
+            if boundary.is_empty() {
+                return Some(Ok(HashMap::new()));
             }
-            let mut retained = Vec::new();
-            let mut relation = EndpointRelation::new();
-            for mut pair in values {
-                pair.sort_unstable();
-                if !allowed(use_.edge, pair) {
-                    continue;
-                }
-                retained.push(pair);
-                points.extend(pair);
-                for (rank, (start, end)) in [(pair[0], pair[1]), (pair[1], pair[0])]
-                    .into_iter()
-                    .enumerate()
-                {
-                    if rank == 1 && pair[0] == pair[1] {
-                        continue;
-                    }
-                    if !charge() {
-                        return None;
-                    }
-                    relation.entry(start).or_default().insert(end);
-                }
-            }
-            retained.sort_unstable();
-            retained.dedup();
-            if retained.is_empty() {
-                return Some(HashMap::new());
-            }
-            layers.push((use_.edge, retained, relation));
-        }
-        if points.len() > MAX_LOCAL_ENDPOINT_STATES {
-            return None;
-        }
-        let identity = identity_relation(&points);
-        let mut prefixes = Vec::with_capacity(layers.len() + 1);
-        prefixes.push(identity.clone());
-        for (index, (_, _, relation)) in layers.iter().enumerate() {
-            let composed = compose_relations(&prefixes[index], relation, budget)?;
-            prefixes.push(composed);
-        }
-        let mut suffixes = alloc_filled(
-            layers.len() + 1,
-            EndpointRelation::new(),
-            "catia_endpoint_suffixes",
-        )
-        .ok()?;
-        suffixes[layers.len()] = identity;
-        for layer in (0..layers.len()).rev() {
-            suffixes[layer] = compose_relations(&layers[layer].2, &suffixes[layer + 1], budget)?;
-        }
-        let mut boundary_support = HashMap::<usize, HashSet<[usize; 2]>>::new();
-        for (layer, (edge, candidates, _)) in layers.into_iter().enumerate() {
-            let mut layer_support = HashSet::new();
-            for pair in candidates {
-                let supported = [(pair[0], pair[1]), (pair[1], pair[0])]
-                    .into_iter()
-                    .enumerate()
-                    .any(|(rank, (start, end))| {
-                        if rank == 1 && pair[0] == pair[1] {
-                            return false;
-                        }
-                        let Some(anchors) = suffixes[layer + 1].get(&end) else {
-                            return false;
-                        };
-                        anchors.iter().any(|anchor| {
-                            if !charge() {
-                                return false;
-                            }
-                            prefixes[layer]
-                                .get(anchor)
-                                .is_some_and(|ends| ends.contains(&start))
-                        })
-                    });
-                if budget.is_some_and(WorkBudget::exhausted) {
+            let mut points = BTreeSet::new();
+            let mut layers = Vec::<(usize, Vec<[usize; 2]>, EndpointRelation)>::new();
+            for use_ in boundary {
+                let values = match candidates(use_.edge)? {
+                    MeshEndpointCandidates::Explicit(values) => values.to_vec(),
+                    MeshEndpointCandidates::Implicit(values) => values
+                        .take(MAX_LOCAL_ENDPOINT_STATES + 1)
+                        .collect::<Vec<_>>(),
+                    MeshEndpointCandidates::Selected(value) => vec![value],
+                };
+                if values.len() > MAX_LOCAL_ENDPOINT_STATES {
                     return None;
                 }
-                if supported {
-                    layer_support.insert(pair);
+                let mut retained = Vec::new();
+                let mut relation = EndpointRelation::new();
+                for mut pair in values {
+                    pair.sort_unstable();
+                    if !allowed(use_.edge, pair) {
+                        continue;
+                    }
+                    retained.push(pair);
+                    points.extend(pair);
+                    for (rank, (start, end)) in [(pair[0], pair[1]), (pair[1], pair[0])]
+                        .into_iter()
+                        .enumerate()
+                    {
+                        if rank == 1 && pair[0] == pair[1] {
+                            continue;
+                        }
+                        if !charge() {
+                            return None;
+                        }
+                        relation.entry(start).or_default().insert(end);
+                    }
                 }
+                retained.sort_unstable();
+                retained.dedup();
+                if retained.is_empty() {
+                    return Some(Ok(HashMap::new()));
+                }
+                layers.push((use_.edge, retained, relation));
             }
-            boundary_support
-                .entry(edge)
-                .and_modify(|retained| retained.retain(|pair| layer_support.contains(pair)))
-                .or_insert(layer_support);
+            if points.len() > MAX_LOCAL_ENDPOINT_STATES {
+                return None;
+            }
+            let identity = identity_relation(&points);
+            let mut prefixes = Vec::with_capacity(layers.len() + 1);
+            prefixes.push(identity.clone());
+            for (index, (_, _, relation)) in layers.iter().enumerate() {
+                let composed = compose_relations(&prefixes[index], relation, budget)?;
+                prefixes.push(composed);
+            }
+            let mut suffixes = match ctx.alloc_filled(
+                layers.len() + 1,
+                EndpointRelation::new(),
+                "catia_endpoint_suffixes",
+            ) {
+                Ok(suffixes) => suffixes,
+                Err(error) => return Some(Err(error)),
+            };
+            suffixes[layers.len()] = identity;
+            for layer in (0..layers.len()).rev() {
+                suffixes[layer] =
+                    compose_relations(&layers[layer].2, &suffixes[layer + 1], budget)?;
+            }
+            let mut boundary_support = HashMap::<usize, HashSet<[usize; 2]>>::new();
+            for (layer, (edge, candidates, _)) in layers.into_iter().enumerate() {
+                let mut layer_support = HashSet::new();
+                for pair in candidates {
+                    let supported = [(pair[0], pair[1]), (pair[1], pair[0])]
+                        .into_iter()
+                        .enumerate()
+                        .any(|(rank, (start, end))| {
+                            if rank == 1 && pair[0] == pair[1] {
+                                return false;
+                            }
+                            let Some(anchors) = suffixes[layer + 1].get(&end) else {
+                                return false;
+                            };
+                            anchors.iter().any(|anchor| {
+                                if !charge() {
+                                    return false;
+                                }
+                                prefixes[layer]
+                                    .get(anchor)
+                                    .is_some_and(|ends| ends.contains(&start))
+                            })
+                        });
+                    if budget.is_some_and(WorkBudget::exhausted) {
+                        return None;
+                    }
+                    if supported {
+                        layer_support.insert(pair);
+                    }
+                }
+                boundary_support
+                    .entry(edge)
+                    .and_modify(|retained| retained.retain(|pair| layer_support.contains(pair)))
+                    .or_insert(layer_support);
+            }
+            if boundary.iter().any(|use_| {
+                boundary_support
+                    .get(&use_.edge)
+                    .is_none_or(HashSet::is_empty)
+            }) {
+                return Some(Ok(HashMap::new()));
+            }
+            for (edge, supported) in boundary_support {
+                assignment_support
+                    .entry(edge)
+                    .and_modify(|retained| retained.retain(|pair| supported.contains(pair)))
+                    .or_insert(supported);
+            }
+            if assignment_support.values().any(HashSet::is_empty) {
+                return Some(Ok(HashMap::new()));
+            }
         }
-        if boundary.iter().any(|use_| {
-            boundary_support
-                .get(&use_.edge)
-                .is_none_or(HashSet::is_empty)
-        }) {
-            return Some(HashMap::new());
-        }
-        for (edge, supported) in boundary_support {
-            assignment_support
-                .entry(edge)
-                .and_modify(|retained| retained.retain(|pair| supported.contains(pair)))
-                .or_insert(supported);
-        }
-        if assignment_support.values().any(HashSet::is_empty) {
-            return Some(HashMap::new());
-        }
-    }
-    Some(assignment_support)
+        Some(Ok(assignment_support))
+    })()
+    .transpose()
 }
 
 fn mesh_assignment_endpoint_cycles_viable_with(

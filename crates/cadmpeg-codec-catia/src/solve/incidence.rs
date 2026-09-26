@@ -1476,11 +1476,12 @@ fn prune_ordered_face_endpoint_support(
 }
 
 pub(super) fn prune_implicit_ordered_face_endpoint_support(
+    ctx: &DecodeContext<'_>,
     domains: &[MeshFaceBoundaryDomain],
     choices: &mut [Vec<[usize; 2]>],
     coordinate_domains: &MeshCoordinateRootDomains,
     budget: &WorkBudget<'_>,
-) -> bool {
+) -> Result<bool, CodecError> {
     loop {
         let mut changed = false;
         for domain in domains {
@@ -1491,6 +1492,7 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
             let mut assignment_found = false;
             for assignment in assignments {
                 let Some(support) = mesh_assignment_endpoint_cycle_support_by(
+                    ctx,
                     assignment,
                     Some(budget),
                     |edge| {
@@ -1505,8 +1507,9 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
                             })
                     },
                     |_, _| true,
-                ) else {
-                    return true;
+                )?
+                else {
+                    return Ok(true);
                 };
                 if support.is_empty() {
                     continue;
@@ -1517,16 +1520,16 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
                 }
             }
             if !assignment_found {
-                return false;
+                return Ok(false);
             }
             for (edge, supported) in face_support {
                 let Some(current) = choices.get(edge) else {
-                    return false;
+                    return Ok(false);
                 };
                 let values = if current.is_empty() {
                     let Some(values) = coordinate_domains.implicit_edge_candidates(edge, None)
                     else {
-                        return false;
+                        return Ok(false);
                     };
                     values.collect::<Vec<_>>()
                 } else {
@@ -1535,7 +1538,7 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
                 let mut retained = Vec::new();
                 for mut pair in values {
                     if !budget.charge() {
-                        return true;
+                        return Ok(true);
                     }
                     pair.sort_unstable();
                     if supported.contains(&pair) {
@@ -1545,7 +1548,7 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
                 retained.sort_unstable();
                 retained.dedup();
                 if retained.is_empty() {
-                    return false;
+                    return Ok(false);
                 }
                 if retained != choices[edge] {
                     choices[edge] = retained;
@@ -1554,7 +1557,7 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
             }
         }
         if !changed {
-            return true;
+            return Ok(true);
         }
     }
 }
@@ -4443,14 +4446,17 @@ where
         if let Some(domains) = mesh_assignments {
             let implicit_support_budget =
                 session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
-            let implicit_support_viable = coordinate_domains.as_ref().is_none_or(|coordinate| {
+            let implicit_support_viable = if let Some(coordinate) = coordinate_domains.as_ref() {
                 prune_implicit_ordered_face_endpoint_support(
+                    ctx,
                     domains,
                     &mut narrowed_choices,
                     coordinate,
                     &implicit_support_budget,
-                )
-            });
+                )?
+            } else {
+                true
+            };
             if !implicit_support_viable {
                 rejection = IncidenceRejection::ChoicePruning;
                 return Ok(None);
