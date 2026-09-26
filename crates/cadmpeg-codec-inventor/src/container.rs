@@ -143,14 +143,15 @@ impl<'a> InventorContainer<'a> {
             ctx.charge_collection_items(1, "collect Inventor summary loss")?;
             losses.push(loss);
         }
-        let dialects = crate::dialect::layers(matched, &self.rse.active_carrier)?;
-        if let Some(loss) = dialects
+        let dialects = crate::dialect::layers(ctx, &matched, &self.rse.active_carrier)?;
+        if let Some(kernel) = dialects
             .iter()
             .find(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
-            .and_then(crate::dialect::kernel_dialect_loss)
         {
-            ctx.charge_collection_items(1, "collect Inventor summary loss")?;
-            losses.push(loss);
+            if let Some(loss) = crate::dialect::kernel_dialect_loss(ctx, kernel)? {
+                ctx.charge_collection_items(1, "collect Inventor summary loss")?;
+                losses.push(loss);
+            }
         }
         ctx.charge_collection_items(1, "collect Inventor summary note")?;
         admit_formatted(
