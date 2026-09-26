@@ -87,7 +87,7 @@ fn partial_compact_assignment_viable(
         }
     };
     if budget.is_some_and(|budget| !budget.charge_by(work_units(relevant.len()))) {
-        return Err(ctx.refuse_codec_limit("catia coordinate compact work", 0, 1));
+        return Ok(false);
     }
     let value = |root| {
         if root == candidate.0 {
@@ -604,8 +604,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
         }
         if budget.is_some_and(|budget| !budget.charge()) {
             *exhausted = true;
-            ctx.charge_work(0, "catia coordinate assignment")?;
-            return Err(ctx.refuse_codec_limit("catia coordinate assignment", 0, 1));
+            return Ok(());
         }
         let viable_values = |root: usize,
                              assigned: &[Option<usize>],
@@ -1286,8 +1285,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
     let incidence = if let Some((edge_faces, boundary_domains)) = incidence {
         if budget.is_some_and(|budget| !budget.charge_by(edge_faces.len())) {
             exhausted.set(true);
-            ctx.charge_work(0, "catia coordinate incidence")?;
-            return Err(ctx.refuse_codec_limit("catia coordinate incidence", 0, 1));
+            return Ok(None);
         }
         let mut counts = vec![0usize; boundary_domains.len()];
         for faces in edge_faces {
@@ -1372,8 +1370,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
             Some((edge_faces, boundary_domains, counts)) => {
                 if budget.is_some_and(|budget| !budget.charge_by(work_units(edge_ids.len()))) {
                     exhausted.set(true);
-                    ctx.charge_work(0, "catia coordinate local incidence")?;
-                    return Err(ctx.refuse_codec_limit("catia coordinate local incidence", 0, 1));
+                    return Ok(None);
                 }
                 let local_edge_faces = edge_ids
                     .iter()
@@ -1439,8 +1436,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 let work = budget.remaining() - arc_budget.remaining();
                 if !budget.charge_by(work) {
                     exhausted.set(true);
-                    ctx.charge_work(0, "catia coordinate arc consistency")?;
-                    return Err(ctx.refuse_codec_limit("catia coordinate arc consistency", 0, 1));
+                    return Ok(None);
                 }
             }
             local_domains = arc_domains;

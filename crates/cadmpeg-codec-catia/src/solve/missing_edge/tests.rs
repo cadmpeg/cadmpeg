@@ -52,6 +52,84 @@ fn edge_run_face_collection_refuses_limit() {
             && limit.operation == "catia_edge_run_faces"));
 }
 
+#[test]
+fn edge_port_queue_propagates_collection_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let ports = [[10, 11]];
+    let pairs = [Some([0, 1])];
+    catia_test_context!(service_ctx);
+    assert_eq!(
+        super::propagate_edge_port_points(&service_ctx, &ports, &pairs)
+            .expect("service resource budget"),
+        Some(vec![Some([0, 1])])
+    );
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let error = super::propagate_edge_port_points(&ctx, &ports, &pairs)
+        .expect_err("the edge queue exceeds the collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_edge_port_queue"));
+}
+
+#[test]
+fn edge_port_solution_propagates_collection_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let ports = [[10, 11]];
+    let candidates = [vec![[0, 1]]];
+    catia_test_context!(service_ctx);
+    assert_eq!(
+        super::bind_edge_port_candidates(&service_ctx, &ports, &candidates)
+            .expect("service resource budget"),
+        Some(vec![[0, 1]])
+    );
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let error = super::bind_edge_port_candidates(&ctx, &ports, &candidates)
+        .expect_err("the solution exceeds the collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_edge_port_solution"));
+}
+
+#[test]
+fn edge_port_component_pairs_propagate_collection_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let ports = [[10, 11]];
+    let candidates = [vec![[0, 1]]];
+    catia_test_context!(service_ctx);
+    assert_eq!(
+        super::bind_edge_port_candidates(&service_ctx, &ports, &candidates)
+            .expect("service resource budget"),
+        Some(vec![[0, 1]])
+    );
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let error = super::bind_edge_port_candidates(&ctx, &ports, &candidates)
+        .expect_err("component pairs exceed the collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_edge_port_pairs"));
+}
+
 fn raw_visualization_table(mode: u8, triples: &[[f32; 3]]) -> Vec<u8> {
     let mut bytes = INDEXED_VISUALIZATION_POINT_MARKER.to_vec();
     let count = u32::try_from(triples.len()).expect("synthetic table count");
