@@ -1335,16 +1335,25 @@ fn prune_face_configuration_singleton_support(
 }
 
 fn prune_ordered_face_endpoint_support(
+    ctx: &DecodeContext<'_>,
     domains: &[MeshFaceBoundaryDomain],
     choices: &mut [Vec<[usize; 2]>],
     budget: &WorkBudget<'_>,
-) -> bool {
+) -> Result<bool, CodecError> {
     loop {
         let mut changed = false;
         for domain in domains {
             let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
                 continue;
             };
+            let use_count = assignments
+                .iter()
+                .flat_map(|assignment| assignment.boundaries.iter())
+                .try_fold(0usize, |count, boundary| count.checked_add(boundary.len()))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("catia ordered face edges", u64::MAX, u64::MAX)
+                })?;
+            charge_collection_items(ctx, use_count, "catia ordered face edges")?;
             let mut edges = assignments
                 .iter()
                 .flat_map(|assignment| assignment.boundaries.iter().flatten())
@@ -1358,47 +1367,52 @@ fn prune_ordered_face_endpoint_support(
             {
                 continue;
             }
-            let Ok(selected) = alloc_filled(choices.len(), None, "catia_ordered_face_selection")
-            else {
-                return true;
-            };
+            let selected = ctx.alloc_filled(choices.len(), None, "catia_ordered_face_selection")?;
             let Some(configurations) =
                 mesh_face_endpoint_configurations(assignments, choices, &selected, budget)
             else {
                 if budget.exhausted() {
-                    return true;
+                    return Ok(true);
                 }
                 continue;
             };
             if configurations.is_empty() {
-                return false;
+                return Ok(false);
             }
             let mut supported = HashMap::<usize, HashSet<[usize; 2]>>::new();
             for configuration in configurations {
                 for (edge, pair) in configuration {
                     if !budget.charge() {
-                        return true;
+                        return Ok(true);
                     }
-                    supported.entry(edge).or_default().insert(pair);
+                    if !supported.contains_key(&edge) {
+                        charge_collection_items(ctx, 1, "catia ordered face support edges")?;
+                    }
+                    let pairs = supported.entry(edge).or_default();
+                    if !pairs.contains(&pair) {
+                        charge_collection_items(ctx, 1, "catia ordered face support pairs")?;
+                        pairs.insert(pair);
+                    }
                 }
             }
             for edge in edges {
                 let Some(edge_supported) = supported.get(&edge) else {
                     continue;
                 };
-                let mut retained = Vec::with_capacity(choices[edge].len());
+                let mut retained = Vec::new();
                 for pair in choices[edge].iter().copied() {
                     if !budget.charge() {
-                        return true;
+                        return Ok(true);
                     }
                     let mut canonical = pair;
                     canonical.sort_unstable();
                     if edge_supported.contains(&canonical) {
+                        charge_collection_items(ctx, 1, "catia ordered face retained pairs")?;
                         retained.push(pair);
                     }
                 }
                 if retained.is_empty() {
-                    return false;
+                    return Ok(false);
                 }
                 if retained.len() != choices[edge].len() {
                     choices[edge] = retained;
@@ -1407,7 +1421,7 @@ fn prune_ordered_face_endpoint_support(
             }
         }
         if !changed {
-            return true;
+            return Ok(true);
         }
     }
 }
@@ -4186,10 +4200,11 @@ where
             let face_support_budget =
                 session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
             if !prune_ordered_face_endpoint_support(
+                ctx,
                 domains,
                 &mut narrowed_choices,
                 &face_support_budget,
-            ) {
+            )? {
                 rejection = IncidenceRejection::ChoicePruning;
                 return Ok(None);
             }
