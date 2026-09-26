@@ -12,6 +12,66 @@ use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+fn assert_negative_primitive_size_reports_loss(style: super::PrimitiveStyle) {
+    use cadmpeg_ir::ids::{EdgeId, PointId, VertexId};
+    use cadmpeg_ir::topology::{Edge, EdgeCarrier, Vertex};
+
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let vertex = VertexId::mint("fcstd:test:vertex#0").expect("vertex id");
+    ir.model.vertices.push(Vertex {
+        id: vertex.clone(),
+        point: PointId::mint("fcstd:test:point#0").expect("point id"),
+        tolerance: None,
+    });
+    ir.model.edges.push(Edge {
+        id: EdgeId::mint("fcstd:test:edge#0").expect("edge id"),
+        carrier: EdgeCarrier::unbounded(None),
+        start: vertex.clone(),
+        end: vertex,
+        tolerance: None,
+    });
+    let mut plan = super::AppearancePlan::default();
+    let mut losses = Vec::new();
+    super::transfer_primitive_appearance(
+        &ir,
+        &mut plan,
+        &mut losses,
+        "Model",
+        "fcstd:object#Model",
+        0xff00_00ff,
+        style,
+        &[String::new()],
+        cadmpeg_ir::SourceProvenance::in_stream(
+            "fcstd",
+            cadmpeg_ir::stream_name!("GuiDocument.xml"),
+            17,
+        ),
+    );
+    assert_eq!(plan.appearances.len(), 1);
+    assert!(plan.appearances[0].properties.is_empty());
+    assert!(!plan.bindings.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code.local_code(),
+        "appearance.primitive-size-not-transferred"
+    );
+    assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Warning);
+    assert_eq!(
+        losses[0].provenance.as_ref().map(|source| source.offset),
+        Some(17)
+    );
+}
+
+#[test]
+fn a_negative_line_width_records_an_appearance_loss() {
+    assert_negative_primitive_size_reports_loss(super::PrimitiveStyle::Line(Some(-1.0)));
+}
+
+#[test]
+fn a_negative_point_size_records_an_appearance_loss() {
+    assert_negative_primitive_size_reports_loss(super::PrimitiveStyle::Point(Some(-1.0)));
+}
+
 #[test]
 fn complete_codec_admits_provider_names_with_source_identity_encoding() {
     let document = br##"<Document SchemaVersion="4" FileVersion="1">
