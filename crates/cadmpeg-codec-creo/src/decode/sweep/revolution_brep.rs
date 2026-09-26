@@ -198,7 +198,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     segment,
                     surface,
                     &axis,
-                    area,
+                    area.get(),
                     &format!("revolution feature {feature_id} profile segment {index} face sense"),
                     refusal,
                 )

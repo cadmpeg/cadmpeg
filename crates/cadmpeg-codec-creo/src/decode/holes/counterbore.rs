@@ -492,9 +492,7 @@ pub(in crate::decode) fn counterbore_support_axis_placement(
         return None;
     };
     let frame = frame.frame();
-    let origin = frame
-        .origin
-        .filter(|origin| origin.iter().all(|value| value.is_finite()))?;
+    let origin = frame.origin?;
     Some(cadmpeg_ir::features::holes::HolePlacement::Axis {
         origin: cadmpeg_ir::features::FinitePoint3::new(Point3::from(origin))?,
         axis: frame.normal?.into(),
