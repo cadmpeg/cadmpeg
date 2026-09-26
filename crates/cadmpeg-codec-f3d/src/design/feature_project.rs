@@ -1245,7 +1245,12 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-                evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs),
+                evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                    definition,
+                    outputs
+                        .try_into()
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                ),
                 native_ref: Some(scope.id.clone()),
             })
         })

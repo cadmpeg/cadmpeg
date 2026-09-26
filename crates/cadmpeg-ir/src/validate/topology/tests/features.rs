@@ -247,7 +247,9 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
                 length_along_profile_normal: None,
                 allow_multi_profile_faces: None,
             }),
-            vec![BodyId::mint("synthetic:test:body#missing").expect("valid identity")],
+            (vec![BodyId::mint("synthetic:test:body#missing").expect("valid identity")])
+                .try_into()
+                .unwrap(),
         ),
         native_ref: None,
     });

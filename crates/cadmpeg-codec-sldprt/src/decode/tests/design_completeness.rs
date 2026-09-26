@@ -95,22 +95,26 @@ fn design_completeness_audits_direct_body_and_shape_families() {
     let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
     let other_body = BodyId::mint("test:model:entity#other-body").expect("identity grammar");
     let source = FeatureId::mint("synthetic:test:id#base").expect("identity grammar");
-    let mut push = |id: &str, ordinal, dependencies: Vec<FeatureId>, outputs, definition| {
-        ir.model.features.push(Feature {
-            id: FeatureId::mint(id).expect("identity grammar"),
-            ordinal,
-            name: None,
-            suppressed: Some(false),
-            dependencies: (dependencies).try_into().unwrap(),
-            source_properties: BTreeMap::new(),
-            source_tag: None,
-            source_text: None,
-            source_content: cadmpeg_ir::features::FeatureContent::default(),
+    let mut push =
+        |id: &str, ordinal, dependencies: Vec<FeatureId>, outputs: Vec<BodyId>, definition| {
+            ir.model.features.push(Feature {
+                id: FeatureId::mint(id).expect("identity grammar"),
+                ordinal,
+                name: None,
+                suppressed: Some(false),
+                dependencies: (dependencies).try_into().unwrap(),
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs),
-            native_ref: None,
-        });
-    };
+                evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                    definition,
+                    (outputs).try_into().unwrap(),
+                ),
+                native_ref: None,
+            });
+        };
     push(
         "synthetic:test:id#base",
         0,
@@ -1244,7 +1248,7 @@ fn incoherent_feature_outputs_are_reported_as_design_loss() {
                 role: FeatureTreeNodeRole::History,
                 children: cadmpeg_ir::features::TreeChildren::default(),
             }),
-            outputs,
+            (outputs).try_into().unwrap(),
         ),
         native_ref: None,
     };

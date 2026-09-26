@@ -69,7 +69,7 @@ fn complete_sphere_rederives_a_new_body() {
                 radius: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
                 op: BooleanOp::NewBody,
             }),
-            vec![body.clone()],
+            (vec![body.clone()]).try_into().unwrap(),
         ),
         native_ref: None,
     });
@@ -190,7 +190,7 @@ fn curve_construction_family_cannot_claim_a_body_output() {
         }),
     );
     section.evaluation.edit(|_, outputs| {
-        outputs.push(body);
+        outputs.insert(body);
     });
     ir.model.features.push(section);
 
@@ -681,7 +681,7 @@ fn extract_body_copies_each_existing_source_to_one_new_output() {
             FeatureDefinition::Operation(FeatureOperation::ExtractBody {
                 source: BodySelection::Bodies(vec![source]),
             }),
-            vec![extracted.clone()],
+            (vec![extracted.clone()]).try_into().unwrap(),
         ),
         native_ref: None,
     });
@@ -842,7 +842,7 @@ fn keep_selected_removes_every_unselected_body() {
     let retained = ir.model.bodies[0].id.clone();
     let removed = BodyId::mint("test:model:entity#removed".to_string()).expect("identity grammar");
     ir.model.features[0].evaluation.edit(|_, outputs| {
-        outputs.push(removed.clone());
+        outputs.insert(removed.clone());
     });
     ir.model.features[0]
         .evaluation

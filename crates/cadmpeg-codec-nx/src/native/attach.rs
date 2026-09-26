@@ -1221,7 +1221,7 @@ fn attach_initial_segment_bodies(
                     native: "nx:segment-body-bindings".to_string(),
                 },
             }),
-            outputs.clone(),
+            outputs.iter().cloned().collect(),
         ),
         native_ref: None,
     });
@@ -3791,7 +3791,10 @@ fn attach_feature_operations(
             source_text: None,
             source_content,
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                definition,
+                outputs.try_into().map_err(CodecError::malformed)?,
+            ),
             native_ref: Some(label.id.clone()),
         });
         if !deletes_body && !operation_body_writes.is_empty() {

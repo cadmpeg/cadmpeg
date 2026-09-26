@@ -69,7 +69,7 @@ fn feature_output_scope_edit_is_refused() {
     };
     decoded.ir_mut().model.features[0]
         .evaluation
-        .set_outputs(replacement);
+        .set_outputs((replacement).try_into().unwrap());
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),
@@ -120,7 +120,7 @@ fn feature_output_edit_with_nongeometric_history_edit_is_refused() {
     let mut edit = decoded.ir_mut();
     edit.model.features[modeling]
         .evaluation
-        .set_outputs(replacement);
+        .set_outputs((replacement).try_into().unwrap());
     edit.model.features[nongeometric].source_text = Some("changed".into());
     drop(edit);
     let error = crate::test_support::plan_inherited_write(

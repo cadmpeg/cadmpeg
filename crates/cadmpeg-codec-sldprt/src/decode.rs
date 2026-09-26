@@ -2507,7 +2507,7 @@ fn build_geometry_ir(
         &ir.model.faces,
         &ir.model.shells,
         &ir.model.regions,
-    );
+    )?;
     let topology_selection_inputs = crate::history::selections::TopologySelectionInputs {
         bodies: &ir.model.bodies,
         faces: &ir.model.faces,
