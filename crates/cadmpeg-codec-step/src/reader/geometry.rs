@@ -14,9 +14,10 @@ use cadmpeg_ir::geometry::{
     nurbs::{KnotVector, NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis},
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles},
     sampled::{PolylineCurve, PolylineSamples},
-    CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, ProceduralCurve,
-    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, DirectedParameterRange,
+    ProceduralCurve, ProceduralCurveDefinition, ProceduralGeometryError, ProceduralSurface,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     CurveId, IdentityKey, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId,
@@ -1592,13 +1593,16 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     }
                 }
             }
-            if parameter_ranges
-                .iter()
-                .flatten()
-                .any(|parameter| !parameter.is_finite())
-            {
+            let [[u_start, u_end], [v_start, v_end]] = parameter_ranges;
+            let [Some(u_start), Some(u_end), Some(v_start), Some(v_end)] = [
+                FiniteReal::new(u_start),
+                FiniteReal::new(u_end),
+                FiniteReal::new(v_start),
+                FiniteReal::new(v_end),
+            ] else {
                 continue;
-            }
+            };
+            let parameter_ranges = [[u_start, u_end], [v_start, v_end]];
             let surface = SurfaceId::from(ids::data(kind!("surface"), id));
             ir.model.surfaces.push(Surface {
                 id: surface.clone(),
@@ -1607,13 +1611,25 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             });
             let _attached = ir.model.add_procedural_surface(
                 surface,
-                match cadmpeg_ir::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(
-                    SurfaceId::from(ids::data(kind!("surface"), support_step)),
-                    parameter_ranges,
-                    Some(u_sense),
-                    Some(v_sense),
-                    None,
-                )
+                match (|| {
+                    let ranges = parameter_ranges.map(|range| {
+                        DirectedParameterRange::from_finite_endpoints(range).map_err(|_| {
+                            ProceduralGeometryError::Payload(
+                                "surface subset ranges are not finite and non-zero",
+                            )
+                        })
+                    });
+                    let [u_range, v_range] = ranges;
+                    Ok::<_, ProceduralGeometryError>(
+                        cadmpeg_ir::geometry::surface_payloads::SubsetSurfaceConstruction::from_parts(
+                            SurfaceId::from(ids::data(kind!("surface"), support_step)),
+                            [u_range?, v_range?],
+                            Some(u_sense),
+                            Some(v_sense),
+                            None,
+                        ),
+                    )
+                })()
                 .map(|admitted_payload| {
                     ProceduralSurface::new(
                         ProceduralSurfaceId::from(ids::construction(
