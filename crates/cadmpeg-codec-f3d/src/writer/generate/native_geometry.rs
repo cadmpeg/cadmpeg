@@ -3428,7 +3428,7 @@ fn native_radius_function_pcurve_block(
     let native = PcurveGeometry::Nurbs {
         nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
             nurbs.degree(),
-            nurbs.knots().to_vec(),
+            nurbs.knots().clone(),
             nurbs
                 .control_points()
                 .iter()

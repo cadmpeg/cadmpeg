@@ -208,8 +208,8 @@ fn linear_plane_extent_requires_complete_generated_plane_evidence() {
     let plane = |id, z| crate::surface::OutlinePlane {
         surface_id: id,
         origin: [0.0, 0.0, z],
-        normal: [0.0, 0.0, 1.0],
-        u_axis: [1.0, 0.0, 0.0],
+        normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
         offset: id as usize,
     };
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
@@ -252,8 +252,8 @@ fn hole_outline_placement_requires_complete_feature_plane_evidence() {
     let plane = |id, z| crate::surface::OutlinePlane {
         surface_id: id,
         origin: [0.0, 0.0, z],
-        normal: [0.0, 0.0, 1.0],
-        u_axis: [1.0, 0.0, 0.0],
+        normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
         offset: id as usize,
     };
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
@@ -289,8 +289,8 @@ fn hole_outline_placement_preserves_stored_plane_order() {
     let plane = |id, z| crate::surface::OutlinePlane {
         surface_id: id,
         origin: [0.0, 0.0, z],
-        normal: [0.0, 0.0, 1.0],
-        u_axis: [1.0, 0.0, 0.0],
+        normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
         offset: id as usize,
     };
     let mut scan = crate::container::scan_bytes_ok(Vec::new());

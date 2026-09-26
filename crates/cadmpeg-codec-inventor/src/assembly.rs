@@ -15,7 +15,7 @@ use cadmpeg_ir::transform::Transform;
 use crate::compact_matrix::CompactMatrix;
 use crate::native::ufrx::{ExternalReferenceRecord, UfrxOccurrenceRecord};
 use crate::native::{AssemblyOccurrenceRecord, AssemblyPlacementRecord};
-use crate::record_issue::{RecordIssue, RecordIssueFamily};
+use crate::record_issue::{admit_issue_detail, RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
 const SUPPRESSED_REFERENCE_STATE: u16 = 0x2000;
@@ -74,11 +74,24 @@ pub(crate) struct AssemblyPlacement<'a> {
 }
 
 /// Records one more occurrence of `cause` in a non-zero tally.
-pub(crate) fn count_unresolved<C: Ord>(counts: &mut BTreeMap<C, NonZeroUsize>, cause: C) {
-    counts
-        .entry(cause)
-        .and_modify(|count| *count = count.saturating_add(1))
-        .or_insert(NonZeroUsize::MIN);
+pub(crate) fn count_unresolved<C: Ord>(
+    ctx: &DecodeContext<'_>,
+    counts: &mut BTreeMap<C, NonZeroUsize>,
+    cause: C,
+) -> Result<(), CodecError> {
+    if let Some(count) = counts.get_mut(&cause) {
+        *count = count.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "count unresolved Inventor projection cause",
+                u64::MAX,
+                u64::MAX,
+            )
+        })?;
+        return Ok(());
+    }
+    ctx.charge_collection_items(1, "count unresolved Inventor projection cause")?;
+    counts.insert(cause, NonZeroUsize::MIN);
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -115,14 +128,30 @@ pub(crate) struct AssemblyProjection {
 /// assemblies remain one unresolved external prototype, so their internal trees
 /// are not invented as children of this document.
 pub(crate) fn project_occurrences(
+    ctx: &DecodeContext<'_>,
     ufrx_occurrences: &[UfrxOccurrenceRecord],
     external_references: &[ExternalReferenceRecord],
     assembly_occurrences: &[AssemblyOccurrenceRecord],
     assembly_placements: &[AssemblyPlacementRecord],
-) -> AssemblyProjection {
-    let references = unique_by(external_references, |record| record.reference_id);
-    let occurrence_records = unique_by(assembly_occurrences, |record| record.occurrence_id);
-    let placements = unique_by(assembly_placements, |record| record.occurrence_id);
+) -> Result<AssemblyProjection, CodecError> {
+    let references = unique_by(
+        ctx,
+        external_references,
+        "index Inventor external references",
+        |record| record.reference_id,
+    )?;
+    let occurrence_records = unique_by(
+        ctx,
+        assembly_occurrences,
+        "index Inventor assembly occurrences",
+        |record| record.occurrence_id,
+    )?;
+    let placements = unique_by(
+        ctx,
+        assembly_placements,
+        "index Inventor assembly placements",
+        |record| record.occurrence_id,
+    )?;
     let mut emitted_ids = HashSet::new();
     let mut occurrences = Vec::new();
     let mut unresolved_placements = BTreeMap::new();
@@ -130,25 +159,30 @@ pub(crate) fn project_occurrences(
     for source in ufrx_occurrences {
         let Some(reference) = references.get(&source.file_reference_id) else {
             count_unresolved(
+                ctx,
                 &mut unresolved_placements,
                 UnresolvedCause::ExternalReference,
-            );
+            )?;
             continue;
         };
         if !occurrence_records.contains_key(&source.occurrence_id) {
             count_unresolved(
+                ctx,
                 &mut unresolved_placements,
                 UnresolvedCause::OccurrenceRecord,
-            );
+            )?;
             continue;
         }
-        if !emitted_ids.insert(source.occurrence_id) {
+        if emitted_ids.contains(&source.occurrence_id) {
             count_unresolved(
+                ctx,
                 &mut unresolved_placements,
                 UnresolvedCause::DuplicateOccurrence,
-            );
+            )?;
             continue;
         }
+        ctx.charge_collection_items(1, "track Inventor emitted occurrence id")?;
+        emitted_ids.insert(source.occurrence_id);
 
         let suppressed = reference.state[0] & SUPPRESSED_REFERENCE_STATE != 0;
         let (transform, visible) = match placements.get(&source.occurrence_id) {
@@ -163,20 +197,41 @@ pub(crate) fn project_occurrences(
                     .flatten()
                 else {
                     count_unresolved(
+                        ctx,
                         &mut unresolved_placements,
                         UnresolvedCause::InvalidTransform,
-                    );
+                    )?;
                     continue;
                 };
                 (transform, suppressed.then_some(false))
             }
             None if suppressed => (Transform::identity(), Some(false)),
             None => {
-                count_unresolved(&mut unresolved_placements, UnresolvedCause::Placement);
+                count_unresolved(ctx, &mut unresolved_placements, UnresolvedCause::Placement)?;
                 continue;
             }
         };
 
+        ctx.charge_collection_items(1, "project Inventor occurrence")?;
+        ctx.charge_entities(1, "project Inventor occurrence")?;
+        ctx.charge_retained(
+            ("inventor:assembly:instance#".len()
+                + source.occurrence_id.max(1).ilog10() as usize
+                + 1) as u64,
+            "retain projected Inventor occurrence id",
+        )?;
+        ctx.charge_retained(
+            reference.document_copy_len() as u64,
+            "retain projected Inventor external document",
+        )?;
+        ctx.charge_retained(
+            source.title.as_ref().map_or(0, String::len) as u64,
+            "retain projected Inventor occurrence title",
+        )?;
+        ctx.charge_retained(
+            source.id.len() as u64,
+            "retain projected Inventor occurrence native reference",
+        )?;
         occurrences.push(Occurrence {
             id: OccurrenceId::compose(
                 &cadmpeg_ir::identity_namespace!("inventor", "assembly", "instance"),
@@ -198,10 +253,10 @@ pub(crate) fn project_occurrences(
         });
     }
 
-    AssemblyProjection {
+    Ok(AssemblyProjection {
         occurrences,
         unresolved_placements,
-    }
+    })
 }
 
 pub(crate) fn inventory<'a>(
@@ -224,23 +279,44 @@ pub(crate) fn inventory<'a>(
         };
         for record in &table.records {
             let result = if segment.kind == SegmentKind::AmDc && record.type_id == OCCURRENCE_TYPE {
-                parse_occurrence(ctx, record.payload).map(|mut occurrence| {
+                parse_occurrence(ctx, record.payload).and_then(|mut occurrence| {
+                    ctx.charge_collection_items(1, "admit Inventor assembly occurrence record")?;
+                    ctx.charge_retained(
+                        segment.pair.token.as_str().len() as u64,
+                        "retain Inventor assembly occurrence token",
+                    )?;
                     occurrence.segment_token = segment.pair.token.as_str().into();
                     occurrence.record_ordinal = record.ordinal;
                     occurrences.push(occurrence);
+                    Ok(())
                 })
             } else if segment.kind == SegmentKind::AmGraphics
                 && matches!(record.type_id, PLACEMENT_TYPE_CA | PLACEMENT_TYPE_B9)
             {
-                parse_placement(ctx, record.payload).map(|mut placement| {
+                parse_placement(ctx, record.payload).and_then(|mut placement| {
+                    ctx.charge_collection_items(1, "admit Inventor assembly placement record")?;
+                    ctx.charge_retained(
+                        segment.pair.token.as_str().len() as u64,
+                        "retain Inventor assembly placement token",
+                    )?;
                     placement.segment_token = segment.pair.token.as_str().into();
                     placement.record_ordinal = record.ordinal;
                     placements.push(placement);
+                    Ok(())
                 })
             } else {
                 continue;
             };
             if let Err(error) = result {
+                if matches!(error, CodecError::ResourceLimit(_)) {
+                    return Err(error);
+                }
+                ctx.charge_collection_items(1, "admit Inventor assembly issue")?;
+                admit_issue_detail(ctx, &error, "retain Inventor assembly issue detail")?;
+                ctx.charge_retained(
+                    segment.pair.token.as_str().len() as u64,
+                    "retain Inventor assembly issue token",
+                )?;
                 issues.push(RecordIssue {
                     family: RecordIssueFamily::Assembly,
                     segment_token: segment.pair.token.as_str().into(),
@@ -250,13 +326,6 @@ pub(crate) fn inventory<'a>(
             }
         }
     }
-    ctx.charge_collection_items(
-        occurrences
-            .len()
-            .saturating_add(placements.len())
-            .saturating_add(issues.len()) as u64,
-        "admit Inventor assembly records",
-    )?;
     Ok(AssemblyInventory {
         occurrences,
         placements,
@@ -296,6 +365,10 @@ fn parse_occurrence<'a>(
         "occurrence related-list marker",
     )?;
     let related_count = cursor.count32("occurrence related-list count", 65_536)?;
+    ctx.charge_collection_items(
+        related_count as u64,
+        "admit Inventor occurrence related references",
+    )?;
     let mut related_references = Vec::with_capacity(related_count);
     if related_count != 0 {
         cursor.u32("occurrence related-list metadata")?;
@@ -487,14 +560,19 @@ impl<'a> Cursor<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::container::InventorContainer;
+    use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
+    use crate::test_support::test_fixtures::primary_envelope_fixture;
     use crate::test_support::test_fixtures::push_u16;
     use crate::test_support::test_fixtures::push_u32;
     use crate::test_support::test_fixtures::push_utf16;
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension, View};
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::products::PrototypeReference;
 
     use super::{
-        parse_occurrence, parse_placement, project_occurrences, SUPPRESSED_REFERENCE_STATE,
+        inventory, parse_occurrence, parse_placement, OCCURRENCE_TYPE, PLACEMENT_TYPE_CA,
+        SUPPRESSED_REFERENCE_STATE,
     };
     use crate::compact_matrix::CompactMatrix;
     use crate::native::ufrx::{ExternalReferenceRecord, UfrxOccurrenceRecord};
@@ -503,6 +581,286 @@ mod tests {
     use cadmpeg_ir::transform::Transform;
     use std::collections::BTreeMap;
     use std::num::NonZeroUsize;
+
+    fn project_under_service(
+        ufrx_occurrences: &[UfrxOccurrenceRecord],
+        external_references: &[ExternalReferenceRecord],
+        assembly_occurrences: &[AssemblyOccurrenceRecord],
+        assembly_placements: &[AssemblyPlacementRecord],
+    ) -> super::AssemblyProjection {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("projection context");
+        super::project_occurrences(
+            &ctx,
+            ufrx_occurrences,
+            external_references,
+            assembly_occurrences,
+            assembly_placements,
+        )
+        .expect("projection fits service policy")
+    }
+
+    #[test]
+    fn occurrence_projection_refuses_collection_limit_before_output() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 7;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
+        assert!(matches!(
+            super::project_occurrences(
+                &ctx,
+                &[ufrx_occurrence(4, 7, 0)],
+                &[external_reference(4, "part.ipt", [0, 0])],
+                &[assembly_occurrence(7)],
+                &[assembly_placement(7)],
+            ),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "project Inventor occurrence"
+        ));
+        assert_eq!(
+            project_under_service(
+                &[ufrx_occurrence(4, 7, 0)],
+                &[external_reference(4, "part.ipt", [0, 0])],
+                &[assembly_occurrence(7)],
+                &[assembly_placement(7)],
+            )
+            .occurrences
+            .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn occurrence_projection_refuses_entity_limit_before_creation() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_entities = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
+        assert!(matches!(
+            super::project_occurrences(
+                &ctx,
+                &[ufrx_occurrence(4, 7, 0)],
+                &[external_reference(4, "part.ipt", [0, 0])],
+                &[assembly_occurrence(7)],
+                &[assembly_placement(7)],
+            ),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::Entities
+                    && limit.operation == "project Inventor occurrence"
+        ));
+        assert_eq!(
+            project_under_service(
+                &[ufrx_occurrence(4, 7, 0)],
+                &[external_reference(4, "part.ipt", [0, 0])],
+                &[assembly_occurrence(7)],
+                &[assembly_placement(7)],
+            )
+            .occurrences
+            .len(),
+            1
+        );
+    }
+
+    fn inventory_with_record(
+        kind: SegmentKind,
+        type_id: [u8; 16],
+        payload: &[u8],
+        policy: DecodePolicy,
+    ) -> Result<
+        (
+            usize,
+            usize,
+            Vec<crate::record_issue::RecordIssue>,
+            Option<String>,
+        ),
+        CodecError,
+    > {
+        let bytes = primary_envelope_fixture();
+        let payload = payload.to_vec();
+        let arena = DecodeArena::new();
+        let (setup_ctx, source) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("envelope view");
+        let mut container = InventorContainer::open(&setup_ctx, source).expect("framed envelope");
+        let segment = &mut container.rse.segments[0];
+        segment.kind = kind;
+        let SegmentBulkState::Framed(bulk) = &mut segment.bulk else {
+            panic!("framed bulk fixture");
+        };
+        let RecordFrameState::Framed(table) = &mut bulk.records else {
+            panic!("framed record fixture");
+        };
+        table.records[0].type_id = type_id;
+        table.records[0].payload = View::over_retained(&payload);
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input view");
+        let result = inventory(&ctx, &container.rse)?;
+        let token = result
+            .occurrences
+            .first()
+            .map(|record| record.segment_token.clone())
+            .or_else(|| {
+                result
+                    .placements
+                    .first()
+                    .map(|record| record.segment_token.clone())
+            });
+        Ok((
+            result.occurrences.len(),
+            result.placements.len(),
+            result.issues,
+            token,
+        ))
+    }
+
+    #[test]
+    fn assembly_record_forms_refuse_collection_limit_before_push() {
+        for (kind, type_id, payload, operation) in [
+            (
+                SegmentKind::AmDc,
+                OCCURRENCE_TYPE,
+                occurrence_fixture(7, &[]),
+                "admit Inventor assembly occurrence record",
+            ),
+            (
+                SegmentKind::AmGraphics,
+                PLACEMENT_TYPE_CA,
+                placement_fixture(7, false, 0x8421, 0x7bde, &[]),
+                "admit Inventor assembly placement record",
+            ),
+        ] {
+            let admitted =
+                inventory_with_record(kind.clone(), type_id, &payload, DecodePolicy::service())
+                    .expect("assembly record is admitted");
+            assert_eq!(admitted.0 + admitted.1, 1);
+            assert!(admitted.2.is_empty());
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = 0;
+            assert!(matches!(
+                inventory_with_record(kind, type_id, &payload, policy),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::CollectionItems
+                        && limit.operation == operation
+                        && limit.used == 0
+            ));
+        }
+    }
+
+    #[test]
+    fn assembly_related_references_refuse_collection_limit_before_allocation() {
+        let payload = occurrence_fixture(7, &[8]);
+        assert_eq!(
+            inventory_with_record(
+                SegmentKind::AmDc,
+                OCCURRENCE_TYPE,
+                &payload,
+                DecodePolicy::service()
+            )
+            .expect("related reference is admitted")
+            .0,
+            1
+        );
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        assert!(matches!(
+            inventory_with_record(SegmentKind::AmDc, OCCURRENCE_TYPE, &payload, policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "admit Inventor occurrence related references"
+                    && limit.used == 0
+        ));
+    }
+
+    #[test]
+    fn assembly_parse_issue_refuses_collection_limit_before_push() {
+        assert_eq!(
+            inventory_with_record(
+                SegmentKind::AmDc,
+                OCCURRENCE_TYPE,
+                &[],
+                DecodePolicy::service()
+            )
+            .expect("truncated occurrence becomes an issue")
+            .2
+            .len(),
+            1
+        );
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        assert!(matches!(
+            inventory_with_record(SegmentKind::AmDc, OCCURRENCE_TYPE, &[], policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "admit Inventor assembly issue"
+                    && limit.used == 0
+        ));
+    }
+
+    #[test]
+    fn assembly_record_tokens_refuse_retained_limit_before_copy() {
+        for (kind, type_id, payload, operation) in [
+            (
+                SegmentKind::AmDc,
+                OCCURRENCE_TYPE,
+                occurrence_fixture(7, &[]),
+                "retain Inventor assembly occurrence token",
+            ),
+            (
+                SegmentKind::AmGraphics,
+                PLACEMENT_TYPE_CA,
+                placement_fixture(7, false, 0x8421, 0x7bde, &[]),
+                "retain Inventor assembly placement token",
+            ),
+        ] {
+            let admitted =
+                inventory_with_record(kind.clone(), type_id, &payload, DecodePolicy::service())
+                    .expect("assembly record is admitted");
+            let token_len = admitted.3.as_deref().expect("record token").len();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = (6 + token_len - 1) as u64;
+            assert!(matches!(
+                inventory_with_record(kind, type_id, &payload, policy),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::RetainedBytes
+                        && limit.operation == operation
+                    && limit.used == 6
+            ));
+        }
+    }
+
+    #[test]
+    fn assembly_issue_copies_refuse_retained_limits_before_creation() {
+        let admitted = inventory_with_record(
+            SegmentKind::AmDc,
+            OCCURRENCE_TYPE,
+            &[],
+            DecodePolicy::service(),
+        )
+        .expect("truncated occurrence becomes an issue");
+        let detail_len = admitted.2[0].detail.len();
+        let token_len = admitted.2[0].segment_token.len();
+        for (limit_bytes, operation, used) in [
+            (detail_len - 1, "retain Inventor assembly issue detail", 0),
+            (
+                detail_len + token_len - 1,
+                "retain Inventor assembly issue token",
+                detail_len,
+            ),
+        ] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit_bytes as u64;
+            assert!(matches!(
+                inventory_with_record(SegmentKind::AmDc, OCCURRENCE_TYPE, &[], policy),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::RetainedBytes
+                        && limit.operation == operation
+                        && limit.used == used as u64
+            ));
+        }
+    }
 
     #[test]
     fn frames_occurrence_identity_and_variable_related_references() {
@@ -561,7 +919,7 @@ mod tests {
         placement.transform =
             CompactMatrix::try_from_rows(0, 0, rows).expect("finite explicit matrix fixture");
 
-        let projection = project_occurrences(&[ufrx], &[reference], &[occurrence], &[placement]);
+        let projection = project_under_service(&[ufrx], &[reference], &[occurrence], &[placement]);
 
         assert!(projection.unresolved_placements.is_empty());
         let [projected] = projection.occurrences.as_slice() else {
@@ -611,7 +969,7 @@ mod tests {
         second.transform =
             CompactMatrix::try_from_rows(0, 0, rows).expect("finite explicit matrix fixture");
 
-        let projection = project_occurrences(&ufrx, &[reference], &occurrences, &[first, second]);
+        let projection = project_under_service(&ufrx, &[reference], &occurrences, &[first, second]);
 
         assert!(projection.unresolved_placements.is_empty());
         assert_eq!(projection.occurrences.len(), 2);
@@ -630,7 +988,7 @@ mod tests {
             [0, 0],
             "00112233445566778899aabbccddeeff",
         );
-        let projection = project_occurrences(
+        let projection = project_under_service(
             &[ufrx_occurrence(4, 7, 0)],
             &[reference],
             &[assembly_occurrence(7)],
@@ -672,7 +1030,7 @@ mod tests {
         );
         let occurrence = assembly_occurrence(7);
 
-        let projection = project_occurrences(&[ufrx], &[reference], &[occurrence], &[]);
+        let projection = project_under_service(&[ufrx], &[reference], &[occurrence], &[]);
 
         assert!(projection.unresolved_placements.is_empty());
         let [projected] = projection.occurrences.as_slice() else {
@@ -702,7 +1060,7 @@ mod tests {
 
     #[test]
     fn reports_active_occurrence_without_placement() {
-        let projection = project_occurrences(
+        let projection = project_under_service(
             &[ufrx_occurrence(4, 7, 0)],
             &[external_reference(4, "part.ipt", [0, 0])],
             &[assembly_occurrence(7)],

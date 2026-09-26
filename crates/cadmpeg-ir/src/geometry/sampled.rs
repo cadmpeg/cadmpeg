@@ -68,6 +68,30 @@ impl PolygonalSurface {
         triangles: Vec<[u32; 3]>,
         chordal_deflection: f64,
     ) -> Result<Self, GeometryLayoutError> {
+        Self::build(vertices, triangles, || {
+            admit_chordal_deflection(chordal_deflection)
+        })
+    }
+
+    /// Build from admitted source deflection and placement scale.
+    pub fn from_scaled_deflection(
+        vertices: Vec<Point3>,
+        triangles: Vec<[u32; 3]>,
+        chordal_deflection: NonNegativeReal,
+        scale: crate::scalar::PositiveReal,
+    ) -> Result<Self, GeometryLayoutError> {
+        Self::build(vertices, triangles, || {
+            chordal_deflection.scaled(scale).ok_or_else(|| {
+                geometry_layout_error("chordal_deflection must be finite and non-negative")
+            })
+        })
+    }
+
+    fn build(
+        vertices: Vec<Point3>,
+        triangles: Vec<[u32; 3]>,
+        deflection: impl FnOnce() -> Result<NonNegativeReal, GeometryLayoutError>,
+    ) -> Result<Self, GeometryLayoutError> {
         if vertices.len() < 3 {
             return Err(geometry_layout_error(
                 "polygonal surface must contain at least three vertices",
@@ -88,7 +112,7 @@ impl PolygonalSurface {
             ));
         }
         let vertices = admit_finite_vertices(vertices)?;
-        let chordal_deflection = admit_chordal_deflection(chordal_deflection)?;
+        let chordal_deflection = deflection()?;
         Ok(Self {
             vertices,
             triangles,
@@ -389,8 +413,28 @@ impl PolylineCurve {
         samples: PolylineSamples,
         chordal_deflection: f64,
     ) -> Result<Self, GeometryLayoutError> {
+        Self::build(samples, || admit_chordal_deflection(chordal_deflection))
+    }
+
+    /// Build from admitted source deflection and placement scale.
+    pub fn from_scaled_deflection(
+        samples: PolylineSamples,
+        chordal_deflection: NonNegativeReal,
+        scale: crate::scalar::PositiveReal,
+    ) -> Result<Self, GeometryLayoutError> {
+        Self::build(samples, || {
+            chordal_deflection.scaled(scale).ok_or_else(|| {
+                geometry_layout_error("chordal_deflection must be finite and non-negative")
+            })
+        })
+    }
+
+    fn build(
+        samples: PolylineSamples,
+        deflection: impl FnOnce() -> Result<NonNegativeReal, GeometryLayoutError>,
+    ) -> Result<Self, GeometryLayoutError> {
         let samples = Self::admit_sample_points(samples)?;
-        let chordal_deflection = admit_chordal_deflection(chordal_deflection)?;
+        let chordal_deflection = deflection()?;
         let samples = Self::admit_sample_parameters(samples)?;
         Ok(Self {
             samples,

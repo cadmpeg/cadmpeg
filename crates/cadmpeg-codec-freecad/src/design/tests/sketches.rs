@@ -111,7 +111,8 @@ fn x64_profile_construction_refuses_exhausted_work_on_decode() {
         .expect("service profile admits the sketch");
 
     let mut options = DecodeOptions::default();
-    options.policy.limits.max_work_units = 2 * document.len() as u64;
+    // The one-entry ZIP preflight charges its end record and central header.
+    options.policy.limits.max_work_units = 2 * document.len() as u64 + 2;
     let error = FcstdCodec
         .decode(&mut Cursor::new(bytes), &options)
         .expect_err("profile construction must charge work");
@@ -1073,6 +1074,6 @@ fn native_constraint_negative_operands_resolve_to_distinct_builtin_axes() {
             .expect("resolved builtin axis");
         assert!(matches!(resolved.geometry.definition(),
             cadmpeg_ir::sketches::SketchGeometryDefinition::ReferenceLine { origin, direction: actual }
-            if *origin == cadmpeg_ir::math::Point2::new(0.0, 0.0) && *actual == direction));
+            if *origin == cadmpeg_ir::math::Point2::new(0.0, 0.0) && actual.get() == direction));
     }
 }

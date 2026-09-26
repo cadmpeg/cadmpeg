@@ -4,6 +4,8 @@
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
+use crate::record_issue::admit_issue_detail;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RseSchema(u32);
 
@@ -151,10 +153,13 @@ pub(crate) fn parse_database(
     match schema_31_body(ctx, cursor, id, schema) {
         Ok(database) => Ok(DatabaseHeader::Supported(database)),
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
-        Err(error) => Ok(DatabaseHeader::Unframed {
-            schema,
-            detail: error.to_string(),
-        }),
+        Err(error) => {
+            admit_issue_detail(ctx, &error, "retain RSe unframed database detail")?;
+            Ok(DatabaseHeader::Unframed {
+                schema,
+                detail: error.to_string(),
+            })
+        }
     }
 }
 
@@ -173,7 +178,7 @@ fn schema_31_body(
         created_filetime: cursor.u64("creation FILETIME")?,
         saved_by: cursor.version("save version")?,
         saved_filetime: cursor.u64("save FILETIME")?,
-        note: cursor.utf16("database note", 65_536)?,
+        note: cursor.utf16(ctx, "database note", 65_536)?,
     };
     cursor.finish()?;
     ctx.charge_collection_items(1, "admit Inventor RSe database")?;
@@ -198,14 +203,14 @@ pub(crate) fn parse_registry(
     ctx.charge_collection_items(count as u64, "admit Inventor segment registry entries")?;
     let mut entries = Vec::with_capacity(count);
     for _ in 0..count {
-        let display_name = cursor.utf16("segment display name", 4_096)?;
+        let display_name = cursor.utf16(ctx, "segment display name", 4_096)?;
         let segment_id = cursor.array("segment id")?;
         let revision_id = cursor.array("segment revision id")?;
         let value = cursor.u32("segment value")?;
         let object_count = cursor.count("segment object count", 1_000_000)?;
         let state = cursor.u32_array("segment state")?;
         let secondary_count = cursor.u32("segment secondary count")?;
-        let type_name = cursor.utf16("segment type name", 4_096)?;
+        let type_name = cursor.utf16(ctx, "segment type name", 4_096)?;
         let type_state = cursor.u32_array("segment type state")?;
         let version = cursor.version("segment version")?;
         let trailing_value = cursor.u32("segment trailing value")?;
@@ -383,11 +388,21 @@ impl<'a> Cursor<'a> {
         Ok(count)
     }
 
-    fn utf16(&mut self, field: &'static str, maximum: usize) -> Result<String, CodecError> {
+    fn utf16(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        field: &'static str,
+        maximum: usize,
+    ) -> Result<String, CodecError> {
         let count = self.count(field, maximum)?;
-        count.checked_mul(2).ok_or_else(|| {
+        let len = count.checked_mul(2).ok_or_else(|| {
             CodecError::malformed(format_args!("{} {field} length overflows", self.scope))
         })?;
+        let utf8_bytes = crate::reader::utf16_utf8_len(self.source, count).ok_or_else(|| {
+            CodecError::malformed(format_args!("{} {field} is not UTF-16", self.scope))
+        })?;
+        let _units = ctx.reserve_scoped(len as u64, "decode RSe table UTF-16 units")?;
+        ctx.charge_retained(utf8_bytes as u64, "retain RSe table UTF-16 field")?;
         self.source.utf16_le(count).ok_or_else(|| {
             CodecError::malformed(format_args!("{} {field} is not UTF-16", self.scope))
         })
@@ -425,11 +440,108 @@ mod tests {
     use crate::test_support::test_fixtures::push_u32;
     use crate::test_support::test_fixtures::push_utf16;
     use crate::test_support::test_fixtures::push_version;
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
 
     use super::{
         parse_database, parse_registry, parse_revisions, DatabaseHeader, RevisionPayload, RseSchema,
     };
+
+    #[test]
+    fn unframed_database_detail_refuses_retained_limit_before_copy() {
+        let mut bytes = database_fixture();
+        bytes.truncate(28);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("truncated database fits input cap");
+        assert!(matches!(
+            parse_database(&ctx, &bytes),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain RSe unframed database detail"
+        ));
+
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("truncated database fits service policy");
+        assert!(matches!(
+            parse_database(&ctx, &bytes),
+            Ok(DatabaseHeader::Unframed { schema, .. }) if schema == RseSchema::SCHEMA_31
+        ));
+    }
+
+    #[test]
+    fn database_note_refuses_retained_and_materialized_limits_before_utf16_decode() {
+        let bytes = database_fixture();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = "synthetic database".len() as u64 - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("database fits input cap");
+        assert!(matches!(
+            parse_database(&ctx, &bytes),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain RSe table UTF-16 field"
+        ));
+
+        policy.limits.max_retained_bytes = DecodePolicy::service().limits.max_retained_bytes;
+        policy.limits.max_materialized_bytes = ("synthetic database".len() * 2 - 1) as u64;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("database fits input cap");
+        assert!(matches!(
+            parse_database(&ctx, &bytes),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::MaterializedBytes
+                    && limit.operation == "decode RSe table UTF-16 units"
+        ));
+
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("database fits service policy");
+        assert!(matches!(
+            parse_database(&ctx, &bytes),
+            Ok(DatabaseHeader::Supported(database)) if database.note == "synthetic database"
+        ));
+    }
+
+    #[test]
+    fn registry_names_refuse_retained_limit_before_utf16_decode() {
+        let bytes = registry_fixture(&[2]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = "PmBRepSegment".len() as u64 - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("registry fits input cap");
+        assert!(matches!(
+            parse_registry(&ctx, &bytes),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain RSe table UTF-16 field"
+        ));
+
+        policy.limits.max_retained_bytes = "PmBRepSegment".len() as u64;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("registry fits input cap");
+        assert!(matches!(
+            parse_registry(&ctx, &bytes),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain RSe table UTF-16 field"
+                    && limit.used == "PmBRepSegment".len() as u64
+        ));
+
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("registry fits service policy");
+        assert_eq!(
+            parse_registry(&ctx, &bytes)
+                .expect("registry parses under service policy")
+                .entries[0]
+                .type_name,
+            "PmBRepSegmentType"
+        );
+    }
 
     #[test]
     fn schema_31_database_reports_failed_exact_exhaustion_as_unframed() {

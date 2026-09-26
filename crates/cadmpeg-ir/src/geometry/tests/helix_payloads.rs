@@ -303,6 +303,37 @@ fn numerical_followup_circular_helix_admits_finite_radial_scales() {
 }
 
 #[test]
+fn helix_path_unit_axis_keeps_the_raw_construction_and_wire() {
+    use crate::units::UnitVector3;
+
+    let frame = HelixFrame {
+        center: Point3::new(1.0, 2.0, 3.0),
+        major: Vector3::new(2.0, 0.0, 0.0),
+        minor: Vector3::new(0.0, 2.0, 0.0),
+        pitch: Vector3::new(0.0, 0.0, 1.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+    };
+    let raw = HelixPathConstruction::try_new([0.0, 1.0], frame, 0.5).unwrap();
+    let typed = HelixPathConstruction::try_with_unit_axis(
+        [0.0, 1.0],
+        HelixFrame {
+            center: frame.center,
+            major: frame.major,
+            minor: frame.minor,
+            pitch: frame.pitch,
+            axis: UnitVector3::Z_AXIS,
+        },
+        0.5,
+    )
+    .unwrap();
+    assert_eq!(raw, typed);
+    assert_eq!(
+        serde_json::to_vec(&raw).unwrap(),
+        serde_json::to_vec(&typed).unwrap()
+    );
+}
+
+#[test]
 fn numerical_followup_helix_path_requires_two_equal_nonzero_radii() {
     for radius in [1e-200, 1e-10, 1.0, 1e200] {
         for ratio in [0.0, 0.5, 1.0] {

@@ -16,7 +16,9 @@ fn y4_2_decode_refuses_unadmitted_gui_text_copy() {
         .expect("service profile admits the GUI state");
 
     let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes = (document.len() + gui.len()) as u64;
+    // The ZIP snapshot retains four copies of each decoded central-directory name.
+    let zip_names = 4 * ("Document.xml".len() + "GuiDocument.xml".len());
+    options.policy.limits.max_retained_bytes = (zip_names + document.len() + gui.len()) as u64;
     let error = FcstdCodec
         .decode(&mut Cursor::new(bytes), &options)
         .expect_err("GUI text copy must be admitted");

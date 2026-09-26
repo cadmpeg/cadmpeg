@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, HashSet};
 
 use cadmpeg_core::bytes::{assemble_f32_be, assemble_f64_be, find_from};
 use cadmpeg_core::decode::{index_from_u32, View};
+use cadmpeg_ir::units::FiniteVector;
 
 use crate::decode::axis::Axis;
 use crate::psb::{compact_int, short_form_float};
@@ -746,7 +747,7 @@ pub(crate) fn decode_model_reference_coordinate(
 pub(crate) fn decode_explicit_local_system_slots(
     body: &[u8],
     cache: &ScalarCache,
-) -> Option<[f64; 12]> {
+) -> Option<FiniteVector<12>> {
     decode_local_system_slots(body, cache, LocalSystemVariant::Explicit)
 }
 
@@ -754,7 +755,7 @@ pub(crate) fn decode_explicit_local_system_slots(
 pub(crate) fn decode_feature_local_system_slots(
     body: &[u8],
     cache: &ScalarCache,
-) -> Option<[f64; 12]> {
+) -> Option<FiniteVector<12>> {
     decode_local_system_slots(body, cache, LocalSystemVariant::Feature)
 }
 
@@ -793,7 +794,7 @@ pub(crate) fn decode_saved_conic_local_system_prefix(
 pub(crate) fn decode_positional_plane_local_system_slots(
     body: &[u8],
     cache: &ScalarCache,
-) -> Option<[f64; 12]> {
+) -> Option<FiniteVector<12>> {
     decode_local_system_slots(body, cache, LocalSystemVariant::PositionalPlane)
 }
 
@@ -802,7 +803,7 @@ pub(crate) fn decode_positional_plane_local_system_slots(
 pub(crate) fn decode_positional_cylinder_local_system_slots(
     body: &[u8],
     cache: &ScalarCache,
-) -> Option<[f64; 12]> {
+) -> Option<FiniteVector<12>> {
     decode_local_system_slots(body, cache, LocalSystemVariant::PositionalCylinder)
 }
 
@@ -812,7 +813,7 @@ pub(crate) fn decode_positional_cylinder_local_system_slots(
 pub(crate) fn decode_positional_torus_local_system_prefix(
     body: &[u8],
     cache: &ScalarCache,
-) -> Option<([f64; 12], usize)> {
+) -> Option<(FiniteVector<12>, usize)> {
     let prefix = decode_local_system_slot_prefix(body, cache, LocalSystemVariant::PositionalTorus)?;
     Some((finite_local_system_slots(prefix.values)?, prefix.cursor))
 }
@@ -822,7 +823,7 @@ pub(crate) fn decode_positional_torus_local_system_prefix(
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct InlineLocalSystemFrame {
     /// Expanded twelve-slot local-system values.
-    pub(crate) values: [f64; 12],
+    pub(crate) values: FiniteVector<12>,
     /// First byte after the local-system image.
     pub(crate) cursor: usize,
 }
@@ -852,12 +853,13 @@ pub(crate) fn decode_inline_non_plane_local_system_prefix(
 ) -> Vec<InlineNonPlaneLocalSystemPrefix> {
     let mut prefixes = Vec::new();
     if let Some((axes, reference_sign, axis_sign, cursor)) = decode_inline_compact_image(body) {
-        prefixes.push(InlineNonPlaneLocalSystemPrefix::Compact(
-            InlineLocalSystemFrame {
-                values: compact_inline_frame(axes, reference_sign, axis_sign),
-                cursor,
-            },
-        ));
+        if let Some(values) =
+            FiniteVector::new(compact_inline_frame(axes, reference_sign, axis_sign))
+        {
+            prefixes.push(InlineNonPlaneLocalSystemPrefix::Compact(
+                InlineLocalSystemFrame { values, cursor },
+            ));
+        }
     }
 
     let mut explicit = Vec::new();
@@ -1007,7 +1009,7 @@ fn walk_inline_explicit_local_system(
     slot: usize,
     cursor: usize,
     values: &mut [f64; 12],
-    results: &mut Vec<([f64; 12], usize)>,
+    results: &mut Vec<(FiniteVector<12>, usize)>,
 ) {
     if results.len() >= 16 {
         return;
@@ -1176,7 +1178,7 @@ fn plane_support_layout(values: &[f64; 12], saw_zero_slot_prefix: bool) -> Plane
 pub(crate) fn decode_plane_support_local_system(
     body: &[u8],
     cache: &ScalarCache,
-) -> Option<([f64; 12], PlaneSupportFrameLayout)> {
+) -> Option<(FiniteVector<12>, PlaneSupportFrameLayout)> {
     if let Some((values, cursor)) = decode_diagonal_z_plane_support(body, cache) {
         (cursor == body.len()).then_some(())?;
         return Some((
@@ -1204,10 +1206,10 @@ pub(crate) fn decode_plane_support_local_system(
             (prefix.values, prefix.cursor, layout)
         });
     let (values, cursor, layout) = primary?;
-    let primary_frame_valid = finite_local_system_slots(values).is_some()
-        && plane_support_values_have_valid_frame(&values, layout);
-    if primary_frame_valid {
-        return (cursor == body.len()).then_some((values, layout));
+    let primary_frame = finite_local_system_slots(values)
+        .filter(|frame| plane_support_values_have_valid_frame(frame.as_raw(), layout));
+    if let Some(frame) = primary_frame {
+        return (cursor == body.len()).then_some((frame, layout));
     }
     // Compact image bodies have a distinct token grammar.  Their numeric
     // values can accidentally form another orthogonal frame when replayed as
@@ -1293,14 +1295,14 @@ fn plane_support_coordinate_variants(
 fn decode_plane_support_lane_variants(
     body: &[u8],
     cache: &ScalarCache,
-) -> Vec<([f64; 12], PlaneSupportFrameLayout)> {
+) -> Vec<(FiniteVector<12>, PlaneSupportFrameLayout)> {
     fn walk(
         body: &[u8],
         cache: &ScalarCache,
         values: &mut Vec<f64>,
         cursor: usize,
         saw_zero_slot_prefix: bool,
-        results: &mut Vec<([f64; 12], PlaneSupportFrameLayout)>,
+        results: &mut Vec<(FiniteVector<12>, PlaneSupportFrameLayout)>,
     ) {
         if results.len() >= MAX_PLANE_SUPPORT_LANE_VARIANTS {
             return;
@@ -1312,21 +1314,22 @@ fn decode_plane_support_lane_variants(
             let Ok(values) = <[f64; 12]>::try_from(values.as_slice()) else {
                 return;
             };
-            if !values.into_iter().all(f64::is_finite) {
+            let Some(frame) = finite_local_system_slots(values) else {
                 return;
-            }
+            };
             let layout = plane_support_layout(&values, saw_zero_slot_prefix);
             if matches!(layout, PlaneSupportFrameLayout::DirectNormalTriples)
                 && plane_support_values_have_valid_frame(&values, layout)
                 && !results.iter().any(|(known, known_layout)| {
                     *known_layout == layout
                         && known
+                            .as_raw()
                             .iter()
                             .zip(values)
                             .all(|(known, value)| known.to_bits() == value.to_bits())
                 })
             {
-                results.push((values, layout));
+                results.push((frame, layout));
             }
             return;
         }
@@ -1413,7 +1416,7 @@ fn decode_plane_support_lane_variants(
 /// local-system sign for compact one-half coordinates.
 #[cfg(test)]
 fn decode_plane_support_local_system_slots(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
-    decode_plane_support_local_system(body, cache).map(|(values, _)| values)
+    decode_plane_support_local_system(body, cache).map(|(values, _)| values.get())
 }
 
 #[derive(Clone, Copy)]
@@ -1430,13 +1433,13 @@ fn decode_local_system_slots(
     body: &[u8],
     cache: &ScalarCache,
     variant: LocalSystemVariant,
-) -> Option<[f64; 12]> {
+) -> Option<FiniteVector<12>> {
     let prefix = decode_local_system_slot_prefix(body, cache, variant)?;
     (prefix.cursor == body.len()).then(|| finite_local_system_slots(prefix.values))?
 }
 
-fn finite_local_system_slots(values: [f64; 12]) -> Option<[f64; 12]> {
-    values.into_iter().all(f64::is_finite).then_some(values)
+fn finite_local_system_slots(values: [f64; 12]) -> Option<FiniteVector<12>> {
+    FiniteVector::new(values)
 }
 
 struct LocalSystemSlotPrefix {
@@ -2133,7 +2136,8 @@ mod tests {
         decode_named_positive_dict_scalar, decode_plane_support_lane_variants,
         decode_plane_support_local_system, decode_plane_support_local_system_slots,
         decode_positional_cylinder_local_system_slots, decode_positional_plane_local_system_slots,
-        decode_positive_dict, decode_round_edge_coordinate, decode_saved_conic_local_system_prefix,
+        decode_positional_torus_local_system_prefix, decode_positive_dict,
+        decode_round_edge_coordinate, decode_saved_conic_local_system_prefix,
         decode_tabulated_cylinder_first_coordinate,
         decode_tabulated_cylinder_first_frame_coordinate,
         decode_tabulated_cylinder_frame_coordinate, decode_tabulated_cylinder_second_coordinate,
@@ -2142,6 +2146,7 @@ mod tests {
         DoubleXarSlot, InlineNonPlaneLocalSystemPrefix, PlaneSupportFrameLayout, ScalarCache,
         NORMAL_X_PLANE_SUPPORT_PREFIXES, POSITIONAL_SLOT_TABLE_WIDTH,
     };
+    use cadmpeg_ir::units::FiniteVector;
     use std::collections::BTreeMap;
 
     /// Every arm of the surface-row lane reads the bytes it reports: a decode
@@ -2277,7 +2282,7 @@ mod tests {
         ];
 
         assert_eq!(
-            decode_positional_plane_local_system_slots(&body, &cache),
+            decode_positional_plane_local_system_slots(&body, &cache).map(FiniteVector::get),
             Some([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -3.0, 3.0, 0.0])
         );
         assert!(decode_explicit_local_system_slots(&body, &cache).is_none());
@@ -2287,7 +2292,7 @@ mod tests {
             0x0f,
         ];
         assert_eq!(
-            decode_positional_plane_local_system_slots(&fixed, &cache).map(|slots| slots[9]),
+            decode_positional_plane_local_system_slots(&fixed, &cache).map(|slots| slots.get()[9]),
             Some(3.0)
         );
 
@@ -2296,8 +2301,10 @@ mod tests {
             0xc8, 0xb8, 0x2d, 0x1e, 0, 0, 0, 0, 0, 0x65, 0xb9, 0x11, 0x9e, 0xed, 0x48, 0x6f, 0x9e,
         ];
         assert_eq!(
-            decode_positional_plane_local_system_slots(&dict_origin, &cache)
-                .map(|slots| { [slots[9], slots[10], slots[11]] }),
+            decode_positional_plane_local_system_slots(&dict_origin, &cache).map(|slots| {
+                let slots = slots.get();
+                [slots[9], slots[10], slots[11]]
+            }),
             Some([
                 f64::from_be_bytes([0x40, 0x14, 0x77, 0xa7, 0x70, 0x76, 0xc8, 0xb8]),
                 f64::from_be_bytes([0xc0, 0x1e, 0, 0, 0, 0, 0, 0x65]),
@@ -2335,19 +2342,19 @@ mod tests {
         let cache = ScalarCache::default();
 
         assert_eq!(
-            decode_positional_plane_local_system_slots(&body, &cache),
+            decode_positional_plane_local_system_slots(&body, &cache).map(FiniteVector::get),
             Some(expected)
         );
         assert_eq!(
-            decode_explicit_local_system_slots(&body, &cache),
+            decode_explicit_local_system_slots(&body, &cache).map(FiniteVector::get),
             Some(expected)
         );
         assert_eq!(
-            decode_feature_local_system_slots(&body, &cache),
+            decode_feature_local_system_slots(&body, &cache).map(FiniteVector::get),
             Some(expected)
         );
         assert_eq!(
-            decode_positional_cylinder_local_system_slots(&body, &cache),
+            decode_positional_cylinder_local_system_slots(&body, &cache).map(FiniteVector::get),
             Some(expected)
         );
         assert_eq!(
@@ -2388,7 +2395,7 @@ mod tests {
                 .into_iter()
                 .find_map(|prefix| match prefix {
                     InlineNonPlaneLocalSystemPrefix::Compact(frame)
-                        if frame.values[6 + axis] != 0.0 =>
+                        if frame.values.get()[6 + axis] != 0.0 =>
                     {
                         Some(frame)
                     }
@@ -2460,7 +2467,8 @@ mod tests {
         body.extend([0x18, 0x18, 0x18]);
 
         assert_eq!(
-            decode_plane_support_local_system(&body, &ScalarCache::default()),
+            decode_plane_support_local_system(&body, &ScalarCache::default())
+                .map(|(values, layout)| (values.get(), layout)),
             Some((
                 [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,],
                 PlaneSupportFrameLayout::SupportTriples,
@@ -2608,6 +2616,28 @@ mod tests {
     }
 
     #[test]
+    fn positional_torus_prefix_holds_the_admitted_finite_frame() {
+        let mut body = Vec::new();
+        for _ in 0..12 {
+            body.extend_from_slice(&[0x18, 0x00]);
+        }
+        let finite = ScalarCache {
+            entries: vec![1.0],
+            paired_byte_1_by_tail: BTreeMap::new(),
+        };
+        let (frame, cursor) = decode_positional_torus_local_system_prefix(&body, &finite)
+            .expect("the twelve finite coordinates are admitted");
+        assert_eq!(frame.get(), [1.0; 12]);
+        assert_eq!(cursor, body.len());
+
+        let nonfinite = ScalarCache {
+            entries: vec![f64::NAN],
+            paired_byte_1_by_tail: BTreeMap::new(),
+        };
+        assert!(decode_positional_torus_local_system_prefix(&body, &nonfinite).is_none());
+    }
+
+    #[test]
     fn saved_conic_local_system_expands_its_planar_normal() {
         let body = [
             0xf9, 4, 3, 0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x0f, 0x0f, 0x0f,
@@ -2633,8 +2663,12 @@ mod tests {
         ];
 
         assert_eq!(
-            decode_positional_plane_local_system_slots(&body, &ScalarCache::default())
-                .map(|slots| [slots[9], slots[10], slots[11]]),
+            decode_positional_plane_local_system_slots(&body, &ScalarCache::default()).map(
+                |slots| {
+                    let slots = slots.get();
+                    [slots[9], slots[10], slots[11]]
+                }
+            ),
             Some([
                 f64::from_be_bytes([0x40, 0x14, 0x77, 0xa7, 0x70, 0x76, 0xc8, 0xb8]),
                 f64::from_be_bytes([0xc0, 0x1e, 0, 0, 0, 0, 0, 0x65]),
@@ -2655,7 +2689,7 @@ mod tests {
             Some([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.5, 0.0, 1.0])
         );
         assert_eq!(
-            decode_positional_plane_local_system_slots(&body, &cache).map(|slots| slots[9]),
+            decode_positional_plane_local_system_slots(&body, &cache).map(|slots| slots.get()[9]),
             Some(-0.5)
         );
     }
@@ -2714,6 +2748,7 @@ mod tests {
 
         let (slots, layout) = decode_plane_support_local_system(&body, &cache)
             .expect("lane-ambiguous frame has one valid orthogonal interpretation");
+        let slots = slots.get();
         assert_eq!(layout, PlaneSupportFrameLayout::DirectNormalTriples);
         assert!((slots[6] - alternate).abs() <= EPS_PLANE_SUPPORT_LANE_TEST);
         assert!(valid_equal_scale_orthogonal_directions(

@@ -93,7 +93,9 @@ pub(in super::super) fn build_report(
             let frame = frame.frame();
             frame.origin.is_some()
                 && frame.u_axis.is_some()
-                && frame.normal.is_some_and(|normal| !is_axis_aligned(normal))
+                && frame
+                    .normal()
+                    .is_some_and(|normal| !is_axis_aligned(normal))
         })
         .map(|frame| frame.surface_id)
         .collect::<BTreeSet<_>>();

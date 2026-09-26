@@ -11,6 +11,7 @@ use cadmpeg_asm::sab;
 use cadmpeg_asm::{acis_header, asm_header};
 
 use crate::layout::kernel_carrier_header as carrier_header;
+use crate::record_issue::{admit_formatted, admit_issue_detail};
 use crate::rse::{
     DocumentKind, RecordFrameState, SegmentBulkState, SegmentDescriptor, SegmentKind,
 };
@@ -136,60 +137,99 @@ pub(crate) fn decode_kernel_carrier(
 }
 
 pub(crate) fn select_active_carrier<'a>(
+    ctx: &DecodeContext<'_>,
     segments: &[SegmentDescriptor<'a>],
     document_kind: &DocumentKind,
-) -> ActiveCarrierState<'a> {
+) -> Result<ActiveCarrierState<'a>, CodecError> {
     if !matches!(document_kind, DocumentKind::Part) {
-        return ActiveCarrierState::NotApplicable;
+        return Ok(ActiveCarrierState::NotApplicable);
     }
-    let brep_segments = segments
-        .iter()
-        .filter(|segment| matches!(segment.kind, SegmentKind::PmBRep))
-        .collect::<Vec<_>>();
-    let [segment] = brep_segments.as_slice() else {
-        return ActiveCarrierState::Unavailable(format!(
-            "part document has {} PmBRep segments; expected one",
-            brep_segments.len()
-        ));
+    let mut brep_count = 0_u64;
+    let mut selected_segment = None;
+    for segment in segments {
+        ctx.charge_work(1, "scan Inventor kernel carrier segments")?;
+        if matches!(segment.kind, SegmentKind::PmBRep) {
+            brep_count = brep_count.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "Inventor kernel carrier segment count",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })?;
+            selected_segment = Some(segment);
+        }
+    }
+    let Some(segment) = selected_segment.filter(|_| brep_count == 1) else {
+        return unavailable(
+            ctx,
+            format_args!("part document has {brep_count} PmBRep segments; expected one"),
+        );
     };
     let SegmentBulkState::Framed(bulk) = &segment.bulk else {
-        return ActiveCarrierState::Unavailable("PmBRep bulk stream is unavailable".into());
+        return unavailable(ctx, format_args!("PmBRep bulk stream is unavailable"));
     };
     let table = match &bulk.records {
         RecordFrameState::Framed(table) => table,
         RecordFrameState::Unavailable(_) => {
-            return ActiveCarrierState::Unavailable("PmBRep record table is unavailable".into());
+            return unavailable(ctx, format_args!("PmBRep record table is unavailable"));
         }
     };
-    let carriers = table
-        .records
-        .iter()
-        .filter(|record| record.type_id == KERNEL_RECORD_TYPE_ID)
-        .collect::<Vec<_>>();
-    let [record] = carriers.as_slice() else {
-        return ActiveCarrierState::Unavailable(format!(
-            "PmBRep contains {} typed kernel-carrier records; expected one",
-            carriers.len()
-        ));
+    let mut carrier_count = 0_u64;
+    let mut selected_record = None;
+    for record in &table.records {
+        ctx.charge_work(1, "scan Inventor typed kernel carrier records")?;
+        if record.type_id == KERNEL_RECORD_TYPE_ID {
+            carrier_count = carrier_count.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "Inventor typed kernel carrier count",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })?;
+            selected_record = Some(record);
+        }
+    }
+    let Some(record) = selected_record.filter(|_| carrier_count == 1) else {
+        return unavailable(
+            ctx,
+            format_args!(
+                "PmBRep contains {carrier_count} typed kernel-carrier records; expected one"
+            ),
+        );
     };
     let Some(version) = segment.registry.map(|join| join.version_major) else {
-        return ActiveCarrierState::Unavailable(
-            "PmBRep segment version is unavailable from the registry".into(),
+        return unavailable(
+            ctx,
+            format_args!("PmBRep segment version is unavailable from the registry"),
         );
     };
     match parse_carrier(
+        ctx,
         record.payload,
         segment.pair.token.key(),
         record.ordinal,
         record.payload_offset,
         version,
     ) {
-        Ok(carrier) => ActiveCarrierState::Selected(carrier),
-        Err(error) => ActiveCarrierState::Unavailable(error.to_string()),
+        Ok(carrier) => Ok(ActiveCarrierState::Selected(carrier)),
+        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+        Err(error) => {
+            admit_issue_detail(ctx, &error, "retain Inventor carrier unavailable detail")?;
+            Ok(ActiveCarrierState::Unavailable(error.to_string()))
+        }
     }
 }
 
+fn unavailable<'a>(
+    ctx: &DecodeContext<'_>,
+    detail: std::fmt::Arguments<'_>,
+) -> Result<ActiveCarrierState<'a>, CodecError> {
+    admit_formatted(ctx, detail, "retain Inventor carrier unavailable detail")?;
+    Ok(ActiveCarrierState::Unavailable(detail.to_string()))
+}
+
 fn parse_carrier<'a>(
+    ctx: &DecodeContext<'_>,
     payload: View<'a>,
     segment_token: &cadmpeg_ir::ids::IdentityKey,
     record_ordinal: u32,
@@ -268,6 +308,10 @@ fn parse_carrier<'a>(
             "Inventor kernel-carrier footer is not exactly exhausted".into(),
         ));
     }
+    let token_bytes = u64::try_from(segment_token.as_str().len()).map_err(|_| {
+        ctx.refuse_codec_limit("Inventor carrier token length", u64::MAX - 1, u64::MAX)
+    })?;
+    ctx.charge_retained(token_bytes, "retain Inventor selected carrier token")?;
     Ok(ActiveCarrier {
         segment_token: segment_token.clone(),
         carrier_len,
@@ -305,14 +349,80 @@ fn read_i32(bytes: &[u8], offset: usize, name: &str) -> Result<i32, CodecError> 
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_container::compound::CompoundSnapshot;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     use super::{
-        decode_kernel_carrier, parse_carrier, ActiveCarrier, DecodedKernelCarrier, KernelFamily,
+        decode_kernel_carrier, parse_carrier, select_active_carrier, ActiveCarrier,
+        ActiveCarrierState, DecodedKernelCarrier, KernelFamily,
     };
+    use crate::rse::{DocumentKind, RseInventory};
     use crate::test_support::test_fixtures::acis_sphere_kernel_stream;
     use cadmpeg_core::decode::View;
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn active_carrier_scans_refuse_work_limit_before_record_search() {
+        let bytes = crate::test_support::test_fixtures::primary_envelope_fixture();
+        let arena = DecodeArena::new();
+        let (setup_ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("carrier fixture context");
+        let snapshot = CompoundSnapshot::new(&setup_ctx, root).expect("compound fixture");
+        let inventory = RseInventory::build(&setup_ctx, &snapshot).expect("RSe fixture");
+        assert!(matches!(
+            select_active_carrier(&setup_ctx, &inventory.segments, &DocumentKind::Part)
+                .expect("service admission"),
+            ActiveCarrierState::Selected(_)
+        ));
+
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (limited_ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+        assert!(matches!(
+            select_active_carrier(&limited_ctx, &inventory.segments, &DocumentKind::Part),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "scan Inventor kernel carrier segments"
+        ));
+        policy.limits.max_work_units = inventory.segments.len() as u64;
+        let (limited_ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+        assert!(matches!(
+            select_active_carrier(&limited_ctx, &inventory.segments, &DocumentKind::Part),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "scan Inventor typed kernel carrier records"
+        ));
+    }
+
+    #[test]
+    fn selected_carrier_token_refuses_retained_limit_before_copy() {
+        let bytes = crate::test_support::test_fixtures::primary_envelope_fixture();
+        let arena = DecodeArena::new();
+        let (setup_ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("carrier fixture context");
+        let snapshot = CompoundSnapshot::new(&setup_ctx, root).expect("compound fixture");
+        let inventory = RseInventory::build(&setup_ctx, &snapshot).expect("RSe fixture");
+        let ActiveCarrierState::Selected(carrier) =
+            select_active_carrier(&setup_ctx, &inventory.segments, &DocumentKind::Part)
+                .expect("service admission")
+        else {
+            panic!("selected carrier fixture");
+        };
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = (carrier.segment_token.as_str().len() - 1) as u64;
+        let (limited_ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+        assert!(matches!(
+            select_active_carrier(&limited_ctx, &inventory.segments, &DocumentKind::Part),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor selected carrier token"
+        ));
+    }
 
     fn decode_test_carrier(
         ctx: &DecodeContext<'_>,
@@ -328,7 +438,7 @@ mod tests {
     #[test]
     fn typed_carrier_envelope_selects_family_and_exact_footer() {
         let bytes = carrier_fixture(b"ASM BinaryFile4 synthetic", 18);
-        with_view(&bytes, |view| {
+        with_view(&bytes, |ctx, view| {
             assert_eq!(
                 u32::from_le_bytes(bytes[0..4].try_into().expect("planted header state")),
                 1
@@ -345,7 +455,7 @@ mod tests {
                 u32::from_le_bytes(bytes[10..14].try_into().expect("planted schema")),
                 4
             );
-            let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 18)
+            let carrier = parse_carrier(ctx, view, &cadmpeg_ir::identity_key!("token"), 7, 100, 18)
                 .expect("carrier parses");
             assert_eq!(carrier.header_state, 1);
             assert_eq!(carrier.header_kind, 2);
@@ -358,8 +468,10 @@ mod tests {
         });
         let mut malformed = bytes;
         *malformed.last_mut().expect("footer byte") = 0;
-        with_view(&malformed, |view| {
-            assert!(parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 18).is_err());
+        with_view(&malformed, |ctx, view| {
+            assert!(
+                parse_carrier(ctx, view, &cadmpeg_ir::identity_key!("token"), 7, 100, 18).is_err()
+            );
         });
     }
 
@@ -370,7 +482,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic carrier fits policy");
-        let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 23)
+        let carrier = parse_carrier(&ctx, view, &cadmpeg_ir::identity_key!("token"), 7, 100, 23)
             .expect("carrier parses");
         let decoded = decode_test_carrier(&ctx, &carrier).expect("ASM carrier decodes");
 
@@ -391,7 +503,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic carrier fits policy");
-        let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 17)
+        let carrier = parse_carrier(&ctx, view, &cadmpeg_ir::identity_key!("token"), 7, 100, 17)
             .expect("carrier parses");
         let decoded = decode_test_carrier(&ctx, &carrier).expect("ACIS carrier decodes");
 
@@ -417,8 +529,9 @@ mod tests {
             let (ctx, view) =
                 DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
                     .expect("synthetic carrier fits policy");
-            let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 17)
-                .expect("carrier parses");
+            let carrier =
+                parse_carrier(&ctx, view, &cadmpeg_ir::identity_key!("token"), 7, 100, 17)
+                    .expect("carrier parses");
             assert_eq!(carrier.family, KernelFamily::Acis);
             decode_test_carrier(&ctx, &carrier).expect("ACIS carrier decodes")
         };
@@ -451,6 +564,7 @@ mod tests {
                 DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
                     .expect("synthetic carrier fits policy");
             let carrier = parse_carrier(
+                &ctx,
                 view,
                 &cadmpeg_ir::identity_key!("token"),
                 7,
@@ -471,9 +585,9 @@ mod tests {
     #[test]
     fn pre_15_segment_version_over_garbage_is_malformed() {
         let bytes = carrier_fixture(b"not a kernel carrier", 14);
-        with_view(&bytes, |view| {
+        with_view(&bytes, |ctx, view| {
             assert!(matches!(
-                parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 14),
+                parse_carrier(ctx, view, &cadmpeg_ir::identity_key!("token"), 7, 100, 14),
                 Err(CodecError::Malformed(_))
             ));
         });
@@ -489,7 +603,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic carrier fits policy");
-        let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 17)
+        let carrier = parse_carrier(&ctx, view, &cadmpeg_ir::identity_key!("token"), 7, 100, 17)
             .expect("carrier parses");
         assert!(matches!(
             decode_test_carrier(&ctx, &carrier),
@@ -556,10 +670,10 @@ mod tests {
         bytes
     }
 
-    fn with_view(bytes: &[u8], test: impl FnOnce(View<'_>)) {
+    fn with_view(bytes: &[u8], test: impl FnOnce(&DecodeContext<'_>, View<'_>)) {
         let arena = DecodeArena::new();
-        let (_, view) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default())
+        let (ctx, view) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default())
             .expect("synthetic carrier fits policy");
-        test(view);
+        test(&ctx, view);
     }
 }

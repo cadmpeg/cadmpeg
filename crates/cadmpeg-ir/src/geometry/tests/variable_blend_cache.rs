@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::geometry::{RevisionSurfaceParameterization, VariableBlendCache};
+use crate::geometry::{
+    CacheContractError, FitTolerance, RevisionSurfaceParameterization, VariableBlendCache,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::num::NonZeroI64;
@@ -84,4 +86,32 @@ fn a_variable_blend_cache_carries_no_key_of_another_form() {
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
+}
+
+#[test]
+fn scaling_a_variable_blend_cache_changes_only_a_current_tolerance() {
+    let scale = |value| crate::scalar::PositiveReal::new(value).expect("positive scale");
+    let mut current: VariableBlendCache = VariableBlendCache::Current {
+        shape_prefix: NonZeroI64::new(3).expect("nonzero prefix"),
+        fit_tolerance: FitTolerance::try_new(0.25).expect("valid tolerance"),
+    };
+    current
+        .scale_fit_tolerance(scale(25.4))
+        .expect("finite scaled tolerance");
+    assert_eq!(
+        current.fit_tolerance().map(FitTolerance::get),
+        Some(0.25 * 25.4)
+    );
+    let before_overflow = current.clone();
+    assert!(matches!(
+        current.scale_fit_tolerance(scale(f64::MAX)),
+        Err(CacheContractError::InvalidValue { .. })
+    ));
+    assert_eq!(current, before_overflow);
+
+    let mut stale = VariableBlendCache::<f64>::Stale {};
+    stale
+        .scale_fit_tolerance(scale(f64::MAX))
+        .expect("stale cache has no fit tolerance");
+    assert_eq!(stale, VariableBlendCache::Stale {});
 }

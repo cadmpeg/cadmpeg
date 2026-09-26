@@ -866,6 +866,16 @@ fn feature_lines_and_polylines_close_geometry_bounds_without_changing_wire_field
         (vec![first, second, first], false),
     ] {
         let chain = FeaturePolyline::new(points.clone(), closed).unwrap();
+        let admitted = points
+            .iter()
+            .copied()
+            .map(crate::features::FinitePoint3::new)
+            .collect::<Option<Vec<_>>>()
+            .unwrap();
+        assert_eq!(
+            FeaturePolyline::from_parts(admitted, closed),
+            Some(chain.clone())
+        );
         let wire = serde_json::json!({"definition":"polyline", "chain":{"points":points, "closed":closed}});
         let definition = FeatureDefinition::Operation(FeatureOperation::Polyline { chain });
         assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
@@ -1699,7 +1709,7 @@ fn feature_arcs_rebuild_from_checked_parts() {
         FeatureCircularArc, FeatureDirection3, FeatureEllipticArc, FinitePoint3,
     };
     use crate::geometry::DirectedParameterRange;
-    use crate::scalar::PositiveLength;
+    use crate::scalar::{PositiveLength, PositiveReal};
 
     let center = Point3::new(1.0, 2.0, 3.0);
     let normal = Vector3::new(0.0, 0.0, 2.0);
@@ -1724,18 +1734,23 @@ fn feature_arcs_rebuild_from_checked_parts() {
     let [major, minor] = [4.0, 2.0].map(|value| PositiveLength::new(value).unwrap());
     let ellipse =
         FeatureEllipticArc::new(center, normal, major_axis, [major, minor], angles).unwrap();
+    let scale = PositiveReal::new(2.0).unwrap();
     let scaled = [8.0, 4.0].map(|value| PositiveLength::new(value).unwrap());
     assert_eq!(
-        ellipse.with_center_and_radii(moved, scaled),
+        ellipse
+            .with_scaled_radii(scale)
+            .map(|arc| arc.with_center(moved)),
         FeatureEllipticArc::new(moved.get(), normal, major_axis, scaled, angles)
     );
+    let equal =
+        FeatureEllipticArc::new(center, normal, major_axis, [major, major], angles).unwrap();
     assert_eq!(
-        ellipse.with_center_and_radii(moved, [major, major]),
+        Some(equal.with_center(moved)),
         FeatureEllipticArc::new(moved.get(), normal, major_axis, [major, major], angles)
     );
-    assert!(ellipse
-        .with_center_and_radii(moved, [minor, major])
-        .is_none());
+    assert!(
+        FeatureEllipticArc::new(moved.get(), normal, major_axis, [minor, major], angles).is_none()
+    );
 }
 
 #[test]

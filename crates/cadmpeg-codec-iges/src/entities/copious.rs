@@ -443,9 +443,9 @@ pub(super) fn project(
             .map(FiniteReal::new)
             .collect::<Option<Vec<_>>>()
             .ok_or_else(|| CodecError::malformed("copious-data curve: knots must be finite"))?;
-        let nurbs = KnotVector::from_finite_values(knots).and_then(|knots| {
+        let nurbs = KnotVector::from_finite_lanes(knots).and_then(|knots| {
             NurbsPoles3::from_checked_lanes(positions, None)
-                .and_then(|poles| NurbsCurve::from_parts(1, knots, poles, false))
+                .and_then(|poles| NurbsCurve::new(1, knots, poles, false))
         });
         ir.model.curves.push(Curve {
             id: curve.clone(),

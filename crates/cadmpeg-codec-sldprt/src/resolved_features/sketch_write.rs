@@ -758,7 +758,7 @@ enum PatchCurve {
 struct PatchEllipse {
     center: FinitePoint2,
     major_angle: Angle,
-    major_radius: PositiveLength,
+    major_radius: cadmpeg_ir::sketches::OrderedMajorRadius,
     minor_radius: PositiveLength,
     bounds: Option<[Angle; 2]>,
 }
@@ -1088,7 +1088,7 @@ fn patch_direct_ellipse(
         cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
             center_3d,
             frame,
-            major_radius,
+            major_radius.major(),
             minor_radius,
         )
         .map_err(cadmpeg_core::CodecError::malformed)?,

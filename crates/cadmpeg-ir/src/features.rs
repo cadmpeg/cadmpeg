@@ -16,7 +16,7 @@ use crate::scalar::{
     NonZeroReal, PositiveAngle, PositiveLength, PositiveReal, SlopeAngle,
 };
 use crate::transform::Transform;
-use crate::units::{FinitePoint2, UnitVector3};
+use crate::units::{FinitePoint2, FiniteVector, UnitVector3};
 use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -157,6 +157,14 @@ impl FinitePoint3 {
     }
 }
 
+impl From<FiniteVector<3>> for FinitePoint3 {
+    /// Carry three admitted finite coordinates into a model-space point.
+    fn from(value: FiniteVector<3>) -> Self {
+        let [x, y, z] = value.get();
+        Self(Point3::new(x, y, z))
+    }
+}
+
 checked_feature_geometry!(
     /// A displacement with finite components, including zero.
     FiniteVector3, Vector3, value,
@@ -179,6 +187,16 @@ impl FiniteVector3 {
             x: x.get(),
             y: y.get(),
             z: z.get(),
+        })
+    }
+
+    /// Use admitted vector coordinates as a finite point.
+    #[must_use]
+    pub const fn as_point(self) -> FinitePoint3 {
+        FinitePoint3(Point3 {
+            x: self.0.x,
+            y: self.0.y,
+            z: self.0.z,
         })
     }
 
@@ -328,6 +346,12 @@ impl FeatureRigidPlacement {
     #[must_use]
     pub fn with_translation(self, translation: FiniteVector3) -> Self {
         Self(self.0.with_translation(translation))
+    }
+
+    /// Scale the translation while keeping the admitted rigid linear rows.
+    #[must_use]
+    pub fn scaled_translation(self, scale: PositiveReal) -> Option<Self> {
+        Some(Self(self.0.scaled_translation(scale)?))
     }
 }
 
@@ -630,6 +654,11 @@ impl FeatureLineSegment {
     pub fn new(start: Point3, end: Point3) -> Option<Self> {
         let start = FinitePoint3::new(start)?;
         let end = FinitePoint3::new(end)?;
+        Self::from_parts(start, end)
+    }
+
+    /// Build a segment from finite endpoints if they are distinct.
+    pub fn from_parts(start: FinitePoint3, end: FinitePoint3) -> Option<Self> {
         (start != end).then_some(Self { start, end })
     }
 
@@ -673,16 +702,24 @@ struct FeaturePolylineWire {
 impl FeaturePolyline {
     /// Admit a finite chain with at least two points, or three when closed.
     pub fn new(points: Vec<Point3>, closed: bool) -> Option<Self> {
-        if points.len() < 2
-            || (closed && points.len() < 3)
-            || points.windows(2).any(|pair| pair[0] == pair[1])
-        {
+        if points.len() < 2 || (closed && points.len() < 3) {
             return None;
         }
         let points = points
             .into_iter()
             .map(FinitePoint3::new)
             .collect::<Option<Vec<_>>>()?;
+        Self::from_parts(points, closed)
+    }
+
+    /// Build a polyline from finite points if its chain is admissible.
+    pub fn from_parts(points: Vec<FinitePoint3>, closed: bool) -> Option<Self> {
+        if points.len() < 2
+            || (closed && points.len() < 3)
+            || points.windows(2).any(|pair| pair[0] == pair[1])
+        {
+            return None;
+        }
         Some(Self { points, closed })
     }
 
@@ -973,21 +1010,6 @@ impl FeatureEllipticArc {
             major_axis,
             radii,
             angles,
-        })
-    }
-
-    /// Replace the center and the radii and keep the admitted directions and
-    /// interval. Only the radius order is checked again.
-    #[must_use]
-    pub fn with_center_and_radii(
-        self,
-        center: FinitePoint3,
-        radii: [PositiveLength; 2],
-    ) -> Option<Self> {
-        (radii[1].get() <= radii[0].get()).then_some(Self {
-            center,
-            radii,
-            ..self
         })
     }
 
@@ -4124,6 +4146,15 @@ const INVALID_PRIMITIVE_DIMENSIONS: &str = "primitive dimensions are invalid";
 #[serde(try_from = "PrimitiveSolidKind", into = "PrimitiveSolidKind")]
 pub struct PrimitiveSolid(PrimitiveSolidKind);
 
+/// Which condition refuses a scaled primitive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrimitiveSolidScaleError {
+    /// A scaled dimension overflows.
+    NonFinite,
+    /// A positive dimension or strict extent collapses under rounding.
+    Admission(&'static str),
+}
+
 impl PrimitiveSolid {
     /// Admits dimensions that define a solid primitive.
     pub fn new(kind: PrimitiveSolidKind) -> Result<Self, &'static str> {
@@ -4210,15 +4241,16 @@ impl PrimitiveSolid {
     /// The primitive with every length times `scale`, keeping its angles and
     /// side count.
     ///
-    /// `None` when a scaled length overflows. Rounding is monotone, so a
+    /// A non-finite result is distinguished from a collapsed dimension. Rounding is monotone, so a
     /// positive scale keeps every sign and every non-strict order of the
     /// lengths, and the angles and the side count are kept. The scaled
     /// dimensions are tested only for what scaling can break: a positive
     /// length that rounds to zero, and a wedge extent whose strictly ordered
     /// bounds round to one value. That refusal is the admission's own text.
-    #[must_use]
-    pub fn scaled(&self, scale: PositiveReal) -> Option<Result<Self, &'static str>> {
-        let scaled = |value: Length| Length::new(value.get() * scale.get());
+    pub fn scaled(&self, scale: PositiveReal) -> Result<Self, PrimitiveSolidScaleError> {
+        let scaled = |value: Length| {
+            Length::new(value.get() * scale.get()).ok_or(PrimitiveSolidScaleError::NonFinite)
+        };
         let positive = |value: Length| value.get() > 0.0;
         let (kind, valid) = match &self.0 {
             PrimitiveSolidKind::Box {
@@ -4383,11 +4415,11 @@ impl PrimitiveSolid {
                 )
             }
         };
-        Some(
-            valid
-                .then_some(Self(kind))
-                .ok_or(INVALID_PRIMITIVE_DIMENSIONS),
-        )
+        valid
+            .then_some(Self(kind))
+            .ok_or(PrimitiveSolidScaleError::Admission(
+                INVALID_PRIMITIVE_DIMENSIONS,
+            ))
     }
 
     /// Returns the primitive form and dimensions.

@@ -56,12 +56,19 @@ pub trait CompositeStages: Sized {
     /// The stages, in application order.
     fn stages(&self) -> &[PatternStage];
 
-    /// Rebuilds the same kind of arm from edited stages.
+    /// Build the same kind of arm from stages.
     ///
     /// # Errors
     ///
     /// Returns the admission message when the stages do not compose.
     fn rebuild(stages: Vec<PatternStage>) -> Result<Self, &'static str>;
+
+    /// Scale the length-bearing fields of every stage while carrying the
+    /// admitted stage count, order, and operand relationships.
+    fn try_map_stage_lengths<E>(
+        &self,
+        edit: &mut impl FnMut(PatternLengthField<'_>) -> Result<(), E>,
+    ) -> Result<Self, PatternLengthEditError<E>>;
 }
 
 impl CompositeStages for CompositePattern {
@@ -71,6 +78,17 @@ impl CompositeStages for CompositePattern {
 
     fn rebuild(stages: Vec<PatternStage>) -> Result<Self, &'static str> {
         Self::new(stages)
+    }
+
+    fn try_map_stage_lengths<E>(
+        &self,
+        edit: &mut impl FnMut(PatternLengthField<'_>) -> Result<(), E>,
+    ) -> Result<Self, PatternLengthEditError<E>> {
+        let mut stages = self.0.clone();
+        for stage in &mut stages {
+            *stage.pattern = stage.pattern.try_map_lengths(edit)?;
+        }
+        Ok(Self(stages))
     }
 }
 
@@ -82,6 +100,13 @@ impl CompositeStages for NoNestedComposite {
     fn rebuild(_stages: Vec<PatternStage>) -> Result<Self, &'static str> {
         Err("a composite stage applies no nested sequence of stages")
     }
+
+    fn try_map_stage_lengths<E>(
+        &self,
+        _edit: &mut impl FnMut(PatternLengthField<'_>) -> Result<(), E>,
+    ) -> Result<Self, PatternLengthEditError<E>> {
+        match *self {}
+    }
 }
 
 /// An admitted pattern with valid geometry, repetition counts, and stage composition.
@@ -89,6 +114,86 @@ impl CompositeStages for NoNestedComposite {
 /// `C` names the stages a composite arm applies.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PatternKind<C = CompositePattern>(PatternTransform<C>);
+
+/// A pattern field whose value changes under a length-unit conversion.
+pub enum PatternLengthField<'a> {
+    /// A finite distance, including a cumulative linear offset.
+    Length(&'a mut Length),
+    /// A positive distance between instances.
+    PositiveLength(&'a mut PositiveLength),
+    /// A point in model coordinates.
+    Point(&'a mut FinitePoint3),
+}
+
+/// A failed length edit or a collapsed ordered offset sequence.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PatternLengthEditError<E> {
+    /// The field conversion failed.
+    Field(E),
+    /// The converted offsets are no longer strictly increasing.
+    Offsets(&'static str),
+}
+
+impl<C: CompositeStages + Clone> PatternKind<C> {
+    /// Edit length-bearing geometry while retaining admitted unscaled operands.
+    ///
+    /// # Errors
+    ///
+    /// Returns a field error or the offset-order refusal when rounding merges offsets.
+    pub fn try_map_lengths<E>(
+        &self,
+        edit: &mut impl FnMut(PatternLengthField<'_>) -> Result<(), E>,
+    ) -> Result<Self, PatternLengthEditError<E>> {
+        let mut transform = self.0.clone();
+        match &mut transform {
+            PatternTransform::Linear {
+                spacing, second, ..
+            } => {
+                edit(PatternLengthField::PositiveLength(spacing))
+                    .map_err(PatternLengthEditError::Field)?;
+                if let Some(second) = second {
+                    edit(PatternLengthField::PositiveLength(&mut second.spacing))
+                        .map_err(PatternLengthEditError::Field)?;
+                }
+            }
+            PatternTransform::LinearOffsets { offsets, .. } => {
+                for offset in offsets.iter_mut() {
+                    edit(PatternLengthField::Length(offset))
+                        .map_err(PatternLengthEditError::Field)?;
+                }
+                if !valid_increasing_locations(offsets.iter().map(|offset| offset.get())) {
+                    return Err(PatternLengthEditError::Offsets(
+                        "pattern offsets must start at zero and strictly increase",
+                    ));
+                }
+            }
+            PatternTransform::CurveDriven { spacing, .. } => {
+                edit(PatternLengthField::PositiveLength(spacing))
+                    .map_err(PatternLengthEditError::Field)?;
+            }
+            PatternTransform::Circular { axis_origin, .. }
+            | PatternTransform::CircularAngles { axis_origin, .. } => {
+                edit(PatternLengthField::Point(axis_origin))
+                    .map_err(PatternLengthEditError::Field)?;
+            }
+            PatternTransform::Mirror { plane_origin, .. } => {
+                edit(PatternLengthField::Point(plane_origin))
+                    .map_err(PatternLengthEditError::Field)?;
+            }
+            PatternTransform::Composite { stages } => {
+                *stages = stages.try_map_stage_lengths(edit)?;
+            }
+            PatternTransform::Scale { center, .. } => {
+                if let PatternScaleCenter::Point(point) = center {
+                    edit(PatternLengthField::Point(point))
+                        .map_err(PatternLengthEditError::Field)?;
+                }
+            }
+            PatternTransform::Unresolved { .. } | PatternTransform::MirrorReference { .. } => {}
+        }
+        Ok(Self(transform))
+    }
+}
 
 impl<C> PatternKind<C> {
     /// An unresolved pattern with no identified form.

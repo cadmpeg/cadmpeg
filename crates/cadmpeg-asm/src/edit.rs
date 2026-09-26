@@ -23,8 +23,9 @@ const LENGTH_PER_MILLIMETRE: FiniteReal = match FiniteReal::new(1.0 / LEN_TO_MM)
     None => panic!("the native length unit must be a finite nonzero millimeter count"),
 };
 use crate::sab::{self, Record};
+use cadmpeg_ir::geometry::curve_payloads::SpringCurvePayload;
 use cadmpeg_ir::geometry::{
-    CompoundComponent, IntcurveSupportContext, ProjectionTail, SpringLayout, SurfaceCurveFamily,
+    CompoundComponent, IntcurveSupportContext, ProjectionTail, SurfaceCurveFamily,
 };
 use cadmpeg_ir::ids::CurveId;
 
@@ -701,9 +702,7 @@ impl AsmEditSet {
                 )
             }
             ProceduralCurveDefinition::Spring(definition_payload) => {
-                let layout = definition_payload.layout();
-                let direction = definition_payload.direction();
-                patch_spring_definition(bytes, self.ref_width, record, layout, *direction)
+                patch_spring_definition(bytes, self.ref_width, record, definition_payload)
             }
             ProceduralCurveDefinition::Projection(definition_payload) => {
                 let context = definition_payload.context();
@@ -1345,10 +1344,10 @@ fn patch_spring_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    layout: &SpringLayout<FiniteReal, cadmpeg_ir::topology::ParameterInterval>,
-    direction: i64,
+    definition: &SpringCurvePayload,
 ) -> Result<(), CodecError> {
-    let context = layout.support_context().map_err(CodecError::malformed)?;
+    let context = definition.support_context();
+    let layout = definition.layout();
     let discontinuity_flag = match layout {
         cadmpeg_ir::geometry::SpringLayout::ContextFirst {
             discontinuity_flag, ..
@@ -1364,7 +1363,7 @@ fn patch_spring_definition(
         layout.parameter_range,
         layout.discontinuities,
         Some((layout.discontinuity_flag, discontinuity_flag)),
-        &context,
+        context,
         "spring",
     )?;
 
@@ -1372,7 +1371,7 @@ fn patch_spring_definition(
         bytes,
         record.offset + layout.direction,
         stream_width,
-        direction,
+        *definition.direction(),
     )?;
     Ok(())
 }

@@ -146,7 +146,8 @@ fn principal_unit_requires_one_complete_known_type_10_scalar() {
     assert_eq!(
         persistence
             .principal_unit_system()
-            .and_then(PrincipalUnitSystem::length_scale_mm),
+            .and_then(PrincipalUnitSystem::length_scale_mm)
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(1.0)
     );
 
@@ -160,7 +161,8 @@ fn principal_unit_requires_one_complete_known_type_10_scalar() {
     assert_eq!(
         persistence
             .principal_unit_system()
-            .and_then(PrincipalUnitSystem::length_scale_mm),
+            .and_then(PrincipalUnitSystem::length_scale_mm)
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(25.4)
     );
 
@@ -197,7 +199,8 @@ fn legacy_unit_array_supplies_length_scale_when_principal_scalar_is_absent() {
     assert_eq!(
         persistence
             .principal_unit_system()
-            .and_then(PrincipalUnitSystem::length_scale_mm),
+            .and_then(PrincipalUnitSystem::length_scale_mm)
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(10.0)
     );
 }

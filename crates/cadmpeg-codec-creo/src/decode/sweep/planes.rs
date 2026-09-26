@@ -29,7 +29,7 @@ fn feature_local_plane(scan: &ContainerScan, surface_id: u32) -> Result<Option<P
     match outlines.as_slice() {
         [plane] => Ok(Some(PlaneEquation {
             origin: plane.origin,
-            normal: plane.normal,
+            normal: plane.normal(),
         })),
         [] => {
             let frames = scan
@@ -44,7 +44,7 @@ fn feature_local_plane(scan: &ContainerScan, surface_id: u32) -> Result<Option<P
                     let frame = frame.frame();
                     Ok(frame
                         .origin
-                        .zip(frame.normal)
+                        .zip(frame.normal())
                         .map(|(origin, normal)| PlaneEquation { origin, normal }))
                 }
                 _ => Err(()),
@@ -125,9 +125,9 @@ pub(in super::super) fn feature_outline_plane(
                     <= EPS_GEOMETRY_AGREEMENT * left.abs().max(right.abs()).max(1.0)
             })
             && left
-                .normal
+                .normal()
                 .into_iter()
-                .zip(right.normal)
+                .zip(right.normal())
                 .all(|(left, right)| {
                     (left - right).abs()
                         <= EPS_GEOMETRY_AGREEMENT * left.abs().max(right.abs()).max(1.0)
@@ -139,7 +139,7 @@ pub(in super::super) fn feature_outline_plane(
         ([outline], [positional]) if agrees(outline, positional) => outline,
         _ => return None,
     };
-    Some((surface_id, plane.origin, plane.normal))
+    Some((surface_id, plane.origin, plane.normal()))
 }
 
 /// Collect every same-feature plane row only when all rows have complete,

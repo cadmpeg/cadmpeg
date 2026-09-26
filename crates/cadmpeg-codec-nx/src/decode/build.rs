@@ -449,28 +449,25 @@ pub(super) fn try_decode_geometry(
             annotations
                 .derived(&procedural_id, "definition")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
-            let procedural =
-                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+            let admitted_payload =
+                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
                     support,
                     offset.state.distance(),
                     None,
                     None,
                     true,
-                    cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
-                        cache: None,
-                    },
-                )
-                .and_then(|admitted_payload| {
-                    let mut definition = ProceduralSurfaceDefinition::Offset(admitted_payload);
-                    if let Some(tolerance) = cache_fit_tolerance {
-                        definition.set_legacy_cache(Some(
-                            cadmpeg_ir::geometry::LegacyCache::try_new(tolerance)?,
-                        ))?;
-                    }
-                    Ok(ProceduralSurface::new(procedural_id, definition, None))
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                    None,
+                );
+            let mut definition = ProceduralSurfaceDefinition::Offset(admitted_payload);
+            if let Some(tolerance) = cache_fit_tolerance {
+                let cache = cadmpeg_ir::geometry::LegacyCache::try_new(tolerance)
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                definition
+                    .set_legacy_cache(Some(cache))
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
+            }
+            let procedural = ProceduralSurface::new(procedural_id, definition, None);
 
             let _attached = ir
                 .model
@@ -952,12 +949,14 @@ pub(super) fn try_decode_geometry(
                         .get(&pcurve)
                         .and_then(|index| ir.model.pcurves.get_mut(*index))
                     {
-                        let fit_tolerance =
-                            decoded_tolerance(surface_curve.state.tolerance()).map(|tolerance| {
-                                cadmpeg_ir::geometry::FitTolerance::from(
-                                    cadmpeg_ir::scalar::NonNegativeReal::from(tolerance),
-                                )
-                            });
+                        let fit_tolerance = decoded_tolerance(
+                            surface_curve.state.tolerance().get(),
+                        )
+                        .map(|tolerance| {
+                            cadmpeg_ir::geometry::FitTolerance::from(
+                                cadmpeg_ir::scalar::NonNegativeReal::from(tolerance),
+                            )
+                        });
                         match &mut carrier.metadata {
                             cadmpeg_ir::geometry::pcurve::PcurveMetadata::General {
                                 form: metadata,

@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked shifted scalar atoms and their decoded values.
 
+use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ShiftedBinary64([u8; 8]);
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ShiftedBinary64([u8; 8], FiniteReal);
+
+impl Eq for ShiftedBinary64 {}
 
 /// A checked scalar paired with its owning frame's offset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,16 +29,13 @@ impl ShiftedBinary64 {
         &self.0
     }
 
-    pub(crate) fn value(self) -> f64 {
-        let mut bytes = self.0;
-        bytes[0] += 0x10;
-        // endian-exception: reconstructed-scalar
-        f64::from_be_bytes(bytes)
+    pub(crate) fn value(self) -> FiniteReal {
+        self.1
     }
 
     pub(crate) fn from_wire(value: f64, raw: [u8; 8]) -> Result<Self, &'static str> {
         let atom = Self::try_from(raw)?;
-        if value.to_bits() != atom.value().to_bits() {
+        if value.to_bits() != atom.value().get().to_bits() {
             return Err("scalars must match raw_scalars");
         }
         Ok(atom)
@@ -49,28 +49,29 @@ impl TryFrom<[u8; 8]> for ShiftedBinary64 {
         if !is_shifted_ieee_f64_marker(bytes[0]) {
             return Err("raw_scalars must contain shifted binary64 markers");
         }
-        // These marker intervals map only to finite binary64 exponent ranges.
-        Ok(Self(bytes))
+        let mut decoded = bytes;
+        decoded[0] += 0x10;
+        // endian-exception: reconstructed-scalar
+        let value = f64::from_be_bytes(decoded);
+        let value =
+            FiniteReal::new(value).ok_or("raw_scalars must contain shifted binary64 markers")?;
+        Ok(Self(bytes, value))
     }
-}
-
-pub(super) fn shifted_ieee_f64(bytes: &[u8]) -> Option<f64> {
-    ShiftedBinary64::read(bytes).map(ShiftedBinary64::value)
 }
 
 fn is_shifted_ieee_f64_marker(marker: u8) -> bool {
     matches!(marker, 0x20..=0x3f | 0xa0..=0xbf)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ShiftedBinary32([u8; 4]);
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ShiftedBinary32([u8; 4], FiniteReal);
+
+impl Eq for ShiftedBinary32 {}
 
 impl ShiftedBinary32 {
-    // Validate the value against the same borrowed raw byte window used by the reader.
-    #[allow(clippy::trivially_copy_pass_by_ref)]
-    pub(crate) fn from_wire(value: f64, raw: &[u8; 4]) -> Result<Self, &'static str> {
-        let scalar = Self::read(raw).ok_or("raw_values must contain shifted binary32 atoms")?;
-        if scalar.value().to_bits() != value.to_bits() {
+    pub(crate) fn from_wire(value: f64, raw: [u8; 4]) -> Result<Self, &'static str> {
+        let scalar = Self::read(&raw).ok_or("raw_values must contain shifted binary32 atoms")?;
+        if scalar.value().get().to_bits() != value.to_bits() {
             return Err("values must match raw_values atoms");
         }
         Ok(scalar)
@@ -78,7 +79,14 @@ impl ShiftedBinary32 {
 
     pub(super) fn read(bytes: &[u8]) -> Option<Self> {
         let raw = <[u8; 4]>::try_from(bytes).ok()?;
-        matches!(raw[0], 0x40..=0x5f | 0xc0..=0xdf).then_some(Self(raw))
+        if !matches!(raw[0], 0x40..=0x5f | 0xc0..=0xdf) {
+            return None;
+        }
+        let mut decoded = raw;
+        decoded[0] -= 0x10;
+        // endian-exception: reconstructed-scalar
+        let value = FiniteReal::new(f64::from(f32::from_be_bytes(decoded)))?;
+        Some(Self(raw, value))
     }
 
     pub(crate) fn raw(self) -> [u8; 4] {
@@ -89,11 +97,8 @@ impl ShiftedBinary32 {
         &self.0
     }
 
-    pub(crate) fn value(self) -> f64 {
-        let mut bytes = self.0;
-        bytes[0] -= 0x10;
-        // endian-exception: reconstructed-scalar
-        f64::from(f32::from_be_bytes(bytes))
+    pub(crate) fn value(self) -> FiniteReal {
+        self.1
     }
 }
 
@@ -107,7 +112,7 @@ pub(crate) enum ShiftedScalar {
 impl ShiftedScalar {
     pub(crate) fn from_wire(value: f64, raw: &[u8]) -> Result<Self, &'static str> {
         let scalar = Self::read(raw).ok_or("raw_values must contain shifted scalar atoms")?;
-        if scalar.raw().len() != raw.len() || scalar.value().to_bits() != value.to_bits() {
+        if scalar.raw().len() != raw.len() || scalar.value().get().to_bits() != value.to_bits() {
             return Err("values must match exact raw_values atoms");
         }
         Ok(scalar)
@@ -121,7 +126,7 @@ impl ShiftedScalar {
         }
     }
 
-    pub(crate) fn value(self) -> f64 {
+    pub(crate) fn value(self) -> FiniteReal {
         match self {
             Self::Binary32(atom) => atom.value(),
             Self::Binary64(atom) => atom.value(),
@@ -162,9 +167,9 @@ impl PayloadScalarAtom {
         }
     }
 
-    pub(crate) fn value(self) -> f64 {
+    pub(crate) fn value(self) -> FiniteReal {
         match self {
-            Self::Zero => 0.0,
+            Self::Zero => FiniteReal::ZERO,
             Self::Binary32(atom) => atom.value(),
             Self::Binary64(atom) => atom.value(),
         }
@@ -198,7 +203,7 @@ impl PayloadScalarAtom {
         if atom.encoding() != encoding {
             return Err("encodings must match raw_values");
         }
-        if atom.value().to_bits() != value.to_bits() {
+        if atom.value().get().to_bits() != value.to_bits() {
             return Err("values must match raw_values");
         }
         Ok(atom)
@@ -217,7 +222,7 @@ mod tests {
             (vec![0x2f, 0xf0, 0, 0, 0, 0, 0, 0], 1.0),
         ] {
             let atom = PayloadScalarAtom::read(&raw).unwrap();
-            assert_eq!(atom.value(), expected);
+            assert_eq!(atom.value().get(), expected);
             assert_eq!(atom.raw(), raw);
             assert_eq!(
                 PayloadScalarAtom::from_wire(expected, atom.encoding(), &raw),
@@ -232,6 +237,7 @@ mod tests {
             assert!(ShiftedBinary32::read(&[marker, 255, 255, 255])
                 .unwrap()
                 .value()
+                .get()
                 .is_finite());
         }
         for bytes in [
@@ -249,13 +255,17 @@ mod tests {
         let mut raw = 1.0_f64.to_be_bytes();
         raw[0] -= 0x10;
         let atom = ShiftedBinary64::try_from(raw).unwrap();
-        assert_eq!(atom.value(), 1.0);
+        assert_eq!(atom.value().get(), 1.0);
         assert_eq!(atom.raw(), raw);
         assert_eq!(ShiftedBinary64::from_wire(1.0, raw), Ok(atom));
         assert!(ShiftedBinary64::from_wire(2.0, raw).is_err());
         for marker in [0x20, 0x3f, 0xa0, 0xbf] {
             raw[0] = marker;
-            assert!(ShiftedBinary64::try_from(raw).unwrap().value().is_finite());
+            assert!(ShiftedBinary64::try_from(raw)
+                .unwrap()
+                .value()
+                .get()
+                .is_finite());
         }
         for marker in [0x00, 0x1f, 0x40, 0x9f, 0xc0, 0xff] {
             raw[0] = marker;

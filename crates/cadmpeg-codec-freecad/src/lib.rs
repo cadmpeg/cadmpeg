@@ -767,8 +767,8 @@ fn validate_logical_chain(
 impl CodecBackend for FcstdCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
-    fn validate_native(ir: &CadIr) -> Vec<Finding> {
-        crate::validate_native(ir)
+    fn validate_native(_ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, CodecError> {
+        Ok(crate::validate_native(ir))
     }
 
     fn detect_impl(&self, prefix: &[u8]) -> Confidence {

@@ -15,6 +15,7 @@ use cadmpeg_core::decode::{
     u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, View,
 };
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
 use sha1::{Digest, Sha1};
@@ -218,7 +219,7 @@ pub(crate) struct MeshDecodeOptions<'a> {
 struct MeshChannels {
     vertices: Vec<[f32; 3]>,
     /// The normal lane, absent when the archive carries no normal channel.
-    normals: Option<Vec<Vector3>>,
+    normals: Option<Vec<FiniteVector3>>,
     channels: Vec<TessellationChannel>,
     warnings: Diagnostics,
     losses: Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -522,20 +523,20 @@ pub(crate) fn decode(
     let vertices = source_vertices
         .into_iter()
         .map(|point| {
-            Some(Point3::new(
-                crate::wire::scaled_coordinate(point[0], scale)?.get(),
-                crate::wire::scaled_coordinate(point[1], scale)?.get(),
-                crate::wire::scaled_coordinate(point[2], scale)?.get(),
+            Some(FinitePoint3::from_coordinates(
+                crate::wire::scaled_coordinate(point[0], scale)?,
+                crate::wire::scaled_coordinate(point[1], scale)?,
+                crate::wire::scaled_coordinate(point[2], scale)?,
             ))
         })
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| error(reader.position(), "scaled mesh vertex is invalid"))?;
     let quad_count = quad_face_count(&faces);
-    let triangles = triangulate_faces(&faces, &vertices);
+    let triangles = triangulate_faces(&faces, &vertices, FinitePoint3::get);
     Ok(DecodedMesh {
-        tessellation: Tessellation::new(
+        tessellation: Tessellation::from_parts(
             id,
-            cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
+            cadmpeg_ir::tessellation::TessellationMesh::from_admitted_list_lanes(
                 vertices,
                 triangles,
                 decoded.normals,
@@ -684,7 +685,11 @@ fn read_faces(
     Ok(result)
 }
 
-pub(crate) fn triangulate_faces(faces: &[[u32; 4]], vertices: &[Point3]) -> Vec<[u32; 3]> {
+pub(crate) fn triangulate_faces<P: Copy>(
+    faces: &[[u32; 4]],
+    vertices: &[P],
+    point: impl Fn(P) -> Point3,
+) -> Vec<[u32; 3]> {
     let mut triangles = Vec::with_capacity(faces.len().saturating_mul(2));
     for face in faces {
         if unique_face_vertices(face) == 3 {
@@ -696,8 +701,10 @@ pub(crate) fn triangulate_faces(faces: &[[u32; 4]], vertices: &[Point3]) -> Vec<
             }
             triangles.push([unique[0], unique[1], unique[2]]);
         } else if unique_face_vertices(face) == 4 {
-            let diagonal_02 = vertices[face[0] as usize].distance(vertices[face[2] as usize]);
-            let diagonal_13 = vertices[face[1] as usize].distance(vertices[face[3] as usize]);
+            let diagonal_02 =
+                point(vertices[face[0] as usize]).distance(point(vertices[face[2] as usize]));
+            let diagonal_13 =
+                point(vertices[face[1] as usize]).distance(point(vertices[face[3] as usize]));
             if diagonal_02 <= diagonal_13 {
                 triangles.extend([[face[0], face[1], face[2]], [face[0], face[2], face[3]]]);
             } else {
@@ -737,7 +744,7 @@ fn read_raw_channels(
     reader: &mut BoundedReader<'_>,
     vertices: usize,
     points: &mut Vec<[f32; 3]>,
-    normals: &mut Option<Vec<Vector3>>,
+    normals: &mut Option<Vec<FiniteVector3>>,
     channels: &mut Vec<TessellationChannel>,
     warnings: &mut Diagnostics,
 ) -> Result<(), GeometryError> {
@@ -1459,11 +1466,20 @@ fn parse_f32_points(bytes: &[u8]) -> Result<Vec<[f32; 3]>, GeometryError> {
     Ok(points)
 }
 
-fn parse_f32_vectors(bytes: &[u8]) -> Result<Vec<Vector3>, GeometryError> {
-    Ok(parse_f32_points(bytes)?
+fn parse_f32_vectors(bytes: &[u8]) -> Result<Vec<FiniteVector3>, GeometryError> {
+    parse_f32_points(bytes)?
         .into_iter()
-        .map(|p| Vector3::new(p[0] as f64, p[1] as f64, p[2] as f64))
-        .collect())
+        .map(|point| {
+            FiniteVector3::new(Vector3::new(
+                f64::from(point[0]),
+                f64::from(point[1]),
+                f64::from(point[2]),
+            ))
+            .ok_or_else(|| {
+                GeometryError::unpositioned("f32 point channel contains nonfinite values")
+            })
+        })
+        .collect()
 }
 
 fn parse_f64_points(bytes: &[u8]) -> Result<Vec<[f64; 3]>, GeometryError> {
@@ -1555,7 +1571,7 @@ mod tests {
             Point3::new(0.0, 1.0e200, 0.0),
         ];
         assert_eq!(
-            super::triangulate_faces(&[[0, 1, 2, 3]], &vertices),
+            super::triangulate_faces(&[[0, 1, 2, 3]], &vertices, |point| point),
             vec![[0, 1, 3], [1, 2, 3]]
         );
     }
@@ -1578,7 +1594,7 @@ mod tests {
     use crate::objects::{ClassUserdata, UserdataDescriptor};
     use crate::settings::MillimeterScale;
     use cadmpeg_core::decode::DecodeContext;
-    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::math::{Point3, Vector3};
     use std::ops::Range;
 
     fn with_expand<R>(data: &[u8], f: impl FnOnce(MeshExpand<'_>) -> R) -> R {
@@ -1759,6 +1775,45 @@ mod tests {
             payload.extend(0_u32.to_le_bytes());
         }
         payload
+    }
+
+    #[test]
+    fn compressed_mesh_retains_admitted_positions_and_normals() {
+        let mut bytes = compressed_mesh();
+        bytes.truncate(bytes.len() - 16);
+        let mut normals = Vec::new();
+        for value in [0.0_f32, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0] {
+            normals.extend(value.to_le_bytes());
+        }
+        bytes.extend(buffer(&normals, 0));
+        for _ in 0..3 {
+            bytes.extend(0_u32.to_le_bytes());
+        }
+        let decoded = with_expand(&bytes, |expand| {
+            decode(
+                expand,
+                &bytes,
+                0..bytes.len(),
+                ArchiveVersion::V5,
+                MeshDecodeOptions {
+                    writer_version: None,
+                    association: None,
+                    id: "synthetic:test:tessellation#admitted-lanes".to_string(),
+                    scale: MillimeterScale::IDENTITY,
+                    userdata: &[],
+                },
+                &mut MeshBudget::new(),
+            )
+        })
+        .expect("finite mesh lanes");
+        assert_eq!(
+            decoded.tessellation.vertices()[1].get(),
+            Point3::new(1.0, 0.0, 0.0)
+        );
+        let normals = decoded.tessellation.vertex_normals();
+        assert_eq!(normals.len(), 3);
+        assert_eq!(normals[2].get(), Vector3::new(0.0, 0.0, 1.0));
+        assert!(decoded.warnings.is_empty(), "{:?}", decoded.warnings);
     }
 
     #[test]
@@ -2573,7 +2628,7 @@ mod tests {
             Point3::new(1.0, 1.0, 0.0),
         ];
         assert_eq!(
-            triangulate_faces(&[[0, 1, 2, 3], [0, 1, 2, 2]], &vertices),
+            triangulate_faces(&[[0, 1, 2, 3], [0, 1, 2, 2]], &vertices, |point| point),
             vec![[0, 1, 3], [1, 2, 3], [0, 1, 2]]
         );
         assert_eq!(quad_face_count(&[[0, 1, 2, 3], [0, 1, 2, 2]]), 1);

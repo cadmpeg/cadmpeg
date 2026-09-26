@@ -377,7 +377,7 @@ pub(super) fn pcurve_geometry(
     };
     let parameter_curve = PcurveNurbs::from_checked_lanes(
         nurbs.degree(),
-        nurbs.knots().to_vec(),
+        nurbs.knots().clone(),
         nurbs
             .control_points()
             .iter()

@@ -45,7 +45,7 @@ use cadmpeg_ir::{
         RibConstruction, RibDraft, SurfaceExtension, ThickenSide, TreeChildren, TrimRegion,
         UnresolvedFamily,
     },
-    scalar::{Angle, Length},
+    scalar::{Angle, FiniteReal, Length, NonZeroLength, PositiveLength},
 };
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
@@ -4240,7 +4240,7 @@ fn attach_sketch_graph(
                         || scalar_fields.iter().zip(group.coordinates).any(
                             |(scalar, coordinate)| {
                                 scalar.operation_label != label.id
-                                    || scalar.scalar.value().to_bits() != coordinate.to_bits()
+                                    || scalar.scalar.value().get().to_bits() != coordinate.to_bits()
                             },
                         )
                     {
@@ -4359,10 +4359,7 @@ fn native_fixed_point_entities(
     let mut entity_keys = BTreeSet::new();
     let mut entities = Vec::with_capacity(points.len());
     for point in points {
-        if point.operation_label != label.id
-            || !point.values.iter().all(|value| value.is_finite())
-            || !point_ids.insert(point.id.as_str())
-        {
+        if point.operation_label != label.id || !point_ids.insert(point.id.as_str()) {
             return None;
         }
         let point_key = point
@@ -4829,14 +4826,6 @@ fn parasolid_topology_attribute_contexts<'a>(
         .collect()
 }
 
-/// The refusal of a Parasolid attribute value record that holds a NaN or
-/// infinite number.
-fn non_finite_attribute_value(record: &str) -> cadmpeg_core::CodecError {
-    cadmpeg_core::CodecError::malformed(format_args!(
-        "Parasolid attribute value record {record} holds a non-finite number"
-    ))
-}
-
 fn topology_attribute_id(
     reference: &crate::native::parasolid::ParasolidTopologyAttributeListReference,
     family: &cadmpeg_ir::ids::IdentityComponent,
@@ -4921,9 +4910,8 @@ fn attach_parasolid_topology_numeric_attributes(
                             .values
                             .as_slice()
                             .iter()
-                            .map(|value| AttributeValue::float(*value))
-                            .collect::<Option<Vec<_>>>()
-                            .ok_or_else(|| non_finite_attribute_value(&record.id))?,
+                            .map(|value| AttributeValue::Float(*value))
+                            .collect(),
                         record.inflated_offset,
                         "ENTITY_53_DOUBLE_ATTRIBUTE",
                         "double",
@@ -5044,9 +5032,8 @@ fn attach_parasolid_topology_structured_attributes(
                             .values
                             .as_slice()
                             .iter()
-                            .map(|value| AttributeValue::vector(*value))
-                            .collect::<Option<Vec<_>>>()
-                            .ok_or_else(|| non_finite_attribute_value(&record.id))?,
+                            .map(|value| AttributeValue::Vector(value.finite_components().into()))
+                            .collect(),
                         record.inflated_offset,
                         "PARASOLID_VECTOR_ATTRIBUTE",
                         family,
@@ -5062,12 +5049,13 @@ fn attach_parasolid_topology_structured_attributes(
                             .as_slice()
                             .iter()
                             .map(|axis| {
-                                AttributeValue::vector(
-                                    axis.iter().flat_map(|vector| vector.iter().copied()),
+                                AttributeValue::Vector(
+                                    axis.iter()
+                                        .flat_map(|vector| vector.finite_components())
+                                        .collect(),
                                 )
                             })
-                            .collect::<Option<Vec<_>>>()
-                            .ok_or_else(|| non_finite_attribute_value(&record.id))?,
+                            .collect(),
                         record.inflated_offset,
                         "ENTITY_57_AXIS_ATTRIBUTE",
                         "87_axis",
@@ -5579,12 +5567,12 @@ fn offset_surface_feature_definition(
         .and_then(uniform_face_sense)
         .map(|sense| match sense {
             Sense::Forward => distance,
-            Sense::Reversed => -distance,
+            Sense::Reversed => distance.negated(),
         });
     Some((
         FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
             faces,
-            distance: distance.and_then(Length::new),
+            distance: distance.map(Length::from_assigned_real),
         }),
         supports,
     ))
@@ -5593,12 +5581,12 @@ fn offset_surface_feature_definition(
 fn owned_offset_surface_data<'a>(
     ir: &CadIr,
     outputs: &'a [BodyId],
-) -> Option<(&'a BodyId, f64, Vec<SurfaceId>)> {
+) -> Option<(&'a BodyId, FiniteReal, Vec<SurfaceId>)> {
     let (body, carriers) = owned_offset_carriers(ir, outputs)?;
     let distance = carriers[0].1;
     if carriers
         .iter()
-        .any(|(_, candidate)| candidate.to_bits() != distance.to_bits())
+        .any(|(_, candidate)| candidate.get().to_bits() != distance.get().to_bits())
     {
         return None;
     }
@@ -5614,7 +5602,7 @@ fn owned_offset_surface_data<'a>(
 fn owned_offset_carriers<'a>(
     ir: &CadIr,
     outputs: &'a [BodyId],
-) -> Option<(&'a BodyId, Vec<(SurfaceId, f64)>)> {
+) -> Option<(&'a BodyId, Vec<(SurfaceId, FiniteReal)>)> {
     let [body] = outputs else {
         return None;
     };
@@ -5633,7 +5621,7 @@ fn owned_offset_carriers<'a>(
         };
         let support = definition_payload.support();
         let candidate = definition_payload.distance();
-        carriers.push((support.clone(), candidate.get()));
+        carriers.push((support.clone(), candidate));
     }
     (!carriers.is_empty()).then_some((body, carriers))
 }
@@ -5655,7 +5643,7 @@ fn thicken_feature_definition(
     Some((
         FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces,
-            thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(thickness)?),
+            thickness: Some(thickness),
             side,
         }),
         supports,
@@ -5663,14 +5651,14 @@ fn thicken_feature_definition(
 }
 
 enum ThickenDirection {
-    Signed(f64),
+    Signed(NonZeroLength),
     Both,
 }
 
 fn owned_thicken_surface_data<'a>(
     ir: &CadIr,
     outputs: &'a [BodyId],
-) -> Option<(&'a BodyId, f64, Vec<SurfaceId>, ThickenDirection)> {
+) -> Option<(&'a BodyId, PositiveLength, Vec<SurfaceId>, ThickenDirection)> {
     let (body, carriers) = owned_offset_carriers(ir, outputs)?;
     if ir
         .model
@@ -5685,9 +5673,9 @@ fn owned_thicken_surface_data<'a>(
     let distance = carriers[0].1;
     if carriers
         .iter()
-        .all(|(_, candidate)| candidate.to_bits() == distance.to_bits())
+        .all(|(_, candidate)| candidate.get().to_bits() == distance.get().to_bits())
     {
-        if distance.is_finite() && distance != 0.0 {
+        if let Ok(distance) = NonZeroLength::try_from(Length::from_assigned_real(distance)) {
             let supports = carriers
                 .into_iter()
                 .map(|(support, _)| support)
@@ -5704,19 +5692,18 @@ fn owned_thicken_surface_data<'a>(
         return None;
     }
 
-    let mut magnitude = None::<f64>;
+    let mut magnitude = None::<PositiveLength>;
     let mut positive = BTreeSet::new();
     let mut negative = BTreeSet::new();
     for (support, distance) in carriers {
-        if !distance.is_finite() || distance == 0.0 {
-            return None;
-        }
+        let distance = NonZeroLength::try_from(Length::from_assigned_real(distance)).ok()?;
         let candidate = distance.abs();
-        if magnitude.is_some_and(|magnitude| magnitude.to_bits() != candidate.to_bits()) {
+        if magnitude.is_some_and(|magnitude| magnitude.get().to_bits() != candidate.get().to_bits())
+        {
             return None;
         }
         magnitude = Some(candidate);
-        if distance.is_sign_positive() {
+        if distance.get().is_sign_positive() {
             positive.insert(support);
         } else {
             negative.insert(support);
@@ -5725,10 +5712,7 @@ fn owned_thicken_surface_data<'a>(
     if positive.is_empty() || positive != negative {
         return None;
     }
-    let thickness = magnitude? * 2.0;
-    if !thickness.is_finite() {
-        return None;
-    }
+    let thickness = PositiveLength::new(magnitude?.get() * 2.0)?;
     Some((
         body,
         thickness,
@@ -5773,8 +5757,8 @@ fn support_face_projection(
     }
 }
 
-fn thicken_side(distance: f64, sense: Sense) -> ThickenSide {
-    match (distance.is_sign_positive(), sense) {
+fn thicken_side(distance: NonZeroLength, sense: Sense) -> ThickenSide {
+    match (distance.get().is_sign_positive(), sense) {
         (true, Sense::Forward) | (false, Sense::Reversed) => ThickenSide::Forward,
         (true, Sense::Reversed) | (false, Sense::Forward) => ThickenSide::Reverse,
     }

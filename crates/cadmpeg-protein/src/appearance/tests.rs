@@ -21,6 +21,18 @@ fn distance_record(unit: u32, value: f64) -> crate::DecodedRecord {
     }
 }
 
+fn texture_for_test(
+    record: &crate::DecodedRecord,
+) -> Result<super::TextureAssetResult, cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    super::texture_asset(&ctx, record)
+}
+
 /// The three length tags of the Distance quantity class each convert to
 /// the IR's millimetres. `0x200e` is millimetre, not centimetre.
 #[test]
@@ -44,6 +56,23 @@ fn a_non_length_distance_tag_yields_no_value() {
         super::distance_property(&record, "Depth"),
         Err(super::DistanceError::UnknownUnit(0x0002_1008))
     );
+}
+
+#[test]
+fn unknown_texture_distance_unit_has_no_usable_texture_or_zero_scale() {
+    let mut record = distance_record(0x0002_1008, 7.0);
+    record.schema = "UnifiedBitmapSchema".into();
+    record.properties = std::collections::BTreeMap::from([(
+        "texture_RealWorldScaleX".into(),
+        record
+            .properties
+            .remove("test_Depth")
+            .expect("fixture has a distance"),
+    )]);
+    assert!(matches!(
+        texture_for_test(&record),
+        Ok(super::TextureAssetResult::UnknownDistanceUnit { count: 1 })
+    ));
 }
 
 #[test]
@@ -78,7 +107,7 @@ fn numerical_audit_distance_conversion_rejects_nonfinite_results() {
                 .remove("test_Depth")
                 .expect("the synthetic record carries test_Depth");
             record.properties.insert(suffix.into(), property);
-            assert!(super::texture_asset(&record).is_err(), "{schema} {suffix}");
+            assert!(texture_for_test(&record).is_err(), "{schema} {suffix}");
         }
     }
 }
@@ -114,7 +143,7 @@ fn a_non_finite_texture_float_property_is_refused() {
     ] {
         for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             let record = float_record("BumpMapSchema", suffix, value);
-            let Err(error) = super::texture_asset(&record) else {
+            let Err(error) = texture_for_test(&record) else {
                 panic!("{suffix} {value} is refused");
             };
             assert!(
@@ -125,6 +154,6 @@ fn a_non_finite_texture_float_property_is_refused() {
             );
         }
         let finite = float_record("BumpMapSchema", suffix, 0.5);
-        assert!(super::texture_asset(&finite).is_ok(), "{suffix}");
+        assert!(texture_for_test(&finite).is_ok(), "{suffix}");
     }
 }

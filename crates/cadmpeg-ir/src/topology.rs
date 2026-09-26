@@ -12,6 +12,7 @@ use crate::ids::{
     PointId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use crate::math::Point3;
+use crate::scalar::UnitBinary32;
 use crate::transform::Transform;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -65,6 +66,13 @@ impl Color {
     /// Construct RGBA components in the closed unit interval.
     pub fn new(r: f32, g: f32, b: f32, a: f32) -> Option<Self> {
         Self::try_from(ColorWire { r, g, b, a }).ok()
+    }
+
+    /// Construct RGBA from admitted binary32 unit fractions.
+    #[must_use]
+    pub fn from_unit_binary32(components: [UnitBinary32; 4]) -> Self {
+        let [r, g, b, a] = components.map(UnitBinary32::get);
+        Self { r, g, b, a }
     }
 
     /// Convert eight-bit RGBA components to the closed unit interval.
@@ -964,11 +972,19 @@ impl ParameterInterval {
 
     /// Admit finite endpoints in increasing or equal order.
     pub fn new(endpoints: [f64; 2]) -> Result<Self, &'static str> {
-        if endpoints.iter().all(|value| value.is_finite()) && endpoints[0] <= endpoints[1] {
-            Ok(Self(endpoints))
-        } else {
-            Err("parameter_range must be finite and ordered")
-        }
+        let endpoints = crate::units::FiniteVector::new(endpoints)
+            .ok_or("parameter_range must be finite and ordered")?;
+        Self::from_finite_endpoints(endpoints)
+    }
+
+    /// Build from finite endpoints, checking only their order.
+    pub fn from_finite_endpoints(
+        endpoints: crate::units::FiniteVector<2>,
+    ) -> Result<Self, &'static str> {
+        let endpoints = endpoints.get();
+        (endpoints[0] <= endpoints[1])
+            .then_some(Self(endpoints))
+            .ok_or("parameter_range must be finite and ordered")
     }
 
     /// The interval with both endpoints times `scale`.
@@ -1371,6 +1387,20 @@ cadmpeg_core::named_optional_field!(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn color_from_unit_binary32_preserves_admitted_components() {
+        use super::Color;
+        use crate::scalar::UnitBinary32;
+
+        let components = [-0.0_f32, 0.25, 1.0, 0.5]
+            .map(|value| UnitBinary32::new(value).expect("each component is in the unit interval"));
+        let color = Color::from_unit_binary32(components);
+        assert_eq!(
+            [color.r(), color.g(), color.b(), color.a()].map(f32::to_bits),
+            [-0.0_f32, 0.25, 1.0, 0.5].map(f32::to_bits)
+        );
+    }
+
     #[test]
     fn checked_endpoints_build_ordered_and_increasing_intervals() {
         use super::{IncreasingParameterInterval, ParameterInterval};

@@ -78,7 +78,7 @@ impl ColorComponent {
             _ => ColorAtom::Shifted(ShiftedScalar::read(bytes)?),
         };
         if let ColorAtom::Shifted(scalar) = atom {
-            if !(0.0..=1.0).contains(&(scalar.value() / 4.0)) {
+            if !(0.0..=1.0).contains(&(scalar.value().get() / 4.0)) {
                 return None;
             }
         }
@@ -89,7 +89,7 @@ impl ColorComponent {
         match self.0 {
             ColorAtom::Zero => 0.0,
             ColorAtom::One => 1.0,
-            ColorAtom::Shifted(scalar) => (scalar.value() / 4.0) as f32,
+            ColorAtom::Shifted(scalar) => (scalar.value().get() / 4.0) as f32,
         }
     }
 

@@ -2306,9 +2306,21 @@ fn append_legacy_brep(
                     ))?,
                 );
                 let pcurve_domain = curve_domain(&trim.pcurve)?;
-                let mut pcurve_knots =
-                    v1_values::<f64>(ctx, trim.pcurve.knots().len(), "Rhino V1 pcurve knots")?;
-                pcurve_knots.extend_from_slice(trim.pcurve.knots());
+                let pcurve_knot_bytes = admit_v1_values::<f64>(
+                    ctx,
+                    trim.pcurve.knots().len(),
+                    "Rhino V1 pcurve knots",
+                )?;
+                let pcurve_knots = trim.pcurve.knots().try_clone().map_err(|_| {
+                    CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
+                        dimension: cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                        reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
+                        limit: ctx.policy().limits.max_retained_bytes,
+                        used: 0,
+                        additional: pcurve_knot_bytes,
+                        operation: "Rhino V1 pcurve knots",
+                    })
+                })?;
                 let mut pcurve_points = v1_values::<cadmpeg_ir::units::FinitePoint2>(
                     ctx,
                     trim.pcurve.pole_count(),
@@ -2854,7 +2866,7 @@ fn legacy_mesh(
         CodecError::NotImplemented("Rhino V1 mesh triangle count exceeds address space".to_string())
     })?;
     admit_v1_values::<[u32; 3]>(ctx, triangle_count, "Rhino V1 mesh triangles")?;
-    let triangles = crate::mesh::triangulate_faces(&faces, &vertices);
+    let triangles = crate::mesh::triangulate_faces(&faces, &vertices, |point| point);
     Tessellation::new(
         id,
         cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(vertices, triangles, normals)?,

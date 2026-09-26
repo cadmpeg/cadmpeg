@@ -504,11 +504,15 @@ fn transfer_schema_one(
             transfer_primitive_appearance(
                 ir,
                 &mut plan,
-                name,
-                object_id,
-                color,
-                PrimitiveStyle::Line(width),
-                &payload_prefixes,
+                &mut losses,
+                PrimitiveAppearanceSource {
+                    provider_name: name,
+                    object_id,
+                    packed_color: color,
+                    style: PrimitiveStyle::Line(width),
+                    payload_prefixes: &payload_prefixes,
+                    provenance: property_provenance("LineWidth", "App::PropertyFloatConstraint"),
+                },
             );
         }
         if let Some(file) = values
@@ -545,11 +549,15 @@ fn transfer_schema_one(
             transfer_primitive_appearance(
                 ir,
                 &mut plan,
-                name,
-                object_id,
-                color,
-                PrimitiveStyle::Point(size),
-                &payload_prefixes,
+                &mut losses,
+                PrimitiveAppearanceSource {
+                    provider_name: name,
+                    object_id,
+                    packed_color: color,
+                    style: PrimitiveStyle::Point(size),
+                    payload_prefixes: &payload_prefixes,
+                    provenance: property_provenance("PointSize", "App::PropertyFloatConstraint"),
+                },
             );
         }
         if let Some(file) = values
@@ -943,15 +951,29 @@ enum PrimitiveStyle {
     Point(Option<f64>),
 }
 
+struct PrimitiveAppearanceSource<'a> {
+    provider_name: &'a str,
+    object_id: &'a str,
+    packed_color: u32,
+    style: PrimitiveStyle,
+    payload_prefixes: &'a [String],
+    provenance: SourceProvenance,
+}
+
 fn transfer_primitive_appearance(
     ir: &CadIr,
     plan: &mut AppearancePlan,
-    provider_name: &str,
-    object_id: &str,
-    packed_color: u32,
-    style: PrimitiveStyle,
-    payload_prefixes: &[String],
+    losses: &mut Vec<LossNote>,
+    source: PrimitiveAppearanceSource<'_>,
 ) {
+    let PrimitiveAppearanceSource {
+        provider_name,
+        object_id,
+        packed_color,
+        style,
+        payload_prefixes,
+        provenance,
+    } = source;
     let targets = match style {
         PrimitiveStyle::Line(_) => ir
             .model
@@ -1000,6 +1022,18 @@ fn transfer_primitive_appearance(
             "vertex_over_object",
         ),
     };
+    let admitted_size = size
+        .filter(|value| *value >= 0.0)
+        .and_then(cadmpeg_ir::scalar::FiniteReal::new);
+    if size.is_some() && admitted_size.is_none() {
+        losses.push(
+            FreecadLossCode::AppearancePrimitiveSizeNotTransferred
+                .note(format!(
+                    "FCStd provider {provider_name} {label} size cannot enter the neutral appearance"
+                ))
+                .with_provenance(provenance),
+        );
+    }
     plan.appearances.push(Appearance {
         id: appearance_id.clone(),
         name: Some(format!("{provider_name} {label} appearance")),
@@ -1016,9 +1050,7 @@ fn transfer_primitive_appearance(
             packed_color as u8,
         )),
         textures: Vec::new(),
-        properties: size
-            .filter(|width| *width >= 0.0)
-            .and_then(cadmpeg_ir::scalar::FiniteReal::new)
+        properties: admitted_size
             .map(|width| [(property, width)].into())
             .unwrap_or_default(),
     });

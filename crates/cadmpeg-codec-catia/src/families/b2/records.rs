@@ -2068,7 +2068,11 @@ fn parse_b2_nurbs_curve(
         pos: frame.pos,
         header_token: frame.header_token,
         geometry: crate::nurbs::note_refusal(
-            NurbsCurve::from_checked_lanes(degree, knots, control_points, Some(weights), false),
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_checked_lanes(
+                control_points,
+                Some(weights),
+            )
+            .and_then(|poles| NurbsCurve::new(degree, knots, poles, false)),
             refusal,
             format_args!("b2 NURBS curve record at byte {}", frame.pos),
         )?,

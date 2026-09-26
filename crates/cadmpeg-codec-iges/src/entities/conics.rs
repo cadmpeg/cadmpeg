@@ -186,7 +186,7 @@ pub(super) fn project(
                 let raw = v.get();
                 let n = raw.norm();
                 n.is_finite().then_some(())?;
-                Some((UnitVector3::normalized_nonzero(raw)?, n))
+                Some((UnitVector3::normalized_nonzero(v)?, n))
             })
         else {
             losses.push(entity_loss(entry, "conic placement collapses the x axis"));
@@ -198,7 +198,7 @@ pub(super) fn project(
                 let raw = v.get();
                 let n = raw.norm();
                 n.is_finite().then_some(())?;
-                Some((UnitVector3::normalized_nonzero(raw)?, n))
+                Some((UnitVector3::normalized_nonzero(v)?, n))
             })
         else {
             losses.push(entity_loss(entry, "conic placement collapses the y axis"));

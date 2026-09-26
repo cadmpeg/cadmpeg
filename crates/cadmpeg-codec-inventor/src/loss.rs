@@ -74,6 +74,8 @@ pub(crate) enum InventorLossCode {
     AppearanceDefaultUnresolved,
     /// Protein catalog asset GUIDs collide; ambiguous texture joins were refused.
     ProteinGuidAmbiguous,
+    /// A Protein texture states a distance with no length conversion.
+    MaterialDistanceUnitUntyped,
     /// The Inventor Protein stream is malformed.
     ProteinStreamMalformed,
     /// `PmGraphics` face appearance overrides did not resolve.
@@ -122,6 +124,7 @@ impl InventorLossCode {
         Self::ProteinAppearanceAbsent,
         Self::AppearanceDefaultUnresolved,
         Self::ProteinGuidAmbiguous,
+        Self::MaterialDistanceUnitUntyped,
         Self::ProteinStreamMalformed,
         Self::AppearanceFaceOverrideUnresolved,
         Self::UfrxTableMalformed,
@@ -162,6 +165,7 @@ impl InventorLossCode {
             Self::ProteinAppearanceAbsent => "protein.appearance-absent",
             Self::AppearanceDefaultUnresolved => "appearance.default-unresolved",
             Self::ProteinGuidAmbiguous => "protein.guid-ambiguous",
+            Self::MaterialDistanceUnitUntyped => "material.distance-unit-untyped",
             Self::ProteinStreamMalformed => "protein.stream-malformed",
             Self::AppearanceFaceOverrideUnresolved => "appearance.face-override-unresolved",
             Self::UfrxTableMalformed => "ufrx.table-malformed",
@@ -214,6 +218,7 @@ impl InventorLossCode {
             | Self::ProteinAppearanceAbsent
             | Self::AppearanceDefaultUnresolved
             | Self::ProteinGuidAmbiguous
+            | Self::MaterialDistanceUnitUntyped
             | Self::AppearanceFaceOverrideUnresolved => LossTaxonomy::MaterialNotTransferred,
             Self::UfrxSchemaUnsupportedAssembly | Self::AssemblyComponentExternal => {
                 LossTaxonomy::AssemblyComponentsExternal
@@ -284,6 +289,7 @@ mod tests {
                 "protein.appearance-absent",
                 "appearance.default-unresolved",
                 "protein.guid-ambiguous",
+                "material.distance-unit-untyped",
                 "protein.stream-malformed",
                 "appearance.face-override-unresolved",
                 "ufrx.table-malformed",
