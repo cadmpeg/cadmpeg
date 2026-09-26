@@ -21,10 +21,13 @@
 //! In both widths, three `0x06`-tagged little-endian f64s (`scale`, `resabs`,
 //! `resnor`) follow the strings, then the SAB record stream.
 
-use crate::kernel_header::{read_string_region, BinaryHeader, KernelHeader, RefWidth};
+use crate::kernel_header::{
+    read_string_region, scan_string_region, BinaryHeader, KernelHeader, RefWidth,
+};
 use crate::layout::asmheader_binaryfile4 as bf4;
 use crate::layout::asmheader_binaryfile8 as bf8;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 
 /// The ASM magic prefix common to both widths.
 const MAGIC_PREFIX: &[u8] = b"ASM BinaryFile";
@@ -58,8 +61,10 @@ pub fn record_count(bytes: &[u8]) -> Option<u32> {
 /// Parse the header of a decompressed ASM stream. Returns `None` if the magic
 /// is absent. Fields that cannot be read (short stream or unexpected tags) are
 /// left `None` rather than guessed.
-pub fn parse(bytes: &[u8]) -> Option<BinaryHeader> {
-    let width = declared_width(bytes)?;
+pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Option<BinaryHeader>, CodecError> {
+    let Some(width) = declared_width(bytes) else {
+        return Ok(None);
+    };
     let mut header = KernelHeader {
         save_format_version: None,
         entity_count: None,
@@ -92,21 +97,19 @@ pub fn parse(bytes: &[u8]) -> Option<BinaryHeader> {
         RefWidth::Four => bf4::LEN,
         RefWidth::Eight => bf8::LEN,
     };
-    let (strings, doubles, _) = read_string_region(bytes, start);
+    let ([family, version, date], [scale, linear, angular], _) =
+        read_string_region(ctx, bytes, start)?;
+    header.product_family = family;
+    header.product_version = version;
+    header.save_date = date;
+    header.scale = scale;
+    header.linear = linear;
+    header.angular = angular;
 
-    let mut it = strings.into_iter();
-    header.product_family = it.next();
-    header.product_version = it.next();
-    header.save_date = it.next();
-    let mut dit = doubles.into_iter();
-    header.scale = dit.next();
-    header.linear = dit.next();
-    header.angular = dit.next();
-
-    Some(BinaryHeader {
+    Ok(Some(BinaryHeader {
         width,
         metadata: header,
-    })
+    }))
 }
 
 /// Byte offset at which the SAB record stream begins, i.e. the first byte after
@@ -115,19 +118,23 @@ pub fn parse(bytes: &[u8]) -> Option<BinaryHeader> {
 /// the `asmheader`, which is `RecordTable` index 0. Returns `None` for streams
 /// without a recognized header layout.
 pub fn record_stream_start(bytes: &[u8]) -> Option<usize> {
-    let header = parse(bytes)?;
-    record_stream_start_with_header(bytes, &header)
+    let width = declared_width(bytes)?;
+    record_stream_start_with_width(bytes, width)
 }
 
 /// Byte offset at which the SAB record stream begins, using an already-parsed
 /// ASM header.
 pub fn record_stream_start_with_header(bytes: &[u8], header: &BinaryHeader) -> Option<usize> {
-    let start = match header.width {
+    record_stream_start_with_width(bytes, header.width)
+}
+
+fn record_stream_start_with_width(bytes: &[u8], width: RefWidth) -> Option<usize> {
+    let start = match width {
         RefWidth::Eight => bf8::LEN,
         RefWidth::Four => bf4::LEN,
     };
-    let (strings, doubles, cur) = read_string_region(bytes, start);
-    (strings.len() == 3 && doubles.len() == 3).then_some(cur)
+    let (strings, doubles, cur) = scan_string_region(bytes, start);
+    (strings == 3 && doubles == 3).then_some(cur)
 }
 
 /// Exact byte boundary between solved BREP records and construction history.
@@ -140,8 +147,21 @@ pub fn record_stream_start_with_header(bytes: &[u8], header: &BinaryHeader) -> O
 /// identifier token is `delta_state`. Raw substring search is deliberately not
 /// used because string payloads can contain the same bytes.
 pub fn solved_record_limit(bytes: &[u8]) -> Option<usize> {
-    let header = parse(bytes)?;
-    solved_record_limit_with_header(bytes, &header)
+    let width = declared_width(bytes)?;
+    let flags = match width {
+        RefWidth::Four => View::u32_le_at(bytes, bf4::FLAGS).map(u64::from),
+        RefWidth::Eight => View::u64_le_at(bytes, bf8::FLAGS),
+    }?;
+    if flags & crate::kernel_header::HISTORY_PARTITION_FLAG == 0 {
+        return None;
+    }
+    let start = record_stream_start_with_width(bytes, width)?;
+    crate::sab::scan_history_boundary(
+        bytes,
+        start,
+        width,
+        Some(&["Begin", "of", "ASM", "History", "Data"]),
+    )
 }
 
 /// Exact solved-record boundary, using an already-parsed ASM header.
@@ -156,4 +176,39 @@ pub fn solved_record_limit_with_header(bytes: &[u8], header: &BinaryHeader) -> O
         header.width,
         Some(&["Begin", "of", "ASM", "History", "Data"]),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn asm_product_string_refuses_retained_limit_before_copy() {
+        let mut bytes = b"ASM BinaryFile4".to_vec();
+        bytes.resize(crate::layout::asmheader_binaryfile4::LEN, 0);
+        bytes.extend_from_slice(&[7, 3]);
+        bytes.extend_from_slice(b"ASM");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 2;
+        let (limited, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        assert!(matches!(
+            super::parse(&limited, &bytes),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain kernel header product string"
+        ));
+        let (service, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+        assert_eq!(
+            super::parse(&service, &bytes)
+                .unwrap()
+                .unwrap()
+                .metadata
+                .product_family
+                .as_deref(),
+            Some("ASM")
+        );
+    }
 }
