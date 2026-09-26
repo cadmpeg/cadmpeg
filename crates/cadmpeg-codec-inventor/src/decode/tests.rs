@@ -98,6 +98,55 @@ fn metadata_projection_refuses_retained_limits_before_normalized_name_and_value(
 }
 
 #[test]
+fn metadata_bom_property_refuses_collection_limit_before_insert() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let mut projection = MetadataProjection::default();
+    assert!(matches!(
+        projection.consider(&ctx, &[0; 16], 99, Some("Custom"), Some("value"), "custom"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "collect Inventor BOM property"
+    ));
+    assert!(projection.bom_properties.is_empty());
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    projection
+        .consider(&ctx, &[0; 16], 99, Some("Custom"), Some("value"), "custom")
+        .expect("admitted property");
+    assert_eq!(
+        projection.bom_properties.get("Custom").map(String::as_str),
+        Some("value")
+    );
+}
+
+#[test]
+fn metadata_attribute_refuses_collection_limit_before_insert() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let mut projection = MetadataProjection::default();
+    projection.title = Some("Drawing".into());
+    let mut attributes = std::collections::BTreeMap::new();
+    assert!(matches!(
+        projection.apply_attributes(&ctx, &mut attributes),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "collect Inventor metadata attribute"
+    ));
+    assert!(attributes.is_empty());
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    projection
+        .apply_attributes(&ctx, &mut attributes)
+        .expect("admitted attribute");
+    assert_eq!(attributes.get("title").map(String::as_str), Some("Drawing"));
+}
+
+#[test]
 fn inventor_clipboard_preview_requires_matching_png_dimensions() {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3_u32.to_le_bytes());
