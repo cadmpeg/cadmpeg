@@ -1362,6 +1362,7 @@ fn incidence_face_singleton_support_tracks_multiword_configuration_masks() {
 
 #[test]
 fn ordered_face_support_prunes_edge_pairs_to_complete_configurations() {
+    catia_test_context!(ctx);
     let use_ = |edge| MeshBoundaryEdgeCandidate {
         edge,
         start: 0,
@@ -1376,25 +1377,68 @@ fn ordered_face_support_prunes_edge_pairs_to_complete_configurations() {
     let mut choices = vec![vec![[0, 1], [0, 2], [3, 4]], vec![[0, 1], [0, 2]]];
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
 
-    assert!(prune_ordered_face_endpoint_support(
-        &domains,
-        &mut choices,
-        &budget,
-    ));
+    assert!(
+        prune_ordered_face_endpoint_support(&ctx, &domains, &mut choices, &budget,)
+            .expect("service resource budget")
+    );
     assert_eq!(choices, vec![vec![[0, 1], [0, 2]], vec![[0, 1], [0, 2]]]);
 
     let mut unpruned = vec![vec![[0, 1], [0, 2], [3, 4]], vec![[0, 1], [0, 2]]];
     let exhausted = WorkBudget::new(0);
-    assert!(prune_ordered_face_endpoint_support(
-        &domains,
-        &mut unpruned,
-        &exhausted,
-    ));
+    assert!(
+        prune_ordered_face_endpoint_support(&ctx, &domains, &mut unpruned, &exhausted,)
+            .expect("service resource budget")
+    );
     assert_eq!(
         unpruned,
         vec![vec![[0, 1], [0, 2], [3, 4]], vec![[0, 1], [0, 2]]]
     );
     assert!(exhausted.exhausted());
+}
+
+#[test]
+fn ordered_face_support_refuses_selection_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: None,
+    };
+    let domains = [MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0), use_(1)]],
+        },
+    ])];
+    let choices = vec![vec![[0, 1]], vec![[0, 1]]];
+    catia_test_context!(service_ctx);
+    let mut service_choices = choices.clone();
+    assert!(prune_ordered_face_endpoint_support(
+        &service_ctx,
+        &domains,
+        &mut service_choices,
+        &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
+    )
+    .expect("service budget"));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let mut limited_choices = choices;
+    let error = prune_ordered_face_endpoint_support(
+        &ctx,
+        &domains,
+        &mut limited_choices,
+        &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
+    )
+    .expect_err("selection collection exceeds the limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_ordered_face_selection"));
 }
 
 #[test]
