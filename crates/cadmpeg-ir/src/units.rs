@@ -334,6 +334,15 @@ impl UnitVector3 {
     pub fn normalized(value: Vector3) -> Option<Self> {
         value.unit().map(Self)
     }
+    /// Normalize every finite nonzero vector with the arithmetic of
+    /// [`crate::features::FiniteVector3::unit_nonzero`]. Subnormal inputs are
+    /// admitted. The charted quotients have unit length to rounding.
+    #[must_use]
+    pub fn normalized_nonzero(value: Vector3) -> Option<Self> {
+        crate::features::FiniteVector3::new(value)?
+            .unit_nonzero()
+            .map(Self)
+    }
     /// Normalize by multiplying each component by the reciprocal of the
     /// Euclidean length. The length must be finite and nonzero, and the
     /// rounded result must remain a unit vector.
@@ -936,6 +945,29 @@ mod tests {
             FiniteVector::new([-0.0, f64::MAX, 5.0e-324]),
             Some(coordinates)
         );
+    }
+
+    #[test]
+    fn nonzero_unit_normalization_keeps_charted_bits_for_subnormals() {
+        use crate::features::FiniteVector3;
+
+        for raw in [
+            Vector3::new(5.0e-324, 0.0, -0.0),
+            Vector3::new(f64::MAX, f64::MIN_POSITIVE, 0.0),
+            Vector3::new(0.6, 0.8, 0.0),
+        ] {
+            let expected = FiniteVector3::new(raw)
+                .and_then(FiniteVector3::unit_nonzero)
+                .expect("finite nonzero direction");
+            let actual = UnitVector3::normalized_nonzero(raw).expect("unit direction");
+            assert_eq!(
+                [actual.as_raw().x, actual.as_raw().y, actual.as_raw().z].map(f64::to_bits),
+                [expected.x, expected.y, expected.z].map(f64::to_bits)
+            );
+            assert_eq!(UnitVector3::new(expected), Some(actual));
+        }
+        assert!(UnitVector3::normalized_nonzero(Vector3::new(0.0, 0.0, 0.0)).is_none());
+        assert!(UnitVector3::normalized_nonzero(Vector3::new(f64::NAN, 0.0, 0.0)).is_none());
     }
 
     #[test]
