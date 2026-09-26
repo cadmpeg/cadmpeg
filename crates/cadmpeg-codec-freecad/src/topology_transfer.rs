@@ -1789,7 +1789,7 @@ pub(crate) fn pcurve_geometry(
             })
             .map(PcurveGeometry::Hyperbola),
         TextCurve2d::Nurbs(nurbs) => Some(PcurveGeometry::Nurbs {
-            nurbs: PcurveNurbs::from_lanes(
+            nurbs: PcurveNurbs::from_finite_lanes(
                 nurbs.degree,
                 nurbs.knots.clone(),
                 nurbs.control_points.clone(),

@@ -17,7 +17,7 @@ use cadmpeg_ir::geometry::{
     SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::math::{Point2, Vector3};
 use cadmpeg_ir::scalar::{
     Angle, FiniteBinary32, FiniteReal, NonNegativeLength, NonNegativeReal, NonZeroLength,
     PositiveLength, PositiveReal,
@@ -1815,11 +1815,11 @@ pub(crate) struct NurbsCurve2d {
     /// Curve degree.
     pub(crate) degree: u32,
     /// Full knot vector.
-    pub(crate) knots: Vec<f64>,
+    pub(crate) knots: Vec<FiniteReal>,
     /// Ordered parameter-space poles.
-    pub(crate) control_points: Vec<Point2>,
+    pub(crate) control_points: Vec<FinitePoint2>,
     /// Optional rational weights.
-    pub(crate) weights: Option<Vec<f64>>,
+    pub(crate) weights: Option<Vec<FiniteReal>>,
     /// Periodicity flag.
     pub(crate) periodic: bool,
 }
@@ -3474,13 +3474,13 @@ fn parse_binary_surface(
             let mut control_points = Vec::with_capacity(capacity);
             let mut weights = rational.then(|| Vec::with_capacity(capacity));
             for _ in 0..pole_count {
-                control_points.push(cursor.point3("binary Bezier surface pole")?);
+                control_points.push(cursor.finite_point3("binary Bezier surface pole")?);
                 if let Some(weights) = &mut weights {
-                    weights.push(cursor.f64("binary Bezier surface weight")?);
+                    weights.push(cursor.finite_f64("binary Bezier surface weight")?);
                 }
             }
             TextSurface::Nurbs(
-                NurbsSurface::from_lanes(
+                NurbsSurface::from_finite_lanes(
                     NurbsSurfaceAxis::new(
                         u32::try_from(u_degree).map_err(|_| {
                             CodecError::Malformed("binary Bezier u degree exceeds u32".into())
@@ -3522,9 +3522,9 @@ fn parse_binary_surface(
             let mut control_points = Vec::with_capacity(capacity);
             let mut weights = rational.then(|| Vec::with_capacity(capacity));
             for _ in 0..pole_count {
-                control_points.push(cursor.point3("binary B-spline surface pole")?);
+                control_points.push(cursor.finite_point3("binary B-spline surface pole")?);
                 if let Some(weights) = &mut weights {
-                    weights.push(cursor.f64("binary B-spline surface weight")?);
+                    weights.push(cursor.finite_f64("binary B-spline surface weight")?);
                 }
             }
             TextSurface::Nurbs(normalize_periodic_surface(
@@ -3648,13 +3648,13 @@ fn parse_binary_curve(
             let mut control_points = Vec::with_capacity(capacity);
             let mut weights = rational.then(|| Vec::with_capacity(capacity));
             for _ in 0..pole_count {
-                control_points.push(cursor.point3("binary Bezier pole")?);
+                control_points.push(cursor.finite_point3("binary Bezier pole")?);
                 if let Some(weights) = &mut weights {
-                    weights.push(cursor.f64("binary Bezier weight")?);
+                    weights.push(cursor.finite_f64("binary Bezier weight")?);
                 }
             }
             TextCurve::Nurbs(
-                NurbsCurve::from_lanes(
+                NurbsCurve::from_finite_lanes(
                     u32::try_from(degree).map_err(|_| {
                         CodecError::Malformed("binary Bezier degree exceeds u32".into())
                     })?,
@@ -3677,16 +3677,16 @@ fn parse_binary_curve(
             let mut control_points = Vec::with_capacity(capacity);
             let mut weights = rational.then(|| Vec::with_capacity(capacity));
             for _ in 0..pole_count {
-                control_points.push(cursor.point3("binary B-spline pole")?);
+                control_points.push(cursor.finite_point3("binary B-spline pole")?);
                 if let Some(weights) = &mut weights {
-                    weights.push(cursor.f64("binary B-spline weight")?);
+                    weights.push(cursor.finite_f64("binary B-spline weight")?);
                 }
             }
             let knots = cursor.expanded_knots(knot_count, "binary B-spline")?;
             let (knots, padding) = normalize_periodic_knots(knots, degree, periodic)?;
             append_periodic_curve_poles(&mut control_points, weights.as_mut(), padding)?;
             TextCurve::Nurbs(
-                NurbsCurve::from_lanes(degree, knots, control_points, weights, periodic)
+                NurbsCurve::from_finite_lanes(degree, knots, control_points, weights, periodic)
                     .map_err(|error| CodecError::Malformed(error.to_string()))?,
             )
         }
@@ -3721,9 +3721,6 @@ fn parse_binary_curve2d(
             "binary parameter-curve nesting exceeds {MAX_GEOMETRY_NESTING_DEPTH}"
         )));
     }
-    let point = |cursor: &mut BinaryCursor<'_>, label| -> Result<Point2, CodecError> {
-        Ok(Point2::new(cursor.f64(label)?, cursor.f64(label)?))
-    };
     Ok(match cursor.u8("binary parameter-curve kind")? {
         1 => TextCurve2d::Line {
             origin: cursor.finite_point2("binary line origin")?,
@@ -3766,9 +3763,9 @@ fn parse_binary_curve2d(
             let mut control_points = Vec::with_capacity(capacity);
             let mut weights = rational.then(|| Vec::with_capacity(capacity));
             for _ in 0..pole_count {
-                control_points.push(point(cursor, "binary Bezier pole")?);
+                control_points.push(cursor.finite_point2("binary Bezier pole")?);
                 if let Some(weights) = &mut weights {
-                    weights.push(cursor.f64("binary Bezier weight")?);
+                    weights.push(cursor.finite_f64("binary Bezier weight")?);
                 }
             }
             TextCurve2d::Nurbs(NurbsCurve2d {
@@ -3792,9 +3789,9 @@ fn parse_binary_curve2d(
             let mut control_points = Vec::with_capacity(capacity);
             let mut weights = rational.then(|| Vec::with_capacity(capacity));
             for _ in 0..pole_count {
-                control_points.push(point(cursor, "binary B-spline pole")?);
+                control_points.push(cursor.finite_point2("binary B-spline pole")?);
                 if let Some(weights) = &mut weights {
-                    weights.push(cursor.f64("binary B-spline weight")?);
+                    weights.push(cursor.finite_f64("binary B-spline weight")?);
                 }
             }
             let knots = cursor.expanded_knots(knot_count, "binary B-spline")?;
@@ -3950,14 +3947,6 @@ impl<'a> BinaryCursor<'a> {
         Ok(Point2::new(self.f64(label)?, self.f64(label)?))
     }
 
-    fn point3(&mut self, label: &str) -> Result<Point3, CodecError> {
-        Ok(Point3::new(
-            self.f64(label)?,
-            self.f64(label)?,
-            self.f64(label)?,
-        ))
-    }
-
     fn finite_point3(&mut self, label: &str) -> Result<FinitePoint3, CodecError> {
         Ok(FinitePoint3::from_coordinates(
             self.finite_f64(label)?,
@@ -3990,10 +3979,10 @@ impl<'a> BinaryCursor<'a> {
         ))
     }
 
-    fn expanded_knots(&mut self, count: usize, label: &str) -> Result<Vec<f64>, CodecError> {
+    fn expanded_knots(&mut self, count: usize, label: &str) -> Result<Vec<FiniteReal>, CodecError> {
         let mut knots = Vec::new();
         for _ in 0..count {
-            let knot = self.f64(label)?;
+            let knot = self.finite_f64(label)?;
             let multiplicity = self.count(label)?;
             if knots
                 .len()
@@ -4211,9 +4200,9 @@ fn parse_bezier_curve2d(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve2d, Co
     let mut control_points = Vec::with_capacity(pole_count);
     let mut weights = rational.then(|| Vec::with_capacity(pole_count));
     for _ in 0..pole_count {
-        control_points.push(cursor.point2("2D Bezier pole")?);
+        control_points.push(cursor.finite_point2("2D Bezier pole")?);
         if let Some(weights) = &mut weights {
-            weights.push(cursor.real("2D Bezier weight")?);
+            weights.push(cursor.finite_real("2D Bezier weight")?);
         }
     }
     Ok(NurbsCurve2d {
@@ -4236,9 +4225,9 @@ fn parse_nurbs_curve2d(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve2d, Cod
     let mut control_points = Vec::with_capacity(capacity);
     let mut weights = rational.then(|| Vec::with_capacity(capacity));
     for _ in 0..pole_count {
-        control_points.push(cursor.point2("2D B-spline pole")?);
+        control_points.push(cursor.finite_point2("2D B-spline pole")?);
         if let Some(weights) = &mut weights {
-            weights.push(cursor.real("2D B-spline weight")?);
+            weights.push(cursor.finite_real("2D B-spline weight")?);
         }
     }
     let knots = parse_knots(cursor, knot_count, degree, "2D B-spline")?;
@@ -5104,9 +5093,9 @@ fn parse_nurbs_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, Cod
     let mut control_points = Vec::with_capacity(capacity);
     let mut weights = rational.then(|| Vec::with_capacity(capacity));
     for _ in 0..pole_count {
-        control_points.push(cursor.point("B-spline surface pole")?);
+        control_points.push(cursor.finite_point("B-spline surface pole")?);
         if let Some(weights) = &mut weights {
-            weights.push(cursor.real("B-spline surface weight")?);
+            weights.push(cursor.finite_real("B-spline surface weight")?);
         }
     }
     let u_knots = parse_knots(cursor, u_knot_count, u_degree, "B-spline u")?;
@@ -5135,12 +5124,12 @@ fn parse_bezier_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, Co
     let mut control_points = Vec::with_capacity(pole_count);
     let mut weights = rational.then(|| Vec::with_capacity(pole_count));
     for _ in 0..pole_count {
-        control_points.push(cursor.point("Bezier surface pole")?);
+        control_points.push(cursor.finite_point("Bezier surface pole")?);
         if let Some(weights) = &mut weights {
-            weights.push(cursor.real("Bezier surface weight")?);
+            weights.push(cursor.finite_real("Bezier surface weight")?);
         }
     }
-    NurbsSurface::from_lanes(
+    NurbsSurface::from_finite_lanes(
         NurbsSurfaceAxis::new(u_degree as u32, clamped_bezier_knots(u_degree), false),
         NurbsSurfaceAxis::new(v_degree as u32, clamped_bezier_knots(v_degree), false),
         NurbsSurfaceLanes::new(
@@ -5165,10 +5154,10 @@ fn parse_knots(
     knot_count: usize,
     degree: usize,
     label: &str,
-) -> Result<Vec<f64>, CodecError> {
+) -> Result<Vec<FiniteReal>, CodecError> {
     let mut knots = Vec::new();
     for _ in 0..knot_count {
-        let knot = cursor.real(&format!("{label} knot"))?;
+        let knot = cursor.finite_real(&format!("{label} knot"))?;
         let multiplicity = cursor.count(&format!("{label} knot multiplicity"), degree + 1)?;
         let expanded = knots
             .len()
@@ -5183,10 +5172,10 @@ fn parse_knots(
 }
 
 fn normalize_periodic_knots(
-    knots: Vec<f64>,
+    knots: Vec<FiniteReal>,
     degree: u32,
     periodic: bool,
-) -> Result<(Vec<f64>, usize), CodecError> {
+) -> Result<(Vec<FiniteReal>, usize), CodecError> {
     if !periodic {
         return Ok((knots, 0));
     }
@@ -5207,8 +5196,6 @@ fn normalize_periodic_knots(
     if first_multiplicity == 0
         || first_multiplicity > degree
         || last_multiplicity != first_multiplicity
-        || !first.is_finite()
-        || !last.is_finite()
         || first >= last
     {
         return Err(CodecError::Malformed(
@@ -5228,28 +5215,31 @@ fn normalize_periodic_knots(
         Vec::with_capacity(knots.len().checked_add(2 * padding).ok_or_else(|| {
             CodecError::Malformed("periodic B-spline knot limit exceeded".into())
         })?);
+    let overflow =
+        || CodecError::Malformed("periodic B-spline extension exceeds finite knot range".into());
     normalized.extend(
         knots[before_last - padding..before_last]
             .iter()
-            .map(|knot| first - (last - knot)),
+            .map(|knot| {
+                FiniteReal::new(first.get() - (last.get() - knot.get())).ok_or_else(overflow)
+            })
+            .collect::<Result<Vec<_>, _>>()?,
     );
     normalized.extend_from_slice(&knots);
     normalized.extend(
         knots[first_multiplicity..first_multiplicity + padding]
             .iter()
-            .map(|knot| last + (knot - first)),
+            .map(|knot| {
+                FiniteReal::new(last.get() + (knot.get() - first.get())).ok_or_else(overflow)
+            })
+            .collect::<Result<Vec<_>, _>>()?,
     );
-    if normalized.iter().any(|knot| !knot.is_finite()) {
-        return Err(CodecError::Malformed(
-            "periodic B-spline extension exceeds finite knot range".into(),
-        ));
-    }
     Ok((normalized, padding))
 }
 
 fn append_periodic_curve_poles<T: Clone>(
     control_points: &mut Vec<T>,
-    weights: Option<&mut Vec<f64>>,
+    weights: Option<&mut Vec<FiniteReal>>,
     padding: usize,
 ) -> Result<(), CodecError> {
     if padding == 0 {
@@ -5274,10 +5264,10 @@ fn append_periodic_curve_poles<T: Clone>(
 
 fn normalize_periodic_surface(
     degrees: [u32; 2],
-    knots: [Vec<f64>; 2],
+    knots: [Vec<FiniteReal>; 2],
     counts: [usize; 2],
-    control_points: Vec<Point3>,
-    weights: Option<Vec<f64>>,
+    control_points: Vec<FinitePoint3>,
+    weights: Option<Vec<FiniteReal>>,
     periodic: [bool; 2],
 ) -> Result<NurbsSurface, CodecError> {
     let [u_source_knots, v_source_knots] = knots;
@@ -5329,7 +5319,7 @@ fn normalize_periodic_surface(
     };
     let v_count = u32::try_from(new_v)
         .map_err(|_| CodecError::Malformed("periodic B-spline v pole count exceeds u32".into()))?;
-    NurbsSurface::from_lanes(
+    NurbsSurface::from_finite_lanes(
         NurbsSurfaceAxis::new(degrees[0], u_knots, periodic[0]),
         NurbsSurfaceAxis::new(degrees[1], v_knots, periodic[1]),
         NurbsSurfaceLanes::new(
@@ -5460,15 +5450,15 @@ fn parse_nurbs_curve(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve, CodecEr
     let mut control_points = Vec::with_capacity(capacity);
     let mut weights = rational.then(|| Vec::with_capacity(capacity));
     for _ in 0..pole_count {
-        control_points.push(cursor.point("B-spline pole")?);
+        control_points.push(cursor.finite_point("B-spline pole")?);
         if let Some(weights) = &mut weights {
-            weights.push(cursor.real("B-spline weight")?);
+            weights.push(cursor.finite_real("B-spline weight")?);
         }
     }
     let knots = parse_knots(cursor, knot_count, degree, "B-spline")?;
     let (knots, padding) = normalize_periodic_knots(knots, degree as u32, periodic)?;
     append_periodic_curve_poles(&mut control_points, weights.as_mut(), padding)?;
-    NurbsCurve::from_lanes(degree as u32, knots, control_points, weights, periodic)
+    NurbsCurve::from_finite_lanes(degree as u32, knots, control_points, weights, periodic)
         .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
@@ -5479,12 +5469,12 @@ fn parse_bezier_curve(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve, CodecE
     let mut control_points = Vec::with_capacity(pole_count);
     let mut weights = rational.then(|| Vec::with_capacity(pole_count));
     for _ in 0..pole_count {
-        control_points.push(cursor.point("Bezier pole")?);
+        control_points.push(cursor.finite_point("Bezier pole")?);
         if let Some(weights) = &mut weights {
-            weights.push(cursor.real("Bezier weight")?);
+            weights.push(cursor.finite_real("Bezier weight")?);
         }
     }
-    NurbsCurve::from_lanes(
+    NurbsCurve::from_finite_lanes(
         degree as u32,
         clamped_bezier_knots(degree),
         control_points,
@@ -5494,9 +5484,9 @@ fn parse_bezier_curve(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve, CodecE
     .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
-fn clamped_bezier_knots(degree: usize) -> Vec<f64> {
-    std::iter::repeat_n(0.0, degree + 1)
-        .chain(std::iter::repeat_n(1.0, degree + 1))
+fn clamped_bezier_knots(degree: usize) -> Vec<FiniteReal> {
+    std::iter::repeat_n(FiniteReal::ZERO, degree + 1)
+        .chain(std::iter::repeat_n(FiniteReal::ONE, degree + 1))
         .collect()
 }
 
@@ -5593,14 +5583,6 @@ impl<'a> TokenCursor<'a> {
             self.finite_real(label)?,
             self.finite_real(label)?,
             self.finite_real(label)?,
-        ))
-    }
-
-    fn point(&mut self, label: &str) -> Result<Point3, CodecError> {
-        Ok(Point3::new(
-            self.real(label)?,
-            self.real(label)?,
-            self.real(label)?,
         ))
     }
 
@@ -6533,8 +6515,14 @@ pub(crate) mod tests {
         let normalized = normalize_periodic_surface(
             [3, 1],
             [
-                vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0],
-                vec![0.0, 0.0, 1.0, 1.0],
+                vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0]
+                    .into_iter()
+                    .map(|value| FiniteReal::new(value).unwrap())
+                    .collect(),
+                vec![0.0, 0.0, 1.0, 1.0]
+                    .into_iter()
+                    .map(|value| FiniteReal::new(value).unwrap())
+                    .collect(),
             ],
             [6, 2],
             (0..6)
@@ -6544,6 +6532,7 @@ pub(crate) mod tests {
                         Point3::new(f64::from(u), 1.0, 0.0),
                     ]
                 })
+                .map(|point| FinitePoint3::new(point).unwrap())
                 .collect(),
             None,
             [true, false],
@@ -7044,8 +7033,21 @@ pub(crate) mod tests {
             panic!("expected normalized 2D Bezier")
         };
         assert_eq!(nurbs.degree, 2);
-        assert_eq!(nurbs.knots, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
-        assert_eq!(nurbs.weights.as_deref(), Some(&[1.0, 2.0, 1.0][..]));
+        assert_eq!(
+            nurbs
+                .knots
+                .iter()
+                .map(|value| value.get())
+                .collect::<Vec<_>>(),
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+        );
+        assert_eq!(
+            nurbs
+                .weights
+                .as_ref()
+                .map(|values| values.iter().map(|value| value.get()).collect::<Vec<_>>()),
+            Some(vec![1.0, 2.0, 1.0])
+        );
         let TextCurve2d::Trimmed {
             parameter_range,
             basis,
@@ -7071,8 +7073,14 @@ pub(crate) mod tests {
         assert_eq!(nurbs.weights.as_ref().map(Vec::len), Some(7));
         assert_eq!(nurbs.knots.len(), 14);
         assert_eq!(nurbs.control_points.first(), nurbs.control_points.last());
-        assert_eq!(nurbs.weights.as_ref().map(|weights| weights[0]), Some(1.0));
-        assert_eq!(nurbs.weights.as_ref().map(|weights| weights[6]), Some(1.0));
+        assert_eq!(
+            nurbs.weights.as_ref().map(|weights| weights[0].get()),
+            Some(1.0)
+        );
+        assert_eq!(
+            nurbs.weights.as_ref().map(|weights| weights[6].get()),
+            Some(1.0)
+        );
     }
 
     #[test]
@@ -7544,12 +7552,27 @@ pub(crate) mod tests {
 
     #[test]
     fn numerical_seventh_periodic_knots_keep_finite_exterior_knots() {
-        let (knots, padding) =
-            super::normalize_periodic_knots(vec![-1e308, -9e307, 9e307, 1e308], 1, true).unwrap();
+        let (knots, padding) = super::normalize_periodic_knots(
+            vec![-1e308, -9e307, 9e307, 1e308]
+                .into_iter()
+                .map(|value| FiniteReal::new(value).unwrap())
+                .collect(),
+            1,
+            true,
+        )
+        .unwrap();
         assert_eq!(padding, 1);
-        assert!((knots[0] / 1e308 + 1.1).abs() <= 4.0 * f64::EPSILON);
-        assert!((knots[5] / 1e308 - 1.1).abs() <= 4.0 * f64::EPSILON);
-        assert!(super::normalize_periodic_knots(vec![-1e308, 0.0, 1e308], 1, true).is_err());
+        assert!((knots[0].get() / 1e308 + 1.1).abs() <= 4.0 * f64::EPSILON);
+        assert!((knots[5].get() / 1e308 - 1.1).abs() <= 4.0 * f64::EPSILON);
+        assert!(super::normalize_periodic_knots(
+            vec![-1e308, 0.0, 1e308]
+                .into_iter()
+                .map(|value| FiniteReal::new(value).unwrap())
+                .collect(),
+            1,
+            true
+        )
+        .is_err());
     }
 
     /// `wrappers` offset surface records over one plane leaf, as text tokens.
