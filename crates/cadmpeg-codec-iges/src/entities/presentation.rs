@@ -5,7 +5,8 @@ use super::geometry::ProjectionOutcome;
 use super::{mirror_flag_valid, presentation_loss, vertical_text_flag_valid};
 use crate::directory::{DirectoryEntry, Hierarchy, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
-use crate::parameter::{ParameterRecord, TokenValue};
+use crate::loss::IgesLossCode;
+use crate::parameter::{ParameterRecord, TokenValue, TrailingPointerAnalysis};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::ids::AppearanceId;
@@ -202,6 +203,7 @@ pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
+    trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     global: &ProjectedGlobal,
     _ctx: Option<&DecodeContext<'_>>,
     sequences: &super::geometry::SourceSequences,
@@ -575,6 +577,46 @@ pub(super) fn project(
                 .body(&body.id)
                 .and_then(|sequence| entries.get(&sequence))
                 .map(|entry| entry.status.is_visible());
+        }
+        let Some(sequence) = sequences.body(&body.id) else {
+            continue;
+        };
+        let Some(TrailingPointerAnalysis::Unambiguous(groups)) =
+            trailing_pointer_analysis.get(&sequence)
+        else {
+            continue;
+        };
+        let names = groups
+            .properties()
+            .iter()
+            .filter_map(|pointer| {
+                entries
+                    .get(pointer)
+                    .filter(|entry| entry.entity_type == 406 && entry.form == 15)?;
+                let record = records.get(pointer)?;
+                (record.integer(1) == Some(1))
+                    .then(|| record.string(2))
+                    .flatten()
+                    .filter(|name| !name.is_empty())
+                    .filter(|name| {
+                        name.iter()
+                            .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+                    })
+                    .and_then(|name| String::from_utf8(name.to_vec()).ok())
+            })
+            .collect::<BTreeSet<_>>();
+        if names.len() > 1 {
+            if let Some(entry) = entries.get(&sequence) {
+                losses.push(
+                    IgesLossCode::BodyNameAmbiguous
+                        .note(format!(
+                            "IGES body owner D{sequence} has conflicting valid Type 406 Form 15 names"
+                        ))
+                        .with_provenance(entry.loss_provenance()),
+                );
+            }
+        } else {
+            body.name = names.into_iter().next();
         }
     }
 

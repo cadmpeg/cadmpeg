@@ -81,6 +81,8 @@ loss_codes! {
     DisplayDataNotProjected => "presentation.display-data-not-projected",
     /// A drawing has conflicting valid properties of the same form.
     DrawingPropertyAmbiguous => "presentation.drawing-property-ambiguous",
+    /// A body owner has conflicting valid Type 406 Form 15 names.
+    BodyNameAmbiguous => "presentation.body-name-ambiguous",
     /// The Global line-weight scale is unavailable, so no entity has a width.
     LineWeightScaleUnavailable => "presentation.line-weight-scale-unavailable",
     /// A Type 118 developability flag was not transferred to neutral geometry.
@@ -111,7 +113,7 @@ loss_codes! {
     PassthroughRecordOmitted => "writer.passthrough-omitted",
     /// The emitted Global minimum resolution exceeds the neutral declaration.
     WriterMinimumResolutionAdjusted => "writer.minimum-resolution-adjusted",
-    /// A body name cannot fit in one Directory label.
+    /// A body name cannot be encoded as a Type 406 Form 15 name.
     WriterBodyNameNotRepresented => "writer.body-name-not-represented",
     /// A body has no owning Directory Entry for its color.
     WriterBodyColorNotRepresented => "writer.body-color-not-represented",
@@ -148,6 +150,7 @@ impl IgesLossCode {
             | Self::CardFramingRecovered
             | Self::DisplayDataNotProjected
             | Self::DrawingPropertyAmbiguous
+            | Self::BodyNameAmbiguous
             | Self::LineWeightScaleUnavailable
             | Self::RuledDevelopabilityNotTransferred
             | Self::SplineHeaderNotTransferred
@@ -184,6 +187,7 @@ impl IgesLossCode {
                 LossTaxonomy::MaterialNotTransferred
             }
             Self::DrawingPropertyAmbiguous
+            | Self::BodyNameAmbiguous
             | Self::RuledDevelopabilityNotTransferred
             | Self::SplineHeaderNotTransferred
             | Self::GlobalMetadataFieldUnusable => LossTaxonomy::MetadataNotTransferred,
@@ -269,6 +273,7 @@ mod tests {
                 "card.framing-recovered",
                 "presentation.display-data-not-projected",
                 "presentation.drawing-property-ambiguous",
+                "presentation.body-name-ambiguous",
                 "presentation.line-weight-scale-unavailable",
                 "geometry.ruled-developability-not-transferred",
                 "geometry.spline-header-not-transferred",

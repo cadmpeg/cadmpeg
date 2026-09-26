@@ -2260,8 +2260,16 @@ pub(crate) fn project_geometry(
     );
     structure_projection.merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_structure")?;
-    super::presentation::project(ir, directory, parameters, global, ctx, &sequences)
-        .merge_into(&mut decoded, &mut losses);
+    super::presentation::project(
+        ir,
+        directory,
+        parameters,
+        trailing_pointer_analysis,
+        global,
+        ctx,
+        &sequences,
+    )
+    .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(
         ctx,
         ir,
