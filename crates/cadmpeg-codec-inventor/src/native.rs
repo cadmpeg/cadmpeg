@@ -1197,21 +1197,42 @@ pub(crate) struct RseRecordRecord {
 }
 
 impl RseRecordRecord {
-    pub(crate) fn from_frame(token: &str, frame: &crate::records::RseRecordFrame<'_>) -> Self {
-        Self {
-            id: format!("inventor:rse:record#{token}-{}", frame.ordinal),
-            token: token.into(),
+    pub(crate) fn from_frame(
+        ctx: &DecodeContext<'_>,
+        token: &str,
+        frame: &crate::records::RseRecordFrame<'_>,
+    ) -> Result<Self, CodecError> {
+        Ok(Self {
+            id: retained_format(
+                ctx,
+                format_args!("inventor:rse:record#{token}-{}", frame.ordinal),
+                "retain Inventor RSe record id",
+            )?,
+            token: retained_copy(ctx, token, "retain Inventor RSe record token")?,
             ordinal: frame.ordinal,
             selector: frame.selector,
             type_index: frame.type_index(),
-            type_id: crate::pmdc::type_id_string(frame.type_id),
+            type_id: {
+                ctx.charge_retained(32, "retain Inventor RSe record type GUID")?;
+                crate::pmdc::type_id_string(frame.type_id)
+            },
             payload_offset: frame.payload_offset,
             payload_len: u64::from(frame.payload_len()),
-            payload_sha256: cadmpeg_ir::hash::sha256_hex(frame.payload.window()),
+            payload_sha256: retained_digest(
+                ctx,
+                frame.payload.window(),
+                "retain Inventor RSe payload digest",
+            )?,
             trailing_payload_len: frame.trailing_payload_len(),
-            trailer_len: frame.trailer.window().len() as u64,
-            trailer_sha256: cadmpeg_ir::hash::sha256_hex(frame.trailer.window()),
-        }
+            trailer_len: u64::try_from(frame.trailer.window().len()).map_err(|_| {
+                ctx.refuse_codec_limit("Inventor record trailer length", u64::MAX - 1, u64::MAX)
+            })?,
+            trailer_sha256: retained_digest(
+                ctx,
+                frame.trailer.window(),
+                "retain Inventor RSe trailer digest",
+            )?,
+        })
     }
     pub(crate) fn type_index(&self) -> u8 {
         self.type_index
