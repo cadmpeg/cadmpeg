@@ -502,17 +502,36 @@ fn run_aggregate(view: &AggregateView) -> Result<()> {
     }
 }
 
+const MAX_QUERY_INPUT_BYTES: u64 = 256 * 1024 * 1024;
+
 fn read_input(path: &Path) -> Result<Vec<u8>> {
+    let mut bytes = Vec::new();
     if path == Path::new("-") {
-        let mut bytes = Vec::new();
         std::io::stdin()
             .lock()
+            .take(MAX_QUERY_INPUT_BYTES + 1)
             .read_to_end(&mut bytes)
             .context("reading standard input")?;
-        Ok(bytes)
     } else {
-        std::fs::read(path).with_context(|| format!("reading {}", path.display()))
+        let file =
+            std::fs::File::open(path).with_context(|| format!("reading {}", path.display()))?;
+        if file.metadata()?.len() > MAX_QUERY_INPUT_BYTES {
+            bail!(
+                "{} exceeds the query input limit of 256 MiB",
+                path.display()
+            );
+        }
+        file.take(MAX_QUERY_INPUT_BYTES + 1)
+            .read_to_end(&mut bytes)
+            .with_context(|| format!("reading {}", path.display()))?;
     }
+    if u64::try_from(bytes.len())? > MAX_QUERY_INPUT_BYTES {
+        bail!(
+            "{} exceeds the query input limit of 256 MiB",
+            path.display()
+        );
+    }
+    Ok(bytes)
 }
 
 /// Artifact kind decided from top-level keys alone.
