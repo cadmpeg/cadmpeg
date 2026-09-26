@@ -5465,10 +5465,10 @@ fn attach_standard_topology(
     {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
-    } else if let Some(topology) = (if !has_open_face_domains {
-        fbb::parse_standard_motif(ctx, spine, &edge_faces, &circle_anchors)
-    } else {
+    } else if let Some(topology) = (if has_open_face_domains {
         Ok(None)
+    } else {
+        fbb::parse_standard_motif(ctx, spine, &edge_faces, &circle_anchors)
     })
     .map_err(StandardTopologyError::Resource)?
     {

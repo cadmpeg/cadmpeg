@@ -1232,8 +1232,8 @@ fn compact_face_quotient_states_accumulate_across_calls() {
 
 #[test]
 fn compact_face_quotient_state_cap_is_exhausted() {
-    catia_test_context!(ctx);
     const EDGE_COUNT: usize = 14;
+    catia_test_context!(ctx);
     let choices = vec![Vec::new(); EDGE_COUNT];
     let quotient = MeshQuotient::new(
         (0..EDGE_COUNT * 2)
@@ -1418,10 +1418,10 @@ fn incidence_components_apply_monotone_partial_constraints_before_solution_limit
 
 #[test]
 fn incidence_components_reuse_independent_solution_domains() {
-    catia_test_context!(ctx);
     use std::ops::ControlFlow;
 
     const COMPONENT_COUNT: usize = 15;
+    catia_test_context!(ctx);
     let choices = (0..COMPONENT_COUNT)
         .map(|component| {
             let first = component * 2;
@@ -1468,10 +1468,10 @@ fn incidence_components_include_fixed_incidence_chains() {
 
 #[test]
 fn incidence_components_preflight_independent_unsatisfiable_domains() {
-    catia_test_context!(ctx);
     use std::ops::ControlFlow;
 
     const BROAD_COMPONENT_COUNT: usize = 15;
+    catia_test_context!(ctx);
     let mut choices = (0..BROAD_COMPONENT_COUNT)
         .map(|component| {
             let first = component * 2;
@@ -1548,10 +1548,10 @@ fn incidence_components_discard_quotient_impossible_complete_solutions() {
 
 #[test]
 fn incidence_components_preflight_quotient_impossible_domains() {
-    catia_test_context!(ctx);
     use std::ops::ControlFlow;
 
     const BROAD_COMPONENT_COUNT: usize = 15;
+    catia_test_context!(ctx);
     let mut choices = (0..BROAD_COMPONENT_COUNT)
         .map(|component| {
             let first = component * 2;
@@ -1632,9 +1632,9 @@ fn fixed_incidence_assignments_must_satisfy_the_mesh_quotient() {
 
 #[test]
 fn incidence_outcome_distinguishes_exhaustion_from_rejection() {
-    catia_test_context!(ctx);
     use crate::solve::incidence::{component_incidence_pair_solution_outcome, IncidenceSolve};
 
+    catia_test_context!(ctx);
     let choices = vec![(0..300).map(|point| [point, point]).collect::<Vec<_>>()];
     assert_eq!(
         component_incidence_pair_solution_outcome(
@@ -1670,10 +1670,10 @@ fn incidence_outcome_distinguishes_exhaustion_from_rejection() {
 
 #[test]
 fn incidence_component_products_stream_until_the_consumer_stops() {
-    catia_test_context!(ctx);
     use crate::solve::incidence::{visit_component_incidence_pair_solutions, IncidenceSolve};
     use std::ops::ControlFlow;
 
+    catia_test_context!(ctx);
     let choices = (0..9)
         .map(|edge| vec![[edge * 2, edge * 2], [edge * 2 + 1, edge * 2 + 1]])
         .collect::<Vec<_>>();
@@ -1707,11 +1707,11 @@ fn incidence_component_products_stream_until_the_consumer_stops() {
 
 #[test]
 fn incidence_component_prefix_can_prove_the_consumer_result_before_exhaustion() {
-    catia_test_context!(ctx);
     use crate::solve::incidence::{visit_component_incidence_pair_solutions, IncidenceSolve};
     use std::cell::Cell;
     use std::ops::ControlFlow;
 
+    catia_test_context!(ctx);
     let choices = vec![(0..300).map(|point| [point, point]).collect::<Vec<_>>()];
     let mut visited = 0usize;
     let validated = Cell::new(0usize);

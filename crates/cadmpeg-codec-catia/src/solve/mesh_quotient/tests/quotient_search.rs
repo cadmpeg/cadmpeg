@@ -39,9 +39,8 @@ fn edge_class_constraint_refuses_normalized_row_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
-    let error = match edge_class_search_constraint(&ctx, &[0], &choices) {
-        Err(error) => error,
-        Ok(_) => panic!("the normalized row exceeds the collection limit"),
+    let Err(error) = edge_class_search_constraint(&ctx, &[0], &choices) else {
+        panic!("the normalized row exceeds the collection limit");
     };
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
@@ -457,9 +456,9 @@ fn coordinate_domain_preparation_scales_with_constraint_graph_work() {
 
 #[test]
 fn incidence_search_consumes_implicit_coordinate_root_pairs() {
-    catia_test_context!(ctx);
     use crate::solve::incidence::{component_incidence_pair_solution_outcome, IncidenceSolve};
 
+    catia_test_context!(ctx);
     let candidates = vec![Vec::new(); 3];
     let quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
         &candidates,
@@ -555,7 +554,7 @@ fn ordered_corner_equations_propagate_direction_collection_refusals() {
         let equations = crate::solve::mesh_quotient::common_supported_corner_equations(
             ctx,
             &mut quotient,
-            &[assignment.clone()],
+            std::slice::from_ref(&assignment),
             &budget,
         )?;
         Ok::<_, CodecError>(equations)
@@ -606,8 +605,7 @@ fn ordered_corner_equations_propagate_direction_collection_refusals() {
         &mut quotient,
         &budget,
     )
-    .err()
-    .expect("direction row exceeds the collection limit");
+    .expect_err("direction row exceeds the collection limit");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "catia_boundary_dir_row"));
@@ -838,8 +836,8 @@ fn quotient_point_existence_declines_when_its_work_budget_is_exhausted() {
 
 #[test]
 fn point_assignment_handles_deep_augmenting_paths_iteratively() {
-    catia_test_context!(ctx);
     const ROOT_COUNT: usize = 10_000;
+    catia_test_context!(ctx);
     let mut domains = (0..ROOT_COUNT - 1)
         .map(|root| Arc::new(HashSet::from([root, root + 1])))
         .collect::<Vec<_>>();
@@ -1575,8 +1573,8 @@ fn mesh_selection_declines_when_its_work_budget_is_exhausted() {
 
 #[test]
 fn mesh_selection_finishes_the_active_face_component_first() {
-    catia_test_context!(ctx);
     const UNRELATED_FACE_COUNT: usize = 1_000;
+    catia_test_context!(ctx);
     let use_edge = |edge| MeshBoundaryEdgeCandidate {
         edge,
         start: 0,

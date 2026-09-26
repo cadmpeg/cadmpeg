@@ -845,7 +845,6 @@ impl B5Loop {
 }
 
 /// Resolve the dominant object-stream topology graph through inline object ids.
-#[must_use]
 pub(crate) fn parse(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -1934,7 +1933,6 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
 
 /// Resolve the unique length-closed geometry construction frames independently
 /// of the dominant topology run.
-#[must_use]
 #[cfg(test)]
 fn targeted_geometry_graph(
     ctx: &DecodeContext<'_>,

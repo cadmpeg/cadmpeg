@@ -221,74 +221,6 @@ fn partial_compact_assignment_viable(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{partial_compact_assignment_viable, MeshFaceBoundaryDomain};
-    use crate::solve::missing_edge::{
-        MeshBoundaryEdgeCandidate, MeshDeferredBoundaryCycle, MeshDeferredFaceBoundary,
-    };
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    use std::collections::HashMap;
-
-    #[test]
-    fn deferred_coordinate_boundary_refuses_edge_point_collection_limit() {
-        let domain = MeshFaceBoundaryDomain::DeferredValidation(MeshDeferredFaceBoundary {
-            cycles: vec![MeshDeferredBoundaryCycle {
-                length: 2,
-                exact_uses: vec![(
-                    MeshBoundaryEdgeCandidate {
-                        edge: 0,
-                        start: 0,
-                        end: 1,
-                        reversed: Some(false),
-                    },
-                    1,
-                )],
-            }],
-            missing_edges: vec![1],
-        });
-        let edge_by_id = HashMap::from([(0, 0), (1, 1)]);
-        let edges = [[0, 1], [2, 3]];
-        let assigned = [None, Some(1), Some(1), Some(0)];
-
-        let arena = DecodeArena::new();
-        let service = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &service)
-            .expect("fixture fits the service profile");
-        assert!(partial_compact_assignment_viable(
-            &ctx,
-            &domain,
-            &edge_by_id,
-            &edges,
-            2,
-            &assigned,
-            (0, 0),
-            None,
-        )
-        .expect("service budget"));
-
-        let mut limited = DecodePolicy::service();
-        limited.limits.max_collection_items = 29;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &limited)
-            .expect("fixture fits the input limit");
-        let error = partial_compact_assignment_viable(
-            &ctx,
-            &domain,
-            &edge_by_id,
-            &edges,
-            2,
-            &assigned,
-            (0, 0),
-            None,
-        )
-        .expect_err("edge point collection exceeds the limit");
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "catia coordinate assignment edge points"));
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 pub(super) fn close_coordinate_roots_with_incidence(
     ctx: &DecodeContext<'_>,
@@ -1522,4 +1454,72 @@ pub(super) fn close_coordinate_roots_with_incidence(
         return Ok(None);
     }
     quotient.point_assignment(ctx, point_count, edge_candidates, None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{partial_compact_assignment_viable, MeshFaceBoundaryDomain};
+    use crate::solve::missing_edge::{
+        MeshBoundaryEdgeCandidate, MeshDeferredBoundaryCycle, MeshDeferredFaceBoundary,
+    };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::HashMap;
+
+    #[test]
+    fn deferred_coordinate_boundary_refuses_edge_point_collection_limit() {
+        let domain = MeshFaceBoundaryDomain::DeferredValidation(MeshDeferredFaceBoundary {
+            cycles: vec![MeshDeferredBoundaryCycle {
+                length: 2,
+                exact_uses: vec![(
+                    MeshBoundaryEdgeCandidate {
+                        edge: 0,
+                        start: 0,
+                        end: 1,
+                        reversed: Some(false),
+                    },
+                    1,
+                )],
+            }],
+            missing_edges: vec![1],
+        });
+        let edge_by_id = HashMap::from([(0, 0), (1, 1)]);
+        let edges = [[0, 1], [2, 3]];
+        let assigned = [None, Some(1), Some(1), Some(0)];
+
+        let arena = DecodeArena::new();
+        let service = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &service)
+            .expect("fixture fits the service profile");
+        assert!(partial_compact_assignment_viable(
+            &ctx,
+            &domain,
+            &edge_by_id,
+            &edges,
+            2,
+            &assigned,
+            (0, 0),
+            None,
+        )
+        .expect("service budget"));
+
+        let mut limited = DecodePolicy::service();
+        limited.limits.max_collection_items = 29;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &limited)
+            .expect("fixture fits the input limit");
+        let error = partial_compact_assignment_viable(
+            &ctx,
+            &domain,
+            &edge_by_id,
+            &edges,
+            2,
+            &assigned,
+            (0, 0),
+            None,
+        )
+        .expect_err("edge point collection exceeds the limit");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "catia coordinate assignment edge points"));
+    }
 }

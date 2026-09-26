@@ -60,9 +60,8 @@ fn b5_ownership_refuses_face_id_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("fixture fits the input limit");
-    let error = match super::faces::ownership_plan(&ctx, &graph) {
-        Err(error) => error,
-        Ok(_) => panic!("one face ownership id exceeds the collection limit"),
+    let Err(error) = super::faces::ownership_plan(&ctx, &graph) else {
+        panic!("one face ownership id exceeds the collection limit");
     };
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
@@ -99,9 +98,8 @@ fn b5_loop_orientation_refuses_loop_id_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("fixture fits the input limit");
-    let error = match super::faces::orient_loop_members(&ctx, &graph, reversed) {
-        Err(error) => error,
-        Ok(_) => panic!("loop ids exceed the collection limit"),
+    let Err(error) = super::faces::orient_loop_members(&ctx, &graph, reversed) else {
+        panic!("loop ids exceed the collection limit");
     };
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems

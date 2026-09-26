@@ -867,7 +867,6 @@ pub(in crate::families) fn resolved_surface_carrier_in_graph(
 }
 
 /// Lower one decoded degree-5 UV jet through its resolved native chart.
-#[must_use]
 pub(in crate::families) fn resolved_object_stream_pcurve(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     pcurve: &crate::families::a5a8::records::A8Pcurve,

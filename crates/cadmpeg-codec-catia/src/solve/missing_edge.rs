@@ -996,10 +996,10 @@ pub(crate) fn repeated_face_endpoint_closures(
         if add_pair(ctx, &mut degrees[faces[0]], endpoint_pairs[edge])?.is_none() {
             return Ok(None);
         }
-        if faces[1] != faces[0] {
-            if add_pair(ctx, &mut degrees[faces[1]], endpoint_pairs[edge])?.is_none() {
-                return Ok(None);
-            }
+        if faces[1] != faces[0]
+            && add_pair(ctx, &mut degrees[faces[1]], endpoint_pairs[edge])?.is_none()
+        {
+            return Ok(None);
         }
     }
     let mut branches = Vec::new();

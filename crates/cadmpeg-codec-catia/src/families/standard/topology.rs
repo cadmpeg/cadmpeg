@@ -206,10 +206,8 @@ impl StandardTopology {
             return Ok(None);
         };
         for (group, kind) in groups.into_iter().zip(kinds) {
-            if kind == BodyKind::Solid {
-                if orient_face_cycles(ctx, group)?.is_none() {
-                    return Ok(None);
-                }
+            if kind == BodyKind::Solid && orient_face_cycles(ctx, group)?.is_none() {
+                return Ok(None);
             }
         }
         Ok(Some(()))
@@ -1067,7 +1065,7 @@ pub(crate) fn parse_fbb(
     };
     if classify_fbb_edge_layouts(&mut edge_rows, &trims).is_none() {
         return Ok(None);
-    };
+    }
     reconstruct(ctx, edge_rows, vertex_points, &trims)
 }
 

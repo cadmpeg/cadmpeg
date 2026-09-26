@@ -486,12 +486,14 @@ pub(crate) fn unique_coordinate_bijection(
             classes
         })
         .collect::<Vec<_>>();
-    let mut capacities = ctx.alloc_filled(representatives.len(), 0usize, "catia_bijection_capacities")?;
+    let mut capacities =
+        ctx.alloc_filled(representatives.len(), 0usize, "catia_bijection_capacities")?;
     for class in &point_classes {
         capacities[*class] += 1;
     }
     let mut slot_classes = Vec::with_capacity(points.len());
-    let mut slots_by_class = ctx.alloc_filled(capacities.len(), Vec::new(), "catia_bijection_slots")?;
+    let mut slots_by_class =
+        ctx.alloc_filled(capacities.len(), Vec::new(), "catia_bijection_slots")?;
     for (class, capacity) in capacities.into_iter().enumerate() {
         for _ in 0..capacity {
             let slot = slot_classes.len();
@@ -618,10 +620,10 @@ mod tests {
 
     #[test]
     fn matching_support_pruning_matches_forced_edge_search() {
+        const POINT_COUNT: usize = 4;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::service())
             .expect("matching fixture fits the service profile");
-        const POINT_COUNT: usize = 4;
         for first_mask in 1u8..1 << POINT_COUNT {
             for second_mask in 1u8..1 << POINT_COUNT {
                 for third_mask in 1u8..1 << POINT_COUNT {
@@ -637,14 +639,19 @@ mod tests {
                         None,
                         None,
                     )
-                    .expect("matching search fits the service profile")
-                    else {
+                    .expect("matching search fits the service profile") else {
                         continue;
                     };
                     let mut pruned = original.clone();
-                    retain_distinct_matching_supports(&ctx, &mut pruned, POINT_COUNT, &matching, None)
-                        .expect("matching supports fit the service profile")
-                        .expect("valid matching");
+                    retain_distinct_matching_supports(
+                        &ctx,
+                        &mut pruned,
+                        POINT_COUNT,
+                        &matching,
+                        None,
+                    )
+                    .expect("matching supports fit the service profile")
+                    .expect("valid matching");
                     for (domain, values) in original.iter().enumerate() {
                         for &point in values {
                             let supported = distinct_domain_matching_with_budget(

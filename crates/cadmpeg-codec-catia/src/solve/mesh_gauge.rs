@@ -1144,8 +1144,8 @@ fn mesh_candidate_comparison_collapses_coordinate_row_gauge() {
 
 #[test]
 fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorphisms() {
-    catia_test_context!(ctx);
     const COMPONENT_COUNT: usize = 3;
+    catia_test_context!(ctx);
     let edge_rows = (0..COMPONENT_COUNT * 2)
         .map(|edge| EdgeRow {
             kind: 2,
@@ -1850,8 +1850,7 @@ fn mesh_candidate_canonicalization_propagates_collection_refusals() {
         .expect("fixture fits the input limit");
     let error =
         canonicalize_mesh_candidate_for_output(&ctx, &candidate.0, &candidate.1, Some(gauge))
-            .err()
-            .expect("canonicalization exceeds the collection limit");
+            .expect_err("canonicalization exceeds the collection limit");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "catia_mesh_vertex_seen"));
