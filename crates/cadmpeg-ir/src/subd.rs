@@ -575,6 +575,20 @@ impl TryFrom<SubdVertexWire> for SubdVertex {
 }
 
 impl SubdVertex {
+    /// Construct a control vertex from an admitted finite position.
+    #[must_use]
+    pub fn from_parts(
+        point: FinitePoint3,
+        tag: SubdVertexTag,
+        secondary_grips: Option<SubdVertexGripLayout>,
+    ) -> Self {
+        Self {
+            point,
+            tag,
+            secondary_grips,
+        }
+    }
+
     /// Construct a control vertex with a finite position.
     pub fn new(
         point: Point3,
@@ -829,6 +843,28 @@ impl TryFrom<SubdEdgeWire> for SubdEdge {
 }
 
 impl SubdEdge {
+    /// Construct an edge from admitted numeric controls.
+    pub fn from_checked_parts(
+        vertices: [u32; 2],
+        sharpness: [NonNegativeReal; 2],
+        tag: SubdEdgeTag,
+        knot_interval: Option<PositiveReal>,
+        sector_coefficients: [FiniteReal; 2],
+    ) -> Result<Self, SubdError> {
+        if vertices[0] == vertices[1] {
+            return Err(SubdError::Admission(
+                "vertices must name distinct endpoints".into(),
+            ));
+        }
+        Ok(Self {
+            vertices,
+            sharpness,
+            tag,
+            knot_interval,
+            sector_coefficients,
+        })
+    }
+
     /// Construct an edge with distinct endpoints and admitted numeric controls.
     pub fn new(
         vertices: [u32; 2],

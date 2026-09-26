@@ -396,6 +396,14 @@ pub fn admit_revolution_axis(
     direction: Vector3,
 ) -> Result<(FinitePoint3, UnitVector3), ProceduralGeometryError> {
     let direction = UnitVector3::new(direction).ok_or(INVALID_REVOLUTION_AXIS)?;
+    admit_revolution_axis_parts(origin, direction)
+}
+
+/// Admit an axis origin beside a unit direction already admitted by its reader.
+pub fn admit_revolution_axis_parts(
+    origin: Point3,
+    direction: UnitVector3,
+) -> Result<(FinitePoint3, UnitVector3), ProceduralGeometryError> {
     Ok((
         FinitePoint3::new(origin).ok_or(INVALID_REVOLUTION_AXIS)?,
         direction,

@@ -381,6 +381,37 @@ impl PolylineSamples<FiniteReal, FinitePoint3> {
 }
 
 impl PolylineCurve {
+    /// Build from admitted sample scalars and points, checking only the
+    /// sample count, computed deviation, and parameter order.
+    pub fn from_checked_samples(
+        samples: PolylineSamples<FiniteReal, FinitePoint3>,
+        chordal_deflection: f64,
+    ) -> Result<Self, GeometryLayoutError> {
+        if samples.count() < 2 {
+            return Err(geometry_layout_error(
+                "polyline must contain at least two points",
+            ));
+        }
+        let chordal_deflection = admit_chordal_deflection(chordal_deflection)?;
+        if let PolylineSamples::Parameterized { vertices } = &samples {
+            if !vertices
+                .windows(2)
+                .all(|pair| pair[0].parameter < pair[1].parameter)
+                && !vertices
+                    .windows(2)
+                    .all(|pair| pair[0].parameter > pair[1].parameter)
+            {
+                return Err(geometry_layout_error(
+                    "parameters must be finite and strictly monotonic",
+                ));
+            }
+        }
+        Ok(Self {
+            samples,
+            chordal_deflection,
+        })
+    }
+
     /// Build a polyline from its sample rows.
     ///
     /// A parameterized sample carries its parameter in the row, so there is no
