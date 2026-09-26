@@ -338,57 +338,14 @@ pub(super) fn operation_state_journal_groups(
 
 /// Decode field-declared roll-forward groups from canonical feature-history areas.
 pub(super) fn operation_state_groups(
+    ctx: Option<&DecodeContext<'_>>,
     container: &Container,
 ) -> Result<Vec<OmRollForwardStateTable>, CodecError> {
     let sections = container.om_sections();
     crate::native::features::canonical_feature_history_links(segment_om_links(container))
         .into_iter()
         .enumerate()
-        .filter_map(|(section_ordinal, link)| {
-            let (entry, section) = sections.iter().find(|(entry, section)| {
-                entry
-                    .file_span()
-                    .map_or(section.offset as u64, |(offset, _)| {
-                        offset + section.offset as u64
-                    })
-                    == link.location.section_offset()
-            })?;
-            let table = section.operation_state_group_table()?;
-            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-            let table_end_offset = entry_offset + table.end_offset() as u64;
-            let table_footer = table.footer();
-            let frames = table
-                .into_groups()
-                .into_iter()
-                .filter_map(|group| group.into_absolute(entry_offset))
-                .collect();
-            Some(
-                OmRollForwardStateTable::from_frames(
-                    section_ordinal,
-                    &link.id,
-                    &entry.name,
-                    table_footer,
-                    table_end_offset,
-                    frames,
-                )
-                .map_err(|error| {
-                    CodecError::malformed(format!(
-                        "{}: {error}",
-                        crate::loss::NxLossCode::RollForwardTableRejected.code()
-                    ))
-                }),
-            )
-        })
-        .collect()
-}
-
-/// Decode standalone operation-state messages from canonical feature-history areas.
-pub(super) fn operation_state_messages(container: &Container) -> Vec<OmOperationStateMessage> {
-    let sections = container.om_sections();
-    crate::native::features::canonical_feature_history_links(segment_om_links(container))
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, link)| {
+        .map(|(section_ordinal, link)| {
             let Some((entry, section)) = sections.iter().find(|(entry, section)| {
                 entry
                     .file_span()
@@ -397,14 +354,65 @@ pub(super) fn operation_state_messages(container: &Container) -> Vec<OmOperation
                     })
                     == link.location.section_offset()
             }) else {
-                return Vec::new();
+                return Ok(None);
             };
-            let Some(messages) = section.operation_state_messages() else {
-                return Vec::new();
+            let Some(table) = section.operation_state_group_table(ctx)? else {
+                return Ok(None);
+            };
+            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+            let table_end_offset = entry_offset + table.end_offset() as u64;
+            let table_footer = table.footer();
+            let frames = table
+                .into_groups()
+                .into_iter()
+                .filter_map(|group| group.into_absolute(entry_offset))
+                .collect();
+            let table = OmRollForwardStateTable::from_frames(
+                section_ordinal,
+                &link.id,
+                &entry.name,
+                table_footer,
+                table_end_offset,
+                frames,
+            )
+            .map_err(|error| {
+                CodecError::malformed(format!(
+                    "{}: {error}",
+                    crate::loss::NxLossCode::RollForwardTableRejected.code()
+                ))
+            })?;
+            Ok(Some(table))
+        })
+        .collect::<Result<Vec<_>, CodecError>>()
+        .map(|tables| tables.into_iter().flatten().collect())
+}
+
+/// Decode standalone operation-state messages from canonical feature-history areas.
+pub(super) fn operation_state_messages(
+    ctx: Option<&DecodeContext<'_>>,
+    container: &Container,
+) -> Result<Vec<OmOperationStateMessage>, CodecError> {
+    let sections = container.om_sections();
+    crate::native::features::canonical_feature_history_links(segment_om_links(container))
+        .into_iter()
+        .enumerate()
+        .map(|(section_ordinal, link)| {
+            let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+                entry
+                    .file_span()
+                    .map_or(section.offset as u64, |(offset, _)| {
+                        offset + section.offset as u64
+                    })
+                    == link.location.section_offset()
+            }) else {
+                return Ok(Vec::new());
+            };
+            let Some(messages) = section.operation_state_messages(ctx)? else {
+                return Ok(Vec::new());
             };
             let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
-            messages
+            Ok(messages
                 .into_iter()
                 .enumerate()
                 .filter_map(move |(ordinal, message)| {
@@ -420,18 +428,22 @@ pub(super) fn operation_state_messages(container: &Container) -> Vec<OmOperation
                         source_offset: entry_offset + message.offset() as u64,
                     })
                 })
-                .collect()
+                .collect())
         })
-        .collect()
+        .collect::<Result<Vec<Vec<_>>, CodecError>>()
+        .map(|rows| rows.into_iter().flatten().collect())
 }
 
 /// Decode exact per-object operation-state status rows from feature-history areas.
-pub(super) fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateStatus> {
+pub(super) fn operation_state_statuses(
+    ctx: Option<&DecodeContext<'_>>,
+    container: &Container,
+) -> Result<Vec<OmOperationStateStatus>, CodecError> {
     let sections = container.om_sections();
     crate::native::features::canonical_feature_history_links(segment_om_links(container))
         .into_iter()
         .enumerate()
-        .flat_map(|(section_ordinal, link)| {
+        .map(|(section_ordinal, link)| {
             let Some((entry, section)) = sections.iter().find(|(entry, section)| {
                 entry
                     .file_span()
@@ -440,14 +452,14 @@ pub(super) fn operation_state_statuses(container: &Container) -> Vec<OmOperation
                     })
                     == link.location.section_offset()
             }) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
-            let Some(table) = section.operation_state_status_table() else {
-                return Vec::new();
+            let Some(table) = section.operation_state_status_table(ctx)? else {
+                return Ok(Vec::new());
             };
             let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
-            table
+            Ok(table
                 .into_entries()
                 .filter_map(|(offset, entry)| match entry {
                     StateTableEntry::Status(row) => Some((offset, row)),
@@ -467,18 +479,22 @@ pub(super) fn operation_state_statuses(container: &Container) -> Vec<OmOperation
                         entry_offset.checked_add(offset as u64)?,
                     )
                 })
-                .collect()
+                .collect())
         })
-        .collect()
+        .collect::<Result<Vec<Vec<_>>, CodecError>>()
+        .map(|rows| rows.into_iter().flatten().collect())
 }
 
 /// Decode exact feature-record slot lanes from feature-history status blocks.
-pub(super) fn operation_state_slot_lanes(container: &Container) -> Vec<OmOperationStateSlotLane> {
+pub(super) fn operation_state_slot_lanes(
+    ctx: Option<&DecodeContext<'_>>,
+    container: &Container,
+) -> Result<Vec<OmOperationStateSlotLane>, CodecError> {
     let sections = container.om_sections();
     crate::native::features::canonical_feature_history_links(segment_om_links(container))
         .into_iter()
         .enumerate()
-        .flat_map(|(section_ordinal, link)| {
+        .map(|(section_ordinal, link)| {
             let Some((entry, section)) = sections.iter().find(|(entry, section)| {
                 entry
                     .file_span()
@@ -487,14 +503,14 @@ pub(super) fn operation_state_slot_lanes(container: &Container) -> Vec<OmOperati
                     })
                     == link.location.section_offset()
             }) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
-            let Some(table) = section.operation_state_status_table() else {
-                return Vec::new();
+            let Some(table) = section.operation_state_status_table(ctx)? else {
+                return Ok(Vec::new());
             };
             let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
-            table
+            Ok(table
                 .into_entries()
                 .filter_map(|(offset, entry)| match entry {
                     StateTableEntry::Status(_) => None,
@@ -513,9 +529,10 @@ pub(super) fn operation_state_slot_lanes(container: &Container) -> Vec<OmOperati
                         source_entry: entry.name.clone(),
                     })
                 })
-                .collect()
+                .collect())
         })
-        .collect()
+        .collect::<Result<Vec<Vec<_>>, CodecError>>()
+        .map(|rows| rows.into_iter().flatten().collect())
 }
 
 /// Unit declared by an NX numeric expression.

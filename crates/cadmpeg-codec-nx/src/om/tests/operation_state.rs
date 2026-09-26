@@ -78,7 +78,8 @@ fn operation_state_group_table_anchors_to_counter_map_boundary() {
     bytes.extend([0x99; 16]);
 
     let map = crate::om::state_counter::StateCounterMap::read(&bytes, 0).expect("counter map");
-    let table = operation_state_group_table_before_counter_map(&bytes, map.offset(), 0)
+    let table = operation_state_group_table_before_counter_map(None, &bytes, map.offset(), 0)
+        .unwrap()
         .expect("group table");
     assert_eq!(table.offset(), 3);
     assert_eq!(table.end_offset(), map.offset());
@@ -103,7 +104,7 @@ fn operation_state_group_table_anchors_to_counter_map_boundary() {
 }
 
 #[test]
-fn operation_state_group_table_handles_a_long_adjacent_group_run() {
+fn operation_state_group_table_handles_a_long_adjacent_group_run_and_refuses_collection_limit() {
     const GROUP_COUNT: usize = 4096;
     let mut bytes = Vec::with_capacity(GROUP_COUNT * 3 + 12);
     for _ in 0..GROUP_COUNT {
@@ -113,12 +114,26 @@ fn operation_state_group_table_handles_a_long_adjacent_group_run() {
     bytes.extend([0x05, 0x01, 0x00, 0x01, 0x01, 0x4e]);
     bytes.extend([0x05, 0x02, 0x01, 0x01, 0x01, 0x4e]);
 
-    let table = operation_state_group_table_before_counter_map(&bytes, map_start, 0)
+    let table = operation_state_group_table_before_counter_map(None, &bytes, map_start, 0)
+        .unwrap()
         .expect("long adjacent group run");
     assert_eq!(table.groups().len(), GROUP_COUNT);
     assert_eq!(table.offset(), 0);
     assert_eq!(table.end_offset(), map_start);
     assert!(table.trailing_bytes().is_empty());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = (GROUP_COUNT - 1) as u64;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let error = operation_state_group_table_before_counter_map(Some(&ctx), &bytes, map_start, 0)
+        .err()
+        .expect("the final group exceeds the admitted collection count");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+    ));
 }
 
 #[test]

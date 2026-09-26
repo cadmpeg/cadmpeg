@@ -190,7 +190,7 @@ fn native_catalog_emits_field_declared_roll_forward_groups() {
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
             .expect("required invariant");
 
-    let tables = operation_state_groups(&container).unwrap();
+    let tables = operation_state_groups(None, &container).unwrap();
     let groups = tables
         .iter()
         .flat_map(OmRollForwardStateTable::groups)
@@ -247,7 +247,7 @@ fn native_catalog_emits_bounded_operation_state_messages() {
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
             .expect("required invariant");
 
-    let messages = operation_state_messages(&container);
+    let messages = operation_state_messages(None, &container).unwrap();
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].body.text.as_str(), "state warning");
     assert_eq!(messages[0].body.value.marker(), 0xaa);
@@ -285,7 +285,7 @@ fn native_catalog_emits_bounded_operation_state_statuses_and_slot_lanes() {
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
             .expect("required invariant");
 
-    let statuses = operation_state_statuses(&container);
+    let statuses = operation_state_statuses(None, &container).unwrap();
     assert_eq!(statuses.len(), 2);
     assert_eq!(statuses[0].body().status_code.value(), 0x41);
     assert_eq!(statuses[0].body().object_index.value(), 0x20);
@@ -305,7 +305,7 @@ fn native_catalog_emits_bounded_operation_state_statuses_and_slot_lanes() {
         } if u8::from(link_code) == 0x4b && object_index.value() == 0x22
     ));
 
-    let lanes = operation_state_slot_lanes(&container);
+    let lanes = operation_state_slot_lanes(None, &container).unwrap();
     assert_eq!(lanes.len(), 1);
     assert_eq!(lanes[0].frame.slots().len(), 3);
     assert_eq!(
