@@ -36,7 +36,8 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
     let mut bytes = compact_counted_nurbs_surface_carrier(180, 181, 10);
-    let carrier = crate::brep::spline::scan_surface_carriers(&bytes, &mut Vec::new())
+    let carrier = crate::brep::spline::scan_surface_carriers(None, &bytes, &mut Vec::new())
+        .expect("surface scan")
         .remove(&180)
         .expect("compact NURBS carrier");
     let Some(SolvedSurfaceGeometry::Nurbs(old)) = carrier.geometry.solved() else {
@@ -105,7 +106,8 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
     crate::brep::spline::patch_nurbs_surface(&mut bytes, 0, old, &new, 0.001)
         .expect("compact NURBS patch");
 
-    let patched = crate::brep::spline::scan_surface_carriers(&bytes, &mut Vec::new())
+    let patched = crate::brep::spline::scan_surface_carriers(None, &bytes, &mut Vec::new())
+        .expect("surface scan")
         .remove(&180)
         .expect("patched compact NURBS carrier");
     let Some(SolvedSurfaceGeometry::Nurbs(patched)) = patched.geometry.solved() else {

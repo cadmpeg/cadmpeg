@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Wrappers over internal parsers for the `cadmpeg-fuzz` targets.
 //!
-//! Each wrapper runs one internal parser over arbitrary bytes as an expression
-//! statement. None of the six scanning parsers states a refusal -- each answers
-//! a scan, a collection or a fact table for every input -- so there is no
-//! `Result` here and nothing is discarded: the answer is a value the wrapper
-//! has no use for, and the contract a target checks is only that no input
-//! panics. `pmi` states its own reparse invariant instead.
+//! Each wrapper runs one internal parser over arbitrary bytes. The fuzz target
+//! checks that no input panics. Resource-aware scanners can return a refusal;
+//! these wrappers run without a decode context. `pmi` states its own reparse
+//! invariant instead.
 #![doc(hidden)]
 
 /// Exercise outer-container scanning.
@@ -21,12 +19,20 @@ pub fn parasolid(data: &[u8]) {
 
 /// Exercise spline-curve carrier scanning.
 pub fn spline_curves(data: &[u8]) {
-    crate::brep::spline::scan_curve_carriers(data, &mut Vec::new());
+    drop(crate::brep::spline::scan_curve_carriers(
+        None,
+        data,
+        &mut Vec::new(),
+    ));
 }
 
 /// Exercise spline-surface carrier scanning.
 pub fn spline_surfaces(data: &[u8]) {
-    crate::brep::spline::scan_surface_carriers(data, &mut Vec::new());
+    drop(crate::brep::spline::scan_surface_carriers(
+        None,
+        data,
+        &mut Vec::new(),
+    ));
 }
 
 /// Exercise topology record scanning.
