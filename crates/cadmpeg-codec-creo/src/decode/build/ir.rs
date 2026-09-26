@@ -689,8 +689,14 @@ pub(in super::super) fn build_ir(
     )?;
     let geometry_generator_feature_count =
         emit_model_features(ctx, scan, &mut ir, &mut annotations)?;
-    let (feature_result_topology_count, feature_result_edge_count) =
-        finish_feature_transfers(ctx, scan, &mut ir, &mut annotations, &mut coverage)?;
+    let (feature_result_topology_count, feature_result_edge_count) = finish_feature_transfers(
+        ctx,
+        scan,
+        &mut ir,
+        &mut annotations,
+        &mut coverage,
+        &mut source_carriers,
+    )?;
     attach_expanded_sections(scan, &mut ir, &mut annotations)?;
     emit_geometry_arenas(scan, &mut ir, &mut annotations, &brep_diagnostics)?;
     if let Some(length_scale_mm) = length_scale_mm {

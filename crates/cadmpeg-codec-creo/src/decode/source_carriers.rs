@@ -5,8 +5,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, ProceduralSurface, Surface, SurfaceGeometry};
-use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, Surface, SurfaceGeometry,
+};
+use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::scalar::PositiveReal;
 
 #[derive(Default)]
@@ -15,6 +17,7 @@ pub(super) struct SourceUnitCarriers {
     surfaces: BTreeMap<SurfaceId, SurfaceGeometry>,
     curves: BTreeMap<CurveId, CurveGeometry>,
     procedural_surfaces: BTreeSet<ProceduralSurfaceId>,
+    procedural_curves: BTreeSet<ProceduralCurveId>,
 }
 
 impl SourceUnitCarriers {
@@ -24,6 +27,7 @@ impl SourceUnitCarriers {
             surfaces: BTreeMap::new(),
             curves: BTreeMap::new(),
             procedural_surfaces: BTreeSet::new(),
+            procedural_curves: BTreeSet::new(),
         }
     }
 
@@ -119,6 +123,27 @@ impl SourceUnitCarriers {
         self.procedural_surfaces.contains(id)
     }
 
+    pub(super) fn admit_procedural_curve(
+        &mut self,
+        ir: &mut CadIr,
+        owner: CurveId,
+        mut procedural: ProceduralCurve,
+    ) -> Result<(), CodecError> {
+        let procedural_id = procedural.id.clone();
+        if let Some(scale) = self.length_scale_mm {
+            crate::decode::build::units::scale_procedural_curve(&mut procedural, scale)?;
+        }
+        let attached = ir.model.add_procedural_curve(owner, procedural);
+        if attached.is_ok() {
+            self.procedural_curves.insert(procedural_id);
+        }
+        Ok(())
+    }
+
+    pub(super) fn contains_procedural_curve(&self, id: &ProceduralCurveId) -> bool {
+        self.procedural_curves.contains(id)
+    }
+
     #[cfg(test)]
     pub(super) fn record_surface(&mut self, surface: &Surface) {
         self.surfaces
@@ -146,10 +171,11 @@ mod tests {
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::{
-        Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-        SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+        Curve, CurveGeometry, HelixCurveConstruction, HelixFrame, ProceduralCurve,
+        ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
+        SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
-    use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
+    use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::scalar::PositiveReal;
 
@@ -251,5 +277,52 @@ mod tests {
             panic!("procedural construction changed family");
         };
         assert_eq!(construction.direction().get(), Vector3::new(0.0, 0.0, 25.4));
+    }
+
+    #[test]
+    fn helix_construction_lengths_are_in_millimeters_at_attachment() {
+        let curve_id = CurveId::mint("creo:depdb:curve#1").expect("identity grammar");
+        let mut ir = CadIr::empty();
+        let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+        source_carriers
+            .admit_curve(
+                &mut ir,
+                Curve {
+                    id: curve_id.clone(),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+                    source_object: None,
+                },
+            )
+            .expect("curve admission");
+        source_carriers
+            .admit_procedural_curve(
+                &mut ir,
+                curve_id,
+                ProceduralCurve::new(
+                    ProceduralCurveId::mint("creo:depdb:helix#1").expect("identity grammar"),
+                    ProceduralCurveDefinition::Helix(
+                        HelixCurveConstruction::try_new(
+                            [0.0, 1.0],
+                            HelixFrame {
+                                center: Point3::new(1.0, 0.0, 0.0),
+                                major: Vector3::new(1.0, 0.0, 0.0),
+                                minor: Vector3::new(0.0, 1.0, 0.0),
+                                pitch: Vector3::new(0.0, 0.0, 1.0),
+                                axis: Vector3::new(0.0, 0.0, 1.0),
+                            },
+                            0.0,
+                            None,
+                        )
+                        .expect("valid helix"),
+                    ),
+                ),
+            )
+            .expect("helix attachment");
+        let ProceduralCurveDefinition::Helix(helix) = ir.model.procedural_curves[0].definition()
+        else {
+            panic!("helix construction changed family");
+        };
+        assert_eq!(helix.center().get(), Point3::new(25.4, 0.0, 0.0));
+        assert_eq!(helix.pitch().get(), Vector3::new(0.0, 0.0, 25.4));
     }
 }

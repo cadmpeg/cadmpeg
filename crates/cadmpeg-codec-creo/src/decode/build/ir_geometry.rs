@@ -121,7 +121,8 @@ pub(super) fn transfer_and_record_scanned_geometry(
     transfer_cap_pair_cylinders(ctx, scan, ir, annotations, source_carriers)?;
     let saved_spline_curve_count =
         transfer_saved_spline_curves(ctx, scan, ir, annotations, transfer_losses, source_carriers)?;
-    let sketch_segment_coverage = transfer_sketches(ctx, scan, ir, annotations, transfer_losses)?;
+    let sketch_segment_coverage =
+        transfer_sketches(ctx, scan, ir, annotations, transfer_losses, source_carriers)?;
     let feature_revolution_surface_count = transfer_resolved_revolution_surfaces(
         ctx,
         scan,

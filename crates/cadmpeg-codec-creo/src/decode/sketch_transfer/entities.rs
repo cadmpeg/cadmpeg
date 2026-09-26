@@ -57,6 +57,7 @@ pub(super) fn transfer_section_entities(
     mut profiles: Vec<Vec<SketchEntityUse>>,
     profile_entities: &BTreeSet<SketchEntityId>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<(Vec<SketchEntity>, Vec<Vec<SketchEntityUse>>), cadmpeg_core::CodecError> {
     let segment_geometry = |segment: &crate::feature::definitions::FeatureSegment| {
         if section_degenerate_axis_line(definition, segment) {
@@ -847,25 +848,30 @@ pub(super) fn transfer_section_entities(
                 Exactness::Derived,
             );
             ctx.charge_entities(1, "admit Creo model curves")?;
-            ir.model.curves.push(Curve {
-                id,
-                geometry,
-                source_object: Some(SourceObjectAssociation {
-                    format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                        "FeatDefs:section#{}:{suffix}",
-                        sketch_identity_scope(sketch_id)
-                    ))
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                    })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                }),
-            });
+            source_carriers.admit_curve(
+                ir,
+                Curve {
+                    id,
+                    geometry,
+                    source_object: Some(SourceObjectAssociation {
+                        format: cadmpeg_ir::CodecFormat::Creo,
+                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                            "FeatDefs:section#{}:{suffix}",
+                            sketch_identity_scope(sketch_id)
+                        ))
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "source object_id must not be empty",
+                            )
+                        })?,
+                        name: None,
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    }),
+                },
+            )?;
         }
         for segment in definition
             .segments
@@ -898,25 +904,30 @@ pub(super) fn transfer_section_entities(
                 Exactness::Derived,
             );
             ctx.charge_entities(1, "admit Creo model curves")?;
-            ir.model.curves.push(Curve {
-                id,
-                geometry,
-                source_object: Some(SourceObjectAssociation {
-                    format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                        "FeatDefs:section#{}:{suffix}",
-                        sketch_identity_scope(sketch_id)
-                    ))
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                    })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                }),
-            });
+            source_carriers.admit_curve(
+                ir,
+                Curve {
+                    id,
+                    geometry,
+                    source_object: Some(SourceObjectAssociation {
+                        format: cadmpeg_ir::CodecFormat::Creo,
+                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                            "FeatDefs:section#{}:{suffix}",
+                            sketch_identity_scope(sketch_id)
+                        ))
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "source object_id must not be empty",
+                            )
+                        })?,
+                        name: None,
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    }),
+                },
+            )?;
         }
         for segment in definition
             .segments
@@ -950,25 +961,30 @@ pub(super) fn transfer_section_entities(
                 Exactness::Derived,
             );
             ctx.charge_entities(1, "admit Creo model curves")?;
-            ir.model.curves.push(Curve {
-                id,
-                geometry,
-                source_object: Some(SourceObjectAssociation {
-                    format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                        "FeatDefs:section#{}:{suffix}",
-                        sketch_identity_scope(sketch_id)
-                    ))
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                    })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                }),
-            });
+            source_carriers.admit_curve(
+                ir,
+                Curve {
+                    id,
+                    geometry,
+                    source_object: Some(SourceObjectAssociation {
+                        format: cadmpeg_ir::CodecFormat::Creo,
+                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                            "FeatDefs:section#{}:{suffix}",
+                            sketch_identity_scope(sketch_id)
+                        ))
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "source object_id must not be empty",
+                            )
+                        })?,
+                        name: None,
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    }),
+                },
+            )?;
         }
         for (internal_id, external_id, section_geometry, offset, id) in saved_section_geometries {
             if ir.model.curves.iter().any(|existing| existing.id == id) {
@@ -986,30 +1002,37 @@ pub(super) fn transfer_section_entities(
                 Exactness::Derived,
             );
             ctx.charge_entities(1, "admit Creo model curves")?;
-            ir.model.curves.push(Curve {
-                id,
-                geometry,
-                source_object: Some(SourceObjectAssociation {
-                    format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(external_id.map_or_else(
-                        || format!("FeatDefs:saved_entity#{internal_id}"),
-                        |external_id| {
-                            format!(
-                                "FeatDefs:section#{}:{external_id}",
-                                sketch_identity_scope(sketch_id)
+            source_carriers.admit_curve(
+                ir,
+                Curve {
+                    id,
+                    geometry,
+                    source_object: Some(SourceObjectAssociation {
+                        format: cadmpeg_ir::CodecFormat::Creo,
+                        object_id: cadmpeg_core::text::NonBlankString::new(
+                            external_id.map_or_else(
+                                || format!("FeatDefs:saved_entity#{internal_id}"),
+                                |external_id| {
+                                    format!(
+                                        "FeatDefs:section#{}:{external_id}",
+                                        sketch_identity_scope(sketch_id)
+                                    )
+                                },
+                            ),
+                        )
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "source object_id must not be empty",
                             )
-                        },
-                    ))
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                    })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                }),
-            });
+                        })?,
+                        name: None,
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    }),
+                },
+            )?;
         }
     }
     Ok((entities, profiles))
