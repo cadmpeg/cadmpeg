@@ -3,7 +3,7 @@
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 
 use cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MAJOR;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 mod native_admission;
@@ -41,16 +41,60 @@ fn built_in_properties_are_selected_by_embedded_set_identity() {
 
 #[test]
 fn metadata_projection_maps_stable_fields_without_overwriting_conflicts() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
     let mut projection = MetadataProjection::default();
-    projection.consider(&[0; 16], 5, Some("Part Number"), Some("P-1"), "first");
-    projection.consider(&[0; 16], 5, Some("Part Number"), Some("P-2"), "second");
-    projection.consider(&[0; 16], 29, Some("Description"), Some("Bracket"), "desc");
+    projection
+        .consider(&ctx, &[0; 16], 5, Some("Part Number"), Some("P-1"), "first")
+        .expect("first property");
+    projection
+        .consider(
+            &ctx,
+            &[0; 16],
+            5,
+            Some("Part Number"),
+            Some("P-2"),
+            "second",
+        )
+        .expect("second property");
+    projection
+        .consider(
+            &ctx,
+            &[0; 16],
+            29,
+            Some("Description"),
+            Some("Bracket"),
+            "desc",
+        )
+        .expect("description property");
     assert_eq!(projection.part_number.as_deref(), Some("P-1"));
     assert_eq!(projection.description.as_deref(), Some("Bracket"));
     assert_eq!(
         projection.bom_properties.get("second").map(String::as_str),
         Some("P-2")
     );
+}
+
+#[test]
+fn metadata_projection_refuses_retained_limits_before_normalized_name_and_value() {
+    let arena = DecodeArena::new();
+    for (cap, operation) in [
+        (9, "retain Inventor normalized property name"),
+        (12, "retain Inventor metadata value"),
+    ] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+        let mut projection = MetadataProjection::default();
+        assert!(matches!(
+            projection.consider(&ctx, &[0; 16], 5, Some("Part Number"), Some("P-1"), "first"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == operation
+        ));
+    }
 }
 
 #[test]
