@@ -168,6 +168,7 @@ fn axis_endpoint_with_offset_neighbor_reports_boundary_rejection() {
             &mut ir,
             &mut AnnotationBuilder::new(),
             &mut losses,
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     })
     .expect("transfer");

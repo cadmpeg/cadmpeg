@@ -61,6 +61,7 @@ const EPS_SIGNED_LENGTH: f64 = 1.0e-9;
 pub(in super::super) fn feature_plane_equations(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
 ) -> Option<Vec<([f64; 3], [f64; 3])>> {
     let ids = scan
@@ -84,7 +85,7 @@ pub(in super::super) fn feature_plane_equations(
     }
     ids.into_iter()
         .map(|id| {
-            let plane = reconciled_model_plane(&local_planes, ir, id)?;
+            let plane = reconciled_model_plane(&local_planes, ir, source_carriers, id)?;
             Some((plane.origin, plane.normal))
         })
         .collect()
@@ -163,6 +164,7 @@ pub(in super::super) fn feature_outline_planes(
 pub(in super::super) fn generated_arc_cylinder_extent(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     definition: &crate::feature::definitions::FeatureDefinition,
     transform: &crate::placement::FeatureSectionTransform,
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
@@ -205,7 +207,9 @@ pub(in super::super) fn generated_arc_cylinder_extent(
     (!frame_records.is_empty()).then_some(())?;
     frame_records
         .iter()
-        .all(|(surface_id, frame)| cylinder_frame_agrees_with_model(ir, *surface_id, frame))
+        .all(|(surface_id, frame)| {
+            cylinder_frame_agrees_with_model(ir, *surface_id, frame, source_carriers)
+        })
         .then_some(())?;
     let frames = frame_records
         .into_iter()
@@ -218,6 +222,7 @@ fn cylinder_frame_agrees_with_model(
     ir: &CadIr,
     surface_id: u32,
     frame: &crate::surface::PositionalCylinderFrame,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> bool {
     let model_id = SurfaceId::compose(
         &crate::identity::VISIBGEOM_SURFACE,
@@ -234,9 +239,10 @@ fn cylinder_frame_agrees_with_model(
         [surface] => surface,
         _ => return false,
     };
-    let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved() else {
+    let geometry = source_carriers.surface_geometry(surface);
+    let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = geometry.solved() else {
         return matches!(
-            surface.geometry,
+            geometry,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
         );
     };
@@ -311,6 +317,7 @@ pub(super) fn ordered_parallel_cap_extent(
 pub(in super::super) fn generated_cap_plane_extent(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
     let tables = scan
@@ -348,7 +355,7 @@ pub(in super::super) fn generated_cap_plane_extent(
         let row = crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id)?;
         (row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane)
             .then_some(())?;
-        reconciled_model_plane(&local_planes, ir, surface_id)
+        reconciled_model_plane(&local_planes, ir, source_carriers, surface_id)
     };
     ordered_parallel_cap_extent(plane(start_id?)?, plane(end_id?)?)
 }

@@ -4,9 +4,9 @@ use crate::decode::analytic::planes::{
     agreed_plane, agreed_plane_surface, agreed_topology_bound_plane, analytic_boundary_line,
     analytic_curve_plane, envelope_reconciled_plane_candidate, fc05_cylinder_model_witness,
     frame_bound_outline_plane_candidate, held_coordinate_plane,
-    plane_candidate_pcurve_lies_on_carrier, plane_candidates, stored_parameter_normal_candidates,
-    topology_bound_line_plane, topology_bound_plane, unique_round_edge_origin_candidate,
-    BoundaryLine, PlaneCandidate, PlaneChart,
+    plane_candidate_pcurve_lies_on_carrier, plane_candidates, reconciled_model_plane,
+    stored_parameter_normal_candidates, topology_bound_line_plane, topology_bound_plane,
+    unique_round_edge_origin_candidate, BoundaryLine, PlaneCandidate, PlaneChart,
 };
 use crate::decode::surfaces::fc05_cap_pair_model_frame;
 use crate::surface::{
@@ -14,11 +14,53 @@ use crate::surface::{
 };
 use crate::vecmath::dot;
 use cadmpeg_ir::geometry::{
-    nurbs::NurbsCurve, Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    nurbs::NurbsCurve, Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
     SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
+
+#[test]
+fn reconciled_plane_uses_source_carrier_after_millimeter_admission() {
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::new(
+        cadmpeg_ir::scalar::PositiveReal::new(25.4),
+    );
+    source_carriers
+        .admit_surface(
+            &mut ir,
+            Surface {
+                id: SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, 7),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        Point3::new(1.0, 0.0, 0.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                        Vector3::new(0.0, 1.0, 0.0),
+                    )
+                    .expect("source plane"),
+                )),
+                source_object: None,
+            },
+        )
+        .expect("surface admission");
+    let local = std::collections::BTreeMap::from([(
+        7,
+        PlaneEquation {
+            origin: [1.0, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+        },
+    )]);
+    assert_eq!(
+        reconciled_model_plane(&local, &ir, &source_carriers, 7).map(|plane| plane.origin),
+        Some([1.0, 0.0, 0.0])
+    );
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) =
+        &ir.model.surfaces[0].geometry
+    else {
+        panic!("surface changed family");
+    };
+    assert_eq!(plane.origin().get(), Point3::new(25.4, 0.0, 0.0));
+}
 
 fn nurbs_curve(
     degree: u32,
@@ -228,6 +270,7 @@ fn unique_native_conic_loop_places_its_plane_surface() {
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
             &std::collections::BTreeSet::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     })
     .expect("valid source object identity");
@@ -262,6 +305,7 @@ fn unique_native_conic_loop_places_its_plane_surface() {
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
             &std::collections::BTreeSet::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         ))
         .expect("valid source object identity"),
         0
@@ -334,6 +378,7 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
             &std::collections::BTreeSet::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         ))
         .expect("valid source object identity"),
         1

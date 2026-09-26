@@ -494,6 +494,7 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
         schema_feature_definition(
             &scan,
             &CadIr::empty(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
             942,
             Some(SchemaClass::Surface),
             "Surface"
@@ -518,6 +519,7 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
         schema_feature_definition(
             &scan,
             &CadIr::empty(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
             942,
             Some(SchemaClass::Surface),
             "Surface"
@@ -553,7 +555,7 @@ fn class_942_schema_state_precedes_surface_body_tree_fallback() {
         });
 
     assert!(matches!(
-        schema_feature_definition(&scan, &CadIr::empty(), 942, Some(SchemaClass::Surface), "Surface").expect("valid test fixture"),
+        schema_feature_definition(&scan, &CadIr::empty(), &crate::decode::source_carriers::SourceUnitCarriers::default(), 942, Some(SchemaClass::Surface), "Surface").expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::Native { kind, .. }) if kind.as_str() == "Surface"
     ));
 }
@@ -649,7 +651,7 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
     ir.model.surfaces.extend([plane(31, 2.0), plane(32, 8.0)]);
 
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 942, Some(SchemaClass::Surface), "Surface").expect("valid test fixture"),
+        schema_feature_definition(&scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 942, Some(SchemaClass::Surface), "Surface").expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::Extrude {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: direction,
@@ -1035,7 +1037,7 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
     let mut ir = CadIr::empty();
     for kind in ["Revolve", "Revolve 2"] {
         assert!(matches!(
-            named_feature_definition(&scan, &ir, 822, kind),
+            named_feature_definition(&scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 822, kind),
             Ok(Some(IrFeatureDefinition::Operation(IrFeatureOperation::Revolve {
                 ref construction,
                 op: BooleanOp::Unresolved,
@@ -1053,7 +1055,7 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
             offset: 1,
         });
     assert!(matches!(
-        named_feature_definition(&scan, &ir, 822, "Revolve"),
+        named_feature_definition(&scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 822, "Revolve"),
         Ok(Some(IrFeatureDefinition::Operation(IrFeatureOperation::Revolve {
             ref construction,
             ..
@@ -1157,9 +1159,15 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
                     },
             },
         ..
-    }) = named_feature_definition(&scan, &ir, 7, "Protrusion")
-        .expect("a named sweep states no blank key")
-        .expect("named sweep")
+    }) = named_feature_definition(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        7,
+        "Protrusion",
+    )
+    .expect("a named sweep states no blank key")
+    .expect("named sweep")
     else {
         panic!("named sweep did not resolve the cap extent");
     };
@@ -1352,8 +1360,15 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
     });
 
     assert_eq!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::DatumPlane), "Datum Plane")
-            .expect("valid test fixture"),
+        schema_feature_definition(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5,
+            Some(SchemaClass::DatumPlane),
+            "Datum Plane"
+        )
+        .expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::DatumPlane {
             frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
                 Point3::new(0.0, 1.0, 0.0),
@@ -1364,8 +1379,15 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
         })
     );
     assert_eq!(
-        schema_feature_definition(&scan, &ir, 5, None, "Native Feature")
-            .expect("valid test fixture"),
+        schema_feature_definition(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5,
+            None,
+            "Native Feature"
+        )
+        .expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::DatumPlane {
             frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
                 Point3::new(0.0, 1.0, 0.0),
@@ -1386,15 +1408,29 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
         offset: 1,
     });
     assert_eq!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::DatumPlane), "Datum Plane")
-            .expect("valid test fixture"),
+        schema_feature_definition(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5,
+            Some(SchemaClass::DatumPlane),
+            "Datum Plane"
+        )
+        .expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPlane
         })
     );
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, None, "Native Feature")
-            .expect("valid test fixture"),
+        schema_feature_definition(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5,
+            None,
+            "Native Feature"
+        )
+        .expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::Native { .. })
     ));
 }
@@ -1423,6 +1459,7 @@ fn datum_feature_preserves_its_unique_transferred_plane_chart() {
         schema_feature_definition(
             &scan,
             &CadIr::empty(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
             5,
             Some(SchemaClass::DatumPlane),
             "Datum Plane",
@@ -1483,6 +1520,7 @@ fn datum_feature_uses_its_unique_complete_local_system() {
         schema_feature_definition(
             &scan,
             &CadIr::empty(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
             5,
             Some(SchemaClass::DatumPlane),
             "Datum Plane"
@@ -1543,6 +1581,7 @@ fn coordinate_system_feature_uses_its_unique_complete_local_system() {
         schema_feature_definition(
             &scan,
             &CadIr::empty(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
             7,
             Some(SchemaClass::CoordinateSystem),
             "PRT_CSYS_DEF"
@@ -1596,6 +1635,7 @@ fn coordinate_system_feature_rejects_a_reflected_local_system() {
         schema_feature_definition(
             &scan,
             &CadIr::empty(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
             7,
             Some(SchemaClass::CoordinateSystem),
             "PRT_CSYS_DEF"
@@ -1653,6 +1693,7 @@ fn coordinate_system_feature_rejects_a_local_system_outside_the_record_tolerance
         schema_feature_definition(
             &scan,
             &CadIr::empty(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
             7,
             Some(SchemaClass::CoordinateSystem),
             "PRT_CSYS_DEF"

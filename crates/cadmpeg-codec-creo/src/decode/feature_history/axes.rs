@@ -65,6 +65,7 @@ pub(in super::super) fn resolved_revolution_axis(
 pub(in super::super) fn full_turn_revolution_carrier_axis(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     extent: Option<&RevolveExtent>,
 ) -> Option<RevolutionAxis> {
@@ -103,7 +104,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         let [surface] = surfaces.as_slice() else {
             return None;
         };
-        match surface.geometry {
+        match source_carriers.surface_geometry(surface) {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                 let origin = cylinder_surface.origin().get();
                 axes.push((origin, *cylinder_surface.frame().axis()));
@@ -188,18 +189,21 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
 pub(in super::super) fn revolution_axis_for_transfer(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     definition: &crate::feature::definitions::FeatureDefinition,
     transform: &crate::placement::FeatureSectionTransform,
     extent: Option<&RevolveExtent>,
 ) -> Option<RevolutionAxis> {
-    resolved_revolution_axis(definition, transform)
-        .or_else(|| full_turn_revolution_carrier_axis(scan, ir, feature_id, extent))
+    resolved_revolution_axis(definition, transform).or_else(|| {
+        full_turn_revolution_carrier_axis(scan, ir, source_carriers, feature_id, extent)
+    })
 }
 
 pub(super) fn feature_revolution_axis_for_transfer(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     extent: Option<&RevolveExtent>,
 ) -> Option<RevolutionAxis> {
@@ -221,9 +225,19 @@ pub(super) fn feature_revolution_axis_for_transfer(
     definition
         .zip(transform)
         .and_then(|(definition, transform)| {
-            revolution_axis_for_transfer(scan, ir, feature_id, definition, transform, extent)
+            revolution_axis_for_transfer(
+                scan,
+                ir,
+                source_carriers,
+                feature_id,
+                definition,
+                transform,
+                extent,
+            )
         })
-        .or_else(|| full_turn_revolution_carrier_axis(scan, ir, feature_id, extent))
+        .or_else(|| {
+            full_turn_revolution_carrier_axis(scan, ir, source_carriers, feature_id, extent)
+        })
 }
 
 pub(in super::super) fn section_profile_ref(ir: &CadIr, native_ref: String) -> ProfileRef {

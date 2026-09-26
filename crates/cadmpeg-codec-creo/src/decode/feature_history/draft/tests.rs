@@ -46,8 +46,15 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
         source_object: None,
     });
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::DatumPlane), "Datum Plane")
-            .expect("valid test fixture"),
+        schema_feature_definition(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5,
+            Some(SchemaClass::DatumPlane),
+            "Datum Plane"
+        )
+        .expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::DatumPlane { .. })
     ));
 
@@ -65,8 +72,15 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
         _ => panic!("transferred datum plane"),
     }
     assert_eq!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::DatumPlane), "Datum Plane")
-            .expect("valid test fixture"),
+        schema_feature_definition(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5,
+            Some(SchemaClass::DatumPlane),
+            "Datum Plane"
+        )
+        .expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPlane
         })
@@ -118,7 +132,12 @@ fn unbounded_plane_uses_its_placed_carrier_without_model_surface() {
     scan.planes.positional_frames.push(placed_plane());
 
     assert_eq!(
-        unbounded_feature_plane_definition(&scan, &CadIr::empty(), 5),
+        unbounded_feature_plane_definition(
+            &scan,
+            &CadIr::empty(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5
+        ),
         Some(IrFeatureDefinition::Operation(
             IrFeatureOperation::DatumPlane {
                 frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
@@ -139,7 +158,12 @@ fn unbounded_plane_uses_its_model_carrier_without_placed_surface() {
     ir.model.surfaces.push(plane_surface(1.0));
 
     assert_eq!(
-        unbounded_feature_plane_definition(&scan, &ir, 5),
+        unbounded_feature_plane_definition(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5
+        ),
         Some(IrFeatureDefinition::Operation(
             IrFeatureOperation::DatumPlane {
                 frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
@@ -160,10 +184,23 @@ fn unbounded_plane_rejects_conflicting_carriers() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(plane_surface(2.0));
 
-    assert!(unbounded_feature_plane_definition(&scan, &ir, 5).is_none());
+    assert!(unbounded_feature_plane_definition(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        5
+    )
+    .is_none());
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, None, "Unbounded Plane")
-            .expect("valid test fixture"),
+        schema_feature_definition(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5,
+            None,
+            "Unbounded Plane"
+        )
+        .expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::Native { .. })
     ));
 }
