@@ -1015,21 +1015,25 @@ fn standard_emission_reverses_only_face_pcurve_use_range() {
             logical_vertex_count: 2,
         };
         let mut annotations = AnnotationBuilder::new();
-        emit_standard_topology(
-            &mut ir,
-            &mut annotations,
-            &bindings,
-            &[],
-            &surface_indices,
-            &supports,
-            &[[0, 1]],
-            &[0, 1],
-            &topology,
-            &[None],
-            &[None],
-            &[],
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
+        crate::test_support::with_service_context(|ctx| {
+            let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+            emit_standard_topology(
+                &mut ir,
+                &mut annotations,
+                &bindings,
+                &[],
+                &surface_indices,
+                &supports,
+                &[[0, 1]],
+                &[0, 1],
+                &topology,
+                &[None],
+                &[None],
+                &[],
+                &mut crate::nurbs::LaneRefusals::new(),
+                &mut admission,
+            )
+        })
         .expect("valid source object identity");
 
         let [loop_] = ir.model.loops.as_slice() else {
@@ -1239,18 +1243,22 @@ fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
             radius: 2.0,
         },
     };
-    let (curve, range) = build_standard_edge_curve(
-        &mut ir,
-        &mut AnnotationBuilder::new(),
-        &[(surface_id.clone(), false, 0)],
-        &HashMap::from([(surface_id, 0)]),
-        &[],
-        &support,
-        [0, 0],
-        None,
-        None,
-        &mut crate::nurbs::LaneRefusals::new(),
-    )
+    let (curve, range) = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        build_standard_edge_curve(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &[(surface_id.clone(), false, 0)],
+            &HashMap::from([(surface_id, 0)]),
+            &[],
+            &support,
+            [0, 0],
+            None,
+            None,
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut admission,
+        )
+    })
     .expect("valid source object identity");
     assert_eq!(range, Some([0.0, std::f64::consts::TAU]));
     let curve = curve.expect("closed circle support identifies a curve");
