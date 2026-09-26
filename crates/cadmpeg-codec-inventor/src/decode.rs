@@ -79,7 +79,7 @@ fn decode_container<'a>(
     let feature_inventory = crate::feature::inventory(ctx, &container.rse)?;
     let mut ir = CadIr::empty();
     let (design_parameters, unresolved_design_parameters) =
-        crate::design::project_parameters(&design_inventory);
+        crate::design::project_parameters(ctx, &design_inventory)?;
     ir.model.parameters = design_parameters;
     let sketch_projection = crate::sketch::project(&sketch_inventory, &ir.model.parameters);
     let unresolved_sketches = sketch_projection.unresolved_sketches;
