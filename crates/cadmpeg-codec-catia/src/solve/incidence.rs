@@ -568,10 +568,11 @@ fn order_incidence_components_by_branch_width(
 /// search share every branch. Components in a prerequisite cycle have no
 /// valid order and are rejected by the caller.
 fn order_incidence_components_by_constraints(
+    ctx: &DecodeContext<'_>,
     components: &mut Vec<Vec<usize>>,
     choices: &[Vec<[usize; 2]>],
     assignment_order: Option<AssignmentOrder<'_>>,
-) -> Option<()> {
+) -> Result<Option<()>, CodecError> {
     let assignment_predecessors = assignment_order.and_then(AssignmentOrder::predecessors);
     let assignment_dependencies = assignment_order.and_then(AssignmentOrder::dependencies);
     if components
@@ -593,69 +594,91 @@ fn order_incidence_components_by_constraints(
                     .any(|edge| *edge >= choices.len())
         })
     {
-        return None;
+        return Ok(None);
     }
     if assignment_order.is_none() {
-        return order_incidence_components_by_branch_width(components, choices);
+        return Ok(order_incidence_components_by_branch_width(
+            components, choices,
+        ));
     }
 
+    let edge_entry_count = components
+        .iter()
+        .try_fold(0usize, |count, edges| count.checked_add(edges.len()))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("catia incidence component edge indices", u64::MAX, u64::MAX)
+        })?;
+    charge_collection_items(
+        ctx,
+        edge_entry_count,
+        "catia incidence component edge indices",
+    )?;
     let component_by_edge = components
         .iter()
         .enumerate()
         .flat_map(|(component, edges)| edges.iter().copied().map(move |edge| (edge, component)))
         .collect::<HashMap<_, _>>();
-    if component_by_edge.len() != components.iter().map(Vec::len).sum::<usize>() {
-        return None;
+    if component_by_edge.len() != edge_entry_count {
+        return Ok(None);
     }
     let mut incoming =
-        alloc_filled(components.len(), 0usize, "catia_incidence_component_in").ok()?;
-    let mut outgoing = alloc_filled(
+        ctx.alloc_filled(components.len(), 0usize, "catia_incidence_component_in")?;
+    let mut outgoing = ctx.alloc_filled(
         components.len(),
         Vec::<usize>::new(),
         "catia_incidence_component_out",
-    )
-    .ok()?;
-    let mut local_incoming =
-        alloc_filled(choices.len(), 0usize, "catia_incidence_local_in").ok()?;
-    let mut local_outgoing = alloc_filled(
+    )?;
+    let mut local_incoming = ctx.alloc_filled(choices.len(), 0usize, "catia_incidence_local_in")?;
+    let mut local_outgoing = ctx.alloc_filled(
         choices.len(),
         Vec::<usize>::new(),
         "catia_incidence_local_out",
-    )
-    .ok()?;
-    let mut add_dependency = |target_edge: usize, prerequisite_edge: usize| {
-        let (Some(&target_component), Some(&prerequisite_component)) = (
-            component_by_edge.get(&target_edge),
-            component_by_edge.get(&prerequisite_edge),
-        ) else {
-            return;
-        };
-        if target_component == prerequisite_component {
-            if !local_outgoing[prerequisite_edge].contains(&target_edge) {
-                local_outgoing[prerequisite_edge].push(target_edge);
-                local_incoming[target_edge] += 1;
+    )?;
+    let mut add_dependency =
+        |target_edge: usize, prerequisite_edge: usize| -> Result<(), CodecError> {
+            let (Some(&target_component), Some(&prerequisite_component)) = (
+                component_by_edge.get(&target_edge),
+                component_by_edge.get(&prerequisite_edge),
+            ) else {
+                return Ok(());
+            };
+            if target_component == prerequisite_component {
+                if !local_outgoing[prerequisite_edge].contains(&target_edge) {
+                    charge_collection_items(ctx, 1, "catia incidence local dependents")?;
+                    local_outgoing[prerequisite_edge].push(target_edge);
+                    local_incoming[target_edge] += 1;
+                }
+                return Ok(());
             }
-            return;
-        }
-        if !outgoing[prerequisite_component].contains(&target_component) {
-            outgoing[prerequisite_component].push(target_component);
-            incoming[target_component] += 1;
-        }
-    };
+            if !outgoing[prerequisite_component].contains(&target_component) {
+                charge_collection_items(ctx, 1, "catia incidence component dependents")?;
+                outgoing[prerequisite_component].push(target_component);
+                incoming[target_component] += 1;
+            }
+            Ok(())
+        };
     if let Some(predecessors) = assignment_predecessors {
         for (target, prerequisite) in predecessors.iter().enumerate() {
             if let Some(prerequisite) = prerequisite {
-                add_dependency(target, *prerequisite);
+                add_dependency(target, *prerequisite)?;
             }
         }
     }
     if let Some(dependencies) = assignment_dependencies {
         for (target, prerequisites) in dependencies.iter().enumerate() {
             for prerequisite in prerequisites {
-                add_dependency(target, *prerequisite);
+                add_dependency(target, *prerequisite)?;
             }
         }
     }
+    charge_collection_items(
+        ctx,
+        component_by_edge
+            .keys()
+            .filter(|edge| local_incoming[**edge] == 0)
+            .count(),
+        "catia incidence local ready edges",
+    )?;
     let mut local_ready = component_by_edge
         .keys()
         .copied()
@@ -667,12 +690,13 @@ fn order_incidence_components_by_constraints(
         for dependent in local_outgoing[edge].iter().copied() {
             local_incoming[dependent] -= 1;
             if local_incoming[dependent] == 0 {
+                charge_collection_items(ctx, 1, "catia incidence local ready edges")?;
                 local_ready.push(dependent);
             }
         }
     }
     if local_ordered != component_by_edge.len() {
-        return None;
+        return Ok(None);
     }
 
     let branch_width = |component: &[usize]| {
@@ -680,9 +704,17 @@ fn order_incidence_components_by_constraints(
             width.saturating_mul(choices[*edge].len())
         })
     };
+    charge_collection_items(
+        ctx,
+        (0..components.len())
+            .filter(|component| incoming[*component] == 0)
+            .count(),
+        "catia incidence ready components",
+    )?;
     let mut ready = (0..components.len())
         .filter(|component| incoming[*component] == 0)
         .collect::<Vec<_>>();
+    charge_collection_items(ctx, components.len(), "catia incidence ordered components")?;
     let mut ordered = Vec::with_capacity(components.len());
     while let Some((position, &component)) =
         ready.iter().enumerate().min_by_key(|(_, component)| {
@@ -698,15 +730,16 @@ fn order_incidence_components_by_constraints(
         for dependent in outgoing[component].iter().copied() {
             incoming[dependent] -= 1;
             if incoming[dependent] == 0 {
+                charge_collection_items(ctx, 1, "catia incidence ready components")?;
                 ready.push(dependent);
             }
         }
     }
     if ordered.len() != components.len() {
-        return None;
+        return Ok(None);
     }
     *components = ordered;
-    Some(())
+    Ok(Some(()))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4189,10 +4222,11 @@ where
                 join_incidence_components_by_coupling(components, constraint.coupled_edges);
         }
         let ordered = order_incidence_components_by_constraints(
+            ctx,
             &mut components,
             choices,
             partial_solution_valid.and_then(|constraint| constraint.assignment_order),
-        );
+        )?;
         if ordered.is_none() {
             return Ok(None);
         }
