@@ -1341,7 +1341,7 @@ impl<'a> DecodeContext<'a> {
             .iter()
             .map(|axis| {
                 axis.iter()
-                    .map(f64::to_string)
+                    .map(|knot| knot.get().to_string())
                     .collect::<Vec<_>>()
                     .join(",")
             })
@@ -1352,7 +1352,7 @@ impl<'a> DecodeContext<'a> {
             .map(|point| {
                 point
                     .iter()
-                    .map(f64::to_string)
+                    .map(|coordinate| coordinate.get().to_string())
                     .collect::<Vec<_>>()
                     .join(",")
             })
@@ -1369,7 +1369,7 @@ impl<'a> DecodeContext<'a> {
                 "weights".to_string(),
                 weights
                     .iter()
-                    .map(f64::to_string)
+                    .map(|weight| weight.get().to_string())
                     .collect::<Vec<_>>()
                     .join(","),
             );
