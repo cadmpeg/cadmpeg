@@ -21,11 +21,9 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::units::UnitVector3;
+use cadmpeg_ir::units::SumSquaresUnitVector3;
 
 use super::LEN_TO_MM;
-
-const EPS_SWEEP_UNIT3_E9: f64 = 1.0e-9;
 
 /// A parsed swept- or spun-surface carrier.
 #[derive(Debug, Clone)]
@@ -46,29 +44,22 @@ pub(super) enum SweepKind {
     /// `00 43`: translation of the profile along a unit direction.
     Swept {
         /// Unit sweep direction (dimensionless).
-        direction: UnitVector3,
+        direction: SumSquaresUnitVector3,
     },
     /// `00 44`: revolution of the profile about an axis.
     Spun {
         /// Point on the spin axis, in millimetres.
         base: Point3,
         /// Unit spin-axis direction.
-        axis: UnitVector3,
+        axis: SumSquaresUnitVector3,
     },
 }
 
-fn unit3(bytes: &[u8], at: usize) -> Option<UnitVector3> {
+fn unit3(bytes: &[u8], at: usize) -> Option<SumSquaresUnitVector3> {
     let x = View::f64_be_at(bytes, at)?;
     let y = View::f64_be_at(bytes, at + 8)?;
     let z = View::f64_be_at(bytes, at + 16)?;
-    if !(x.is_finite() && y.is_finite() && z.is_finite()) {
-        return None;
-    }
-    let norm = (x * x + y * y + z * z).sqrt();
-    if (norm - 1.0).abs() > EPS_SWEEP_UNIT3_E9 {
-        return None;
-    }
-    UnitVector3::new(Vector3::new(x, y, z))
+    SumSquaresUnitVector3::new(Vector3::new(x, y, z))
 }
 
 fn point_mm(bytes: &[u8], at: usize) -> Option<Point3> {
@@ -216,7 +207,7 @@ pub(super) fn profile_nurbs(
 /// `[v_start, v_end]` millimetres of travel along the unit direction.
 pub(super) fn swept_nurbs(
     profile: &NurbsCurve,
-    direction: UnitVector3,
+    direction: SumSquaresUnitVector3,
     v_start: f64,
     v_end: f64,
     record: &dyn std::fmt::Display,
@@ -276,7 +267,7 @@ pub(super) fn swept_nurbs(
 pub(super) fn spun_nurbs(
     profile: &NurbsCurve,
     base: Point3,
-    axis: UnitVector3,
+    axis: SumSquaresUnitVector3,
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<NurbsSurface> {
@@ -390,7 +381,7 @@ mod tests {
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::math::Vector3;
-    use cadmpeg_ir::units::UnitVector3;
+    use cadmpeg_ir::units::SumSquaresUnitVector3;
 
     fn header(tt: u8, attr: u16, profile: u16) -> Vec<u8> {
         let mut bytes = vec![0x00, tt];
@@ -449,6 +440,18 @@ mod tests {
             bytes.extend_from_slice(&v.to_be_bytes());
         }
         assert!(scan_sweep_carriers(&bytes).is_empty());
+    }
+
+    #[test]
+    fn admits_square_sum_unit_boundary_even_when_hypot_rounds_outside() {
+        let direction = Vector3::new(-0.3314901066101886, -0.9434586960856134, 0.0);
+        assert!(SumSquaresUnitVector3::new(direction).is_some());
+        assert!(cadmpeg_ir::units::UnitVector3::new(direction).is_none());
+        let mut bytes = header(0x43, 9, 5);
+        for value in [direction.x, direction.y, direction.z, 0.25] {
+            bytes.extend_from_slice(&value.to_be_bytes());
+        }
+        assert!(scan_sweep_carriers(&bytes).contains_key(&9));
     }
 
     #[test]
@@ -620,7 +623,7 @@ mod tests {
         let surface = spun_nurbs(
             &profile,
             Point3::new(0.0, 0.0, 0.0),
-            UnitVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
+            SumSquaresUnitVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
             &"test spun construction",
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
@@ -666,7 +669,7 @@ mod tests {
         .expect("valid line profile");
         let surface = swept_nurbs(
             &profile,
-            UnitVector3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap(),
+            SumSquaresUnitVector3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap(),
             -2.0,
             3.0,
             &"test swept construction",
@@ -695,7 +698,7 @@ mod tests {
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
         let first = swept_nurbs(
             &profile,
-            UnitVector3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
+            SumSquaresUnitVector3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
             0.0,
             f64::MAX,
             &"sweep construction at byte 16 for surface attr 3",
@@ -703,7 +706,7 @@ mod tests {
         );
         let second = swept_nurbs(
             &profile,
-            UnitVector3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
+            SumSquaresUnitVector3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
             0.0,
             f64::MAX,
             &"sweep construction at byte 64 for surface attr 9",
@@ -742,7 +745,7 @@ mod tests {
             let surface = super::spun_nurbs(
                 &profile,
                 Point3::new(0., 0., 0.),
-                UnitVector3::new(Vector3::new(0., 0., 1.)).unwrap(),
+                SumSquaresUnitVector3::new(Vector3::new(0., 0., 1.)).unwrap(),
                 &"audit",
                 &mut crate::lane_refusal::LaneRefusals::new(),
             )
