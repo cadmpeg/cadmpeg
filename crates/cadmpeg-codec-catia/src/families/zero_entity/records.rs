@@ -1358,7 +1358,11 @@ fn zero_entity_support_pcurve(
     };
     Some(PcurveGeometry::Nurbs {
         nurbs: crate::nurbs::note_refusal(
-            PcurveNurbs::from_checked_lanes(degree, knots, control_points, weights, false),
+            cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::from_checked_lanes(
+                control_points,
+                weights,
+            )
+            .and_then(|poles| PcurveNurbs::new(degree, knots, poles, false)),
             refusal,
             format_args!("zero-entity NURBS pcurve record at byte {}", record.pos),
         )?,
@@ -1408,7 +1412,7 @@ pub(super) fn zero_entity_neutral_pcurve(
         nurbs: crate::nurbs::note_refusal(
             PcurveNurbs::from_checked_lanes(
                 nurbs.degree(),
-                nurbs.knots().to_vec(),
+                nurbs.knots().clone(),
                 control_points,
                 nurbs.weights(),
                 nurbs.periodic(),

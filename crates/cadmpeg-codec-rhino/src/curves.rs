@@ -1042,13 +1042,11 @@ fn elevate_to_degree(
         ));
         output_weights.push(weight);
     }
-    NurbsCurve::from_checked_lanes(
-        target as u32,
-        elevated_knots,
+    cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_checked_lanes(
         control_points,
         rational.then_some(output_weights),
-        false,
     )
+    .and_then(|poles| NurbsCurve::new(target as u32, elevated_knots, poles, false))
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))
 }
 
@@ -1201,8 +1199,12 @@ pub(crate) fn join_nurbs_segments(
         );
     }
     Ok(NurbsJoin {
-        curve: NurbsCurve::from_checked_lanes(degree, knots, control_points, weights, false)
-            .map_err(|error| GeometryError::malformed(offset, error.to_string()))?,
+        curve: cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_checked_lanes(
+            control_points,
+            weights,
+        )
+        .and_then(|poles| NurbsCurve::new(degree, knots, poles, false))
+        .map_err(|error| GeometryError::malformed(offset, error.to_string()))?,
         warnings,
     })
 }

@@ -8,7 +8,10 @@ use cadmpeg_core::decode::{alloc_filled, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
+    nurbs::{
+        KnotVector, NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis,
+        NurbsSurfaceLanes,
+    },
     SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -820,8 +823,8 @@ fn sum_nurbs(
         .as_deref()
         .map(|values| copy_rows(ctx, values, row_len, "Rhino sum surface weight grid"))
         .transpose()?;
-    let u_knots = copy_axis_knots(ctx, first.knots(), "Rhino sum surface U knots")?;
-    let v_knots = copy_axis_knots(ctx, second.knots(), "Rhino sum surface V knots")?;
+    let u_knots = copy_checked_axis_knots(ctx, first.knots(), "Rhino sum surface U knots")?;
+    let v_knots = copy_checked_axis_knots(ctx, second.knots(), "Rhino sum surface V knots")?;
     admit_nurbs_pole_conversion(ctx, product_count, rational)?;
     NurbsSurface::from_checked_lanes(
         NurbsSurfaceAxis::new(first.degree(), u_knots, first.periodic()),
@@ -918,12 +921,12 @@ fn copy_rows<T: Clone>(
     Ok(rows)
 }
 
-fn copy_axis_knots(
+fn charge_axis_knots(
     ctx: &DecodeContext<'_>,
-    source: &[f64],
+    count: usize,
     operation: &'static str,
-) -> Result<Vec<f64>, GeometryError> {
-    let count = u64::try_from(source.len()).map_err(|_| {
+) -> Result<u64, GeometryError> {
+    let count = u64::try_from(count).map_err(|_| {
         GeometryError::not_implemented("Rhino surface knot count exceeds address space")
     })?;
     let bytes = count.checked_mul(8).ok_or_else(|| {
@@ -931,12 +934,32 @@ fn copy_axis_knots(
     })?;
     ctx.charge_collection_items(count, operation)?;
     ctx.charge_retained(bytes, operation)?;
+    Ok(bytes)
+}
+
+fn copy_axis_knots(
+    ctx: &DecodeContext<'_>,
+    source: &[f64],
+    operation: &'static str,
+) -> Result<Vec<f64>, GeometryError> {
+    let bytes = charge_axis_knots(ctx, source.len(), operation)?;
     let mut knots = Vec::new();
     knots
         .try_reserve_exact(source.len())
         .map_err(|_| crate::curves::allocation_failed(operation, bytes))?;
     knots.extend_from_slice(source);
     Ok(knots)
+}
+
+fn copy_checked_axis_knots(
+    ctx: &DecodeContext<'_>,
+    source: &KnotVector,
+    operation: &'static str,
+) -> Result<KnotVector, GeometryError> {
+    let bytes = charge_axis_knots(ctx, source.len(), operation)?;
+    source
+        .try_clone()
+        .map_err(|_| crate::curves::allocation_failed(operation, bytes))
 }
 
 fn admit_nurbs_pole_conversion(
@@ -1013,24 +1036,27 @@ pub(crate) fn extrusion_nurbs(
             target.push(source[index]);
         }
     }
-    let mut surface = NurbsSurface::from_checked_lanes(
-        NurbsSurfaceAxis::new(start.degree(), start.knots().to_vec(), start.periodic()),
-        NurbsSurfaceAxis::new(
-            1,
-            vec![
-                path_domain[0],
-                path_domain[0],
-                path_domain[1],
-                path_domain[1],
-            ],
-            false,
-        ),
-        NurbsSurfaceLanes::new(
-            control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
-            weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-        ),
-        false,
+    let mut surface = NurbsPoleGrid::from_checked_lanes(
+        control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
+        weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
     )
+    .and_then(|poles| {
+        NurbsSurface::new(
+            NurbsSurfaceAxis::new(start.degree(), start.knots().clone(), start.periodic()),
+            NurbsSurfaceAxis::new(
+                1,
+                vec![
+                    path_domain[0],
+                    path_domain[0],
+                    path_domain[1],
+                    path_domain[1],
+                ],
+                false,
+            ),
+            poles,
+            false,
+        )
+    })
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
     if transposed {
         surface.transpose_parameter_axes();

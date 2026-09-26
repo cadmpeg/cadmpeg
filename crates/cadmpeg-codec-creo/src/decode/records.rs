@@ -550,8 +550,8 @@ pub(super) fn reference_line_records(scan: &ContainerScan) -> Vec<CreoReferenceL
                 line.offset
             ),
             kind: line.kind.clone(),
-            start: line.start,
-            end: line.end,
+            start: line.start.get().into(),
+            end: line.end.get().into(),
             offset: line.offset,
         })
         .collect()
@@ -571,8 +571,8 @@ pub(super) fn reference_circle_records(scan: &ContainerScan) -> Vec<CreoReferenc
                 "endpoint_midpoint"
             },
             radius: circle.radius.get(),
-            axis: circle.axis,
-            endpoints: [circle.start, circle.end],
+            axis: (*circle.axis.as_raw()).into(),
+            endpoints: [circle.start.get().into(), circle.end.get().into()],
             offset: circle.offset,
         })
         .collect()
@@ -587,10 +587,10 @@ pub(super) fn reference_conic_records(scan: &ContainerScan) -> Vec<CreoReference
             entity_id: conic.entity_id,
             type_id: conic.type_id,
             flip: conic.flip,
-            endpoints: [conic.start, conic.end],
+            endpoints: [conic.start.get().into(), conic.end.get().into()],
             parameter_interval: [conic.parameter_start, conic.parameter_end],
             coefficients: [conic.coefficient_1, conic.coefficient_2],
-            local_system: conic.local_system,
+            local_system: conic.local_system.map(cadmpeg_ir::units::FiniteVector::get),
             body: conic.body.clone(),
             offset: conic.offset,
         })
@@ -605,9 +605,9 @@ pub(super) fn reference_ellipse_records(scan: &ContainerScan) -> Vec<CreoReferen
             id: format!("creo:mdl_ref_info:ellipse_carrier#{}", ellipse.offset),
             source_conic_id: format!("creo:mdl_ref_info:conic_record#{}", ellipse.offset),
             source_entity_id: ellipse.source_entity_id,
-            center: ellipse.center,
-            axis: ellipse.axis,
-            major_direction: ellipse.major_direction,
+            center: ellipse.center.get().into(),
+            axis: (*ellipse.axis.as_raw()).into(),
+            major_direction: (*ellipse.major_direction.as_raw()).into(),
             major_radius: ellipse.major_radius.get(),
             minor_radius: ellipse.minor_radius.get(),
             offset: ellipse.offset,
@@ -1296,8 +1296,8 @@ pub(super) fn plane_local_system_records(
                 body: record.body.clone(),
                 slots: record.slots.to_vec(),
                 origin: frame.origin,
-                u_axis: frame.u_axis,
-                normal: frame.normal,
+                u_axis: frame.u_axis(),
+                normal: frame.normal(),
                 classification: match record.classification {
                     crate::surface::LocalSystemClassification::Simple => "simple",
                     crate::surface::LocalSystemClassification::Unclassified => "unclassified",
@@ -1356,8 +1356,8 @@ pub(super) fn outline_plane_records(
             id: format!("{id_prefix}#{}:{}", record.offset, record.surface_id),
             surface_id: record.surface_id,
             origin: record.origin,
-            normal: record.normal,
-            u_axis: record.u_axis,
+            normal: record.normal(),
+            u_axis: record.u_axis(),
             offset: record.offset,
             source_section: source_section(scan, record.offset),
         })
@@ -2020,7 +2020,7 @@ pub(super) fn surface_parameter_records(
                 terminal_scalar_frame: record.terminal_scalar_frame().cloned(),
                 tabulated_cylinder_frame: record.tabulated_cylinder_frame().map(|frame| {
                     CreoTabulatedCylinderFrame {
-                        values: frame.values(),
+                        values: frame.values().get(),
                         prefixes: frame.prefixes(),
                     }
                 }),
@@ -2223,7 +2223,9 @@ pub(super) fn curve_expression_records(scan: &ContainerScan) -> Vec<CreoCurveExp
                     dimensions: frame.dimensions,
                     count: frame.count,
                     body: frame.body.clone(),
-                    explicit_slots: frame.explicit_slots,
+                    explicit_slots: frame
+                        .explicit_slots
+                        .map(cadmpeg_ir::units::FiniteVector::get),
                     offset: frame.offset,
                 }
             }),
@@ -2741,7 +2743,9 @@ pub(super) fn feature_definition_records(scan: &ContainerScan) -> Vec<CreoFeatur
                         }
                     },
                     body: frame.body.clone(),
-                    decoded_values: frame.decoded_values,
+                    decoded_values: frame
+                        .decoded_values
+                        .map(cadmpeg_ir::units::FiniteVector::get),
                     offset: frame.offset,
                 })
                 .collect(),

@@ -270,8 +270,8 @@ pub trait CodecBackend {
     /// namespace or has no validator for it. The sealed wrapper exposes it as
     /// [`Codec::validate_native`], which the application runs after
     /// `validate_neutral`.
-    fn validate_native(_ir: &CadIr) -> Vec<Finding> {
-        Vec::new()
+    fn validate_native(_ctx: &DecodeContext<'_>, _ir: &CadIr) -> Result<Vec<Finding>, CodecError> {
+        Ok(Vec::new())
     }
 
     /// Judge, from a leading byte prefix, whether this codec applies.
@@ -327,8 +327,9 @@ mod sealed {
 /// impl Codec for Rogue {
 ///     fn id(&self) -> FormatId { FormatId::new("rogue") }
 ///     fn detect(&self, _: &[u8]) -> Confidence { Confidence::No }
-///     fn validate_native(&self, _: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::check::Finding> {
-///         Vec::new()
+///     fn validate_native(&self, _: &DecodeContext<'_>, _: &cadmpeg_ir::CadIr)
+///         -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
+///         Ok(Vec::new())
 ///     }
 ///     fn inspect(&self, _: &mut dyn ReadSeek, _: &InspectOptions)
 ///         -> Result<ContainerSummary, CodecError> { panic!("never runs") }
@@ -347,7 +348,11 @@ pub trait Codec: sealed::Sealed {
 
     /// Findings this codec reports over its own native namespace,
     /// [`CodecBackend::validate_native`].
-    fn validate_native(&self, ir: &CadIr) -> Vec<Finding>;
+    fn validate_native(
+        &self,
+        ctx: &DecodeContext<'_>,
+        ir: &CadIr,
+    ) -> Result<Vec<Finding>, CodecError>;
 
     /// Inspects the source under its input and resource limits.
     fn inspect(
@@ -383,8 +388,12 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         self.detect_impl(prefix)
     }
 
-    fn validate_native(&self, ir: &CadIr) -> Vec<Finding> {
-        C::validate_native(ir)
+    fn validate_native(
+        &self,
+        ctx: &DecodeContext<'_>,
+        ir: &CadIr,
+    ) -> Result<Vec<Finding>, CodecError> {
+        C::validate_native(ctx, ir)
     }
 
     fn inspect(

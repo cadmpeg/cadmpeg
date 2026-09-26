@@ -373,3 +373,29 @@ fn a_scaled_fit_tolerance_is_refused_only_when_it_overflows() {
         Some(0.5 * 25.4)
     );
 }
+
+#[test]
+fn scaling_an_existing_revision_tolerance_keeps_its_cache_form() {
+    let scale = |value| crate::scalar::PositiveReal::new(value).expect("positive scale");
+    let mut surface = ProceduralSurface::new(surface_id(), revision_exact_definition(), None);
+    surface
+        .scale_cache_fit_tolerance(scale(25.4))
+        .expect("finite scaled revision tolerance");
+    assert_eq!(
+        surface.cache_fit_tolerance().map(FitTolerance::get),
+        Some(0.25 * 25.4)
+    );
+    let before_overflow = surface.clone();
+    assert!(matches!(
+        surface.scale_cache_fit_tolerance(scale(f64::MAX)),
+        Err(CacheContractError::InvalidValue { .. })
+    ));
+    assert_eq!(surface, before_overflow);
+
+    let mut parameterized = ProceduralCurve::new(curve_id(), parameterized_curve_definition());
+    let before_scale = parameterized.clone();
+    parameterized
+        .scale_cache_fit_tolerance(scale(f64::MAX))
+        .expect("parameterized curve has no fit tolerance");
+    assert_eq!(parameterized, before_scale);
+}

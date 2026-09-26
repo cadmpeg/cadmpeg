@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::features::{FinitePoint3, FiniteVector3};
 use crate::math::sum::{finite_dot, ExactSignedSum, ScaledValue};
 use crate::math::{Point2, Point3, Vector3};
-use crate::scalar::FiniteReal;
+use crate::scalar::{FiniteReal, PositiveReal};
 use crate::units::UnitVector3;
 
 /// A row-major affine transform applied to two-dimensional geometry.
@@ -205,6 +205,15 @@ impl Transform {
         Self { rows }
     }
 
+    /// Multiply only the translation by a positive length-unit scale.
+    /// The admitted linear rows are kept. A translation overflow is refused.
+    #[must_use]
+    pub fn scaled_translation(self, scale: PositiveReal) -> Option<Self> {
+        let [x, y, z] = self.rows.map(|row| row[3] * scale.get());
+        let translation = FiniteVector3::new(Vector3::new(x, y, z))?;
+        Some(self.with_translation(translation))
+    }
+
     /// The affine rows, without the constant bottom row.
     #[must_use]
     pub fn affine_rows(self) -> [[f64; 4]; 3] {
@@ -371,7 +380,7 @@ impl Transform {
 
 #[cfg(test)]
 mod tests {
-    use super::{Transform, Transform2, TransformError};
+    use super::{PositiveReal, Transform, Transform2, TransformError};
     use crate::features::{FinitePoint3, FiniteVector3};
     use crate::math::{Point3, Vector3};
 
@@ -583,5 +592,28 @@ mod tests {
             .expect("two affine rows");
         assert_eq!(transform2, Transform2::identity());
         assert_eq!(transform2.rows()[2], [0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn scaling_translation_keeps_admitted_linear_rows() {
+        let transform = Transform::affine([
+            [0.0, -1.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, -2.0],
+            [0.0, 0.0, 1.0, 3.0],
+        ])
+        .expect("finite rows");
+        let scale = PositiveReal::new(25.4).expect("positive scale");
+        let scaled = transform.scaled_translation(scale).expect("finite product");
+        assert_eq!(scaled.affine_rows()[0], [0.0, -1.0, 0.0, 25.4]);
+        assert_eq!(scaled.affine_rows()[1], [1.0, 0.0, 0.0, -50.8]);
+        assert_eq!(scaled.affine_rows()[2], [0.0, 0.0, 1.0, 3.0 * 25.4]);
+
+        let overflow = Transform::affine([
+            [1.0, 0.0, 0.0, f64::MAX],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ])
+        .expect("finite rows");
+        assert_eq!(overflow.scaled_translation(scale), None);
     }
 }
