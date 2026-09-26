@@ -29,7 +29,12 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     let original = decoded.ir().native.namespace("sldprt").unwrap();
     let typed = crate::native::SldprtNative::load(original).unwrap();
     let mut round_trip = cadmpeg_ir::NativeNamespace::default();
-    typed.store(&mut round_trip).unwrap();
+    typed
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut round_trip,
+        )
+        .unwrap();
     assert_eq!(
         typed,
         crate::native::SldprtNative::load(&round_trip).unwrap()
@@ -64,7 +69,10 @@ fn native_store_rejects_mismatched_nested_owners_atomically() {
     native.feature_histories[0].features[0].parent = "missing-history".into();
     let before = decoded.ir().native.namespace("sldprt").unwrap().clone();
     let error = native
-        .store(decoded.ir_mut().native.namespace_mut("sldprt"))
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            decoded.ir_mut().native.namespace_mut("sldprt"),
+        )
         .unwrap_err();
     assert!(error.to_string().contains("invalid owner"));
     assert_eq!(decoded.ir().native.namespace("sldprt").unwrap(), &before);
@@ -89,7 +97,12 @@ fn native_store_rejects_missing_sketch_marker_feature_owner() {
         .feature_ref = Some("sldprt:history:feature#missing".into());
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    let error = native.store(&mut namespace).unwrap_err();
+    let error = native
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut namespace,
+        )
+        .unwrap_err();
     assert!(error
         .to_string()
         .contains("inconsistent lane or feature ownership"));
@@ -115,7 +128,12 @@ fn native_store_rejects_edited_history_feature_class() {
     native.feature_histories[0].features[0].input_class = Some("moRefPlane_c".into());
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    let error = native.store(&mut namespace).unwrap_err();
+    let error = native
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut namespace,
+        )
+        .unwrap_err();
     assert!(error
         .to_string()
         .contains("feature classes do not match the feature-input index"));
@@ -143,7 +161,12 @@ fn native_store_rejects_missing_sketch_marker_local_link() {
     );
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    let error = native.store(&mut namespace).unwrap_err();
+    let error = native
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut namespace,
+        )
+        .unwrap_err();
     assert!(error.to_string().contains("missing local-link target"));
 }
 
@@ -207,7 +230,12 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
     lane.references = expected.references;
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    native.store(&mut namespace).unwrap();
+    native
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut namespace,
+        )
+        .unwrap();
     let stored = crate::native::SldprtNative::load(&namespace).unwrap();
     assert_eq!(
         stored.feature_input_lanes[0].sketch_entities[0]
@@ -235,7 +263,12 @@ fn native_store_rejects_relation_scalar_owner_disagreement() {
     native.feature_input_lanes[0].relation_bindings[0].feature_ref = None;
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    let error = native.store(&mut namespace).unwrap_err();
+    let error = native
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut namespace,
+        )
+        .unwrap_err();
     assert!(error
         .to_string()
         .contains("disagrees with its scalar owner"));
@@ -259,7 +292,12 @@ fn native_store_rejects_nonlocal_relation_scalar_groups() {
         .push(duplicate);
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    let error = native.store(&mut namespace).unwrap_err();
+    let error = native
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut namespace,
+        )
+        .unwrap_err();
     assert!(
         error.to_string().contains("relation instance")
             && error.to_string().contains("inconsistent ownership")
@@ -290,7 +328,11 @@ fn native_load_rejects_nonadjacent_duplicate_relation_scalars() {
     assert_eq!(relation.scalar_refs().len(), 2);
     relation.scalars.push(relation.scalar_refs()[0].clone());
     namespace
-        .set_arena("feature_input_relation_instances", &relations)
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "feature_input_relation_instances",
+            &relations,
+        )
         .unwrap();
 
     let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
@@ -312,7 +354,12 @@ fn native_store_rejects_relation_instance_operand_disagreement() {
     native.feature_input_lanes[0].relation_instances[0].operands[0].entity_index += 1;
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    let error = native.store(&mut namespace).unwrap_err();
+    let error = native
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut namespace,
+        )
+        .unwrap_err();
     assert!(
         error.to_string().contains("relation instance")
             && error.to_string().contains("inconsistent ownership")
@@ -343,7 +390,12 @@ fn native_store_rejects_inconsistent_scalar_marker_target() {
     native.feature_input_lanes[0].relation_instances[0].operands[1].entity_ref = Some(wrong_target);
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    let error = native.store(&mut namespace).unwrap_err();
+    let error = native
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut namespace,
+        )
+        .unwrap_err();
     assert!(error.to_string().contains("inconsistent sketch marker"));
 }
 
@@ -383,7 +435,12 @@ fn native_store_accepts_duplicate_local_ids_for_scalar_ordinals() {
     *next = next.with_test_identity(Some(local_id), next.local_id());
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    native.store(&mut namespace).unwrap();
+    native
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut namespace,
+        )
+        .unwrap();
 }
 
 #[test]
@@ -631,7 +688,9 @@ fn native_load_refuses_a_forged_object_name_length_byte_after_a_store() {
     typed.feature_input_lanes[0].native_payload[length_byte] = stated + 1;
 
     let mut forged = cadmpeg_ir::NativeNamespace::default();
-    typed.store(&mut forged).unwrap();
+    typed
+        .store(&cadmpeg_test_support::service_decode_context(), &mut forged)
+        .unwrap();
     let error = crate::native::SldprtNative::load(&forged).unwrap_err();
     assert!(
         error

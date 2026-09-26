@@ -67,6 +67,7 @@ pub(crate) fn push_record<T>(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, operation)?;
+    ctx.charge_entities(1, operation)?;
     ctx.charge_retained(32, "retain Inventor PmDc record type id")?;
     ctx.charge_retained(
         segment_token.as_str().len() as u64,
@@ -144,5 +145,51 @@ impl<'de, T: RecordPayload + Deserialize<'de>> Deserialize<'de> for Located<T> {
             ));
         }
         Ok(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn parsed_record_refuses_entity_limit_before_collection_push() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_entities = 0;
+        let (limited, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+        let token = cadmpeg_ir::ids::IdentityKey::encode_segment("segment");
+        let mut records = Vec::new();
+        assert!(matches!(
+            super::push_record(
+                &limited,
+                &mut records,
+                7_u32,
+                [0; 16],
+                &token,
+                1,
+                "admit parsed record",
+            ),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::Entities
+                    && limit.operation == "admit parsed record"
+        ));
+        assert!(records.is_empty());
+
+        let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("service context");
+        super::push_record(
+            &service,
+            &mut records,
+            7_u32,
+            [0; 16],
+            &token,
+            1,
+            "admit parsed record",
+        )
+        .expect("service admission");
+        assert_eq!(records.len(), 1);
     }
 }

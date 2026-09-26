@@ -346,6 +346,16 @@ impl NonNegativeLength {
     /// Zero in canonical units.
     pub const ZERO: Self = Self(0.0);
 
+    /// Assign a finite scalar to the length family if it is nonnegative.
+    #[must_use]
+    pub const fn from_finite_assigned_real(value: FiniteReal) -> Option<Self> {
+        if value.get() >= 0.0 {
+            Some(Self(value.get()))
+        } else {
+            None
+        }
+    }
+
     /// The length times the magnitude of the sine of `angle`.
     ///
     /// The sine of a finite angle is finite, and a sine computed within one
@@ -406,6 +416,16 @@ impl PositiveReal {
 impl NonNegativeReal {
     /// Zero dimensionless scalar.
     pub const ZERO: Self = Self(0.0);
+
+    /// Admit a finite scalar as nonnegative. Only its sign remains to check.
+    #[must_use]
+    pub const fn from_finite(value: FiniteReal) -> Option<Self> {
+        if value.get() >= 0.0 {
+            Some(Self(value.get()))
+        } else {
+            None
+        }
+    }
 
     /// The value times `scale`.
     ///
@@ -534,11 +554,20 @@ impl Length {
 }
 
 impl PositiveLength {
-    /// Assign the length family to an admitted positive real in millimeters.
-    /// Both domains admit every finite positive value.
+    /// Assign a positive dimensionless value to the length family.
     #[must_use]
-    pub const fn from_assigned_real(value: PositiveReal) -> Self {
-        Self(value.0)
+    pub const fn from_assigned_positive_real(value: PositiveReal) -> Self {
+        Self(value.get())
+    }
+
+    /// Assign a finite scalar to the length family if it is positive.
+    #[must_use]
+    pub const fn from_assigned_real(value: FiniteReal) -> Option<Self> {
+        if value.get() > 0.0 {
+            Some(Self(value.get()))
+        } else {
+            None
+        }
     }
 
     /// The length in canonical millimeters as a dimensionless real, for a
@@ -637,6 +666,12 @@ impl FiniteReal {
     pub const HALF: Self = Self(0.5);
     /// Two.
     pub(crate) const TWO: Self = Self(2.0);
+
+    /// Widen a finite binary32 scalar exactly to binary64.
+    #[must_use]
+    pub fn from_finite_binary32(value: FiniteBinary32) -> Self {
+        Self(f64::from(value.get()))
+    }
 
     /// Reverse the sign.
     #[must_use]
@@ -1296,6 +1331,16 @@ impl PositiveReal {
 }
 
 impl NonZeroReal {
+    /// Admit a finite scalar as nonzero. Only zero remains to check.
+    #[must_use]
+    pub const fn from_finite(value: FiniteReal) -> Option<Self> {
+        if value.get() == 0.0 {
+            None
+        } else {
+            Some(Self(value.get()))
+        }
+    }
+
     /// Unit scalar value.
     pub const ONE: Self = Self(1.0);
     /// One over the square root of two.

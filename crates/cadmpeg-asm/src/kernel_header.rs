@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Kernel header metadata shared by binary ASM, binary ACIS, and text streams.
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 
 /// Integer and reference payload width of a kernel stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,40 +86,77 @@ impl KernelHeader {
     }
 }
 
-pub(crate) fn read_string_region(bytes: &[u8], start: usize) -> (Vec<String>, Vec<f64>, usize) {
+pub(crate) struct HeaderRegion {
+    pub(crate) strings: [Option<String>; 3],
+    pub(crate) doubles: [Option<f64>; 3],
+}
+
+pub(crate) fn read_string_region(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    start: usize,
+) -> Result<HeaderRegion, CodecError> {
     let mut cur = start;
-    let mut strings = Vec::new();
-    while strings.len() < 3 {
-        match read_u8_string(bytes, cur) {
+    let mut strings = [None, None, None];
+    for slot in &mut strings {
+        match read_u8_string_span(bytes, cur) {
             Some((value, next)) => {
-                strings.push(value);
+                let length = u64::try_from(value.len()).map_err(|_| {
+                    ctx.refuse_codec_limit(
+                        "kernel header product string length",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?;
+                ctx.charge_retained(length, "retain kernel header product string")?;
+                *slot = Some(value.to_owned());
                 cur = next;
             }
             None => break,
         }
     }
-    let mut doubles = Vec::new();
-    while doubles.len() < 3 {
+    let mut doubles = [None, None, None];
+    for slot in &mut doubles {
         match read_tagged_f64(bytes, cur) {
             Some((value, next)) => {
-                doubles.push(value);
+                *slot = Some(value);
                 cur = next;
             }
             None => break,
         }
+    }
+    Ok(HeaderRegion { strings, doubles })
+}
+
+/// Locate tagged header values without materializing a second copy.
+pub(crate) fn scan_string_region(bytes: &[u8], start: usize) -> (usize, usize, usize) {
+    let mut cur = start;
+    let mut strings = 0;
+    while strings < 3 {
+        let Some((_, next)) = read_u8_string_span(bytes, cur) else {
+            break;
+        };
+        strings += 1;
+        cur = next;
+    }
+    let mut doubles = 0;
+    while doubles < 3 {
+        let Some((_, next)) = read_tagged_f64(bytes, cur) else {
+            break;
+        };
+        doubles += 1;
+        cur = next;
     }
     (strings, doubles, cur)
 }
 
-fn read_u8_string(bytes: &[u8], at: usize) -> Option<(String, usize)> {
+fn read_u8_string_span(bytes: &[u8], at: usize) -> Option<(&str, usize)> {
     if *bytes.get(at)? != 0x07 {
         return None;
     }
     let len = *bytes.get(at + 1)? as usize;
     let start = at + 2;
-    let value = std::str::from_utf8(bytes.get(start..start + len)?)
-        .ok()?
-        .to_string();
+    let value = std::str::from_utf8(bytes.get(start..start + len)?).ok()?;
     Some((value, start + len))
 }
 
@@ -160,12 +198,16 @@ mod tests {
             } else {
                 crate::acis_header::parse
             };
-            let header = parse(&bytes).expect("recognized partial header");
+            let header = parse(&cadmpeg_test_support::service_decode_context(), &bytes)
+                .expect("service policy admits header")
+                .expect("recognized partial header");
             assert_eq!(header.metadata.linear, Some(0.125));
             assert_eq!(header.metadata.angular, None);
             bytes.push(6);
             bytes.extend_from_slice(&0.25_f64.to_le_bytes());
-            let header = parse(&bytes).expect("recognized complete header");
+            let header = parse(&cadmpeg_test_support::service_decode_context(), &bytes)
+                .expect("service policy admits header")
+                .expect("recognized complete header");
             assert_eq!(header.metadata.linear, Some(0.125));
             assert_eq!(header.metadata.angular, Some(0.25));
         }

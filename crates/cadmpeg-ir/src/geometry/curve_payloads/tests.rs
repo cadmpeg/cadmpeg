@@ -391,6 +391,52 @@ fn a_direction_offset_from_admitted_parts_matches_its_raw_admission() {
 }
 
 #[test]
+fn admitted_finite_direction_offset_matches_raw_without_a_range() {
+    use super::OffsetCurveConstruction;
+    use crate::features::FiniteVector3;
+    use crate::geometry::OffsetSide;
+    use crate::ids::CurveId;
+    use crate::math::Vector3;
+    use crate::scalar::FiniteReal;
+
+    let source = CurveId::mint("synthetic:test:curve#finite-direction").unwrap();
+    let direction = Vector3::new(0.0, 2.0, 0.0);
+    assert_eq!(
+        OffsetCurveConstruction::from_admitted_direction(
+            source.clone(),
+            FiniteReal::new(-1.25).unwrap(),
+            FiniteVector3::new(direction).unwrap(),
+        ),
+        OffsetCurveConstruction::try_new(
+            source.clone(),
+            -1.25,
+            OffsetSide::Direction {
+                direction,
+                support: None
+            },
+            None,
+        ),
+    );
+    let zero = Vector3::new(0.0, 0.0, 0.0);
+    assert_eq!(
+        OffsetCurveConstruction::from_admitted_direction(
+            source.clone(),
+            FiniteReal::ZERO,
+            FiniteVector3::ZERO,
+        ),
+        OffsetCurveConstruction::try_new(
+            source,
+            0.0,
+            OffsetSide::Direction {
+                direction: zero,
+                support: None
+            },
+            None,
+        ),
+    );
+}
+
+#[test]
 fn a_plane_normal_offset_from_a_unit_matches_raw_admission() {
     use super::OffsetCurveConstruction;
     use crate::geometry::{CurveOffsetRange, OffsetSide};

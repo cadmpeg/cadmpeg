@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
-use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::NonNegativeReal;
 use cadmpeg_ir::units::FinitePoint2;
 use serde::{Deserialize, Serialize};
 
@@ -31,30 +33,78 @@ pub(crate) struct TextTriangulation {
 impl TextTriangulation {
     /// Admits attributes with exactly one value per node.
     pub(super) fn try_new(
-        deflection: FiniteReal,
-        nodes: Vec<FinitePoint3>,
-        uv_nodes: Option<Vec<FinitePoint2>>,
+        deflection: f64,
+        nodes: Vec<Point3>,
+        uv_nodes: Option<Vec<Point2>>,
         triangles: Vec<[u32; 3]>,
-        normals: Option<Vec<FiniteVector3>>,
+        normals: Option<Vec<Vector3>>,
     ) -> Result<Self, String> {
-        let triangles = triangles
-            .into_iter()
-            .map(|triangle| {
-                if triangle.iter().any(|&index| {
-                    index == 0 || usize::try_from(index).map_or(true, |index| index > nodes.len())
-                }) {
-                    return Err("triangles node index is out of bounds".to_owned());
-                }
-                Ok(triangle.map(|index| index - 1))
-            })
-            .collect::<Result<Vec<_>, String>>()?;
+        let triangles = Self::checked_triangles(triangles, nodes.len())?;
         let uv_nodes = uv_nodes
             .map(|values| PerNode::try_new(values, nodes.len(), "uv_nodes"))
             .transpose()?;
         let normals = normals
             .map(|values| PerNode::try_new(values, nodes.len(), "normals"))
             .transpose()?;
-        let deflection = NonNegativeReal::new(deflection.get())
+        let deflection = NonNegativeReal::new(deflection)
+            .ok_or_else(|| "chordal_deflection must be finite and non-negative".to_owned())?;
+        let nodes = nodes
+            .into_iter()
+            .map(|point| {
+                FinitePoint3::new(point).ok_or("nodes coordinates must be finite".to_owned())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let uv_nodes = uv_nodes
+            .map(|values| {
+                values
+                    .0
+                    .into_iter()
+                    .map(|point| {
+                        FinitePoint2::new(point)
+                            .ok_or("uv_nodes coordinates must be finite".to_owned())
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+                    .map(PerNode)
+            })
+            .transpose()?;
+        let normals = normals
+            .map(|values| {
+                values
+                    .0
+                    .into_iter()
+                    .map(|normal| {
+                        FiniteVector3::new(normal)
+                            .ok_or("normals components must be finite".to_owned())
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+                    .map(PerNode)
+            })
+            .transpose()?;
+        Ok(Self {
+            deflection,
+            nodes,
+            uv_nodes,
+            triangles,
+            normals,
+        })
+    }
+
+    /// Build from coordinates already admitted by the B-rep parser.
+    pub(super) fn from_admitted_parts(
+        deflection: FiniteReal,
+        nodes: Vec<FinitePoint3>,
+        uv_nodes: Option<Vec<FinitePoint2>>,
+        triangles: Vec<[u32; 3]>,
+        normals: Option<Vec<FiniteVector3>>,
+    ) -> Result<Self, String> {
+        let triangles = Self::checked_triangles(triangles, nodes.len())?;
+        let uv_nodes = uv_nodes
+            .map(|values| PerNode::try_new(values, nodes.len(), "uv_nodes"))
+            .transpose()?;
+        let normals = normals
+            .map(|values| PerNode::try_new(values, nodes.len(), "normals"))
+            .transpose()?;
+        let deflection = NonNegativeReal::from_finite(deflection)
             .ok_or_else(|| "chordal_deflection must be finite and non-negative".to_owned())?;
         Ok(Self {
             deflection,
@@ -63,6 +113,23 @@ impl TextTriangulation {
             triangles,
             normals,
         })
+    }
+
+    fn checked_triangles(
+        triangles: Vec<[u32; 3]>,
+        node_count: usize,
+    ) -> Result<Vec<[u32; 3]>, String> {
+        triangles
+            .into_iter()
+            .map(|triangle| {
+                if triangle.iter().any(|&index| {
+                    index == 0 || usize::try_from(index).map_or(true, |index| index > node_count)
+                }) {
+                    return Err("triangles node index is out of bounds".to_owned());
+                }
+                Ok(triangle.map(|index| index - 1))
+            })
+            .collect()
     }
 
     /// Returns ordered model-space vertices.
@@ -89,11 +156,11 @@ impl TextTriangulation {
 
 #[derive(Deserialize)]
 struct TextTriangulationWire {
-    deflection: FiniteReal,
-    nodes: Vec<FinitePoint3>,
-    uv_nodes: Option<Vec<FinitePoint2>>,
+    deflection: f64,
+    nodes: Vec<Point3>,
+    uv_nodes: Option<Vec<Point2>>,
     triangles: Vec<[u32; 3]>,
-    normals: Option<Vec<FiniteVector3>>,
+    normals: Option<Vec<Vector3>>,
 }
 
 /// The retained wire shape, borrowed from the triangulation it states.
@@ -152,31 +219,16 @@ impl TryFrom<TextTriangulationWire> for TextTriangulation {
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
-    use cadmpeg_ir::scalar::FiniteReal;
-    use cadmpeg_ir::units::FinitePoint2;
 
     use super::{TextTriangulation, TextTriangulationWire};
-
-    fn point3(x: f64, y: f64, z: f64) -> FinitePoint3 {
-        FinitePoint3::new(Point3::new(x, y, z)).expect("finite test point")
-    }
-
-    fn point2(u: f64, v: f64) -> FinitePoint2 {
-        FinitePoint2::new(Point2::new(u, v)).expect("finite test UV point")
-    }
-
-    fn vector3(x: f64, y: f64, z: f64) -> FiniteVector3 {
-        FiniteVector3::new(Vector3::new(x, y, z)).expect("finite test normal")
-    }
 
     #[test]
     fn rejects_invalid_wire_triangle_indices() {
         for triangle in [[0, 1, 1], [1, 2, 1]] {
             let wire = TextTriangulationWire {
-                deflection: FiniteReal::ZERO,
-                nodes: vec![point3(0.0, 0.0, 0.0)],
+                deflection: 0.0,
+                nodes: vec![Point3::new(0.0, 0.0, 0.0)],
                 uv_nodes: None,
                 triangles: vec![triangle],
                 normals: None,
@@ -187,17 +239,13 @@ mod tests {
 
     #[test]
     fn rejects_negative_and_nonfinite_triangulation_deflection() {
-        let negative = FiniteReal::new(-1.0).expect("finite negative deflection");
-        let error = TextTriangulation::try_new(
-            negative,
-            vec![point3(0.0, 0.0, 0.0)],
-            None,
-            Vec::new(),
-            None,
-        )
-        .unwrap_err();
-        assert!(error.contains("chordal_deflection must be finite and non-negative"));
-        assert!(FiniteReal::new(f64::INFINITY).is_none());
+        let nodes = vec![Point3::new(0.0, 0.0, 0.0)];
+        for deflection in [-1.0, f64::INFINITY] {
+            let error =
+                TextTriangulation::try_new(deflection, nodes.clone(), None, Vec::new(), None)
+                    .unwrap_err();
+            assert!(error.contains("chordal_deflection must be finite and non-negative"));
+        }
         let mut json = serde_json::json!({
             "deflection": 0.5,
             "nodes": [{"x": 0.0, "y": 0.0, "z": 0.0}],
@@ -210,20 +258,56 @@ mod tests {
     }
 
     #[test]
+    fn rejects_nonfinite_triangulation_lanes_before_retention() {
+        let point = Point3::new(0.0, 0.0, 0.0);
+        assert!(TextTriangulation::try_new(
+            0.0,
+            vec![Point3::new(f64::INFINITY, 0.0, 0.0)],
+            None,
+            Vec::new(),
+            None,
+        )
+        .unwrap_err()
+        .contains("nodes coordinates must be finite"));
+        assert!(TextTriangulation::try_new(
+            0.0,
+            vec![point],
+            Some(vec![Point2::new(f64::NAN, 0.0)]),
+            Vec::new(),
+            None,
+        )
+        .unwrap_err()
+        .contains("uv_nodes coordinates must be finite"));
+        assert!(TextTriangulation::try_new(
+            0.0,
+            vec![point],
+            None,
+            Vec::new(),
+            Some(vec![Vector3::new(0.0, f64::NEG_INFINITY, 0.0)]),
+        )
+        .unwrap_err()
+        .contains("normals components must be finite"));
+    }
+
+    #[test]
     fn writes_one_based_triangles_beside_the_aligned_node_attributes() {
         let value = TextTriangulation::try_new(
-            FiniteReal::HALF,
+            0.5,
             vec![
-                point3(0.0, 0.0, 0.0),
-                point3(1.0, 0.0, 0.0),
-                point3(0.0, 1.0, 0.0),
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
             ],
-            Some(vec![point2(0.0, 0.0), point2(1.0, 0.0), point2(0.0, 1.0)]),
+            Some(vec![
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 0.0),
+                Point2::new(0.0, 1.0),
+            ]),
             vec![[1, 2, 3], [3, 2, 1]],
             Some(vec![
-                vector3(0.0, 0.0, 1.0),
-                vector3(1.0, 0.0, 0.0),
-                vector3(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
             ]),
         )
         .unwrap();
@@ -252,31 +336,23 @@ mod tests {
 
     #[test]
     fn rejects_misaligned_attributes_at_constructor_and_serde() {
-        let nodes = vec![point3(0.0, 0.0, 0.0)];
-        assert!(TextTriangulation::try_new(
-            FiniteReal::ZERO,
-            nodes.clone(),
-            Some(vec![]),
-            vec![],
-            None
-        )
-        .unwrap_err()
-        .contains("uv_nodes"));
-        assert!(TextTriangulation::try_new(
-            FiniteReal::ZERO,
-            nodes.clone(),
-            None,
-            vec![],
-            Some(vec![])
-        )
-        .unwrap_err()
-        .contains("normals"));
+        let nodes = vec![Point3::new(0.0, 0.0, 0.0)];
+        assert!(
+            TextTriangulation::try_new(0.0, nodes.clone(), Some(vec![]), vec![], None)
+                .unwrap_err()
+                .contains("uv_nodes")
+        );
+        assert!(
+            TextTriangulation::try_new(0.0, nodes.clone(), None, vec![], Some(vec![]))
+                .unwrap_err()
+                .contains("normals")
+        );
         let value = TextTriangulation::try_new(
-            FiniteReal::ZERO,
+            0.0,
             nodes,
-            Some(vec![point2(0.0, 0.0)]),
+            Some(vec![Point2::new(0.0, 0.0)]),
             vec![],
-            Some(vec![vector3(0.0, 0.0, 1.0)]),
+            Some(vec![Vector3::new(0.0, 0.0, 1.0)]),
         )
         .unwrap();
         assert_eq!(value.uv_nodes().unwrap().len(), value.nodes().len());

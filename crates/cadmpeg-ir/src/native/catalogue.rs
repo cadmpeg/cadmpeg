@@ -2,6 +2,7 @@
 //! Declarative native-family catalogues.
 
 use super::NativeConvertError;
+use cadmpeg_core::decode::DecodeContext;
 
 /// Ordered processing phase and annotation function for a native record family.
 pub enum Phase<M, A, N, E> {
@@ -37,7 +38,7 @@ pub type NoteFn<M, A, N, E> = fn(&M, &FamilyRow<M, A, N, E>, Option<&'static str
 
 /// Namespace-emission function carried by a family row.
 pub type EmitFn<M, A, N, E> =
-    fn(&M, &FamilyRow<M, A, N, E>, &mut N) -> Result<(), NativeConvertError>;
+    fn(&DecodeContext<'_>, &M, &FamilyRow<M, A, N, E>, &mut N) -> Result<(), NativeConvertError>;
 
 /// One codec-owned native record family.
 pub struct FamilyRow<M, A, N, E> {
@@ -67,9 +68,14 @@ impl<'a, M, A, N, E> Catalogue<'a, M, A, N, E> {
     }
 
     /// Emits every family through its row function, empty families included.
-    pub fn emit_all(&self, model: &M, namespace: &mut N) -> Result<(), NativeConvertError> {
+    pub fn emit_all(
+        &self,
+        ctx: &DecodeContext<'_>,
+        model: &M,
+        namespace: &mut N,
+    ) -> Result<(), NativeConvertError> {
         for row in self.rows {
-            (row.emit)(model, row, namespace)?;
+            (row.emit)(ctx, model, row, namespace)?;
         }
         Ok(())
     }

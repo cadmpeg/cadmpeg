@@ -12,6 +12,120 @@ use crate::native::NativeRecord;
 use crate::validate::validate_neutral;
 
 #[test]
+fn native_arena_json_copy_refuses_retained_limit_before_materialization() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let record = serde_json::json!({
+        "id": "test:native:record#first",
+        "payload": "a retained string"
+    });
+    let needed = serde_json::to_vec(&record).unwrap().len() as u64;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = needed - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut namespace = crate::native::NativeNamespace::default();
+    let error = namespace
+        .set_arena(&limited, "records", std::slice::from_ref(&record))
+        .unwrap_err();
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = cadmpeg_core::CodecError::from(error)
+    else {
+        panic!("native storage must preserve the resource refusal")
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, "serialize native record");
+    assert!(namespace.arenas().is_empty());
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    namespace
+        .set_arena(&service, "records", std::slice::from_ref(&record))
+        .unwrap();
+    assert_eq!(
+        namespace.arena_as::<serde_json::Value>("records").unwrap(),
+        vec![record]
+    );
+}
+
+#[test]
+fn native_arena_name_refuses_retained_limit_before_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = "records".len() as u64 - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut namespace = crate::native::NativeNamespace::default();
+    let error = namespace
+        .set_arena(&limited, "records", &[] as &[serde_json::Value])
+        .unwrap_err();
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = cadmpeg_core::CodecError::from(error)
+    else {
+        panic!("native arena name must preserve the resource refusal")
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, "retain native arena name");
+    assert!(namespace.arenas().is_empty());
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    namespace
+        .set_arena(&service, "records", &[] as &[serde_json::Value])
+        .unwrap();
+    assert_eq!(namespace.arenas()["records"].len(), 0);
+}
+
+#[test]
+fn native_record_slot_refuses_collection_limit_before_json_materialization() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let record = serde_json::json!({"id": "test:native:record#first", "payload": "value"});
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut namespace = crate::native::NativeNamespace::default();
+    let error = namespace
+        .set_arena(&limited, "records", std::slice::from_ref(&record))
+        .unwrap_err();
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = cadmpeg_core::CodecError::from(error)
+    else {
+        panic!("native record storage must preserve the resource refusal")
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.operation, "store native record");
+    assert!(namespace.arenas().is_empty());
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    namespace
+        .set_arena(&service, "records", std::slice::from_ref(&record))
+        .unwrap();
+    assert_eq!(namespace.arenas()["records"].len(), 1);
+}
+
+#[test]
+fn native_arena_slot_refuses_collection_limit_before_insert() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut namespace = crate::native::NativeNamespace::default();
+    let error = namespace
+        .set_arena(&limited, "records", &[] as &[serde_json::Value])
+        .unwrap_err();
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = cadmpeg_core::CodecError::from(error)
+    else {
+        panic!("native arena storage must preserve the resource refusal")
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.operation, "store native arena");
+    assert!(namespace.arenas().is_empty());
+}
+
+#[test]
 fn typed_native_read_errors_identify_the_arena_and_stored_record() {
     use crate::native::NativeConvertError;
     use std::error::Error;
@@ -30,6 +144,7 @@ fn typed_native_read_errors_identify_the_arena_and_stored_record() {
         .native
         .namespace_mut("future")
         .set_arena(
+            &crate::native::test_ctx(),
             "records",
             &[
                 serde_json::json!({"id": first, "value": 7}),
@@ -69,11 +184,19 @@ fn typed_native_write_errors_identify_input_ordinal_without_replacing_the_arena(
     let good = serde_json::json!({"id": "test:native:record#first", "value": 7});
     let mut namespace = NativeNamespace::default();
     namespace
-        .set_arena("records", std::slice::from_ref(&good))
+        .set_arena(
+            &crate::native::test_ctx(),
+            "records",
+            std::slice::from_ref(&good),
+        )
         .unwrap();
     let before = namespace.clone();
     let error = namespace
-        .set_arena("records", &[good, serde_json::json!({"value": 8})])
+        .set_arena(
+            &crate::native::test_ctx(),
+            "records",
+            &[good, serde_json::json!({"value": 8})],
+        )
         .unwrap_err();
     assert!(error.to_string().contains("records"));
     assert!(error.to_string().contains("ordinal 1"));
@@ -89,7 +212,10 @@ fn typed_native_write_errors_identify_input_ordinal_without_replacing_the_arena(
     assert_eq!(namespace, before);
 
     let source_error = NativeConvertError::InvalidOwner("producer record at offset 42".into());
-    let result = crate::native::arena_from([Err::<serde_json::Value, _>(source_error)]);
+    let result = crate::native::arena_from(
+        &crate::native::test_ctx(),
+        [Err::<serde_json::Value, _>(source_error)],
+    );
     assert!(
         matches!(result, Err(NativeConvertError::InvalidOwner(message)) if message == "producer record at offset 42")
     );
@@ -361,6 +487,7 @@ fn rejected_typed_identity_does_not_replace_an_existing_arena() {
     let mut namespace = crate::native::NativeNamespace::default();
     namespace
         .set_arena(
+            &crate::native::test_ctx(),
             "records",
             &[Record {
                 id: "f3d:test:record#1",
@@ -369,7 +496,11 @@ fn rejected_typed_identity_does_not_replace_an_existing_arena() {
         .unwrap();
     let before = namespace.clone();
     assert!(namespace
-        .set_arena("records", &[Record { id: "invalid" }])
+        .set_arena(
+            &crate::native::test_ctx(),
+            "records",
+            &[Record { id: "invalid" }]
+        )
         .is_err());
     assert_eq!(namespace, before);
 }
@@ -512,7 +643,11 @@ fn from_typed_matches_value_tree_canonical_text() {
 /// The refusal message a typed record holding a non-finite number converts to.
 fn non_finite_refusal<T: Serialize>(record: &T) -> String {
     let error = crate::native::NativeNamespace::default()
-        .set_arena("records", std::slice::from_ref(record))
+        .set_arena(
+            &crate::native::test_ctx(),
+            "records",
+            std::slice::from_ref(record),
+        )
         .expect_err("a non-finite number has no native value");
     match cadmpeg_core::CodecError::from(error) {
         cadmpeg_core::CodecError::Malformed(message) => message,

@@ -68,7 +68,9 @@ const HEADER_ANGULAR_TOLERANCE: f64 = 1.0e-10;
 #[test]
 fn asm_header_parses_documented_fields() {
     let bytes = synthetic_smbh();
-    let h = asm_header::parse(&bytes).expect("magic present");
+    let h = asm_header::parse(&cadmpeg_test_support::service_decode_context(), &bytes)
+        .expect("service policy admits header")
+        .expect("magic present");
     assert_eq!(h.width.bytes(), 8);
     assert_eq!(h.metadata.save_format_version, Some(23100));
     assert_eq!(h.metadata.entity_count, Some(7));
@@ -95,7 +97,12 @@ fn asm_header_parses_documented_fields() {
 
 #[test]
 fn asm_header_absent_on_non_asm_bytes() {
-    assert!(asm_header::parse(b"not an asm stream at all").is_none());
+    assert!(asm_header::parse(
+        &cadmpeg_test_support::service_decode_context(),
+        b"not an asm stream at all"
+    )
+    .expect("service policy admits absence")
+    .is_none());
     assert!(!asm_header::has_asm_magic(b"PK\x03\x04"));
 }
 
@@ -103,7 +110,9 @@ fn asm_header_absent_on_non_asm_bytes() {
 fn asm_header_parses_binaryfile4_fields() {
     let bytes = bf4_header_prefix(5);
     assert!(asm_header::has_asm_magic(&bytes));
-    let h = asm_header::parse(&bytes).expect("magic present");
+    let h = asm_header::parse(&cadmpeg_test_support::service_decode_context(), &bytes)
+        .expect("service policy admits header")
+        .expect("magic present");
     assert_eq!(h.width.bytes(), 4);
     assert_eq!(h.metadata.save_format_version, Some(22700));
     assert_eq!(asm_header::record_count(&bytes), Some(0));
@@ -545,6 +554,55 @@ fn inspect_enumerates_and_reads_headers() {
 }
 
 #[test]
+fn f3d_brep_scan_propagates_header_string_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let bytes = synthetic_f3d(true);
+    let arena = DecodeArena::new();
+    let mut cap = 0;
+    let mut needed = None;
+    for _ in 0..128 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (limited, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+        match container::scan(&limited, root) {
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes =>
+            {
+                let next = limit
+                    .used
+                    .checked_add(limit.additional)
+                    .expect("fixture charge fits u64");
+                if limit.operation == "retain kernel header product string" {
+                    needed = Some(next);
+                    break;
+                }
+                assert!(next > cap, "fixture advances to its next retained charge");
+                cap = next;
+            }
+            Ok(_) => panic!("BREP scan did not reach the header limit"),
+            Err(error) => panic!("BREP scan failed elsewhere: {error}"),
+        }
+    }
+    let needed = needed.expect("header string reached within fixture charges");
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = needed - 1;
+    let (limited, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+    assert!(matches!(
+        container::scan(&limited, root),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain kernel header product string"
+    ));
+    let (service, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("service context");
+    assert!(container::scan(&service, root).is_ok());
+}
+
+#[test]
 fn decode_refuses_when_max_entities_is_zero_before_ir_build() {
     use cadmpeg_core::decode::ResourceDimension;
 
@@ -746,7 +804,9 @@ fn smbh_header_string_region_starts_at_byte_47() {
     assert_eq!(prefix[47], 0x07, "first string tag at offset 47");
     // The header parses all three strings and both tolerances despite the
     // overlap, and the record stream begins immediately after the last double.
-    let h = asm_header::parse(&prefix).expect("magic present");
+    let h = asm_header::parse(&cadmpeg_test_support::service_decode_context(), &prefix)
+        .expect("service policy admits header")
+        .expect("magic present");
     assert_eq!(
         h.metadata.product_family.as_deref(),
         Some("Autodesk Neutron")

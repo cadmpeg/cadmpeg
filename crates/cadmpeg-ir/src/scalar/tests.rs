@@ -294,7 +294,9 @@ fn a_positive_real_assigns_to_positive_length_with_identical_bits() {
     for value in [f64::from_bits(1), 2.5, f64::MAX] {
         let real = PositiveReal::new(value).expect("positive real");
         assert_eq!(
-            PositiveLength::from_assigned_real(real).get().to_bits(),
+            PositiveLength::from_assigned_positive_real(real)
+                .get()
+                .to_bits(),
             value.to_bits()
         );
     }

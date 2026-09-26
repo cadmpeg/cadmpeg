@@ -63,6 +63,7 @@ fn native_namespace_retains_embedded_cylinders_with_their_owning_group() {
 
     namespace
         .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
             "consolidated_groups",
             &Vec::<crate::native::CatiaConsolidatedGroup>::new(),
         )
