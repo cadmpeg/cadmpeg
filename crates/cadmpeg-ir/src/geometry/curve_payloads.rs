@@ -767,6 +767,22 @@ struct SubsetCurveConstructionWire {
 }
 
 impl SubsetCurveConstruction {
+    /// Build from finite source endpoints, checking only their order.
+    pub fn from_finite_parts(
+        source: CurveId,
+        parameter_range: [crate::scalar::FiniteReal; 2],
+        sense: bool,
+        cache: Option<LegacyCache>,
+    ) -> Result<Self, ProceduralGeometryError> {
+        Ok(Self {
+            cache,
+            source,
+            parameter_range: ParameterInterval::from_finite_endpoints(parameter_range.into())
+                .map_err(ProceduralGeometryError::Payload)?,
+            sense,
+        })
+    }
+
     /// Admit the construction parameters.
     pub fn try_new(
         source: CurveId,

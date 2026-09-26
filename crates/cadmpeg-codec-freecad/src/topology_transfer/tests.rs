@@ -16,11 +16,20 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{pcurve::PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::ids::{CoedgeId, EdgeId, LoopId};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{Coedge, Sense};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::collections::HashSet;
 use std::io::Cursor;
+
+fn admitted_range(values: [f64; 2]) -> [FiniteReal; 2] {
+    values.map(|value| FiniteReal::new(value).expect("finite test endpoint"))
+}
+
+fn raw_range(values: [FiniteReal; 2]) -> [f64; 2] {
+    values.map(FiniteReal::get)
+}
 
 fn translation(x: f64, y: f64, z: f64) -> Transform {
     Transform::affine([[1.0, 0.0, 0.0, x], [0.0, 1.0, 0.0, y], [0.0, 0.0, 1.0, z]])
@@ -685,7 +694,7 @@ fn occt_parabola_ranges_convert_to_step_parameters() {
         .unwrap(),
     );
     assert_eq!(
-        normalize_occt_curve_range(&geometry, Some([-2.0, 4.0])),
+        normalize_occt_curve_range(&geometry, Some(admitted_range([-2.0, 4.0]))).map(raw_range),
         Some([-0.25, 0.5])
     );
     assert_eq!(normalize_occt_curve_range(&geometry, None), None);
@@ -702,11 +711,13 @@ fn periodic_ranges_wrap_the_start_and_preserve_the_sweep() {
         )
         .unwrap(),
     );
-    let [start, end] =
-        normalize_occt_curve_range(&geometry, Some([-1.0e-15, std::f64::consts::FRAC_PI_2]))
-            .expect("periodic range");
-    assert_eq!(start, 0.0);
-    assert!((end - start - (std::f64::consts::FRAC_PI_2 + 1.0e-15)).abs() < 1.0e-15);
+    let [start, end] = normalize_occt_curve_range(
+        &geometry,
+        Some(admitted_range([-1.0e-15, std::f64::consts::FRAC_PI_2])),
+    )
+    .expect("periodic range");
+    assert_eq!(start.get(), 0.0);
+    assert!((end.get() - start.get() - (std::f64::consts::FRAC_PI_2 + 1.0e-15)).abs() < 1.0e-15);
 }
 
 #[test]
@@ -721,17 +732,24 @@ fn periodic_range_keeps_finite_endpoints_when_its_width_overflows() {
         .expect("finite circle"),
     );
     assert_eq!(
-        normalize_occt_curve_range(&geometry, Some([-f64::MAX, f64::MAX])),
+        normalize_occt_curve_range(&geometry, Some(admitted_range([-f64::MAX, f64::MAX])))
+            .map(raw_range),
         Some([-f64::MAX, f64::MAX])
     );
 }
 
 #[test]
 fn collapsed_pcurve_ranges_are_unbounded() {
-    assert_eq!(bounded_pcurve_range(false, Some([2.0, 2.0])), None);
-    assert_eq!(bounded_pcurve_range(true, Some([1.0, 3.0])), None);
     assert_eq!(
-        bounded_pcurve_range(false, Some([1.0, 3.0])),
+        bounded_pcurve_range(false, Some(admitted_range([2.0, 2.0]))),
+        None
+    );
+    assert_eq!(
+        bounded_pcurve_range(true, Some(admitted_range([1.0, 3.0]))),
+        None
+    );
+    assert_eq!(
+        bounded_pcurve_range(false, Some(admitted_range([1.0, 3.0]))).map(raw_range),
         Some([1.0, 3.0])
     );
 }
@@ -753,11 +771,16 @@ fn adjacent_pcurve_domain_rounding_is_canonicalized() {
     };
 
     assert_eq!(
-        normalize_pcurve_parameter_range(&geometry, Some([2.0 - 1.0e-11, 4.0 + 1.0e-11])),
+        normalize_pcurve_parameter_range(
+            &geometry,
+            Some(admitted_range([2.0 - 1.0e-11, 4.0 + 1.0e-11]))
+        )
+        .map(raw_range),
         Some([2.0, 4.0])
     );
     assert_eq!(
-        normalize_pcurve_parameter_range(&geometry, Some([1.0, 5.0])),
+        normalize_pcurve_parameter_range(&geometry, Some(admitted_range([1.0, 5.0])))
+            .map(raw_range),
         Some([1.0, 5.0])
     );
 }
@@ -1536,7 +1559,8 @@ fn numerical_ranges_parabola_range_avoids_doubled_focal_overflow() {
             .unwrap(),
         );
         assert_eq!(
-            normalize_occt_curve_range(&geometry, Some([-focal, focal])),
+            normalize_occt_curve_range(&geometry, Some(admitted_range([-focal, focal])))
+                .map(raw_range),
             Some([-0.5, 0.5])
         );
     }
@@ -1558,12 +1582,14 @@ fn numerical_seventh_pcurve_snapping_preserves_distinct_endpoints() {
         .unwrap();
         let geometry = PcurveGeometry::Nurbs { nurbs };
         assert_eq!(
-            normalize_pcurve_parameter_range(&geometry, Some(domain)),
+            normalize_pcurve_parameter_range(&geometry, Some(admitted_range(domain)))
+                .map(raw_range),
             Some(domain)
         );
         let reversed = [domain[1], domain[0]];
         assert_eq!(
-            normalize_pcurve_parameter_range(&geometry, Some(reversed)),
+            normalize_pcurve_parameter_range(&geometry, Some(admitted_range(reversed)))
+                .map(raw_range),
             Some(reversed)
         );
     }

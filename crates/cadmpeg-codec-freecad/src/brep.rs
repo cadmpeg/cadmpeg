@@ -5780,19 +5780,18 @@ fn append_text_curve(
             );
             let basis_geometry =
                 append_text_curve(basis.curve(), basis_id.clone(), association, transfer)?;
-            let source_range = parameter_range.map(FiniteReal::get);
             let parameter_range = crate::topology_transfer::normalize_occt_curve_range(
                 basis_geometry.solved().ok_or_else(|| {
                     cadmpeg_core::CodecError::NotImplemented(
                         "carrier has no solved geometry".into(),
                     )
                 })?,
-                Some(source_range),
+                Some(*parameter_range),
             )
-            .unwrap_or(source_range);
+            .unwrap_or(*parameter_range);
             transfer.procedural.push((
                 id.clone(),
-                cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction::try_new(
+                cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction::from_finite_parts(
                     basis_id,
                     parameter_range,
                     true,
