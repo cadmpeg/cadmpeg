@@ -117,14 +117,17 @@ fn range_only_dimension_definition(
     };
     let lower_deviation = finite_length(*lower)?;
     let upper_deviation = finite_length(*upper)?;
-    Some(PmiDefinition::Dimension {
-        dimension,
-        nominal: Some(nominal),
-        tolerance: Some(DimensionTolerance::PlusMinus {
-            lower: lower_deviation,
-            upper: upper_deviation,
-        }),
-    })
+    Some(PmiDefinition::Dimension(
+        cadmpeg_ir::pmi::PmiDimension::new(
+            dimension,
+            Some(nominal),
+            Some(DimensionTolerance::PlusMinus {
+                lower: lower_deviation,
+                upper: upper_deviation,
+            }),
+        )
+        .ok()?,
+    ))
 }
 
 fn finite_length(bits: u64) -> Option<PmiValue> {
@@ -309,21 +312,22 @@ mod tests {
             .pmi
             .iter()
             .map(|annotation| match &annotation.definition {
-                PmiDefinition::Dimension {
-                    dimension,
-                    nominal: Some(nominal),
-                    tolerance:
-                        Some(DimensionTolerance::PlusMinus {
-                            lower: lower_deviation,
-                            upper: upper_deviation,
-                        }),
-                    ..
-                } => (
-                    dimension,
-                    nominal.value.get(),
-                    lower_deviation.value.get(),
-                    upper_deviation.value.get(),
-                ),
+                PmiDefinition::Dimension(relation) => {
+                    let nominal = relation.nominal().expect("dimension nominal");
+                    let Some(DimensionTolerance::PlusMinus {
+                        lower: lower_deviation,
+                        upper: upper_deviation,
+                    }) = relation.tolerance()
+                    else {
+                        panic!("dimension tolerance");
+                    };
+                    (
+                        relation.kind(),
+                        nominal.value.get(),
+                        lower_deviation.value.get(),
+                        upper_deviation.value.get(),
+                    )
+                }
                 _ => panic!("dimension annotation"),
             })
             .collect::<Vec<_>>();
