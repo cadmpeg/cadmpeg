@@ -4,9 +4,11 @@
 //! Stored lengths and coordinates use millimeters. Angular quantities use
 //! radians.
 
+use crate::features::FiniteVector3;
 use crate::math::sum::ScaledValue;
 use crate::math::{Point2, Vector3};
 use crate::scalar::{PositiveAngle, PositiveLength};
+use crate::transform::Transform;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -483,6 +485,58 @@ impl From<UnitVector3> for Vector3 {
     }
 }
 
+/// A finite direction whose Euclidean length exceeds machine epsilon.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct DirectionAboveEpsilon(FiniteVector3);
+
+impl DirectionAboveEpsilon {
+    /// Admit a finite direction with length above machine epsilon.
+    pub fn new(value: Vector3) -> Option<Self> {
+        let value = FiniteVector3::new(value)?;
+        (value.as_raw().norm() > f64::EPSILON).then_some(Self(value))
+    }
+
+    /// Borrow the finite vector used by length-bearing constructions.
+    pub const fn finite(&self) -> &FiniteVector3 {
+        &self.0
+    }
+
+    /// Return the direction components.
+    pub const fn get(self) -> Vector3 {
+        self.0.get()
+    }
+
+    /// Return the Euclidean length, which can overflow for finite components.
+    pub fn norm(self) -> f64 {
+        self.0.as_raw().norm()
+    }
+
+    /// Divide by the Euclidean length, using the largest component when that length overflows.
+    ///
+    /// The admitted length is nonzero. Both division routes produce finite
+    /// components with unit length to rounding.
+    #[must_use]
+    pub fn normalized(self) -> UnitVector3 {
+        let value = self.get();
+        let length = self.norm();
+        let unit = if length.is_infinite() {
+            let largest = value.x.abs().max(value.y.abs()).max(value.z.abs());
+            divided_by_largest_component(value, largest)
+        } else {
+            Vector3::new(value.x / length, value.y / length, value.z / length)
+        };
+        UnitVector3(unit)
+    }
+}
+
+impl From<UnitVector3> for DirectionAboveEpsilon {
+    /// Carry an admitted unit direction above machine epsilon.
+    fn from(value: UnitVector3) -> Self {
+        Self(FiniteVector3::from(value))
+    }
+}
+
 /// A planar direction whose `hypot` length is one within the analytic frame
 /// tolerance.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -780,6 +834,24 @@ impl OrthonormalFrame3 {
     }
 }
 
+impl Transform {
+    /// Project a proper rigid transform's admitted +Z and +X columns as a frame.
+    ///
+    /// A proper rigid transform bounds each column's squared-length error and
+    /// pairwise dot product by `1e-9`. Its length error is below the unit
+    /// tolerance, and the selected columns meet the frame tolerance.
+    pub fn proper_rigid_frame(self) -> Option<OrthonormalFrame3> {
+        if !self.is_proper_rigid() {
+            return None;
+        }
+        let rows = self.rows();
+        Some(OrthonormalFrame3 {
+            axis: UnitVector3(Vector3::new(rows[0][2], rows[1][2], rows[2][2])),
+            reference: UnitVector3(Vector3::new(rows[0][0], rows[1][0], rows[2][0])),
+        })
+    }
+}
+
 /// A parameter-space point with finite coordinates.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -901,10 +973,54 @@ impl FiniteVector<2> {
 
 #[cfg(test)]
 mod tests {
-    use super::{FiniteVector, NonzeroVector, Tolerances, UnitVector3};
+    use super::{DirectionAboveEpsilon, FiniteVector, NonzeroVector, Tolerances, UnitVector3};
     use crate::math::Vector3;
     use crate::scalar::PositiveReal;
     use crate::scalar::{FiniteReal, NonNegativeReal};
+
+    #[test]
+    fn direction_above_epsilon_refuses_zero_and_normalizes_overflow() {
+        assert!(DirectionAboveEpsilon::new(Vector3::new(0.0, 0.0, 0.0)).is_none());
+        assert!(DirectionAboveEpsilon::new(Vector3::new(f64::NAN, 0.0, 1.0)).is_none());
+        let large = Vector3::new(1.3e308, 1.3e308, 0.0);
+        let admitted = DirectionAboveEpsilon::new(large).expect("finite nonzero vector");
+        let largest = large.x.abs().max(large.y.abs()).max(large.z.abs());
+        let reduced = Vector3::new(large.x / largest, large.y / largest, 0.0);
+        let length = reduced.norm();
+        let expected = Vector3::new(reduced.x / length, reduced.y / length, 0.0);
+        let actual = *admitted.normalized().as_raw();
+        assert_eq!(actual.x.to_bits(), expected.x.to_bits());
+        assert_eq!(actual.y.to_bits(), expected.y.to_bits());
+        assert_eq!(actual.z.to_bits(), expected.z.to_bits());
+        assert_eq!(
+            UnitVector3::Z_AXIS.reversed().as_raw().z.to_bits(),
+            (-1.0f64).to_bits()
+        );
+    }
+
+    #[test]
+    fn proper_rigid_transform_projects_checked_frame_columns() {
+        use crate::transform::Transform;
+
+        let rotation = Transform::affine([
+            [0.0, -1.0, 0.0, 2.0],
+            [1.0, 0.0, 0.0, 3.0],
+            [0.0, 0.0, 1.0, 4.0],
+        ])
+        .unwrap();
+        let frame = rotation
+            .proper_rigid_frame()
+            .expect("proper rigid transform");
+        assert_eq!(*frame.axis().as_raw(), Vector3::new(0.0, 0.0, 1.0));
+        assert_eq!(*frame.reference().as_raw(), Vector3::new(0.0, 1.0, 0.0));
+        let shear = Transform::affine([
+            [1.0, 0.25, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ])
+        .unwrap();
+        assert!(shear.proper_rigid_frame().is_none());
+    }
 
     #[test]
     fn finite_scalars_carry_into_finite_coordinates_unchanged() {

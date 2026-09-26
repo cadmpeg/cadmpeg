@@ -15,7 +15,7 @@ use crate::ids::{CurveId, SurfaceId};
 use crate::math::{Point3, Vector3};
 use crate::scalar::FiniteReal;
 use crate::topology::IncreasingParameterInterval;
-use crate::units::{FiniteVector, UnitVector3};
+use crate::units::{DirectionAboveEpsilon, FiniteVector, UnitVector3};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -991,17 +991,6 @@ impl TryFrom<ParallelOffsetSurfaceConstructionWire> for ParallelOffsetSurfaceCon
     }
 }
 
-/// A finite sweep vector whose norm exceeds machine epsilon.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-struct SweepDirectionAboveEpsilon(FiniteVector3);
-
-impl SweepDirectionAboveEpsilon {
-    fn new(direction: Vector3) -> Option<Self> {
-        let direction = FiniteVector3::new(direction)?;
-        (direction.as_raw().norm() > f64::EPSILON).then_some(Self(direction))
-    }
-}
-
 /// Admitted unbounded linear sweep parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1014,7 +1003,7 @@ pub struct LinearSweepSurfaceConstruction {
     /// Curve swept along `direction`.
     directrix: CurveId,
     /// Length-bearing sweep vector.
-    direction: SweepDirectionAboveEpsilon,
+    direction: DirectionAboveEpsilon,
 }
 
 #[derive(Deserialize)]
@@ -1033,7 +1022,7 @@ impl LinearSweepSurfaceConstruction {
         directrix: CurveId,
         direction: Vector3,
     ) -> Result<Self, ProceduralGeometryError> {
-        let direction = SweepDirectionAboveEpsilon::new(direction).ok_or(
+        let direction = DirectionAboveEpsilon::new(direction).ok_or(
             ProceduralGeometryError::Payload("invalid linear-sweep direction"),
         )?;
         Ok(Self {
@@ -1046,8 +1035,8 @@ impl LinearSweepSurfaceConstruction {
         &self.directrix
     }
     /// Return the direction.
-    pub fn direction(&self) -> &FiniteVector3 {
-        &self.direction.0
+    pub fn direction(&self) -> &DirectionAboveEpsilon {
+        &self.direction
     }
 }
 
