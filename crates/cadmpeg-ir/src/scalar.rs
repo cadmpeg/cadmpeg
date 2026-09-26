@@ -78,6 +78,50 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// A finite IEEE-754 binary32 value in its source precision.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct FiniteBinary32(f32);
+
+impl FiniteBinary32 {
+    /// Admit a finite binary32 value.
+    #[must_use]
+    pub fn new(value: f32) -> Option<Self> {
+        value.is_finite().then_some(Self(value))
+    }
+
+    /// Return the admitted value in its source precision.
+    #[must_use]
+    pub const fn get(self) -> f32 {
+        self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for FiniteBinary32 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Self::new(f32::deserialize(deserializer)?)
+            .ok_or_else(|| serde::de::Error::custom("FiniteBinary32 must be finite"))
+    }
+}
+
+impl TryFrom<f32> for FiniteBinary32 {
+    type Error = &'static str;
+
+    fn try_from(value: f32) -> Result<Self, Self::Error> {
+        Self::new(value).ok_or("FiniteBinary32 must be finite")
+    }
+}
+
+impl From<FiniteBinary32> for f32 {
+    fn from(value: FiniteBinary32) -> Self {
+        value.get()
+    }
+}
+
 /// A positive value in a native signed 64-bit integer lane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

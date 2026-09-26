@@ -21,6 +21,7 @@ use cadmpeg_core::bytes::{assemble_f32_le, assemble_u32_le, assemble_u64_le};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::FiniteBinary32;
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
 use cadmpeg_ir::units::UnitVector3;
 use cadmpeg_ir::{topology::Color, SourceObjectAssociation};
@@ -816,15 +817,12 @@ impl JtMaterialVersion {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "Vec<f32>", into = "Vec<f32>")]
-struct JtRangeLimits(Vec<f32>);
+struct JtRangeLimits(Vec<FiniteBinary32>);
 
-impl TryFrom<Vec<f32>> for JtRangeLimits {
-    type Error = &'static str;
-    fn try_from(values: Vec<f32>) -> Result<Self, Self::Error> {
-        if values
-            .iter()
-            .any(|value| !value.is_finite() || *value < 0.0)
-            || values.windows(2).any(|pair| pair[0] >= pair[1])
+impl JtRangeLimits {
+    fn from_finite(values: Vec<FiniteBinary32>) -> Result<Self, &'static str> {
+        if values.iter().any(|value| value.get() < 0.0)
+            || values.windows(2).any(|pair| pair[0].get() >= pair[1].get())
         {
             return Err("range_limits: expected finite nonnegative strictly increasing distances");
         }
@@ -832,9 +830,24 @@ impl TryFrom<Vec<f32>> for JtRangeLimits {
     }
 }
 
+impl TryFrom<Vec<f32>> for JtRangeLimits {
+    type Error = &'static str;
+    fn try_from(values: Vec<f32>) -> Result<Self, Self::Error> {
+        let values = values
+            .into_iter()
+            .map(|value| {
+                FiniteBinary32::new(value).ok_or(
+                    "range_limits: expected finite nonnegative strictly increasing distances",
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Self::from_finite(values)
+    }
+}
+
 impl From<JtRangeLimits> for Vec<f32> {
     fn from(value: JtRangeLimits) -> Self {
-        value.0
+        value.0.into_iter().map(FiniteBinary32::get).collect()
     }
 }
 
@@ -1579,7 +1592,7 @@ pub(super) struct DisplayJtRangeLodNode {
     /// LOD-node data version.
     lod_version: u16,
     /// Reserved finite floating-point vector.
-    reserved_values: Vec<f32>,
+    reserved_values: Vec<FiniteBinary32>,
     /// Reserved signed integer.
     reserved_value: i32,
     /// Range-LOD data version.
@@ -1587,7 +1600,7 @@ pub(super) struct DisplayJtRangeLodNode {
     /// Strictly increasing nonnegative eye-distance limits.
     range_limits: JtRangeLimits,
     /// Model-coordinate centre for range selection.
-    center: [f32; 3],
+    center: [FiniteBinary32; 3],
     /// Absolute source offset of the owning compressed envelope.
     pub(super) source_offset: u64,
 }
@@ -1956,21 +1969,22 @@ struct ParsedJtRangeLodNode {
     group_version: u16,
     child_object_ids: Vec<u32>,
     lod_version: u16,
-    reserved_values: Vec<f32>,
+    reserved_values: Vec<FiniteBinary32>,
     reserved_value: i32,
     range_version: u16,
     range_limits: JtRangeLimits,
-    center: [f32; 3],
+    center: [FiniteBinary32; 3],
 }
 
-fn parse_jt_f32_vector(bytes: &[u8]) -> Option<(Vec<f32>, &[u8])> {
+fn parse_jt_f32_vector(bytes: &[u8]) -> Option<(Vec<FiniteBinary32>, &[u8])> {
     let mut view = View::over_retained(bytes);
     let count = view.u32_le()?;
     let values = view.read_counted(u64::from(count), 4, View::f32_le)?;
-    values
-        .iter()
-        .all(|value| value.is_finite())
-        .then_some((values, bytes.get(view.position()..)?))
+    let values = values
+        .into_iter()
+        .map(FiniteBinary32::new)
+        .collect::<Option<Vec<_>>>()?;
+    Some((values, bytes.get(view.position()..)?))
 }
 
 fn parse_jt9_range_lod_node_body(body: &[u8]) -> Option<ParsedJtRangeLodNode> {
@@ -1983,13 +1997,13 @@ fn parse_jt9_range_lod_node_body(body: &[u8]) -> Option<ParsedJtRangeLodNode> {
     let reserved_value = View::i32_le_at(family, 0)?;
     let range_version = View::u16_le_at(family, 4)?;
     let (range_limits, remaining) = parse_jt_f32_vector(&family[6..])?;
-    let range_limits = JtRangeLimits::try_from(range_limits).ok()?;
+    let range_limits = JtRangeLimits::from_finite(range_limits).ok()?;
     let center = [
-        View::f32_le_at(remaining, 0)?,
-        View::f32_le_at(remaining, 4)?,
-        View::f32_le_at(remaining, 8)?,
+        FiniteBinary32::new(View::f32_le_at(remaining, 0)?)?,
+        FiniteBinary32::new(View::f32_le_at(remaining, 4)?)?,
+        FiniteBinary32::new(View::f32_le_at(remaining, 8)?)?,
     ];
-    if remaining.len() != 12 || center.iter().any(|value| !value.is_finite()) {
+    if remaining.len() != 12 {
         return None;
     }
     Some(ParsedJtRangeLodNode {
@@ -6076,11 +6090,26 @@ mod tests {
         assert_eq!(node.group_version, 1);
         assert_eq!(node.child_object_ids, [7, 9]);
         assert_eq!(node.lod_version, 1);
-        assert_eq!(node.reserved_values, [0.25]);
+        assert_eq!(
+            node.reserved_values
+                .iter()
+                .copied()
+                .map(super::FiniteBinary32::get)
+                .collect::<Vec<_>>(),
+            [0.25]
+        );
         assert_eq!(node.reserved_value, -2);
         assert_eq!(node.range_version, 1);
-        assert_eq!(node.range_limits.0, [10.0, 20.0]);
-        assert_eq!(node.center, [1.0, 2.0, 3.0]);
+        assert_eq!(
+            node.range_limits
+                .0
+                .iter()
+                .copied()
+                .map(super::FiniteBinary32::get)
+                .collect::<Vec<_>>(),
+            [10.0, 20.0]
+        );
+        assert_eq!(node.center.map(super::FiniteBinary32::get), [1.0, 2.0, 3.0]);
 
         let range_offset = body.len() - 20;
         body[range_offset..range_offset + 4].copy_from_slice(&5.0_f32.to_le_bytes());
