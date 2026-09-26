@@ -731,34 +731,7 @@ fn decode_container<'a>(
                 }),
         )
         .collect::<Vec<_>>();
-    admit_active_carrier_projection(ctx, &container.rse.active_carrier)?;
-    let active_carrier = match &container.rse.active_carrier {
-        ActiveCarrierState::NotApplicable => ActiveCarrierRecord::NotApplicable {
-            id: "inventor:kernel:active-carrier#root".into(),
-        },
-        ActiveCarrierState::Unavailable(detail) => ActiveCarrierRecord::Unavailable {
-            id: "inventor:kernel:active-carrier#root".into(),
-            detail: detail.clone(),
-        },
-        ActiveCarrierState::Selected(carrier) => ActiveCarrierRecord::Selected {
-            id: "inventor:kernel:active-carrier#root".into(),
-            segment_token: carrier.segment_token.as_str().to_owned(),
-            record_ordinal: carrier.record_ordinal,
-            segment_version_major: carrier.segment_version_major,
-            family: carrier.family,
-            header_state: carrier.header_state,
-            header_kind: carrier.header_kind,
-            header_value: carrier.header_value,
-            schema: carrier.schema,
-            carrier_len: carrier.carrier_len,
-            carrier_offset: carrier.carrier_offset,
-            carrier_sha256: sha256_hex(carrier.bytes.window()),
-            selected_key: carrier.selected_key,
-            enabled: carrier.enabled,
-            delta_state: carrier.delta_state,
-            history_reference: carrier.history_reference,
-        },
-    };
+    let active_carrier = ActiveCarrierRecord::from_state(ctx, &container.rse.active_carrier)?;
     admit_assembly_native_projection(ctx, &assembly_inventory)?;
     let assembly_occurrences = assembly_inventory
         .occurrences
@@ -2270,36 +2243,6 @@ fn admit_rse_segment_projection(
             token.as_str().len(),
             "retain Inventor unpaired bulk token",
         )?;
-    }
-    Ok(())
-}
-
-fn admit_active_carrier_projection(
-    ctx: &DecodeContext<'_>,
-    state: &ActiveCarrierState<'_>,
-) -> Result<(), CodecError> {
-    charge_retained_len(
-        ctx,
-        "inventor:kernel:active-carrier#root".len(),
-        "retain Inventor active carrier id",
-    )?;
-    match state {
-        ActiveCarrierState::NotApplicable => {}
-        ActiveCarrierState::Unavailable(detail) => {
-            charge_retained_len(ctx, detail.len(), "retain Inventor active carrier issue")?;
-        }
-        ActiveCarrierState::Selected(carrier) => {
-            charge_retained_len(
-                ctx,
-                carrier.segment_token.as_str().len(),
-                "retain Inventor active carrier segment token",
-            )?;
-            admit_native_digest(
-                ctx,
-                carrier.bytes.window(),
-                "retain Inventor active carrier digest",
-            )?;
-        }
     }
     Ok(())
 }

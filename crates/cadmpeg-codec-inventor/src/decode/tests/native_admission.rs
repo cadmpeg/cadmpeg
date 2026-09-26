@@ -9,16 +9,15 @@ use cadmpeg_ir::topology::Color;
 
 use crate::container::InventorContainer;
 use crate::decode::{
-    admit_active_carrier_projection, admit_assembly_native_projection, admit_assembly_placement,
-    admit_coverage_entries, admit_kernel_annotation, admit_kernel_unknown_fidelity,
-    admit_native_record_items, admit_rse_segment_projection, admit_untransferred_carrier,
-    admitted_kernel_attribute, admitted_loss, clone_product_body_ids, collect_body_ids,
-    decode_container, index_asm_face_keys, index_face_colors, index_projected_colors,
-    insert_source_attribute, project_preview_asset, project_property_set_issue,
-    project_protein_records, project_protein_state, project_root_product,
-    project_ufrx_embedded_reference, project_ufrx_external_reference, project_ufrx_model_state,
-    project_ufrx_occurrence, project_ufrx_representation, project_ufrx_state, property_set_name,
-    structural_issue,
+    admit_assembly_native_projection, admit_assembly_placement, admit_coverage_entries,
+    admit_kernel_annotation, admit_kernel_unknown_fidelity, admit_native_record_items,
+    admit_rse_segment_projection, admit_untransferred_carrier, admitted_kernel_attribute,
+    admitted_loss, clone_product_body_ids, collect_body_ids, decode_container, index_asm_face_keys,
+    index_face_colors, index_projected_colors, insert_source_attribute, project_preview_asset,
+    project_property_set_issue, project_protein_records, project_protein_state,
+    project_root_product, project_ufrx_embedded_reference, project_ufrx_external_reference,
+    project_ufrx_model_state, project_ufrx_occurrence, project_ufrx_representation,
+    project_ufrx_state, property_set_name, structural_issue,
 };
 
 use crate::assembly::{AssemblyInventory, AssemblyOccurrence, AssemblyPlacement};
@@ -30,7 +29,7 @@ use crate::external_reference::{
 use crate::kernel::ActiveCarrierState;
 use crate::loss::InventorLossCode;
 use crate::native::ufrx::UfrxRecord;
-use crate::native::{AssemblyPlacementRecordWire, StructuralIssueRecord};
+use crate::native::{ActiveCarrierRecord, AssemblyPlacementRecordWire, StructuralIssueRecord};
 use crate::property_set::{Property, PropertySection, PropertyValue};
 use crate::protein::{ProteinInstanceRecords, ProteinState};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
@@ -239,14 +238,14 @@ fn active_carrier_native_record_refuses_before_id_creation() {
         u64::try_from("inventor:kernel:active-carrier#root".len() - 1).expect("id length fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
-        admit_active_carrier_projection(&ctx, &ActiveCarrierState::NotApplicable),
+        ActiveCarrierRecord::from_state(&ctx, &ActiveCarrierState::NotApplicable),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain Inventor active carrier id"
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
-    admit_active_carrier_projection(&ctx, &ActiveCarrierState::NotApplicable)
+    ActiveCarrierRecord::from_state(&ctx, &ActiveCarrierState::NotApplicable)
         .expect("admitted active carrier");
 }
 
@@ -268,7 +267,7 @@ fn selected_active_carrier_refuses_token_and_digest_before_native_copy() {
         u64::try_from(id_len + token_len - 1).expect("token budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
-        admit_active_carrier_projection(&ctx, &container.rse.active_carrier),
+        ActiveCarrierRecord::from_state(&ctx, &container.rse.active_carrier),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain Inventor active carrier segment token"
@@ -277,14 +276,14 @@ fn selected_active_carrier_refuses_token_and_digest_before_native_copy() {
         u64::try_from(id_len + token_len + 63).expect("digest budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
-        admit_active_carrier_projection(&ctx, &container.rse.active_carrier),
+        ActiveCarrierRecord::from_state(&ctx, &container.rse.active_carrier),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain Inventor active carrier digest"
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
-    admit_active_carrier_projection(&ctx, &container.rse.active_carrier)
+    ActiveCarrierRecord::from_state(&ctx, &container.rse.active_carrier)
         .expect("admitted selected carrier");
 }
 
