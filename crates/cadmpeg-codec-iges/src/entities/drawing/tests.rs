@@ -201,7 +201,9 @@ fn drawing_size_accepts_finite_zero_extents() {
 
     assert_eq!(
         drawing_property_value(16, &record),
-        Some(DrawingPropertyValue::Size([0.0, 0.0]))
+        Some(DrawingPropertyValue::Size(
+            cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]).expect("finite size")
+        ))
     );
 }
 
