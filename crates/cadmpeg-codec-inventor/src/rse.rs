@@ -919,34 +919,8 @@ impl<'a> MetaCursor<'a> {
             )));
         }
         let malformed = || CodecError::malformed(format_args!("RSe metadata {what} is not UTF-16"));
-        let bytes = self.source.unread().get(..len).ok_or_else(malformed)?;
-        let mut preview = View::over_retained(bytes);
-        let mut remaining = len / 2;
-        let mut utf8_bytes = 0_usize;
-        while remaining != 0 {
-            let first = preview.u16_le().ok_or_else(malformed)?;
-            remaining -= 1;
-            let scalar = if (0xd800..=0xdbff).contains(&first) {
-                if remaining == 0 {
-                    return Err(malformed());
-                }
-                let second = preview.u16_le().ok_or_else(malformed)?;
-                remaining -= 1;
-                if !(0xdc00..=0xdfff).contains(&second) {
-                    return Err(malformed());
-                }
-                0x10000 + ((u32::from(first) - 0xd800) << 10) + u32::from(second) - 0xdc00
-            } else {
-                if (0xdc00..=0xdfff).contains(&first) {
-                    return Err(malformed());
-                }
-                u32::from(first)
-            };
-            let width = char::from_u32(scalar).ok_or_else(malformed)?.len_utf8();
-            utf8_bytes = utf8_bytes.checked_add(width).ok_or_else(|| {
-                ctx.refuse_codec_limit("RSe metadata UTF-8 byte count", u64::MAX - 1, u64::MAX)
-            })?;
-        }
+        let utf8_bytes =
+            crate::reader::utf16_utf8_len(self.source, len / 2).ok_or_else(malformed)?;
         let _units = ctx.reserve_scoped(len as u64, "decode RSe metadata UTF-16 units")?;
         ctx.charge_retained(utf8_bytes as u64, "retain RSe metadata UTF-16 field")?;
         self.source.utf16_le(len / 2).ok_or_else(malformed)
