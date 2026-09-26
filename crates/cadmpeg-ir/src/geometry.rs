@@ -6535,6 +6535,15 @@ impl std::fmt::Display for ParameterRangeError {
 impl std::error::Error for ParameterRangeError {}
 
 impl DirectedParameterRange {
+    /// Build from finite angle endpoints, checking only that they differ.
+    pub fn from_angle_endpoints(
+        values: [crate::scalar::Angle; 2],
+    ) -> Result<Self, ParameterRangeError> {
+        (values[0] != values[1])
+            .then_some(Self(values.map(crate::scalar::Angle::get)))
+            .ok_or(ParameterRangeError)
+    }
+
     /// Build from finite endpoints, checking only that they differ.
     pub fn from_finite_endpoints(
         values: [crate::scalar::FiniteReal; 2],
