@@ -401,18 +401,20 @@ fn edge_representation_selection_follows_family_rules() {
         },
         _ => panic!("test helper kind {kind}"),
     };
+    let point = |x, y, z| cadmpeg_ir::features::FinitePoint3::new(Point3::new(x, y, z)).unwrap();
+    let vector = |x, y, z| cadmpeg_ir::features::FiniteVector3::new(Vector3::new(x, y, z)).unwrap();
     let curves = [
         TextCurve::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
+            origin: point(0.0, 0.0, 0.0),
+            direction: vector(1.0, 0.0, 0.0),
         },
         TextCurve::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
+            origin: point(0.0, 0.0, 0.0),
+            direction: vector(1.0, 0.0, 0.0),
         },
         TextCurve::Line {
-            origin: Point3::new(0.0, 1.0, 0.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
+            origin: point(0.0, 1.0, 0.0),
+            direction: vector(1.0, 0.0, 0.0),
         },
     ];
     let tables = Tables {

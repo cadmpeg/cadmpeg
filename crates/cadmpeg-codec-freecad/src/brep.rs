@@ -18,9 +18,9 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::{FiniteBinary32, FiniteReal, NonNegativeReal};
+use cadmpeg_ir::scalar::{FiniteBinary32, FiniteReal, NonNegativeReal, PositiveLength};
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::units::FinitePoint2;
+use cadmpeg_ir::units::{FinitePoint2, OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::SourceObjectAssociation;
 use serde::{Deserialize, Serialize};
 
@@ -1972,36 +1972,39 @@ pub(crate) struct TextLocation {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum TextCurve {
     /// Infinite line.
-    Line { origin: Point3, direction: Vector3 },
+    Line {
+        origin: FinitePoint3,
+        direction: FiniteVector3,
+    },
     /// Full circle.
     Circle {
-        center: Point3,
-        axis: Vector3,
-        ref_direction: Vector3,
-        radius: f64,
+        center: FinitePoint3,
+        axis: FiniteVector3,
+        ref_direction: FiniteVector3,
+        radius: FiniteReal,
     },
     /// Full ellipse.
     Ellipse {
-        center: Point3,
-        axis: Vector3,
-        major_direction: Vector3,
-        major_radius: f64,
-        minor_radius: f64,
+        center: FinitePoint3,
+        axis: FiniteVector3,
+        major_direction: FiniteVector3,
+        major_radius: FiniteReal,
+        minor_radius: FiniteReal,
     },
     /// Parabola.
     Parabola {
-        vertex: Point3,
-        axis: Vector3,
-        major_direction: Vector3,
-        focal_distance: f64,
+        vertex: FinitePoint3,
+        axis: FiniteVector3,
+        major_direction: FiniteVector3,
+        focal_distance: FiniteReal,
     },
     /// Hyperbola.
     Hyperbola {
-        center: Point3,
-        axis: Vector3,
-        major_direction: Vector3,
-        major_radius: f64,
-        minor_radius: f64,
+        center: FinitePoint3,
+        axis: FiniteVector3,
+        major_direction: FiniteVector3,
+        major_radius: FiniteReal,
+        minor_radius: FiniteReal,
     },
     /// Rational or non-rational B-spline curve.
     Nurbs(NurbsCurve),
@@ -3569,57 +3572,57 @@ fn parse_binary_curve(
     }
     Ok(match cursor.u8("binary 3D curve kind")? {
         1 => TextCurve::Line {
-            origin: cursor.point3("binary line origin")?,
-            direction: cursor.vector3("binary line direction")?,
+            origin: cursor.finite_point3("binary line origin")?,
+            direction: cursor.finite_vector3("binary line direction")?,
         },
         2 => {
-            let center = cursor.point3("binary circle center")?;
-            let axis = cursor.vector3("binary circle axis")?;
-            let ref_direction = cursor.vector3("binary circle reference direction")?;
+            let center = cursor.finite_point3("binary circle center")?;
+            let axis = cursor.finite_vector3("binary circle axis")?;
+            let ref_direction = cursor.finite_vector3("binary circle reference direction")?;
             cursor.vector3("binary circle y axis")?;
             TextCurve::Circle {
                 center,
                 axis,
                 ref_direction,
-                radius: cursor.f64("binary circle radius")?,
+                radius: cursor.finite_f64("binary circle radius")?,
             }
         }
         3 => {
-            let center = cursor.point3("binary ellipse center")?;
-            let axis = cursor.vector3("binary ellipse axis")?;
-            let major_direction = cursor.vector3("binary ellipse major direction")?;
+            let center = cursor.finite_point3("binary ellipse center")?;
+            let axis = cursor.finite_vector3("binary ellipse axis")?;
+            let major_direction = cursor.finite_vector3("binary ellipse major direction")?;
             cursor.vector3("binary ellipse minor direction")?;
             TextCurve::Ellipse {
                 center,
                 axis,
                 major_direction,
-                major_radius: cursor.f64("binary ellipse major radius")?,
-                minor_radius: cursor.f64("binary ellipse minor radius")?,
+                major_radius: cursor.finite_f64("binary ellipse major radius")?,
+                minor_radius: cursor.finite_f64("binary ellipse minor radius")?,
             }
         }
         4 => {
-            let vertex = cursor.point3("binary parabola vertex")?;
-            let axis = cursor.vector3("binary parabola axis")?;
-            let major_direction = cursor.vector3("binary parabola major direction")?;
+            let vertex = cursor.finite_point3("binary parabola vertex")?;
+            let axis = cursor.finite_vector3("binary parabola axis")?;
+            let major_direction = cursor.finite_vector3("binary parabola major direction")?;
             cursor.vector3("binary parabola minor direction")?;
             TextCurve::Parabola {
                 vertex,
                 axis,
                 major_direction,
-                focal_distance: cursor.f64("binary parabola focal distance")?,
+                focal_distance: cursor.finite_f64("binary parabola focal distance")?,
             }
         }
         5 => {
-            let center = cursor.point3("binary hyperbola center")?;
-            let axis = cursor.vector3("binary hyperbola axis")?;
-            let major_direction = cursor.vector3("binary hyperbola major direction")?;
+            let center = cursor.finite_point3("binary hyperbola center")?;
+            let axis = cursor.finite_vector3("binary hyperbola axis")?;
+            let major_direction = cursor.finite_vector3("binary hyperbola major direction")?;
             cursor.vector3("binary hyperbola minor direction")?;
             TextCurve::Hyperbola {
                 center,
                 axis,
                 major_direction,
-                major_radius: cursor.f64("binary hyperbola major radius")?,
-                minor_radius: cursor.f64("binary hyperbola minor radius")?,
+                major_radius: cursor.finite_f64("binary hyperbola major radius")?,
+                minor_radius: cursor.finite_f64("binary hyperbola minor radius")?,
             }
         }
         6 => {
@@ -3945,6 +3948,14 @@ impl<'a> BinaryCursor<'a> {
 
     fn finite_point3(&mut self, label: &str) -> Result<FinitePoint3, CodecError> {
         Ok(FinitePoint3::from_coordinates(
+            self.finite_f64(label)?,
+            self.finite_f64(label)?,
+            self.finite_f64(label)?,
+        ))
+    }
+
+    fn finite_vector3(&mut self, label: &str) -> Result<FiniteVector3, CodecError> {
+        Ok(FiniteVector3::from_components(
             self.finite_f64(label)?,
             self.finite_f64(label)?,
             self.finite_f64(label)?,
@@ -5333,57 +5344,57 @@ fn parse_curve(
     let kind = cursor.integer("curve type")?;
     Ok(match kind {
         1 => TextCurve::Line {
-            origin: cursor.point("line origin")?,
-            direction: cursor.vector("line direction")?,
+            origin: cursor.finite_point("line origin")?,
+            direction: cursor.finite_vector("line direction")?,
         },
         2 => {
-            let center = cursor.point("circle center")?;
-            let axis = cursor.vector("circle axis")?;
-            let ref_direction = cursor.vector("circle reference direction")?;
+            let center = cursor.finite_point("circle center")?;
+            let axis = cursor.finite_vector("circle axis")?;
+            let ref_direction = cursor.finite_vector("circle reference direction")?;
             let _y_direction = cursor.vector("circle y direction")?;
             TextCurve::Circle {
                 center,
                 axis,
                 ref_direction,
-                radius: cursor.real("circle radius")?,
+                radius: cursor.finite_real("circle radius")?,
             }
         }
         3 => {
-            let center = cursor.point("ellipse center")?;
-            let axis = cursor.vector("ellipse axis")?;
-            let major_direction = cursor.vector("ellipse major direction")?;
+            let center = cursor.finite_point("ellipse center")?;
+            let axis = cursor.finite_vector("ellipse axis")?;
+            let major_direction = cursor.finite_vector("ellipse major direction")?;
             let _y_direction = cursor.vector("ellipse y direction")?;
             TextCurve::Ellipse {
                 center,
                 axis,
                 major_direction,
-                major_radius: cursor.real("ellipse major radius")?,
-                minor_radius: cursor.real("ellipse minor radius")?,
+                major_radius: cursor.finite_real("ellipse major radius")?,
+                minor_radius: cursor.finite_real("ellipse minor radius")?,
             }
         }
         4 => {
-            let vertex = cursor.point("parabola vertex")?;
-            let axis = cursor.vector("parabola axis")?;
-            let major_direction = cursor.vector("parabola major direction")?;
+            let vertex = cursor.finite_point("parabola vertex")?;
+            let axis = cursor.finite_vector("parabola axis")?;
+            let major_direction = cursor.finite_vector("parabola major direction")?;
             let _y_direction = cursor.vector("parabola y direction")?;
             TextCurve::Parabola {
                 vertex,
                 axis,
                 major_direction,
-                focal_distance: cursor.real("parabola focal distance")?,
+                focal_distance: cursor.finite_real("parabola focal distance")?,
             }
         }
         5 => {
-            let center = cursor.point("hyperbola center")?;
-            let axis = cursor.vector("hyperbola axis")?;
-            let major_direction = cursor.vector("hyperbola major direction")?;
+            let center = cursor.finite_point("hyperbola center")?;
+            let axis = cursor.finite_vector("hyperbola axis")?;
+            let major_direction = cursor.finite_vector("hyperbola major direction")?;
             let _y_direction = cursor.vector("hyperbola y direction")?;
             TextCurve::Hyperbola {
                 center,
                 axis,
                 major_direction,
-                major_radius: cursor.real("hyperbola major radius")?,
-                minor_radius: cursor.real("hyperbola minor radius")?,
+                major_radius: cursor.finite_real("hyperbola major radius")?,
+                minor_radius: cursor.finite_real("hyperbola minor radius")?,
             }
         }
         6 => TextCurve::Nurbs(parse_bezier_curve(cursor)?),
@@ -5652,79 +5663,124 @@ fn append_text_curve(
     transfer: &mut CurveTransfer,
 ) -> Result<CurveGeometry, CodecError> {
     let geometry = match curve {
-        TextCurve::Line { origin, direction } => CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::analytic::LineCurve::try_new(*origin, *direction)
-                .map_err(CodecError::malformed)?,
-        )),
+        TextCurve::Line { origin, direction } => {
+            let direction = UnitVector3::new(direction.get()).ok_or_else(|| {
+                CodecError::malformed("LineCurve.direction must have unit length")
+            })?;
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::analytic::LineCurve::new(*origin, direction),
+            ))
+        }
         TextCurve::Circle {
             center,
             axis: _,
             ref_direction: _,
             radius,
-        } if *radius == 0.0 => CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
-            cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(*center)
-                .map_err(CodecError::malformed)?,
+        } if radius.get() == 0.0 => CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
+            cadmpeg_ir::geometry::analytic::DegenerateCurve::new(*center),
         )),
         TextCurve::Circle {
             center,
             axis,
             ref_direction,
             radius,
-        } => CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                *center,
-                *axis,
-                *ref_direction,
-                *radius,
-            )
-            .map_err(CodecError::malformed)?,
-        )),
+        } => {
+            let frame =
+                OrthonormalFrame3::new(axis.get(), ref_direction.get()).ok_or_else(|| {
+                    CodecError::malformed(
+                        "CircleCurve.axis/ref_direction must form an orthonormal frame",
+                    )
+                })?;
+            let radius = PositiveLength::from_assigned_real(*radius).ok_or_else(|| {
+                CodecError::malformed("CircleCurve.radius must be positive and finite")
+            })?;
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                cadmpeg_ir::geometry::analytic::CircleCurve::new(*center, frame, radius),
+            ))
+        }
         TextCurve::Ellipse {
             center,
             axis,
             major_direction,
             major_radius,
             minor_radius,
-        } => CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-            cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
-                *center,
-                *axis,
-                *major_direction,
-                *major_radius,
-                *minor_radius,
-            )
-            .map_err(CodecError::malformed)?,
-        )),
+        } => {
+            let frame =
+                OrthonormalFrame3::new(axis.get(), major_direction.get()).ok_or_else(|| {
+                    CodecError::malformed(
+                        "EllipseCurve.axis/major_direction must form an orthonormal frame",
+                    )
+                })?;
+            let major_radius =
+                PositiveLength::from_assigned_real(*major_radius).ok_or_else(|| {
+                    CodecError::malformed("EllipseCurve.major_radius must be positive and finite")
+                })?;
+            let minor_radius =
+                PositiveLength::from_assigned_real(*minor_radius).ok_or_else(|| {
+                    CodecError::malformed("EllipseCurve.minor_radius must be positive and finite")
+                })?;
+            CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
+                cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
+                    *center,
+                    frame,
+                    major_radius,
+                    minor_radius,
+                )
+                .map_err(CodecError::malformed)?,
+            ))
+        }
         TextCurve::Parabola {
             vertex,
             axis,
             major_direction,
             focal_distance,
-        } => CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
-            cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
-                *vertex,
-                *axis,
-                *major_direction,
-                *focal_distance,
-            )
-            .map_err(CodecError::malformed)?,
-        )),
+        } => {
+            let frame =
+                OrthonormalFrame3::new(axis.get(), major_direction.get()).ok_or_else(|| {
+                    CodecError::malformed(
+                        "ParabolaCurve.axis/major_direction must form an orthonormal frame",
+                    )
+                })?;
+            let focal_distance =
+                PositiveLength::from_assigned_real(*focal_distance).ok_or_else(|| {
+                    CodecError::malformed(
+                        "ParabolaCurve.focal_distance must be positive and finite",
+                    )
+                })?;
+            CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
+                cadmpeg_ir::geometry::analytic::ParabolaCurve::new(*vertex, frame, focal_distance),
+            ))
+        }
         TextCurve::Hyperbola {
             center,
             axis,
             major_direction,
             major_radius,
             minor_radius,
-        } => CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
-            cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
-                *center,
-                *axis,
-                *major_direction,
-                *major_radius,
-                *minor_radius,
-            )
-            .map_err(CodecError::malformed)?,
-        )),
+        } => {
+            let frame =
+                OrthonormalFrame3::new(axis.get(), major_direction.get()).ok_or_else(|| {
+                    CodecError::malformed(
+                        "HyperbolaCurve.axis/major_direction must form an orthonormal frame",
+                    )
+                })?;
+            let major_radius =
+                PositiveLength::from_assigned_real(*major_radius).ok_or_else(|| {
+                    CodecError::malformed("HyperbolaCurve.major_radius must be positive and finite")
+                })?;
+            let minor_radius =
+                PositiveLength::from_assigned_real(*minor_radius).ok_or_else(|| {
+                    CodecError::malformed("HyperbolaCurve.minor_radius must be positive and finite")
+                })?;
+            CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
+                cadmpeg_ir::geometry::analytic::HyperbolaCurve::new(
+                    *center,
+                    frame,
+                    major_radius,
+                    minor_radius,
+                ),
+            ))
+        }
         TextCurve::Nurbs(nurbs) => CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone())),
         TextCurve::Trimmed {
             parameter_range,
@@ -6135,6 +6191,7 @@ fn append_text_surface(
 pub(crate) mod tests {
     use std::collections::BTreeMap;
 
+    use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
     use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::scalar::FiniteReal;
@@ -7208,10 +7265,11 @@ pub(crate) mod tests {
     fn transfers_zero_radius_brep_circles_as_degenerate_curves() {
         let center = cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0);
         let curve = crate::brep::TextCurve::Circle {
-            center,
-            axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            radius: 0.0,
+            center: FinitePoint3::new(center).unwrap(),
+            axis: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)).unwrap(),
+            ref_direction: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
+                .unwrap(),
+            radius: FiniteReal::ZERO,
         };
         let association = cadmpeg_ir::SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Fcstd,
@@ -7242,15 +7300,38 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn native_analytic_curve_fields_remain_checked_and_wire_identical() {
+        let point = serde_json::json!({"x": 1.0, "y": 2.0, "z": 3.0});
+        let axis = serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0});
+        let reference = serde_json::json!({"x": 1.0, "y": 0.0, "z": 0.0});
+        let wires = [
+            serde_json::json!({"kind": "line", "origin": point, "direction": axis}),
+            serde_json::json!({"kind": "circle", "center": point, "axis": axis, "ref_direction": reference, "radius": 2.0}),
+            serde_json::json!({"kind": "ellipse", "center": point, "axis": axis, "major_direction": reference, "major_radius": 3.0, "minor_radius": 2.0}),
+            serde_json::json!({"kind": "parabola", "vertex": point, "axis": axis, "major_direction": reference, "focal_distance": 2.0}),
+            serde_json::json!({"kind": "hyperbola", "center": point, "axis": axis, "major_direction": reference, "major_radius": 2.0, "minor_radius": 3.0}),
+        ];
+        for wire in wires {
+            let curve: TextCurve = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(&curve).unwrap(), wire);
+            if let TextCurve::Line { origin, direction } = curve {
+                let _: FinitePoint3 = origin;
+                let _: FiniteVector3 = direction;
+            }
+        }
+    }
+
+    #[test]
     fn transfers_occt_revolution_surface_parameter_order() {
         let surface = crate::brep::TextSurface::Revolution {
             axis_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             axis_direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
             directrix: super::NestedCurve::try_new(crate::brep::TextCurve::Circle {
-                center: cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0),
-                axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-                ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                radius: 1.0,
+                center: FinitePoint3::new(cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0)).unwrap(),
+                axis: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)).unwrap(),
+                ref_direction: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
+                    .unwrap(),
+                radius: FiniteReal::ONE,
             })
             .expect("one inline directrix is admitted"),
         };
@@ -7549,8 +7630,8 @@ pub(crate) mod tests {
     /// `wrappers` trimmed 3D curve records over one line leaf.
     fn nested_trimmed_curve(wrappers: usize) -> Result<TextCurve, String> {
         let mut curve = TextCurve::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            origin: FinitePoint3::ZERO,
+            direction: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)).unwrap(),
         };
         for _ in 0..wrappers {
             curve = TextCurve::Trimmed {
