@@ -543,13 +543,147 @@ pub(crate) fn unique_coordinate_bijection(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{BTreeSet, HashSet};
+
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
     use super::{
         distinct_domain_matching_with_budget, repair_distinct_domain_matching_with_budget,
-        retain_distinct_matching_supports, MatchingEdgeConstraint,
+        retain_distinct_matching_supports, unique_coordinate_bijection, MatchingEdgeConstraint,
     };
+
+    fn allocation_refusals(
+        final_limit: u64,
+        mut run: impl FnMut(&DecodeContext<'_>) -> Result<(), CodecError>,
+    ) -> BTreeSet<&'static str> {
+        let mut operations = BTreeSet::new();
+        let mut completed = false;
+        for limit in 0..=final_limit {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+                .expect("matching fixture fits the input limit");
+            match run(&ctx) {
+                Err(CodecError::ResourceLimit(error)) => {
+                    assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                    operations.insert(error.operation);
+                }
+                Ok(()) => {
+                    completed = true;
+                    break;
+                }
+                Err(error) => panic!("unexpected matching refusal: {error}"),
+            }
+        }
+        assert!(completed, "final limit must admit the matching fixture");
+        operations
+    }
+
+    #[test]
+    fn distinct_matching_charges_each_search_array() {
+        let domains = [vec![0], vec![1]];
+        let operations = allocation_refusals(12, |ctx| {
+            assert!(distinct_domain_matching_with_budget(
+                ctx,
+                domains.iter().map(Vec::as_slice),
+                2,
+                None,
+                None,
+            )?
+            .is_some());
+            Ok(())
+        });
+        assert_eq!(
+            operations,
+            BTreeSet::from([
+                "catia_match_owners",
+                "catia_match_flags",
+                "catia_match_distance",
+                "catia_match_cursor",
+                "catia_match_incoming",
+                "catia_match_assignment",
+            ])
+        );
+    }
+
+    #[test]
+    fn matching_repair_charges_each_augmenting_array() {
+        let domains = [vec![0], vec![1]];
+        let operations = allocation_refusals(10, |ctx| {
+            assert!(repair_distinct_domain_matching_with_budget(
+                ctx,
+                domains.iter().map(Vec::as_slice),
+                2,
+                &[1, 1],
+                None,
+            )?
+            .is_some());
+            Ok(())
+        });
+        assert_eq!(
+            operations,
+            BTreeSet::from([
+                "catia_match_repair_owners",
+                "catia_match_repair_seen_domains",
+                "catia_match_repair_seen_points",
+                "catia_match_repair_incoming",
+                "catia_match_repair_via",
+            ])
+        );
+    }
+
+    #[test]
+    fn matching_support_charges_each_graph_array() {
+        let operations = allocation_refusals(22, |ctx| {
+            let mut domains = [vec![0], vec![1]];
+            assert_eq!(
+                retain_distinct_matching_supports(ctx, &mut domains, 2, &[0, 1], None)?,
+                Some(false)
+            );
+            Ok(())
+        });
+        assert_eq!(
+            operations,
+            BTreeSet::from([
+                "catia_match_support_graph",
+                "catia_match_support_reverse",
+                "catia_match_support_points",
+                "catia_match_support_visit",
+                "catia_match_support_components",
+                "catia_match_support_free",
+            ])
+        );
+    }
+
+    #[test]
+    fn coordinate_bijection_charges_each_class_array() {
+        let domains = [HashSet::from([0]), HashSet::from([1])];
+        let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
+        let operations = allocation_refusals(20, |ctx| {
+            assert_eq!(
+                unique_coordinate_bijection(ctx, &domains, &points)?,
+                Some(vec![0, 1])
+            );
+            Ok(())
+        });
+        assert_eq!(
+            operations,
+            BTreeSet::from([
+                "catia_bijection_capacities",
+                "catia_bijection_slots",
+                "catia_bijection_owners",
+                "catia_bijection_seen_vertices",
+                "catia_bijection_seen_slots",
+                "catia_bijection_incoming",
+                "catia_bijection_via",
+                "catia_bijection_assignment",
+                "catia_bijection_available",
+                "catia_bijection_used",
+            ])
+        );
+    }
 
     #[test]
     fn repairs_matching_after_a_matched_edge_is_removed() {

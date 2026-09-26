@@ -183,6 +183,51 @@ fn incidence_component_order_refuses_incoming_collection_limit() {
 }
 
 #[test]
+fn incidence_component_order_charges_outgoing_and_local_arrays() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let choices = vec![vec![[0, 0]], vec![[1, 1]]];
+    let dependencies = [Vec::new(), vec![0]];
+    let original = vec![vec![0], vec![1]];
+    let mut operations = BTreeSet::new();
+    let mut completed = false;
+    for limit in 0..=64 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        let mut components = original.clone();
+        match crate::solve::incidence::order_incidence_components_by_constraints(
+            &ctx,
+            &mut components,
+            &choices,
+            AssignmentOrder::new(None, Some(&dependencies)),
+        ) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                operations.insert(error.operation);
+            }
+            Ok(Some(())) => {
+                completed = true;
+                break;
+            }
+            Ok(None) => panic!("acyclic component prerequisites must remain viable"),
+            Err(error) => panic!("unexpected component refusal: {error}"),
+        }
+    }
+    assert!(
+        completed,
+        "collection limit 64 must admit the component fixture"
+    );
+    assert!(operations.contains("catia_incidence_component_out"));
+    assert!(operations.contains("catia_incidence_local_in"));
+    assert!(operations.contains("catia_incidence_local_out"));
+}
+
+#[test]
 fn incidence_components_reject_prerequisite_cycles() {
     catia_test_context!(ctx);
     let choices = vec![vec![[0, 0]], vec![[1, 1]]];
