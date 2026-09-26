@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Pattern row layouts with their exact scalar families.
 
+use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 
 use super::branch_items::BranchItems;
@@ -29,9 +30,9 @@ impl PatternTerminal {
         }
     }
 
-    pub(crate) fn value(self) -> f64 {
+    pub(crate) fn value(self) -> FiniteReal {
         match self {
-            Self::ExactOne => 1.0,
+            Self::ExactOne => FiniteReal::ONE,
             Self::Binary32(atom) => atom.value(),
         }
     }

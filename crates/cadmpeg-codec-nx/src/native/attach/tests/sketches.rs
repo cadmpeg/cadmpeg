@@ -97,7 +97,7 @@ fn sketch_fixed_points_are_retained_as_native_entities_without_roles() {
         named_record: "named-record".to_string(),
         name: "Point1".to_string(),
         fixed_pair: "fixed-pair".to_string(),
-        values: [0.25, -0.5],
+        values: [0.25, -0.5].map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap()),
         source_offset: 91,
     };
     let fixed_points = [&point];

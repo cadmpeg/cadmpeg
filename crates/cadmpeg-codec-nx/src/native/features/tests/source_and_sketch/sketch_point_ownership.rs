@@ -79,7 +79,7 @@ fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
     let points = feature_sketch_fixed_points(&records, &names, &pairs);
     assert_eq!(points.len(), 1);
     assert_eq!(points[0].name, "Point1");
-    assert_eq!(points[0].values, [0.5, 0.75]);
+    assert_eq!(points[0].values.map(|value| value.get()), [0.5, 0.75]);
 }
 
 #[test]

@@ -301,6 +301,19 @@ impl UnitVector3 {
     pub fn normalized(value: Vector3) -> Option<Self> {
         value.unit().map(Self)
     }
+    /// Normalize with the Euclidean norm and divide each component by that
+    /// norm. This keeps the source's component division order.
+    #[must_use]
+    pub fn normalized_by_norm(value: Vector3) -> Option<Self> {
+        let length = value.norm();
+        (length.is_finite() && length > 0.0).then(|| {
+            Self(Vector3::new(
+                value.x / length,
+                value.y / length,
+                value.z / length,
+            ))
+        })
+    }
     /// Normalize by multiplying each component by the reciprocal of the
     /// Euclidean length. The length must be finite and nonzero, and the
     /// rounded result must remain a unit vector.
@@ -1382,6 +1395,28 @@ mod tests {
             Vector3::new(1.0e-320, 0.0, 0.0),
         ] {
             assert_eq!(UnitVector3::normalized_by_reciprocal(value), None);
+        }
+    }
+
+    #[test]
+    fn norm_division_normalization_preserves_component_bits_and_refusals() {
+        for value in [
+            Vector3::new(3.0, 4.0, 0.0),
+            Vector3::new(1.0e-300, -2.0e-300, 0.0),
+        ] {
+            let length = value.norm();
+            let expected = Vector3::new(value.x / length, value.y / length, value.z / length);
+            let actual = UnitVector3::normalized_by_norm(value).expect("finite direction");
+            assert_eq!(actual.as_raw().x.to_bits(), expected.x.to_bits());
+            assert_eq!(actual.as_raw().y.to_bits(), expected.y.to_bits());
+            assert_eq!(actual.as_raw().z.to_bits(), expected.z.to_bits());
+        }
+        for value in [
+            Vector3::new(0.0, 0.0, 0.0),
+            Vector3::new(f64::INFINITY, 1.0, 0.0),
+            Vector3::new(f64::NAN, 1.0, 0.0),
+        ] {
+            assert_eq!(UnitVector3::normalized_by_norm(value), None);
         }
     }
 

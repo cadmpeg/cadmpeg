@@ -2,6 +2,7 @@
 //! Surface-curve references and finite source tolerance.
 
 use crate::framing::xmt_reference::NonNullXmt;
+use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -10,7 +11,7 @@ pub(crate) struct SurfaceCurveState {
     surface: NonNullXmt,
     pcurve: NonNullXmt,
     original: Option<u32>,
-    tolerance: f64,
+    tolerance: FiniteReal,
 }
 impl SurfaceCurveState {
     pub(super) fn new(
@@ -19,9 +20,8 @@ impl SurfaceCurveState {
         original: u32,
         tolerance: f64,
     ) -> Result<Self, &'static str> {
-        if !tolerance.is_finite() {
-            return Err("tolerance_to_original: must be finite");
-        }
+        let tolerance =
+            FiniteReal::new(tolerance).ok_or("tolerance_to_original: must be finite")?;
         Ok(Self {
             surface: surface
                 .try_into()
@@ -42,7 +42,7 @@ impl SurfaceCurveState {
     pub(crate) fn original(self) -> Option<u32> {
         self.original
     }
-    pub(crate) fn tolerance(self) -> f64 {
+    pub(crate) fn tolerance(self) -> FiniteReal {
         self.tolerance
     }
 }
@@ -60,7 +60,7 @@ impl From<SurfaceCurveState> for StateWire {
             surface_xmt: state.surface(),
             pcurve_xmt: state.pcurve(),
             original_curve_xmt: state.original().unwrap_or(1),
-            tolerance_to_original: state.tolerance(),
+            tolerance_to_original: state.tolerance().get(),
         }
     }
 }
@@ -106,7 +106,10 @@ mod tests {
                 .contains("tolerance_to_original"));
         }
         assert_eq!(
-            SurfaceCurveState::new(6, 9, 1, -2.0).unwrap().tolerance(),
+            SurfaceCurveState::new(6, 9, 1, -2.0)
+                .unwrap()
+                .tolerance()
+                .get(),
             -2.0
         );
     }

@@ -4240,7 +4240,7 @@ fn attach_sketch_graph(
                         || scalar_fields.iter().zip(group.coordinates).any(
                             |(scalar, coordinate)| {
                                 scalar.operation_label != label.id
-                                    || scalar.scalar.value().to_bits() != coordinate.to_bits()
+                                    || scalar.scalar.value().get().to_bits() != coordinate.to_bits()
                             },
                         )
                     {
@@ -4359,10 +4359,7 @@ fn native_fixed_point_entities(
     let mut entity_keys = BTreeSet::new();
     let mut entities = Vec::with_capacity(points.len());
     for point in points {
-        if point.operation_label != label.id
-            || !point.values.iter().all(|value| value.is_finite())
-            || !point_ids.insert(point.id.as_str())
-        {
+        if point.operation_label != label.id || !point_ids.insert(point.id.as_str()) {
             return None;
         }
         let point_key = point

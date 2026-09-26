@@ -105,6 +105,37 @@ fn per_vertex_mesh_exposes_its_normals() {
     assert!(value.per_corner_normals().is_empty());
 }
 
+#[test]
+fn checked_vertex_lanes_pair_without_retesting_coordinates() {
+    let positions = square()
+        .into_iter()
+        .map(|point| FinitePoint3::new(point).unwrap())
+        .collect::<Vec<_>>();
+    let normals = vec![FiniteVector3::from(UnitVector3::Z_AXIS); positions.len()];
+    let mesh = TessellationMesh::from_checked_list_lanes(
+        positions.clone(),
+        vec![[0, 1, 2]],
+        Some(normals.clone()),
+    )
+    .unwrap();
+    let tessellation =
+        Tessellation::from_parts("test:mesh:tessellation#checked-lanes", mesh, Vec::new()).unwrap();
+    assert_eq!(tessellation.vertex_count(), positions.len());
+    assert_eq!(
+        tessellation.vertex_normals(),
+        vec![Vector3::new(0.0, 0.0, 1.0); 4]
+    );
+    let refusal = TessellationMesh::from_checked_list_lanes(
+        positions,
+        vec![[0, 1, 2]],
+        Some(normals[..3].to_vec()),
+    );
+    assert_eq!(
+        refusal.unwrap_err().to_string(),
+        "4 vertex/vertices against 3 vertex normal(s)"
+    );
+}
+
 fn group(source_id: Option<&str>, triangles: Vec<u32>) -> TessellationTriangleGroup {
     TessellationTriangleGroup {
         source_id: source_id.map(str::to_owned),

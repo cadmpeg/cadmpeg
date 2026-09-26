@@ -1422,7 +1422,8 @@ fn deltas_offset_surface_normalizes_exact_record_envelope() {
     assert_eq!(
         crate::topology::offset_surfaces(&record.canonical_bytes)[0]
             .state
-            .distance(),
+            .distance()
+            .get(),
         4.5
     );
 

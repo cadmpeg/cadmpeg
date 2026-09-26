@@ -2,12 +2,15 @@
 //! Non-null trim basis and finite endpoint payloads.
 
 use crate::framing::xmt_reference::NonNullXmt;
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Endpoint {
-    point: [f64; 3],
-    parameter: f64,
+    point: FinitePoint3,
+    parameter: FiniteReal,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -18,14 +21,14 @@ pub(crate) struct TrimmedCurveState {
 }
 impl TrimmedCurveState {
     fn new(basis: u32, points: [[f64; 3]; 2], parameters: [f64; 2]) -> Result<Self, &'static str> {
-        if !points.iter().flatten().all(|value| value.is_finite()) {
+        let [Some(first), Some(second)] =
+            points.map(|point| FinitePoint3::new(Point3::from(point)))
+        else {
             return Err("points: trim coordinates must be finite");
-        }
-        if !parameters.iter().all(|value| value.is_finite()) {
+        };
+        let [Some(start), Some(end)] = parameters.map(FiniteReal::new) else {
             return Err("parameters: trim parameters must be finite");
-        }
-        let [first, second] = points;
-        let [start, end] = parameters;
+        };
         Ok(Self {
             basis: basis.try_into().map_err(|_| "basis_xmt: must exceed one")?,
             endpoints: [
@@ -55,10 +58,10 @@ impl TrimmedCurveState {
         self.basis.into()
     }
     pub(crate) fn points(self) -> [[f64; 3]; 2] {
-        self.endpoints.map(|endpoint| endpoint.point)
+        self.endpoints.map(|endpoint| endpoint.point.get().into())
     }
     pub(crate) fn parameters(self) -> [f64; 2] {
-        self.endpoints.map(|endpoint| endpoint.parameter)
+        self.endpoints.map(|endpoint| endpoint.parameter.get())
     }
 }
 

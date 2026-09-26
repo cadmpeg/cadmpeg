@@ -2,20 +2,19 @@
 //! Offset-surface support and finite signed distance in model millimetres.
 
 use crate::framing::xmt_reference::NonNullXmt;
+use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "StateWire", into = "StateWire")]
 pub(crate) struct OffsetSurfaceState {
     support: NonNullXmt,
-    distance: f64,
+    distance: FiniteReal,
 }
 
 impl OffsetSurfaceState {
     pub(super) fn new(support: u32, distance: f64) -> Result<Self, &'static str> {
-        if !distance.is_finite() {
-            return Err("distance: must be finite");
-        }
+        let distance = FiniteReal::new(distance).ok_or("distance: must be finite")?;
         Ok(Self {
             support: support
                 .try_into()
@@ -26,7 +25,7 @@ impl OffsetSurfaceState {
     pub(crate) fn support(self) -> u32 {
         self.support.into()
     }
-    pub(crate) fn distance(self) -> f64 {
+    pub(crate) fn distance(self) -> FiniteReal {
         self.distance
     }
 }
@@ -41,7 +40,7 @@ impl From<OffsetSurfaceState> for StateWire {
     fn from(state: OffsetSurfaceState) -> Self {
         Self {
             support_xmt: state.support(),
-            distance: state.distance(),
+            distance: state.distance().get(),
         }
     }
 }
@@ -70,7 +69,7 @@ mod tests {
                 )
             );
             let decoded: OffsetSurfaceState = serde_json::from_str(&wire).unwrap();
-            assert_eq!(decoded.distance().to_bits(), distance.to_bits());
+            assert_eq!(decoded.distance().get().to_bits(), distance.to_bits());
         }
         for support in [0, 1] {
             let wire = format!("{{\"support_xmt\":{support},\"distance\":2.5}}");

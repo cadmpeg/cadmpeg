@@ -326,7 +326,7 @@ fn om_point_feature_scalar_lane_spans_the_preceding_block_atomically() {
 
     let lane = point_feature_scalar_lane(&preceding, &target).expect("complete lane");
     assert_eq!(
-        lane.values.map(crate::om::scalar::ShiftedBinary64::value),
+        lane.values.map(|scalar| scalar.value().get()),
         [1.0, -2.0, 3.5, 4.0, 5.25, -6.0]
     );
     assert_eq!(
@@ -879,9 +879,7 @@ fn om_extrude_header_decodes_shifted_ieee_scalars() {
     let header = extrude_payload_header(record).unwrap();
     assert_eq!(header.offset, 205);
     assert_eq!(
-        header
-            .scalars
-            .map(crate::om::scalar::ShiftedBinary64::value),
+        header.scalars.map(|scalar| scalar.value().get()),
         [0.04, 0.038]
     );
     assert_eq!(
@@ -919,12 +917,7 @@ fn om_swp104_leading_branch_preserves_counts_state_and_references() {
     let record = crate::om::operation_record::OperationPayload::new(&payload, 200, label).unwrap();
     let branch = swp104_payload_leading_branch(record).expect("leading branch");
     assert_eq!(branch.discriminator.get(), 0x21);
-    assert_eq!(
-        branch
-            .scalars
-            .map(crate::om::scalar::ShiftedBinary64::value),
-        [0.04; 4]
-    );
+    assert_eq!(branch.scalars.map(|scalar| scalar.value().get()), [0.04; 4]);
     assert_eq!(
         branch.scalars.map(crate::om::scalar::ShiftedBinary64::raw),
         [raw_scalar; 4]
@@ -1081,7 +1074,7 @@ fn om_operation_body_scalar_clauses_preserve_body_order_and_branch() {
             .scalars
             .atoms()
             .each_ref()
-            .map(|scalar| scalar.value()),
+            .map(|scalar| scalar.value().get()),
         [0.0, 3.0, -170.0]
     );
     assert_eq!(
@@ -1113,7 +1106,7 @@ fn om_operation_body_scalar_clauses_preserve_body_order_and_branch() {
             .scalars
             .atoms()
             .each_ref()
-            .map(|scalar| scalar.value()),
+            .map(|scalar| scalar.value().get()),
         [2.0, 0.0, 0.0]
     );
     let truncated = &bytes[..bytes.len() - 1];
@@ -1313,7 +1306,7 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
     let branch = crate::om::extrude_32::extrude_payload_32_branch(record).unwrap();
     assert_eq!(branch.origin(), 105);
     assert_eq!(branch.terminal().value(), 115);
-    assert!(branch.scalar().value().is_finite());
+    assert!(branch.scalar().value().get().is_finite());
     assert_eq!(branch.scalar().raw(), bytes[8..16]);
     assert_eq!(
         branch
@@ -1599,7 +1592,10 @@ fn om_offset_only_index_bounds_storage_blocks() {
     let expressions = sections[0].numeric_expressions();
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].name.as_str(), "length");
-    assert_eq!(expressions[0].constant_value(), Some(25.0));
+    assert_eq!(
+        expressions[0].constant_value().map(|value| value.get()),
+        Some(25.0)
+    );
 }
 
 #[test]

@@ -38,7 +38,10 @@ fn om_numeric_expression_evaluates_constant_arithmetic_formula() {
     let expressions = numeric_expressions(&bytes);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].expression, "(193.94 - 6) / 2 + 1.5e1");
-    assert_eq!(expressions[0].constant_value(), Some(108.97));
+    assert_eq!(
+        expressions[0].constant_value().map(|value| value.get()),
+        Some(108.97)
+    );
 }
 
 #[test]
@@ -60,14 +63,20 @@ fn om_numeric_expression_accepts_inches_and_terminal_comments() {
     assert_eq!(expressions.len(), 3);
     assert_eq!(expressions[0].unit, ExpressionUnit::Inch);
     assert_eq!(expressions[0].expression, "0.5");
-    assert_eq!(expressions[0].constant_value(), Some(0.5));
+    assert_eq!(
+        expressions[0].constant_value().map(|value| value.get()),
+        Some(0.5)
+    );
     assert_eq!(expressions[1].expression, "p1 * 2");
     assert_eq!(expressions[1].constant_value(), None);
     assert_eq!(
         expressions[2].unit,
         ExpressionUnit::Native("custom/unit".into())
     );
-    assert_eq!(expressions[2].constant_value(), Some(4.0));
+    assert_eq!(
+        expressions[2].constant_value().map(|value| value.get()),
+        Some(4.0)
+    );
 }
 
 #[test]
@@ -79,7 +88,7 @@ fn om_numeric_expression_applies_power_before_unary_sign() {
         ("2^3^2", 512.0),
     ] {
         assert_eq!(
-            evaluate_constant_expression(formula),
+            evaluate_constant_expression(formula).map(|value| value.get()),
             Some(expected),
             "{formula}"
         );
@@ -91,10 +100,16 @@ fn om_numeric_expression_parser_handles_deep_nesting_without_recursion() {
     const DEPTH: usize = 16 * 1024;
 
     let nested = format!("{}1{}", "(".repeat(DEPTH), ")".repeat(DEPTH));
-    assert_eq!(evaluate_constant_expression(&nested), Some(1.0));
+    assert_eq!(
+        evaluate_constant_expression(&nested).map(|value| value.get()),
+        Some(1.0)
+    );
 
     let unary = format!("{}1", "+".repeat(DEPTH));
-    assert_eq!(evaluate_constant_expression(&unary), Some(1.0));
+    assert_eq!(
+        evaluate_constant_expression(&unary).map(|value| value.get()),
+        Some(1.0)
+    );
 
     let malformed = format!("{}1", "(".repeat(DEPTH));
     assert_eq!(evaluate_constant_expression(&malformed), None);
@@ -180,5 +195,8 @@ fn om_numeric_expression_table_is_independent_of_entity_indexing() {
         expressions[0].name.qualifier(),
         Some("CircularPattern_pattern_Circular_Dir_offset_angle")
     );
-    assert_eq!(expressions[0].constant_value(), Some(120.0));
+    assert_eq!(
+        expressions[0].constant_value().map(|value| value.get()),
+        Some(120.0)
+    );
 }

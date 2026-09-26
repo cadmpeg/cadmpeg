@@ -103,7 +103,7 @@ pub(super) fn saved_offset_carriers(
             let key = (
                 support_id.clone(),
                 (*candidate_id).clone(),
-                offset.state.distance().to_bits(),
+                offset.state.distance().get().to_bits(),
                 tolerance.get().to_bits(),
             );
             let fit = if let Some(fit) = fit_cache.get(&key).copied() {
@@ -112,7 +112,7 @@ pub(super) fn saved_offset_carriers(
                 let fit = certified_offset_cache_fit_with_budget(
                     support,
                     candidate,
-                    offset.state.distance(),
+                    offset.state.distance().get(),
                     NonNegativeLength::from(tolerance),
                     geometry_budget,
                 );

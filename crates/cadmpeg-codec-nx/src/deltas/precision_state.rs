@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Type-100 identity, derived references, and translation-only state.
 
+use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "PrecisionWire", into = "PrecisionWire")]
 pub(crate) struct PrecisionState {
     xmt: u32,
-    translation: [f64; 3],
+    translation: [FiniteReal; 3],
 }
 impl PrecisionState {
     pub(super) fn new(
@@ -25,7 +26,7 @@ impl PrecisionState {
         for (ordinal, value) in transform.iter().enumerate() {
             let valid = match ordinal {
                 0 | 4 | 8 | 12 => value.to_bits() == 1.0_f64.to_bits(),
-                9..=11 => value.is_finite(),
+                9..=11 => true,
                 _ => value.to_bits() == 0.0_f64.to_bits(),
             };
             if !valid {
@@ -34,9 +35,16 @@ impl PrecisionState {
                 );
             }
         }
+        let [Some(x), Some(y), Some(z)] =
+            [transform[9], transform[10], transform[11]].map(FiniteReal::new)
+        else {
+            return Err(
+                "transform: require a finite translation with identity rotation and unit scale",
+            );
+        };
         Ok(Self {
             xmt,
-            translation: [transform[9], transform[10], transform[11]],
+            translation: [x, y, z],
         })
     }
     #[cfg(test)]
@@ -47,7 +55,7 @@ impl PrecisionState {
         [2, self.xmt + 1, 1]
     }
     pub(super) fn transform(&self) -> [f64; 13] {
-        let [x, y, z] = self.translation;
+        let [x, y, z] = self.translation.map(FiniteReal::get);
         [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, x, y, z, 1.0]
     }
 }
