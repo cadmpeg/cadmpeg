@@ -13,6 +13,69 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
+fn negative_primitive_sizes_keep_native_values_and_report_neutral_losses() {
+    use cadmpeg_ir::ids::{EdgeId, VertexId};
+    use cadmpeg_ir::scalar::FiniteReal;
+    use cadmpeg_ir::topology::{Edge, EdgeCarrier, Vertex};
+
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let vertex_id = VertexId::compose(
+        &cadmpeg_ir::identity_namespace!("fcstd", "model", "vertex"),
+        cadmpeg_ir::identity_key!("shape").colon(cadmpeg_ir::identity_key!("v1")),
+    );
+    ir.model.vertices.push(Vertex {
+        id: vertex_id.clone(),
+        point: cadmpeg_ir::ids::PointId::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "model", "point"),
+            cadmpeg_ir::identity_key!("shape").colon(cadmpeg_ir::identity_key!("p1")),
+        ),
+        tolerance: None,
+    });
+    ir.model.edges.push(Edge {
+        id: EdgeId::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "model", "edge"),
+            cadmpeg_ir::identity_key!("shape").colon(cadmpeg_ir::identity_key!("e1")),
+        ),
+        carrier: EdgeCarrier::unbounded(None),
+        start: vertex_id.clone(),
+        end: vertex_id,
+        tolerance: None,
+    });
+    let mut plan = super::AppearancePlan::default();
+    let mut losses = Vec::new();
+    let prefixes = [String::from("shape:")];
+    for style in [
+        super::PrimitiveStyle::Line {
+            color: 0x1122_3344,
+            width: Some(FiniteReal::ONE.negated()),
+        },
+        super::PrimitiveStyle::Point {
+            color: 0x1122_3344,
+            size: Some(FiniteReal::ONE.negated()),
+        },
+    ] {
+        super::transfer_primitive_appearance(
+            &ir,
+            &mut plan,
+            "Model",
+            "shape",
+            style,
+            &prefixes,
+            &mut losses,
+        );
+    }
+    assert_eq!(plan.appearances.len(), 2);
+    assert!(plan
+        .appearances
+        .iter()
+        .all(|appearance| appearance.properties.is_empty()));
+    assert_eq!(losses.len(), 2);
+    assert!(losses
+        .iter()
+        .all(|loss| { loss.code.local_code() == "appearance.primitive-size-not-transferred" }));
+}
+
+#[test]
 fn complete_codec_admits_provider_names_with_source_identity_encoding() {
     let document = br##"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="3"><Object type="Part::Feature" name=""/><Object type="Part::Feature" name="A B"/><Object type="Part::Feature" name="#"/></Objects>
