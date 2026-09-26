@@ -1327,7 +1327,12 @@ fn spatial_vertex_record_decodes_model_coordinates() {
     }
     assert_eq!(
         crate::resolved_features::markers::spatial_vertex_coordinates(&payload),
-        vec![cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75)]
+        vec![
+            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                1.25, -2.5, 3.75
+            ))
+            .expect("finite spatial vertex")
+        ]
     );
     payload[7 + 43] = 0x1e;
     assert!(crate::resolved_features::markers::spatial_vertex_coordinates(&payload).is_empty());

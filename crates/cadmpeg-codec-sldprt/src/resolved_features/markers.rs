@@ -27,7 +27,7 @@ use crate::records::{
     FeatureInputRelationBinding, FeatureInputScalar, SketchInputEntity, SketchInputKind,
 };
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, FinitePoint3};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::sketches::{
     SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
@@ -195,11 +195,8 @@ pub(crate) fn spatial_sketches(
                     Some((
                         lines.0 + offsets[0],
                         None,
-                        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
-                            start: vertices[0],
-                            end: vertices[1],
-                        })
-                        .ok()?,
+                        SpatialSketchGeometry::try_line_from_parts(vertices[0], vertices[1])
+                            .ok()?,
                     ))
                 })
                 .collect::<Option<Vec<_>>>()
@@ -297,11 +294,7 @@ pub(crate) fn spatial_sketches(
                     SpatialSketchEntityId::mint(format!("{}:entity:{index}", sketch_id.as_str()))
                         .ok()?,
                     sketch_id.clone(),
-                    SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
-                        start: vertices[0],
-                        end: vertices[1],
-                    })
-                    .ok()?,
+                    SpatialSketchGeometry::try_line_from_parts(vertices[0], vertices[1]).ok()?,
                 ))
             })
             .collect::<Option<Vec<_>>>()
@@ -708,7 +701,7 @@ pub(super) fn spatial_relation_marker_coordinates(payload: &[u8], offset: usize)
     Some(Point3::new(coordinate(0)?, coordinate(8)?, coordinate(16)?))
 }
 
-pub(super) fn spatial_vertex_coordinates(payload: &[u8]) -> Vec<Point3> {
+pub(super) fn spatial_vertex_coordinates(payload: &[u8]) -> Vec<FinitePoint3> {
     spatial_vertex_offsets(payload)
         .into_iter()
         .filter_map(|offset| {
@@ -717,7 +710,7 @@ pub(super) fn spatial_vertex_coordinates(payload: &[u8]) -> Vec<Point3> {
                 View::f64_le_at(payload, offset + 53)?,
                 View::f64_le_at(payload, offset + 61)?,
             );
-            point.is_finite().then_some(point)
+            FinitePoint3::new(point)
         })
         .collect()
 }
