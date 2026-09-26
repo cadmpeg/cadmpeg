@@ -71,6 +71,12 @@ struct JoinSpec<'a> {
     right_arena: &'a str,
     mode: JoinMode,
     files: Option<(&'a str, &'a str)>,
+    head: Option<usize>,
+}
+
+#[cfg(test)]
+thread_local! {
+    static ROWS_BUILT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// Runs `query join` against one or two CADIR documents.
@@ -78,42 +84,29 @@ pub(super) fn run(args: &JoinArgs) -> Result<()> {
     let output = args.output.mode();
     let left_doc = CadirDocument::load(&args.file, "join")?;
     let left_target = ArenaTarget::parse(&args.left_arena)?;
-    let left_records;
-    let left_dotted;
-    {
-        let left_arena = left_doc.require_arena(&left_target)?;
-        left_records = left_arena.records.clone();
-        left_dotted = left_arena.target.dotted();
-    }
-
-    let (right_records, right_dotted, files) = match &args.right_file {
-        Some(right_path) => {
-            let right_doc = CadirDocument::load(right_path, "join")?;
-            let right_target = ArenaTarget::parse(&args.right_arena)?;
-            let right_arena = right_doc.require_arena(&right_target)?;
-            (
-                right_arena.records.clone(),
-                right_arena.target.dotted(),
-                Some((
-                    args.file.display().to_string(),
-                    right_path.display().to_string(),
-                )),
-            )
-        }
-        None => {
-            let right_target = ArenaTarget::parse(&args.right_arena)?;
-            let right_arena = left_doc.require_arena(&right_target)?;
-            (
-                right_arena.records.clone(),
-                right_arena.target.dotted(),
-                None,
-            )
-        }
+    let left_arena = left_doc.require_arena(&left_target)?;
+    let right_doc = args
+        .right_file
+        .as_ref()
+        .map(|path| CadirDocument::load(path, "join"))
+        .transpose()?;
+    let right_target = ArenaTarget::parse(&args.right_arena)?;
+    let right_arena = match &right_doc {
+        Some(doc) => doc.require_arena(&right_target)?,
+        None => left_doc.require_arena(&right_target)?,
     };
+    let left_dotted = left_arena.target.dotted();
+    let right_dotted = right_arena.target.dotted();
+    let files = args.right_file.as_ref().map(|right_path| {
+        (
+            args.file.display().to_string(),
+            right_path.display().to_string(),
+        )
+    });
 
     let spec = JoinSpec {
-        left: &left_records,
-        right: &right_records,
+        left: &left_arena.records,
+        right: &right_arena.records,
         left_key: &args.left_key,
         right_key: &args.right_key,
         left_arena: &left_dotted,
@@ -122,15 +115,17 @@ pub(super) fn run(args: &JoinArgs) -> Result<()> {
         files: files
             .as_ref()
             .map(|(left, right)| (left.as_str(), right.as_str())),
+        head: args.head,
     };
-    let mut rows = join_records(&spec);
-    if let Some(n) = args.head {
-        rows.truncate(n);
-    }
+    let rows = join_records(&spec);
     emit_values("join", output, &rows)
 }
 
 fn join_records(spec: &JoinSpec<'_>) -> Vec<Value> {
+    if let Some(limit) = spec.head {
+        return join_records_limited(spec, limit);
+    }
+
     let mut index: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (ri, rec) in spec.right.iter().enumerate() {
         for key in key_values(rec, spec.right_key) {
@@ -183,7 +178,59 @@ fn join_records(spec: &JoinSpec<'_>) -> Vec<Value> {
     rows
 }
 
+fn join_records_limited(spec: &JoinSpec<'_>, limit: usize) -> Vec<Value> {
+    let mut rows = Vec::new();
+    for left_rec in spec.left {
+        if rows.len() >= limit {
+            break;
+        }
+        let left_keys: BTreeSet<String> = key_values(left_rec, spec.left_key).into_iter().collect();
+        match spec.mode {
+            JoinMode::Matched => {
+                for right_rec in spec.right {
+                    let matching: BTreeSet<String> = key_values(right_rec, spec.right_key)
+                        .into_iter()
+                        .filter(|key| left_keys.contains(key))
+                        .collect();
+                    for key in matching {
+                        rows.push(row_pair(spec, left_rec, Some((right_rec, &key))));
+                        if rows.len() >= limit {
+                            return rows;
+                        }
+                    }
+                }
+            }
+            JoinMode::Unmatched => {
+                let found = spec.right.iter().any(|right_rec| {
+                    key_values(right_rec, spec.right_key)
+                        .iter()
+                        .any(|key| left_keys.contains(key))
+                });
+                if !found {
+                    rows.push(row_pair(spec, left_rec, None));
+                }
+            }
+            JoinMode::All => {
+                let rights = spec
+                    .right
+                    .iter()
+                    .filter(|right_rec| {
+                        key_values(right_rec, spec.right_key)
+                            .iter()
+                            .any(|key| left_keys.contains(key))
+                    })
+                    .cloned()
+                    .collect();
+                rows.push(row_all(spec, left_rec, rights));
+            }
+        }
+    }
+    rows
+}
+
 fn row_pair(spec: &JoinSpec<'_>, left: &Value, matched: Option<(&Value, &str)>) -> Value {
+    #[cfg(test)]
+    ROWS_BUILT.with(|count| count.set(count.get() + 1));
     let mut map = Map::new();
     map.insert(
         "left_arena".to_owned(),
@@ -207,6 +254,8 @@ fn row_pair(spec: &JoinSpec<'_>, left: &Value, matched: Option<(&Value, &str)>) 
 }
 
 fn row_all(spec: &JoinSpec<'_>, left: &Value, rights: Vec<Value>) -> Value {
+    #[cfg(test)]
+    ROWS_BUILT.with(|count| count.set(count.get() + 1));
     let mut map = Map::new();
     map.insert(
         "left_arena".to_owned(),
@@ -280,7 +329,7 @@ fn canonical_key(value: &Value) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{join_records, JoinMode, JoinSpec};
+    use super::{join_records, JoinMode, JoinSpec, ROWS_BUILT};
     use serde_json::json;
     use serde_json::Value;
 
@@ -301,6 +350,7 @@ mod tests {
             right_arena: "native.rhino.unknowns",
             mode,
             files,
+            head: None,
         }
     }
 
@@ -487,5 +537,41 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0]["right"].as_array().unwrap().len(), 2);
         assert_eq!(rows[1]["right"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn join_head_one_constructs_only_one_row() {
+        let left = vec![json!({"id": "left", "key": "same"})];
+        let right: Vec<Value> = (0..4096)
+            .map(|i| json!({"id": format!("right-{i}"), "key": "same"}))
+            .collect();
+        let mut request = spec(&left, &right, "key", "key", JoinMode::Matched, None);
+        request.head = Some(1);
+        ROWS_BUILT.with(|count| count.set(0));
+        let rows = join_records(&request);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["right"]["id"], "right-0");
+        ROWS_BUILT.with(|count| assert_eq!(count.get(), 1));
+    }
+
+    #[test]
+    fn join_limited_rows_match_unlimited_prefix_in_each_mode() {
+        let left = vec![
+            json!({"id": "left-0", "keys": ["b", "a"]}),
+            json!({"id": "left-1", "keys": ["missing"]}),
+        ];
+        let right = vec![
+            json!({"id": "right-0", "keys": ["b", "a"]}),
+            json!({"id": "right-1", "keys": ["a"]}),
+        ];
+        for mode in [JoinMode::Matched, JoinMode::Unmatched, JoinMode::All] {
+            let mut request = spec(&left, &right, "keys", "keys", mode, None);
+            let unlimited = join_records(&request);
+            for head in 0..=unlimited.len() + 1 {
+                request.head = Some(head);
+                let limited = join_records(&request);
+                assert_eq!(limited, unlimited[..head.min(unlimited.len())]);
+            }
+        }
     }
 }
