@@ -988,7 +988,7 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
 }
 
 #[test]
-fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint() {
+fn surface_patch_reference_occupancy_reports_limit_and_preserves_boundary_endpoints() {
     use crate::records::{
         feature::{
             scope::DesignParameterScope,
@@ -999,6 +999,8 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
             construction::DesignConstructionOperandGroupFrame,
         },
     };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SurfaceContinuity};
 
     let mut scope = DesignParameterScope::empty(
@@ -1099,11 +1101,12 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
     let shifted_groups = [group(100, 1, 101), group(110, 4, 111), group(120, 7, 121)];
     assert!(matches!(
         crate::design::feature_project::project_surface_patch(
+            None,
             &scope,
             &shifted_groups,
             &[],
             &[],
-        ),
+        ).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             ref continuity,
             ..
@@ -1116,6 +1119,22 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
                 ][..],
             )
     ));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+    let error = crate::design::feature_project::project_surface_patch(
+        Some(&ctx),
+        &scope,
+        &shifted_groups,
+        &[],
+        &[],
+    )
+    .expect_err("ten occupancy slots exceed the remaining collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "f3d surface-patch reference occupancy"));
 
     scope
         .try_edit(|draft| {
@@ -1139,11 +1158,12 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
     let endpoint_groups = [group(100, 0, 101), group(110, 3, 111), group(120, 6, 121)];
     assert!(matches!(
         crate::design::feature_project::project_surface_patch(
+            None,
             &scope,
             &endpoint_groups,
             &[],
             &[],
-        ),
+        ).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             ref continuity,
             ..

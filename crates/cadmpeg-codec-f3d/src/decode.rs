@@ -2417,6 +2417,7 @@ impl<'a> F3dDecodeSession<'a> {
         )?;
         (self.ir.model.features, self.ir.model.parameters) =
             crate::design::feature_project::project_parameter_design_with_edge_identities(
+                Some(self.ctx),
                 &crate::design::feature_project::ProjectInputs {
                     native: &self.native.design_parameters,
                     owners: &self.native.design_parameter_owners,

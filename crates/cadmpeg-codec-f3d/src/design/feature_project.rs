@@ -61,7 +61,7 @@ use crate::records::{
         face::DesignFaceOperand, fillet::DesignFilletRadiusGroup, fillet::DesignFilletRadiusLaw,
     },
 };
-use cadmpeg_core::decode::{bounded_len, View};
+use cadmpeg_core::decode::{alloc_filled, bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
@@ -574,31 +574,35 @@ pub(crate) fn project_parameter_design(
             .unwrap()
         })
         .collect::<Vec<_>>();
-    project_parameter_design_with_edge_identities(&ProjectInputs {
-        native,
-        owners,
-        scopes,
-        timelines: &timelines,
-        construction_groups,
-        fillet_radius_groups,
-        edge_operands,
-        edge_identity_operands: &[],
-        edge_treatment_vertex_operands: &[],
-        entity_selection_operands: &[],
-        curve_identities: &[],
-        face_operands,
-        body_recipe_operands: &[],
-        legacy_loft_body_carriers: &[],
-        placements,
-        body_bindings: &[],
-        component_naming_spaces: &[],
-        histories: &[],
-    })
+    project_parameter_design_with_edge_identities(
+        None,
+        &ProjectInputs {
+            native,
+            owners,
+            scopes,
+            timelines: &timelines,
+            construction_groups,
+            fillet_radius_groups,
+            edge_operands,
+            edge_identity_operands: &[],
+            edge_treatment_vertex_operands: &[],
+            entity_selection_operands: &[],
+            curve_identities: &[],
+            face_operands,
+            body_recipe_operands: &[],
+            legacy_loft_body_carriers: &[],
+            placements,
+            body_bindings: &[],
+            component_naming_spaces: &[],
+            histories: &[],
+        },
+    )
     .expect("test projection has a synthetic exact timeline")
 }
 
 /// Project Design parameters and feature scopes, including fixed edge identities.
 pub(crate) fn project_parameter_design_with_edge_identities(
+    ctx: Option<&DecodeContext<'_>>,
     inputs: &ProjectInputs<'_>,
 ) -> Result<
     (
@@ -805,11 +809,12 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 )
                 .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::SurfacePatch) => project_surface_patch(
+                    ctx,
                     scope,
                     construction_groups,
                     edge_operands,
                     edge_identity_operands,
-                )
+                )?
                 .unwrap_or_else(|| FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: scope.kind_name().into(),
                     parameters: BTreeMap::new(),
@@ -7303,19 +7308,32 @@ fn surface_patch_boundary_continuities(
 }
 
 fn project_surface_patch(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
     edge_operands: &[DesignEdgeOperand],
     edge_identity_operands: &[DesignEdgeIdentityOperand],
-) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
         FaceSelection, FeatureDefinition, FeatureOperation, SurfaceBoundary,
     };
 
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SurfacePatch {
-        return None;
+        return Ok(None);
     }
-    let stream = native_stream(&scope.id)?;
+    let Some(stream) = native_stream(&scope.id) else {
+        return Ok(None);
+    };
+    if let Some(ctx) = ctx {
+        let count = construction_groups
+            .iter()
+            .filter(|group| {
+                native_stream(&group.id) == Some(stream)
+                    && group.scope_record_index == scope.record_index
+            })
+            .count();
+        ctx.charge_collection_items(count as u64, "f3d surface-patch groups")?;
+    }
     let mut groups = construction_groups
         .iter()
         .filter(|group| {
@@ -7327,27 +7345,42 @@ fn project_surface_patch(
 
     // The single-group path form stores the group, all of its ordered edge
     // members, and the tool body. It has no per-component settings records.
-    let grouped_path_frame_length = u64::try_from(scope.reference_members().len())
-        .ok()?
-        .checked_mul(11)?
-        .checked_add(277)?;
+    let Some(grouped_path_frame_length) = u64::try_from(scope.reference_members().len())
+        .ok()
+        .and_then(|count| count.checked_mul(11))
+        .and_then(|count| count.checked_add(277))
+    else {
+        return Ok(None);
+    };
     if scope.frame_length() == grouped_path_frame_length {
         let [group] = groups.as_slice() else {
-            return None;
+            return Ok(None);
         };
-        if scope.reference_members().len() < 3
-            || group.scope_reference_ordinal != 0
-            || group.record_index != *scope.reference_members().values().next()?
+        if scope.reference_members().len() < 3 {
+            return Ok(None);
+        }
+        let Some(first_reference) = scope.reference_members().values().next() else {
+            return Ok(None);
+        };
+        let Some(edge_references) = scope
+            .reference_members()
+            .values_in(1..scope.reference_members().len() - 1)
+        else {
+            return Ok(None);
+        };
+        if group.scope_reference_ordinal != 0
+            || group.record_index != *first_reference
             || group.role() != DesignOperandRole::BODIES_A
             || group.members().is_empty()
-            || !group.members().iter().map(|member| member.value).eq(scope
-                .reference_members()
-                .values_in(1..scope.reference_members().len() - 1)?
-                .copied())
+            || !group
+                .members()
+                .iter()
+                .map(|member| member.value)
+                .eq(edge_references.copied())
         {
-            return None;
+            return Ok(None);
         }
-        return Some(FeatureDefinition::Operation(
+        return Ok(Some(FeatureDefinition::Operation(
             FeatureOperation::FilledSurface {
                 boundary: SurfaceBoundary::Path(resolved_surface_patch_path(
                     std::slice::from_ref(group),
@@ -7363,7 +7396,7 @@ fn project_surface_patch(
                 ),
                 merge_result: Some(false),
             },
-        ));
+        )));
     }
 
     // The reference count separates the two settings-bearing forms: the
@@ -7373,27 +7406,45 @@ fn project_surface_patch(
     let (boundary_count, boundary_role) = if scope.reference_members().len() == 3 {
         (1, DesignOperandRole::PROFILE)
     } else {
-        let boundary_count = scope.reference_members().len().checked_sub(1)? / 3;
+        let Some(reference_count) = scope.reference_members().len().checked_sub(1) else {
+            return Ok(None);
+        };
+        let boundary_count = reference_count / 3;
         if boundary_count == 0 || scope.reference_members().len() != boundary_count * 3 + 1 {
-            return None;
+            return Ok(None);
         }
         (boundary_count, DesignOperandRole::BODIES_A)
     };
     if groups.len() != boundary_count || scope.surface_patch_boundaries().len() != boundary_count {
-        return None;
+        return Ok(None);
     }
-    let mut occupied = cadmpeg_core::decode::alloc_filled(
-        scope.reference_members().len(),
-        false,
-        "f3d surface-patch reference occupancy",
-    )
-    .ok()?;
+    let mut occupied = match ctx {
+        Some(ctx) => ctx.alloc_filled(
+            scope.reference_members().len(),
+            false,
+            "f3d surface-patch reference occupancy",
+        )?,
+        None => alloc_filled(
+            scope.reference_members().len(),
+            false,
+            "f3d surface-patch reference occupancy",
+        )?,
+    };
     for boundary in &groups {
-        let group_ordinal = usize::try_from(boundary.scope_reference_ordinal).ok()?;
-        let member_ordinal = group_ordinal.checked_add(1)?;
-        let settings_ordinal = group_ordinal.checked_add(2)?;
+        let Ok(group_ordinal) = usize::try_from(boundary.scope_reference_ordinal) else {
+            return Ok(None);
+        };
+        let Some(member_ordinal) = group_ordinal.checked_add(1) else {
+            return Ok(None);
+        };
+        let Some(settings_ordinal) = group_ordinal.checked_add(2) else {
+            return Ok(None);
+        };
+        let Some(group_reference) = scope.reference_members().values().nth(group_ordinal) else {
+            return Ok(None);
+        };
         if settings_ordinal >= scope.reference_members().len()
-            || boundary.record_index != *scope.reference_members().values().nth(group_ordinal)?
+            || boundary.record_index != *group_reference
             || boundary.role() != boundary_role
             || !boundary
                 .members()
@@ -7409,19 +7460,29 @@ fn project_surface_patch(
             || occupied[member_ordinal]
             || occupied[settings_ordinal]
         {
-            return None;
+            return Ok(None);
         }
-        let settings = scope.surface_patch_boundaries().iter().find(|settings| {
+        let Some(settings) = scope.surface_patch_boundaries().iter().find(|settings| {
             usize::try_from(settings.scope_reference_ordinal).ok() == Some(settings_ordinal)
-        })?;
-        if settings.record_index != *scope.reference_members().values().nth(settings_ordinal)?
+        }) else {
+            return Ok(None);
+        };
+        let Some(settings_reference) = scope.reference_members().values().nth(settings_ordinal)
+        else {
+            return Ok(None);
+        };
+        if settings.record_index != *settings_reference
             || settings.model_reference != boundary.record_index
         {
-            return None;
+            return Ok(None);
         }
         occupied[group_ordinal] = true;
         occupied[member_ordinal] = true;
         occupied[settings_ordinal] = true;
+    }
+    if let Some(ctx) = ctx {
+        let count = occupied.iter().filter(|&&occupied| !occupied).count();
+        ctx.charge_collection_items(count as u64, "f3d surface-patch unoccupied references")?;
     }
     let unoccupied = occupied
         .iter()
@@ -7433,7 +7494,7 @@ fn project_surface_patch(
     if (scope.reference_members().len() == 3 && !unoccupied.is_empty())
         || (scope.reference_members().len() != 3 && !endpoint_unoccupied)
     {
-        return None;
+        return Ok(None);
     }
     let boundary = if let [boundary] = groups.as_slice() {
         resolved_loft_path(
@@ -7453,7 +7514,7 @@ fn project_surface_patch(
             SurfacePatchRecipe::Direct,
         )
     };
-    Some(FeatureDefinition::Operation(
+    Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::FilledSurface {
             boundary: SurfaceBoundary::Path(boundary),
             support_faces: FaceSelection::Faces(Vec::new()),
@@ -7466,7 +7527,7 @@ fn project_surface_patch(
             ),
             merge_result: Some(false),
         },
-    ))
+    )))
 }
 
 fn project_boundary_fill(
