@@ -3737,10 +3737,10 @@ fn part_construction_geometry_definition(
     entries: &[EntryRecord],
 ) -> Option<FeatureDefinition> {
     let point = |x: &str, y: &str, z: &str| {
-        Some(Point3::new(
-            scalar_named(properties, x)?,
-            scalar_named(properties, y)?,
-            scalar_named(properties, z)?,
+        Some(cadmpeg_ir::features::FinitePoint3::from_coordinates(
+            scalar_value(property(properties, x)?)?,
+            scalar_value(property(properties, y)?)?,
+            scalar_value(property(properties, z)?)?,
         ))
     };
     let angle = |name: &str| {
@@ -3750,12 +3750,12 @@ fn part_construction_geometry_definition(
     match kind {
         "Part::Vertex" => Some(FeatureDefinition::Operation(
             FeatureOperation::PointGeometry {
-                position: cadmpeg_ir::features::FinitePoint3::new(point("X", "Y", "Z")?)?,
+                position: point("X", "Y", "Z")?,
             },
         )),
         "Part::Line" => Some(FeatureDefinition::Operation(
             FeatureOperation::LineSegment {
-                segment: cadmpeg_ir::features::FeatureLineSegment::new(
+                segment: cadmpeg_ir::features::FeatureLineSegment::from_parts(
                     point("X1", "Y1", "Z1")?,
                     point("X2", "Y2", "Z2")?,
                 )?,

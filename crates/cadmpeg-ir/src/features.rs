@@ -598,6 +598,11 @@ impl FeatureLineSegment {
     pub fn new(start: Point3, end: Point3) -> Option<Self> {
         let start = FinitePoint3::new(start)?;
         let end = FinitePoint3::new(end)?;
+        Self::from_parts(start, end)
+    }
+
+    /// Build a segment from finite endpoints if they are distinct.
+    pub fn from_parts(start: FinitePoint3, end: FinitePoint3) -> Option<Self> {
         (start != end).then_some(Self { start, end })
     }
 
