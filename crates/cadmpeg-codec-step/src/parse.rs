@@ -381,13 +381,6 @@ impl Exchange {
         self.implementation_level.text()
     }
 
-    pub(crate) fn decode_string(
-        &self,
-        bytes: &[u8],
-    ) -> Result<String, crate::strings::StringError> {
-        crate::strings::decode_with_level(bytes, self.implementation_level.level())
-    }
-
     pub(crate) fn decode_string_with_context(
         &self,
         bytes: &[u8],

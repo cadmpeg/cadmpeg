@@ -453,7 +453,8 @@ fn decode_exchange_mode(
         &mut session.ir,
         &session.typed_records,
         &product.value.product_definition_ids_by_shape,
-    );
+        Some(session.ctx),
+    )?;
     session.absorb(&mut drawing);
     let mut post_decode_losses = Vec::new();
     session.charge_stage("step_carrier_retention")?;
@@ -1241,28 +1242,6 @@ fn claim_trivia(
         }
     }
     Ok(())
-}
-
-fn decode_text(
-    exchange: &Exchange,
-    value: &Value,
-    losses: &mut Vec<LossNote>,
-    record_id: u64,
-    field: &str,
-    code: StepLossCode,
-) -> Option<String> {
-    let Value::String(bytes) = value else {
-        return None;
-    };
-    match exchange.decode_string(bytes) {
-        Ok(text) => Some(text),
-        Err(error) => {
-            losses.push(code.note(format!(
-                "STEP record #{record_id} has an invalid {field} string: {error}"
-            )));
-            None
-        }
-    }
 }
 
 fn decode_text_charged(
