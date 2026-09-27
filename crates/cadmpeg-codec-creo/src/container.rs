@@ -2263,17 +2263,22 @@ fn feature_definitions(
     Ok(definitions)
 }
 
-fn feature_row_definitions(rows: &[FeatureRow]) -> Vec<FeatureDefinition> {
-    let mut definitions = rows
-        .iter()
-        .filter_map(|row| {
-            let mut definition = feature::definitions::depdb_section_definition(&row.body, None)?;
-            offset_feature_definition(&mut definition, row.body_offset);
-            Some(definition)
-        })
-        .collect::<Vec<_>>();
+fn feature_row_definitions(
+    ctx: &DecodeContext<'_>,
+    rows: &[FeatureRow],
+) -> Result<Vec<FeatureDefinition>, CodecError> {
+    let mut definitions = Vec::new();
+    for row in rows {
+        let Some(mut definition) = feature::definitions::depdb_section_definition(&row.body, None)
+        else {
+            continue;
+        };
+        offset_feature_definition(&mut definition, row.body_offset);
+        ctx.try_reserve_items(&mut definitions, 1, "creo feature row definitions")?;
+        definitions.push(definition);
+    }
     definitions.sort_by_key(|definition| definition.offset);
-    definitions
+    Ok(definitions)
 }
 
 fn feature_geometry_tables(
@@ -2330,21 +2335,31 @@ fn feature_revolution_extents(
 }
 
 fn section_owner_ranges(
+    ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
     feature_rows: &[FeatureRow],
-) -> Vec<(usize, usize)> {
-    let mut ranges = sections
+) -> Result<Vec<(usize, usize)>, CodecError> {
+    let count = sections
         .iter()
         .filter(|section| section.section.name() == "DEPDB_DATA")
-        .map(|section| (section.section.offset(), section.section.end()))
-        .collect::<Vec<_>>();
+        .count()
+        .checked_add(feature_rows.len())
+        .ok_or_else(|| CodecError::malformed("feature owner range count exceeds usize"))?;
+    let mut ranges = Vec::new();
+    ctx.try_reserve_items(&mut ranges, count, "creo section owner ranges")?;
+    ranges.extend(
+        sections
+            .iter()
+            .filter(|section| section.section.name() == "DEPDB_DATA")
+            .map(|section| (section.section.offset(), section.section.end())),
+    );
     ranges.extend(feature_rows.iter().map(|row| {
         (
             row.body_offset,
             row.body_offset.saturating_add(row.body.len()),
         )
     }));
-    ranges
+    Ok(ranges)
 }
 
 fn positional_replay_definitions(
@@ -2850,7 +2865,7 @@ pub(crate) fn scan_bytes<'a>(
         feature_definitions,
         &feature_entity_tables,
     );
-    feature_definitions.extend(feature_row_definitions(&feature_rows));
+    feature_definitions.extend(feature_row_definitions(ctx, &feature_rows)?);
     feature_definitions.sort_by_key(|definition| definition.offset);
     let claimed_definition_owners = feature_definitions
         .iter()
@@ -2863,7 +2878,7 @@ pub(crate) fn scan_bytes<'a>(
     );
     feature_definitions.extend(replay_definitions);
     feature_definitions.sort_by_key(|definition| definition.offset);
-    let section_owner_ranges = section_owner_ranges(&sections, &feature_rows);
+    let section_owner_ranges = section_owner_ranges(ctx, &sections, &feature_rows)?;
     let feature_definitions = feature::definitions::bind_section_owners(
         feature_definitions,
         &feature_operations,
@@ -3242,15 +3257,25 @@ pub(crate) fn notes(scan: &ContainerScan) -> Vec<String> {
 
 #[cfg(test)]
 mod feature_row_definition_tests {
-    use super::{
-        feature_row_definitions, feature_row_has_model_identity, section_owner_ranges,
-        structural_feature_ids, toc_sections,
-    };
+    use super::{feature_row_has_model_identity, structural_feature_ids, toc_sections};
     use crate::curve::CurveTopologyRow;
     use crate::feature;
     use crate::feature::operations::{FeatureOperation, FeatureRecipe, FeatureReferenceName};
     use crate::feature::rows::FeatureRow;
     use crate::surface::SurfaceRow;
+
+    fn feature_row_definitions(rows: &[FeatureRow]) -> Vec<super::FeatureDefinition> {
+        crate::decode::with_test_decode_ctx(|ctx| super::feature_row_definitions(ctx, rows))
+            .expect("feature row definitions admitted")
+    }
+
+    fn section_owner_ranges(
+        sections: &[super::ScannedSection<'_>],
+        rows: &[FeatureRow],
+    ) -> Vec<(usize, usize)> {
+        crate::decode::with_test_decode_ctx(|ctx| super::section_owner_ranges(ctx, sections, rows))
+            .expect("section owner ranges admitted")
+    }
 
     #[test]
     fn surface_and_curve_generators_are_structural_feature_identities() {
