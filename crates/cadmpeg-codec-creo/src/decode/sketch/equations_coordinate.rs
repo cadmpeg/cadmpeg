@@ -853,30 +853,44 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
     let mut remaining = section_remaining_variables(ctx, variables.len())?;
     let mut resolved = BTreeMap::new();
     while let Some(component) = next_section_component(ctx, &mut remaining, &adjacency)? {
-        let component_distances = distances
-            .iter()
-            .copied()
-            .filter(|&(first, second, coordinate, _)| {
-                component.contains(&indices[&(first, coordinate)])
-                    && component.contains(&indices[&(second, coordinate)])
-            })
-            .collect::<Vec<_>>();
+        let mut component_distances = Vec::new();
+        for &(first, second, coordinate, magnitude) in distances {
+            if component.contains(&indices[&(first, coordinate)])
+                && component.contains(&indices[&(second, coordinate)])
+            {
+                ctx.try_reserve_items(
+                    &mut component_distances,
+                    1,
+                    "creo section component distances",
+                )?;
+                component_distances.push((first, second, coordinate, magnitude));
+            }
+        }
         if component_distances.is_empty()
             || component_distances.len() >= usize::BITS as usize
             || (1usize << component_distances.len()) > MAX_SIGNED_BRANCHES
         {
             continue;
         }
-        let component_equations = equations
-            .iter()
-            .filter(|equation| {
-                equation
-                    .terms
-                    .keys()
-                    .any(|variable| component.contains(&indices[variable]))
-            })
-            .cloned()
-            .collect::<Vec<_>>();
+        let mut component_equations = Vec::new();
+        for equation in equations {
+            if equation
+                .terms
+                .keys()
+                .any(|variable| component.contains(&indices[variable]))
+            {
+                ctx.try_reserve_items(
+                    &mut component_equations,
+                    1,
+                    "creo section component equation rows",
+                )?;
+                ctx.charge_collection_items(
+                    equation.terms.len() as u64,
+                    "creo section component equation terms",
+                )?;
+                component_equations.push(equation.clone());
+            }
+        }
         let mut solutions = Vec::new();
         for signs in 0..(1usize << component_distances.len()) {
             let mut branched = component_equations.clone();
@@ -1606,6 +1620,74 @@ mod tests {
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo section remaining variables")
+        );
+    }
+
+    #[test]
+    fn unsigned_component_distances_refuse_before_vector_growth() {
+        let error = with_collection_limit(16, |ctx| {
+            super::solve_unsigned_dimension_coordinates(
+                ctx,
+                &[],
+                &BTreeMap::new(),
+                &[(1, 2, SectionAxis::U, 1.0)],
+            )
+        })
+        .expect_err("the first component distance needs one vector item");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section component distances")
+        );
+    }
+
+    #[test]
+    fn unsigned_component_equation_rows_refuse_before_vector_growth() {
+        let equations = [SectionCoordinateEquation::point_difference(
+            1,
+            2,
+            SectionAxis::U,
+            1.0,
+        )];
+        let error = with_collection_limit(19, |ctx| {
+            super::solve_unsigned_dimension_coordinates(
+                ctx,
+                &equations,
+                &BTreeMap::new(),
+                &[(1, 2, SectionAxis::U, 1.0)],
+            )
+        })
+        .expect_err("the first component equation needs an outer slot");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section component equation rows"),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn unsigned_component_equation_terms_refuse_before_tree_clone() {
+        let equations = [SectionCoordinateEquation::point_difference(
+            1,
+            2,
+            SectionAxis::U,
+            1.0,
+        )];
+        let error = with_collection_limit(21, |ctx| {
+            super::solve_unsigned_dimension_coordinates(
+                ctx,
+                &equations,
+                &BTreeMap::new(),
+                &[(1, 2, SectionAxis::U, 1.0)],
+            )
+        })
+        .expect_err("two BTreeMap terms need admission before cloning");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section component equation terms"),
+            "{error:?}"
         );
     }
 
