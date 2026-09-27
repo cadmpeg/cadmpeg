@@ -4351,10 +4351,11 @@ fn attach_standard_topology(
         return Err(StandardTopologyFailure::NoCurveSupports.into());
     }
     diagnostics.curve_supports = supports.len();
-    let serialized_edge_faces = supports
-        .iter()
-        .map(|support| support.faces)
-        .collect::<Vec<_>>();
+    let serialized_edge_faces = crate::resource::collect_vec(
+        ctx,
+        supports.iter().map(|support| support.faces),
+        "catia_standard_serialized_edge_faces",
+    ).map_err(StandardTopologyError::Resource)?;
     let Some(mut edge_faces) =
         missing_edge::resolve_standard_edge_faces(ctx, spine, &serialized_edge_faces)
             .map_err(StandardTopologyError::Resource)?
@@ -4903,7 +4904,8 @@ fn attach_standard_topology(
             ) {
                 continue;
             }
-            let unfiltered = pairs.clone();
+            let unfiltered = crate::resource::copy_slice(ctx, pairs, "catia_standard_unfiltered_endpoint_pairs")
+                .map_err(StandardTopologyError::Resource)?;
             pairs.retain(|pair| {
                 let Some(start) = ir
                     .model
@@ -4945,14 +4947,12 @@ fn attach_standard_topology(
     }
     if let Some(options) = &mut endpoint_options {
         loop {
-            let seeds = options
-                .iter()
-                .map(|pairs| {
+            let seeds = crate::resource::collect_vec(ctx, options.iter().map(|pairs| {
                     <[[usize; 2]; 1]>::try_from(pairs.as_slice())
                         .ok()
                         .map(|[pair]| pair)
-                })
-                .collect::<Vec<_>>();
+                }), "catia_standard_placement_seeds")
+                .map_err(StandardTopologyError::Resource)?;
             let mut changed = false;
             if let Some(placement_domains) = missing_edge::standard_mesh_placement_endpoint_pairs(
                 ctx,
@@ -4970,7 +4970,8 @@ fn attach_standard_topology(
                     if domain.is_empty() {
                         continue;
                     }
-                    let previous = options[edge].clone();
+                    let previous = crate::resource::copy_slice(ctx, &options[edge], "catia_standard_placement_previous")
+                        .map_err(StandardTopologyError::Resource)?;
                     if options[edge].is_empty() {
                         options[edge] = domain;
                     } else {
@@ -5000,7 +5001,8 @@ fn attach_standard_topology(
                         continue;
                     }
                     domain.retain(|pair| endpoint_pair_on_incident_faces(edge, *pair));
-                    let previous = options[edge].clone();
+                    let previous = crate::resource::copy_slice(ctx, &options[edge], "catia_standard_boundary_previous")
+                        .map_err(StandardTopologyError::Resource)?;
                     if options[edge].is_empty() {
                         options[edge] = domain;
                     } else {
@@ -5025,14 +5027,18 @@ fn attach_standard_topology(
         for (candidates, options) in endpoint_candidates.iter_mut().zip(&mut *options) {
             for point in options.iter().flatten() {
                 if !candidates.contains(point) {
-                    candidates.push(*point);
+                    crate::resource::push(ctx, candidates, *point, "catia_standard_endpoint_candidate_point")
+                        .map_err(StandardTopologyError::Resource)?;
                 }
             }
         }
     }
     let graph_propagated_pairs = graph_propagated_endpoint_pairs
         .as_ref()
-        .and_then(|pairs| pairs.iter().copied().collect::<Option<Vec<_>>>());
+        .map(|pairs| crate::resource::collect_options(ctx, pairs.iter().copied(), "catia_standard_graph_propagated_pairs"))
+        .transpose()
+        .map_err(StandardTopologyError::Resource)?
+        .flatten();
     let native_endpoint_pairs = if let Some(pairs) = graph_propagated_pairs {
         Some(pairs)
     } else {
@@ -5046,14 +5052,11 @@ fn attach_standard_topology(
             let Some(ports) = native_ports.as_ref() else {
                 return Ok(None);
             };
-            let seeds = options
-                .iter()
-                .map(|choices| {
+            let seeds = crate::resource::collect_vec(ctx, options.iter().map(|choices| {
                     <[[usize; 2]; 1]>::try_from(choices.as_slice())
                         .ok()
                         .map(|[pair]| pair)
-                })
-                .collect::<Vec<_>>();
+                }), "catia_standard_native_port_seeds")?;
             let Some(propagated) = missing_edge::propagate_edge_port_points_with_ordered_seeds(
                 ctx,
                 ports,
@@ -5063,7 +5066,7 @@ fn attach_standard_topology(
             else {
                 return Ok(None);
             };
-            if let Some(complete) = propagated.iter().copied().collect::<Option<Vec<_>>>() {
+            if let Some(complete) = crate::resource::collect_options(ctx, propagated.iter().copied(), "catia_standard_native_complete_pairs")? {
                 return Ok(Some(complete));
             }
             // Exhaustive binding is a fallback after exact identity propagation.
@@ -5086,14 +5089,12 @@ fn attach_standard_topology(
     let propagated_endpoint_pairs = if let Some((options, ports)) = endpoint_options.as_ref().zip(
         missing_edge::edge_port_identities(ctx, spine).map_err(StandardTopologyError::Resource)?,
     ) {
-        let pairs = options
-            .iter()
-            .map(|pairs| {
+        let pairs = crate::resource::collect_vec(ctx, options.iter().map(|pairs| {
                 <[[usize; 2]; 1]>::try_from(pairs.as_slice())
                     .ok()
                     .map(|pair| pair[0])
-            })
-            .collect::<Vec<_>>();
+            }), "catia_standard_propagated_seeds")
+            .map_err(StandardTopologyError::Resource)?;
         missing_edge::propagate_edge_port_points_with_ordered_seeds_and_deferred(
             ctx,
             &ports,
@@ -5103,7 +5104,7 @@ fn attach_standard_topology(
         )
         .map_err(StandardTopologyError::Resource)?
         .map(|propagated| {
-            propagated
+            crate::resource::collect_vec(ctx, propagated
                 .into_iter()
                 .zip(options)
                 .map(|(pair, candidates)| {
@@ -5112,9 +5113,10 @@ fn attach_standard_topology(
                             *candidate == *pair || *candidate == [pair[1], pair[0]]
                         })
                     })
-                })
-                .collect::<Vec<_>>()
+                }), "catia_standard_validated_propagated_pairs")
         })
+        .transpose()
+        .map_err(StandardTopologyError::Resource)?
     } else {
         None
     };
@@ -5123,14 +5125,12 @@ fn attach_standard_topology(
             missing_edge::standard_mesh_edge_ports(ctx, spine)
                 .map_err(StandardTopologyError::Resource)?,
         ) {
-        let pairs = options
-            .iter()
-            .map(|pairs| {
+        let pairs = crate::resource::collect_vec(ctx, options.iter().map(|pairs| {
                 <[[usize; 2]; 1]>::try_from(pairs.as_slice())
                     .ok()
                     .map(|pair| pair[0])
-            })
-            .collect::<Vec<_>>();
+            }), "catia_standard_mesh_propagated_seeds")
+            .map_err(StandardTopologyError::Resource)?;
         missing_edge::propagate_edge_port_points_with_ordered_seeds_and_deferred(
             ctx,
             &ports,
@@ -5197,7 +5197,9 @@ fn attach_standard_topology(
         } else {
             missing_edge::unique_mesh_edge_port_candidate_pairs(ctx, &ports, options)
                 .map_err(StandardTopologyError::Resource)?
-                .map(|pairs| pairs.into_iter().map(Some).collect())
+                .map(|pairs| crate::resource::collect_vec(ctx, pairs.into_iter().map(Some), "catia_standard_unique_port_pair_options"))
+                .transpose()
+                .map_err(StandardTopologyError::Resource)?
         };
         if let Some(pairs) = unique_pairs {
             for (domain, pair) in options
@@ -5221,9 +5223,13 @@ fn attach_standard_topology(
         diagnostics.endpoint_domain_choices = options.iter().map(Vec::len).sum();
     }
     let resolved_endpoint_pairs = propagated_endpoint_pairs
-        .and_then(|pairs| pairs.into_iter().collect::<Option<Vec<[usize; 2]>>>());
+        .map(|pairs| crate::resource::collect_options(ctx, pairs, "catia_standard_resolved_endpoint_pairs"))
+        .transpose()
+        .map_err(StandardTopologyError::Resource)?
+        .flatten();
     if let Some(pairs) = &resolved_endpoint_pairs {
-        let pairs = pairs.iter().copied().map(Some).collect::<Vec<_>>();
+        let pairs = crate::resource::collect_vec(ctx, pairs.iter().copied().map(Some), "catia_standard_included_native_pairs")
+            .map_err(StandardTopologyError::Resource)?;
         include_native_endpoint_pairs(ctx, &mut endpoint_candidates, &pairs)
             .map_err(StandardTopologyError::Resource)?;
     }
@@ -5260,22 +5266,25 @@ fn attach_standard_topology(
         let Some(topology) = (!has_open_face_domains).then_some(mesh_topology).flatten() else {
             return Ok(None);
         };
-        let candidate_pairs = resolved_endpoint_pairs.clone().or_else(|| {
-            endpoint_candidates
-                .iter()
-                .map(|candidates| <[usize; 2]>::try_from(candidates.as_slice()).ok())
-                .collect::<Option<Vec<[usize; 2]>>>()
-        });
+        let candidate_pairs = match resolved_endpoint_pairs.as_ref() {
+            Some(pairs) => Some(crate::resource::copy_slice(ctx, pairs, "catia_standard_mesh_resolved_pair_copy")?),
+            None => crate::resource::collect_options(
+                ctx,
+                endpoint_candidates.iter().map(|candidates| <[usize; 2]>::try_from(candidates.as_slice()).ok()),
+                "catia_standard_mesh_candidate_pairs",
+            )?,
+        };
         let endpoint_pairs = if let Some(pairs) = candidate_pairs {
             Some(pairs)
         } else {
             let Some(vertices) = topology.edge_vertices(ctx)? else {
                 return Ok(None);
             };
-            let ports = vertices
-                .into_iter()
-                .map(|[left, right]| Some([u32::try_from(left).ok()?, u32::try_from(right).ok()?]))
-                .collect::<Option<Vec<_>>>();
+            let ports = crate::resource::collect_options(
+                ctx,
+                vertices.into_iter().map(|[left, right]| Some([u32::try_from(left).ok()?, u32::try_from(right).ok()?])),
+                "catia_standard_mesh_vertex_ports",
+            )?;
             let Some(ports) = ports else {
                 return Ok(None);
             };
@@ -5296,17 +5305,14 @@ fn attach_standard_topology(
         Ok(bound) => bound,
         Err(error) => return Err(StandardTopologyError::Resource(error)),
     };
-    let circle_anchors: Vec<Option<[usize; 2]>> = supports
-        .iter()
-        .zip(&endpoint_candidates)
-        .map(|(support, candidates)| match &support.geometry {
+    let circle_anchors = crate::resource::collect_vec(ctx, supports.iter().zip(&endpoint_candidates).map(|(support, candidates)| match &support.geometry {
             crate::families::standard::records::StandardCurveGeometry::Circle { .. } => {
                 <[usize; 2]>::try_from(candidates.as_slice()).ok()
             }
             crate::families::standard::records::StandardCurveGeometry::Line
             | crate::families::standard::records::StandardCurveGeometry::Bspline => None,
-        })
-        .collect();
+        }), "catia_standard_circle_anchors")
+        .map_err(StandardTopologyError::Resource)?;
     let mut mesh_search_exhausted = false;
     let native_fbb_topology = if edge_table_form == EdgeTableForm::FbbOnly && !has_open_face_domains
     {
@@ -5329,7 +5335,8 @@ fn attach_standard_topology(
     let (mut topology, point_assignment) = if let Some(bound) = mesh_bound {
         bound
     } else if let Some(topology) = native_fbb_topology {
-        let point_assignment = (0..ir.model.points.len()).collect();
+        let point_assignment = crate::resource::collect_vec(ctx, 0..ir.model.points.len(), "catia_standard_native_point_assignment")
+            .map_err(StandardTopologyError::Resource)?;
         (topology, point_assignment)
     } else if let Some(topology) = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
         if has_open_face_domains {
@@ -5349,16 +5356,14 @@ fn attach_standard_topology(
     })()
     .map_err(StandardTopologyError::Resource)?
     {
-        let point_assignment = (0..ir.model.points.len()).collect();
+        let point_assignment = crate::resource::collect_vec(ctx, 0..ir.model.points.len(), "catia_standard_fbb_point_assignment")
+            .map_err(StandardTopologyError::Resource)?;
         (topology, point_assignment)
     } else if let Some(bound) = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
         let Some(options) = constrained_endpoint_options.as_ref() else {
             return Ok(None);
         };
-        let edge_identity_evidence = supports
-            .iter()
-            .enumerate()
-            .map(|(edge, _)| {
+        let edge_identity_evidence = crate::resource::collect_vec(ctx, supports.iter().enumerate().map(|(edge, _)| {
                 standard_edge_identity_is_admitted(
                     ordered_endpoint_pairs[edge],
                     native_endpoint_evidence
@@ -5367,12 +5372,11 @@ fn attach_standard_topology(
                     native_supports_by_row[edge].is_some(),
                     !limit_curve_bindings[edge].is_empty(),
                 )
-            })
-            .collect::<Vec<_>>();
-        let edge_direction_evidence = native_endpoint_evidence.as_ref().map_or_else(
-            || supports.iter().map(|_| false).collect::<Vec<_>>(),
-            |pairs| pairs.iter().map(Option::is_some).collect(),
-        );
+            }), "catia_standard_edge_identity_evidence")?;
+        let edge_direction_evidence = match native_endpoint_evidence.as_ref() {
+            Some(pairs) => crate::resource::collect_vec(ctx, pairs.iter().map(Option::is_some), "catia_standard_edge_direction_evidence")?,
+            None => ctx.alloc_filled(supports.len(), false, "catia_standard_missing_direction_evidence")?,
+        };
         let point_on_face = |face: usize, point: usize| {
             if let Some(membership) = face_point_membership.as_ref() {
                 return membership
@@ -5462,26 +5466,21 @@ fn attach_standard_topology(
                     selected_supports,
                     &solver_options,
                 );
-                let face_domain_edges = open_face_domains.as_ref().map_or_else(
-                    || solver_options.iter().map(|_| false).collect::<Vec<_>>(),
-                    |domains| domains.iter().map(|domain| !domain.is_empty()).collect(),
-                );
-                let selected_circle_constraint_edges = selected_supports
-                    .iter()
-                    .enumerate()
-                    .map(|(edge, support)| {
+                let face_domain_edges = match open_face_domains.as_ref() {
+                    Some(domains) => crate::resource::collect_vec(ctx, domains.iter().map(|domain| !domain.is_empty()), "catia_standard_face_domain_edges")?,
+                    None => ctx.alloc_filled(solver_options.len(), false, "catia_standard_missing_face_domain_edges")?,
+                };
+                let selected_circle_constraint_edges = crate::resource::collect_vec(ctx, selected_supports.iter().enumerate().map(|(edge, support)| {
                         matches!(
                             support.geometry,
                             crate::families::standard::records::StandardCurveGeometry::Circle { .. }
                         ) && solver_options[edge].len() > 1
-                    })
-                    .collect::<Vec<_>>();
-                let partial_constraint_edges = selected_circle_constraint_edges
+                    }), "catia_standard_circle_constraint_edges")?;
+                let partial_constraint_edges = crate::resource::collect_vec(ctx, selected_circle_constraint_edges
                     .iter()
                     .zip(line_constraint.flexible_edge_mask())
                     .zip(&face_domain_edges)
-                    .map(|((circle, line), face)| *circle || line || *face)
-                    .collect::<Vec<_>>();
+                    .map(|((circle, line), face)| *circle || line || *face), "catia_standard_partial_constraint_edges")?;
                 let preferred_budget =
                     solve_budget.child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
                 let preferred = mesh_quotient::parse_standard_mesh_candidate_outcome(
@@ -5659,7 +5658,8 @@ fn attach_standard_topology(
     })()
     .map_err(StandardTopologyError::Resource)?
     {
-        let point_assignment = (0..ir.model.points.len()).collect();
+        let point_assignment = crate::resource::collect_vec(ctx, 0..ir.model.points.len(), "catia_standard_endpoint_point_assignment")
+            .map_err(StandardTopologyError::Resource)?;
         (topology, point_assignment)
     } else if let Some(topology) = (if has_open_face_domains {
         Ok(None)
@@ -5668,7 +5668,8 @@ fn attach_standard_topology(
     })
     .map_err(StandardTopologyError::Resource)?
     {
-        let point_assignment = (0..ir.model.points.len()).collect();
+        let point_assignment = crate::resource::collect_vec(ctx, 0..ir.model.points.len(), "catia_standard_motif_point_assignment")
+            .map_err(StandardTopologyError::Resource)?;
         (topology, point_assignment)
     } else {
         return Err((if mesh_search_exhausted || work_budget.exhausted() {
@@ -5781,7 +5782,7 @@ fn validate_standard_topology(
     {
         return Ok(None);
     }
-    let face_groups = vec![topology.face_count()];
+    let face_groups = [topology.face_count()];
     if topology
         .orient_solid_body_cycles(ctx, &face_groups)?
         .is_none()
@@ -5803,15 +5804,13 @@ fn validate_standard_topology(
     }) {
         return Ok(None);
     }
-    let Some(body_arena_indices) = (0..body_kinds.len())
-        .map(|body_index| {
+    let Some(body_arena_indices) = crate::resource::collect_options(ctx, (0..body_kinds.len()).map(|body_index| {
             let id = BodyId::compose(
                 &cadmpeg_ir::identity_namespace!("catia", "standard", "body"),
                 body_index,
             );
             ir.model.bodies.iter().position(|body| body.id == id)
-        })
-        .collect::<Option<Vec<_>>>()
+        }), "catia_standard_body_arena_indices")?
     else {
         return Ok(None);
     };
