@@ -7,6 +7,30 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
+fn attachment_owner_lookup_refuses_on_collection_limit() {
+    let property = crate::native::PropertyRecord {
+        id: "property".into(),
+        owner: "object".into(),
+        name: "AttachmentSupport".into(),
+        type_name: "App::PropertyLinkSubList".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Transient,
+        order: 0,
+        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
+            .expect("valid XML span"),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within input policy");
+    assert!(matches!(super::transfer(&ctx, &[], &[property]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD attachment owner lookup"));
+}
+
+#[test]
 fn retains_support_attachment_and_distinct_offset_frame() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2">
