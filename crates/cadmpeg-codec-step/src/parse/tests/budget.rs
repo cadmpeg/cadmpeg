@@ -84,6 +84,11 @@ parser_vector_limit_test!(
     "step_parse_section_ids"
 );
 parser_vector_limit_test!(
+    record_table_refuses_collection_limit,
+    VECTOR_SOURCE,
+    "step_parse_record_table_items"
+);
+parser_vector_limit_test!(
     data_section_vector_refuses_collection_limit,
     VECTOR_SOURCE,
     "step_parse_data_sections"
@@ -97,6 +102,11 @@ parser_vector_limit_test!(
     anchor_vector_refuses_collection_limit,
     ANCHOR_VECTOR_SOURCE,
     "step_parse_anchors"
+);
+parser_vector_limit_test!(
+    anchor_binding_map_refuses_collection_limit,
+    ANCHOR_VECTOR_SOURCE,
+    "step_anchor_binding_items"
 );
 parser_vector_limit_test!(
     reference_entry_vector_refuses_collection_limit,
