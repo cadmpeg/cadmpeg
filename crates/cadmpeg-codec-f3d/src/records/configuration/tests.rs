@@ -6,6 +6,51 @@ use super::{
 };
 use serde_json::{json, Value};
 
+fn scalar_text_refusal(
+    scalar: &super::ConfigurationScalar,
+    retained_bytes: u64,
+) -> cadmpeg_core::CodecError {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = retained_bytes;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test decode context");
+    scalar
+        .text_charged(&ctx)
+        .expect_err("configuration scalar text must exceed retained budget")
+}
+
+#[test]
+fn configuration_string_scalar_refuses_retained_limit() {
+    let error = scalar_text_refusal(&super::ConfigurationScalar::String("abc".into()), 2);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "project F3D configuration scalar text"));
+}
+
+#[test]
+fn configuration_number_scalar_refuses_retained_limit() {
+    let error = scalar_text_refusal(
+        &super::ConfigurationScalar::Number(serde_json::Number::from(123)),
+        2,
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "project F3D configuration scalar text"));
+}
+
+#[test]
+fn configuration_bool_scalar_refuses_retained_limit() {
+    let error = scalar_text_refusal(&super::ConfigurationScalar::Bool(true), 3);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "project F3D configuration scalar text"));
+}
+
+#[test]
+fn configuration_null_scalar_refuses_retained_limit() {
+    let error = scalar_text_refusal(&super::ConfigurationScalar::Null, 3);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "project F3D configuration scalar text"));
+}
+
 fn wire(kind: &str, order: &[&str], payload: Value) -> Value {
     let name = if kind == "rule" {
         "entry.dsgcfgrule"

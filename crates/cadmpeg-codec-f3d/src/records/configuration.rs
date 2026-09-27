@@ -81,6 +81,42 @@ impl ConfigurationScalar {
         }
     }
 
+    pub(crate) fn text_charged(&self, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
+        let operation = "project F3D configuration scalar text";
+        struct ScalarText<'a>(&'a ConfigurationScalar);
+        impl std::fmt::Display for ScalarText<'_> {
+            fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self.0 {
+                    ConfigurationScalar::Null => formatter.write_str("null"),
+                    ConfigurationScalar::Bool(value) => std::fmt::Display::fmt(value, formatter),
+                    ConfigurationScalar::Number(value) => std::fmt::Display::fmt(value, formatter),
+                    ConfigurationScalar::String(value) => formatter.write_str(value),
+                }
+            }
+        }
+        struct Length(usize);
+        impl std::fmt::Write for Length {
+            fn write_str(&mut self, value: &str) -> std::fmt::Result {
+                self.0 = self.0.checked_add(value.len()).ok_or(std::fmt::Error)?;
+                Ok(())
+            }
+        }
+        let display = ScalarText(self);
+        let args = format_args!("{display}");
+        let mut length = Length(0);
+        std::fmt::write(&mut length, args)
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+        let bytes = u64::try_from(length.0)
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+        ctx.charge_retained(bytes, operation)?;
+        let mut text = String::new();
+        text.try_reserve(length.0)
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
+        std::fmt::write(&mut text, args)
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
+        Ok(text)
+    }
+
     fn value(&self) -> Value {
         match self {
             Self::Null => Value::Null,
