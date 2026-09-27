@@ -21,7 +21,7 @@ use crate::ids;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::decode_text;
+use super::decode_text_charged;
 use super::geometry::GeometryData;
 use super::topology::TopologyData;
 use super::StageOutcome;
@@ -67,34 +67,38 @@ pub(super) fn decode(
 
     let mut presentation_semantics = BTreeMap::<u64, Vec<u64>>::new();
     let graph_limit = super::record_graph_limit(ctx);
-    let characteristic_values = characteristic_values(exchange, geometry, &mut losses, graph_limit);
+    let characteristic_values = characteristic_values(exchange, geometry, &mut losses, graph_limit, ctx)?;
     for (id, record) in exchange.entities("DATUM") {
         let identification = named_parameter(record, "DATUM", 0)
-            .and_then(|value| {
-                decode_text(
+            .map(|value| {
+                decode_text_charged(
                     exchange,
                     value,
                     &mut losses,
                     id,
                     "datum identification",
                     StepLossCode::MetadataStringInvalid,
+                    ctx,
                 )
             })
+            .transpose()?
+            .flatten()
             .unwrap_or_else(|| format!("#{id}"));
         annotations.push(
             ctx,
             ir,
             id,
-            shape_aspect_parameter(record, 0).and_then(|value| {
-                decode_text(
+            shape_aspect_parameter(record, 0).map(|value| {
+                decode_text_charged(
                     exchange,
                     value,
                     &mut losses,
                     id,
                     "datum name",
                     StepLossCode::MetadataStringInvalid,
+                    ctx,
                 )
-            }),
+            }).transpose()?.flatten(),
             targets([id]),
             None,
             PmiDefinition::Datum { identification },
@@ -107,43 +111,50 @@ pub(super) fn decode(
             continue;
         };
         let form = shape_aspect_parameter(record, 1)
-            .and_then(|value| {
-                decode_text(
+            .map(|value| {
+                decode_text_charged(
                     exchange,
                     value,
                     &mut losses,
                     id,
                     "datum target form",
                     StepLossCode::MetadataStringInvalid,
+                    ctx,
                 )
             })
+            .transpose()?
+            .flatten()
             .unwrap_or_default();
         let identification = datum_target_identification_parameter(record)
-            .and_then(|value| {
-                decode_text(
+            .map(|value| {
+                decode_text_charged(
                     exchange,
                     value,
                     &mut losses,
                     id,
                     "datum target identification",
                     StepLossCode::MetadataStringInvalid,
+                    ctx,
                 )
             })
+            .transpose()?
+            .flatten()
             .unwrap_or_else(|| format!("#{id}"));
         annotations.push(
             ctx,
             ir,
             id,
-            shape_aspect_parameter(record, 0).and_then(|value| {
-                decode_text(
+            shape_aspect_parameter(record, 0).map(|value| {
+                decode_text_charged(
                     exchange,
                     value,
                     &mut losses,
                     id,
                     "datum target name",
                     StepLossCode::MetadataStringInvalid,
+                    ctx,
                 )
-            }),
+            }).transpose()?.flatten(),
             targets([id]),
             None,
             PmiDefinition::DatumTarget {
@@ -194,16 +205,17 @@ pub(super) fn decode(
             ctx,
             ir,
             id,
-            shape_aspect_parameter(record, 0).and_then(|value| {
-                decode_text(
+            shape_aspect_parameter(record, 0).map(|value| {
+                decode_text_charged(
                     exchange,
                     value,
                     &mut losses,
                     id,
                     "datum system name",
                     StepLossCode::MetadataStringInvalid,
+                    ctx,
                 )
-            }),
+            }).transpose()?.flatten(),
             targets(
                 record
                     .parameters()
@@ -227,38 +239,45 @@ pub(super) fn decode(
         let Some((dimension_name, mut kind)) = dimension_descriptor(record) else {
             continue;
         };
-        let name = record
-            .partials
-            .iter()
-            .flat_map(|partial| &partial.parameters)
-            .find_map(|value| {
-                decode_text(
-                    exchange,
-                    value,
-                    &mut losses,
-                    id,
-                    "dimension name",
-                    StepLossCode::MetadataStringInvalid,
-                )
-            });
+        let mut name = None;
+        for value in record.partials.iter().flat_map(|partial| &partial.parameters) {
+            if let Some(text) = decode_text_charged(
+                exchange,
+                value,
+                &mut losses,
+                id,
+                "dimension name",
+                StepLossCode::MetadataStringInvalid,
+                ctx,
+            )? {
+                name = Some(text);
+                break;
+            }
+        }
         if matches!(kind, DimensionKind::Size) {
             let category = if dimension_name.starts_with("DIMENSIONAL_SIZE_WITH_DATUM_FEATURE") {
-                record
+                let mut category = None;
+                for value in record
                     .partials
                     .iter()
                     .find(|partial| partial.name == dimension_name)
                     .into_iter()
                     .flat_map(|partial| partial.parameters.iter().rev())
-                    .find_map(|value| {
-                        decode_text(
-                            exchange,
-                            value,
-                            &mut losses,
-                            id,
-                            "dimension category",
-                            StepLossCode::MetadataStringInvalid,
-                        )
-                    })
+                {
+                    if let Some(text) = decode_text_charged(
+                        exchange,
+                        value,
+                        &mut losses,
+                        id,
+                        "dimension category",
+                        StepLossCode::MetadataStringInvalid,
+                        ctx,
+                    )? {
+                        category = Some(text);
+                        break;
+                    }
+                }
+                category
             } else {
                 name.clone()
             };
@@ -306,66 +325,78 @@ pub(super) fn decode(
         });
         let fit = refs.iter().find_map(|reference| {
             let record = exchange.records().get(reference)?;
-            (record.simple_name() == Some("LIMITS_AND_FITS")).then(|| {
-                (
+            (record.simple_name() == Some("LIMITS_AND_FITS")).then(|| -> Result<_, CodecError> {
+                Ok((
                     *reference,
                     LimitsAndFits {
-                        form_variance: record
-                            .parameter(0)
-                            .and_then(|value| {
-                                decode_text(
-                                    exchange,
-                                    value,
-                                    &mut losses,
-                                    *reference,
-                                    "limits-and-fits form variance",
-                                    StepLossCode::MetadataStringInvalid,
-                                )
-                            })
-                            .unwrap_or_default(),
-                        zone_variance: record
-                            .parameter(1)
-                            .and_then(|value| {
-                                decode_text(
-                                    exchange,
-                                    value,
-                                    &mut losses,
-                                    *reference,
-                                    "limits-and-fits zone variance",
-                                    StepLossCode::MetadataStringInvalid,
-                                )
-                            })
-                            .unwrap_or_default(),
-                        grade: record
-                            .parameter(2)
-                            .and_then(|value| {
-                                decode_text(
-                                    exchange,
-                                    value,
-                                    &mut losses,
-                                    *reference,
-                                    "limits-and-fits grade",
-                                    StepLossCode::MetadataStringInvalid,
-                                )
-                            })
-                            .unwrap_or_default(),
-                        source: record
-                            .parameter(3)
-                            .and_then(|value| {
-                                decode_text(
-                                    exchange,
-                                    value,
-                                    &mut losses,
-                                    *reference,
-                                    "limits-and-fits source",
-                                    StepLossCode::MetadataStringInvalid,
-                                )
-                            })
-                            .unwrap_or_default(),
+                    form_variance: record
+                        .parameter(0)
+                        .map(|value| {
+                            decode_text_charged(
+                                exchange,
+                                value,
+                                &mut losses,
+                                *reference,
+                                "limits-and-fits form variance",
+                                StepLossCode::MetadataStringInvalid,
+                                ctx,
+                            )
+                        })
+                        .transpose()?
+                        .flatten()
+                        .unwrap_or_default(),
+                    zone_variance: record
+                        .parameter(1)
+                        .map(|value| {
+                            decode_text_charged(
+                                exchange,
+                                value,
+                                &mut losses,
+                                *reference,
+                                "limits-and-fits zone variance",
+                                StepLossCode::MetadataStringInvalid,
+                                ctx,
+                            )
+                        })
+                        .transpose()?
+                        .flatten()
+                        .unwrap_or_default(),
+                    grade: record
+                        .parameter(2)
+                        .map(|value| {
+                            decode_text_charged(
+                                exchange,
+                                value,
+                                &mut losses,
+                                *reference,
+                                "limits-and-fits grade",
+                                StepLossCode::MetadataStringInvalid,
+                                ctx,
+                            )
+                        })
+                        .transpose()?
+                        .flatten()
+                        .unwrap_or_default(),
+                    source: record
+                        .parameter(3)
+                        .map(|value| {
+                            decode_text_charged(
+                                exchange,
+                                value,
+                                &mut losses,
+                                *reference,
+                                "limits-and-fits source",
+                                StepLossCode::MetadataStringInvalid,
+                                ctx,
+                            )
+                        })
+                        .transpose()?
+                        .flatten()
+                        .unwrap_or_default(),
                     },
-                )
+                ))
             })
-        });
+        }).transpose()?;
         if let (Some(index), Some(limits)) = (dimension, limits) {
             let mut measurements = measure_context(geometry, id, &mut losses, graph_limit);
             let lower = limits
@@ -525,16 +556,19 @@ pub(super) fn decode(
             id,
             named_parameter(record, "GEOMETRIC_TOLERANCE", 0)
                 .or_else(|| record.parameter(0))
-                .and_then(|value| {
-                    decode_text(
+                .map(|value| {
+                    decode_text_charged(
                         exchange,
                         value,
                         &mut losses,
                         id,
                         "geometric tolerance name",
                         StepLossCode::MetadataStringInvalid,
+                        ctx,
                     )
-                }),
+                })
+                .transpose()?
+                .flatten(),
             targets(refs.iter().copied().filter(|id| base_aspects.contains(id))),
             None,
             PmiDefinition::GeometricTolerance {
@@ -604,7 +638,8 @@ pub(super) fn decode(
             &mut text_records,
             &mut losses,
             0,
-        );
+            ctx,
+        )?;
         let parameters = record_values(record).collect::<Vec<_>>();
         // Placement identity is the carrier key; the transform value cannot
         // make two source carriers one semantic carrier.
@@ -653,16 +688,19 @@ pub(super) fn decode(
             named_parameter(record, name, 0)
                 .or_else(|| named_parameter(record, "REPRESENTATION_ITEM", 0))
                 .or_else(|| record.parameter(0))
-                .and_then(|value| {
-                    decode_text(
+                .map(|value| {
+                    decode_text_charged(
                         exchange,
                         value,
                         &mut losses,
                         id,
                         "presentation annotation name",
                         StepLossCode::MetadataStringInvalid,
+                        ctx,
                     )
-                }),
+                })
+                .transpose()?
+                .flatten(),
             Vec::new(),
             hidden_presentation_annotations
                 .contains(&id)
@@ -1245,19 +1283,27 @@ fn find_annotation_text(
     used: &mut BTreeSet<u64>,
     losses: &mut Vec<LossNote>,
     depth: usize,
-) -> Option<String> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<String>, CodecError> {
     let mut candidates = BTreeMap::new();
-    collect_annotation_text(id, exchange, visited, &mut candidates, losses, depth);
-    let (text_id, text) = candidates.pop_first()?;
+    collect_annotation_text(id, exchange, visited, &mut candidates, losses, depth, ctx)?;
+    let Some((text_id, text)) = candidates.pop_first() else {
+        return Ok(None);
+    };
     if candidates.is_empty() {
+        if !used.contains(&text_id) {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "step_pmi_annotation_text_used")?;
+            }
+        }
         used.insert(text_id);
-        Some(text)
+        Ok(Some(text))
     } else {
         let count = candidates.len() + 1;
         losses.push(StepLossCode::PresentationAnnotationTextUnordered.note(format!(
                     "presentation annotation #{id} has {count} reachable text carriers with no ordered composition"
                 )));
-        None
+        Ok(None)
     }
 }
 
@@ -1268,30 +1314,43 @@ fn collect_annotation_text(
     candidates: &mut BTreeMap<u64, String>,
     losses: &mut Vec<LossNote>,
     depth: usize,
-) {
-    if depth >= 256 || !visited.insert(id) {
-        return;
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
+    if depth >= 256 || visited.contains(&id) {
+        return Ok(());
     }
+    let _depth_guard = ctx
+        .map(|ctx| ctx.enter_nested("step_pmi_annotation_text_walk"))
+        .transpose()?;
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, "step_pmi_annotation_text_visited")?;
+    }
+    visited.insert(id);
     let Some(record) = exchange.records().get(&id) else {
-        return;
+        return Ok(());
     };
     if let Some(value) = named_parameter(record, "TEXT_LITERAL", 0)
         .or_else(|| named_parameter(record, "TEXT_LITERAL_WITH_ASSOCIATED_CURVES", 0))
     {
-        if let Some(text) = decode_text(
+        if let Some(text) = decode_text_charged(
             exchange,
             value,
             losses,
             id,
             "PMI annotation text",
             StepLossCode::MetadataStringInvalid,
-        ) {
+            ctx,
+        )? {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "step_pmi_annotation_text_candidates")?;
+            }
             candidates.insert(id, text);
         }
     }
     for reference in record_values(record).flat_map(references) {
-        collect_annotation_text(reference, exchange, visited, candidates, losses, depth + 1);
+        collect_annotation_text(reference, exchange, visited, candidates, losses, depth + 1, ctx)?;
     }
+    Ok(())
 }
 
 fn collect_placement_candidates(
@@ -1598,7 +1657,8 @@ fn characteristic_values(
     geometry: &GeometryData,
     losses: &mut Vec<LossNote>,
     graph_limit: usize,
-) -> BTreeMap<u64, PmiValue> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<BTreeMap<u64, PmiValue>, CodecError> {
     let mut result = BTreeMap::<u64, PmiValue>::new();
     for (id, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
         let mut measurements = measure_context(geometry, id, losses, graph_limit);
@@ -1642,24 +1702,26 @@ fn characteristic_values(
                     .and_then(ValueExt::list)
             });
         let values = if let Some(items) = representation_items {
-            characteristic_measure_values(items.iter(), exchange, &mut measurements)
+            characteristic_measure_values(items.iter(), exchange, &mut measurements, ctx)?
         } else {
-            characteristic_measure_values(parameters.iter().copied(), exchange, &mut measurements)
+            characteristic_measure_values(parameters.iter().copied(), exchange, &mut measurements, ctx)?
         };
-        let named_nominals = values
-            .iter()
-            .filter(|(name, _)| {
-                name.as_deref()
-                    .is_some_and(|name| name.eq_ignore_ascii_case("nominal value"))
-            })
-            .map(|(_, value)| *value)
-            .collect::<Vec<_>>();
-        let selected = if named_nominals.len() == 1 {
-            named_nominals.first().copied()
-        } else if named_nominals.len() > 1 {
+        let mut named_count = 0usize;
+        let mut named_first = None;
+        for (name, value) in &values {
+            if name.as_deref().is_some_and(|name| name.eq_ignore_ascii_case("nominal value")) {
+                named_count += 1;
+                if named_count == 1 {
+                    named_first = Some(*value);
+                }
+            }
+        }
+        let selected = if named_count == 1 {
+            named_first
+        } else if named_count > 1 {
             losses.push(StepLossCode::DimensionalNominalAmbiguous.note(format!(
-                    "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION #{id} has {} nominal value measures; the nominal is ambiguous",
-                    named_nominals.len()
+                "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION #{id} has {} nominal value measures; the nominal is ambiguous",
+                named_count
                 )));
             None
         } else if values.len() == 1 {
@@ -1674,17 +1736,23 @@ fn characteristic_values(
             None
         };
         if let Some(selected) = selected {
+            if !result.contains_key(&characteristic) {
+                if let Some(ctx) = ctx {
+                    ctx.charge_collection_items(1, "step_pmi_characteristic_values")?;
+                }
+            }
             result.insert(characteristic, selected);
         }
     }
-    result
+    Ok(result)
 }
 
 fn characteristic_measure_values<'a>(
     parameters: impl IntoIterator<Item = &'a Value>,
     exchange: &Exchange,
     measurements: &mut MeasureContext<'_>,
-) -> Vec<(Option<String>, PmiValue)> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Vec<(Option<String>, PmiValue)>, CodecError> {
     let parameters = parameters.into_iter().collect::<Vec<_>>();
     let mut measure_ids = BTreeSet::new();
     for parameter in &parameters {
@@ -1697,25 +1765,40 @@ fn characteristic_measure_values<'a>(
             &mut measure_ids,
         );
     }
-    let mut values = measure_ids
-        .into_iter()
-        .filter_map(|id| {
-            let value = measure(&Value::Reference(id), exchange, measurements)?;
+    let mut values = Vec::new();
+    for id in measure_ids {
+        if let Some(value) = measure(&Value::Reference(id), exchange, measurements) {
             let name = exchange
                 .records()
                 .get(&id)
-                .and_then(|record| measure_item_name(id, record, exchange, measurements.losses));
-            Some((name, value))
-        })
-        .collect::<Vec<_>>();
-    if values.is_empty() {
-        values.extend(
-            parameters.iter().filter_map(|value| {
-                measure(value, exchange, measurements).map(|value| (None, value))
-            }),
-        );
+                .map(|record| measure_item_name(id, record, exchange, measurements.losses, ctx))
+                .transpose()?
+                .flatten();
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "step_pmi_measure_values")?;
+            }
+            values.try_reserve(1).map_err(|_| match ctx {
+                Some(ctx) => ctx.refuse_codec_limit("step_pmi_measure_values", 0, 1),
+                None => cadmpeg_core::decode::refuse_local_limit("step_pmi_measure_values", 0, 1),
+            })?;
+            values.push((name, value));
+        }
     }
-    values
+    if values.is_empty() {
+        for parameter in &parameters {
+            if let Some(value) = measure(parameter, exchange, measurements) {
+                if let Some(ctx) = ctx {
+                    ctx.charge_collection_items(1, "step_pmi_measure_values")?;
+                }
+                values.try_reserve(1).map_err(|_| match ctx {
+                    Some(ctx) => ctx.refuse_codec_limit("step_pmi_measure_values", 0, 1),
+                    None => cadmpeg_core::decode::refuse_local_limit("step_pmi_measure_values", 0, 1),
+                })?;
+                values.push((None, value));
+            }
+        }
+    }
+    Ok(values)
 }
 
 fn collect_measure_ids(
@@ -1771,8 +1854,9 @@ fn measure_item_name(
     record: &RawRecord,
     exchange: &Exchange,
     losses: &mut Vec<LossNote>,
-) -> Option<String> {
-    record
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<String>, CodecError> {
+    Ok(record
         .partials
         .iter()
         .find(|partial| partial.name == "REPRESENTATION_ITEM")
@@ -1784,17 +1868,20 @@ fn measure_item_name(
                 .find(|partial| partial.name == "MEASURE_REPRESENTATION_ITEM")
                 .and_then(|partial| partial.parameters.first())
         })
-        .and_then(|value| {
-            decode_text(
+        .map(|value| {
+            decode_text_charged(
                 exchange,
                 value,
                 losses,
                 id,
                 "measure item name",
                 StepLossCode::MetadataStringInvalid,
+                ctx,
             )
         })
-        .filter(|name| !name.is_empty())
+        .transpose()?
+        .flatten()
+        .filter(|name| !name.is_empty()))
 }
 
 fn measure_context<'a>(

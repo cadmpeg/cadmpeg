@@ -18,6 +18,8 @@ use crate::loss::StepLossCode;
 use crate::test_support::exchange::decode_inline;
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
+mod string_limits;
+
 #[test]
 pub(crate) fn decode_transfers_ap242_semantic_pmi() {
     use cadmpeg_ir::pmi::{DimensionTolerance, GeometricToleranceKind, PmiDefinition, PmiQuantity};
