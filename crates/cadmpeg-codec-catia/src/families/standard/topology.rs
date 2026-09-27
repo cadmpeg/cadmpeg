@@ -645,32 +645,47 @@ pub(super) fn reconstruct_incidence_with_edge_classes_and_mesh(
             crate::resource::push(ctx, face, edge, "catia_standard_face_edge_entries")?;
         }
     }
-    let mut faces = Vec::with_capacity(face_count);
+    let mut faces = Vec::new();
     for incident in face_edges {
         let Some(cycles) = incidence_cycles(ctx, &incident, edge_points)? else {
             return Ok(None);
         };
-        faces.push(FaceTopology {
-            boundaries: cycles
-                .into_iter()
-                .map(|cycle| Boundary {
-                    coedges: cycle.map(|(edge_row, reversed)| {
-                        let [stored_start, stored_end] = edge_points[edge_row];
-                        let [start_vertex, end_vertex] = if reversed {
-                            [stored_end, stored_start]
-                        } else {
-                            [stored_start, stored_end]
-                        };
-                        CoedgeUse {
-                            edge_row,
-                            reversed,
-                            start_vertex,
-                            end_vertex,
-                        }
-                    }),
-                })
-                .collect(),
-        });
+        let mut boundaries = Vec::new();
+        for cycle in cycles {
+            let mut coedges = Vec::new();
+            for (edge_row, reversed) in cycle {
+                let [stored_start, stored_end] = edge_points[edge_row];
+                let [start_vertex, end_vertex] = if reversed {
+                    [stored_end, stored_start]
+                } else {
+                    [stored_start, stored_end]
+                };
+                crate::resource::push(
+                    ctx,
+                    &mut coedges,
+                    CoedgeUse {
+                        edge_row,
+                        reversed,
+                        start_vertex,
+                        end_vertex,
+                    },
+                    "catia_standard_incidence_coedges",
+                )?;
+            }
+            let coedges = NonEmptyCoedges::try_from(coedges).map_err(CodecError::malformed)?;
+            crate::resource::push(
+                ctx,
+                &mut boundaries,
+                Boundary { coedges },
+                "catia_standard_incidence_boundaries",
+            )?;
+        }
+        crate::resource::push(
+            ctx,
+            &mut faces,
+            FaceTopology { boundaries },
+            "catia_standard_incidence_faces",
+        )?;
     }
     if orient_face_cycles(ctx, &mut faces)?.is_none() {
         return Ok(None);
