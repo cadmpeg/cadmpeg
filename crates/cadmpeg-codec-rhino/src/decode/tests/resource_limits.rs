@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::disallowed_methods)]
 
+use super::super::source_association;
 use super::{
     commit_curve_tree, hatch_loop_ids, hatch_source_links, object_record, one_child_compound,
     scan_with_objects, stage_curve_tree, test_association, with_collection_limit,
@@ -205,4 +206,85 @@ fn class_outcome_label_refuses_retained_limit() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
         if refusal.operation == "Rhino class outcome label")
     );
+}
+
+#[test]
+fn source_association_refuses_retained_copy_and_path_limits() {
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
+    let identity = scan.objects[0].identity().expect("source identity");
+    let refusal = with_transaction_limits(&scan, 1, Some(35), |expand| {
+        source_association(expand.ctx(), identity, &[], None, None)
+            .expect_err("UUID text exceeds 35 retained bytes")
+    });
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(ref limit)
+            if limit.operation == "Rhino source association object ID"
+    ));
+
+    let mut named = identity.clone();
+    named.name = "part".to_string();
+    let refusal = with_transaction_limits(&scan, 1, Some(36), |expand| {
+        source_association(expand.ctx(), &named, &[], None, None)
+            .expect_err("name exceeds UUID-only retained budget")
+    });
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(ref limit)
+            if limit.operation == "Rhino source association name"
+    ));
+
+    let mut layered = identity.clone();
+    layered.layer = Some(crate::objects::LayerRef {
+        id: None,
+        name: "layer".to_string(),
+    });
+    let refusal = with_transaction_limits(&scan, 1, Some(36), |expand| {
+        source_association(expand.ctx(), &layered, &[], None, None)
+            .expect_err("layer name exceeds UUID-only retained budget")
+    });
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(ref limit)
+            if limit.operation == "Rhino source association layer name"
+    ));
+    layered.layer.as_mut().expect("fixture layer").id = Some(identity.object_id);
+    let refusal = with_transaction_limits(&scan, 1, Some(36), |expand| {
+        source_association(expand.ctx(), &layered, &[], None, None)
+            .expect_err("layer UUID exceeds object UUID-only retained budget")
+    });
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(ref limit)
+            if limit.operation == "Rhino source association layer ID"
+    ));
+
+    let path = vec!["instance".to_string()];
+    let refusal = with_transaction_limits(&scan, 0, None, |expand| {
+        source_association(expand.ctx(), identity, &path, None, None)
+            .expect_err("one instance path exceeds zero collection items")
+    });
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(ref limit)
+            if limit.operation == "Rhino source association instance path"
+    ));
+    let refusal = with_transaction_limits(&scan, 1, Some(36), |expand| {
+        source_association(expand.ctx(), identity, &path, None, None)
+            .expect_err("instance ID exceeds object UUID-only retained budget")
+    });
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(ref limit)
+            if limit.operation == "Rhino source association instance ID"
+    ));
+    let association = with_transaction_limits(&scan, 1, None, |expand| {
+        source_association(expand.ctx(), identity, &path, None, None)
+            .expect("service profile admits source association")
+    });
+    assert_eq!(
+        association.object_id.as_str(),
+        identity.object_id.to_string()
+    );
+    assert_eq!(association.instance_path, path);
 }
