@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transfer of application-owned mesh and point payloads.
 
-use cadmpeg_core::decode::{BoundedCount, View};
+use cadmpeg_core::decode::{
+    BoundedCount, DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit, View,
+};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FinitePoint3;
@@ -21,6 +23,7 @@ const MESH_MAGIC: u32 = mesh_hdr::MAGIC_VALUE;
 const MESH_VERSION: u32 = mesh_hdr::VERSION_VALUE;
 
 pub(crate) fn transfer(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
@@ -62,7 +65,7 @@ pub(crate) fn transfer(
         if geometry_kind == GeometryKind::Mesh {
             ir.model
                 .tessellations
-                .push(parse_mesh(property, &entry.data)?);
+                .push(parse_mesh(ctx, property, &entry.data)?);
             transferred = true;
         } else if geometry_kind == GeometryKind::Points {
             ir.model.points.extend(parse_points(property, &entry.data)?);
@@ -129,7 +132,11 @@ fn association(property: &PropertyRecord) -> Result<SourceObjectAssociation, Cod
     })
 }
 
-fn parse_mesh(property: &PropertyRecord, bytes: &[u8]) -> Result<Tessellation, CodecError> {
+fn parse_mesh(
+    ctx: &DecodeContext<'_>,
+    property: &PropertyRecord,
+    bytes: &[u8],
+) -> Result<Tessellation, CodecError> {
     let mut reader = Reader::new(bytes);
     let byte_order = reader.mesh_byte_order(&property.id)?;
     reader.skip(mesh_hdr::LEN - mesh_hdr::INFORMATION)?;
@@ -145,7 +152,18 @@ fn parse_mesh(property: &PropertyRecord, bytes: &[u8]) -> Result<Tessellation, C
         .ok_or_else(|| {
             CodecError::Malformed("mesh facet count exceeds remaining payload".into())
         })?;
-    let mut triangles = Vec::with_capacity(facet_capacity);
+    ctx.charge_collection_items(facet_capacity as u64, "FreeCAD mesh facets")?;
+    let mut triangles = Vec::new();
+    triangles.try_reserve_exact(facet_capacity).map_err(|_| {
+        CodecError::ResourceLimit(ResourceLimit {
+            dimension: ResourceDimension::CollectionItems,
+            reason: ResourceFailure::AllocationFailed,
+            limit: ctx.policy().limits.max_collection_items,
+            used: 0,
+            additional: facet_capacity as u64,
+            operation: "FreeCAD mesh facets",
+        })
+    })?;
     for _ in 0..facet_count {
         let triangle = [
             reader.index(byte_order, point_count, "mesh facet point")?,
@@ -387,12 +405,47 @@ impl<'a> Reader<'a> {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::{ByteOrder, Reader};
+    use super::{parse_mesh, ByteOrder, Reader};
     use crate::layout::mesh_kernel_side_entry_header as mesh_hdr;
+    use crate::native::{PropertyBody, PropertyFamily, PropertyRecord, RetainedXml};
     use crate::test_support::test_archive::archive_entries;
     use crate::FcstdCodec;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::{Codec, DecodeOptions};
     use std::io::Cursor;
+
+    #[test]
+    fn mesh_facet_collection_limit_refuses_before_triangle_allocation() {
+        let mut mesh = Vec::new();
+        mesh.extend_from_slice(&0xa0b0_c0d0_u32.to_le_bytes());
+        mesh.extend_from_slice(&0x0001_0000_u32.to_le_bytes());
+        mesh.extend_from_slice(&[0; mesh_hdr::LEN - mesh_hdr::INFORMATION]);
+        mesh.extend_from_slice(&0_u32.to_le_bytes());
+        mesh.extend_from_slice(&1_u32.to_le_bytes());
+        mesh.extend_from_slice(&[0; 24]);
+        let property = PropertyRecord {
+            id: "fcstd:native:property#Mesh".to_owned(),
+            owner: "fcstd:native:object#Mesh".to_owned(),
+            name: "Mesh".to_owned(),
+            type_name: "Mesh::PropertyMeshKernel".to_owned(),
+            family: PropertyFamily::Unknown,
+            status: None,
+            body: PropertyBody::Transient,
+            order: 0,
+            xml: RetainedXml::from_text("<Mesh/>".to_owned(), 0).expect("valid XML span"),
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&mesh, &arena, &policy)
+            .expect("root mesh is within the input limit");
+        assert!(matches!(
+            parse_mesh(&ctx, &property, &mesh),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.operation == "FreeCAD mesh facets"
+        ));
+    }
 
     #[test]
     fn bounded_application_geometry_reader_rejects_counts_indices_and_truncation() {
