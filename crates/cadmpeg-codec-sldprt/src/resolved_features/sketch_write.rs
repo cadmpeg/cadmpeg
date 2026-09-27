@@ -956,7 +956,11 @@ fn edit_stream(
     stream_ordinal: usize,
     edit: impl FnOnce(&mut [u8]) -> Result<(), cadmpeg_core::CodecError>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let stream = crate::parasolid::extract_streams_with_offsets(payload, None)?
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        payload, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    let stream = crate::parasolid::extract_streams_with_offsets(payload, &ctx)?
         .get(stream_ordinal)
         .cloned()
         .ok_or_else(|| {

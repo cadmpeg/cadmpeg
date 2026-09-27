@@ -536,8 +536,12 @@ fn semantic_writer_rejects_embedded_helix_geometry_edits() {
             native.feature_input_lanes[0].native_payload.extend(stream);
         });
         let native = sldprt_native(&ir_edit);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).unwrap();
         crate::resolved_features::holes::project_helix_axes(
-            None,
+            &ctx,
             &mut ir_edit.model.features,
             &native.feature_histories,
             &native.feature_input_lanes,

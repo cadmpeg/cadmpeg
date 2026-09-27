@@ -46,7 +46,7 @@ use crate::records::ObjectId;
 /// object. Promotion requires one mesh stream and a circular-helix fit whose
 /// residual is small relative to its radius.
 pub(crate) fn project_helix_axes(
-    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],

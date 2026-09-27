@@ -278,8 +278,12 @@ fn parasolid_partition_selection_withholds_ambiguous_sites() {
 #[test]
 fn parasolid_partition_selection_retains_a_compound_stream_site() {
     let payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body());
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(
+        &[], &arena, &DecodePolicy::service(),
+    ).expect("root");
     let stream = container::compound_stream(
-        None,
+        &ctx,
         "Contents/Config-0-Partition".into(),
         7,
         11,
