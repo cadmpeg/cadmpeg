@@ -175,7 +175,7 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
         ctx.charge_work(1, "walk NX deltas census")?;
         intersection_schema_anchor_seen |=
             crate::topology::intersection_data_schema_header_at(stream, offset);
-        if let Some(preamble) = schema_reference_preamble(stream, offset, stream.len()) {
+        if let Some(preamble) = schema_reference_preamble(ctx, stream, offset, stream.len())? {
             census.bytes_decoded += preamble.end - preamble.offset;
             offset = preamble.end;
             value_boundary = true;

@@ -837,24 +837,24 @@ fn schema_reference_preambles(
     stream: &[u8],
     census: &Census,
 ) -> Result<Vec<SchemaReferencePreamble>, CodecError> {
-    Ok(uncovered_spans(ctx, stream.len(), census, true)?
-        .flat_map(|(offset, gap_end)| {
-            let mut preambles = Vec::new();
-            let mut at = offset;
-            while let Some(preamble) = schema_reference_preamble(stream, at, gap_end) {
-                at = preamble.end;
-                preambles.push(preamble);
-            }
-            preambles
-        })
-        .collect())
+    let mut preambles = Vec::new();
+    for (offset, gap_end) in uncovered_spans(ctx, stream.len(), census, true)? {
+        let mut at = offset;
+        while let Some(preamble) = schema_reference_preamble(ctx, stream, at, gap_end)? {
+            at = preamble.end;
+            census::push_event(ctx, &mut preambles, preamble, "NX schema reference preambles")?;
+        }
+    }
+    Ok(preambles)
 }
 
 fn schema_reference_preamble(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     offset: usize,
     gap_end: usize,
-) -> Option<SchemaReferencePreamble> {
+) -> Result<Option<SchemaReferencePreamble>, CodecError> {
+    let Some((identity, references, state_references, state_words, count, mut at)) = (|| {
     let identity = View::u16_be_at(stream, offset)?;
     (View::u16_be_at(stream, offset.checked_add(2)?) == Some(4)
         && stream.get(offset.checked_add(4)?) == Some(&0xff))
@@ -888,19 +888,35 @@ fn schema_reference_preamble(
     }
     let count = View::u16_be_at(stream, at)?;
     at = at.checked_add(2)?;
+        Some((identity, references, state_references, state_words, count, at))
+    })() else {
+        return Ok(None);
+    };
     let mut entries = Vec::new();
     loop {
-        let entry_kind = View::u16_be_at(stream, at)?;
-        at = at.checked_add(2)?;
-        let (reference, consumed) = read_xmt(stream, at)?;
-        at = at.checked_add(consumed)?;
+        ctx.charge_work(1, "scan NX schema reference preamble")?;
+        let Some((entry_kind, reference, next)) = (|| {
+            let entry_kind = View::u16_be_at(stream, at)?;
+            let next = at.checked_add(2)?;
+            let (reference, consumed) = read_xmt(stream, next)?;
+            Some((entry_kind, reference, next.checked_add(consumed)?))
+        })() else {
+            return Ok(None);
+        };
+        at = next;
         if entry_kind == 82 && reference == 1 {
-            (View::u16_be_at(stream, at) == Some(0)).then_some(())?;
-            at = at.checked_add(2)?;
-            let terminal_value = View::u16_be_at(stream, at)?;
-            at = at.checked_add(2)?;
-            return (at <= gap_end).then_some(SchemaReferencePreamble {
-                state: PreambleState::new(
+            let Some((terminal_value, end)) = (|| {
+                (View::u16_be_at(stream, at) == Some(0)).then_some(())?;
+                let terminal_at = at.checked_add(2)?;
+                let terminal_value = View::u16_be_at(stream, terminal_at)?;
+                Some((terminal_value, terminal_at.checked_add(2)?))
+            })() else {
+                return Ok(None);
+            };
+            if end > gap_end {
+                return Ok(None);
+            }
+            return Ok(PreambleState::new(
                     identity,
                     references,
                     state_references,
@@ -909,12 +925,14 @@ fn schema_reference_preamble(
                     entries,
                     terminal_value,
                 )
-                .ok()?,
+                .ok()
+                .map(|state| SchemaReferencePreamble {
+                state,
                 offset,
-                end: at,
-            });
+                end,
+            }));
         }
-        entries.push((entry_kind, reference));
+        census::push_event(ctx, &mut entries, (entry_kind, reference), "NX schema reference entries")?;
     }
 }
 
@@ -3164,7 +3182,8 @@ mod schema_reference_preamble_tests {
     #[test]
     fn schema_reference_preamble_retains_variable_reference_lane() {
         let bytes = preamble();
-        let parsed = schema_reference_preamble(&bytes, 0, bytes.len())
+        let parsed = crate::test_support::with_decode_context(|ctx| schema_reference_preamble(ctx, &bytes, 0, bytes.len()))
+            .unwrap()
             .expect("complete preamble must be admitted");
 
         assert_eq!(
@@ -3194,7 +3213,9 @@ mod schema_reference_preamble_tests {
         mismatched_kind[repeated_kind + 1] ^= 1;
 
         for malformed in [&bytes[..bytes.len() - 1], mismatched_kind.as_slice()] {
-            assert!(schema_reference_preamble(malformed, 0, malformed.len()).is_none());
+            assert!(crate::test_support::with_decode_context(|ctx| schema_reference_preamble(ctx, malformed, 0, malformed.len()))
+                .unwrap()
+                .is_none());
         }
     }
 
@@ -3231,7 +3252,8 @@ mod schema_reference_preamble_tests {
             linked_state,
         );
 
-        let parsed = schema_reference_preamble(&bytes, 0, bytes.len())
+        let parsed = crate::test_support::with_decode_context(|ctx| schema_reference_preamble(ctx, &bytes, 0, bytes.len()))
+            .unwrap()
             .expect("linked state-reference lane must be admitted");
 
         assert_eq!(parsed.state.references(), [40_000, 40_001]);
@@ -3239,7 +3261,9 @@ mod schema_reference_preamble_tests {
 
         let mut invalid = bytes;
         invalid[first_state_reference + 3] ^= 1;
-        assert!(schema_reference_preamble(&invalid, 0, invalid.len()).is_none());
+        assert!(crate::test_support::with_decode_context(|ctx| schema_reference_preamble(ctx, &invalid, 0, invalid.len()))
+            .unwrap()
+            .is_none());
     }
 }
 
