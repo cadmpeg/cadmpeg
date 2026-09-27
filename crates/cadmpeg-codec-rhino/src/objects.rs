@@ -1305,6 +1305,7 @@ pub(crate) fn parse_attributes(
             AttributeItem::SectionFillRule => attributes.section_fill_rule = reader.u8()?,
             AttributeItem::EmbeddedLinetype => {
                 attributes.embedded_linetype = Some(settings::parse_direct_linetype(
+                    ctx,
                     bytes,
                     &mut reader,
                     archive,
@@ -1313,6 +1314,7 @@ pub(crate) fn parse_attributes(
             }
             AttributeItem::EmbeddedSectionStyle => {
                 attributes.embedded_section_style = Some(settings::parse_direct_section_style(
+                    ctx,
                     bytes,
                     &mut reader,
                     archive,
