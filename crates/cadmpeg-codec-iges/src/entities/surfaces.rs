@@ -1308,6 +1308,7 @@ pub(super) fn project(
         let rails = match rails {
             (Ok(first), Ok(second)) => (first, second),
             (Err(error), _) | (_, Err(error)) => {
+                let error = error.non_resource()?;
                 losses.push(entity_loss(
                     entry,
                     format!("a rail curve states no NURBS carrier: {error}"),
@@ -1471,6 +1472,7 @@ pub(super) fn project(
         let directrix_carrier = match bounded_nurbs(ir, &directrix_id, ctx, &composite_index) {
             Ok(carrier) => carrier,
             Err(error) => {
+                let error = error.non_resource()?;
                 losses.push(entity_loss(
                     entry,
                     format!("the directrix states no NURBS carrier: {error}"),
@@ -1824,6 +1826,7 @@ pub(super) fn project(
         let generatrix_carrier = match bounded_nurbs(ir, &generatrix_id, ctx, &composite_index) {
             Ok(carrier) => carrier,
             Err(error) => {
+                let error = error.non_resource()?;
                 losses.push(entity_loss(
                     entry,
                     format!("the generatrix states no NURBS carrier: {error}"),
