@@ -1435,63 +1435,71 @@ pub(crate) enum SourceMetaDetail<'a> {
     },
 }
 
+fn insert_source_meta_attribute(
+    ctx: &DecodeContext<'_>,
+    attributes: &mut BTreeMap<NonBlankString, String>,
+    key: &'static str,
+    value: std::fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "Rhino source metadata attributes")?;
+    let key = crate::wire::copy_retained_string(ctx, key, "Rhino source metadata key")?;
+    let key = NonBlankString::new(key)
+        .ok_or_else(|| CodecError::malformed("generated Rhino source metadata key is blank"))?;
+    let value = crate::wire::admitted_format(ctx, value, "Rhino source metadata value")?;
+    attributes.insert(key, value);
+    Ok(())
+}
+
 /// Builds source metadata; `primary` is the one author of the document's identity.
-pub(crate) fn source_meta(primary: DialectMatch, detail: SourceMetaDetail<'_>) -> SourceMeta {
+pub(crate) fn source_meta(
+    ctx: &DecodeContext<'_>,
+    primary: DialectMatch,
+    detail: SourceMetaDetail<'_>,
+) -> Result<SourceMeta, CodecError> {
     let attributes = match detail {
-        SourceMetaDetail::FlatLegacyArchive => BTreeMap::from([(
-            cadmpeg_core::nonblank_literal!("archive_version"),
-            "1".to_string(),
-        )]),
+        SourceMetaDetail::FlatLegacyArchive => {
+            let mut attributes = BTreeMap::new();
+            insert_source_meta_attribute(ctx, &mut attributes, "archive_version", format_args!("1"))?;
+            attributes
+        }
         SourceMetaDetail::ContainerOnly(scan) => {
-            let mut attributes = chunked_source_attributes(scan);
-            attributes.insert(
-                cadmpeg_core::nonblank_literal!("comment_offset"),
-                scan.comment.range.start.to_string(),
-            );
-            attributes.insert(
-                cadmpeg_core::nonblank_literal!("eof_offset"),
-                scan.eof_offset.to_string(),
-            );
-            attributes.insert(
-                cadmpeg_core::nonblank_literal!("table_count"),
-                scan.tables.len().to_string(),
-            );
-            attributes.insert(
-                cadmpeg_core::nonblank_literal!("instance_definition_count"),
-                scan.definitions.definitions().len().to_string(),
-            );
+            let mut attributes = BTreeMap::new();
+            chunked_source_attributes(ctx, scan, &mut attributes)?;
+            insert_source_meta_attribute(ctx, &mut attributes, "comment_offset", format_args!("{}", scan.comment.range.start))?;
+            insert_source_meta_attribute(ctx, &mut attributes, "eof_offset", format_args!("{}", scan.eof_offset))?;
+            insert_source_meta_attribute(ctx, &mut attributes, "table_count", format_args!("{}", scan.tables.len()))?;
+            insert_source_meta_attribute(ctx, &mut attributes, "instance_definition_count", format_args!("{}", scan.definitions.definitions().len()))?;
             attributes
         }
         SourceMetaDetail::Full {
             scan,
-            attributes: full,
+            attributes: mut full,
         } => {
-            let mut attributes = chunked_source_attributes(scan);
-            attributes.extend(full);
-            attributes
+            chunked_source_attributes(ctx, scan, &mut full)?;
+            full
         }
     };
-    SourceMeta::classified(
+    Ok(SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(primary),
         attributes,
-    )
+    ))
 }
 
-fn chunked_source_attributes(scan: &Scan<'_>) -> BTreeMap<NonBlankString, String> {
-    BTreeMap::from([
-        (
-            cadmpeg_core::nonblank_literal!("archive_version"),
-            scan.archive.value().to_string(),
-        ),
-        (
-            cadmpeg_core::nonblank_literal!("container_kind"),
-            "3dm-chunks".to_string(),
-        ),
-    ])
+fn chunked_source_attributes(
+    ctx: &DecodeContext<'_>,
+    scan: &Scan<'_>,
+    attributes: &mut BTreeMap<NonBlankString, String>,
+) -> Result<(), CodecError> {
+    insert_source_meta_attribute(ctx, attributes, "archive_version", format_args!("{}", scan.archive.value()))?;
+    insert_source_meta_attribute(ctx, attributes, "container_kind", format_args!("3dm-chunks"))?;
+    Ok(())
 }
 
 /// Build an empty current-version IR and a container-only report.
-pub(crate) fn container_only_result(scan: &Scan<'_>) -> Decoded {
+pub(crate) fn container_only_result(
+    ctx: &DecodeContext<'_>,
+    scan: &Scan<'_>,
+) -> Result<Decoded, CodecError> {
     let mut notes = vec![scan.version_note()];
     notes.extend(scan.warnings.messages().map(str::to_owned));
     notes.extend(
@@ -1518,8 +1526,8 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> Decoded {
     );
     let primary = dialect_match(scan);
     losses.extend(crate::dialect::admission_loss(&primary));
-    let ir = CadIr::decoded(source_meta(primary, SourceMetaDetail::ContainerOnly(scan)));
-    Decoded {
+    let ir = CadIr::decoded(source_meta(ctx, primary, SourceMetaDetail::ContainerOnly(scan))?);
+    Ok(Decoded {
         ir,
         body: DecodeBody {
             transfer: cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
@@ -1529,7 +1537,7 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> Decoded {
             transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
         },
         source_fidelity: cadmpeg_ir::SourceFidelity::default(),
-    }
+    })
 }
 
 /// Inspect a Rhino stream, applying the version-specific scan depth.
@@ -1569,7 +1577,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     }
     let scan = scan(ctx, data)?;
     if ctx.container_only() && scan.archive.is_chunked() {
-        return Ok(container_only_result(&scan));
+        return container_only_result(ctx, &scan);
     }
     crate::decode::decode(&scan, crate::mesh::MeshExpand::new(ctx, root))
 }

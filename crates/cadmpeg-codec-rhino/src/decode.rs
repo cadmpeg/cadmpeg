@@ -2627,12 +2627,13 @@ impl<'a> DecodeContext<'a> {
         losses.extend(crate::dialect::admission_loss(&primary));
         let attributes = full_source_attributes(self.expand.ctx(), self.scan)?;
         self.ir.source = Some(crate::container::source_meta(
+            self.expand.ctx(),
             primary,
             crate::container::SourceMetaDetail::Full {
                 scan: self.scan,
                 attributes,
             },
-        ));
+        )?);
         Ok(Decoded {
             ir: self.ir,
             body: DecodeBody {
