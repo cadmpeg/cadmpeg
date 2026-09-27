@@ -18,6 +18,89 @@ use cadmpeg_ir::Exactness;
 use crate::container::{self, Layout, UnknownLayout};
 use crate::CreoCodec;
 
+fn reference_scan_with_limit(
+    payload: &[u8],
+    items: u64,
+) -> Result<super::ReferenceScan, cadmpeg_core::CodecError> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let section = super::Section::scan("MdlRefInfo".to_string(), 0, payload.len(), None, payload)
+        .expect("bounded reference section");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = items;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("root reference input is admitted");
+    super::reference_scan(&ctx, &[section])
+}
+
+#[test]
+fn reference_line_aggregation_refuses_before_vec_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    let payload = b"ent_list(line3d)\0\x23\xe3\x23\x0d\xe2\x02\x48\x10\x00\
+        \x0f\x0f\x0f\xe4\x0f\x0f\xe4";
+    assert_eq!(
+        reference_scan_with_limit(payload, 3)
+            .expect("line admitted")
+            .lines
+            .len(),
+        1
+    );
+    let error = reference_scan_with_limit(payload, 2)
+        .err()
+        .expect("line aggregate needs one item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo reference line aggregation"));
+}
+
+#[test]
+fn reference_circle_aggregation_refuses_before_vec_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    let payload = b"ent_list(arc_z)\0\xe2\x2d\xe3\x2d\x0f\xe2\x01\
+        \xe4\xe4\x0f\x0f\x43\xf0\x00\x0f\x0f\xe0\x00ent_list(line3d)\0";
+    assert_eq!(
+        reference_scan_with_limit(payload, 3)
+            .expect("circle admitted")
+            .circles
+            .len(),
+        1
+    );
+    let error = reference_scan_with_limit(payload, 2)
+        .err()
+        .expect("circle aggregate needs one item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo reference circle aggregation"));
+}
+
+#[test]
+fn reference_conic_aggregation_refuses_before_vec_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    let payload = b"ent_list(conic)\0\
+        \xe0\x01id\0\x2a\xe0\x01type\0\x1e\
+        \xe0\x00gen_info\0\xe2\xf7\x13\x02\x48\x10\x00\xeb\x10\x00\x00\x00\x00\
+        \xe0\x01flip\0\x01\
+        \xe0\x02end1\0\xf8\x03\xe4\x0f\x0f\
+        \xe0\x02end2\0\xf8\x03\x43\xf0\x00\x0f\x0f\
+        \xe0\x02t0\0\x0f\xe0\x02t1\0\x11\
+        \xe0\x02c1\0\x43\xf0\x00\xe0\x02c2\0\xe4\
+        \xe0\x02local_sys\0\xf9\x04\x03\x18\xe4\x0f\xe4\x18\xe5\x0f\x18\xe6\
+        \xf2\xf7\x0e\xe3";
+    let error = reference_scan_with_limit(payload, 1)
+        .err()
+        .expect("conic aggregate needs one item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo reference conic aggregation"));
+}
+
 #[test]
 fn feature_row_aggregation_refuses_before_vec_growth() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};

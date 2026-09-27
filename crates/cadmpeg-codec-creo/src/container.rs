@@ -2309,6 +2309,49 @@ fn legacy_geom_depend_value(persistence: &legacy::Persistence, field_name: &str)
     values.all(|other| other == value).then_some(value)
 }
 
+fn reference_scan(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+) -> Result<ReferenceScan, CodecError> {
+    let mut lines = Vec::new();
+    let mut circles = Vec::new();
+    let mut conics = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| section.section.name() == "MdlRefInfo")
+    {
+        let payload = section.region;
+        for mut line in reference::lines(ctx, payload)?
+            .into_iter()
+            .chain(reference::line3d_lines(ctx, payload)?)
+        {
+            ctx.try_reserve_items(&mut lines, 1, "creo reference line aggregation")?;
+            line.offset += section.section.offset();
+            lines.push(line);
+        }
+        for mut circle in reference::arc_z_circles(ctx, payload)? {
+            ctx.try_reserve_items(&mut circles, 1, "creo reference circle aggregation")?;
+            circle.offset += section.section.offset();
+            circles.push(circle);
+        }
+        for mut conic in reference::named_conics(ctx, payload)?
+            .into_iter()
+            .chain(reference::positional_conics(ctx, payload)?)
+        {
+            ctx.try_reserve_items(&mut conics, 1, "creo reference conic aggregation")?;
+            conic.offset += section.section.offset();
+            conics.push(conic);
+        }
+    }
+    let ellipses = reference::ellipse_carriers(ctx, &conics)?;
+    Ok(ReferenceScan {
+        lines,
+        circles,
+        conics,
+        ellipses,
+    })
+}
+
 /// Parse a whole `.prt` byte image.
 pub(crate) fn scan_bytes<'a>(
     ctx: &DecodeContext<'_>,
@@ -2408,40 +2451,7 @@ pub(crate) fn scan_bytes<'a>(
                     conflicts.saturating_add(scan.conflicting_representation_count),
                 )
             });
-    let mut reference_lines = Vec::new();
-    let mut reference_circles = Vec::new();
-    let mut reference_conics: Vec<ReferenceConic> = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| section.section.name() == "MdlRefInfo")
-    {
-        let payload = section.region;
-        reference_lines.extend(
-            reference::lines(payload)
-                .into_iter()
-                .chain(reference::line3d_lines(payload))
-                .map(|mut line| {
-                    line.offset += section.section.offset();
-                    line
-                }),
-        );
-        reference_circles.extend(reference::arc_z_circles(payload).into_iter().map(
-            |mut circle| {
-                circle.offset += section.section.offset();
-                circle
-            },
-        ));
-        reference_conics.extend(
-            reference::named_conics(payload)
-                .into_iter()
-                .chain(reference::positional_conics(payload))
-                .map(|mut conic| {
-                    conic.offset += section.section.offset();
-                    conic
-                }),
-        );
-    }
-    let reference_ellipses = reference::ellipse_carriers(&reference_conics);
+    let references = reference_scan(ctx, &sections)?;
     let layout = identify_layout(&data, &sections, legacy_ascii);
     if model_name.is_none() && !matches!(layout, Layout::LegacyAscii(_)) {
         if let Some((name, offset)) = native_model_name(&sections) {
@@ -2730,12 +2740,7 @@ pub(crate) fn scan_bytes<'a>(
             triangle_strips: primitive_triangle_strips,
             conflicting_triangle_strip_representation_count,
         },
-        references: ReferenceScan {
-            lines: reference_lines,
-            circles: reference_circles,
-            conics: reference_conics,
-            ellipses: reference_ellipses,
-        },
+        references,
         surfaces: SurfaceScan {
             rows: surface_rows,
             nonvisible_rows: nonvisible_surface_rows,
