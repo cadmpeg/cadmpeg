@@ -224,6 +224,8 @@ fn type128_projection_refuses_source_lanes_nested_rows_and_surface_slot() {
     for operation in [
         "iges NURBS surface source u knots",
         "iges NURBS surface source v knots",
+        "iges NURBS surface admitted u knots",
+        "iges NURBS surface admitted v knots",
         "iges NURBS surface source weights",
         "iges NURBS surface positive weights",
         "iges NURBS surface source poles",

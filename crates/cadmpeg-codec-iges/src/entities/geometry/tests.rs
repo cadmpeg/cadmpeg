@@ -44,6 +44,7 @@ fn nurbs_projection_refuses_source_lanes_neutral_slots_and_decoded_node() {
     let bytes = crate::test_support::test_curves_and_surfaces::rational_nurbs_curve_file();
     for operation in [
         "iges NURBS source knots",
+        "iges NURBS admitted knots",
         "iges NURBS source weights",
         "iges NURBS positive weights",
         "iges NURBS source poles",

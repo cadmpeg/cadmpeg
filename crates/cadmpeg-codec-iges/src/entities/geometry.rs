@@ -2025,7 +2025,9 @@ pub(crate) fn project_geometry(
         };
         let domain_start = finite_knots[degree_usize];
         let domain_end = finite_knots[control_count];
-        let Ok(knots) = KnotVector::from_finite_lanes(finite_knots) else {
+        let mut raw_knots = reserve_vec(ctx, finite_knots.len(), "iges NURBS admitted knots")?;
+        raw_knots.extend(finite_knots.into_iter().map(FiniteReal::get));
+        let Ok(knots) = KnotVector::new(raw_knots) else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "knot vector is decreasing"))?;
             continue;
         };
