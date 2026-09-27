@@ -44,6 +44,7 @@ map_refusal_test!(geometry_transformation_operators_refuse_collection_limit, "st
 map_refusal_test!(geometry_transformation_operators2_refuse_collection_limit, "step_geometry_transformation_operators2");
 map_refusal_test!(geometry_curve_parameter_offsets_refuse_collection_limit, "step_geometry_curve_parameter_offsets");
 map_refusal_test!(surface_parameter_scales_refuse_collection_limit, "step_surface_parameter_scales");
+map_refusal_test!(pcurve_geometries_refuse_collection_limit, "step_pcurve_geometries");
 
 macro_rules! hash_refusal_test {
     ($name:ident, $operation:literal) => {
@@ -344,5 +345,20 @@ fn decoded_pcurve_steps_refuse_collection_limit() {
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_decoded_pcurve_steps"
+    ));
+}
+
+#[test]
+fn pcurve_geometry_records_refuse_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    assert!(matches!(
+        super::super::insert_geometry_set(&mut BTreeSet::new(), 1, &ctx, "step_pcurve_geometry_records"),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_pcurve_geometry_records"
     ));
 }

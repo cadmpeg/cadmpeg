@@ -868,9 +868,10 @@ pub(super) fn decode(
         let pcurve_angle_scale = representation_id.map_or(angle_scale, |representation| {
             unit_scales.angle([representation]).get()
         });
-        let decoded = items
-            .filter_map(|curve| {
-                decode_pcurve_geometry(
+        let mut decoded = None;
+        let mut decoded_count = 0;
+        for curve in items {
+            if let Some(geometry) = decode_pcurve_geometry(
                     curve,
                     exchange,
                     &points2,
@@ -881,13 +882,18 @@ pub(super) fn decode(
                     &mut losses,
                     &mut BTreeSet::new(),
                     0,
-                )
-                .map(|decoded| (curve, decoded))
-            })
-            .collect::<Vec<_>>();
-        if let [(curve, decoded)] = decoded.as_slice() {
-            pcurve_geometry_records.extend(decoded.1.iter().copied());
-            pcurve_geometries.insert(*curve, decoded.clone());
+                ) {
+                decoded_count += 1;
+                decoded = Some((curve, geometry));
+            }
+        }
+        if decoded_count == 1 {
+            if let Some((curve, (geometry, records))) = decoded {
+                for &record in &records {
+                    insert_geometry_set(&mut pcurve_geometry_records, record, ctx, "step_pcurve_geometry_records")?;
+                }
+                insert_geometry_map(&mut pcurve_geometries, curve, (geometry, records), ctx, "step_pcurve_geometries")?;
+            }
         }
     }
     let mut curve_parameter_offsets = BTreeMap::<u64, f64>::new();
