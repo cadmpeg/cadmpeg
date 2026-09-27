@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Curve-from-equation feature transfer and assignment parameter ordering.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -40,7 +40,7 @@ const EPS_HELIX_BASIS_ORIGIN: f64 = 1.0e-12;
 const EPS_HELIX_UV_EQUAL: f64 = 1.0e-9;
 const EPS_HELIX_UV_ORTHO: f64 = 1.0e-9;
 
-type CurveExpressionParameterOrder = (Vec<u32>, BTreeSet<(usize, usize)>);
+type CurveExpressionParameterOrder = (Vec<u32>, HashSet<(usize, usize)>);
 
 fn curve_expression_helix_definition(
     record: &crate::curve::CurveExpressionRecord,
@@ -150,18 +150,34 @@ fn curve_expression_helix_feature_definition(
     }))
 }
 
-fn expression_dependency_reaches(dependencies: &[Vec<usize>], start: usize, target: usize) -> bool {
-    let mut pending = vec![start];
-    let mut visited = BTreeSet::new();
+fn expression_dependency_reaches(
+    ctx: &DecodeContext<'_>,
+    dependencies: &[Vec<usize>],
+    start: usize,
+    target: usize,
+) -> Result<bool, CodecError> {
+    let mut pending = ctx.alloc_filled(1, start, "creo curve-expression pending dependency")?;
+    let mut visited = ctx.alloc_filled(
+        dependencies.len(),
+        false,
+        "creo curve-expression visited dependencies",
+    )?;
     while let Some(index) = pending.pop() {
+        ctx.charge_work(1, "walk Creo curve-expression dependencies")?;
         if index == target {
-            return true;
+            return Ok(true);
         }
-        if visited.insert(index) {
+        if !visited[index] {
+            visited[index] = true;
+            ctx.try_reserve_items(
+                &mut pending,
+                dependencies[index].len(),
+                "creo curve-expression pending dependencies",
+            )?;
             pending.extend(dependencies[index].iter().copied());
         }
     }
-    false
+    Ok(false)
 }
 
 fn curve_expression_parameter_order(
@@ -188,35 +204,43 @@ fn curve_expression_parameter_order(
             row.push(index);
         }
     }
-    let mut cyclic_edges = BTreeSet::new();
+    let mut cyclic_edges = HashSet::new();
     for (consumer, dependency_indices) in dependencies.iter().enumerate() {
         for &dependency in dependency_indices {
-            if expression_dependency_reaches(&dependencies, dependency, consumer) {
+            if expression_dependency_reaches(ctx, &dependencies, dependency, consumer)? {
+                ctx.try_collection(1, "creo curve-expression cyclic edges", || {
+                    cyclic_edges.try_reserve(1)
+                })?;
                 cyclic_edges.insert((consumer, dependency));
             }
         }
     }
     let mut ordinals = ctx.alloc_filled(
         dependencies.len(),
-        None::<u32>,
+        0u32,
         "creo curve-expression parameter ordinals",
+    )?;
+    let mut assigned = ctx.alloc_filled(
+        dependencies.len(),
+        false,
+        "creo curve-expression assigned ordinals",
     )?;
     for ordinal in 0..dependencies.len() {
         let Some(index) = (0..dependencies.len()).find(|&candidate| {
-            ordinals[candidate].is_none()
+            !assigned[candidate]
                 && dependencies[candidate].iter().all(|dependency| {
-                    cyclic_edges.contains(&(candidate, *dependency))
-                        || ordinals[*dependency].is_some()
+                    cyclic_edges.contains(&(candidate, *dependency)) || assigned[*dependency]
                 })
         }) else {
             return Ok(None);
         };
-        ordinals[index] = Some(ordinal as u32);
+        let Ok(ordinal) = u32::try_from(ordinal) else {
+            return Ok(None);
+        };
+        ordinals[index] = ordinal;
+        assigned[index] = true;
     }
-    Ok(ordinals
-        .into_iter()
-        .collect::<Option<Vec<u32>>>()
-        .map(|ordinals| (ordinals, cyclic_edges)))
+    Ok(Some((ordinals, cyclic_edges)))
 }
 
 fn curve_expression_parameter_names(

@@ -355,22 +355,45 @@ pub(in super::super) fn saved_spline_sketch_geometry(
     let Some(nurbs) = saved_spline_nurbs(ctx, spline, refusal)? else {
         return Ok(None);
     };
-    ctx.charge_collection_items(
-        nurbs.control_points().len() as u64,
+    let knots = ctx.try_collection(
+        nurbs.knots().len(),
+        "creo saved spline sketch knots",
+        || nurbs.knots().try_clone(),
+    )?;
+    let mut controls = Vec::new();
+    ctx.try_reserve_items(
+        &mut controls,
+        nurbs.pole_count(),
         "creo saved spline sketch controls",
     )?;
+    let weights = match nurbs.pole_rows() {
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
+            for point in points {
+                let [x, y, _] = point.coordinates();
+                controls.push(cadmpeg_ir::units::FinitePoint2::from_coordinates(x, y));
+            }
+            None
+        }
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
+            let mut weights = Vec::new();
+            ctx.try_reserve_items(
+                &mut weights,
+                points.len(),
+                "creo saved spline sketch weights",
+            )?;
+            for pole in points {
+                let [x, y, _] = pole.point.coordinates();
+                controls.push(cadmpeg_ir::units::FinitePoint2::from_coordinates(x, y));
+                weights.push(pole.weight);
+            }
+            Some(weights)
+        }
+    };
     match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
         nurbs.degree(),
-        nurbs.knots().clone(),
-        nurbs
-            .control_points()
-            .iter()
-            .map(|point| {
-                let [x, y, _] = point.coordinates();
-                cadmpeg_ir::units::FinitePoint2::from_coordinates(x, y)
-            })
-            .collect(),
-        nurbs.weights(),
+        knots,
+        controls,
+        weights,
         nurbs.periodic(),
     ) {
         Ok(pcurve) => Ok(Some(SketchGeometry::nurbs(pcurve))),
@@ -418,13 +441,13 @@ pub(in super::super) fn interpolation_spline_surface(
     }
     let mut u_knots = None;
     for v in 0..v_sample_count {
-        ctx.charge_collection_items(
-            u_sample_count as u64,
+        let mut samples = Vec::new();
+        ctx.try_reserve_items(
+            &mut samples,
+            u_sample_count,
             "creo interpolation surface position samples",
         )?;
-        let samples = (0..u_sample_count)
-            .map(|u| points[u * v_sample_count + v])
-            .collect::<Vec<_>>();
+        samples.extend((0..u_sample_count).map(|u| points[u * v_sample_count + v]));
         let Some(InterpolationCurveData { knots, controls }) = interpolation_curve_data(
             ctx,
             &samples,
@@ -453,13 +476,15 @@ pub(in super::super) fn interpolation_spline_surface(
         )?;
     }
     for v_boundary in 0..2 {
-        ctx.charge_collection_items(
-            u_sample_count as u64,
+        let mut samples = Vec::new();
+        ctx.try_reserve_items(
+            &mut samples,
+            u_sample_count,
             "creo interpolation surface derivative samples",
         )?;
-        let samples = (0..u_sample_count)
-            .map(|u| end_v_derivatives[v_boundary * u_sample_count + u])
-            .collect::<Vec<_>>();
+        samples.extend(
+            (0..u_sample_count).map(|u| end_v_derivatives[v_boundary * u_sample_count + u]),
+        );
         let Some(InterpolationCurveData { controls, .. }) = interpolation_curve_data(
             ctx,
             &samples,
@@ -478,8 +503,12 @@ pub(in super::super) fn interpolation_spline_surface(
     let Some(control_count) = u_control_count.checked_mul(v_control_count) else {
         return Ok(None);
     };
-    ctx.charge_collection_items(control_count as u64, "creo interpolation surface controls")?;
-    let mut control_points = Vec::with_capacity(control_count);
+    let mut control_points = Vec::new();
+    ctx.try_reserve_items(
+        &mut control_points,
+        control_count,
+        "creo interpolation surface controls",
+    )?;
     let mut v_knots = None;
     for u in 0..u_control_count {
         let Some(InterpolationCurveData { knots, controls }) = interpolation_curve_data(
@@ -501,20 +530,26 @@ pub(in super::super) fn interpolation_spline_surface(
     if u32::try_from(v_control_count).is_err() {
         return Ok(None);
     }
-    ctx.charge_collection_items(
-        (control_points.len() + u_control_count) as u64,
+    let mut pole_rows = Vec::new();
+    ctx.try_reserve_items(
+        &mut pole_rows,
+        u_control_count,
         "creo interpolation surface NURBS pole rows",
     )?;
+    for points in control_points.chunks(v_control_count) {
+        let mut row = Vec::new();
+        ctx.try_reserve_items(
+            &mut row,
+            points.len(),
+            "creo interpolation surface NURBS pole values",
+        )?;
+        row.extend_from_slice(points);
+        pole_rows.push(row);
+    }
     match NurbsSurface::from_lanes(
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(3, u_knots, false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(3, v_knots, false),
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
-            control_points
-                .chunks(v_control_count)
-                .map(<[_]>::to_vec)
-                .collect(),
-            None,
-        ),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(pole_rows, None),
         false,
     ) {
         Ok(surface) => Ok(Some(surface)),
@@ -1131,6 +1166,37 @@ mod tests {
     }
 
     #[test]
+    fn interpolation_pole_rows_refuse_at_collection_limit() {
+        let grid = interpolation_grid();
+        crate::decode::with_test_decode_ctx(|ctx| {
+            assert!(super::interpolation_spline_surface(
+                ctx,
+                &grid,
+                &"interpolation grid fixture",
+                &mut crate::lane_refusal::LaneRefusals::new(),
+            )
+            .expect("service profile admits interpolation grid")
+            .is_some());
+        });
+        assert!(matches!(
+            interpolation_surface_refusal(305),
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "creo interpolation surface NURBS pole rows"
+        ));
+    }
+
+    #[test]
+    fn interpolation_pole_values_refuse_at_collection_limit() {
+        assert!(matches!(
+            interpolation_surface_refusal(309),
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "creo interpolation surface NURBS pole values"
+        ));
+    }
+
+    #[test]
     fn reversed_sketch_nurbs_keeps_finite_knots_when_endpoint_sum_overflows() {
         let lower = 9.0e307;
         let upper = f64::MAX;
@@ -1204,6 +1270,44 @@ mod tests {
             .is_some()
         );
         assert!(refusal.take_records().is_empty());
+    }
+
+    #[test]
+    fn saved_spline_sketch_knots_refuse_at_collection_limit() {
+        let spline = planar_or_offset_spline(0.0);
+        let error = with_collection_limit(43, |ctx| {
+            super::saved_spline_sketch_geometry(
+                ctx,
+                &spline,
+                &mut crate::lane_refusal::LaneRefusals::new(),
+            )
+        })
+        .expect_err("thirty-six source items leave fewer than eight knot slots");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "creo saved spline sketch knots"
+        ));
+    }
+
+    #[test]
+    fn saved_spline_sketch_controls_refuse_at_collection_limit() {
+        let spline = planar_or_offset_spline(0.0);
+        let error = with_collection_limit(47, |ctx| {
+            super::saved_spline_sketch_geometry(
+                ctx,
+                &spline,
+                &mut crate::lane_refusal::LaneRefusals::new(),
+            )
+        })
+        .expect_err("forty-four admitted items leave fewer than four controls");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "creo saved spline sketch controls"
+        ));
     }
 
     #[test]
