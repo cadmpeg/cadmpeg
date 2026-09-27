@@ -266,6 +266,7 @@ mod tests {
             .unwrap();
             let parameter =
                 super::closest_nurbs_curve_parameter(&curve, Point3::new(0.25, 0.0, 0.0), None)
+                    .expect("evaluator allocation succeeds")
                     .unwrap();
             assert!((parameter - 0.25).abs() <= 128.0 * f64::EPSILON);
         }
@@ -1657,8 +1658,8 @@ fn spine_contact_direction_with_index_and_budget_and_options(
     allow_offset_contact: bool,
     contact_seeds: &mut BlendContactSeedCache,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Vector3> {
-    let contact = spine_contact_point_with_index_and_budget_and_options(
+) -> Result<Option<Vector3>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(contact) = spine_contact_point_with_index_and_budget_and_options(
         index,
         support,
         spine,
@@ -1668,13 +1669,15 @@ fn spine_contact_direction_with_index_and_budget_and_options(
         allow_offset_contact,
         contact_seeds,
         geometry_budget,
-    )?;
-    FiniteVector3::new(Vector3::new(
+    )? else {
+        return Ok(None);
+    };
+    Ok(FiniteVector3::new(Vector3::new(
         contact.x - center.x,
         contact.y - center.y,
         contact.z - center.z,
     ))
-    .and_then(FiniteVector3::unit_nonzero)
+    .and_then(FiniteVector3::unit_nonzero))
 }
 
 fn blend_boundary_point_with_index_and_budget(
@@ -2808,7 +2811,7 @@ fn spine_contact_point_with_index_and_budget(
     radius: f64,
     depth: usize,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point3> {
+) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
     let mut contact_seeds = BlendContactSeedCache::default();
     spine_contact_point_with_index_and_budget_and_options(
         index,
@@ -2836,11 +2839,16 @@ fn spine_contact_point_with_index_and_budget_and_options(
     allow_offset_contact: bool,
     contact_seeds: &mut BlendContactSeedCache,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point3> {
+) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
+    (|| -> Option<Result<Point3, cadmpeg_core::decode::ResourceLimit>> {
     (depth < 32).then_some(())?;
     if let Some(pcurve) = spine_contact_pcurve_with_index(index, support, spine, radius, depth + 1)
     {
-        let uv = pcurve_uv(pcurve, parameter).ok()?;
+        let uv = match pcurve_uv(pcurve, parameter) {
+            Ok(uv) => uv,
+            Err(EvaluationFailure::ResourceLimit(limit)) => return Some(Err(limit)),
+            Err(_) => return None,
+        };
         return decoded_surface_point_inner_with_budget(
             index,
             support,
@@ -2848,7 +2856,7 @@ fn spine_contact_point_with_index_and_budget_and_options(
             uv.v,
             depth + 1,
             geometry_budget,
-        );
+        ).transpose();
     }
     if !allow_offset_contact {
         return None;
@@ -2874,7 +2882,8 @@ fn spine_contact_point_with_index_and_budget_and_options(
         depth + 1,
         contact_seeds,
         geometry_budget,
-    )
+    ).transpose()
+    })().transpose()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2887,7 +2896,8 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
     depth: usize,
     contact_seeds: &mut BlendContactSeedCache,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point3> {
+) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
+    (|| -> Option<Result<Point3, cadmpeg_core::decode::ResourceLimit>> {
     (depth < 32).then_some(())?;
     let tolerance = index.ir().tolerances.linear.get();
     if !radius.is_finite() || radius <= 0.0 {
@@ -2926,18 +2936,22 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
         let (Some(side_surface), Some(pcurve)) = (&side.surface, &side.pcurve) else {
             continue;
         };
-        let Some(side_uv) = pcurve_uv(&pcurve.geometry, parameter).ok() else {
-            continue;
+        let side_uv = match pcurve_uv(&pcurve.geometry, parameter) {
+            Ok(side_uv) => side_uv,
+            Err(EvaluationFailure::ResourceLimit(limit)) => return Some(Err(limit)),
+            Err(_) => continue,
         };
-        let Some(side_point) = decoded_surface_point_inner_with_budget(
+        let side_point = match decoded_surface_point_inner_with_budget(
             index,
             side_surface,
             side_uv.u,
             side_uv.v,
             depth + 1,
             geometry_budget,
-        ) else {
-            continue;
+        ) {
+            Ok(Some(point)) => point,
+            Ok(None) => continue,
+            Err(limit) => return Some(Err(limit)),
         };
         for (offset_surface, offset_distance) in &offset_surfaces {
             let cached_seed = contact_seeds.seed_for(support, spine, parameter, offset_surface);
@@ -2965,29 +2979,33 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
             ) else {
                 continue;
             };
-            let Some(offset_point) = decoded_surface_point_inner_with_budget(
+            let offset_point = match decoded_surface_point_inner_with_budget(
                 index,
                 offset_surface,
                 parameters.u,
                 parameters.v,
                 depth + 1,
                 geometry_budget,
-            ) else {
-                continue;
+            ) {
+                Ok(Some(point)) => point,
+                Ok(None) => continue,
+                Err(limit) => return Some(Err(limit)),
             };
             let offset_fit = Point3::distance(offset_point, side_point);
             if offset_fit > contact_fit_tolerance {
                 continue;
             }
-            let Some(reproduced) = decoded_surface_point_inner_with_budget(
+            let reproduced = match decoded_surface_point_inner_with_budget(
                 index,
                 support,
                 parameters.u,
                 parameters.v,
                 depth + 1,
                 geometry_budget,
-            ) else {
-                continue;
+            ) {
+                Ok(Some(point)) => point,
+                Ok(None) => continue,
+                Err(limit) => return Some(Err(limit)),
             };
             let offset_error = (Point3::distance(side_point, reproduced) - offset_distance).abs();
             if offset_error > contact_fit_tolerance {
@@ -3029,7 +3047,8 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
         return None;
     };
     contact_seeds.remember(contact_seed.clone());
-    Some(*candidate)
+    Some(Ok(*candidate))
+    })().transpose()
 }
 
 pub(super) fn spine_contact_pcurve_with_index<'a>(

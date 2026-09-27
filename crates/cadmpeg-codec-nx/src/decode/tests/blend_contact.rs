@@ -666,7 +666,7 @@ fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
         &curve,
         cadmpeg_ir::math::Point3::new(-5.0, 2.0, 0.0),
         Some(0.9),
-    )
+    ).expect("evaluator allocation succeeds")
     .unwrap();
 
     assert!((actual - 0.25).abs() < 1.0e-10);
@@ -1233,13 +1233,13 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
         source_object: None,
     });
 
-    let first = closest_spine_parameter(&ir, &ellipse, point, None).unwrap();
+    let first = closest_spine_parameter(&ir, &ellipse, point, None).expect("evaluator allocation succeeds").unwrap();
     let continued = closest_spine_parameter(
         &ir,
         &ellipse,
         point,
         Some(parameter + std::f64::consts::TAU),
-    )
+    ).expect("evaluator allocation succeeds")
     .unwrap();
 
     assert!((first - parameter).abs() < 1.0e-8, "{first}");
@@ -1249,8 +1249,8 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
     );
 
     let center = Point3::new(2.0, 3.0, 4.0);
-    let upper = closest_spine_parameter(&ir, &ellipse, center, Some(1.4)).unwrap();
-    let lower = closest_spine_parameter(&ir, &ellipse, center, Some(4.8)).unwrap();
+    let upper = closest_spine_parameter(&ir, &ellipse, center, Some(1.4)).expect("evaluator allocation succeeds").unwrap();
+    let lower = closest_spine_parameter(&ir, &ellipse, center, Some(4.8)).expect("evaluator allocation succeeds").unwrap();
     assert!(
         (upper - std::f64::consts::FRAC_PI_2).abs() < 1.0e-8,
         "{upper}"
@@ -1887,7 +1887,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         expected.v,
         0,
         &geometry_budget,
-    )
+    ).expect("evaluator allocation succeeds")
     .expect("budgeted evaluation handles a nested blend support");
     assert!(Point3::distance(evaluated, point) <= 64.0 * f64::EPSILON);
     let actual = blend_surface_parameters(&ir, &outer, point, None).unwrap();
