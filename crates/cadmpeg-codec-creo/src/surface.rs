@@ -3558,7 +3558,7 @@ pub(crate) fn named_prototype_records(
     payload: &[u8],
     refusals: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Vec<SurfacePrototypeRecord>, CodecError> {
-    let cache = scalar::ScalarCache::from_section(payload);
+    let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let mut records = Vec::new();
     for frame in named_prototype_frames(payload) {
         let mut parameters = Vec::new();
@@ -4971,7 +4971,7 @@ fn parameter_records_for_rows(
     payload: &[u8],
     rows: &[SurfaceRow],
 ) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
-    let cache = scalar::ScalarCache::from_section(payload);
+    let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let mut headers = Vec::<(SurfaceRow, usize)>::new();
     for row in rows {
         let Some(body_start) = positional_body_start(payload, row) else {
@@ -5120,7 +5120,7 @@ fn contour_records_for_rows(
     payload: &[u8],
     rows: &[SurfaceRow],
 ) -> Result<Vec<SurfaceContourRecord>, CodecError> {
-    let cache = scalar::ScalarCache::from_section(payload);
+    let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let frames = surface_array_frames(payload);
     let mut records = Vec::new();
     for (index, row) in rows.iter().enumerate() {
@@ -6817,7 +6817,7 @@ fn plane_local_systems_for_rows(
     payload: &[u8],
     rows: &[SurfaceRow],
 ) -> Result<Vec<PlaneLocalSystem>, CodecError> {
-    let cache = scalar::ScalarCache::from_section(payload);
+    let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let parameters = parameter_records_for_rows(ctx, payload, rows)?;
     let headers = rows
         .iter()
