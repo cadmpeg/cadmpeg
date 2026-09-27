@@ -6,7 +6,7 @@ use cadmpeg_core::CodecError;
 
 use crate::container::{Container, DirEntry, DirEntryBody, Region};
 
-fn one_document() -> Container<'static> {
+pub(super) fn one_document() -> Container<'static> {
     let mut data = Vec::new();
     data.extend_from_slice(&9u32.to_le_bytes());
     data.extend_from_slice(&1u32.to_le_bytes());

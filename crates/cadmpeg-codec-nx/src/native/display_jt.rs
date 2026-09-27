@@ -7,6 +7,8 @@ mod document_admission_tests;
 #[cfg(test)]
 mod index_admission_tests;
 mod packet_role;
+#[cfg(test)]
+mod segment_admission_tests;
 mod version;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -62,6 +64,59 @@ fn child_for_subslice<'a>(source: View<'a>, slice: &[u8]) -> Option<View<'a>> {
     let start = source.start().checked_add(relative)?;
     let end = start.checked_add(slice.len())?;
     source.child(start, end)
+}
+
+fn admit_display_jt_record<T>(
+    ctx: Option<&DecodeContext<'_>>,
+    records: &mut Vec<T>,
+    text_bytes: u64,
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    if let Some(ctx) = ctx {
+        ctx.charge_entities(1, operation)?;
+        ctx.charge_collection_items(1, operation)?;
+        let slot_bytes = u64::try_from(std::mem::size_of::<T>())
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, text_bytes))?;
+        let bytes = slot_bytes
+            .checked_add(text_bytes)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, text_bytes))?;
+        ctx.charge_retained(bytes, operation)?;
+    }
+    if records.try_reserve_exact(1).is_err() {
+        return match ctx {
+            Some(ctx) => Err(ctx.refuse_codec_limit(operation, 0, 1)),
+            None => Ok(false),
+        };
+    }
+    Ok(true)
+}
+
+fn display_jt_text_size(
+    ctx: Option<&DecodeContext<'_>>,
+    parts: &[&str],
+    digits: u64,
+) -> Result<u64, CodecError> {
+    let invalid = || match ctx {
+        Some(ctx) => ctx.refuse_codec_limit("size DisplayJT text", 0, digits),
+        None => display_jt_framing_error("DisplayJT text length exceeds u64"),
+    };
+    parts.iter().try_fold(digits, |sum, part| {
+        let len = u64::try_from(part.len()).map_err(|_| invalid())?;
+        sum.checked_add(len).ok_or_else(invalid)
+    })
+}
+
+fn digest_display_jt(
+    ctx: Option<&DecodeContext<'_>>,
+    bytes: &[u8],
+) -> Result<Sha256Hex, CodecError> {
+    if let Some(ctx) = ctx {
+        let work = u64::try_from(bytes.len())
+            .map_err(|_| ctx.refuse_codec_limit("hash DisplayJT bytes", 0, u64::MAX))?;
+        ctx.charge_work(work, "hash DisplayJT bytes")?;
+        ctx.charge_retained(64, "retain DisplayJT hash")?;
+    }
+    Ok(Sha256Hex::digest(bytes))
 }
 
 fn inflate_display_jt(
@@ -3266,11 +3321,31 @@ pub(super) fn display_jt_segments(
                 };
                 Some(DisplayJtCompression {
                     envelope,
-                    inflated_sha256: Sha256Hex::digest(&inflated),
+                    inflated_sha256: digest_display_jt(budget.map(|(ctx, _)| ctx), &inflated)?,
                 })
             } else {
                 None
             };
+            let ctx = budget.map(|(ctx, _)| ctx);
+            let digits = entry
+                .ordinal
+                .checked_ilog10()
+                .map_or(1, |value| u64::from(value) + 1);
+            let text_bytes = display_jt_text_size(
+                ctx,
+                &[
+                    "nx:display-jt:segment#",
+                    document_key,
+                    "-",
+                    &document.id,
+                    &entry.id,
+                ],
+                digits,
+            )?;
+            if !admit_display_jt_record(ctx, &mut segments, text_bytes, "store DisplayJT segment")?
+            {
+                return Ok(Vec::new());
+            }
             segments.push(DisplayJtSegment {
                 id: format!("nx:display-jt:segment#{document_key}-{}", entry.ordinal),
                 document: document.id.clone(),
@@ -3278,7 +3353,7 @@ pub(super) fn display_jt_segments(
                 segment_id,
                 segment_type,
                 segment_byte_len: header_byte_len,
-                payload_sha256: Sha256Hex::digest(payload),
+                payload_sha256: digest_display_jt(ctx, payload)?,
                 compression,
                 source_offset: document.source_offset + u64::from(entry.segment_offset),
             });
@@ -3314,6 +3389,20 @@ pub(super) fn display_jt_shape_lod_elements(
             if element.object_base_type != 4 {
                 return Ok(Vec::new());
             }
+            let ctx = budget.map(|(ctx, _)| ctx);
+            let text_bytes = display_jt_text_size(
+                ctx,
+                &[&segment.id, "-element-", &segment.id],
+                decimal_digits(ordinal),
+            )?;
+            if !admit_display_jt_record(
+                ctx,
+                &mut elements,
+                text_bytes,
+                "store DisplayJT shape element",
+            )? {
+                return Ok(Vec::new());
+            }
             elements.push(DisplayJtShapeLodElement {
                 id: format!("{}-element-{ordinal}", segment.id),
                 segment: segment.id.clone(),
@@ -3321,7 +3410,7 @@ pub(super) fn display_jt_shape_lod_elements(
                 object_type_id: element.object_type_id,
                 object_id: element.object_id,
                 body_byte_len: element.body.len() as u32,
-                body_sha256: Sha256Hex::digest(element.body),
+                body_sha256: digest_display_jt(ctx, element.body)?,
                 source_offset: segment.source_offset + 24 + element.offset as u64,
             });
         }
