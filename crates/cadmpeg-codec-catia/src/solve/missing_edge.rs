@@ -3359,37 +3359,27 @@ fn boundary_endpoint_support(
         end: usize,
     }
 
-    let layers = boundary
-        .iter()
-        .map(|use_| {
-            edge_candidates.get(use_.edge).and_then(|pairs| {
-                (!pairs.is_empty()).then(|| {
-                    pairs
-                        .iter()
-                        .flat_map(|&pair| {
-                            let mut unordered = pair;
-                            unordered.sort_unstable();
-                            [
-                                State {
-                                    pair: unordered,
-                                    start: unordered[0],
-                                    end: unordered[1],
-                                },
-                                State {
-                                    pair: unordered,
-                                    start: unordered[1],
-                                    end: unordered[0],
-                                },
-                            ]
-                        })
-                        .collect::<Vec<_>>()
-                })
-            })
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(layers) = layers else {
-        return Ok(None);
-    };
+    let mut layers = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut layers, boundary.len(), "catia_boundary_support_layer_rows")?;
+    for use_ in boundary {
+        let Some(pairs) = edge_candidates.get(use_.edge).filter(|pairs| !pairs.is_empty()) else {
+            return Ok(None);
+        };
+        let Some(count) = pairs.len().checked_mul(2) else {
+            return Err(ctx.refuse_codec_limit("catia_boundary_support_layer_states", u64::MAX, u64::MAX));
+        };
+        let mut states = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut states, count, "catia_boundary_support_layer_states")?;
+        for &pair in pairs {
+            let mut unordered = pair;
+            unordered.sort_unstable();
+            states.extend([
+                State { pair: unordered, start: unordered[0], end: unordered[1] },
+                State { pair: unordered, start: unordered[1], end: unordered[0] },
+            ]);
+        }
+        layers.push(states);
+    }
     let Some(first_layer) = layers.first() else {
         return Ok(None);
     };
@@ -3399,14 +3389,19 @@ fn boundary_endpoint_support(
     else {
         return Ok(None);
     };
-    let first_points = first_layer
-        .iter()
-        .map(|state| state.start)
-        .collect::<HashSet<_>>();
-    let mut supported = layers
-        .iter()
-        .map(|layer| ctx.alloc_filled(layer.len(), false, "catia_boundary_layer_marks"))
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut first_points = HashSet::new();
+    for state in first_layer {
+        crate::resource::insert_set(ctx, &mut first_points, state.start, "catia_boundary_first_points")?;
+    }
+    let make_marks = |row_operation, item_operation| -> Result<Vec<Vec<bool>>, CodecError> {
+        let mut marks = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut marks, layers.len(), row_operation)?;
+        for layer in &layers {
+            marks.push(ctx.alloc_filled(layer.len(), false, item_operation)?);
+        }
+        Ok(marks)
+    };
+    let mut supported = make_marks("catia_boundary_support_mark_rows", "catia_boundary_layer_marks")?;
     for first_point in first_points {
         let Some(work) = layer_states.checked_mul(3) else {
             return Ok(None);
@@ -3414,10 +3409,7 @@ fn boundary_endpoint_support(
         if !budget.charge_by(work) {
             return Ok(None);
         }
-        let mut forward = layers
-            .iter()
-            .map(|layer| ctx.alloc_filled(layer.len(), false, "catia_boundary_forward_marks"))
-            .collect::<Result<Vec<_>, _>>()?;
+        let mut forward = make_marks("catia_boundary_forward_mark_rows", "catia_boundary_forward_marks")?;
         for (state, reachable) in first_layer.iter().zip(&mut forward[0]) {
             *reachable = state.start == first_point;
         }
@@ -3425,19 +3417,17 @@ fn boundary_endpoint_support(
             if !budget.charge_by(layers[layer - 1].len() + layers[layer].len()) {
                 return Ok(None);
             }
-            let reachable_points = layers[layer - 1]
-                .iter()
-                .zip(&forward[layer - 1])
-                .filter_map(|(state, reachable)| reachable.then_some(state.end))
-                .collect::<HashSet<_>>();
+            let mut reachable_points = HashSet::new();
+            for (state, reachable) in layers[layer - 1].iter().zip(&forward[layer - 1]) {
+                if *reachable {
+                    crate::resource::insert_set(ctx, &mut reachable_points, state.end, "catia_boundary_reachable_points")?;
+                }
+            }
             for (right, right_state) in layers[layer].iter().enumerate() {
                 forward[layer][right] = reachable_points.contains(&right_state.start);
             }
         }
-        let mut backward = layers
-            .iter()
-            .map(|layer| ctx.alloc_filled(layer.len(), false, "catia_boundary_backward_marks"))
-            .collect::<Result<Vec<_>, _>>()?;
+        let mut backward = make_marks("catia_boundary_backward_mark_rows", "catia_boundary_backward_marks")?;
         let last = layers.len() - 1;
         for (state, (reachable, value)) in layers[last]
             .iter()
@@ -3446,11 +3436,12 @@ fn boundary_endpoint_support(
             *value = *reachable && state.end == first_point;
         }
         for layer in (0..last).rev() {
-            let supported_points = layers[layer + 1]
-                .iter()
-                .zip(&backward[layer + 1])
-                .filter_map(|(state, supported)| supported.then_some(state.start))
-                .collect::<HashSet<_>>();
+            let mut supported_points = HashSet::new();
+            for (state, supported) in layers[layer + 1].iter().zip(&backward[layer + 1]) {
+                if *supported {
+                    crate::resource::insert_set(ctx, &mut supported_points, state.start, "catia_boundary_supported_points")?;
+                }
+            }
             for (left, left_state) in layers[layer].iter().enumerate() {
                 backward[layer][left] = supported_points.contains(&left_state.end);
             }
@@ -3465,16 +3456,17 @@ fn boundary_endpoint_support(
     }
     let mut by_edge = HashMap::<usize, HashSet<[usize; 2]>>::new();
     for (layer, use_) in boundary.iter().enumerate() {
-        let values = layers[layer]
-            .iter()
-            .zip(&supported[layer])
-            .filter_map(|(state, supported)| supported.then_some(state.pair))
-            .collect::<HashSet<_>>();
+        let mut values = HashSet::new();
+        for (state, supported) in layers[layer].iter().zip(&supported[layer]) {
+            if *supported {
+                crate::resource::insert_set(ctx, &mut values, state.pair, "catia_boundary_supported_pairs")?;
+            }
+        }
         if values.is_empty() {
             return Ok(None);
         }
-        by_edge
-            .entry(use_.edge)
+        crate::resource::admit_map_entry(ctx, &mut by_edge, &use_.edge, "catia_boundary_support_edges")?;
+        by_edge.entry(use_.edge)
             .and_modify(|stored| stored.retain(|pair| values.contains(pair)))
             .or_insert(values);
     }

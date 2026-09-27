@@ -419,7 +419,7 @@ fn boundary_support_limit_operation(max_collection_items: u64) -> &'static str {
 #[test]
 fn boundary_support_layer_marks_propagate_collection_refusal() {
     assert_eq!(
-        boundary_support_limit_operation(0),
+        boundary_support_limit_operation(7),
         "catia_boundary_layer_marks"
     );
 }
@@ -427,7 +427,7 @@ fn boundary_support_layer_marks_propagate_collection_refusal() {
 #[test]
 fn boundary_support_forward_marks_propagate_collection_refusal() {
     assert_eq!(
-        boundary_support_limit_operation(2),
+        boundary_support_limit_operation(10),
         "catia_boundary_forward_marks"
     );
 }
@@ -435,9 +435,53 @@ fn boundary_support_forward_marks_propagate_collection_refusal() {
 #[test]
 fn boundary_support_backward_marks_propagate_collection_refusal() {
     assert_eq!(
-        boundary_support_limit_operation(4),
+        boundary_support_limit_operation(13),
         "catia_boundary_backward_marks"
     );
+}
+
+#[test]
+fn boundary_support_layer_state_storage_refuses_before_marks() {
+    assert_eq!(boundary_support_limit_operation(0), "catia_boundary_support_layer_rows");
+    assert_eq!(boundary_support_limit_operation(1), "catia_boundary_support_layer_states");
+    assert_eq!(boundary_support_limit_operation(3), "catia_boundary_first_points");
+}
+
+#[test]
+fn boundary_support_outer_rows_and_sets_refuse_before_growth() {
+    use cadmpeg_core::decode::WorkBudget;
+    let boundary = [crate::solve::missing_edge::MeshBoundaryEdgeCandidate {
+        edge: 0,
+        start: 0,
+        end: 1,
+        reversed: None,
+    }];
+    let candidates = [vec![[0, 0]]];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        crate::solve::missing_edge::boundary_endpoint_support(
+            ctx, &boundary, &candidates, &WorkBudget::new(100),
+        )
+    };
+    assert!(crate::test_support::with_service_context(run).expect("service budget").is_some());
+    let mut operations = std::collections::HashSet::new();
+    for limit in 0..=64 {
+        match crate::test_support::with_collection_limit(limit, run) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
+                operations.insert(error.operation);
+            }
+            Ok(Some(_)) => break,
+            outcome => panic!("unexpected boundary support outcome: {outcome:?}"),
+        }
+    }
+    for operation in [
+        "catia_boundary_support_mark_rows",
+        "catia_boundary_forward_mark_rows",
+        "catia_boundary_backward_mark_rows",
+        "catia_boundary_supported_pairs",
+        "catia_boundary_support_edges",
+    ] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
 }
 
 #[test]
