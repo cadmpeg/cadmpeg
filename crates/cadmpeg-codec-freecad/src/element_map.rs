@@ -12,6 +12,7 @@ use crate::native::element_map::{
 use crate::native::{
     EntryRecord, PropertyRecord, StringTableEntry, StringTableRecord, StringTables,
 };
+use crate::resource::reserve_vec_items;
 use crate::topology_transfer::TopologyOccurrence;
 
 const MAX_TABLE_ENTRIES: usize = 10_000_000;
@@ -94,6 +95,7 @@ pub(crate) fn parse(
             parse_count(data_node, "StringHasher")?
         };
         let entries = parse_string_table(ctx, bytes, declared_count, source_entry.is_some())?;
+        reserve_vec_items(ctx, &mut tables, 1, "FreeCAD string table records")?;
         tables.push(
             StringTableRecord::try_new(
                 index,
@@ -169,6 +171,7 @@ pub(crate) fn parse(
             declared_count,
             parsed,
         } = payload;
+        reserve_vec_items(ctx, &mut maps, 1, "FreeCAD element map records")?;
         maps.push(ElementMapRecord {
             id: crate::native::native_child_id("element-map", &property.id, "map"),
             property: property.id.clone(),
@@ -844,6 +847,7 @@ fn parse_string_table(
             } else {
                 encoded
             };
+            reserve_vec_items(ctx, &mut components, 1, "FreeCAD string table components")?;
             components.push(component);
         }
         let payload = if flags & 0x8 == 0 {
@@ -853,9 +857,11 @@ fn parse_string_table(
             let encoded_postfix = flags & 0x4 != 0;
             let mut values = Vec::new();
             if !derived_prefix {
+                reserve_vec_items(ctx, &mut values, 1, "FreeCAD string table value words")?;
                 values.push(scanner.token()?.to_owned());
             }
             if !encoded_postfix {
+                reserve_vec_items(ctx, &mut values, 1, "FreeCAD string table value words")?;
                 values.push(scanner.token()?.to_owned());
             }
             values.join(" ")
@@ -1029,6 +1035,7 @@ fn parse_element_map(
                     if encoded == "0" {
                         break;
                     }
+                    reserve_vec_items(ctx, &mut chain, 1, "FreeCAD mapped name chain")?;
                     chain.push(parse_mapped_name(encoded, &postfixes)?);
                 }
                 names.push(chain);
@@ -1208,6 +1215,34 @@ mod tests {
     }
 
     #[test]
+    fn string_table_component_refuses_on_collection_limit() {
+        let bytes = b"1.c.2 name\n";
+        let result = with_collection_limit(bytes, 1, |ctx| {
+            parse_string_table(ctx, bytes, 1, false)
+        });
+        assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD string table components"));
+    }
+
+    #[test]
+    fn string_table_value_word_refuses_on_collection_limit() {
+        let bytes = b"1.8 prefix postfix\n";
+        let result = with_collection_limit(bytes, 1, |ctx| {
+            parse_string_table(ctx, bytes, 1, false)
+        });
+        assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD string table value words"));
+    }
+
+    #[test]
+    fn string_table_record_refuses_on_collection_limit() {
+        let document = b"<Document><StringHasher saveall=\"0\" threshold=\"0\" count=\"0\" new=\"1\"/><StringHasher2 count=\"0\"/></Document>";
+        let result = with_collection_limit(document, 0, |ctx| parse(ctx, document, 1, &[], &[]));
+        assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD string table records"));
+    }
+
+    #[test]
     fn element_map_group_capacity_refuses_on_collection_limit() {
         let bytes = b"1 PostfixCount 0 MapCount 1 ElementMap 1 1 1";
         let result = with_collection_limit(bytes, 1, |ctx| {
@@ -1218,6 +1253,14 @@ mod tests {
             Err(CodecError::ResourceLimit(limit))
                 if limit.operation == "FreeCAD element map groups"
         ));
+    }
+
+    #[test]
+    fn mapped_name_chain_refuses_on_collection_limit() {
+        let bytes = b"7 PostfixCount 0 MapCount 1 ElementMap 1 7 1 Face ChildCount 0 NameCount 1 ;Generated.0.a 0 EndMap";
+        let result = with_collection_limit(bytes, 3, |ctx| parse_element_map(ctx, bytes, false));
+        assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD mapped name chain"));
     }
 
     fn test_parse(

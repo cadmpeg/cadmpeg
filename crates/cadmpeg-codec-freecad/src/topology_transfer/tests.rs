@@ -891,6 +891,42 @@ fn face_connectivity_reports_collection_limit() {
 }
 
 #[test]
+fn face_connectivity_stack_refuses_on_collection_limit() {
+    let sets = [HashSet::new()];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
+    assert!(matches!(connected_components(&ctx, &sets), Err(CodecError::ResourceLimit(limit))
+        if limit.operation == "FreeCAD connected-component stack"));
+}
+
+#[test]
+fn face_connectivity_members_refuse_on_collection_limit() {
+    let sets = [HashSet::new()];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
+    assert!(matches!(connected_components(&ctx, &sets), Err(CodecError::ResourceLimit(limit))
+        if limit.operation == "FreeCAD connected-component members"));
+}
+
+#[test]
+fn face_connectivity_components_refuse_on_collection_limit() {
+    let sets = [HashSet::new()];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 3;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
+    assert!(matches!(connected_components(&ctx, &sets), Err(CodecError::ResourceLimit(limit))
+        if limit.operation == "FreeCAD connected components"));
+}
+
+#[test]
 fn indirect_analytic_frames_reverse_the_pcurve_u_parameter() {
     let origin = cadmpeg_ir::features::FinitePoint3::ZERO;
     let axis = cadmpeg_ir::features::FiniteVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap();
