@@ -7,6 +7,8 @@ use crate::om::branch_items::BranchItems;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
 
+mod borrowed_wires;
+
 /// Complete alternate extrusion construction using the structured `32` branch.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "ConstructionWire")]
@@ -130,11 +132,8 @@ impl TryFrom<ConstructionWire> for FeatureExtrude32Construction {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureExtrudePayload32BranchWire",
-    into = "FeatureExtrudePayload32BranchWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "FeatureExtrudePayload32BranchWire")]
 pub(in crate::native) struct FeatureExtrudePayload32Branch {
     pub(in crate::native) id: String,
     pub(in crate::native) operation_label: String,
@@ -187,6 +186,7 @@ struct FeatureExtrudePayload32BranchWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureExtrudePayload32Branch> for FeatureExtrudePayload32BranchWire {
     fn from(branch: FeatureExtrudePayload32Branch) -> Self {
         Self {
