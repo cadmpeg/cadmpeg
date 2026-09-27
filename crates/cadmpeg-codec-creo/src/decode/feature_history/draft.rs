@@ -175,26 +175,22 @@ pub(super) fn linear_extrusion_extent_and_direction(
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
-    let transforms = scan
+    let mut transforms = scan
         .features
         .section_transforms
         .iter()
-        .filter(|transform| transform.feature_id == Some(feature_id))
-        .collect::<Vec<_>>();
-    let definition = match transforms.as_slice() {
-        [transform] => {
+        .filter(|transform| transform.feature_id == Some(feature_id));
+    let first = transforms.next();
+    let unique_transform = transforms.next().is_none().then_some(first);
+    let definition = match unique_transform {
+        Some(Some(transform)) => {
             unique_feature_definition_for_transform(&scan.features.definitions, transform)
         }
-        [] => unique_owned_feature_definition(&scan.features.definitions, feature_id),
-        _ => None,
+        Some(None) => unique_owned_feature_definition(&scan.features.definitions, feature_id),
+        None => None,
     };
     let section = definition.and_then(|definition| definition.section_3d.as_ref());
-    let unique_transform = match transforms.as_slice() {
-        [] => Some(None),
-        [transform] => Some(Some(*transform)),
-        _ => None,
-    };
-    if let ([transform], Some(definition)) = (transforms.as_slice(), definition) {
+    if let (Some(Some(transform)), Some(definition)) = (unique_transform, definition) {
         if let Some(extent) = generated_arc_cylinder_extent(
             scan,
             ir,
@@ -222,7 +218,7 @@ pub(super) fn linear_extrusion_extent_and_direction(
             })
         })
         .or_else(|| {
-            (transforms.is_empty()).then_some(()).and_then(|()| {
+            matches!(unique_transform, Some(None)).then_some(()).and_then(|()| {
                 generated_rectilinear_plane_extent(scan, ir, source_carriers, feature_id, section)
             })
         })
