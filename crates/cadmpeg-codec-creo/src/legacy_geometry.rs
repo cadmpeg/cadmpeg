@@ -279,13 +279,9 @@ fn curve_topology_row(
     let type_byte = u8::try_from(integer_field(integers, curve_object.offset, "type")?).ok()?;
     let feature_id =
         u32::try_from(integer_field(integers, curve_object.offset, "feat_id")?).ok()?;
-    let directions = integer_array(integers, curve_object.offset, "crv_pnt_dir")?
-        .into_iter()
-        .map(legacy_direction)
-        .collect::<Option<Vec<_>>>()?;
-    let [first_direction, second_direction] = directions.as_slice() else {
-        return None;
-    };
+    let [first_direction, second_direction] =
+        integer_pair(integers, curve_object.offset, "crv_pnt_dir")?;
+    let directions = [legacy_direction(first_direction)?, legacy_direction(second_direction)?];
     let faces = [
         u32::try_from(integer_field(
             integers,
@@ -318,7 +314,7 @@ fn curve_topology_row(
         id,
         type_byte,
         feature_id,
-        directions: [*first_direction, *second_direction],
+        directions,
         faces: faces.map(std::num::NonZeroU32::new),
         next_edges,
         offset: integer_record(integers, curve_object.offset, "crv_id")?.offset,
@@ -342,9 +338,14 @@ fn curve_pcurve(
     }
     // One element per declared element, so the four-element window at each end
     // of the expansion is the first and the last of the `sample_count` samples.
-    let values = real_array_values(record)?;
-    let first = *values.first_chunk::<4>()?;
-    let last = *values.last_chunk::<4>()?;
+    let mut values = array.runs().iter().flat_map(|run| {
+        std::iter::repeat_n(run.value.value(), index_from_u32(run.count))
+    });
+    let first = [values.next()?, values.next()?, values.next()?, values.next()?];
+    let mut last = first;
+    for _ in 1..*sample_count {
+        last = [values.next()?, values.next()?, values.next()?, values.next()?];
+    }
     Some(PcurveEndpoints {
         curve_id: topology.id,
         faces: topology.faces,
@@ -411,28 +412,28 @@ fn spline_surface_carrier(
     reals: &RealFieldIndex<'_>,
     namespace: LegacySurfaceNamespace,
 ) -> Result<Option<LegacySurfaceCarrier>, CodecError> {
-    let Some((
-        primitive,
-        points,
-        u_parameters,
-        v_parameters,
-        u_tangents,
-        v_tangents,
-        mixed_derivatives,
-    )) = (|| {
-        let primitive = unique_primitive(children, row_object.offset)?;
-        (primitive.name == "srf_prim_ptr(splsrf)").then_some(())?;
-        Some((
-            primitive,
-            real_vector_array(reals, primitive.offset, "i_points")?,
-            real_scalar_array(reals, primitive.offset, "u_params")?,
-            real_scalar_array(reals, primitive.offset, "v_params")?,
-            real_vector_array(reals, primitive.offset, "u_tangts")?,
-            real_vector_array(reals, primitive.offset, "v_tangts")?,
-            real_vector_array(reals, primitive.offset, "uv_deriv")?,
-        ))
-    })()
-    else {
+    let Some(primitive) = unique_primitive(children, row_object.offset) else {
+        return Ok(None);
+    };
+    if primitive.name != "srf_prim_ptr(splsrf)" {
+        return Ok(None);
+    }
+    let Some(points) = real_vector_array(ctx, reals, primitive.offset, "i_points")? else {
+        return Ok(None);
+    };
+    let Some(u_parameters) = real_scalar_array(ctx, reals, primitive.offset, "u_params")? else {
+        return Ok(None);
+    };
+    let Some(v_parameters) = real_scalar_array(ctx, reals, primitive.offset, "v_params")? else {
+        return Ok(None);
+    };
+    let Some(u_tangents) = real_vector_array(ctx, reals, primitive.offset, "u_tangts")? else {
+        return Ok(None);
+    };
+    let Some(v_tangents) = real_vector_array(ctx, reals, primitive.offset, "v_tangts")? else {
+        return Ok(None);
+    };
+    let Some(mixed_derivatives) = real_vector_array(ctx, reals, primitive.offset, "uv_deriv")? else {
         return Ok(None);
     };
     let spline = crate::interpolation_grid::InterpolationGrid::from_full_tangent_grid(
@@ -627,48 +628,73 @@ pub(crate) fn canonicalize_legacy_cone_pcurve_endpoints(
 }
 
 fn real_vector_array(
+    ctx: &DecodeContext<'_>,
     records: &RealFieldIndex<'_>,
     parent: usize,
     name: &str,
-) -> Option<Vec<[f64; 3]>> {
-    let record = real_record(records, parent, name)?;
-    let values = real_array_values(record)?;
+) -> Result<Option<Vec<[f64; 3]>>, CodecError> {
+    let Some(record) = real_record(records, parent, name) else {
+        return Ok(None);
+    };
     let NumericPayload::Array(array) = &record.payload else {
-        return None;
+        return Ok(None);
     };
     let dimensions = array.dimensions();
     let [_, width] = dimensions else {
-        return None;
+        return Ok(None);
     };
-    (*width == 3).then_some(())?;
-    Some(values.as_chunks::<3>().0.to_vec())
+    if *width != 3 {
+        return Ok(None);
+    }
+    let Some(values) = real_array_values(ctx, record)? else {
+        return Ok(None);
+    };
+    let mut vectors = Vec::new();
+    ctx.try_reserve_items(&mut vectors, values.len() / 3, "creo legacy real vector array")?;
+    vectors.extend(values.as_chunks::<3>().0.iter().copied());
+    Ok(Some(vectors))
 }
 
-fn real_scalar_array(records: &RealFieldIndex<'_>, parent: usize, name: &str) -> Option<Vec<f64>> {
-    let record = real_record(records, parent, name)?;
+fn real_scalar_array(
+    ctx: &DecodeContext<'_>,
+    records: &RealFieldIndex<'_>,
+    parent: usize,
+    name: &str,
+) -> Result<Option<Vec<f64>>, CodecError> {
+    let Some(record) = real_record(records, parent, name) else {
+        return Ok(None);
+    };
     let NumericPayload::Array(array) = &record.payload else {
-        return None;
+        return Ok(None);
     };
     let dimensions = array.dimensions();
-    (dimensions.len() == 1).then_some(())?;
-    real_array_values(record)
+    if dimensions.len() != 1 {
+        return Ok(None);
+    }
+    real_array_values(ctx, record)
 }
 
 /// Expand one real array's runs into its elements, in element order.
 ///
 /// The array states a run-count sum equal to its extent product, so the result
 /// holds one element per declared array element.
-fn real_array_values(record: &RealRecord) -> Option<Vec<f64>> {
+fn real_array_values(
+    ctx: &DecodeContext<'_>,
+    record: &RealRecord,
+) -> Result<Option<Vec<f64>>, CodecError> {
     let NumericPayload::Array(array) = &record.payload else {
-        return None;
+        return Ok(None);
     };
-    Some(
-        array
-            .runs()
-            .iter()
-            .flat_map(|run| std::iter::repeat_n(run.value.value(), index_from_u32(run.count)))
-            .collect(),
-    )
+    let mut values = Vec::new();
+    ctx.try_reserve_items(
+        &mut values,
+        record.payload.element_count(),
+        "creo legacy real array expansion",
+    )?;
+    values.extend(array.runs().iter().flat_map(|run| {
+        std::iter::repeat_n(run.value.value(), index_from_u32(run.count))
+    }));
+    Ok(Some(values))
 }
 
 fn object_id_index<'a>(
@@ -738,18 +764,19 @@ fn integer_field(records: &IntegerFieldIndex<'_>, parent: usize, name: &str) -> 
 ///
 /// The array states a run-count sum equal to its extent product, so the result
 /// holds one element per declared array element.
-fn integer_array(records: &IntegerFieldIndex<'_>, parent: usize, name: &str) -> Option<Vec<i32>> {
+fn integer_pair(records: &IntegerFieldIndex<'_>, parent: usize, name: &str) -> Option<[i32; 2]> {
     let record = integer_record(records, parent, name)?;
     let NumericPayload::Array(array) = &record.payload else {
         return None;
     };
-    Some(
-        array
-            .runs()
-            .iter()
-            .flat_map(|run| std::iter::repeat_n(run.value, index_from_u32(run.count)))
-            .collect(),
-    )
+    if record.payload.element_count() != 2 {
+        return None;
+    }
+    let mut values = array
+        .runs()
+        .iter()
+        .flat_map(|run| std::iter::repeat_n(run.value, index_from_u32(run.count)));
+    Some([values.next()?, values.next()?])
 }
 
 fn real_record<'a>(
@@ -775,7 +802,14 @@ fn local_system_slots(record: &RealRecord) -> Option<[f64; 12]> {
         return None;
     };
     (array.dimensions() == [4, 3]).then_some(())?;
-    real_array_values(record)?.try_into().ok()
+    let mut slots = [0.0; 12];
+    let values = array.runs().iter().flat_map(|run| {
+        std::iter::repeat_n(run.value.value(), index_from_u32(run.count))
+    });
+    for (slot, value) in slots.iter_mut().zip(values) {
+        *slot = value;
+    }
+    Some(slots)
 }
 
 #[cfg(test)]
@@ -1709,6 +1743,20 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         let persistence = cylinder_persistence(false);
         assert_eq!(scan(&persistence).rows.len(), 1);
         assert_collection_refusal(&persistence, "creo legacy geometry array elements");
+    }
+
+    #[test]
+    fn legacy_real_array_expansion_refuses_before_vec_growth() {
+        let persistence = spline_persistence(false);
+        assert!(scan(&persistence).carriers.is_empty());
+        assert_collection_refusal(&persistence, "creo legacy real array expansion");
+    }
+
+    #[test]
+    fn legacy_real_vector_array_refuses_before_vec_growth() {
+        let persistence = spline_persistence(true);
+        assert_eq!(scan(&persistence).carriers.len(), 1);
+        assert_collection_refusal(&persistence, "creo legacy real vector array");
     }
 
     #[test]
