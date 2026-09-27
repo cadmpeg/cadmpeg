@@ -16,6 +16,72 @@ use crate::test_support::streams_test::design_metastream_with_records;
 use crate::test_support::zip_test::with_scan;
 
 #[test]
+fn feature_timeline_item_limit_refuses_before_counted_vector_allocation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use std::collections::HashMap;
+
+    let mut bulk = Vec::new();
+    lp_ascii(&mut bulk, "256");
+    bulk.extend_from_slice(&35_u64.to_le_bytes());
+    lp_ascii(&mut bulk, "Timeline");
+    bulk.extend_from_slice(&[0, 0]);
+    for target in [17_u64, 101, 102] {
+        bulk.push(1);
+        bulk.extend_from_slice(&target.to_le_bytes());
+        bulk.extend_from_slice(&[0, 0]);
+        if target == 17 {
+            bulk.extend_from_slice(&2_u32.to_le_bytes());
+        }
+    }
+    let frame = 0..bulk.len();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::parse_feature_timeline_record(
+        &limited,
+        &bulk,
+        "Design/BulkStream.dat",
+        frame.clone(),
+        "256",
+        35,
+        0,
+        &HashMap::new(),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "admit F3D timeline item slots"
+    ));
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let admitted = super::parse_feature_timeline_record(
+        &service,
+        &bulk,
+        "Design/BulkStream.dat",
+        frame,
+        "256",
+        35,
+        0,
+        &HashMap::new(),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        admitted
+            .frame()
+            .items()
+            .iter()
+            .map(|item| item.value)
+            .collect::<Vec<_>>(),
+        [101, 102]
+    );
+}
+
+#[test]
 fn component_naming_space_binds_component_entity_to_context_uuid() {
     const COMPONENT_TYPE_GUID: &str = "11111111-2222-3333-4444-555555555555";
     const CONTEXT_UUID: &str = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
@@ -180,7 +246,10 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
             &[(35, 0)],
         );
         let decoded = with_scan(&archive(&meta, &bulk), |scan| {
-            crate::design::decode::meta::decode_feature_timelines(scan)
+            crate::design::decode::meta::decode_feature_timelines(
+                &cadmpeg_test_support::service_decode_context(),
+                scan,
+            )
         })
         .expect("exact feature timeline");
         let [timeline] = decoded.as_slice() else {
@@ -213,7 +282,10 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
         let second_offset = timeline.frame().items()[1].offset as usize;
         duplicate[second_offset..second_offset + 8].copy_from_slice(&101_u64.to_le_bytes());
         let error = with_scan(&archive(&meta, &duplicate), |scan| {
-            crate::design::decode::meta::decode_feature_timelines(scan)
+            crate::design::decode::meta::decode_feature_timelines(
+                &cadmpeg_test_support::service_decode_context(),
+                scan,
+            )
         })
         .expect_err("duplicate timeline items must be rejected");
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
@@ -225,7 +297,10 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
             .expect("inline type GUID");
         mismatched_inline_type[inline_type_at] = b'2';
         let error = with_scan(&archive(&meta, &mismatched_inline_type), |scan| {
-            crate::design::decode::meta::decode_feature_timelines(scan)
+            crate::design::decode::meta::decode_feature_timelines(
+                &cadmpeg_test_support::service_decode_context(),
+                scan,
+            )
         })
         .expect_err("an inline type GUID must match the target registration");
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
@@ -242,7 +317,10 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
         &[(35, 0)],
     );
     let error = with_scan(&archive(&unsupported_meta, &bulk), |scan| {
-        crate::design::decode::meta::decode_feature_timelines(scan)
+        crate::design::decode::meta::decode_feature_timelines(
+            &cadmpeg_test_support::service_decode_context(),
+            scan,
+        )
     })
     .expect_err("an unsupported timeline version must not use a known frame speculatively");
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
@@ -265,7 +343,10 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
             &[(35, 0)],
         );
         let error = with_scan(&archive(&incompatible_meta, &bulk), |scan| {
-            crate::design::decode::meta::decode_feature_timelines(scan)
+            crate::design::decode::meta::decode_feature_timelines(
+                &cadmpeg_test_support::service_decode_context(),
+                scan,
+            )
         })
         .expect_err("incompatible timeline registration metadata must be rejected");
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
