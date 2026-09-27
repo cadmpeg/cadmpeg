@@ -1107,21 +1107,28 @@ fn planar_point_is_strictly_inside(point: [f64; 2], ring: &SimpleRing) -> bool {
 fn linear_boundary_rings(
     candidates: &[Option<LinearBoundaryGeometry>],
     space: BoundarySpace,
-) -> Option<Result<Vec<SimpleRing>, NonSimpleRing>> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Result<Vec<SimpleRing>, NonSimpleRing>>, CodecError> {
     if candidates.is_empty() {
-        return None;
+        return Ok(None);
     }
-    let rings = candidates
-        .iter()
-        .map(|candidate| match (space, candidate.as_ref()) {
+    let mut rings = reserve_vec(ctx, candidates.len(), "iges linear boundary ring slots")?;
+    for candidate in candidates {
+        let points = match (space, candidate.as_ref()) {
             (BoundarySpace::Parameter, Some(LinearBoundaryGeometry::Parameter(points)))
             | (BoundarySpace::Model, Some(LinearBoundaryGeometry::Model(points))) => {
-                Some(points.clone())
+                points
             }
-            _ => None,
-        })
-        .collect::<Option<Vec<_>>>()?;
-    Some(rings.into_iter().map(SimpleRing::new).collect())
+            _ => return Ok(None),
+        };
+        let mut copied = reserve_vec(ctx, points.len(), "iges linear boundary ring points")?;
+        copied.extend_from_slice(points);
+        match SimpleRing::new(copied) {
+            Ok(ring) => rings.push(ring),
+            Err(error) => return Ok(Some(Err(error))),
+        }
+    }
+    Ok(Some(Ok(rings)))
 }
 
 fn inner_boundaries_are_disjoint_and_inside(outer: &SimpleRing, inners: &[SimpleRing]) -> bool {
@@ -2451,10 +2458,10 @@ pub(super) fn project(
         if !valid {
             continue;
         }
-        let linear_rings =
-            linear_boundary_rings(&linear_boundary_candidates, BoundarySpace::Parameter).or_else(
-                || linear_boundary_rings(&linear_boundary_candidates, BoundarySpace::Model),
-            );
+        let linear_rings = match linear_boundary_rings(&linear_boundary_candidates, BoundarySpace::Parameter, ctx)? {
+            Some(rings) => Some(rings),
+            None => linear_boundary_rings(&linear_boundary_candidates, BoundarySpace::Model, ctx)?,
+        };
         let linear_relationship = linear_rings.and_then(|rings| {
             linear_boundary_relationship_is_valid(
                 rings.as_deref(),

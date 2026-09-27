@@ -1130,7 +1130,9 @@ fn linear_boundary_relationship_rejects_a_self_intersecting_outer_boundary() {
         [1.0, 0.0],
         [0.0, 0.0],
     ]))];
-    let rings = linear_boundary_rings(&candidates, BoundarySpace::Parameter).unwrap();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let rings = linear_boundary_rings(&candidates, BoundarySpace::Parameter, &ctx).unwrap().unwrap();
     let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
@@ -1151,6 +1153,29 @@ fn linear_boundary_relationship_rejects_a_self_intersecting_outer_boundary() {
         ),
         Some(false)
     );
+}
+
+#[test]
+fn linear_boundary_rings_refuse_outer_and_nested_point_storage() {
+    let candidates = [Some(LinearBoundaryGeometry::Parameter(vec![
+        [0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 0.0],
+    ]))];
+    for (cap, operation) in [
+        (0, "iges linear boundary ring slots"),
+        (1, "iges linear boundary ring points"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = linear_boundary_rings(&candidates, BoundarySpace::Parameter, &ctx);
+        assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation));
+    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert!(linear_boundary_rings(&candidates, BoundarySpace::Parameter, &ctx)
+        .unwrap().unwrap().is_ok());
 }
 
 #[test]
