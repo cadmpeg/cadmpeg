@@ -16,7 +16,7 @@ use crate::chunks::{
 };
 use crate::container::{OpaqueRecord, Record};
 use crate::objects::{parse_class_wrapper_with_userdata, ClassUserdata, UserdataDescriptor};
-use crate::settings::{bbox, utf16, MillimeterScale};
+use crate::settings::{bbox, utf16, utf16_retained, MillimeterScale};
 use crate::wire::{uuid, Uuid};
 
 const INSTANCE_DEFINITION_UUID: Uuid = Uuid::from_canonical([
@@ -438,6 +438,7 @@ fn anonymous<'a>(
 }
 
 fn unit_detail<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
@@ -446,7 +447,7 @@ fn unit_detail<'a>(
     let (_chunk, mut payload) = anonymous(data, reader, archive, "unit detail", warnings)?;
     let unit = payload.u32()?;
     let meters_per_unit = payload.f64()?;
-    let custom_name = utf16(&mut payload)?;
+    let custom_name = utf16_retained(ctx, &mut payload, "Rhino instance unit name")?;
     let standard_scale = if unit == 0 {
         Some(1.0)
     } else {
@@ -468,6 +469,7 @@ fn unit_detail<'a>(
 }
 
 fn model_component(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -533,7 +535,7 @@ fn model_component(
     };
     let name = match payload.u8()? {
         0 | 2 => String::new(),
-        1 => utf16(&mut payload)?,
+        1 => utf16_retained(ctx, &mut payload, "Rhino instance component name")?,
         _ => {
             return Err(FramingError::structural(
                 payload.position(),
@@ -795,13 +797,13 @@ fn parse_v5(
         ));
     }
     let member_ids = members(ctx, &mut reader)?;
-    let name = utf16(&mut reader)?;
-    let description = utf16(&mut reader)?;
-    let url = utf16(&mut reader)?;
-    let url_tag = utf16(&mut reader)?;
+    let name = utf16_retained(ctx, &mut reader, "Rhino instance name")?;
+    let description = utf16_retained(ctx, &mut reader, "Rhino instance description")?;
+    let url = utf16_retained(ctx, &mut reader, "Rhino instance URL")?;
+    let url_tag = utf16_retained(ctx, &mut reader, "Rhino instance URL tag")?;
     let _bounds = bbox(&mut reader)?;
     let mut kind = v5_definition_kind(reader.u32()?);
-    let mut legacy_linked_path = utf16(&mut reader)?;
+    let mut legacy_linked_path = utf16_retained(ctx, &mut reader, "Rhino instance linked path")?;
     if matches!(
         kind,
         DefinitionKind::Linked | DefinitionKind::LinkedAndEmbedded
@@ -824,7 +826,7 @@ fn parse_v5(
     } else {
         String::new()
     };
-    let units = unit_detail(data, &mut reader, archive, warnings)?;
+    let units = unit_detail(ctx, data, &mut reader, archive, warnings)?;
     let linked_depth = reader.i32()?;
     let mut linked_appearance = reader.u32()?;
     if matches!(kind, DefinitionKind::Linked) && !matches!(linked_appearance, 1 | 2) {
@@ -882,7 +884,7 @@ fn parse_v6(
     }
     outer.skip_remaining()?;
     let component_start = reader.position();
-    let (index, id, name) = model_component(data, &mut reader, archive, warnings)?;
+    let (index, id, name) = model_component(ctx, data, &mut reader, archive, warnings)?;
     let mut outer_children =
         crate::chunks::admitted_vec(ctx, 1, "Rhino instance definition checksum children")?;
     outer_children.push(component_start..reader.position());
@@ -894,7 +896,7 @@ fn parse_v6(
     }
     let kind = v6_definition_kind(reader.u32()?);
     let units_start = reader.position();
-    let units = unit_detail(data, &mut reader, archive, warnings)?;
+    let units = unit_detail(ctx, data, &mut reader, archive, warnings)?;
     crate::chunks::reserve_admitted_vec(
         ctx,
         &mut outer_children,
@@ -902,9 +904,9 @@ fn parse_v6(
         "Rhino instance definition checksum children",
     )?;
     outer_children.push(units_start..reader.position());
-    let description = utf16(&mut reader)?;
-    let url = utf16(&mut reader)?;
-    let url_tag = utf16(&mut reader)?;
+    let description = utf16_retained(ctx, &mut reader, "Rhino instance description")?;
+    let url = utf16_retained(ctx, &mut reader, "Rhino instance URL")?;
+    let url_tag = utf16_retained(ctx, &mut reader, "Rhino instance URL tag")?;
     let _bounds = bbox(&mut reader)?;
     let member_ids = if reader.bool()? {
         members(ctx, &mut reader)?
