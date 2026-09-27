@@ -182,7 +182,20 @@ impl CodecBackend for NxCodec {
 /// Build the container summary: one entry per catalogued directory stream, plus
 /// one per embedded Parasolid stream, and the shared container notes.
 fn summarize(ctx: &DecodeContext<'_>, scan: &decode::Scan) -> Result<ContainerSummary, CodecError> {
+    let entry_count = scan
+        .container
+        .entries
+        .len()
+        .checked_add(scan.streams.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("nx summary entries", 0, u64::MAX))?;
+    ctx.charge_collection_items(
+        u64::try_from(entry_count).unwrap_or(u64::MAX),
+        "nx summary entries",
+    )?;
     let mut entries = Vec::new();
+    entries
+        .try_reserve_exact(entry_count)
+        .map_err(|_| ctx.refuse_codec_limit("nx summary entries", 0, 1))?;
     let semantic_streams = native::substrate::topology_streams(ctx, scan)?;
 
     for entry in &scan.container.entries {
