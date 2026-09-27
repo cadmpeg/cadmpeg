@@ -190,6 +190,21 @@ pub(crate) struct ScannedSection<'a> {
     region: &'a [u8],
 }
 
+impl<'a> ScannedSection<'a> {
+    fn copy_retained(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        Ok(Self {
+            section: Section {
+                raw_name: ctx
+                    .copy_retained_text(&self.section.raw_name, "creo copied section names")?,
+                offset: self.section.offset,
+                length: self.section.length,
+                expanded_length: self.section.expanded_length,
+            },
+            region: self.region,
+        })
+    }
+}
+
 impl Section {
     /// The section whose payload is `data[offset..end]`, with those bytes, or
     /// `None` when that is not a region of `data`: an end before the offset, or
@@ -1253,7 +1268,10 @@ fn family_table(data: &[u8], sections: &[ScannedSection<'_>]) -> Option<FamilyTa
     Some(FamilyTableRecord { pointer, offset })
 }
 
-fn model_geometry_sections<'a>(sections: &[ScannedSection<'a>]) -> Vec<ScannedSection<'a>> {
+fn model_geometry_sections<'a>(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'a>],
+) -> Result<Vec<ScannedSection<'a>>, CodecError> {
     let mut visible_namespace_present = false;
     for candidate in sections
         .iter()
@@ -1277,10 +1295,11 @@ fn model_geometry_sections<'a>(sections: &[ScannedSection<'a>]) -> Vec<ScannedSe
             false
         };
         if keep {
-            selected.push(section.clone());
+            ctx.try_reserve_items(&mut selected, 1, "creo model geometry sections")?;
+            selected.push(section.copy_retained(ctx)?);
         }
     }
-    selected
+    Ok(selected)
 }
 
 fn surface_rows(
@@ -2401,7 +2420,7 @@ pub(crate) fn scan_bytes<'a>(
             crate::legacy_feature::scan(&framing.persistence, &legacy_geometry.topology_rows)
         })
         .unwrap_or_default();
-    let model_geometry_sections = model_geometry_sections(&sections);
+    let model_geometry_sections = model_geometry_sections(ctx, &sections)?;
     let census = geom_census(&sections)?;
     let principal_unit =
         binary_principal_unit(&data).or_else(|| legacy_ascii?.persistence.principal_unit_system());
