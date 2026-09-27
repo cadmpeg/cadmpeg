@@ -1271,7 +1271,9 @@ pub(super) fn decode(
                 continue;
             };
             let curve = CurveId::from(ids::data(kind!("curve"), id));
-            typed.extend(segments.iter().map(|(segment, _)| *segment));
+            for &(segment, _) in &segments {
+                claim_geometry_typed(&mut typed, segment, ctx)?;
+            }
             let curve_index = CurveIndex(ir.model.curves.len());
             push_geometry_vec(&mut ir.model.curves, Curve {
                 id: curve.clone(),
@@ -2222,7 +2224,9 @@ pub(super) fn decode(
             claim_geometry_typed(&mut typed, representation, ctx)?;
         }
         claim_geometry_typed(&mut typed, curve_step, ctx)?;
-        typed.extend(geometry_records.iter().copied());
+        for &record in geometry_records {
+            claim_geometry_typed(&mut typed, record, ctx)?;
+        }
     }
 
     // Curve-bounded surfaces resolve before the PCURVE pass because their 3D
@@ -2389,7 +2393,9 @@ fn decode_tessellated_curve_sets(
                 source_object: Some(super::step_source_association(id, source_name.clone())),
             }, ctx, "step_geometry_ir_curves")?;
         }
-        typed.extend([id, coordinates_id]);
+        for source_id in [id, coordinates_id] {
+            claim_geometry_typed(typed, source_id, ctx)?;
+        }
     }
     Ok(())
 }
