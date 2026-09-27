@@ -358,6 +358,26 @@ impl Shell {
         }
     }
 
+    /// Construct a shell from a nonempty, already allocated free-vertex list.
+    pub fn with_free_vertices(
+        id: ShellId,
+        region: RegionId,
+        free_vertices: Vec<VertexId>,
+    ) -> Result<Self, BodySelectionError> {
+        if free_vertices.is_empty() {
+            return Err(BodySelectionError::Empty);
+        }
+        Ok(Self {
+            id,
+            region,
+            members: ShellMembers {
+                faces: Vec::new(),
+                wire_edges: Vec::new(),
+                free_vertices,
+            },
+        })
+    }
+
     /// Faces of the shell.
     pub fn faces(&self) -> &[FaceId] {
         &self.members.faces
