@@ -418,6 +418,50 @@ fn standard_edge_vertices_propagate_collection_refusal() {
 }
 
 #[test]
+fn standard_completed_edge_vertices_refuse_before_absent_row() {
+    use super::{Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopology, NonEmptyCoedges};
+    use cadmpeg_core::CodecError;
+
+    let topology = StandardTopology {
+        faces: vec![FaceTopology {
+            boundaries: vec![Boundary {
+                coedges: NonEmptyCoedges::one(CoedgeUse {
+                    edge_row: 0,
+                    reversed: false,
+                    start_vertex: 0,
+                    end_vertex: 1,
+                }),
+            }],
+        }],
+        edge_rows: vec![
+            EdgeRow {
+                kind: 1,
+                handles: vec![10],
+                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+            },
+            EdgeRow {
+                kind: 1,
+                handles: vec![11],
+                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+            },
+        ],
+        vertex_points: Vec::new(),
+        logical_vertex_count: 2,
+    };
+    assert!(
+        crate::test_support::with_service_context(|ctx| topology.edge_vertices(ctx))
+            .expect("service resource budget")
+            .is_none()
+    );
+    let refused = crate::test_support::with_collection_limit(2, |ctx| topology.edge_vertices(ctx));
+    assert!(matches!(
+        refused,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_standard_edge_vertices_complete"
+    ));
+}
+
+#[test]
 fn standard_vertex_point_domains_propagate_collection_refusal() {
     use super::{Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopology};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
