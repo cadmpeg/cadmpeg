@@ -8,8 +8,7 @@ use crate::om::expression_declaration_name;
 use crate::om::indexed_sections;
 use crate::om::ExpressionUnit;
 
-#[test]
-fn om_color_table_requires_complete_names_indices_and_rgb_atoms() {
+fn sample_color_table_bytes() -> Vec<u8> {
     let mut bytes = vec![0x02, 0x80, 0xd9, 0x01];
     for ordinal in 0..=216 {
         let name = if ordinal == 0 {
@@ -44,7 +43,17 @@ fn om_color_table_requires_complete_names_indices_and_rgb_atoms() {
         }
     }
 
-    let tables = color_tables(&bytes);
+    bytes
+}
+
+#[test]
+fn om_color_table_requires_complete_names_indices_and_rgb_atoms() {
+    let bytes = sample_color_table_bytes();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .unwrap();
+    let tables = color_tables(&ctx, &bytes).unwrap();
     assert_eq!(tables.len(), 1);
     assert_eq!(
         tables[0].background.map(|(component, _)| component.value()),
@@ -69,13 +78,61 @@ fn om_color_table_requires_complete_names_indices_and_rgb_atoms() {
 
     let mut wrong_background = bytes.clone();
     wrong_background[5] = b'b';
-    assert!(color_tables(&wrong_background).is_empty());
+    assert!(color_tables(&ctx, &wrong_background).unwrap().is_empty());
 
     let mut malformed = bytes.clone();
     *malformed.last_mut().unwrap() = 0x02;
-    assert!(color_tables(&malformed).is_empty());
+    assert!(color_tables(&ctx, &malformed).unwrap().is_empty());
     let truncated = &bytes[..bytes.len() - 1];
-    assert!(color_tables(truncated).is_empty());
+    assert!(color_tables(&ctx, truncated).unwrap().is_empty());
+}
+
+#[test]
+fn om_color_tables_refuse_collection_limit() {
+    let bytes = sample_color_table_bytes();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .unwrap();
+    let error = color_tables(&ctx, &bytes).unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn om_color_tables_refuse_retained_limit() {
+    let bytes = sample_color_table_bytes();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .unwrap();
+    let error = color_tables(&ctx, &bytes).unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+    ));
+}
+
+#[test]
+fn om_color_tables_refuse_work_limit() {
+    let bytes = sample_color_table_bytes();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .unwrap();
+    let error = color_tables(&ctx, &bytes).unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+    ));
 }
 
 #[test]

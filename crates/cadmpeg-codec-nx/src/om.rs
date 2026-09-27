@@ -366,8 +366,15 @@ fn color_table_at(bytes: &[u8], start: usize) -> Option<ColorTable<'_>> {
 }
 
 /// Decode every complete NX part color table in a bounded byte region.
-pub(crate) fn color_tables(bytes: &[u8]) -> Vec<ColorTable<'_>> {
+pub(crate) fn color_tables<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
+) -> Result<Vec<ColorTable<'a>>, CodecError> {
     let mut tables = Vec::new();
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+        "scan NX part color tables",
+    )?;
     let mut start = 0;
     while start + COLOR_TABLE_NAME_HEADER.len() <= bytes.len() {
         if bytes.get(start..start + COLOR_TABLE_NAME_HEADER.len()) != Some(&COLOR_TABLE_NAME_HEADER)
@@ -380,11 +387,19 @@ pub(crate) fn color_tables(bytes: &[u8]) -> Vec<ColorTable<'_>> {
             continue;
         };
         if let Some(table) = color_table_at(bytes, start) {
+            ctx.charge_collection_items(1, "nx part color tables")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ColorTable<'_>>()),
+                "retain NX part color table",
+            )?;
+            tables
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("nx part color tables", 0, 1))?;
             tables.push(table);
         }
         start = end;
     }
-    tables
+    Ok(tables)
 }
 
 /// One exact shifted-IEEE scalar field in a reconstructed construction payload.

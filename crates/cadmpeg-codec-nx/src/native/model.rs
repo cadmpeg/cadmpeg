@@ -1284,7 +1284,7 @@ impl NativeModel {
         let data_block_target_index_rows = data_block_target_index_rows(container);
         let rm_creation_display_data_relations =
             rm_creation_display_data_relations(container, &rmfastload_object_ids);
-        let (part_color_tables, part_color_definitions) = part_color_tables(container);
+        let (part_color_tables, part_color_definitions) = part_color_tables(ctx, container)?;
         let rm_display_color_assignments = rm_display_color_assignments(
             container,
             &part_color_definitions,
