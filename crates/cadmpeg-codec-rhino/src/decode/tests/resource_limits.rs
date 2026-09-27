@@ -3,10 +3,11 @@
 
 use super::super::source_association;
 use super::{
-    commit_curve_tree, hatch_loop_ids, hatch_source_links, object_record, one_child_compound,
-    scan_with_objects, stage_curve_tree, test_association, with_collection_limit,
-    with_transaction_limits, ArchiveVersion, BrepDraft, CadIr, CandidateError, CurveCommitSource,
-    DecodeContext, POINT_CLASS,
+    commit_curve_tree, hatch_loop_ids, hatch_source_links, line_nurbs, object_record,
+    one_child_compound, scan_with_objects, stage_curve_tree, test_association,
+    with_collection_limit, with_transaction_limits, ArchiveVersion, BrepDraft, CadIr,
+    CandidateError, CurveCommitSource, CurveGeometry, DecodeContext, Diagnostics, RhinoLossCode,
+    SolvedCurveGeometry, POINT_CLASS,
 };
 
 #[test]
@@ -318,4 +319,200 @@ fn source_association_refuses_retained_copy_and_path_limits() {
         identity.object_id.to_string()
     );
     assert_eq!(association.instance_path, path);
+}
+
+#[test]
+fn full_source_attributes_refuse_collection_limit() {
+    let mut scan = scan_with_objects(&[]);
+    scan.metadata.settings.current_layer = Some(7);
+    let refusal = with_collection_limit(0, |ctx| {
+        super::super::full_source_attributes(ctx, &scan)
+            .expect_err("one source attribute exceeds zero collection items")
+    });
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino full source attributes"
+    ));
+    let attributes = super::super::full_source_attributes(
+        &cadmpeg_test_support::service_decode_context(),
+        &scan,
+    )
+    .expect("source attributes admitted by service profile");
+    assert_eq!(attributes.get("current_layer"), Some(&"7".to_string()));
+}
+
+#[test]
+fn feature_property_map_refuses_collection_limit() {
+    let error = with_collection_limit(0, |ctx| {
+        super::super::insert_feature_property(
+            ctx,
+            &mut std::collections::BTreeMap::new(),
+            format_args!("dimension"),
+            format_args!("3"),
+        )
+        .expect_err("one generated feature property exceeds zero collection items")
+    });
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino feature property entries"
+    ));
+    let mut properties = std::collections::BTreeMap::new();
+    super::super::insert_feature_property(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut properties,
+        format_args!("dimension"),
+        format_args!("3"),
+    )
+    .expect("service profile admits the property");
+    assert_eq!(properties["dimension"], "3");
+}
+
+#[test]
+fn scan_warning_and_diagnostic_refuse_collection_limit() {
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
+    let refusal = with_transaction_limits(&scan, 4, None, |expand| {
+        let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
+        context
+            .scan_warning(0, format_args!("decode failed"))
+            .expect_err("warning requires a report slot")
+    });
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino diagnostics"
+    ));
+    let diagnostic = crate::loss::RhinoDiagnostic {
+        code: Some(RhinoLossCode::IntegrityFailure),
+        message: "checksum mismatch".to_string(),
+    };
+    let refusal = with_transaction_limits(&scan, 4, None, |expand| {
+        let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
+        context
+            .scan_diagnostic(0, &diagnostic)
+            .expect_err("coded diagnostic requires a report slot")
+    });
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino diagnostics"
+    ));
+    with_transaction_limits(&scan, 6, None, |expand| {
+        let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
+        context
+            .scan_warning(0, format_args!("decode failed"))
+            .expect("warning admitted");
+        context
+            .scan_diagnostic(0, &diagnostic)
+            .expect("coded diagnostic admitted");
+        assert_eq!(context.report.phase_warnings.len(), 2);
+    });
+}
+
+#[test]
+fn typed_report_loss_and_prefixed_diagnostic_refuse_collection_limit() {
+    let refusal = with_collection_limit(0, |ctx| {
+        super::super::push_report_loss(
+            ctx,
+            &mut Vec::new(),
+            RhinoLossCode::DimensionOverrideDropped,
+            format_args!("override dropped"),
+        )
+        .expect_err("typed loss requires a collection slot")
+    });
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino typed decode losses"
+    ));
+    let mut source = Diagnostics::new();
+    source.push("repaired");
+    let refusal = with_collection_limit(0, |ctx| {
+        Diagnostics::new()
+            .append_prefixed_admitted(ctx, source, format_args!("object"))
+            .expect_err("prefixed diagnostic requires a collection slot")
+    });
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino diagnostics"
+    ));
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut losses = Vec::new();
+    super::super::push_report_loss(
+        &ctx,
+        &mut losses,
+        RhinoLossCode::DimensionOverrideDropped,
+        format_args!("override dropped"),
+    )
+    .expect("service profile admits the typed loss");
+    assert_eq!(losses[0].message, "override dropped");
+}
+
+#[test]
+fn curve_warning_tree_refuses_collection_limit() {
+    let mut warnings = Diagnostics::new();
+    warnings.push("curve repair");
+    let curve = crate::curves::DecodedCurve::leaf(
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false))),
+        warnings,
+    );
+    let error = with_collection_limit(0, |ctx| {
+        super::super::append_curve_warnings(ctx, &mut Diagnostics::new(), &curve, "source")
+            .expect_err("curve diagnostic requires a collection slot")
+    });
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino diagnostics"
+    ));
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut report = Diagnostics::new();
+    super::super::append_curve_warnings(&ctx, &mut report, &curve, "source")
+        .expect("service profile admits the warning");
+    assert_eq!(report[0].message, "source: curve repair");
+}
+
+#[test]
+fn typed_install_loss_transfer_refuses_collection_limit() {
+    let source = vec![RhinoLossCode::IntegrityFailure.note("invalid source record")];
+    let refusal = with_collection_limit(0, |ctx| {
+        super::super::append_report_losses(ctx, &mut Vec::new(), source)
+            .expect_err("typed loss transfer requires one report slot")
+    });
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino typed decode losses"
+    ));
+    let source = vec![RhinoLossCode::IntegrityFailure.note("invalid source record")];
+    let mut report = Vec::new();
+    super::super::append_report_losses(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut report,
+        source,
+    )
+    .expect("service profile admits the loss");
+    assert_eq!(report[0].message, "invalid source record");
+}
+
+#[test]
+fn instance_unique_members_refuse_collection_limit() {
+    let members = [crate::wire::Uuid::from_canonical([0x51; 16])];
+    let refusal = with_collection_limit(0, |ctx| {
+        super::super::instance_members_are_unique(ctx, &members)
+            .expect_err("one member requires one set node")
+    });
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino instance unique members"
+    ));
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert!(super::super::instance_members_are_unique(&ctx, &members).expect("one unique member"));
+    assert!(
+        !super::super::instance_members_are_unique(&ctx, &[members[0], members[0]])
+            .expect("duplicate members are admitted before rejection")
+    );
 }
