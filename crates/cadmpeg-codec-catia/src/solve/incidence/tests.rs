@@ -844,15 +844,28 @@ fn incidence_solution_filter_propagates_collection_refusal() {
         run(&service_ctx).expect("service resource budget"),
         vec![vec![(0, [0, 0])]]
     );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    let error = run(&ctx).expect_err("filter allocation exceeds the collection limit");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "catia incidence solution filter probe"));
+    let mut limit = 0;
+    let mut operations = HashSet::new();
+    for _ in 0..512 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        let error = run(&ctx).expect_err("filter allocation exceeds the collection limit");
+        let CodecError::ResourceLimit(refusal) = error else {
+            panic!("expected collection refusal");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::CollectionItems);
+        operations.insert(refusal.operation);
+        if refusal.operation == "catia incidence solution filter probe" {
+            assert!(operations.contains("catia_incidence_branch_edge_widths"));
+            assert!(operations.contains("catia_incidence_branch_options"));
+            return;
+        }
+        limit = refusal.used + refusal.additional;
+    }
+    panic!("adaptive cap did not reach the filter probe");
 }
 
 #[test]

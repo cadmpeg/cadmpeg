@@ -2810,21 +2810,30 @@ impl IncidenceComponentSearch<'_, '_> {
                     .is_none_or(|domains| domains.supports_edge_candidate(edge, pair)))
         };
         let mut best = None::<(usize, usize, Option<Vec<(usize, [usize; 2])>>)>;
-        let mut edges = edges.into_iter().collect::<Vec<_>>();
-        edges.sort_by_key(|edge| {
-            coordinate_domains
-                .filter(|_| self.choices[*edge].is_empty())
-                .and_then(|domains| domains.implicit_edge_candidates(*edge, None))
-                .map_or(self.choices[*edge].len(), |candidates| {
-                    candidates.width_upper_bound()
-                })
-        });
-        'edges: for edge in edges {
-            if let Some(candidates) = coordinate_domains
+        let mut ordered_edges = Vec::new();
+        for edge in edges {
+            let width = if let Some(candidates) = coordinate_domains
                 .filter(|_| self.choices[edge].is_empty())
                 .and_then(|domains| domains.implicit_edge_candidates(edge, None))
             {
-                let width = candidates.width_upper_bound();
+                candidates.width_upper_bound(self.ctx)?
+            } else {
+                self.choices[edge].len()
+            };
+            crate::resource::push(
+                self.ctx,
+                &mut ordered_edges,
+                (edge, width),
+                "catia_incidence_branch_edge_widths",
+            )?;
+        }
+        ordered_edges.sort_by_key(|(_, width)| *width);
+        'edges: for (edge, width) in ordered_edges {
+            if coordinate_domains
+                .filter(|_| self.choices[edge].is_empty())
+                .and_then(|domains| domains.implicit_edge_candidates(edge, None))
+                .is_some()
+            {
                 if best.as_ref().is_none_or(|(_, best, _)| width < *best) {
                     best = Some((edge, width, None));
                     if width == 0 {
@@ -2837,7 +2846,12 @@ impl IncidenceComponentSearch<'_, '_> {
             let mut options = Vec::new();
             for pair in self.choices[edge].iter().copied() {
                 if viable(edge, pair)? {
-                    options.push((edge, pair));
+                    crate::resource::push(
+                        self.ctx,
+                        &mut options,
+                        (edge, pair),
+                        "catia_incidence_branch_options",
+                    )?;
                     if options.len() == limit {
                         continue 'edges;
                     }
