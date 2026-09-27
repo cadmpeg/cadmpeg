@@ -29,6 +29,45 @@ pub(super) struct OmAuditTrailRowWire {
     end_offset: u64,
 }
 
+#[derive(Serialize)]
+struct OmAuditTrailRowRef<'a> {
+    id: &'a str,
+    section_link: &'a str,
+    ordinal: u32,
+    raw_ordinal: &'a [u8],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    frame_selector: Option<u8>,
+    timestamp: u32,
+    #[serde(flatten)]
+    value: crate::om::state_tagged_value::StateTaggedValue,
+    raw: &'a [u8],
+    source_entry: &'a str,
+    source_offset: u64,
+    end_offset: u64,
+}
+
+impl Serialize for OmAuditTrailRow {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let record = self.record();
+        let (raw, len) = record.raw_array();
+        OmAuditTrailRowRef {
+            id: &self.id,
+            section_link: &self.section_link,
+            ordinal: record.ordinal.value(),
+            raw_ordinal: record.ordinal.raw(),
+            frame_selector: record.frame_selector,
+            timestamp: record.timestamp,
+            value: record.value,
+            raw: &raw[..len],
+            source_entry: &self.source_entry,
+            source_offset: self.source_offset,
+            end_offset: self.end_offset(),
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 impl From<OmAuditTrailRow> for OmAuditTrailRowWire {
     fn from(value: OmAuditTrailRow) -> Self {
         let record = value.record();
@@ -92,6 +131,42 @@ pub(super) struct OmOperationStateCounterWire {
     source_offset: u64,
 }
 
+#[derive(Serialize)]
+struct OmOperationStateCounterRef<'a> {
+    id: &'a str,
+    section_link: &'a str,
+    ordinal: u32,
+    row_kind: crate::om::discriminators::OperationStateCounterKind,
+    object_index: u32,
+    raw_object_index: &'a [u8],
+    introduced_state: u8,
+    modified_state: u8,
+    object_index_source_offset: u64,
+    source_entry: &'a str,
+    source_offset: u64,
+}
+
+impl Serialize for OmOperationStateCounter {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let object = self.frame.object();
+        OmOperationStateCounterRef {
+            id: &self.id,
+            section_link: &self.section_link,
+            ordinal: self.ordinal,
+            row_kind: self.frame.kind(),
+            object_index: object.value(),
+            raw_object_index: object.raw(),
+            introduced_state: self.frame.introduced(),
+            modified_state: self.frame.modified(),
+            object_index_source_offset: self.frame.object_offset(),
+            source_entry: &self.source_entry,
+            source_offset: self.frame.offset(),
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 impl From<OmOperationStateCounter> for OmOperationStateCounterWire {
     fn from(value: OmOperationStateCounter) -> Self {
         Self {
@@ -310,7 +385,10 @@ impl OmRollForwardStateRowWire {
 mod tests {
     use super::super::OmAuditTrailRow;
     use super::super::OmOperationStateCounter;
-    use super::{OmOperationStateSlotWire, OmRollForwardStateRowWire};
+    use super::{
+        OmAuditTrailRowWire, OmOperationStateCounterWire, OmOperationStateSlotWire,
+        OmRollForwardStateRowWire,
+    };
     use crate::native::om::state_status::OmOperationStateStatus;
     use crate::om::state_status::StateStatusPayload;
     use serde::Serialize;
@@ -335,6 +413,48 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&OmOperationStateSlotWire::from_slot(ordinal, slot)).unwrap(),
             json
+        );
+    }
+
+    #[test]
+    fn audit_borrowed_wire_preserves_owned_bytes() {
+        let json = r#"{"id":"nx:om:audit#0","section_link":"section","ordinal":2,"raw_ordinal":[2],"timestamp":0,"value_marker":160,"value":0,"raw_value":[160,0,0],"raw":[4,2,19,224,0,0,0,0,160,0,0],"source_entry":"om","source_offset":0,"end_offset":11}"#;
+        let record: OmAuditTrailRow = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&OmAuditTrailRowWire::from(record.clone())).unwrap()
+        );
+    }
+
+    #[test]
+    fn audit_retained_limit_refuses_before_raw_frame_allocation() {
+        let json = r#"{"id":"nx:om:audit#0","section_link":"section","ordinal":2,"raw_ordinal":[2],"timestamp":0,"value_marker":160,"value":0,"raw_value":[160,0,0],"raw":[4,2,19,224,0,0,0,0,160,0,0],"source_entry":"om","source_offset":0,"end_offset":11}"#;
+        let record: OmAuditTrailRow = serde_json::from_str(json).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(json).unwrap(),
+        );
+    }
+
+    #[test]
+    fn counter_borrowed_wire_preserves_owned_bytes() {
+        let json = r#"{"id":"nx:om:counter#0","section_link":"section","ordinal":0,"row_kind":1,"object_index":0,"raw_object_index":[144,0,0],"introduced_state":1,"modified_state":2,"object_index_source_offset":102,"source_entry":"om","source_offset":100}"#;
+        let record: OmOperationStateCounter = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&OmOperationStateCounterWire::from(record.clone())).unwrap()
+        );
+    }
+
+    #[test]
+    fn counter_retained_limit_refuses_before_token_clone() {
+        let json = r#"{"id":"nx:om:counter#0","section_link":"section","ordinal":0,"row_kind":1,"object_index":0,"raw_object_index":[144,0,0],"introduced_state":1,"modified_state":2,"object_index_source_offset":102,"source_entry":"om","source_offset":100}"#;
+        let record: OmOperationStateCounter = serde_json::from_str(json).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(json).unwrap(),
         );
     }
 
