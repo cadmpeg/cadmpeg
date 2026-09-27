@@ -480,7 +480,7 @@ impl<'a> Container<'a> {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<String>, CodecError> {
-        let strings = self.external_reference_strings();
+        let strings = self.external_reference_strings(ctx)?;
         let count = strings.len();
         let count_u64 = cadmpeg_core::decode::u64_from_index(count);
         ctx.charge_collection_items(count_u64, "nx external reference paths")?;
@@ -508,70 +508,124 @@ impl<'a> Container<'a> {
     }
 
     /// Extract child-part strings with their owning entry and payload offset.
-    pub(crate) fn external_reference_strings(&self) -> Vec<(&DirEntry, usize, String)> {
-        self.entries
+    pub(crate) fn external_reference_strings(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<(&DirEntry, usize, String)>, CodecError> {
+        let mut out = Vec::new();
+        for entry in self
+            .entries
             .iter()
             .filter(|entry| entry.name.contains("ExternalReferences"))
-            .filter_map(|entry| entry.file_span().map(|span| (entry, span)))
-            .flat_map(|(entry, (offset, size))| {
-                let Ok(offset) = usize::try_from(offset) else {
-                    return Vec::new();
-                };
-                let Ok(size) = usize::try_from(size) else {
-                    return Vec::new();
-                };
-                self.data
-                    .get(offset..offset.saturating_add(size))
-                    .and_then(parse_extref_string_table)
-                    .map(|(_, strings)| {
-                        strings
-                            .into_iter()
-                            .map(|(relative, value)| (entry, relative, value))
-                            .collect()
-                    })
-                    .unwrap_or_default()
-            })
-            .collect()
+        {
+            let Some((offset, size)) = entry.file_span() else {
+                continue;
+            };
+            let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
+                continue;
+            };
+            let Some(end) = offset.checked_add(size) else {
+                continue;
+            };
+            let Some(payload) = self.data.get(offset..end) else {
+                continue;
+            };
+            let Some((_, strings)) = parse_extref_string_table(ctx, payload)? else {
+                continue;
+            };
+            let count = strings.len();
+            let count_u64 = cadmpeg_core::decode::u64_from_index(count);
+            ctx.charge_collection_items(count_u64, "nx external reference strings")?;
+            let bytes = count
+                .checked_mul(std::mem::size_of::<(&DirEntry, usize, String)>())
+                .ok_or_else(|| ctx.refuse_codec_limit("nx external reference strings", 0, count_u64))?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(bytes),
+                "nx external reference strings",
+            )?;
+            out.try_reserve(count)
+                .map_err(|_| ctx.refuse_codec_limit("nx external reference strings", 0, count_u64))?;
+            out.extend(strings.into_iter().map(|(relative, value)| (entry, relative, value)));
+        }
+        Ok(out)
     }
 
     /// Decode indexed EXTREFSTREAM record prefixes and sorted handle lanes.
-    pub(crate) fn external_reference_records(&self) -> Vec<(&DirEntry, ExtrefRecord)> {
-        self.entries
-            .iter()
-            .filter(|entry| entry.name.contains("ExternalReferences"))
-            .filter_map(|entry| {
-                let (offset, size) = entry.file_span()?;
-                let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
-                let payload = self.data.get(offset..offset.checked_add(size)?)?;
-                Some(
-                    parse_extref_records(payload)
-                        .into_iter()
-                        .map(move |record| (entry, record)),
-                )
-            })
-            .flatten()
-            .collect()
+    pub(crate) fn external_reference_records(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<(&DirEntry, ExtrefRecord)>, CodecError> {
+        let mut out = Vec::new();
+        for entry in self.entries.iter().filter(|entry| entry.name.contains("ExternalReferences")) {
+            let Some((offset, size)) = entry.file_span() else {
+                continue;
+            };
+            let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
+                continue;
+            };
+            let Some(end) = offset.checked_add(size) else {
+                continue;
+            };
+            let Some(payload) = self.data.get(offset..end) else {
+                continue;
+            };
+            let records = parse_extref_records(ctx, payload)?;
+            let count = records.len();
+            let count_u64 = cadmpeg_core::decode::u64_from_index(count);
+            ctx.charge_collection_items(count_u64, "nx external reference record entries")?;
+            let bytes = count
+                .checked_mul(std::mem::size_of::<(&DirEntry, ExtrefRecord)>())
+                .ok_or_else(|| ctx.refuse_codec_limit("nx external reference record entries", 0, count_u64))?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(bytes),
+                "nx external reference record entries",
+            )?;
+            out.try_reserve(count).map_err(|_| {
+                ctx.refuse_codec_limit("nx external reference record entries", 0, count_u64)
+            })?;
+            out.extend(records.into_iter().map(|record| (entry, record)));
+        }
+        Ok(out)
     }
 
     /// Retain every record boundary from each valid EXTREFSTREAM index.
     pub(crate) fn external_reference_indexed_records(
         &self,
-    ) -> Vec<(&DirEntry, ExtrefIndexedRecord)> {
-        self.entries
-            .iter()
-            .filter(|entry| entry.name.contains("ExternalReferences"))
-            .filter_map(|entry| {
-                let (offset, size) = entry.file_span()?;
-                let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
-                let payload = self.data.get(offset..offset.checked_add(size)?)?;
-                Some(
-                    parse_extref_record_index(payload)?
-                        .into_iter()
-                        .map(move |record| (entry, record)),
-                )
-            })
-            .flatten()
-            .collect()
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<(&DirEntry, ExtrefIndexedRecord)>, CodecError> {
+        let mut out = Vec::new();
+        for entry in self.entries.iter().filter(|entry| entry.name.contains("ExternalReferences")) {
+            let Some((offset, size)) = entry.file_span() else {
+                continue;
+            };
+            let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
+                continue;
+            };
+            let Some(end) = offset.checked_add(size) else {
+                continue;
+            };
+            let Some(payload) = self.data.get(offset..end) else {
+                continue;
+            };
+            let Some(records) = parse_extref_record_index(ctx, payload)? else {
+                continue;
+            };
+            let count = records.len();
+            let count_u64 = cadmpeg_core::decode::u64_from_index(count);
+            ctx.charge_collection_items(count_u64, "nx external reference indexed entries")?;
+            let bytes = count
+                .checked_mul(std::mem::size_of::<(&DirEntry, ExtrefIndexedRecord)>())
+                .ok_or_else(|| ctx.refuse_codec_limit("nx external reference indexed entries", 0, count_u64))?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(bytes),
+                "nx external reference indexed entries",
+            )?;
+            out.try_reserve(count).map_err(|_| {
+                ctx.refuse_codec_limit("nx external reference indexed entries", 0, count_u64)
+            })?;
+            out.extend(records.into_iter().map(|record| (entry, record)));
+        }
+        Ok(out)
     }
 
     /// Borrow the admitted object-id table from `/Root/FastLoad/RMFastLoad`.
@@ -674,117 +728,280 @@ pub(crate) struct ExtrefIndexedRecord {
     pub(crate) byte_len: usize,
 }
 
-fn parse_extref_string_table(payload: &[u8]) -> Option<(usize, Vec<(usize, String)>)> {
-    (0..payload.len().saturating_sub(4))
-        .rev()
-        .find_map(|marker| {
-            (payload[marker] == 1).then_some(())?;
-            let count = View::u32_le_at(payload, marker + 1)? as usize;
-            let mut pos = marker + 5;
-            // Each entry is a 2-byte length prefix plus at least one non-empty string byte.
-            let count = bounded_len(count as u64, 3, payload.len().saturating_sub(pos))?;
-            let mut out = Vec::with_capacity(count);
-            for _ in 0..count {
-                let length = usize::from(View::u16_le_at(payload, pos)?);
-                let string_offset = pos + 2;
-                pos = string_offset.checked_add(length)?;
-                let raw = payload.get(string_offset..pos)?;
-                let value = std::str::from_utf8(raw).ok()?;
-                (!value.is_empty() && value.chars().all(|character| !character.is_control()))
-                    .then_some(())?;
-                out.push((string_offset, value.to_string()));
+fn parse_extref_string_table(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Option<(usize, Vec<(usize, String)>)>, CodecError> {
+    for marker in (0..payload.len().saturating_sub(4)).rev() {
+        if payload[marker] != 1 {
+            continue;
+        }
+        let Some(count) = View::u32_le_at(payload, marker + 1) else {
+            continue;
+        };
+        let Some(start) = marker.checked_add(5) else {
+            continue;
+        };
+        // Each entry is a 2-byte length prefix plus at least one non-empty string byte.
+        let Some(count) = bounded_len(u64::from(count), 3, payload.len().saturating_sub(start))
+        else {
+            continue;
+        };
+        let mut pos = start;
+        let valid = (0..count).all(|_| {
+            let Some(length) = View::u16_le_at(payload, pos).map(usize::from) else {
+                return false;
+            };
+            let Some(string_offset) = pos.checked_add(2) else {
+                return false;
+            };
+            let Some(end) = string_offset.checked_add(length) else {
+                return false;
+            };
+            let Some(raw) = payload.get(string_offset..end) else {
+                return false;
+            };
+            let Ok(value) = std::str::from_utf8(raw) else {
+                return false;
+            };
+            if value.is_empty() || value.chars().any(char::is_control) {
+                return false;
             }
-            (pos == payload.len()).then_some((marker, out))
-        })
+            pos = end;
+            true
+        });
+        if !valid || pos != payload.len() {
+            continue;
+        }
+        let count_u64 = cadmpeg_core::decode::u64_from_index(count);
+        ctx.charge_collection_items(count_u64, "nx external reference string table")?;
+        let bytes = count
+            .checked_mul(std::mem::size_of::<(usize, String)>())
+            .ok_or_else(|| ctx.refuse_codec_limit("nx external reference string table", 0, count_u64))?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(bytes),
+            "nx external reference string table",
+        )?;
+        let mut out = Vec::new();
+        out.try_reserve_exact(count).map_err(|_| {
+            ctx.refuse_codec_limit("nx external reference string table", 0, count_u64)
+        })?;
+        pos = start;
+        for _ in 0..count {
+            let Some(length) = View::u16_le_at(payload, pos).map(usize::from) else {
+                return Ok(None);
+            };
+            let Some(string_offset) = pos.checked_add(2) else {
+                return Ok(None);
+            };
+            let Some(end) = string_offset.checked_add(length) else {
+                return Ok(None);
+            };
+            let Some(raw) = payload.get(string_offset..end) else {
+                return Ok(None);
+            };
+            let Ok(value) = std::str::from_utf8(raw) else {
+                return Ok(None);
+            };
+            let len = cadmpeg_core::decode::u64_from_index(value.len());
+            ctx.charge_retained(len, "nx external reference string")?;
+            let mut copy = String::new();
+            copy.try_reserve_exact(value.len())
+                .map_err(|_| ctx.refuse_codec_limit("nx external reference string", 0, len))?;
+            copy.push_str(value);
+            out.push((string_offset, copy));
+            pos = end;
+        }
+        return Ok(Some((marker, out)));
+    }
+    Ok(None)
 }
 
-fn parse_extref_records(payload: &[u8]) -> Vec<ExtrefRecord> {
-    let Some(index) = parse_extref_record_index(payload) else {
-        return Vec::new();
+fn parse_extref_records(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<ExtrefRecord>, CodecError> {
+    let Some(index) = parse_extref_record_index(ctx, payload)? else {
+        return Ok(Vec::new());
     };
-    let parse_record = |record_id, offset, end| -> Option<ExtrefRecord> {
-        let bytes = payload.get(offset..end)?;
-        (bytes.get(..handle_set::N) == Some(&[1, 0, 0, 0])
-            && bytes.get(handle_set::MARKER_A) == Some(&1))
-        .then_some(())?;
-        let declared_count = View::u16_be_at(bytes, handle_set::N)?;
+    let parse_record = |record_id, offset, end| -> Result<Option<ExtrefRecord>, CodecError> {
+        let Some(bytes) = payload.get(offset..end) else {
+            return Ok(None);
+        };
+        if bytes.get(..handle_set::N) != Some(&[1, 0, 0, 0])
+            || bytes.get(handle_set::MARKER_A) != Some(&1)
+        {
+            return Ok(None);
+        }
+        let Some(declared_count) = View::u16_be_at(bytes, handle_set::N) else {
+            return Ok(None);
+        };
         let mut id_slots = [0; 4];
         for (slot, value) in id_slots.iter_mut().enumerate() {
-            *value = View::u32_le_at(bytes, handle_set::ID_SLOTS + slot * 4)?;
+            let Some(id) = View::u32_le_at(bytes, handle_set::ID_SLOTS + slot * 4) else {
+                return Ok(None);
+            };
+            *value = id;
         }
-        (bytes.get(handle_set::MARKER_B) == Some(&1)).then_some(())?;
-        let count = usize::from(*bytes.get(handle_set::COUNT)?);
-        (count >= 2).then_some(())?;
+        if bytes.get(handle_set::MARKER_B) != Some(&1) {
+            return Ok(None);
+        }
+        let Some(count) = bytes.get(handle_set::COUNT).map(|value| usize::from(*value)) else {
+            return Ok(None);
+        };
+        if count < 2 {
+            return Ok(None);
+        }
         let handle_token_count = count - 1;
-        let mut handles = Vec::with_capacity(handle_token_count);
         for handle_index in 0..handle_token_count {
             let token = handle_set::LEN + handle_index * 5;
-            (bytes.get(token) == Some(&0xe0)).then_some(())?;
-            handles.push(View::u32_be_at(bytes, token + 1)?);
+            if bytes.get(token) != Some(&0xe0)
+                || View::u32_be_at(bytes, token + 1).is_none()
+            {
+                return Ok(None);
+            }
         }
-        let handles = ExtrefHandles::new(handles).ok()?;
+        let handle_count = cadmpeg_core::decode::u64_from_index(handle_token_count);
+        ctx.charge_collection_items(handle_count, "nx external reference handles")?;
+        let handle_bytes = handle_token_count
+            .checked_mul(std::mem::size_of::<u32>())
+            .ok_or_else(|| ctx.refuse_codec_limit("nx external reference handles", 0, handle_count))?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(handle_bytes),
+            "nx external reference handles",
+        )?;
+        let mut handles = Vec::new();
+        handles.try_reserve_exact(handle_token_count).map_err(|_| {
+            ctx.refuse_codec_limit("nx external reference handles", 0, handle_count)
+        })?;
+        for handle_index in 0..handle_token_count {
+            let token = handle_set::LEN + handle_index * 5;
+            let Some(handle) = View::u32_be_at(bytes, token + 1) else {
+                return Ok(None);
+            };
+            handles.push(handle);
+        }
+        let Ok(handles) = ExtrefHandles::new(handles) else {
+            return Ok(None);
+        };
         let prefix_byte_len = handles.prefix_byte_len();
-        (bytes.get(prefix_byte_len - 1) == Some(&(count as u8))).then_some(())?;
-        Some(ExtrefRecord {
+        if bytes.get(prefix_byte_len - 1) != Some(&(count as u8)) {
+            return Ok(None);
+        }
+        Ok(Some(ExtrefRecord {
             record_id,
             offset,
             declared_count,
             id_slots,
             handles,
             tail_byte_len: bytes.len() - prefix_byte_len,
-        })
+        }))
     };
-
-    index
-        .into_iter()
-        .filter_map(|record| {
-            let end = record.offset.checked_add(record.byte_len)?;
-            parse_record(record.record_id, record.offset, end)
-        })
-        .collect()
+    let mut records = Vec::new();
+    for record in index {
+        let Some(end) = record.offset.checked_add(record.byte_len) else {
+            continue;
+        };
+        let Some(parsed) = parse_record(record.record_id, record.offset, end)? else {
+            continue;
+        };
+        ctx.charge_collection_items(1, "nx external reference records")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ExtrefRecord>()),
+            "nx external reference records",
+        )?;
+        records.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("nx external reference records", 0, 1)
+        })?;
+        records.push(parsed);
+    }
+    Ok(records)
 }
 
-fn parse_extref_record_index(payload: &[u8]) -> Option<Vec<ExtrefIndexedRecord>> {
+fn parse_extref_record_index(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Option<Vec<ExtrefIndexedRecord>>, CodecError> {
     if !payload.starts_with(b"EXTREFSTREAM") || payload.get(24) != Some(&0) {
-        return None;
+        return Ok(None);
     }
-    let (string_table, _) = parse_extref_string_table(payload)?;
+    let Some((string_table, _)) = parse_extref_string_table(ctx, payload)? else {
+        return Ok(None);
+    };
     let mut directory = Vec::new();
     let mut record_ids = std::collections::BTreeSet::new();
     let mut at = 25usize;
     loop {
-        let record_id = View::u32_le_at(payload, at)?;
+        let Some(record_id) = View::u32_le_at(payload, at) else {
+            return Ok(None);
+        };
         at += 4;
         if record_id == 0 {
             break;
         }
-        record_ids.insert(record_id).then_some(())?;
-        let offset = View::u32_le_at(payload, at)?;
-        at += 4;
-        let offset = offset as usize;
-        if offset >= string_table {
-            return None;
+        if record_ids.contains(&record_id) {
+            return Ok(None);
         }
+        ctx.charge_collection_items(1, "nx external reference record ids")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()),
+            "nx external reference record ids",
+        )?;
+        record_ids.insert(record_id);
+        let Some(offset) = View::u32_le_at(payload, at) else {
+            return Ok(None);
+        };
+        at += 4;
+        let Ok(offset) = usize::try_from(offset) else {
+            return Ok(None);
+        };
+        if offset >= string_table {
+            return Ok(None);
+        }
+        ctx.charge_collection_items(1, "nx external reference directory")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, usize)>()),
+            "nx external reference directory",
+        )?;
+        directory.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("nx external reference directory", 0, 1)
+        })?;
         directory.push((record_id, offset));
     }
     if directory.is_empty()
         || !directory.windows(2).all(|pair| pair[0].1 < pair[1].1)
         || at > directory[0].1
     {
-        return None;
+        return Ok(None);
     }
-    let mut records = Vec::with_capacity(directory.len());
+    let count = directory.len();
+    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
+    ctx.charge_collection_items(count_u64, "nx external reference index")?;
+    let slot_bytes = count
+        .checked_mul(std::mem::size_of::<ExtrefIndexedRecord>())
+        .ok_or_else(|| ctx.refuse_codec_limit("nx external reference index", 0, count_u64))?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(slot_bytes),
+        "nx external reference index",
+    )?;
+    let mut records = Vec::new();
+    records.try_reserve_exact(count).map_err(|_| {
+        ctx.refuse_codec_limit("nx external reference index", 0, count_u64)
+    })?;
     for (index, (record_id, offset)) in directory.iter().copied().enumerate() {
         let end = directory
             .get(index + 1)
             .map_or(string_table, |(_, offset)| *offset);
+        let Some(byte_len) = end.checked_sub(offset) else {
+            return Ok(None);
+        };
         records.push(ExtrefIndexedRecord {
             record_id,
             offset,
-            byte_len: end.checked_sub(offset)?,
+            byte_len,
         });
     }
-    Some(records)
+    Ok(Some(records))
 }
 
 /// Decode the two exact empty indexed-record forms.
