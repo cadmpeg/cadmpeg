@@ -344,9 +344,10 @@ pub(super) fn decode(
             name,
             ..
         } = color;
-        let appearance_id = appearance_ids
-            .entry((color_id, color.a().to_bits()))
-            .or_insert_with(|| {
+        let appearance_key = (color_id, color.a().to_bits());
+        let appearance_id = if let Some(appearance_id) = appearance_ids.get(&appearance_key) {
+            appearance_id.clone()
+        } else {
                 let key = if color.a() == 1.0 {
                     IdentityKey::from(color_id)
                 } else {
@@ -355,7 +356,7 @@ pub(super) fn decode(
                         .dash(color.a().to_bits())
                 };
                 let id = AppearanceId::from(ids::presentation(kind!("appearance"), key));
-                ir.model.appearances.push(Appearance {
+                push_presentation_vec(&mut ir.model.appearances, Appearance {
                     id: id.clone(),
                     name,
                     asset_guid: None,
@@ -367,10 +368,16 @@ pub(super) fn decode(
                     base_color: Some(color),
                     textures: Vec::new(),
                     properties: BTreeMap::new(),
-                });
+                }, ctx, "step_presentation_appearance_records")?;
+                insert_presentation_map(
+                    &mut appearance_ids,
+                    appearance_key,
+                    id.clone(),
+                    ctx,
+                    "step_presentation_appearance_ids",
+                )?;
                 id
-            })
-            .clone();
+        };
         let target_steps = expand_style_targets(
             target_step,
             exchange,
@@ -388,7 +395,8 @@ pub(super) fn decode(
                 &entity_ids,
                 &face_indices,
                 &body_indices,
-            );
+                ctx,
+            )?;
             if targets.is_empty() {
                 push_presentation_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                     "STYLED_ITEM #{style_id} targets unsupported item #{target_step}"
@@ -396,16 +404,8 @@ pub(super) fn decode(
                 continue;
             }
             for (target_ordinal, target) in targets.into_iter().enumerate() {
-                match &target {
-                    AppearanceTarget::Face(_) | AppearanceTarget::Body(_) => {
-                        scalar_color_candidates
-                            .entry(target.clone())
-                            .or_default()
-                            .push((style_id, color));
-                    }
-                    _ => {}
-                }
-                ir.model.appearance_bindings.push(AppearanceBinding {
+                push_scalar_candidate(&mut scalar_color_candidates, &target, style_id, color, ctx)?;
+                push_presentation_vec(&mut ir.model.appearance_bindings, AppearanceBinding {
                     id: ids::presentation(
                         kind!("binding"),
                         IdentityKey::from(style_id)
@@ -426,7 +426,7 @@ pub(super) fn decode(
                     )?
                     .then_some(false),
                     channels: BTreeMap::new(),
-                });
+                }, ctx, "step_presentation_appearance_bindings")?;
             }
         }
         claim_presentation_typed(&mut typed, style_id, ctx)?;
@@ -698,38 +698,44 @@ fn appearance_targets(
     entity_ids: &EntityIds<'_>,
     face_indices: &BTreeMap<String, usize>,
     body_indices: &BTreeMap<String, usize>,
-) -> Vec<AppearanceTarget> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Vec<AppearanceTarget>, CodecError> {
+    let mut targets = Vec::new();
     if let Some(bodies) = topology.body_by_root.get(&id) {
-        return bodies
-            .iter()
-            .filter(|body| body_indices.contains_key(body.as_str()))
-            .cloned()
-            .map(AppearanceTarget::Body)
-            .collect();
+        for body in bodies {
+            if body_indices.contains_key(body.as_str()) {
+                let body = clone_presentation_identity::<BodyId>(body.as_str(), ctx, "step_presentation_appearance_body_identity")?;
+                push_presentation_vec(&mut targets, AppearanceTarget::Body(body), ctx, "step_presentation_appearance_targets")?;
+            }
+        }
+        return Ok(targets);
     }
     if let Some(faces) = topology.faces_by_source.get(&id) {
-        return faces
-            .iter()
-            .filter(|face| face_indices.contains_key(face.as_str()))
-            .cloned()
-            .map(AppearanceTarget::Face)
-            .collect();
+        for face in faces {
+            if face_indices.contains_key(face.as_str()) {
+                let face = clone_presentation_identity::<FaceId>(face.as_str(), ctx, "step_presentation_appearance_face_identity")?;
+                push_presentation_vec(&mut targets, AppearanceTarget::Face(face), ctx, "step_presentation_appearance_targets")?;
+            }
+        }
+        return Ok(targets);
     }
     if let Some(edges) = topology.edges_by_source.get(&id) {
-        return edges
-            .iter()
-            .filter(|edge| entity_ids.edges.contains(edge.as_str()))
-            .cloned()
-            .map(AppearanceTarget::Edge)
-            .collect();
+        for edge in edges {
+            if entity_ids.edges.contains(edge.as_str()) {
+                let edge = clone_presentation_identity::<EdgeId>(edge.as_str(), ctx, "step_presentation_appearance_edge_identity")?;
+                push_presentation_vec(&mut targets, AppearanceTarget::Edge(edge), ctx, "step_presentation_appearance_targets")?;
+            }
+        }
+        return Ok(targets);
     }
     if let Some(vertices) = topology.vertices_by_source.get(&id) {
-        return vertices
-            .iter()
-            .filter(|vertex| entity_ids.vertices.contains(vertex.as_str()))
-            .cloned()
-            .map(AppearanceTarget::Vertex)
-            .collect();
+        for vertex in vertices {
+            if entity_ids.vertices.contains(vertex.as_str()) {
+                let vertex = clone_presentation_identity::<VertexId>(vertex.as_str(), ctx, "step_presentation_appearance_vertex_identity")?;
+                push_presentation_vec(&mut targets, AppearanceTarget::Vertex(vertex), ctx, "step_presentation_appearance_targets")?;
+            }
+        }
+        return Ok(targets);
     }
     let face_id = ids::data(kind!("face"), id);
     let body_id = ids::data(kind!("body"), id);
@@ -738,35 +744,29 @@ fn appearance_targets(
     let curve_id = ids::data(kind!("curve"), id);
     let point_id = ids::data(kind!("point"), id);
     let tessellation_id = ids::tessellation(kind!("mesh"), id);
-    if face_indices.contains_key(face_id.as_str()) {
-        return vec![AppearanceTarget::Face(FaceId::from(face_id))];
+    let target = if face_indices.contains_key(face_id.as_str()) {
+        Some(AppearanceTarget::Face(FaceId::from(face_id)))
+    } else if body_indices.contains_key(body_id.as_str()) {
+        Some(AppearanceTarget::Body(BodyId::from(body_id)))
+    } else if entity_ids.edges.contains(edge_id.as_str()) {
+        Some(AppearanceTarget::Edge(EdgeId::from(edge_id)))
+    } else if entity_ids.surfaces.contains(surface_id.as_str()) {
+        Some(AppearanceTarget::Surface(SurfaceId::from(surface_id)))
+    } else if entity_ids.curves.contains(curve_id.as_str()) {
+        Some(AppearanceTarget::Curve(CurveId::from(curve_id)))
+    } else if entity_ids.points.contains(point_id.as_str()) {
+        Some(AppearanceTarget::Point(PointId::from(point_id)))
+    } else if entity_ids.tessellations.contains(tessellation_id.as_str()) {
+        Some(AppearanceTarget::Tessellation(tessellation_id.into_string()))
+    } else if exchange.records().contains_key(&id) {
+        Some(AppearanceTarget::Source { source_id: format!("#{id}") })
+    } else {
+        None
+    };
+    if let Some(target) = target {
+        push_presentation_vec(&mut targets, target, ctx, "step_presentation_appearance_targets")?;
     }
-    if body_indices.contains_key(body_id.as_str()) {
-        return vec![AppearanceTarget::Body(BodyId::from(body_id))];
-    }
-    if entity_ids.edges.contains(edge_id.as_str()) {
-        return vec![AppearanceTarget::Edge(EdgeId::from(edge_id))];
-    }
-    if entity_ids.surfaces.contains(surface_id.as_str()) {
-        return vec![AppearanceTarget::Surface(SurfaceId::from(surface_id))];
-    }
-    if entity_ids.curves.contains(curve_id.as_str()) {
-        return vec![AppearanceTarget::Curve(CurveId::from(curve_id))];
-    }
-    if entity_ids.points.contains(point_id.as_str()) {
-        return vec![AppearanceTarget::Point(PointId::from(point_id))];
-    }
-    if entity_ids.tessellations.contains(tessellation_id.as_str()) {
-        return vec![AppearanceTarget::Tessellation(
-            tessellation_id.into_string(),
-        )];
-    }
-    if exchange.records().contains_key(&id) {
-        return vec![AppearanceTarget::Source {
-            source_id: format!("#{id}"),
-        }];
-    }
-    Vec::new()
+    Ok(targets)
 }
 
 fn append_presentation_items(
@@ -1037,6 +1037,46 @@ fn claim_presentation_typed(
         typed.insert(id);
     }
     Ok(())
+}
+
+fn push_scalar_candidate(
+    candidates: &mut HashMap<AppearanceTarget, Vec<(u64, Color)>>,
+    target: &AppearanceTarget,
+    style_id: u64,
+    color: Color,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
+    if !matches!(target, AppearanceTarget::Face(_) | AppearanceTarget::Body(_)) {
+        return Ok(());
+    }
+    if !candidates.contains_key(target) {
+        let key = match target {
+            AppearanceTarget::Face(face) => AppearanceTarget::Face(
+                clone_presentation_identity(face.as_str(), ctx, "step_presentation_scalar_target_identity")?,
+            ),
+            AppearanceTarget::Body(body) => AppearanceTarget::Body(
+                clone_presentation_identity(body.as_str(), ctx, "step_presentation_scalar_target_identity")?,
+            ),
+            _ => return Ok(()),
+        };
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "step_presentation_scalar_color_groups")?;
+        }
+        candidates.try_reserve(1).map_err(|_| match ctx {
+            Some(ctx) => ctx.refuse_codec_limit("step_presentation_scalar_color_groups", 0, 1),
+            None => cadmpeg_core::decode::refuse_local_limit("step_presentation_scalar_color_groups", 0, 1),
+        })?;
+        candidates.insert(key, Vec::new());
+    }
+    let values = candidates.get_mut(target).ok_or_else(|| {
+        CodecError::malformed("presentation scalar target was not indexed")
+    })?;
+    push_presentation_vec(
+        values,
+        (style_id, color),
+        ctx,
+        "step_presentation_scalar_color_members",
+    )
 }
 
 fn collect_identity_indices<'a>(

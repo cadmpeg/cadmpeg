@@ -522,3 +522,98 @@ fn presentation_invisible_body_ids_refuse_collection_limit() {
 fn presentation_invisible_body_identity_refuses_retained_limit() {
     identity_copy_refuses("step_presentation_invisible_body_identity");
 }
+
+#[test]
+fn presentation_appearance_targets_refuse_collection_limit() {
+    vector_refuses("step_presentation_appearance_targets");
+}
+
+#[test]
+fn presentation_appearance_body_identity_refuses_retained_limit() {
+    identity_copy_refuses("step_presentation_appearance_body_identity");
+}
+
+#[test]
+fn presentation_appearance_face_identity_refuses_retained_limit() {
+    identity_copy_refuses("step_presentation_appearance_face_identity");
+}
+
+#[test]
+fn presentation_appearance_edge_identity_refuses_retained_limit() {
+    identity_copy_refuses("step_presentation_appearance_edge_identity");
+}
+
+#[test]
+fn presentation_appearance_vertex_identity_refuses_retained_limit() {
+    identity_copy_refuses("step_presentation_appearance_vertex_identity");
+}
+
+#[test]
+fn presentation_appearance_records_refuse_collection_limit() {
+    vector_refuses("step_presentation_appearance_records");
+}
+
+#[test]
+fn presentation_appearance_ids_refuse_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    let result = super::super::insert_presentation_map(
+        &mut std::collections::BTreeMap::new(), 1_u64, (), Some(&ctx),
+        "step_presentation_appearance_ids",
+    );
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.operation == "step_presentation_appearance_ids"
+    ));
+}
+
+#[test]
+fn presentation_appearance_bindings_refuse_collection_limit() {
+    vector_refuses("step_presentation_appearance_bindings");
+}
+
+fn scalar_candidate_refuses(operation: &str, retained: bool) {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    if retained {
+        policy.limits.max_retained_bytes = 0;
+    } else if operation == "step_presentation_scalar_color_members" {
+        policy.limits.max_collection_items = 1;
+    } else {
+        policy.limits.max_collection_items = 0;
+    }
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    let body = cadmpeg_ir::ids::BodyId::mint("step:model:body#1").expect("body ID");
+    let color = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("color");
+    let result = super::super::push_scalar_candidate(
+        &mut std::collections::HashMap::new(),
+        &cadmpeg_ir::appearance::AppearanceTarget::Body(body),
+        1,
+        color,
+        Some(&ctx),
+    );
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(refusal)) if refusal.operation == operation
+    ));
+}
+
+#[test]
+fn presentation_scalar_target_identity_refuses_retained_limit() {
+    scalar_candidate_refuses("step_presentation_scalar_target_identity", true);
+}
+
+#[test]
+fn presentation_scalar_color_groups_refuse_collection_limit() {
+    scalar_candidate_refuses("step_presentation_scalar_color_groups", false);
+}
+
+#[test]
+fn presentation_scalar_color_members_refuse_collection_limit() {
+    scalar_candidate_refuses("step_presentation_scalar_color_members", false);
+}
