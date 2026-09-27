@@ -1990,15 +1990,27 @@ fn named_logical(
         .and_then(|partial| partial.parameters.iter().find_map(ValueExt::logical))
 }
 
-fn surface_curve_pcurves(record: &RawRecord) -> Option<Vec<u64>> {
-    if record.partials.len() == 1 {
-        return record.parameter(2).and_then(refs);
-    }
-    record
-        .partial("SURFACE_CURVE")
-        .or_else(|| record.partial("SEAM_CURVE"))
-        .or_else(|| record.partial("INTERSECTION_CURVE"))
-        .and_then(|partial| partial.parameters.iter().find_map(refs))
+fn surface_curve_pcurves(record: &RawRecord) -> impl Iterator<Item = u64> + '_ {
+    let values = if record.partials.len() == 1 {
+        record.parameter(2).and_then(Value::list)
+    } else {
+        record
+            .partial("SURFACE_CURVE")
+            .or_else(|| record.partial("SEAM_CURVE"))
+            .or_else(|| record.partial("INTERSECTION_CURVE"))
+            .and_then(|partial| {
+                partial.parameters.iter().find_map(|value| {
+                    value
+                        .list()
+                        .filter(|values| values.iter().all(|item| item.reference().is_some()))
+                })
+            })
+    };
+    values
+        .filter(|values| values.iter().all(|value| value.reference().is_some()))
+        .into_iter()
+        .flatten()
+        .filter_map(Value::reference)
 }
 
 fn edge_vertices(record: &RawRecord) -> Option<(u64, u64)> {
@@ -2825,16 +2837,17 @@ fn build_one(
                             let pcurve = exchange.records().get(&pcurve_step)?;
                             let pcurve_id = PcurveId::from(ids::data(kind!("pcurve"), pcurve_step));
                             let edge_curve = edge.curve()?;
-                            let associated = associated_pcurves(
-                                edge_curve,
-                                surface_step,
-                                exchange,
-                                decoded_pcurves,
+                            let associated = exchange.records().get(&edge_curve).is_some_and(
+                                |curve_record| {
+                                    surface_curve_pcurves(curve_record)
+                                        .any(|step| step == pcurve_step)
+                                },
                             );
                             (pcurve.partial("PCURVE").is_some()
                                 && entity_parameter(pcurve, "PCURVE", 1)?.reference()?
                                     == surface_step
-                                && associated.contains(&pcurve_id))
+                                && decoded_pcurves.contains(&pcurve_step)
+                                && associated)
                             .then_some(pcurve_id)
                         });
                         if let Some(pcurve) = explicit_pcurve {
@@ -2846,8 +2859,9 @@ fn build_one(
                             Vec::new()
                         }
                     } else if let (Some(surface), Some(curve)) = (surface_step, edge.curve()) {
-                        let associated =
-                            associated_pcurves(curve, surface, exchange, decoded_pcurves);
+                        let associated = associated_pcurves(
+                            curve, surface, exchange, decoded_pcurves, ctx,
+                        )?;
                         if associated.is_empty() {
                             Vec::new()
                         } else {
@@ -3702,9 +3716,10 @@ fn associated_pcurves(
     surface_step: u64,
     exchange: &Exchange,
     decoded_pcurves: &BTreeSet<u64>,
-) -> Vec<PcurveId> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<PcurveId>, CodecError> {
     let Some(curve) = exchange.records().get(&curve_step) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if !curve.partials.iter().any(|partial| {
         matches!(
@@ -3712,22 +3727,24 @@ fn associated_pcurves(
             "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"
         )
     }) {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let Some(pcurves) = surface_curve_pcurves(curve) else {
-        return Vec::new();
-    };
-    pcurves
-        .into_iter()
-        .filter_map(|pcurve_step| {
-            let pcurve = exchange.records().get(&pcurve_step)?;
+    let mut associated = Vec::new();
+    for pcurve_step in surface_curve_pcurves(curve) {
+        let Some(pcurve) = exchange.records().get(&pcurve_step) else {
+            continue;
+        };
+        if pcurve.partial("PCURVE").is_some()
+            && entity_parameter(pcurve, "PCURVE", 1)
+                .and_then(Value::reference)
+                == Some(surface_step)
+            && decoded_pcurves.contains(&pcurve_step)
+        {
             let pcurve_id = PcurveId::from(ids::data(kind!("pcurve"), pcurve_step));
-            (pcurve.partial("PCURVE").is_some()
-                && entity_parameter(pcurve, "PCURVE", 1)?.reference()? == surface_step
-                && decoded_pcurves.contains(&pcurve_step))
-            .then_some(pcurve_id)
-        })
-        .collect()
+            push_topology_vec(&mut associated, pcurve_id, ctx, "step_associated_pcurves")?;
+        }
+    }
+    Ok(associated)
 }
 
 /// Select the only non-seam pcurve candidate with endpoint and locus witnesses.
