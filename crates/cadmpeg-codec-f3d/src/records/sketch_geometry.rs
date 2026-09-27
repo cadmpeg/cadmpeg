@@ -3,6 +3,8 @@
 
 use super::references::DesignClassTag;
 use super::serde_column::SliceColumn;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::nurbs::knots_nondecreasing;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -881,6 +883,23 @@ impl SketchPointCompanion {
         }
         Ok(())
     }
+
+    fn validate_charged(&self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+        let operation = "index F3D sketch point incident curves";
+        let mut unique = std::collections::HashSet::new();
+        for curve in &self.incident_curves {
+            ctx.charge_collection_items(1, operation)?;
+            unique
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+            if !unique.insert(curve) {
+                return Err(CodecError::Malformed(
+                    "sketch point companion.incident_curves must be distinct".into(),
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Borrowed companion payload with the prefix derived for older point forms.
@@ -1057,9 +1076,30 @@ impl TryFrom<SketchPointDraft> for SketchPoint {
     fn try_from(draft: SketchPointDraft) -> Result<Self, Self::Error> {
         let coordinates = FinitePoint2::new(draft.coordinates)
             .ok_or_else(|| "sketch point coordinates must be finite".to_owned())?;
-        let record_form = draft.record_form.try_checked()?;
+        let record_form = draft.record_form.clone().try_checked()?;
         draft.companion.validate()?;
-        Ok(Self {
+        Ok(Self::from_validated(draft, coordinates, record_form))
+    }
+}
+
+impl SketchPoint {
+    pub(crate) fn try_from_charged(
+        ctx: &DecodeContext<'_>,
+        draft: SketchPointDraft,
+    ) -> Result<Self, CodecError> {
+        let coordinates = FinitePoint2::new(draft.coordinates)
+            .ok_or_else(|| CodecError::Malformed("sketch point coordinates must be finite".into()))?;
+        let record_form = draft.record_form.clone().try_checked().map_err(CodecError::Malformed)?;
+        draft.companion.validate_charged(ctx)?;
+        Ok(Self::from_validated(draft, coordinates, record_form))
+    }
+
+    fn from_validated(
+        draft: SketchPointDraft,
+        coordinates: FinitePoint2,
+        record_form: SketchPointRecordForm<FiniteReal>,
+    ) -> Self {
+        Self {
             id: draft.id,
             record_index: draft.record_index,
             owner_reference: draft.owner_reference,
@@ -1070,7 +1110,7 @@ impl TryFrom<SketchPointDraft> for SketchPoint {
             companion: draft.companion,
             paired_reference: draft.paired_reference,
             coordinates,
-        })
+        }
     }
 }
 
@@ -2369,6 +2409,36 @@ impl SketchNurbsPoles {
 mod tests {
     use super::{SketchCurveGeometry, SketchPoint, SketchSurface, SketchText};
     use serde_json::json;
+
+    #[test]
+    fn sketch_point_companion_index_refuses_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let point: SketchPoint = serde_json::from_value(native_point_wire(&json!({
+            "kind": "version11", "padded_paired_reference": false,
+            "companion_prefix_present_zero": false
+        })))
+        .unwrap();
+        let draft = super::SketchPointDraft {
+            id: point.id,
+            record_index: point.record_index,
+            owner_reference: point.owner_reference,
+            class_tag: point.class_tag,
+            byte_offset: point.byte_offset,
+            coordinate_offset: point.coordinate_offset,
+            record_form: point.record_form.into_raw(),
+            companion: point.companion,
+            paired_reference: point.paired_reference,
+            coordinates: point.coordinates.get(),
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap().0;
+        let error = SketchPoint::try_from_charged(&ctx, draft).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "index F3D sketch point incident curves"));
+    }
 
     fn native_surface_wire() -> serde_json::Value {
         json!({
