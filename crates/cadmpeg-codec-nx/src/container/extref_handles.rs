@@ -5,9 +5,28 @@ use serde::{Deserialize, Serialize};
 
 use crate::layout::extrefstream_handle_set_record;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "HandlesWire", into = "HandlesWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "HandlesWire")]
 pub(crate) struct ExtrefHandles(Vec<u32>);
+
+#[derive(Serialize)]
+struct HandlesRef<'a> {
+    handles: &'a [u32],
+    closing_duplicate: bool,
+    prefix_byte_len: u64,
+}
+
+impl Serialize for ExtrefHandles {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        HandlesRef {
+            handles: self.values(),
+            closing_duplicate: self.closing_duplicate(),
+            prefix_byte_len: u64::try_from(self.prefix_byte_len())
+                .map_err(serde::ser::Error::custom)?,
+        }
+        .serialize(serializer)
+    }
+}
 
 impl ExtrefHandles {
     pub(crate) fn new(tokens: Vec<u32>) -> Result<Self, &'static str> {
@@ -37,15 +56,23 @@ impl ExtrefHandles {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct HandlesWire {
     handles: Vec<u32>,
     closing_duplicate: bool,
     prefix_byte_len: u64,
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static HANDLES_INTO_WIRE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
 impl From<ExtrefHandles> for HandlesWire {
     fn from(value: ExtrefHandles) -> Self {
+        HANDLES_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         Self {
             handles: value.values().to_vec(),
             closing_duplicate: value.closing_duplicate(),
@@ -78,7 +105,7 @@ impl TryFrom<HandlesWire> for ExtrefHandles {
 
 #[cfg(test)]
 mod tests {
-    use super::ExtrefHandles;
+    use super::{ExtrefHandles, HANDLES_INTO_WIRE_COUNT};
 
     #[test]
     fn wire_preserves_handle_occurrences_and_derived_fields() {
@@ -96,10 +123,39 @@ mod tests {
             });
             assert_eq!(serde_json::to_value(&value).unwrap(), wire);
             assert_eq!(
+                serde_json::to_vec(&value).unwrap(),
+                serde_json::to_vec(&super::HandlesWire::from(value.clone())).unwrap()
+            );
+            assert_eq!(
                 serde_json::from_value::<ExtrefHandles>(wire).unwrap(),
                 value
             );
         }
+    }
+
+    #[test]
+    fn extref_handles_native_limit_refuses_before_owned_wire_conversion() {
+        #[derive(serde::Serialize)]
+        struct Record<'a> {
+            id: &'static str,
+            #[serde(flatten)]
+            handles: &'a ExtrefHandles,
+        }
+
+        let value = ExtrefHandles::new(vec![7, 7, 9]).unwrap();
+        let record = Record {
+            id: "nx:extref:handles#0",
+            handles: &value,
+        };
+        let expected = serde_json::json!({
+            "id": "nx:extref:handles#0",
+            "handles": [7, 7, 9],
+            "closing_duplicate": false,
+            "prefix_byte_len": 41,
+        });
+        HANDLES_INTO_WIRE_COUNT.with(|count| count.set(0));
+        cadmpeg_test_support::native_serialization::assert_native_limit(&record, expected);
+        HANDLES_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }
 
     #[test]
