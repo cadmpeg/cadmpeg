@@ -65,6 +65,33 @@ fn redirections_reference_collection_refuses_limit() {
 }
 
 #[test]
+fn xref_occurrence_projection_refuses_collection_limit() {
+    let bytes = redirections_json("root.f3d", &[("part.f3d", "role")]);
+    let table = super::parse(&cadmpeg_test_support::service_decode_context(), bytes.as_bytes())
+        .unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let ctx = redirections_limit_context(&arena, 0);
+    let error = super::project_occurrences(&ctx, &table).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "project F3D xref occurrence"));
+}
+
+#[test]
+fn xref_occurrence_path_refuses_retained_limit() {
+    let bytes = redirections_json("root.f3d", &[("part.f3d", "role")]);
+    let table = super::parse(&cadmpeg_test_support::service_decode_context(), bytes.as_bytes())
+        .unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap().0;
+    let error = super::project_occurrences(&ctx, &table).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D xref path"));
+}
+
+#[test]
 fn redirections_keep_neutron_role_and_data_independent() {
     let table = super::parse(&cadmpeg_test_support::service_decode_context(),
         br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":[{"from":"root.f3d","relativePath":"part.f3d","type":"XREF","properties":[{"neutronRole":{"value":"role-guid","dataType":"STRING"}},{"neutronData":{"value":"data-guid","dataType":"STRING"}}]}]}"#,
@@ -195,7 +222,7 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
         placement_overrides: Vec::new(),
     };
 
-    let occurrences = super::project_occurrences(&table).unwrap();
+    let occurrences = super::project_occurrences(&cadmpeg_test_support::service_decode_context(), &table).unwrap();
 
     assert_eq!(occurrences.len(), 1);
     assert_eq!(occurrences[0].id.as_str(), "f3d:model:occurrence#xref-0-0");
@@ -256,7 +283,7 @@ fn external_reference_admission_and_projection_check_affine_transforms() {
     rows[0][3] = f64::MAX;
     table.references[0].transform = Some(rows.try_into().unwrap());
     assert!(matches!(
-        super::project_occurrences(&table),
+        super::project_occurrences(&cadmpeg_test_support::service_decode_context(), &table),
         Err(cadmpeg_core::CodecError::NotImplemented(message))
             if message.contains("finite affine transform")
     ));

@@ -373,13 +373,28 @@ pub(crate) fn design_for<'a>(
 
 /// Project each external-reference placement as one root product occurrence.
 pub(crate) fn project_occurrences(
+    ctx: &DecodeContext<'_>,
     table: &XrefTable,
 ) -> Result<Vec<Occurrence>, cadmpeg_core::CodecError> {
-    table
-        .references
-        .iter()
-        .enumerate()
-        .map(|(ordinal, reference)| {
+    let mut occurrences = Vec::new();
+    for (ordinal, reference) in table.references.iter().enumerate() {
+            ctx.charge_collection_items(1, "project F3D xref occurrence")?;
+            occurrences.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("project F3D xref occurrence", 0, 1)
+            })?;
+            ctx.charge_retained(
+                reference.relative_path.len() as u64,
+                "copy F3D xref path",
+            )?;
+            let mut path = String::new();
+            path.try_reserve(reference.relative_path.len()).map_err(|_| {
+                ctx.refuse_codec_limit(
+                    "copy F3D xref path",
+                    0,
+                    reference.relative_path.len() as u64,
+                )
+            })?;
+            path.push_str(&reference.relative_path);
             let transform = reference.transform.map_or(
                 [
                     [1.0, 0.0, 0.0, 0.0],
@@ -389,13 +404,13 @@ pub(crate) fn project_occurrences(
                 ],
                 crate::records::xref::XrefPlacementTransform::rows,
             );
-            Ok(Occurrence {
+            occurrences.push(Occurrence {
                 id: crate::ids::neutral_xref_occurrence_id(
                     reference.ordinal,
                     reference.occurrence_ordinal,
                 ),
                 prototype: PrototypeReference::External {
-                    document: ExternalDocument::path(reference.relative_path.clone()),
+                    document: ExternalDocument::path(path),
                     object: None,
                 },
                 parent: OccurrenceParent::Root {},
@@ -407,9 +422,9 @@ pub(crate) fn project_occurrences(
                 visible: None,
                 link: None,
                 native_ref: Some(reference.id.clone()),
-            })
-        })
-        .collect()
+            });
+    }
+    Ok(occurrences)
 }
 
 /// Resolve exact `Component Insert` history scopes to their placed occurrences.
