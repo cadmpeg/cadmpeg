@@ -4,7 +4,8 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{pcurve::PcurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::ids::{
@@ -21,16 +22,31 @@ use super::pcurves::PcurveUses;
 use super::{annotate, OrientedLoop, OrientedLoopMember, OwnershipPlan, TransferPlan};
 use crate::solve::union_find::UnionFind;
 
-pub(super) fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
+fn charge_collection(
+    ctx: &DecodeContext<'_>,
+    count: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let count =
+        u64::try_from(count).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    ctx.charge_collection_items(count, operation)
+}
+
+pub(super) fn ownership_plan(
+    ctx: &DecodeContext<'_>,
+    graph: &B5Graph,
+) -> Result<Option<OwnershipPlan>, CodecError> {
+    charge_collection(ctx, graph.faces.len(), "catia b5 face ownership ids")?;
     let mut face_ids = HashSet::new();
     let mut loop_owners = HashMap::<u32, usize>::new();
     for (face_index, face) in graph.faces.iter().enumerate() {
         if !face_ids.insert(face.object_id) || face.loops.is_empty() {
-            return None;
+            return Ok(None);
         }
         for loop_id in &face.loops {
+            charge_collection(ctx, 1, "catia b5 loop owners")?;
             if loop_owners.insert(*loop_id, face_index).is_some() {
-                return None;
+                return Ok(None);
             }
         }
     }
@@ -39,9 +55,10 @@ pub(super) fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
             loop_id != &loop_.object_id || !loop_owners.contains_key(loop_id)
         })
     {
-        return None;
+        return Ok(None);
     }
 
+    charge_collection(ctx, graph.faces.len(), "catia b5 ownership union parents")?;
     let mut parents = UnionFind::new(graph.faces.len());
     let mut first_face_by_edge = HashMap::<u32, usize>::new();
     let mut edge_uses = HashMap::<u32, usize>::new();
@@ -49,7 +66,15 @@ pub(super) fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
         let face = loop_owners[loop_id];
         for member in &loop_.members {
             let edge = member.edge;
-            graph.vertices.edges().get(&edge)?;
+            if !graph.vertices.edges().contains_key(&edge) {
+                return Ok(None);
+            }
+            if !edge_uses.contains_key(&edge) {
+                charge_collection(ctx, 1, "catia b5 ownership edge uses")?;
+            }
+            if !first_face_by_edge.contains_key(&edge) {
+                charge_collection(ctx, 1, "catia b5 ownership first faces")?;
+            }
             *edge_uses.entry(edge).or_default() += 1;
             if let Some(other_face) = first_face_by_edge.insert(edge, face) {
                 parents.union(face, other_face);
@@ -57,6 +82,12 @@ pub(super) fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
         }
     }
 
+    charge_collection(
+        ctx,
+        graph.faces.len(),
+        "catia b5 ownership component labels",
+    )?;
+    charge_collection(ctx, graph.faces.len(), "catia b5 face components")?;
     let mut labels = HashMap::<usize, usize>::new();
     let mut face_components = Vec::with_capacity(graph.faces.len());
     for face in 0..graph.faces.len() {
@@ -66,11 +97,9 @@ pub(super) fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
     }
     let component_count = labels.len();
     let mut closed_components =
-        cadmpeg_core::decode::alloc_filled(component_count, true, "catia b5 closed components")
-            .ok()?;
+        ctx.alloc_filled(component_count, true, "catia b5 closed components")?;
     let mut component_has_edges =
-        cadmpeg_core::decode::alloc_filled(component_count, false, "catia b5 component edge marks")
-            .ok()?;
+        ctx.alloc_filled(component_count, false, "catia b5 component edge marks")?;
     for (&edge, &uses) in &edge_uses {
         let component = face_components[first_face_by_edge[&edge]];
         component_has_edges[component] = true;
@@ -90,17 +119,20 @@ pub(super) fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
     } else {
         BodyKind::Sheet
     };
-    Some(OwnershipPlan {
+    Ok(Some(OwnershipPlan {
         body_kind,
         face_components,
         loop_owners,
-    })
+    }))
 }
 
 pub(super) fn orient_loop_members(
+    ctx: &DecodeContext<'_>,
     graph: &B5Graph,
     mut reversed: BTreeMap<u32, Vec<bool>>,
-) -> Option<BTreeMap<u32, OrientedLoop>> {
+) -> Result<Option<BTreeMap<u32, OrientedLoop>>, CodecError> {
+    charge_collection(ctx, graph.loops.len(), "catia b5 orientation loop ids")?;
+    charge_collection(ctx, graph.loops.len(), "catia b5 orientation loop index")?;
     let loop_ids: Vec<u32> = graph.loops.keys().copied().collect();
     let node_by_loop: HashMap<u32, usize> = loop_ids
         .iter()
@@ -114,22 +146,25 @@ pub(super) fn orient_loop_members(
                 .is_none_or(|senses| senses.len() != graph.loops[loop_id].members.len())
         })
     {
-        return None;
+        return Ok(None);
     }
 
     let mut uses = HashMap::<u32, Vec<(usize, bool)>>::new();
     for loop_id in &loop_ids {
         let node = node_by_loop[loop_id];
         for (member, &sense) in graph.loops[loop_id].members.iter().zip(&reversed[loop_id]) {
+            if !uses.contains_key(&member.edge) {
+                charge_collection(ctx, 1, "catia b5 orientation edge keys")?;
+            }
+            charge_collection(ctx, 1, "catia b5 orientation edge uses")?;
             uses.entry(member.edge).or_default().push((node, sense));
         }
     }
-    let mut constraints = alloc_filled(
+    let mut constraints = ctx.alloc_filled(
         loop_ids.len(),
         Vec::<(usize, bool)>::new(),
         "catia b5 loop orientation constraints",
-    )
-    .ok()?;
+    )?;
     for [(left, left_reversed), (right, right_reversed)] in uses
         .values()
         .filter_map(|occurrences| <&[_; 2]>::try_from(occurrences.as_slice()).ok())
@@ -137,34 +172,36 @@ pub(super) fn orient_loop_members(
         let parity = left_reversed == right_reversed;
         if left == right {
             if parity {
-                return None;
+                return Ok(None);
             }
         } else {
+            charge_collection(ctx, 2, "catia b5 orientation adjacent loops")?;
             constraints[*left].push((*right, parity));
             constraints[*right].push((*left, parity));
         }
     }
 
-    let mut flips = alloc_filled(
+    let mut flips = ctx.alloc_filled(
         loop_ids.len(),
         None,
         "catia b5 loop orientation assignments",
-    )
-    .ok()?;
+    )?;
     for root in 0..loop_ids.len() {
         if flips[root].is_some() {
             continue;
         }
         flips[root] = Some(false);
+        charge_collection(ctx, 1, "catia b5 orientation pending loops")?;
         let mut pending = vec![(root, false)];
         while let Some((node, flip)) = pending.pop() {
             for &(neighbor, parity) in &constraints[node] {
                 let required = flip ^ parity;
                 match flips[neighbor] {
-                    Some(existing) if existing != required => return None,
+                    Some(existing) if existing != required => return Ok(None),
                     Some(_) => {}
                     None => {
                         flips[neighbor] = Some(required);
+                        charge_collection(ctx, 1, "catia b5 orientation pending loops")?;
                         pending.push((neighbor, required));
                     }
                 }
@@ -174,9 +211,14 @@ pub(super) fn orient_loop_members(
 
     let mut oriented = BTreeMap::new();
     for (node, loop_id) in loop_ids.into_iter().enumerate() {
-        let flipped = flips[node]?;
-        let members = reversed
-            .remove(&loop_id)?
+        let Some(flipped) = flips[node] else {
+            return Ok(None);
+        };
+        let Some(senses) = reversed.remove(&loop_id) else {
+            return Ok(None);
+        };
+        charge_collection(ctx, senses.len(), "catia b5 oriented loop members")?;
+        let members = senses
             .into_iter()
             .zip(graph.loops[&loop_id].pcurve_senses())
             .map(|(reversed, pcurve_reversed)| OrientedLoopMember {
@@ -184,9 +226,10 @@ pub(super) fn orient_loop_members(
                 pcurve_reversed: pcurve_reversed ^ flipped,
             })
             .collect();
+        charge_collection(ctx, 1, "catia b5 oriented loops")?;
         oriented.insert(loop_id, OrientedLoop { flipped, members });
     }
-    Some(oriented)
+    Ok(Some(oriented))
 }
 
 fn b5_plane_point(

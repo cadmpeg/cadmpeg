@@ -342,7 +342,8 @@ fn decode_standard_transfers_vertices_and_cylinder() {
     );
 
     // The produced IR validates (free carriers, no dangling references).
-    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
@@ -542,7 +543,12 @@ fn decode_standard_builds_surface_bound_topology_graph() {
 #[test]
 fn decode_fbb_only_without_parseable_counted_table_transfers_only_carriers() {
     assert_eq!(
-        crate::container::scan_bytes(fbb_only_catpart()).variant,
+        crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(
+            ctx,
+            fbb_only_catpart()
+        ))
+        .expect("service resource budget")
+        .variant,
         Variant::FbbOnly
     );
     let mut cur = Cursor::new(fbb_only_catpart());

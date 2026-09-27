@@ -22,6 +22,14 @@ use crate::loss::F3dLossCode;
 use crate::native::F3dNative;
 use crate::records::feature::scope::DesignParameterScope;
 
+fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
+    run(&ctx)
+}
+
 #[test]
 fn active_face_substitutions_have_a_distinct_loss_note() {
     let ir = cadmpeg_ir::document::CadIr::empty();
@@ -146,7 +154,7 @@ fn mesh_texture_ids_resolve_through_design_table_order() {
         ("resource:third".into(), first.clone()),
     ];
     assert_eq!(
-        mesh_texture_assignments(Some(&[0, 2, 1, 3, 2]), &textures, 5)
+        with_test_ctx(|ctx| mesh_texture_assignments(ctx, Some(&[0, 2, 1, 3, 2]), &textures, 5))
             .expect("texture assignments"),
         vec![
             TessellationTextureAssignment {
@@ -167,16 +175,36 @@ fn mesh_texture_ids_resolve_through_design_table_order() {
         ]
     );
     assert!(matches!(
-        mesh_texture_assignments(
+        with_test_ctx(|ctx| mesh_texture_assignments(
+            ctx,
             Some(&[2]),
             &[(
                 "resource:only".into(),
                 AssetId::mint("synthetic:test:id#asset:only").expect("identity grammar")
             )],
             1,
-        ),
+        )),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
+}
+
+#[test]
+fn mesh_texture_assignments_report_collection_limit() {
+    let asset =
+        cadmpeg_ir::assets::AssetId::mint("synthetic:test:id#asset:one").expect("identity grammar");
+    let textures = [("resource:one".into(), asset)];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
+    let error = mesh_texture_assignments(&ctx, Some(&[1]), &textures, 1)
+        .expect_err("one texture group exceeds the collection limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.operation == "f3d mesh texture assignments")
+    );
 }
 
 #[test]

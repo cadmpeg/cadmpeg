@@ -326,6 +326,7 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
         linear_tolerance: 1.0e-6,
         angular_tolerance: 1.0e-9,
         arrangement_budget: &arrangement_budget,
+        ctx: None,
     };
     let scoped_resolution = resolution.scoped(&[]);
 
@@ -1055,7 +1056,14 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
     let point = Point3::new(11.0, 20.0, 9.0);
     let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
     assert_eq!(
-        region_containing_points(&sketch, std::slice::from_ref(&entity), &[point], 1.0e-6).expect("resource allocation did not fail"),
+        region_containing_points(
+            &sketch,
+            std::slice::from_ref(&entity),
+            &[point],
+            1.0e-6,
+            None
+        )
+        .unwrap(),
         None
     );
     assert_eq!(
@@ -1065,7 +1073,9 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
             &[point],
             1.0e-6,
             &arrangement_budget,
-        ).transpose().expect("resource allocation did not fail"),
+            None,
+        )
+        .unwrap(),
         Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0]))
     );
 
@@ -1111,7 +1121,9 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
             &endpoints,
             1.0e-6,
             &arrangement_budget,
-        ).transpose().expect("resource allocation did not fail"),
+            None,
+        )
+        .unwrap(),
         Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0]))
     );
 
@@ -1120,7 +1132,14 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
         .try_push(sketch.profiles[0].clone())
         .unwrap();
     assert_eq!(
-        region_containing_points(&sketch, std::slice::from_ref(&entity), &[point], 1.0e-6).expect("resource allocation did not fail"),
+        region_containing_points(
+            &sketch,
+            std::slice::from_ref(&entity),
+            &[point],
+            1.0e-6,
+            None
+        )
+        .unwrap(),
         None
     );
     assert_eq!(
@@ -1130,7 +1149,9 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
             &[point],
             1.0e-6,
             &arrangement_budget,
-        ).transpose().expect("resource allocation did not fail"),
+            None,
+        )
+        .unwrap(),
         None
     );
 }
@@ -1696,11 +1717,13 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
         profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(profiles).unwrap(),
         native_ref: None,
     };
-    let transition_selection = |selections: Vec<Option<crate::design::profile_select::ResolvedProfileSelection>>| {
-        crate::design::profile_select::transition_inserted_profile_selection(
-            &sketch, &entities, 1.0e-6, selections.into_iter().map(|selection| selection.map(Ok)),
-        ).transpose().expect("resource allocation did not fail")
-    };
+    let transition_selection =
+        |selections: Vec<Option<crate::design::profile_select::ResolvedProfileSelection>>| {
+            crate::design::profile_select::transition_inserted_profile_selection(
+                &sketch, &entities, 1.0e-6, selections, None,
+            )
+            .unwrap()
+        };
 
     assert_eq!(
         crate::design::profile_select::unique_resolved_selection([Some(3), Some(3), Some(3)]),

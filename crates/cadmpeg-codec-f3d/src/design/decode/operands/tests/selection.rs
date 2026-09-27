@@ -894,11 +894,12 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 linear_tolerance: 1.0e-6,
                 angular_tolerance: 1.0e-9,
                 arrangement_budget: &arrangement_budget,
+                ctx: None,
             }
             .scoped(&[]),
             None,
             None,
-        ).expect("resource allocation did not fail"),
+        ).unwrap(),
         cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchProfiles {
             sketch: ref actual_sketch,
             ref profiles,
@@ -967,11 +968,12 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 linear_tolerance: 1.0e-6,
                 angular_tolerance: 1.0e-9,
                 arrangement_budget: &arrangement_budget,
+                ctx: None,
             }
             .scoped(&[]),
             None,
             None,
-        ).expect("resource allocation did not fail"),
+        ).unwrap(),
         cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchProfiles {
             sketch: ref actual_sketch,
             ref profiles,
@@ -993,11 +995,12 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 linear_tolerance: 1.0e-6,
                 angular_tolerance: 1.0e-9,
                 arrangement_budget: &arrangement_budget,
+                ctx: None,
             }
             .scoped(&[]),
             None,
             None,
-        ).expect("resource allocation did not fail"),
+        ).unwrap(),
         cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchSelection {
             sketch: ref actual_sketch,
             selections: ref actual_selections,
@@ -1023,11 +1026,12 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 linear_tolerance: 1.0e-6,
                 angular_tolerance: 1.0e-9,
                 arrangement_budget: &arrangement_budget,
+                ctx: None,
             }
             .scoped(&[]),
             None,
             None,
-        ).expect("resource allocation did not fail"),
+        ).unwrap(),
         cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchProfiles {
             sketch: ref actual_sketch,
             ref profiles,

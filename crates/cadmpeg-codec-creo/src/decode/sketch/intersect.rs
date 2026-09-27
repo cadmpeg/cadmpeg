@@ -15,8 +15,7 @@ use super::geometry::{
     saved_section_arc_record, saved_section_missing_line_geometry,
 };
 use super::radii::{
-    resolved_section_radii, section_arc_carrier,
-    section_segment_intersection_carrier_with_missing_line, trim_segment_id,
+    section_arc_carrier, section_segment_intersection_carrier_with_missing_line, trim_segment_id,
 };
 use super::skamp::section_line_entity_fixed_coordinate_with_unique_rows;
 
@@ -214,11 +213,11 @@ pub(in crate::decode) fn intersect_incident_section_carriers(
 pub(in crate::decode) fn resolved_trim_vertex_coordinates(
     definition: &crate::feature::definitions::FeatureDefinition,
     points: &BTreeMap<u32, [f64; 2]>,
+    radii: &BTreeMap<u32, f64>,
 ) -> BTreeMap<u32, [f64; 2]> {
     let Some(segments) = &definition.segments else {
         return BTreeMap::new();
     };
-    let radii = resolved_section_radii(definition);
     let missing_line = saved_section_missing_line_geometry(definition);
     let variable_points = definition
         .variables
@@ -349,7 +348,7 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
             let segment = segments.unique_segment(external_id)?;
             let carrier = section_segment_intersection_carrier_with_missing_line(
                 definition,
-                &radii,
+                radii,
                 points,
                 segment,
                 missing_line.as_ref(),
@@ -502,6 +501,7 @@ fn reconciled_section_coordinates(
 pub(in crate::decode) fn trimmed_section_segment_geometry_with_missing_line(
     definition: &crate::feature::definitions::FeatureDefinition,
     points: &BTreeMap<u32, [f64; 2]>,
+    radii: &BTreeMap<u32, f64>,
     trim_vertices: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
     missing_line: Option<&(usize, SketchGeometry)>,
@@ -555,9 +555,8 @@ pub(in crate::decode) fn trimmed_section_segment_geometry_with_missing_line(
         {
             return None;
         }
-    } else if let Some(carrier) =
-        section_arc_carrier(&resolved_section_radii(definition), points, segment)
-            .or_else(|| saved_section_arc_carrier(definition, segment))
+    } else if let Some(carrier) = section_arc_carrier(radii, points, segment)
+        .or_else(|| saved_section_arc_carrier(definition, segment))
     {
         let ([center_u, center_v], radius) = carrier.raw();
         let first = [start[0] - center_u, start[1] - center_v];
@@ -715,15 +714,20 @@ mod tests {
         };
 
         assert_eq!(
-            resolved_trim_vertex_coordinates(
-                &definition,
-                &BTreeMap::from([
-                    (1, [-1.0, 0.0]),
-                    (2, [1.0, 0.0]),
-                    (3, [0.0, -1.0]),
-                    (4, [0.0, 1.0]),
-                ]),
-            ),
+            crate::decode::with_test_decode_ctx(|ctx| {
+                let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, &definition)?;
+                Ok::<_, cadmpeg_core::CodecError>(resolved_trim_vertex_coordinates(
+                    &definition,
+                    &BTreeMap::from([
+                        (1, [-1.0, 0.0]),
+                        (2, [1.0, 0.0]),
+                        (3, [0.0, -1.0]),
+                        (4, [0.0, 1.0]),
+                    ]),
+                    &radii,
+                ))
+            })
+            .expect("test section geometry"),
             BTreeMap::new()
         );
 
@@ -750,7 +754,16 @@ mod tests {
                 offset: 0,
             });
         assert_eq!(
-            resolved_trim_vertex_coordinates(&shared_point, &BTreeMap::from([(2, [0.0, 0.0])]),),
+            crate::decode::with_test_decode_ctx(|ctx| {
+                let radii =
+                    crate::decode::sketch::radii::resolved_section_radii(ctx, &shared_point)?;
+                Ok::<_, cadmpeg_core::CodecError>(resolved_trim_vertex_coordinates(
+                    &shared_point,
+                    &BTreeMap::from([(2, [0.0, 0.0])]),
+                    &radii,
+                ))
+            })
+            .expect("test section geometry"),
             BTreeMap::from([(2, [0.0, 0.0])])
         );
     }
@@ -813,13 +826,20 @@ mod tests {
         };
         let trim_vertices = BTreeMap::from([(3, [0.0, 4.0]), (4, [7.0, 4.0])]);
         assert_eq!(
-            trimmed_section_segment_geometry_with_missing_line(
-                &definition,
-                &BTreeMap::new(),
-                &trim_vertices,
-                &segment,
-                None,
-            ),
+            crate::decode::with_test_decode_ctx(|ctx| {
+                let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, &definition)?;
+                Ok::<_, cadmpeg_core::CodecError>(
+                    trimmed_section_segment_geometry_with_missing_line(
+                        &definition,
+                        &BTreeMap::new(),
+                        &radii,
+                        &trim_vertices,
+                        &segment,
+                        None,
+                    ),
+                )
+            })
+            .expect("test section geometry"),
             Some(
                 cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Line {
                     start: Point2::new(0.0, 4.0),
@@ -839,20 +859,27 @@ mod tests {
             ),
         );
         assert_eq!(
-            trimmed_section_segment_geometry_with_missing_line(
-                &duplicate,
-                &BTreeMap::new(),
-                &trim_vertices,
-                &duplicate
-                    .segments
-                    .as_ref()
-                    .expect("segments")
-                    .rows
-                    .ordinary()
-                    .cloned()
-                    .collect::<Vec<_>>()[0],
-                None,
-            ),
+            crate::decode::with_test_decode_ctx(|ctx| {
+                let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, &duplicate)?;
+                Ok::<_, cadmpeg_core::CodecError>(
+                    trimmed_section_segment_geometry_with_missing_line(
+                        &duplicate,
+                        &BTreeMap::new(),
+                        &radii,
+                        &trim_vertices,
+                        &duplicate
+                            .segments
+                            .as_ref()
+                            .expect("segments")
+                            .rows
+                            .ordinary()
+                            .cloned()
+                            .collect::<Vec<_>>()[0],
+                        None,
+                    ),
+                )
+            })
+            .expect("test section geometry"),
             None
         );
     }

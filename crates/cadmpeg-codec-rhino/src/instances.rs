@@ -6,6 +6,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops::Range;
 
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::transform::Transform;
 use serde::{ser::SerializeStruct, Serialize};
 
@@ -50,23 +51,43 @@ pub(crate) enum DefinitionKind {
 }
 
 /// Source unit metadata. The stored scale defines a physical unit only for custom units.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct UnitDetail {
     unit: u32,
-    meters_per_unit_bits: u64,
+    meters_per_unit: UnitScale,
     custom_name: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum UnitScale {
+    Custom(PositiveReal),
+    OtherBits(u64),
 }
 
 impl UnitDetail {
     fn new(unit: u32, meters_per_unit: f64, custom_name: String) -> Result<Self, &'static str> {
-        if unit == 11 && !(meters_per_unit > 0.0 && meters_per_unit < UNSET_POSITIVE_VALUE) {
-            return Err("custom meters-per-unit is invalid");
-        }
+        let meters_per_unit = if unit == 11 {
+            UnitScale::Custom(
+                PositiveReal::new(meters_per_unit)
+                    .filter(|value| value.get() < UNSET_POSITIVE_VALUE)
+                    .ok_or("custom meters-per-unit is invalid")?,
+            )
+        } else {
+            UnitScale::OtherBits(meters_per_unit.to_bits())
+        };
         Ok(Self {
             unit,
-            meters_per_unit_bits: meters_per_unit.to_bits(),
+            meters_per_unit,
             custom_name,
         })
+    }
+
+    #[cfg(test)]
+    fn meters_per_unit_bits(&self) -> u64 {
+        match self.meters_per_unit {
+            UnitScale::Custom(value) => value.get().to_bits(),
+            UnitScale::OtherBits(bits) => bits,
+        }
     }
 }
 
@@ -74,11 +95,16 @@ impl Serialize for UnitDetail {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut record = serializer.serialize_struct("UnitDetail", 3)?;
         record.serialize_field("unit_system", &self.unit)?;
-        let scale = f64::from_bits(self.meters_per_unit_bits);
-        if scale.is_finite() {
-            record.serialize_field("meters_per_unit", &scale)?;
-        } else {
-            record.serialize_field("meters_per_unit_bits", &self.meters_per_unit_bits)?;
+        match self.meters_per_unit {
+            UnitScale::Custom(scale) => record.serialize_field("meters_per_unit", &scale)?,
+            UnitScale::OtherBits(bits) => {
+                let scale = f64::from_bits(bits);
+                if scale.is_finite() {
+                    record.serialize_field("meters_per_unit", &scale)?;
+                } else {
+                    record.serialize_field("meters_per_unit_bits", &bits)?;
+                }
+            }
         }
         record.serialize_field("custom_unit_name", &self.custom_name)?;
         record.end()

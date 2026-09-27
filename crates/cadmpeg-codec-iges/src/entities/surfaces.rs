@@ -10,7 +10,7 @@ use crate::directory::DirectoryEntry;
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::{refuse_local_limit, DecodeContext, ResourceLimit};
+use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::nurbs::bezier::{
@@ -375,19 +375,29 @@ fn curve_geometry<'a>(ir: &'a CadIr, curve_id: &CurveId) -> Option<&'a CurveGeom
         .map(|curve| &curve.geometry)
 }
 
-fn homogeneous_bezier_spans(curve: &NurbsCurve) -> Result<Option<Vec<HomogeneousBezierSpan>>, ResourceLimit> {
-    let Some(degree) = usize::try_from(curve.degree()).ok() else { return Ok(None); };
-    let weights = match curve.weights() {
+fn homogeneous_bezier_spans(
+    ctx: Option<&DecodeContext<'_>>,
+    curve: &NurbsCurve,
+) -> Result<Option<Vec<HomogeneousBezierSpan>>, CodecError> {
+    let Ok(degree) = usize::try_from(curve.degree()) else {
+        return Ok(None);
+    };
+    let weights: Option<Vec<f64>> = match curve.weights() {
         Some(weights) => {
             if weights.iter().any(|weight| weight.get() <= 0.0) {
                 return Ok(None);
             }
-            weights.into_iter().map(NonZeroReal::get).collect()
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(weights.len() as u64, "iges_surface_closure_weights")?;
+            }
+            Some(weights.into_iter().map(NonZeroReal::get).collect())
         }
-        None => Vec::new(),
+        None => None,
     };
-    let Some(controls) = positive_controls(&curve.control_points(), (!weights.is_empty()).then_some(weights.as_slice()))? else { return Ok(None); };
-    homogeneous_spans(degree, curve.knots(), controls)
+    let Some(controls) = positive_controls(&curve.control_points(), weights.as_deref())? else {
+        return Ok(None);
+    };
+    Ok(homogeneous_spans(degree, curve.knots(), controls)?)
 }
 
 fn bernstein_binomial(n: usize, k: usize) -> Option<f64> {
@@ -554,23 +564,39 @@ fn partition_homogeneous_spans(
 }
 
 fn aligned_homogeneous_spans(
+    ctx: Option<&DecodeContext<'_>>,
     first: &NurbsCurve,
     second: &NurbsCurve,
-) -> Result<Option<Vec<(HomogeneousBezierSpan, HomogeneousBezierSpan)>>, ResourceLimit> {
-    let Some(first_spans) = homogeneous_bezier_spans(first)? else { return Ok(None); };
-    let Some(second_spans) = homogeneous_bezier_spans(second)? else { return Ok(None); };
-    Ok((|| {
-    let first_domain = homogeneous_span_domain(&first_spans)?;
-    let second_domain = homogeneous_span_domain(&second_spans)?;
-    let mut boundaries = normalized_span_boundaries(&first_spans, first_domain)?;
-    boundaries.extend(normalized_span_boundaries(&second_spans, second_domain)?);
+) -> Result<Option<Vec<(HomogeneousBezierSpan, HomogeneousBezierSpan)>>, CodecError> {
+    let Some(first_spans) = homogeneous_bezier_spans(ctx, first)? else {
+        return Ok(None);
+    };
+    let Some(second_spans) = homogeneous_bezier_spans(ctx, second)? else {
+        return Ok(None);
+    };
+    let (Some(first_domain), Some(second_domain)) = (
+        homogeneous_span_domain(&first_spans),
+        homogeneous_span_domain(&second_spans),
+    ) else {
+        return Ok(None);
+    };
+    let Some(mut boundaries) = normalized_span_boundaries(&first_spans, first_domain) else {
+        return Ok(None);
+    };
+    let Some(second_boundaries) = normalized_span_boundaries(&second_spans, second_domain) else {
+        return Ok(None);
+    };
+    boundaries.extend(second_boundaries);
     boundaries.sort_by(f64::total_cmp);
     boundaries.dedup();
-    let first_spans = partition_homogeneous_spans(&first_spans, first_domain, &boundaries)?;
-    let second_spans = partition_homogeneous_spans(&second_spans, second_domain, &boundaries)?;
-    (first_spans.len() == second_spans.len())
-        .then(|| first_spans.into_iter().zip(second_spans).collect())
-    })())
+    let (Some(first_spans), Some(second_spans)) = (
+        partition_homogeneous_spans(&first_spans, first_domain, &boundaries),
+        partition_homogeneous_spans(&second_spans, second_domain, &boundaries),
+    ) else {
+        return Ok(None);
+    };
+    Ok((first_spans.len() == second_spans.len())
+        .then(|| first_spans.into_iter().zip(second_spans).collect()))
 }
 
 /// Positive weights in pole order, unit weights for a polynomial curve.
@@ -725,32 +751,63 @@ fn ruled_surface_span_lanes(
     second: &NurbsCurve,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Option<RuledSpanLanes>, CodecError> {
-    let Some(degree) = usize::try_from(first.degree()).ok().and_then(|first| {
-        usize::try_from(second.degree()).ok().and_then(|second| first.checked_add(second))
-    }) else { return Ok(None); };
+    let (Ok(first_degree), Ok(second_degree)) = (
+        usize::try_from(first.degree()),
+        usize::try_from(second.degree()),
+    ) else {
+        return Ok(None);
+    };
+    let Some(degree) = first_degree.checked_add(second_degree) else {
+        return Ok(None);
+    };
     if degree == 0 {
         return Ok(None);
     }
-    let Some(spans) = aligned_homogeneous_spans(first, second)? else { return Ok(None); };
-    let Some(u_count) = spans.len().checked_mul(degree).and_then(|count| count.checked_add(1)) else { return Ok(None); };
-    let Some(pole_count) = u_count.checked_mul(2) else { return Ok(None); };
+    let Some(spans) = aligned_homogeneous_spans(ctx, first, second)? else {
+        return Ok(None);
+    };
+    let Some(u_count) = spans
+        .len()
+        .checked_mul(degree)
+        .and_then(|count| count.checked_add(1))
+    else {
+        return Ok(None);
+    };
+    let Some(pole_count) = u_count.checked_mul(2) else {
+        return Ok(None);
+    };
     admit_surface_pole_count(ctx, pole_count)?;
-    Ok((|| {
     let mut homogeneous = Vec::with_capacity(pole_count);
-    let mut u_knots = Vec::with_capacity(u_count.checked_add(degree)?.checked_add(1)?);
+    let Some(knot_count) = u_count
+        .checked_add(degree)
+        .and_then(|count| count.checked_add(1))
+    else {
+        return Ok(None);
+    };
+    let (Some(first_control_count), Some(second_control_count)) =
+        (first_degree.checked_add(1), second_degree.checked_add(1))
+    else {
+        return Ok(None);
+    };
+    let mut u_knots = Vec::with_capacity(knot_count);
     for (span_index, (first_span, second_span)) in spans.iter().enumerate() {
-        if first_span.controls.len() != usize::try_from(first.degree()).ok()?.checked_add(1)?
-            || second_span.controls.len()
-                != usize::try_from(second.degree()).ok()?.checked_add(1)?
+        if first_span.controls.len() != first_control_count
+            || second_span.controls.len() != second_control_count
         {
-            return None;
+            return Ok(None);
         }
-        let first_times_second =
-            homogeneous_product_with_scalar(&first_span.controls, &second_span.controls)?;
-        let second_times_first =
-            homogeneous_product_with_scalar(&second_span.controls, &first_span.controls)?;
+        let Some(first_times_second) =
+            homogeneous_product_with_scalar(&first_span.controls, &second_span.controls)
+        else {
+            return Ok(None);
+        };
+        let Some(second_times_first) =
+            homogeneous_product_with_scalar(&second_span.controls, &first_span.controls)
+        else {
+            return Ok(None);
+        };
         if first_times_second.len() != degree + 1 || second_times_first.len() != degree + 1 {
-            return None;
+            return Ok(None);
         }
         if span_index == 0 {
             u_knots.extend(std::iter::repeat_n(first_span.domain[0], degree + 1));
@@ -766,19 +823,24 @@ fn ruled_surface_span_lanes(
         }
     }
     if homogeneous.len() != pole_count || u_knots.len() != u_count + degree + 1 {
-        return None;
+        return Ok(None);
     }
     let mut control_points = Vec::with_capacity(pole_count);
     let mut weights = Vec::with_capacity(pole_count);
     for control in homogeneous {
         let weight = control[3];
-        let weight = PositiveReal::new(weight)?;
+        let Some(weight) = PositiveReal::new(weight) else {
+            return Ok(None);
+        };
         let point = Point3::new(
             control[0] / weight.get(),
             control[1] / weight.get(),
             control[2] / weight.get(),
         );
-        control_points.push(FinitePoint3::new(point)?);
+        let Some(point) = FinitePoint3::new(point) else {
+            return Ok(None);
+        };
+        control_points.push(point);
         weights.push(weight);
     }
     let weights = if weights.iter().all(|weight| weight.get() == 1.0) {
@@ -786,21 +848,19 @@ fn ruled_surface_span_lanes(
     } else {
         Some(weights)
     };
-    Some((
-        u32::try_from(degree).ok()?,
-        u_knots,
-        control_points,
-        weights,
-    ))
-    })())
+    let Ok(degree) = u32::try_from(degree) else {
+        return Ok(None);
+    };
+    Ok(Some((degree, u_knots, control_points, weights)))
 }
 
 fn homogeneous_curve_boundary_matches(
+    ctx: Option<&DecodeContext<'_>>,
     first: &NurbsCurve,
     second: &NurbsCurve,
     range: [f64; 2],
     resolution: f64,
-) -> Result<Option<bool>, ResourceLimit> {
+) -> Result<Option<bool>, CodecError> {
     if !resolution.is_finite()
         || resolution < 0.0
         || !range[0].is_finite()
@@ -809,8 +869,12 @@ fn homogeneous_curve_boundary_matches(
     {
         return Ok(None);
     }
-    let Some(first_spans) = homogeneous_bezier_spans(first)? else { return Ok(None); };
-    let Some(second_spans) = homogeneous_bezier_spans(second)? else { return Ok(None); };
+    let Some(first_spans) = homogeneous_bezier_spans(ctx, first)? else {
+        return Ok(None);
+    };
+    let Some(second_spans) = homogeneous_bezier_spans(ctx, second)? else {
+        return Ok(None);
+    };
     if first.degree() != second.degree()
         || first.knots() != second.knots()
         || first_spans.len() != second_spans.len()
@@ -824,8 +888,12 @@ fn homogeneous_curve_boundary_matches(
         if first_span.domain != second_span.domain {
             return Ok(None);
         }
-        let Some(within) = boundaries_within_resolution(&first_span.controls, &second_span.controls, resolution) else { return Ok(None); };
-        if !within {
+        let Some(within_resolution) =
+            boundaries_within_resolution(&first_span.controls, &second_span.controls, resolution)?
+        else {
+            return Ok(None);
+        };
+        if !within_resolution {
             return Ok(Some(false));
         }
     }
@@ -833,15 +901,24 @@ fn homogeneous_curve_boundary_matches(
 }
 
 fn surface_boundary_is_closed(
+    ctx: Option<&DecodeContext<'_>>,
     surface: &NurbsSurface,
     fixed_axis: SurfaceParameterAxis,
     fixed_range: [f64; 2],
     varying_range: [f64; 2],
     resolution: f64,
-) -> Result<Option<bool>, ResourceLimit> {
-    let Some(first) = cadmpeg_ir::eval::nurbs_surface_isocurve(surface, fixed_axis, fixed_range[0])? else { return Ok(None); };
-    let Some(second) = cadmpeg_ir::eval::nurbs_surface_isocurve(surface, fixed_axis, fixed_range[1])? else { return Ok(None); };
-    homogeneous_curve_boundary_matches(&first, &second, varying_range, resolution)
+) -> Result<Option<bool>, CodecError> {
+    let Some(first) =
+        cadmpeg_ir::eval::nurbs_surface_isocurve(surface, fixed_axis, fixed_range[0])?
+    else {
+        return Ok(None);
+    };
+    let Some(second) =
+        cadmpeg_ir::eval::nurbs_surface_isocurve(surface, fixed_axis, fixed_range[1])?
+    else {
+        return Ok(None);
+    };
+    homogeneous_curve_boundary_matches(ctx, &first, &second, varying_range, resolution)
 }
 
 fn rotate(vector: Vector3, axis: Vector3, angle: f64) -> Vector3 {
@@ -1222,6 +1299,7 @@ pub(super) fn project(
         let rails = match rails {
             (Ok(first), Ok(second)) => (first, second),
             (Err(error), _) | (_, Err(error)) => {
+                let error = error.non_resource()?;
                 losses.push(entity_loss(
                     entry,
                     format!("a rail curve states no NURBS carrier: {error}"),
@@ -1385,6 +1463,7 @@ pub(super) fn project(
         let directrix_carrier = match bounded_nurbs(ir, &directrix_id, ctx, &composite_index) {
             Ok(carrier) => carrier,
             Err(error) => {
+                let error = error.non_resource()?;
                 losses.push(entity_loss(
                     entry,
                     format!("the directrix states no NURBS carrier: {error}"),
@@ -1738,6 +1817,7 @@ pub(super) fn project(
         let generatrix_carrier = match bounded_nurbs(ir, &generatrix_id, ctx, &composite_index) {
             Ok(carrier) => carrier,
             Err(error) => {
+                let error = error.non_resource()?;
                 losses.push(entity_loss(
                     entry,
                     format!("the generatrix states no NURBS carrier: {error}"),
@@ -2407,12 +2487,14 @@ pub(super) fn project(
             ),
         ] {
             let Some(actual) = surface_boundary_is_closed(
+                ctx,
                 &surface,
                 fixed_axis,
                 fixed_range,
                 varying_range,
                 global.minimum_resolution_mm(),
-            )? else {
+            )?
+            else {
                 losses.push(entity_loss(
                     entry,
                     format!("{direction}-closed surface boundary cannot be evaluated"),

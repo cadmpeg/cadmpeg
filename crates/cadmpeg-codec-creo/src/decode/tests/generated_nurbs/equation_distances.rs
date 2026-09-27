@@ -57,18 +57,35 @@ fn equation_function_six_derives_positive_point_distance() {
     };
 
     assert_eq!(
-        resolved_section_scalar_values(&definition(None))
-            .get(&(crate::feature::definitions::VariableType::Radius, 20)),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+            ctx,
+            &definition(None)
+        ))
+        .expect("test section solve")
+        .get(&(crate::feature::definitions::VariableType::Radius, 20)),
         Some(&5.0)
     );
     assert_eq!(
-        resolved_section_radii(&definition(None)).get(&20),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition(None)))
+            .expect("test section solve")
+            .get(&20),
         Some(&5.0)
     );
-    assert!(!resolved_section_scalar_values(&definition(Some(6.0)))
-        .contains_key(&(crate::feature::definitions::VariableType::Radius, 20)));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+            ctx,
+            &definition(Some(6.0))
+        ))
+        .expect("test section solve")
+        .contains_key(&(crate::feature::definitions::VariableType::Radius, 20))
+    );
     assert_eq!(
-        resolved_section_radii(&definition(Some(6.0))).get(&20),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(
+            ctx,
+            &definition(Some(6.0))
+        ))
+        .expect("test section solve")
+        .get(&20),
         Some(&6.0)
     );
 
@@ -82,8 +99,14 @@ fn equation_function_six_derives_positive_point_distance() {
         row.value = crate::feature::definitions::ScalarLane::Undefined;
         row.guess = crate::feature::definitions::ScalarLane::Undefined;
     }
-    assert!(!resolved_section_scalar_values(&stored_without_coordinates)
-        .contains_key(&(crate::feature::definitions::VariableType::Radius, 20)));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+            ctx,
+            &stored_without_coordinates
+        ))
+        .expect("test section solve")
+        .contains_key(&(crate::feature::definitions::VariableType::Radius, 20))
+    );
 }
 
 #[test]
@@ -143,26 +166,46 @@ fn equation_function_forty_three_derives_unique_axis_distance_scalar() {
     };
 
     assert_eq!(
-        resolved_section_scalar_values(&definition([0.0, 0.0], [3.0, 0.0], None))
-            .get(&(crate::feature::definitions::VariableType::Dimension, 20)),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+            ctx,
+            &definition([0.0, 0.0], [3.0, 0.0], None)
+        ))
+        .expect("test section solve")
+        .get(&(crate::feature::definitions::VariableType::Dimension, 20)),
         Some(&3.0)
     );
     assert_eq!(
-        resolved_section_scalar_values(&definition([0.0, 0.0], [3.0, 4.0], Some(4.0)))
-            .get(&(crate::feature::definitions::VariableType::Dimension, 20)),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+            ctx,
+            &definition([0.0, 0.0], [3.0, 4.0], Some(4.0))
+        ))
+        .expect("test section solve")
+        .get(&(crate::feature::definitions::VariableType::Dimension, 20)),
         Some(&4.0)
     );
     assert!(
-        !resolved_section_scalar_values(&definition([0.0, 0.0], [3.0, 4.0], None))
-            .contains_key(&(crate::feature::definitions::VariableType::Dimension, 20))
+        !crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+            ctx,
+            &definition([0.0, 0.0], [3.0, 4.0], None)
+        ))
+        .expect("test section solve")
+        .contains_key(&(crate::feature::definitions::VariableType::Dimension, 20))
     );
     assert!(
-        !resolved_section_scalar_values(&definition([0.0, 0.0], [3.0, 4.0], Some(5.0)))
-            .contains_key(&(crate::feature::definitions::VariableType::Dimension, 20))
+        !crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+            ctx,
+            &definition([0.0, 0.0], [3.0, 4.0], Some(5.0))
+        ))
+        .expect("test section solve")
+        .contains_key(&(crate::feature::definitions::VariableType::Dimension, 20))
     );
     assert!(
-        !resolved_section_scalar_values(&definition([0.0, 0.0], [3.0, 3.0], Some(3.0)))
-            .contains_key(&(crate::feature::definitions::VariableType::Dimension, 20))
+        !crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+            ctx,
+            &definition([0.0, 0.0], [3.0, 3.0], Some(3.0))
+        ))
+        .expect("test section solve")
+        .contains_key(&(crate::feature::definitions::VariableType::Dimension, 20))
     );
 
     let mut invalid_auxiliary = definition([0.0, 0.0], [3.0, 0.0], None);
@@ -172,8 +215,14 @@ fn equation_function_forty_three_derives_unique_axis_distance_scalar() {
         .expect("variables")
         .rows[5]
         .value = crate::feature::definitions::ScalarLane::Value(1.0);
-    assert!(!resolved_section_scalar_values(&invalid_auxiliary)
-        .contains_key(&(crate::feature::definitions::VariableType::Dimension, 20)));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+            ctx,
+            &invalid_auxiliary
+        ))
+        .expect("test section solve")
+        .contains_key(&(crate::feature::definitions::VariableType::Dimension, 20))
+    );
 }
 
 #[test]
@@ -242,7 +291,9 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
     };
 
     assert_eq!(
-        resolved_section_coordinates(&definition).get(&2),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(ctx, &definition))
+            .expect("test section solve")
+            .get(&2),
         Some(&[Some(5.0), None])
     );
 
@@ -251,12 +302,21 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
     dimension_scalar.value = ScalarLane::DimensionDriven;
     dimension_scalar.guess = ScalarLane::DimensionDriven;
     assert_eq!(
-        resolved_section_coordinates(&dimension_driven).get(&2),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(
+            ctx,
+            &dimension_driven
+        ))
+        .expect("test section solve")
+        .get(&2),
         Some(&[Some(5.0), None])
     );
     assert_eq!(
-        resolved_section_scalar_values(&dimension_driven)
-            .get(&(crate::feature::definitions::VariableType::Dimension, 0)),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+            ctx,
+            &dimension_driven
+        ))
+        .expect("test section solve")
+        .get(&(crate::feature::definitions::VariableType::Dimension, 0)),
         Some(&5.0)
     );
 
@@ -264,8 +324,14 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
     let missing_scalar = &mut missing_inline.variables.as_mut().expect("variables").rows[3];
     missing_scalar.value = ScalarLane::Undefined;
     missing_scalar.guess = ScalarLane::Undefined;
-    assert!(!resolved_section_scalar_values(&missing_inline)
-        .contains_key(&(crate::feature::definitions::VariableType::Dimension, 0)));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+            ctx,
+            &missing_inline
+        ))
+        .expect("test section solve")
+        .contains_key(&(crate::feature::definitions::VariableType::Dimension, 0))
+    );
 
     let equation_id =
         crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
@@ -310,7 +376,14 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
         }),
         offset: 899,
     });
-    assert!(!resolved_section_coordinates(&disabled_equation).contains_key(&2));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(
+            ctx,
+            &disabled_equation
+        ))
+        .expect("test section solve")
+        .contains_key(&2)
+    );
 
     let mut mismatched = definition;
     mismatched
@@ -319,7 +392,11 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
         .expect("dimension table")
         .rows[0]
         .value = crate::feature::definitions::DimensionValue::Resolved(6.0);
-    assert!(!resolved_section_coordinates(&mismatched).contains_key(&2));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(ctx, &mismatched))
+            .expect("test section solve")
+            .contains_key(&2)
+    );
 }
 
 #[test]
@@ -378,7 +455,9 @@ fn equation_function_thirty_three_solves_unique_equal_line_length_coordinate() {
     };
 
     assert_eq!(
-        resolved_section_coordinates(&definition).get(&4),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(ctx, &definition))
+            .expect("test section solve")
+            .get(&4),
         Some(&[Some(0.0), Some(4.0)])
     );
 
@@ -386,7 +465,9 @@ fn equation_function_thirty_three_solves_unique_equal_line_length_coordinate() {
     ambiguous.variables.as_mut().expect("variables").rows[7].value =
         crate::feature::definitions::ScalarLane::Value(0.0);
     assert_eq!(
-        resolved_section_coordinates(&ambiguous).get(&4),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(ctx, &ambiguous))
+            .expect("test section solve")
+            .get(&4),
         Some(&[None, Some(0.0)])
     );
 
@@ -398,7 +479,12 @@ fn equation_function_thirty_three_solves_unique_equal_line_length_coordinate() {
         .rows[8]
         .value = crate::feature::definitions::ScalarLane::Value(1.0);
     assert_eq!(
-        resolved_section_coordinates(&nonzero_auxiliary).get(&4),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(
+            ctx,
+            &nonzero_auxiliary
+        ))
+        .expect("test section solve")
+        .get(&4),
         Some(&[None, Some(4.0)])
     );
 }

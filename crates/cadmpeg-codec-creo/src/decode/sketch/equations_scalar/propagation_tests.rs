@@ -123,7 +123,8 @@ fn axis_distance_values(
         .1;
     section_equation_function_forty_three_axis_distance_values(
         definition,
-        &resolved_section_coordinates(definition),
+        &crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(ctx, definition))
+            .expect("test section solve"),
         &ambiguous_point_ids,
     )
 }
@@ -538,7 +539,11 @@ fn scalar_equality_propagation_rejects_derived_value_after_finite_row_conflict()
         values.get(&(crate::feature::definitions::VariableType::Result, 21)),
         Some(&None)
     );
-    assert!(resolved_section_scalar_values(&definition).is_empty());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(ctx, &definition))
+            .expect("test section solve")
+            .is_empty()
+    );
 }
 
 #[test]
@@ -662,15 +667,23 @@ fn radius_dimensions_accept_radius_values_proved_by_equality() {
         Some(&Some(5.0))
     );
     assert_eq!(
-        resolved_section_scalar_values(&dimension_driven)
-            .get(&(crate::feature::definitions::VariableType::Radius, 42))
-            .copied(),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+            ctx,
+            &dimension_driven
+        ))
+        .expect("test section solve")
+        .get(&(crate::feature::definitions::VariableType::Radius, 42))
+        .copied(),
         Some(5.0)
     );
     assert_eq!(
-        resolved_section_scalar_values(&dimension_driven)
-            .get(&(crate::feature::definitions::VariableType::Dimension, 0))
-            .copied(),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+            ctx,
+            &dimension_driven
+        ))
+        .expect("test section solve")
+        .get(&(crate::feature::definitions::VariableType::Dimension, 0))
+        .copied(),
         Some(5.0)
     );
 

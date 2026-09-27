@@ -17,6 +17,7 @@ use cadmpeg_ir::{
     features::{DesignParameter, ParameterId},
     scalar::{Angle, FiniteReal, Length, PositiveReal},
 };
+use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::compact_matrix::CompactMatrix;
@@ -231,14 +232,39 @@ pub(crate) enum PmDcSketchEntityKind {
 }
 
 /// The absent or complete state and association tail of a sketch point.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "PointTailWire", into = "PointTailWire")]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "PointTailWire")]
 pub(crate) enum PointTail {
     Absent,
     Present {
         state: u32,
         associations: PmDcReferenceList,
     },
+}
+
+#[derive(Serialize)]
+struct PointTailRef<'a> {
+    state: Option<u32>,
+    associations: Option<&'a PmDcReferenceList>,
+}
+
+impl Serialize for PointTail {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let wire = match self {
+            Self::Absent => PointTailRef {
+                state: None,
+                associations: None,
+            },
+            Self::Present {
+                state,
+                associations,
+            } => PointTailRef {
+                state: Some(*state),
+                associations: Some(associations),
+            },
+        };
+        wire.serialize(serializer)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -282,16 +308,27 @@ impl TryFrom<PointTailWire> for PointTail {
 
 const TRANSFORM_PREFIX: u32 = 0x203;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "PmDcTransformPayloadWire",
-    into = "PmDcTransformPayloadWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "PmDcTransformPayloadWire")]
 pub(crate) struct PmDcTransformPayload {
     pub(crate) save_version_major: u8,
     pub(crate) header: PmDcContentHeader,
     pub(crate) prefix_present: bool,
     pub(crate) matrix: CompactMatrix,
+}
+
+impl Serialize for PmDcTransformPayload {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(6))?;
+        let (value_mask, zero_mask) = self.matrix.masks();
+        map.serialize_entry("save_version_major", &self.save_version_major)?;
+        map.serialize_entry("header", &self.header)?;
+        map.serialize_entry("prefix", &self.prefix_present.then_some(TRANSFORM_PREFIX))?;
+        map.serialize_entry("value_mask", &value_mask)?;
+        map.serialize_entry("zero_mask", &zero_mask)?;
+        map.serialize_entry("matrix", &self.matrix.rows())?;
+        map.end()
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -3447,4 +3484,6 @@ mod tests {
             [1e12 + 1., 12e12 + 13.]
         ));
     }
+
+    mod serialization;
 }

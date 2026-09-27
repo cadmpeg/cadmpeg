@@ -2,7 +2,7 @@
 //! Decode Rhino metadata and retain object records for later geometry phases.
 
 use crate::loss::Diagnostics;
-use cadmpeg_core::decode::{alloc_filled, u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{DraftAccounting, ModelCheckpoint, ModelDraft};
@@ -18,6 +18,7 @@ use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{IdentityKey, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::report::{loss::LossNote, Severity};
+use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Color, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -1003,13 +1004,17 @@ impl<'a> DecodeContext<'a> {
                 }
             };
         for hatch_loop in &mut hatch.loops {
-            if let Err(error) = transform_decoded_curve(&mut hatch_loop.curve, transform) {
-                self.scan_warning(
-                    source_order,
-                    &format!("hatch loop placement failed: {error}"),
-                );
-                self.mark_failed(source_order);
-                return Ok(());
+            match transform_decoded_curve(self.expand.ctx(), &mut hatch_loop.curve, transform) {
+                Ok(()) => {}
+                Err(ReferenceFailure::Codec(error)) => return Err(error),
+                Err(ReferenceFailure::Semantic(error)) => {
+                    self.scan_warning(
+                        source_order,
+                        &format!("hatch loop placement failed: {error}"),
+                    );
+                    self.mark_failed(source_order);
+                    return Ok(());
+                }
             }
         }
         let loop_ids = hatch
@@ -1263,7 +1268,7 @@ impl<'a> DecodeContext<'a> {
                         ),
                         (
                             cadmpeg_core::nonblank_literal!("page_per_model_ratio"),
-                            detail.page_per_model_ratio.to_string(),
+                            detail.page_per_model_ratio.get().to_string(),
                         ),
                     ]),
                 }),
@@ -1342,7 +1347,7 @@ impl<'a> DecodeContext<'a> {
             .iter()
             .map(|axis| {
                 axis.iter()
-                    .map(f64::to_string)
+                    .map(|knot| knot.get().to_string())
                     .collect::<Vec<_>>()
                     .join(",")
             })
@@ -1353,7 +1358,7 @@ impl<'a> DecodeContext<'a> {
             .map(|point| {
                 point
                     .iter()
-                    .map(f64::to_string)
+                    .map(|coordinate| coordinate.get().to_string())
                     .collect::<Vec<_>>()
                     .join(",")
             })
@@ -1370,7 +1375,7 @@ impl<'a> DecodeContext<'a> {
                 "weights".to_string(),
                 weights
                     .iter()
-                    .map(f64::to_string)
+                    .map(|weight| weight.get().to_string())
                     .collect::<Vec<_>>()
                     .join(","),
             );
@@ -1941,7 +1946,7 @@ impl<'a> DecodeContext<'a> {
         &mut self,
         before: &ModelCheckpoint,
         transform: Transform,
-    ) -> Result<Vec<String>, String> {
+    ) -> Result<Vec<String>, ReferenceFailure> {
         let mut links = Vec::new();
         let mut derived_ids = Vec::new();
         for body in before
@@ -1966,7 +1971,7 @@ impl<'a> DecodeContext<'a> {
             if let Some(cache) = curve.geometry.solved_cache() {
                 curve.geometry = CurveGeometry::Solved(cache.clone());
             }
-            transform_curve(curve, transform)?;
+            transform_curve(self.expand.ctx(), curve, transform)?;
             links.push(curve.id.to_string());
             derived_ids.push(curve.id.to_string());
         }
@@ -3546,17 +3551,22 @@ fn stage_extrusion_caps(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "face"),
             cap_key.clone(),
         );
+        let frame = cadmpeg_ir::units::OrthonormalFrame3::from_units(
+            extrusion.cap_normals[cap],
+            extrusion.cap_u_axes[cap],
+        )
+        .ok_or_else(|| {
+            "extrusion cap staging: PlaneSurface.normal/u_axis must form an orthonormal frame"
+                .to_string()
+        })?;
+        let origin = cadmpeg_ir::features::FinitePoint3::new(extrusion.cap_origins[cap])
+            .ok_or_else(|| {
+                "extrusion cap staging: PlaneSurface.origin must be finite".to_string()
+            })?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                match cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    extrusion.cap_origins[cap],
-                    extrusion.cap_normals[cap],
-                    extrusion.cap_u_axes[cap],
-                ) {
-                    Ok(plane) => plane,
-                    Err(error) => return Err(format!("extrusion cap staging: {error}")),
-                },
+                cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, frame),
             )),
             source_object: Some(association.clone()),
         });
@@ -4208,7 +4218,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                 .then(cadmpeg_ir::identity_key!(".slot-"))
                 .then(index),
         );
-        let position = crate::wire::scaled_point(vertex.point, scale).ok_or_else(|| {
+        let position = crate::wire::scaled_point(vertex.point.get(), scale).ok_or_else(|| {
             crate::curves::GeometryError::unpositioned("scaled Brep vertex coordinate is invalid")
         })?;
         staged.draft.model_mut().points.push(Point::new(
@@ -4219,7 +4229,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         staged.draft.model_mut().vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,
-            tolerance: scaled_tolerance(vertex.tolerance, scale)?,
+            tolerance: scaled_tolerance(resolved.vertices[index].tolerance, scale)?,
         });
         vertex_ids.push(vertex_id);
     }
@@ -4239,13 +4249,13 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                 .map_err(crate::curves::GeometryError::unpositioned)?,
             start: vertex_ids[vertices[0]].clone(),
             end: vertex_ids[vertices[1]].clone(),
-            tolerance: scaled_tolerance(edge.tolerance, scale)?,
+            tolerance: scaled_tolerance(resolved.edges[index].tolerance, scale)?,
         });
         edge_ids.push(id);
     }
     let components = face_components(resolved);
-    let grouping = region_shell_groups(raw, resolved, &components)?;
-    let free_vertex_indices = brep_free_vertex_indices(resolved)?;
+    let grouping = region_shell_groups(expand.ctx(), raw, resolved, &components)?;
+    let free_vertex_indices = brep_free_vertex_indices(expand.ctx(), resolved)?;
     if !free_vertex_indices.is_empty() && grouping.shells.len() != 1 {
         return Ok(finish_brep_fallback(
             staged,
@@ -4338,7 +4348,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
                         start: vertex_ids[trim_refs.vertices[0]].clone(),
                         end: vertex_ids[trim_refs.vertices[0]].clone(),
-                        tolerance: scaled_tolerance(trim.tolerances[1], scale)?,
+                        tolerance: scaled_tolerance(trim_refs.tolerances[1], scale)?,
                     });
                     synthetic_edges.insert(*trim_index, synthetic_id.clone());
                 }
@@ -4976,7 +4986,7 @@ fn decode_pcurves(
                         "C2 child is not a curve",
                     ));
                 };
-                c2_curve_to_nurbs_join(curve, trim.source_range.start)
+                c2_curve_to_nurbs_join(ctx, curve, trim.source_range.start)
             })();
             match decoded {
                 Ok(joined) => {
@@ -5040,7 +5050,7 @@ fn decode_pcurves(
             metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                 Some(trim.proxy_reversed),
                 Some(trim.domain.0),
-                finite_tolerance(trim.tolerances[0]),
+                trim_refs.tolerances[0].fit(),
             ),
         });
         ids.insert(index, id);
@@ -5053,6 +5063,7 @@ fn decode_pcurves(
 }
 
 fn c2_curve_to_nurbs_join(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     curve: crate::curves::DecodedCurve,
     offset: usize,
 ) -> Result<crate::curves::NurbsJoin, crate::curves::GeometryError> {
@@ -5086,7 +5097,7 @@ fn c2_curve_to_nurbs_join(
                         "C2 polycurve segment domain is invalid",
                     ));
                 }
-                let joined = c2_curve_to_nurbs_join(child, offset)?;
+                let joined = c2_curve_to_nurbs_join(ctx, child, offset)?;
                 warnings.extend(joined.warnings);
                 segments.push(crate::curves::remap_nurbs_domain(
                     joined.curve,
@@ -5094,7 +5105,7 @@ fn c2_curve_to_nurbs_join(
                     offset,
                 )?);
             }
-            let mut joined = crate::curves::join_nurbs_segments(segments, offset)?;
+            let mut joined = crate::curves::join_nurbs_segments(ctx, segments, offset)?;
             warnings.append(&mut joined.warnings);
             joined.warnings = warnings;
             Ok(joined)
@@ -5102,23 +5113,17 @@ fn c2_curve_to_nurbs_join(
     }
 }
 
-fn finite_tolerance(value: f64) -> Option<cadmpeg_ir::geometry::FitTolerance> {
-    cadmpeg_ir::geometry::FitTolerance::try_new(value)
-        .ok()
-        .filter(|_| value > 0.0)
-}
-
 fn scaled_tolerance(
-    value: f64,
+    value: crate::brep::BrepTolerance,
     scale: MillimeterScale,
 ) -> Result<Option<cadmpeg_ir::scalar::PositiveReal>, crate::curves::GeometryError> {
-    if !value.is_finite() || value <= 0.0 {
+    let Some(source) = value.positive() else {
         return Ok(None);
-    }
-    let scaled = crate::wire::scaled_coordinate(value, scale)
+    };
+    let scaled = crate::wire::scaled_coordinate(source.get(), scale)
         .ok_or_else(|| crate::curves::GeometryError::unpositioned("scaled tolerance is invalid"))?;
     Ok(Some(
-        cadmpeg_ir::scalar::PositiveReal::new(scaled.get()).ok_or_else(|| {
+        cadmpeg_ir::scalar::PositiveReal::from_finite(scaled).ok_or_else(|| {
             crate::curves::GeometryError::unpositioned(
                 "scaled tolerance must be positive and finite",
             )
@@ -5154,18 +5159,14 @@ fn face_components(resolved: &crate::brep::ResolvedBrep) -> Vec<usize> {
 }
 
 fn brep_free_vertex_indices(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     resolved: &crate::brep::ResolvedBrep,
 ) -> Result<Vec<usize>, crate::curves::GeometryError> {
-    let mut attached = alloc_filled(
+    let mut attached = ctx.alloc_filled(
         resolved.vertices.len(),
         false,
         "Rhino Brep free-vertex attachment flags",
-    )
-    .map_err(|error| {
-        crate::curves::GeometryError::unpositioned(format!(
-            "Brep free-vertex allocation refused: {error}"
-        ))
-    })?;
+    )?;
     for (index, vertex) in resolved.vertices.iter().enumerate() {
         if !vertex.edges.is_empty() {
             attached[index] = true;
@@ -5195,6 +5196,7 @@ struct ShellGroup {
 }
 
 fn region_shell_groups(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     raw: &crate::brep::RawBrep,
     resolved: &crate::brep::ResolvedBrep,
     components: &[usize],
@@ -5206,13 +5208,7 @@ fn region_shell_groups(
         }
         let mut shells = Vec::new();
         let mut face_groups =
-            alloc_filled(components.len(), 0usize, "Rhino Brep fallback face groups").map_err(
-                |error| {
-                    crate::curves::GeometryError::unpositioned(format!(
-                        "Brep face-group allocation refused: {error}"
-                    ))
-                },
-            )?;
+            ctx.alloc_filled(components.len(), 0usize, "Rhino Brep fallback face groups")?;
         for (group, (_component, faces)) in groups.into_iter().enumerate() {
             for face in &faces {
                 face_groups[*face] = group;
@@ -5244,19 +5240,15 @@ fn region_shell_groups(
             .filter_map(|side| side.region.filter(|region| solid_regions.contains(region)))
             .collect();
         if bounded_regions.len() != 1 {
-            return region_shell_groups_without_records(components);
+            return region_shell_groups_without_records(ctx, components);
         }
         grouped
             .entry((bounded_regions[0], components[face]))
             .or_default()
             .push(face);
     }
-    let mut face_groups = alloc_filled(components.len(), 0usize, "Rhino Brep region face groups")
-        .map_err(|error| {
-        crate::curves::GeometryError::unpositioned(format!(
-            "Brep face-group allocation refused: {error}"
-        ))
-    })?;
+    let mut face_groups =
+        ctx.alloc_filled(components.len(), 0usize, "Rhino Brep region face groups")?;
     let mut shells = Vec::new();
     for (group, ((region, _component), faces)) in grouped.into_iter().enumerate() {
         for face in &faces {
@@ -5272,6 +5264,7 @@ fn region_shell_groups(
 }
 
 fn region_shell_groups_without_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     components: &[usize],
 ) -> Result<ShellGrouping, crate::curves::GeometryError> {
     let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
@@ -5279,13 +5272,7 @@ fn region_shell_groups_without_records(
         groups.entry(component).or_default().push(face);
     }
     let mut face_groups =
-        alloc_filled(components.len(), 0usize, "Rhino Brep incidence face groups").map_err(
-            |error| {
-                crate::curves::GeometryError::unpositioned(format!(
-                    "Brep face-group allocation refused: {error}"
-                ))
-            },
-        )?;
+        ctx.alloc_filled(components.len(), 0usize, "Rhino Brep incidence face groups")?;
     let mut shells = Vec::new();
     for (group, (_component, faces)) in groups.into_iter().enumerate() {
         for face in &faces {
@@ -5408,10 +5395,10 @@ fn hatch_plane_transform(
     scale: MillimeterScale,
     record: &str,
 ) -> Result<Transform, cadmpeg_core::CodecError> {
-    let origin = plane.origin;
-    let x = plane.xaxis;
-    let y = plane.yaxis;
-    let z = plane.zaxis;
+    let origin = plane.origin.get();
+    let x = plane.xaxis.get();
+    let y = plane.yaxis.get();
+    let z = plane.zaxis.get();
     let scale = scale.value();
     let rows = [
         [x[0] * scale, y[0] * scale, z[0] * scale, origin[0] * scale],
@@ -5433,13 +5420,14 @@ fn hatch_plane_transform(
 }
 
 fn transform_decoded_curve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     curve: &mut crate::curves::DecodedCurve,
     transform: Transform,
-) -> Result<(), String> {
+) -> Result<(), ReferenceFailure> {
     match curve {
         crate::curves::DecodedCurve::Compound { children, .. } => {
             for (_, child) in children {
-                transform_decoded_curve(child, transform)?;
+                transform_decoded_curve(ctx, child, transform)?;
             }
             Ok(())
         }
@@ -5459,7 +5447,7 @@ fn transform_decoded_curve(
                 geometry: source,
                 source_object: None,
             };
-            transform_curve(&mut carrier, transform)?;
+            transform_curve(ctx, &mut carrier, transform)?;
             *geometry = carrier.geometry;
             Ok(())
         }
@@ -5485,7 +5473,11 @@ fn placed_finite_point(transform: Transform, point: FinitePoint3) -> Result<Fini
         .ok_or_else(|| NON_FINITE_PLACEMENT.to_string())
 }
 
-fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String> {
+fn transform_curve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    curve: &mut Curve,
+    transform: Transform,
+) -> Result<(), ReferenceFailure> {
     let geometry = std::mem::replace(
         &mut curve.geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -5509,8 +5501,13 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
                 CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
                 Diagnostics::new(),
             );
-            let mut nurbs = crate::curves::exact_nurbs(&decoded, 0)
-                .map_err(|error| format!("analytic instance curve conversion failed: {error}"))?;
+            let mut nurbs =
+                crate::curves::exact_nurbs(ctx, &decoded, 0).map_err(|error| match error {
+                    crate::curves::GeometryError::Codec(error) => ReferenceFailure::Codec(error),
+                    other => ReferenceFailure::Semantic(format!(
+                        "analytic instance curve conversion failed: {other}"
+                    )),
+                })?;
             nurbs
                 .map_control_points(|pole| {
                     transform.apply_point(pole.get()).ok_or_else(|| {
@@ -5540,19 +5537,13 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
                 endpoint.y - transformed_origin.y,
                 endpoint.z - transformed_origin.z,
             );
-            let norm = value.norm();
-            if !norm.is_finite() || norm == 0.0 {
-                return Err("instance line transform collapsed its direction".to_string());
-            }
+            let norm = PositiveReal::new(value.norm())
+                .ok_or_else(|| "instance line transform collapsed its direction".to_string())?;
             CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::new(
                     transformed_origin,
-                    UnitVector3::new(cadmpeg_ir::math::Vector3::new(
-                        value.x / norm,
-                        value.y / norm,
-                        value.z / norm,
-                    ))
-                    .ok_or("LineCurve.direction must have unit length")?,
+                    UnitVector3::normalized_with_admitted_length(value, norm)
+                        .ok_or_else(|| "LineCurve.direction must have unit length".to_string())?,
                 ),
             ))
         }
@@ -5566,12 +5557,16 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record }) => {
             curve.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record });
-            return Err("unknown free curve cannot be transformed exactly".to_string());
+            return Err("unknown free curve cannot be transformed exactly"
+                .to_string()
+                .into());
         }
         other => {
             curve.geometry = other;
             return Err(
-                "analytic curve family has no exact general-affine instance conversion".to_string(),
+                "analytic curve family has no exact general-affine instance conversion"
+                    .to_string()
+                    .into(),
             );
         }
     };
@@ -5627,20 +5622,14 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
                 projected.y - dot * normal.y,
                 projected.z - dot * normal.z,
             );
-            let length = value.norm();
-            if !length.is_finite() || length == 0.0 {
-                return Err("instance plane transform collapsed its frame".to_string());
-            }
+            let length = PositiveReal::new(value.norm())
+                .ok_or("instance plane transform collapsed its frame")?;
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::new(
                     origin,
-                    UnitVector3::new(cadmpeg_ir::math::Vector3::new(
-                        value.x / length,
-                        value.y / length,
-                        value.z / length,
-                    ))
-                    .and_then(|u_axis| OrthonormalFrame3::from_units(unit_normal, u_axis))
-                    .ok_or("PlaneSurface.normal/u_axis must form an orthonormal frame")?,
+                    UnitVector3::normalized_with_admitted_length(value, length)
+                        .and_then(|u_axis| OrthonormalFrame3::from_units(unit_normal, u_axis))
+                        .ok_or("PlaneSurface.normal/u_axis must form an orthonormal frame")?,
                 ),
             ))
         }

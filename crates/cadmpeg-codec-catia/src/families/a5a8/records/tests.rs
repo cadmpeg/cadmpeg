@@ -1531,8 +1531,11 @@ fn decode_geometry_fallback_transfers_an_external_a8_pole_grid() {
 #[test]
 fn decode_float_packed_stream_transfers_an_elided_a8_surface_with_native_topology() {
     let stream = a8_elided_surface_stream_with_native_vertex_chain();
-    let graph = crate::families::b5::graph::parse(&stream, &mut crate::nurbs::LaneRefusals::new())
-        .expect("generated A8 topology");
+    let graph = crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::parse(ctx, &stream, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("generated A8 topology");
     assert!(graph.complete);
     assert_eq!(graph.faces.len(), 1);
     assert_eq!(graph.loops.len(), 1);
@@ -1585,7 +1588,8 @@ fn decode_float_packed_stream_transfers_an_elided_a8_surface_with_native_topolog
                 | cadmpeg_ir::report::loss::LossCategory::Topology
         ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -1603,7 +1607,12 @@ fn decode_object_stream_does_not_promote_unbound_a8_pcurve() {
 fn decode_object_stream_transfers_a8_rolling_ball_jet() {
     let file = object_main_catpart(&a8_freeform_curve_stream());
     assert_eq!(
-        crate::container::scan_bytes(file.clone()).variant,
+        crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(
+            ctx,
+            file.clone()
+        ))
+        .expect("service resource budget")
+        .variant,
         Variant::FloatPackedInnerNoFbb
     );
     let decoded = EditableDecodeResult::from(
@@ -1653,7 +1662,12 @@ fn decode_object_stream_transfers_a8_rolling_ball_jet() {
 #[test]
 fn decode_float_packed_stream_transfers_a8_nurbs() {
     assert_eq!(
-        crate::container::scan_bytes(a8_catpart()).variant,
+        crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(
+            ctx,
+            a8_catpart()
+        ))
+        .expect("service resource budget")
+        .variant,
         Variant::FloatPackedInnerNoFbb
     );
     let mut cur = Cursor::new(a8_catpart());
@@ -1676,7 +1690,12 @@ fn decode_float_packed_stream_transfers_a8_nurbs() {
 #[test]
 fn decode_inner_no_directory_transfers_a8_nurbs() {
     assert_eq!(
-        crate::container::scan_bytes(inner_no_directory_a8_catpart()).variant,
+        crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(
+            ctx,
+            inner_no_directory_a8_catpart()
+        ))
+        .expect("service resource budget")
+        .variant,
         Variant::InnerNoDirectory
     );
     let mut cur = Cursor::new(inner_no_directory_a8_catpart());

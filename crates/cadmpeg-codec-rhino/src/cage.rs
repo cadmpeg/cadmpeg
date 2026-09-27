@@ -6,7 +6,7 @@ use std::ops::Range;
 
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal};
 
 use crate::chunks::{chunk_at, ArchiveVersion};
 use crate::curves::GeometryError;
@@ -28,9 +28,9 @@ pub(crate) struct Cage {
     pub(crate) dimension: usize,
     pub(crate) orders: [usize; 3],
     pub(crate) counts: [usize; 3],
-    pub(crate) knots: [Vec<f64>; 3],
-    pub(crate) control_points: Vec<Vec<f64>>,
-    pub(crate) weights: Option<Vec<f64>>,
+    pub(crate) knots: [Vec<FiniteReal>; 3],
+    pub(crate) control_points: Vec<Vec<FiniteReal>>,
+    pub(crate) weights: Option<Vec<NonZeroReal>>,
 }
 
 impl Cage {
@@ -159,7 +159,7 @@ pub(crate) fn decode_at(
             GeometryError::malformed(body.position(), "NURBS cage control count exceeds cap")
         })?;
 
-    let mut knots: [Vec<f64>; 3] = std::array::from_fn(|_| Vec::new());
+    let mut knots: [Vec<FiniteReal>; 3] = std::array::from_fn(|_| Vec::new());
     for axis in 0..3 {
         let knot_count = orders[axis]
             .checked_add(counts[axis])
@@ -171,11 +171,17 @@ pub(crate) fn decode_at(
             GeometryError::malformed(body.position(), "NURBS cage knot vector truncated")
         })?;
         let mut reserved =
-            ExactVec::<f64>::new(bound).map_err(|error| refused(body.position(), &error))?;
-        let mut previous: Option<f64> = None;
+            ExactVec::<FiniteReal>::new(bound).map_err(|error| refused(body.position(), &error))?;
+        let mut previous: Option<FiniteReal> = None;
         for _ in 0..knot_count {
             let knot = req_f64(&mut body)?;
-            if !knot.is_finite() || previous.is_some_and(|last| knot < last) {
+            let Some(knot) = FiniteReal::new(knot) else {
+                return Err(GeometryError::malformed(
+                    body.position() - 8,
+                    "invalid NURBS cage knot",
+                ));
+            };
+            if previous.is_some_and(|last| knot.get() < last.get()) {
                 return Err(GeometryError::malformed(
                     body.position() - 8,
                     "invalid NURBS cage knot",
@@ -204,7 +210,7 @@ pub(crate) fn decode_at(
         .ok_or_else(|| {
             GeometryError::malformed(body.position(), "NURBS cage control net truncated")
         })?;
-    let mut control_points = ExactVec::<Vec<f64>>::new(control_bound)
+    let mut control_points = ExactVec::<Vec<FiniteReal>>::new(control_bound)
         .map_err(|error| refused(body.position(), &error))?;
     let mut weights = if rational {
         let mut weights = Vec::new();
@@ -244,28 +250,25 @@ pub(crate) fn decode_at(
                     "nonfinite NURBS cage control value",
                 ));
             };
-            if weight.get() == 0.0 {
-                return Err(GeometryError::malformed(
-                    body.position() - 8,
-                    "zero NURBS cage weight",
-                ));
-            }
-            weights.push(weight.get());
-            weight
+            let weight = NonZeroReal::try_from(weight).map_err(|_| {
+                GeometryError::malformed(body.position() - 8, "zero NURBS cage weight")
+            })?;
+            weights.push(weight);
+            FiniteReal::from(weight)
         } else {
             FiniteReal::ONE
         };
         let point = stored
             .into_iter()
             .map(|coordinate| {
-                cadmpeg_ir::math::multiply_divide(coordinate, scale.real(), weight)
-                    .map(FiniteReal::get)
-                    .ok_or_else(|| {
+                cadmpeg_ir::math::multiply_divide(coordinate, scale.real(), weight).ok_or_else(
+                    || {
                         GeometryError::malformed(
                             body.position(),
                             "scaled NURBS cage coordinate is invalid",
                         )
-                    })
+                    },
+                )
             })
             .collect::<Result<Vec<_>, _>>()?;
         control_points
@@ -296,7 +299,7 @@ pub(crate) fn decode_at(
 #[cfg(test)]
 mod tests {
     use super::{decode, ANONYMOUS};
-    use crate::chunks::ArchiveVersion;
+    use crate::chunks::{ArchiveVersion, FramingError};
     use crate::curves::GeometryError;
     use crate::test_support::test_dump::crc_chunk;
 
@@ -338,9 +341,64 @@ mod tests {
         .expect("required invariant");
         assert_eq!(cage.orders, [2, 2, 2]);
         assert_eq!(cage.counts, [2, 2, 2]);
-        assert_eq!(cage.knots[2], [0.0, 3.0]);
-        assert_eq!(cage.control_points[7], [70.0, 0.0, 0.0]);
-        assert_eq!(cage.weights.as_ref().expect("required invariant")[7], 2.0);
+        assert_eq!(
+            cage.knots[2]
+                .iter()
+                .map(|knot| knot.get())
+                .collect::<Vec<_>>(),
+            [0.0, 3.0]
+        );
+        assert_eq!(
+            cage.control_points[7]
+                .iter()
+                .map(|point| point.get())
+                .collect::<Vec<_>>(),
+            [70.0, 0.0, 0.0]
+        );
+        assert_eq!(
+            cage.weights.as_ref().expect("required invariant")[7].get(),
+            2.0
+        );
+    }
+
+    #[test]
+    fn nonfinite_cage_knot_is_refused_at_source() {
+        let mut body = rational_cage_body();
+        body[40..48].copy_from_slice(&f64::INFINITY.to_le_bytes());
+        let bytes = crc_chunk(ArchiveVersion::V5, ANONYMOUS, &body);
+        let result = crate::decode::with_expand_bytes(&bytes, |expand| {
+            decode(
+                expand,
+                0..bytes.len(),
+                crate::test_support::millimeter_scale(10.0),
+                ArchiveVersion::V8,
+            )
+        });
+        assert!(matches!(
+            result,
+            Err(GeometryError::Malformed(FramingError::Structural { message, .. }))
+                if message == "invalid NURBS cage knot"
+        ));
+    }
+
+    #[test]
+    fn zero_cage_weight_is_refused_at_source() {
+        let mut body = rational_cage_body();
+        body[112..120].copy_from_slice(&0.0_f64.to_le_bytes());
+        let bytes = crc_chunk(ArchiveVersion::V5, ANONYMOUS, &body);
+        let result = crate::decode::with_expand_bytes(&bytes, |expand| {
+            decode(
+                expand,
+                0..bytes.len(),
+                crate::test_support::millimeter_scale(10.0),
+                ArchiveVersion::V8,
+            )
+        });
+        assert!(matches!(
+            result,
+            Err(GeometryError::Malformed(FramingError::Structural { message, .. }))
+                if message == "zero NURBS cage weight"
+        ));
     }
 
     #[test]
@@ -358,7 +416,7 @@ mod tests {
             )
         })
         .expect("major-one future minor is bounded-compatible");
-        assert_eq!(cage.control_points[7][0], 70.0);
+        assert_eq!(cage.control_points[7][0].get(), 70.0);
     }
 
     #[test]
@@ -414,7 +472,7 @@ mod tests {
         })
         .unwrap();
         for point in &cage.control_points {
-            assert!((point[0] / 1e303 - 1.).abs() <= 8. * f64::EPSILON);
+            assert!((point[0].get() / 1e303 - 1.).abs() <= 8. * f64::EPSILON);
         }
     }
 }

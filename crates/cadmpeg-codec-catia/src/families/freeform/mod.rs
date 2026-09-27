@@ -335,14 +335,18 @@ pub(super) fn try_decode_freeform_surfaces(
             &scan.data,
             container::consolidated_record_sources(scan),
         );
-        let mut b5_graph = crate::families::b5::graph::parse_from_records_budgeted(
+        let mut b5_graph = match crate::families::b5::graph::parse_from_records_budgeted(
+            ctx,
             &object_source,
             &selected_object_records,
             &object_frames,
             true,
             Some(&selection_budget),
             refusal,
-        );
+        ) {
+            Ok(graph) => graph,
+            Err(error) => return Some(Err(error)),
+        };
         let face_terminal_controls = b5_graph.as_ref().map(|graph| {
             graph.faces.iter().fold([0usize; 3], |mut counts, face| {
                 match face.terminal_control {
@@ -3271,8 +3275,11 @@ mod tests {
             902,
             &[0x82, 0x18, 100, 0, 0x18, 0xe7, 0x03, 0x03],
         );
-        let graph = parse(&bytes, &mut crate::nurbs::LaneRefusals::new())
-            .expect("one resolved and one unresolved face");
+        let graph = crate::test_support::with_service_context(|ctx| {
+            parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+        })
+        .expect("service resource budget")
+        .expect("one resolved and one unresolved face");
         assert_eq!(graph.face_records.len(), 2);
         assert_eq!(graph.faces.len(), 1);
         assert!(graph
@@ -3292,22 +3299,30 @@ mod tests {
             object_id: 902,
             payload: vec![0x82, 0x18, 100, 0, 0x18, 0xe7, 0x03, 0x03],
         };
-        assert!(parse_from_records(
-            &[],
-            std::slice::from_ref(&record),
-            &[],
-            false,
-            &mut crate::nurbs::LaneRefusals::new()
-        )
-        .is_some());
-        assert!(parse_from_records(
-            &[],
-            &[record.clone(), record],
-            &[],
-            false,
-            &mut crate::nurbs::LaneRefusals::new()
-        )
-        .is_none());
+        assert!(
+            crate::test_support::with_service_context(|ctx| parse_from_records(
+                ctx,
+                &[],
+                std::slice::from_ref(&record),
+                &[],
+                false,
+                &mut crate::nurbs::LaneRefusals::new()
+            ))
+            .expect("service resource budget")
+            .is_some()
+        );
+        assert!(
+            crate::test_support::with_service_context(|ctx| parse_from_records(
+                ctx,
+                &[],
+                &[record.clone(), record],
+                &[],
+                false,
+                &mut crate::nurbs::LaneRefusals::new()
+            ))
+            .expect("service resource budget")
+            .is_none()
+        );
     }
 
     #[test]

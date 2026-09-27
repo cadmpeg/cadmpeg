@@ -18,7 +18,6 @@ use crate::decode::sketch_transfer::recipe::{
     current_additive_feature_recipe, feature_is_first_material_operation,
     feature_revolution_extent, unique_feature_revolution_extent,
 };
-use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{Curve, Surface};
 use cadmpeg_ir::ids::{
@@ -69,14 +68,15 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         };
         let extent = feature_revolution_extent(scan, feature_id);
         let Some(axis) = revolution_axis_for_transfer(
+            ctx,
             scan,
             ir,
             source_carriers,
             feature_id,
-            definition,
-            transform,
+            (definition, transform),
             extent.as_ref(),
-        ) else {
+        )?
+        else {
             continue;
         };
         let Some(sketch_id) = model_sketch_id(scan, definition) else {
@@ -237,9 +237,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         let region_id = revolution_id!(RegionId, cadmpeg_ir::identity_key!("region"));
         let shell_id = revolution_id!(ShellId, cadmpeg_ir::identity_key!("shell"));
         let count = profile.len();
-        let Ok(mut edges) = alloc_filled(count, None, "creo revolution profile edges") else {
-            continue;
-        };
+        let mut edges = ctx.alloc_filled(count, None, "creo revolution profile edges")?;
         for (index, (entity, curve_geometry)) in profile.iter().zip(vertex_curves).enumerate() {
             let Some(curve_geometry) = curve_geometry else {
                 continue;

@@ -25,7 +25,10 @@ use std::collections::{BTreeMap, HashMap};
 fn a8_class21_jet_decodes_a_piecewise_quintic_pcurve() {
     let mut payload = a8_class21_test_payload();
 
-    let pcurve = parse_a8_class21_pcurve(7, &payload).expect("complete class-21 jet");
+    let pcurve =
+        crate::test_support::with_service_context(|ctx| parse_a8_class21_pcurve(ctx, 7, &payload))
+            .expect("service resource budget")
+            .expect("complete class-21 jet");
     assert_eq!(pcurve.object_id, 7);
     assert_eq!(pcurve.surface, 3);
     assert_eq!(
@@ -44,7 +47,11 @@ fn a8_class21_jet_decodes_a_piecewise_quintic_pcurve() {
     );
 
     payload[6] = 0x0d;
-    assert_eq!(parse_a8_class21_pcurve(7, &payload), None);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| parse_a8_class21_pcurve(ctx, 7, &payload))
+            .expect("service resource budget"),
+        None
+    );
 }
 
 fn a8_class21_large_test_payload(knot_count: usize) -> Vec<u8> {
@@ -74,11 +81,33 @@ fn a8_class21_large_test_payload(knot_count: usize) -> Vec<u8> {
 fn a8_class21_jet_uses_frame_extent_for_knot_count() {
     let knot_count = 8193;
     let payload = a8_class21_large_test_payload(knot_count);
-    let pcurve = parse_a8_class21_pcurve(7, &payload).expect("frame-sized class-21 jet");
+    let pcurve =
+        crate::test_support::with_service_context(|ctx| parse_a8_class21_pcurve(ctx, 7, &payload))
+            .expect("service resource budget")
+            .expect("frame-sized class-21 jet");
 
     assert_eq!(pcurve.distinct_knots.len(), knot_count);
     assert_eq!(pcurve.multiplicities.len(), knot_count);
     assert_eq!(pcurve.control_points.len(), 6 * (knot_count - 1));
+}
+
+#[test]
+fn a8_class21_pcurve_multiplicities_propagate_collection_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let payload = a8_class21_test_payload();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // Two knots use forty items before the retained multiplicity vector.
+    policy.limits.max_collection_items = 40;
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
+        .expect("fixture fits the input limit");
+    let error = parse_a8_class21_pcurve(&ctx, 7, &payload)
+        .expect_err("multiplicity array exceeds the collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia B5 pcurve multiplicities"));
 }
 
 #[test]
@@ -87,7 +116,11 @@ fn a8_class21_jet_rejects_count_without_frame_extent() {
         0x81, 0x83, 0x01, 0x15, 0x01, 0x01, 0x10, 0xff, 0xff, 0xff, 0xff, 0x01,
     ];
 
-    assert_eq!(parse_a8_class21_pcurve(7, &payload), None);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| parse_a8_class21_pcurve(ctx, 7, &payload))
+            .expect("service resource budget"),
+        None
+    );
 }
 
 #[test]
@@ -121,7 +154,9 @@ fn a8_class21_scan_ignores_marker_shaped_nested_payload() {
     peer.extend_from_slice(&child_payload);
     wrapper.extend_from_slice(&peer);
 
-    let pcurves = a8_class21_pcurves(&wrapper);
+    let pcurves =
+        crate::test_support::with_service_context(|ctx| a8_class21_pcurves(ctx, &wrapper))
+            .expect("service resource budget");
     assert_eq!(pcurves.len(), 1);
     assert_eq!(pcurves[0].object_id, 9);
 }
@@ -310,11 +345,19 @@ fn topology_parse_does_not_join_records_across_object_stream_runs() {
     let mut separated = original.clone();
     separated.insert(split, 0xff);
 
-    let merged = parse_flat(&separated, &mut crate::nurbs::LaneRefusals::new())
-        .expect("flat scan can join the separated records");
+    let merged = crate::test_support::with_service_context(|ctx| {
+        parse_flat(ctx, &separated, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("flat scan can join the separated records");
     assert!(merged.complete);
     assert_ne!(
-        parse(&separated, &mut crate::nurbs::LaneRefusals::new()),
+        crate::test_support::with_service_context(|ctx| parse(
+            ctx,
+            &separated,
+            &mut crate::nurbs::LaneRefusals::new()
+        ))
+        .expect("service resource budget"),
         Some(merged)
     );
 }
@@ -326,7 +369,10 @@ fn topology_runs_retain_only_their_own_vertex_allocations() {
     bytes.push(0xff);
     bytes.extend_from_slice(&first);
 
-    let graphs = topology_runs(&bytes, &mut crate::nurbs::LaneRefusals::new());
+    let graphs = crate::test_support::with_service_context(|ctx| {
+        topology_runs(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget");
     assert_eq!(graphs.len(), 2);
     assert!(graphs
         .iter()
@@ -336,8 +382,11 @@ fn topology_runs_retain_only_their_own_vertex_allocations() {
 #[test]
 fn topology_parse_admits_one_referenced_isolated_geometry_frame() {
     let original = crate::test_support::test_b5::b5_closed_triangle_stream();
-    let expected =
-        parse(&original, &mut crate::nurbs::LaneRefusals::new()).expect("closed source graph");
+    let expected = crate::test_support::with_service_context(|ctx| {
+        parse(ctx, &original, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("closed source graph");
     let isolated = object_stream_frames(&original)
         .into_iter()
         .find(|frame| is_referenced_geometry_class(frame.family, frame.class))
@@ -349,7 +398,12 @@ fn topology_parse_admits_one_referenced_isolated_geometry_frame() {
     separated.extend_from_slice(&isolated_bytes);
 
     assert_eq!(
-        parse(&separated, &mut crate::nurbs::LaneRefusals::new()),
+        crate::test_support::with_service_context(|ctx| parse(
+            ctx,
+            &separated,
+            &mut crate::nurbs::LaneRefusals::new()
+        ))
+        .expect("service resource budget"),
         Some(expected)
     );
     assert_eq!(object_stream_populations(&separated).len(), 1);
@@ -358,8 +412,11 @@ fn topology_parse_admits_one_referenced_isolated_geometry_frame() {
 #[test]
 fn topology_parse_does_not_borrow_geometry_from_another_population() {
     let original = crate::test_support::test_b5::b5_closed_triangle_stream();
-    let expected =
-        parse(&original, &mut crate::nurbs::LaneRefusals::new()).expect("closed source graph");
+    let expected = crate::test_support::with_service_context(|ctx| {
+        parse(ctx, &original, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("closed source graph");
     let geometry = object_stream_frames(&original)
         .into_iter()
         .find(|frame| is_referenced_geometry_class(frame.family, frame.class))
@@ -372,7 +429,12 @@ fn topology_parse_does_not_borrow_geometry_from_another_population() {
     crate::test_support::test_b5::append_b5_record(&mut separated, 0x5e, 900, &[]);
 
     assert_ne!(
-        parse(&separated, &mut crate::nurbs::LaneRefusals::new()),
+        crate::test_support::with_service_context(|ctx| parse(
+            ctx,
+            &separated,
+            &mut crate::nurbs::LaneRefusals::new()
+        ))
+        .expect("service resource budget"),
         Some(expected)
     );
     assert_eq!(object_stream_populations(&separated).len(), 2);
@@ -421,18 +483,36 @@ fn indexed_frame_parse_matches_one_shot_parse() {
     let records = records_from_frames(&bytes, &frames);
 
     assert_eq!(
-        parse(&bytes, &mut crate::nurbs::LaneRefusals::new()),
-        parse_from_frames(&bytes, &frames, &mut crate::nurbs::LaneRefusals::new())
+        crate::test_support::with_service_context(|ctx| parse(
+            ctx,
+            &bytes,
+            &mut crate::nurbs::LaneRefusals::new()
+        ))
+        .expect("service resource budget"),
+        crate::test_support::with_service_context(|ctx| parse_from_frames(
+            ctx,
+            &bytes,
+            &frames,
+            &mut crate::nurbs::LaneRefusals::new()
+        ))
+        .expect("service resource budget")
     );
     assert_eq!(
-        parse(&bytes, &mut crate::nurbs::LaneRefusals::new()),
-        parse_from_records(
+        crate::test_support::with_service_context(|ctx| parse(
+            ctx,
+            &bytes,
+            &mut crate::nurbs::LaneRefusals::new()
+        ))
+        .expect("service resource budget"),
+        crate::test_support::with_service_context(|ctx| parse_from_records(
+            ctx,
             &bytes,
             &records,
             &frames,
             true,
             &mut crate::nurbs::LaneRefusals::new()
-        )
+        ))
+        .expect("service resource budget")
     );
     assert_eq!(
         typed_face_records(&bytes),
@@ -586,7 +666,10 @@ fn targeted_geometry_graph_closes_a_four_span_extrusion_without_topology() {
     extrusion.extend_from_slice(&[0x05, 0x11]);
     append_b5(&mut bytes, 0x2c, 8, &extrusion);
 
-    let graph = targeted_geometry_graph(&bytes).expect("geometry-only graph");
+    let graph =
+        crate::test_support::with_service_context(|ctx| targeted_geometry_graph(ctx, &bytes))
+            .expect("service resource budget")
+            .expect("geometry-only graph");
     assert!(graph.faces.is_empty());
     assert_eq!(
         graph
@@ -1502,10 +1585,14 @@ fn edge_record_retains_references_and_each_admitted_terminal_control() {
 
 #[test]
 fn referenced_edge_vertex_references_excludes_unreferenced_allocations() {
-    let mut graph = parse(
-        &crate::test_support::test_b5::b5_closed_triangle_stream(),
-        &mut crate::nurbs::LaneRefusals::new(),
-    )
+    let mut graph = crate::test_support::with_service_context(|ctx| {
+        parse(
+            ctx,
+            &crate::test_support::test_b5::b5_closed_triangle_stream(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service resource budget")
     .expect("B5 graph");
     assert!(graph.complete);
     graph.edges.insert(
@@ -1547,8 +1634,11 @@ fn duplicate_face_loop_ownership_does_not_close_the_graph() {
     face_payload.push(0x03);
     crate::test_support::test_b5::append_b5_record(&mut bytes, 0x5f, 902, &face_payload);
 
-    let graph = parse(&bytes, &mut crate::nurbs::LaneRefusals::new())
-        .expect("structurally parseable B5 graph");
+    let graph = crate::test_support::with_service_context(|ctx| {
+        parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("structurally parseable B5 graph");
 
     assert_eq!(graph.faces.len(), 2);
     assert_eq!(graph.loops.len(), 1);

@@ -14,7 +14,25 @@ pub fn serialize<S>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    serializer.serialize_str(&STANDARD.encode(bytes))
+    serializer.collect_str(&Base64Text(bytes))
+}
+
+struct Base64Text<'a>(&'a [u8]);
+
+impl fmt::Display for Base64Text<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        const INPUT_CHUNK: usize = 768;
+        const OUTPUT_CHUNK: usize = 1024;
+        let mut output = [0u8; OUTPUT_CHUNK];
+        for chunk in self.0.chunks(INPUT_CHUNK) {
+            let used = STANDARD
+                .encode_slice(chunk, &mut output)
+                .map_err(|_| fmt::Error)?;
+            let text = std::str::from_utf8(&output[..used]).map_err(|_| fmt::Error)?;
+            formatter.write_str(text)?;
+        }
+        Ok(())
+    }
 }
 
 /// Deserializes a standard, padded base64 string into bytes.
