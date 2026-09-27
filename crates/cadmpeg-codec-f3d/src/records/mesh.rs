@@ -1522,16 +1522,32 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
 }
 
 /// Exact identity and source extent of one indexed Design mesh record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignMeshRecordIdentityWire",
-    into = "DesignMeshRecordIdentityWire"
-)]
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "DesignMeshRecordIdentityWire")]
 pub(crate) struct DesignMeshRecordIdentity {
     class_tag: DesignClassTag,
     record_index: std::num::NonZeroU32,
     byte_offset: u64,
     frame_length: u64,
+}
+
+#[cfg(test)]
+thread_local! {
+    static MESH_RECORD_IDENTITY_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for DesignMeshRecordIdentity {
+    fn clone(&self) -> Self {
+        MESH_RECORD_IDENTITY_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            class_tag: self.class_tag.clone(),
+            record_index: self.record_index,
+            byte_offset: self.byte_offset,
+            frame_length: self.frame_length,
+        }
+    }
 }
 
 impl DesignMeshRecordIdentity {
@@ -1583,6 +1599,25 @@ struct DesignMeshRecordIdentityWire {
     frame_length: u64,
 }
 
+impl Serialize for DesignMeshRecordIdentity {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            class_tag: &'a str,
+            record_index: u32,
+            byte_offset: u64,
+            frame_length: u64,
+        }
+        WireRef {
+            class_tag: self.class_tag.as_str(),
+            record_index: self.record_index.get(),
+            byte_offset: self.byte_offset,
+            frame_length: self.frame_length,
+        }
+        .serialize(serializer)
+    }
+}
+
 impl TryFrom<DesignMeshRecordIdentityWire> for DesignMeshRecordIdentity {
     type Error = String;
     fn try_from(wire: DesignMeshRecordIdentityWire) -> Result<Self, Self::Error> {
@@ -1595,6 +1630,7 @@ impl TryFrom<DesignMeshRecordIdentityWire> for DesignMeshRecordIdentity {
     }
 }
 
+#[cfg(test)]
 impl From<DesignMeshRecordIdentity> for DesignMeshRecordIdentityWire {
     fn from(record: DesignMeshRecordIdentity) -> Self {
         Self {

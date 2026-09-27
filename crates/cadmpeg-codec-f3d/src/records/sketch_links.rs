@@ -95,11 +95,9 @@ impl From<DesignPersistentIdText> for String {
 }
 
 /// Persistent Fusion design identifier attached to a solved B-rep entity.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "PersistentDesignLinkWire",
-    into = "PersistentDesignLinkWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "PersistentDesignLinkWire")]
 pub(crate) struct PersistentDesignLink {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -111,6 +109,25 @@ pub(crate) struct PersistentDesignLink {
     pub(crate) design_reference: i64,
     /// Position of this id in the entity's persistent-id history, in assignment order.
     pub(crate) ordinal: u32,
+}
+
+#[cfg(test)]
+thread_local! {
+    static PERSISTENT_DESIGN_LINK_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for PersistentDesignLink {
+    fn clone(&self) -> Self {
+        PERSISTENT_DESIGN_LINK_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            target: self.target.clone(),
+            design_id: self.design_id.clone(),
+            design_reference: self.design_reference,
+            ordinal: self.ordinal,
+        }
+    }
 }
 
 /// The active persistent design link of every target: the highest-ordinal link
@@ -149,6 +166,29 @@ struct PersistentDesignLinkWire {
     ordinal: u32,
 }
 
+impl Serialize for PersistentDesignLink {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            id: &'a str,
+            target: &'a AttributeTarget,
+            design_id: &'a str,
+            entity_kind: i64,
+            design_reference: i64,
+            ordinal: u32,
+        }
+        WireRef {
+            id: &self.id,
+            target: &self.target,
+            design_id: self.design_id.as_str(),
+            entity_kind: 3,
+            design_reference: self.design_reference,
+            ordinal: self.ordinal,
+        }
+        .serialize(serializer)
+    }
+}
+
 impl TryFrom<PersistentDesignLinkWire> for PersistentDesignLink {
     type Error = String;
 
@@ -166,6 +206,7 @@ impl TryFrom<PersistentDesignLinkWire> for PersistentDesignLink {
     }
 }
 
+#[cfg(test)]
 impl From<PersistentDesignLink> for PersistentDesignLinkWire {
     fn from(record: PersistentDesignLink) -> Self {
         Self {
@@ -203,3 +244,6 @@ fn deserialize_persistent_tag_token<'de, D: Deserializer<'de>>(
     cadmpeg_core::text::NonBlankString::new(String::deserialize(deserializer)?)
         .ok_or_else(|| serde::de::Error::custom("token must not be empty"))
 }
+
+#[cfg(test)]
+mod tests;
