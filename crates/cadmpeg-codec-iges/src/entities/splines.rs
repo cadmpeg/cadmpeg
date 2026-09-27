@@ -886,11 +886,8 @@ pub(super) fn project(
             ));
             continue;
         }
-        let Some(control_points) = collect_optional_vec(
-            ctx,
-            grid.into_iter(),
-            "iges spline surface completed controls",
-        )?
+        let Some(control_points) =
+            collect_optional_vec(ctx, grid, "iges spline surface completed controls")?
         else {
             losses.push(entity_loss(
                 entry,

@@ -527,11 +527,13 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
     let (selected, start, end, pcurves_agree) = super::select_boundary_edge(
         &candidates,
         &index,
-        &surface_id,
-        &pcurves,
-        Sense::Forward,
-        EPS_BOUNDARY_ENDPOINT_MATCH,
-        true,
+        super::BoundaryMatch {
+            surface_id: &surface_id,
+            pcurves: &pcurves,
+            sense: Sense::Forward,
+            tolerance: EPS_BOUNDARY_ENDPOINT_MATCH,
+            parameter_curves_authoritative: true,
+        },
         &ctx,
     )
     .expect("unique pcurve-compatible edge");
@@ -556,11 +558,13 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
         super::select_boundary_edge(
             &ambiguous_candidates,
             &index,
-            &surface_id,
-            &[],
-            Sense::Forward,
-            EPS_BOUNDARY_ENDPOINT_MATCH,
-            false,
+            super::BoundaryMatch {
+                surface_id: &surface_id,
+                pcurves: &[],
+                sense: Sense::Forward,
+                tolerance: EPS_BOUNDARY_ENDPOINT_MATCH,
+                parameter_curves_authoritative: false,
+            },
             &ctx,
         ),
         Err(super::BoundaryEdgeSelectionError::Ambiguous)

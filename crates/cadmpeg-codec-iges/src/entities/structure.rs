@@ -1840,16 +1840,22 @@ impl LegacyPlaneError {
     }
 }
 
+#[derive(Clone, Copy)]
+struct LegacyPlaneSource<'a> {
+    entry: &'a DirectoryEntry,
+    record: &'a ParameterRecord,
+}
+
 fn legacy_single_parent_face(
     ir: &CadIr,
-    entry: &DirectoryEntry,
-    record: &ParameterRecord,
+    source: LegacyPlaneSource<'_>,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<Option<(ModelDraft, Vec<u32>)>, LegacyPlaneError> {
+    let LegacyPlaneSource { entry, record } = source;
     let Some(parent_sequence) = existing_pointer(record, 3, entries) else {
         return Ok(None);
     };
@@ -2071,7 +2077,7 @@ pub(crate) enum PlacementAffineError {
 }
 
 impl From<()> for PlacementAffineError {
-    fn from(_: ()) -> Self {
+    fn from((): ()) -> Self {
         Self::Invalid
     }
 }
@@ -2707,7 +2713,13 @@ pub(super) fn project(
             decoded.insert(entry.sequence);
             if entry.form == 9 {
                 match legacy_single_parent_face(
-                    ir, entry, record, &entries, &records, global, ctx, sequences,
+                    ir,
+                    LegacyPlaneSource { entry, record },
+                    &entries,
+                    &records,
+                    global,
+                    ctx,
+                    sequences,
                 ) {
                     Ok(Some((candidate, plane_sequences))) => {
                         legacy_plane_sequences.extend(plane_sequences);

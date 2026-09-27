@@ -129,7 +129,7 @@ impl CompositePointContext<'_, '_, '_, '_> {
             y * self.global.length_factor_mm(),
             z * self.global.length_factor_mm(),
         ));
-        Ok(point.map(|point| point.get()))
+        Ok(point.map(FinitePoint3::get))
     }
 }
 
@@ -1991,12 +1991,17 @@ fn project_native_composite(
 }
 
 /// The degraded carrier, if one was built, and the loss it charges either way.
+#[derive(Clone, Copy)]
+struct CompositeCarrier<'a> {
+    entry: &'a DirectoryEntry,
+    child_curves: &'a [CurveId],
+    join_tolerance: f64,
+}
+
 fn project_degraded_composite(
     ir: &mut CadIr,
     index: &mut CompositeIndex,
-    entry: &DirectoryEntry,
-    child_curves: &[CurveId],
-    join_tolerance: f64,
+    carrier: CompositeCarrier<'_>,
     reason: &str,
     ctx: Option<&DecodeContext<'_>>,
     sequences: &mut super::geometry::SourceSequences,
@@ -2004,17 +2009,17 @@ fn project_degraded_composite(
     let edge = project_native_composite(
         ir,
         index,
-        entry,
-        child_curves,
-        join_tolerance,
+        carrier.entry,
+        carrier.child_curves,
+        carrier.join_tolerance,
         ctx,
         sequences,
     )?;
     let loss = if edge.is_some() {
-        degraded_carrier_loss(entry, reason)
+        degraded_carrier_loss(carrier.entry, reason)
     } else {
         entity_loss(
-            entry,
+            carrier.entry,
             format!("{reason}, and no ordered native composite carrier can be constructed"),
         )
     };
@@ -2261,6 +2266,11 @@ fn project_with_type_130_policy(
             ));
             continue;
         };
+        let carrier = CompositeCarrier {
+            entry,
+            child_curves: &curve_ids,
+            join_tolerance,
+        };
         if let Some(ctx) = ctx {
             ctx.charge_collection_items(
                 u64_from_index(curve_ids.len()),
@@ -2285,16 +2295,8 @@ fn project_with_type_130_policy(
             }
         }
         if let Some(reason) = child_refusal {
-            let (edge, loss) = project_degraded_composite(
-                ir,
-                &mut index,
-                entry,
-                &curve_ids,
-                join_tolerance,
-                &reason,
-                ctx,
-                sequences,
-            )?;
+            let (edge, loss) =
+                project_degraded_composite(ir, &mut index, carrier, &reason, ctx, sequences)?;
             losses.push(loss);
             if let Some(edge) = edge {
                 wire_edges.push(edge);
@@ -2310,9 +2312,7 @@ fn project_with_type_130_policy(
                 let (edge, loss) = project_degraded_composite(
                     ir,
                     &mut index,
-                    entry,
-                    &curve_ids,
-                    join_tolerance,
+                    carrier,
                     // The error names its own cause: a carrier the IR
                     // refuses, or a child that does not raise to the
                     // composite degree.
@@ -2340,9 +2340,7 @@ fn project_with_type_130_policy(
             let (edge, loss) = project_degraded_composite(
                 ir,
                 &mut index,
-                entry,
-                &curve_ids,
-                join_tolerance,
+                carrier,
                 "child endpoints do not join within the Global minimum resolution",
                 ctx,
                 sequences,
@@ -2361,9 +2359,7 @@ fn project_with_type_130_policy(
             let (edge, loss) = project_degraded_composite(
                 ir,
                 &mut index,
-                entry,
-                &curve_ids,
-                join_tolerance,
+                carrier,
                 "its start cannot be evaluated",
                 ctx,
                 sequences,
@@ -2381,9 +2377,7 @@ fn project_with_type_130_policy(
             let (edge, loss) = project_degraded_composite(
                 ir,
                 &mut index,
-                entry,
-                &curve_ids,
-                join_tolerance,
+                carrier,
                 "its end cannot be evaluated",
                 ctx,
                 sequences,
