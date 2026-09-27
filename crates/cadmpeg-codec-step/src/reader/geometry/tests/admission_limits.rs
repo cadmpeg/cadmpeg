@@ -254,3 +254,64 @@ fn deferred_surface_queue_refuses_collection_limit() {
         CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::CollectionItems
             && refusal.operation == "step_deferred_surface_queue"));
 }
+
+#[test]
+fn curve_coordinate_rows_refuse_collection_limit() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.)));ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid coordinate list");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("source fits policy");
+    assert!(matches!(
+        super::super::coordinate_rows(&exchange.records()[&1], 1.0, &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_curve_coordinate_rows"
+    ));
+}
+
+fn strip_refusal(collection_limit: u64) -> CodecError {
+    use crate::parse::Value;
+
+    let strips = Value::List(vec![Value::List(vec![Value::Integer(1), Value::Integer(2)])]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    super::super::tessellated_line_strips(Some(&strips), 2, &ctx)
+        .expect_err("strip exceeds collection limit")
+}
+
+#[test]
+fn curve_strip_indices_refuse_collection_limit() {
+    assert!(matches!(strip_refusal(0), CodecError::ResourceLimit(refusal)
+        if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == "step_curve_strip_indices"));
+}
+
+#[test]
+fn curve_strips_refuse_collection_limit() {
+    assert!(matches!(strip_refusal(2), CodecError::ResourceLimit(refusal)
+        if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == "step_curve_strips"));
+}
+
+deferred_ids_refusal_test!(curve_strip_points_refuse_collection_limit, "step_curve_strip_points");
+
+#[test]
+fn curve_strip_source_name_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    assert!(matches!(
+        crate::decode_alloc::charged_format(&ctx, "step_curve_strip_source_name", format_args!("{}", "curve")),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_curve_strip_source_name"
+    ));
+}
