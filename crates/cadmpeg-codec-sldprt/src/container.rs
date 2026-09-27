@@ -118,6 +118,23 @@ fn nibble_swap_name(raw: &[u8]) -> Option<String> {
     Some(s)
 }
 
+fn nibble_swap_name_charged(
+    ctx: &DecodeContext<'_>,
+    raw: &[u8],
+) -> Result<Option<String>, CodecError> {
+    if !raw
+        .iter()
+        .all(|byte| (0x20..0x7f).contains(&byte.rotate_left(4)))
+    {
+        return Ok(None);
+    }
+    let mut bytes = ctx.copy_retained(raw, "retain SLDPRT section name")?;
+    for byte in &mut bytes {
+        *byte = byte.rotate_left(4);
+    }
+    Ok(String::from_utf8(bytes).ok())
+}
+
 /// The admitted name of one compressed block.
 ///
 /// Anonymous blocks retain a generated source owner while keeping their
@@ -360,6 +377,8 @@ pub(crate) fn scan_bytes(bytes: &[u8]) -> ContainerScan<'_> {
     let (blocks, directory, cache_cells) = match walk_native_markers(
         bytes,
         |off| Ok::<_, std::convert::Infallible>(try_block(bytes, off)),
+        |off| Ok::<_, std::convert::Infallible>(try_cache_cell(bytes, off)),
+        |off| Ok::<_, std::convert::Infallible>(try_directory_entry(bytes, off)),
         |_| Ok::<_, std::convert::Infallible>(()),
     ) {
         Ok(frames) => frames,
@@ -416,6 +435,8 @@ type NativeWalk<E> = Result<(Vec<Block>, Vec<DirectoryEntry>, Vec<CacheCell>), E
 fn walk_native_markers<E>(
     bytes: &[u8],
     mut try_one_block: impl FnMut(usize) -> Result<Option<RawBlock>, E>,
+    mut try_one_cell: impl FnMut(usize) -> Result<Option<CacheCell>, E>,
+    mut try_one_directory: impl FnMut(usize) -> Result<Option<DirectoryEntry>, E>,
     mut admit: impl FnMut(&'static str) -> Result<(), E>,
 ) -> NativeWalk<E> {
     let mut blocks = Vec::new();
@@ -433,10 +454,10 @@ fn walk_native_markers<E>(
             blocks.push(block.into_block());
             continue;
         }
-        if let Some(cell) = try_cache_cell(bytes, i) {
+        if let Some(cell) = try_one_cell(i)? {
             admit("admit SLDPRT cache cell")?;
             cache_cells.push(cell);
-        } else if let Some(entry) = try_directory_entry(bytes, i) {
+        } else if let Some(entry) = try_one_directory(i)? {
             admit("admit SLDPRT directory entry")?;
             directory.push(entry);
         }
@@ -489,6 +510,8 @@ pub(crate) fn scan<'a>(
     let (blocks, directory, cache_cells) = walk_native_markers(
         bytes,
         |off| try_block_budgeted(ctx, root, off),
+        |off| try_cache_cell_with(bytes, off, |raw| nibble_swap_name_charged(ctx, raw)),
+        |off| try_directory_entry_with(bytes, off, |raw| nibble_swap_name_charged(ctx, raw)),
         |operation| {
             ctx.charge_collection_items(1, operation)?;
             ctx.charge_entities(1, operation)
@@ -672,7 +695,7 @@ fn block_from_inflated(
     let preamble = bytes
         .get(off + block_hdr::LEN..payload_start)
         .unwrap_or(&[]);
-    let section = nibble_swap_name(preamble);
+    let section = nibble_swap_name_charged(ctx, preamble)?;
     // A Parasolid block is one from which a `PS\0\0` stream can be extracted (in
     // plain, wrapped, or nested form); otherwise fall back to a byte-signature
     // family label.
@@ -740,61 +763,111 @@ fn try_block_budgeted<'a>(
 /// (`f@+10 == 2L`, `f@+14 == L/2`, `f@+18 == L`, `f@+22 == name_len`) plus a
 /// printable nibble-swapped name ([spec §2.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#12-cache-cell-section-index-grid)).
 fn try_cache_cell(bytes: &[u8], off: usize) -> Option<CacheCell> {
-    let two_l = View::u32_le_at(bytes, off + cache_hdr::TWO_L)?;
-    let half_l = View::u32_le_at(bytes, off + cache_hdr::HALF_L)?;
-    let l = View::u32_le_at(bytes, off + cache_hdr::L)?;
-    let name_len = View::u32_le_at(bytes, off + cache_hdr::NAME_LEN)?;
+    match try_cache_cell_with(bytes, off, |raw| {
+        Ok::<_, std::convert::Infallible>(nibble_swap_name(raw))
+    }) {
+        Ok(cell) => cell,
+        Err(never) => match never {},
+    }
+}
+
+fn try_cache_cell_with<E>(
+    bytes: &[u8],
+    off: usize,
+    name_from_bytes: impl FnOnce(&[u8]) -> Result<Option<String>, E>,
+) -> Result<Option<CacheCell>, E> {
+    let Some((two_l, half_l, l, name_len)) = (|| {
+        Some((
+            View::u32_le_at(bytes, off + cache_hdr::TWO_L)?,
+            View::u32_le_at(bytes, off + cache_hdr::HALF_L)?,
+            View::u32_le_at(bytes, off + cache_hdr::L)?,
+            View::u32_le_at(bytes, off + cache_hdr::NAME_LEN)?,
+        ))
+    })() else {
+        return Ok(None);
+    };
 
     if l == 0 || l.checked_mul(2) != Some(two_l) || half_l != l / 2 {
-        return None;
+        return Ok(None);
     }
     if name_len == 0 || name_len >= 500 {
-        return None;
+        return Ok(None);
     }
     let name_start = off + cache_hdr::LEN;
-    let raw = bytes.get(name_start..name_start + name_len as usize)?;
-    let name = nibble_swap_name(raw)?;
-    Some(CacheCell {
+    let Some(raw) = bytes.get(name_start..name_start + name_len as usize) else {
+        return Ok(None);
+    };
+    let Some(name) = name_from_bytes(raw)? else {
+        return Ok(None);
+    };
+    Ok(Some(CacheCell {
         offset: off,
         logical_len: l,
         name,
-    })
+    }))
 }
 
 /// Test a marker hit against the tail-directory frame: two zero words at +10 and
 /// +18, a size at +14, a name length at +22, a 14-byte descriptor, then a
 /// printable nibble-swapped name ([spec §2.3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#13-tail-section-directory)).
 fn try_directory_entry(bytes: &[u8], off: usize) -> Option<DirectoryEntry> {
-    let type_id = View::u32_le_at(bytes, off + dir_ent::TYPE_ID)?;
-    let zero_a = View::u32_le_at(bytes, off + dir_ent::ZERO_AT_10)?;
-    let size = View::u32_le_at(bytes, off + dir_ent::SIZE)?;
-    let zero_b = View::u32_le_at(bytes, off + dir_ent::ZERO_AT_18)?;
-    let name_len = View::u32_le_at(bytes, off + dir_ent::NAME_LEN)?;
+    match try_directory_entry_with(bytes, off, |raw| {
+        Ok::<_, std::convert::Infallible>(nibble_swap_name(raw))
+    }) {
+        Ok(entry) => entry,
+        Err(never) => match never {},
+    }
+}
+
+fn try_directory_entry_with<E>(
+    bytes: &[u8],
+    off: usize,
+    name_from_bytes: impl FnOnce(&[u8]) -> Result<Option<String>, E>,
+) -> Result<Option<DirectoryEntry>, E> {
+    let Some((type_id, zero_a, size, zero_b, name_len)) = (|| {
+        Some((
+            View::u32_le_at(bytes, off + dir_ent::TYPE_ID)?,
+            View::u32_le_at(bytes, off + dir_ent::ZERO_AT_10)?,
+            View::u32_le_at(bytes, off + dir_ent::SIZE)?,
+            View::u32_le_at(bytes, off + dir_ent::ZERO_AT_18)?,
+            View::u32_le_at(bytes, off + dir_ent::NAME_LEN)?,
+        ))
+    })() else {
+        return Ok(None);
+    };
     if zero_a != 0 || zero_b != 0 {
-        return None;
+        return Ok(None);
     }
     if name_len == 0 || name_len >= 500 {
-        return None;
+        return Ok(None);
     }
     let name_start = off + dir_ent::LEN;
-    let raw = bytes.get(name_start..name_start + name_len as usize)?;
-    let name = nibble_swap_name(raw)?;
-    let descriptor = bytes
-        .get(off + dir_ent::DESCRIPTOR..off + dir_ent::LEN)?
-        .try_into()
-        .ok()?;
-    let trailer = bytes
-        .get(name_start + name_len as usize..name_start + name_len as usize + 6)?
-        .try_into()
-        .ok()?;
-    Some(DirectoryEntry {
+    let Some(raw) = bytes.get(name_start..name_start + name_len as usize) else {
+        return Ok(None);
+    };
+    let Some(descriptor) = bytes
+        .get(off + dir_ent::DESCRIPTOR..off + dir_ent::LEN)
+        .and_then(|value| value.try_into().ok())
+    else {
+        return Ok(None);
+    };
+    let Some(trailer) = bytes
+        .get(name_start + name_len as usize..name_start + name_len as usize + 6)
+        .and_then(|value| value.try_into().ok())
+    else {
+        return Ok(None);
+    };
+    let Some(name) = name_from_bytes(raw)? else {
+        return Ok(None);
+    };
+    Ok(Some(DirectoryEntry {
         offset: off,
         type_id,
         size,
         name,
         descriptor,
         trailer,
-    })
+    }))
 }
 
 /// Convert a scan into the generic container inventory returned by

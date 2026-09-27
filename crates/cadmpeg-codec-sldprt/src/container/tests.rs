@@ -109,6 +109,20 @@ fn native_marker_scan_succeeds_with_service_profile() {
 }
 
 #[test]
+fn native_marker_name_refuses_retained_byte_limit() {
+    let source = synthetic_sldprt();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, root) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let Err(CodecError::ResourceLimit(limit)) = container::scan(&ctx, root) else {
+        panic!("expected a retained-byte refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, "retain SLDPRT section name");
+}
+
+#[test]
 fn site_keys_use_outer_container_identity() {
     let first = Block {
         offset: 100,
