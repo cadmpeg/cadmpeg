@@ -319,7 +319,7 @@ fn paired_delta_intersection_replaces_the_partition_form_by_xmt() {
         put_ref(&mut replacement, delta_twin + 18 + ordinal * 2, reference);
     }
     let mut semantic = base.clone();
-    semantic.extend_from_slice(&crate::deltas::semantic_residual(&replacement));
+    semantic.extend_from_slice(&crate::test_support::with_decode_context(|ctx| crate::deltas::semantic_residual(ctx, &replacement)).unwrap());
 
     let scan =
         crate::intersection::scan_with_auxiliary_replacements(&semantic, &base, &[&replacement]);

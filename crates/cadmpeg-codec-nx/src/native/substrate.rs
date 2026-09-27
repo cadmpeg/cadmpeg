@@ -88,7 +88,7 @@ fn prepare_topology_streams<'a>(
     };
     for (delta, stream) in scan.streams.iter().enumerate() {
         if stream.kind() == StreamKind::Deltas && !paired_deltas.contains(&delta) {
-            let census = crate::deltas::census::walk(&stream.inflated);
+            let census = crate::deltas::census::walk(ctx, &stream.inflated)?;
             if !census.records.is_empty() || !census.tombstones.is_empty() {
                 let merged = merge(&[], &stream.inflated, &census);
                 semantic[delta].bytes = Cow::Owned(merged);
@@ -98,7 +98,7 @@ fn prepare_topology_streams<'a>(
     }
     for (partition, deltas) in pairs {
         for delta in deltas {
-            let census = crate::deltas::census::walk(&semantic[delta].bytes);
+            let census = crate::deltas::census::walk(ctx, &semantic[delta].bytes)?;
             let merged = merge(&semantic[partition].bytes, &semantic[delta].bytes, &census);
             semantic[partition].bytes = Cow::Owned(merged);
             semantic[delta].bytes = Cow::Borrowed(&[]);

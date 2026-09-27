@@ -110,14 +110,17 @@ impl Census {
     }
 
     /// Return the sorted disjoint union of every admitted event byte span.
-    pub(crate) fn covered_spans(&self) -> Vec<(usize, usize)> {
-        merged_event_spans(self, true)
+    pub(crate) fn covered_spans(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<(usize, usize)>, CodecError> {
+        merged_event_spans(ctx, self, true)
     }
 }
 
 /// Walk all accepted records, revisions, tombstones, and numeric tails in an
 /// inflated deltas stream.
-pub(crate) fn walk(stream: &[u8]) -> Census {
+pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, CodecError> {
     let transmit_header = transmit_header(stream);
     let header_byte_len = transmit_header.as_ref().map_or(0, |header| header.end);
     let terminal_null_references = TerminalNullReferences::at_end(stream);
@@ -262,54 +265,58 @@ pub(crate) fn walk(stream: &[u8]) -> Census {
         .iter()
         .map(|tail| tail.values().byte_len())
         .sum::<usize>();
-    census.bytes_decoded += populate_gap_events(stream, &mut census);
-    let body_revision_state_bytes = populate_body_revision_state_tails(stream, &mut census);
+    census.bytes_decoded += populate_gap_events(ctx, stream, &mut census)?;
+    let body_revision_state_bytes = populate_body_revision_state_tails(ctx, stream, &mut census)?;
     census.bytes_decoded += body_revision_state_bytes;
-    census
+    Ok(census)
 }
 
-fn populate_gap_events(stream: &[u8], census: &mut Census) -> usize {
+fn populate_gap_events(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    census: &mut Census,
+) -> Result<usize, CodecError> {
     let mut admitted_bytes = 0;
     loop {
-        let covered_before = merged_event_spans(census, true)
+        let covered_before = merged_event_spans(ctx, census, true)?
             .into_iter()
             .map(|(start, end)| end - start)
             .sum::<usize>();
 
-        let lanes = tagged_reference_lanes(stream, census);
+        let lanes = tagged_reference_lanes(ctx, stream, census)?;
         census.events.tagged_reference_lanes.extend(lanes);
 
-        let maps = reference_type_maps(stream, census);
+        let maps = reference_type_maps(ctx, stream, census)?;
         census.events.reference_type_maps.extend(maps);
 
-        let state_packets = reference_state_packets(stream, census);
+        let state_packets = reference_state_packets(ctx, stream, census)?;
         census.events.reference_state_packets.extend(state_packets);
 
-        let preambles = schema_reference_preambles(stream, census);
+        let preambles = schema_reference_preambles(ctx, stream, census)?;
         census.events.schema_reference_preambles.extend(preambles);
 
-        let declarations = inline_schema_declarations(stream, census);
+        let declarations = inline_schema_declarations(ctx, stream, census)?;
         census
             .events
             .inline_schema_declarations
             .extend(declarations);
 
-        let body_states = inline_body_states(stream, census);
+        let body_states = inline_body_states(ctx, stream, census)?;
         census.events.inline_body_states.extend(body_states);
 
-        let marker_packets = reference_marker_packets(stream, census);
+        let marker_packets = reference_marker_packets(ctx, stream, census)?;
         census
             .events
             .reference_marker_packets
             .extend(marker_packets);
 
-        let type_150_packets = type_150_state_packets(stream, census);
+        let type_150_packets = type_150_state_packets(ctx, stream, census)?;
         census
             .events
             .type_150_state_packets
             .extend(type_150_packets);
 
-        let covered_after = merged_event_spans(census, true)
+        let covered_after = merged_event_spans(ctx, census, true)?
             .into_iter()
             .map(|(start, end)| end - start)
             .sum::<usize>();
@@ -352,11 +359,15 @@ fn populate_gap_events(stream: &[u8], census: &mut Census) -> usize {
         .events
         .type_150_state_packets
         .sort_unstable_by_key(|packet| packet.offset);
-    admitted_bytes
+    Ok(admitted_bytes)
 }
 
-fn populate_body_revision_state_tails(stream: &[u8], census: &mut Census) -> usize {
-    let tails = uncovered_spans(stream.len(), census, true)
+fn populate_body_revision_state_tails(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    census: &mut Census,
+) -> Result<usize, CodecError> {
+    let tails = uncovered_spans(ctx, stream.len(), census, true)?
         .filter_map(|(start, end)| {
             census
                 .body_revisions
@@ -371,5 +382,5 @@ fn populate_body_revision_state_tails(stream: &[u8], census: &mut Census) -> usi
         revision.end = end;
         byte_len += end - start;
     }
-    byte_len
+    Ok(byte_len)
 }
