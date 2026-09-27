@@ -47,6 +47,26 @@ pub(super) struct ProductData {
     pub(super) product_definition_ids_by_shape: BTreeMap<u64, ProductDefinitionId>,
 }
 
+fn claim_product_typed(
+    typed: &mut HashSet<u64>,
+    id: u64,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
+    const OPERATION: &str = "step_product_typed_claims";
+    if typed.contains(&id) {
+        return Ok(());
+    }
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, OPERATION)?;
+    }
+    typed.try_reserve(1).map_err(|_| match ctx {
+        Some(ctx) => ctx.refuse_codec_limit(OPERATION, 0, 1),
+        None => cadmpeg_core::decode::refuse_local_limit(OPERATION, 0, 1),
+    })?;
+    typed.insert(id);
+    Ok(())
+}
+
 pub(super) fn decode(
     exchange: &Exchange,
     geometry: &GeometryData,
@@ -221,13 +241,16 @@ pub(super) fn decode(
             .chain(product_definitions.iter().copied().map(Some));
         for definition in definition_iter {
             let product_definition_id = definition.map_or_else(
-                || product_ir_id(step_id),
+                || Ok::<ProductDefinitionId, CodecError>(product_ir_id(step_id)),
                 |definition| {
                     let id = product_definition_ir_id(step_id, definition, definition_count);
+                    if let Some(ctx) = ctx {
+                        ctx.charge_collection_items(1, "step_product_definition_prototypes")?;
+                    }
                     definition_prototypes.insert(definition, id.clone());
-                    id
+                    Ok(id)
                 },
-            );
+            )?;
             let definition_description =
                 definition.and_then(|definition| definition_descriptions.get(&definition).cloned());
             let description = if definition_count <= 1 {
@@ -291,18 +314,24 @@ pub(super) fn decode(
                 .or_default()
                 .push(product_definition_id);
         }
-        typed.insert(step_id);
+        claim_product_typed(&mut typed, step_id, ctx)?;
     }
-    let product_definition_ids_by_shape = exchange
-        .entities("PRODUCT_DEFINITION_SHAPE")
-        .filter_map(|(shape_id, record)| {
-            let definition = named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2)
-                .and_then(ValueExt::reference)?;
-            Some((shape_id, definition_prototypes.get(&definition)?.clone()))
-        })
-        .collect();
-    typed.extend(formations.keys().copied());
-    typed.extend(definitions.keys().copied());
+    let mut product_definition_ids_by_shape = BTreeMap::new();
+    for (shape_id, record) in exchange.entities("PRODUCT_DEFINITION_SHAPE") {
+        let Some(prototype) = named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2)
+            .and_then(ValueExt::reference)
+            .and_then(|definition| definition_prototypes.get(&definition))
+        else {
+            continue;
+        };
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "step_product_shape_prototypes")?;
+        }
+        product_definition_ids_by_shape.insert(shape_id, prototype.clone());
+    }
+    for id in formations.keys().chain(definitions.keys()) {
+        claim_product_typed(&mut typed, *id, ctx)?;
+    }
 
     let mut usages = BTreeMap::new();
     for (id, record) in exchange.entities("NEXT_ASSEMBLY_USAGE_OCCURRENCE") {
@@ -522,7 +551,7 @@ pub(super) fn decode(
             path.insert(usage.child_definition);
             occurrence_paths.insert(id.clone(), path);
             enqueue_occurrence(&mut pending_occurrences, usage.child_definition, id, ctx)?;
-            typed.insert(usage_id);
+            claim_product_typed(&mut typed, usage_id, ctx)?;
         }
     }
     if !had_roots && !usages.is_empty() {
@@ -562,7 +591,7 @@ pub(super) fn decode(
                 .partial("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")
                 .is_some()
         {
-            typed.insert(id);
+            claim_product_typed(&mut typed, id, ctx)?;
         }
     }
     for (&usage_id, source_ids) in &ambiguous_placements {
