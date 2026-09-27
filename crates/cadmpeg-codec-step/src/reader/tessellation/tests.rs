@@ -621,6 +621,25 @@ fn tessellation_mesh_list_charges_before_push() {
 }
 
 #[test]
+fn tessellation_mesh_body_refuses_retained_limit_before_copy() {
+    let body = cadmpeg_ir::ids::BodyId::mint("step:data:body#1")
+        .expect("valid body identity");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64_from_index(body.as_str().len()) - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits selected policy");
+    let error = super::admitted_mesh_body(Some(&body), &ctx)
+        .expect_err("body copy exceeds retained limit");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "step_tessellation_mesh_body"
+    ));
+}
+
+#[test]
 fn tessellation_mesh_entity_is_admitted_before_creation() {
     let service = DecodePolicy::service();
     decode_tessellation_under_policy(ONE_TRIANGLE, service).expect("service admits mesh entity");
