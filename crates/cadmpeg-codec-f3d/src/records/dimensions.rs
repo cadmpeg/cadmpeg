@@ -95,11 +95,9 @@ pub(crate) struct DesignRecipeReference {
 /// One frame shape covers both source forms: the two-locus form, which carries
 /// the opaque index that precedes its loci, and the null-locus form, whose
 /// first locus is the fixed zero reference and which carries no opaque index.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignDimensionLocusPairWire",
-    into = "DesignDimensionLocusPairWire"
-)]
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "DesignDimensionLocusPairWire")]
 pub(crate) struct DesignDimensionLocusPair {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -118,6 +116,31 @@ pub(crate) struct DesignDimensionLocusPair {
     roles: [u32; 2],
     /// Per-file paired class tag.
     pub(crate) paired_class_tag: DesignClassTag,
+}
+
+#[cfg(test)]
+thread_local! {
+    static DIMENSION_LOCUS_PAIR_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for DesignDimensionLocusPair {
+    fn clone(&self) -> Self {
+        DIMENSION_LOCUS_PAIR_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            companion_record_index: self.companion_record_index,
+            governing_companion_record_index: self.governing_companion_record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag.clone(),
+            record_index: self.record_index,
+            frame_length: self.frame_length,
+            first: self.first,
+            second_geometry_record_index: self.second_geometry_record_index,
+            roles: self.roles,
+            paired_class_tag: self.paired_class_tag.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -276,6 +299,7 @@ impl DesignDimensionLocusPair {
     }
 
     /// Recover the payload with derived frame and locus offsets.
+    #[cfg(test)]
     pub(crate) fn into_draft(self) -> DesignDimensionLocusPairDraft {
         let opaque_index = self.opaque_index();
         let loci = self.loci();
@@ -329,6 +353,59 @@ pub(super) struct DesignDimensionLocusPairWire {
     pub(super) paired_byte_offset: u64,
 }
 
+impl Serialize for DesignDimensionLocusPair {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            id: &'a str,
+            companion_record_index: u32,
+            governing_companion_record_index: u32,
+            byte_offset: u64,
+            class_tag: &'a str,
+            record_index: u32,
+            frame_length: u64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            opaque_index: Option<u32>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            opaque_index_offset: Option<u64>,
+            first_geometry_record_index: u32,
+            first_geometry_reference_offset: u64,
+            first_role: u32,
+            first_role_offset: u64,
+            second_geometry_record_index: u32,
+            second_geometry_reference_offset: u64,
+            second_role: u32,
+            second_role_offset: u64,
+            paired_class_tag: &'a str,
+            paired_byte_offset: u64,
+        }
+        let opaque = self.opaque_index();
+        let [first, second] = self.loci();
+        WireRef {
+            id: &self.id,
+            companion_record_index: self.companion_record_index,
+            governing_companion_record_index: self.governing_companion_record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag.as_str(),
+            record_index: self.record_index,
+            frame_length: self.frame_length,
+            opaque_index: opaque.map(|field| field.value),
+            opaque_index_offset: opaque.map(|field| field.offset),
+            first_geometry_record_index: first.geometry_index(),
+            first_geometry_reference_offset: first.geometry_reference_offset,
+            first_role: first.role,
+            first_role_offset: first.role_offset,
+            second_geometry_record_index: second.geometry_index(),
+            second_geometry_reference_offset: second.geometry_reference_offset,
+            second_role: second.role,
+            second_role_offset: second.role_offset,
+            paired_class_tag: self.paired_class_tag.as_str(),
+            paired_byte_offset: self.paired_byte_offset(),
+        }
+        .serialize(serializer)
+    }
+}
+
 impl TryFrom<DesignDimensionLocusPairWire> for DesignDimensionLocusPair {
     type Error = String;
 
@@ -369,6 +446,7 @@ impl TryFrom<DesignDimensionLocusPairWire> for DesignDimensionLocusPair {
     }
 }
 
+#[cfg(test)]
 impl From<DesignDimensionLocusPair> for DesignDimensionLocusPairWire {
     fn from(pair: DesignDimensionLocusPair) -> Self {
         let pair = pair.into_draft();

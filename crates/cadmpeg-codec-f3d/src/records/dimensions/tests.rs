@@ -135,3 +135,59 @@ fn annotation_frame_rejects_unrepresentable_extents() {
         .unwrap_err()
         .contains("annotation_byte_offset"));
 }
+
+fn locus_pair(has_first: bool) -> super::DesignDimensionLocusPair {
+    let prefix = if has_first { 40 } else { 25 };
+    super::DesignDimensionLocusPair::try_new(super::DesignDimensionLocusPairDraft {
+        id: "f3d:native:locus-pair#0".into(),
+        companion_record_index: 2,
+        governing_companion_record_index: 3,
+        byte_offset: 100,
+        class_tag: "256".to_owned().try_into().unwrap(),
+        record_index: 4,
+        frame_length: 100,
+        opaque_index: has_first.then_some(Located {
+            value: 7,
+            offset: 135,
+        }),
+        loci: [
+            Operand {
+                geometry_record_index: has_first.then(|| NonZeroU32::new(7).unwrap()),
+                geometry_reference_offset: 100 + prefix,
+                role: 1,
+                role_offset: 110 + prefix,
+            },
+            Operand {
+                geometry_record_index: NonZeroU32::new(8),
+                geometry_reference_offset: 115 + prefix,
+                role: 2,
+                role_offset: 125 + prefix,
+            },
+        ],
+        paired_class_tag: "257".to_owned().try_into().unwrap(),
+        paired_byte_offset: 200,
+    })
+    .unwrap()
+}
+
+#[test]
+fn dimension_locus_pair_borrowed_wire_matches_owned_wire_bytes() {
+    for record in [locus_pair(false), locus_pair(true)] {
+        let owned = super::DesignDimensionLocusPairWire::from(record.clone());
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+}
+
+#[test]
+fn dimension_locus_pair_native_retained_limit_refuses_before_record_clone() {
+    let record = locus_pair(true);
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_dimension_locus_pairs",
+        || super::DIMENSION_LOCUS_PAIR_CLONE_COUNT.with(|count| count.set(0)),
+        || super::DIMENSION_LOCUS_PAIR_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
