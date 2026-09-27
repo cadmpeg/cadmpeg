@@ -59,11 +59,18 @@ impl CopiousProjectionOutcome {
         losses: &mut Vec<LossNote>,
         wire_edges: &mut Vec<EdgeId>,
         free_vertices: &mut Vec<VertexId>,
-    ) {
-        decoded.extend(self.decoded);
+        ctx: &DecodeContext<'_>,
+    ) -> Result<(), CodecError> {
+        for sequence in self.decoded {
+            insert_optional_btree_set(Some(ctx), decoded, sequence, "iges merged decoded sequences")?;
+        }
+        reserve_vec_growth(ctx, losses, self.losses.len(), "iges merged loss slots")?;
         losses.extend(self.losses);
+        reserve_vec_growth(ctx, wire_edges, self.wire_edges.len(), "iges merged wire edge slots")?;
         wire_edges.extend(self.wire_edges);
+        reserve_vec_growth(ctx, free_vertices, self.free_vertices.len(), "iges merged free vertex slots")?;
         free_vertices.extend(self.free_vertices);
+        Ok(())
     }
 }
 
