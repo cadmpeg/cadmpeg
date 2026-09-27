@@ -285,3 +285,53 @@ fn history_pcurve_use_has_no_invented_parameter_interval() {
     assert_eq!(out.coedges[0].pcurves.len(), 1);
     assert_eq!(out.coedges[0].pcurves[0].parameter_range, None);
 }
+
+#[test]
+fn model_pcurve_parameter_range_refuses_collection_limit() {
+    let records = [
+        ref_record(0, "face", &[-1, -1, -1, -1, 1]),
+        ref_record(1, "loop", &[-1, -1, -1, -1, 2]),
+        ref_record(2, "coedge", &[-1, -1, -1, 2, -1, -1, 3, -1, -1, 4]),
+        ref_record(3, "edge", &[-1; 9]),
+        Record {
+            index: 4,
+            name: "pcurve".into(),
+            tokens: vec![
+                Token::Ref(-1), Token::Ref(-1), Token::Ref(-1),
+                Token::Long(0), Token::True, Token::SubtypeOpen,
+                Token::Ident("exp_par_cur".into()), Token::Ident("nubs".into()),
+                Token::Long(1), Token::Enum(0), Token::Long(2),
+                Token::Double(0.0), Token::Long(1),
+                Token::Double(1.0), Token::Long(1),
+                Token::Double(0.0), Token::Double(0.0),
+                Token::Double(1.0), Token::Double(0.0),
+                Token::SubtypeClose,
+            ].into(),
+            offset: 0,
+            len: 0,
+        },
+    ];
+    let by_index = records.iter().map(|record| (record.index as i64, record)).collect();
+    let error = with_collection_limit(18, |ctx| {
+        let table = nurbs::toks::SubtypeTable::from_records(ctx, &records)
+            .expect("subtype table fits limit");
+        let mut out = AsmBrep::default();
+        let mut carriers = Carriers::default();
+        let mut reach = Reachable {
+            faces: HashSet::from([0]),
+            ..Reachable::default()
+        };
+        walk_reachable_topology(
+            ctx,
+            &mut out,
+            &by_index,
+            &table,
+            &mut carriers,
+            &mut reach,
+            DecodePurpose::Model,
+            crate::asm_format!("f3d"),
+        )
+        .expect_err("parameter-range map exceeds collection limit")
+    });
+    assert_collection_refusal(error, "ASM topology pcurve_parameter_ranges");
+}
