@@ -120,21 +120,26 @@ pub(crate) fn standard_face_colors(
 }
 
 fn trim_frame_vectors(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     face_start: usize,
     face_count: usize,
-) -> Option<Vec<Option<FiniteVector<3>>>> {
-    let solutions = [1, 2, 3]
-        .into_iter()
-        .filter_map(|width| parse_trim_chain(bytes, face_start, face_count, width))
-        .collect::<Vec<_>>();
-    let [records] = <[Vec<TrimRecord>; 1]>::try_from(solutions).ok()?;
-    Some(
-        records
-            .into_iter()
-            .map(|record| record.frame_vector)
-            .collect(),
-    )
+) -> Result<Option<Vec<Option<FiniteVector<3>>>>, CodecError> {
+    let mut solutions = Vec::new();
+    for width in [1, 2, 3] {
+        if let Some(records) = parse_trim_chain(ctx, bytes, face_start, face_count, width)? {
+            crate::resource::push(ctx, &mut solutions, records, "catia_trim_width_solutions")?;
+        }
+    }
+    let Ok([records]) = <[Vec<TrimRecord>; 1]>::try_from(solutions) else {
+        return Ok(None);
+    };
+    let mut vectors = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut vectors, records.len(), "catia_trim_frame_vectors")?;
+    for record in records {
+        vectors.push(record.frame_vector);
+    }
+    Ok(Some(vectors))
 }
 
 /// Unit frame vector for each positional standard trim packet. The result is
@@ -151,20 +156,38 @@ pub(super) fn standard_face_frame_vectors(
 ) -> Result<Vec<Option<FiniteVector<3>>>, CodecError> {
     let runs = crate::container::fbb_run_ranges(bytes);
     if runs.len() > 1 {
-        let combined = runs
-            .iter()
-            .map(|range| trim_frame_vectors(bytes, range.start, range.len() / fbb_row::LEN))
-            .collect::<Option<Vec<_>>>();
-        if let Some(vectors) = combined
-            .filter(|vectors| vectors.iter().map(Vec::len).sum::<usize>() == expected_face_count)
-        {
-            return Ok(vectors.into_iter().flatten().collect());
+        let mut combined = Vec::new();
+        let mut complete = true;
+        for range in &runs {
+            let Some(vectors) =
+                trim_frame_vectors(ctx, bytes, range.start, range.len() / fbb_row::LEN)?
+            else {
+                complete = false;
+                break;
+            };
+            crate::resource::push(ctx, &mut combined, vectors, "catia_trim_population_frames")?;
+        }
+        if complete && combined.iter().map(Vec::len).sum::<usize>() == expected_face_count {
+            let mut vectors = Vec::new();
+            crate::resource::reserve_vec(
+                ctx,
+                &mut vectors,
+                expected_face_count,
+                "catia_trim_combined_frames",
+            )?;
+            for population in combined {
+                vectors.extend(population);
+            }
+            return Ok(vectors);
         }
     }
     let Some(face_run) = selected_standard_run(ctx, bytes)? else {
         return Ok(Vec::new());
     };
-    Ok(trim_frame_vectors(bytes, face_run.face_start(), face_run.face_count()).unwrap_or_default())
+    Ok(
+        trim_frame_vectors(ctx, bytes, face_run.face_start(), face_run.face_count())?
+            .unwrap_or_default(),
+    )
 }
 
 /// Return the counted vertex table of an admitted standard nested spine.
@@ -219,7 +242,7 @@ pub(crate) fn parse_standard(
     let Some(vertex_points) = parse_vertex_table(ctx, bytes, vertex_header)? else {
         return Ok(None);
     };
-    let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
+    let Some(trims) = parse_trim_chain(ctx, bytes, face_start, face_count, handle_width)? else {
         return Ok(None);
     };
     reconstruct(ctx, edge_rows, vertex_points, &trims)
@@ -252,7 +275,7 @@ pub(super) fn parse_standard_motif(
     if edge_rows.len() != edge_faces.len() || edge_rows.len() != circle_anchors.len() {
         return Ok(None);
     }
-    let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
+    let Some(trims) = parse_trim_chain(ctx, bytes, face_start, face_count, handle_width)? else {
         return Ok(None);
     };
     let Some(port_points) = motif_port_points(&trims, vertex_points.len()) else {
@@ -776,7 +799,7 @@ pub(super) fn classify_fbb_edge_layouts(
 ) -> Result<Option<()>, cadmpeg_core::CodecError> {
     let mut cycles = Vec::new();
     for trim in trims {
-        let Some(face) = boundary_cycles(ctx, trim.packet.triangles())? else {
+        let Some(face) = boundary_cycles(ctx, trim.packet.triangles(ctx)?)? else {
             return Ok(None);
         };
         crate::resource::push(ctx, &mut cycles, face, "catia_fbb_layout_face_cycles")?;
@@ -942,11 +965,13 @@ pub(super) fn population_spine<'a>(
         return Ok(None);
     };
     let Some((trim_start, _)) = parse_trim_chain_start(
+        ctx,
         bytes,
         layout.face_run.face_start(),
         layout.face_run.face_count(),
         handle_width,
-    ) else {
+    )?
+    else {
         return Ok(None);
     };
     let Some(end) = vertex_table_end(bytes, vertex_header) else {
@@ -992,11 +1017,12 @@ pub(super) fn fbb_population_layouts(
             continue;
         };
         if parse_trim_chain(
+            ctx,
             bytes,
             face_run.face_start(),
             face_run.face_count(),
             handle_width,
-        )
+        )?
         .is_none()
         {
             continue;
@@ -1034,7 +1060,7 @@ fn parse_standard_group(
     let Some(vertex_points) = parse_vertex_table(ctx, bytes, vertex_header)? else {
         return Ok(None);
     };
-    let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
+    let Some(trims) = parse_trim_chain(ctx, bytes, face_start, face_count, handle_width)? else {
         return Ok(None);
     };
     Ok(reconstruct(ctx, edge_rows, vertex_points, &trims)?.map(|_| face_run))
@@ -1121,7 +1147,8 @@ mod appearance_tests {
 mod allocation_tests {
     use super::{
         fbb_population_layouts, largest_fbb_run, parse_fbb_edge_tables, parse_standard,
-        parse_standard_edge_tables_with_width, parse_vertex_table, standard_face_count,
+        parse_standard_edge_tables_with_width, parse_trim_chain, parse_trim_record,
+        parse_trim_record_layout, parse_vertex_table, standard_face_count,
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
@@ -1147,6 +1174,48 @@ mod allocation_tests {
             }
         }
         operations
+    }
+
+    #[test]
+    fn counted_trim_search_and_packet_lanes_refuse_before_growth() {
+        let mut bytes = vec![
+            0x01, 0x47, 0x01, 0x01, 0x01, 0xff, 0x0a, 0x00, 0x00, 0x00, 0x03, 0x04,
+        ];
+        for handle in 0u16..10 {
+            bytes.extend_from_slice(&handle.to_be_bytes());
+        }
+        let parsed = crate::test_support::with_service_context(|ctx| {
+            parse_trim_chain(ctx, &bytes, bytes.len(), 1, 2)
+        })
+        .expect("service resource budget")
+        .expect("complete trim chain");
+        assert_eq!(parsed.len(), 1);
+        let operations = collection_refusals(&bytes, |ctx| {
+            parse_trim_chain(ctx, &bytes, bytes.len(), 1, 2)?;
+            Ok(())
+        });
+        for operation in [
+            "catia_trim_primitive_lengths",
+            "catia_trim_predecessor_ends",
+            "catia_trim_predecessor_starts",
+            "catia_trim_search_frames",
+            "catia_trim_packet_handles",
+            "catia_trim_strip_lengths",
+            "catia_trim_fan_lengths",
+            "catia_trim_reversed",
+            "catia_trim_solution_records",
+            "catia_trim_clone_handles",
+            "catia_trim_solutions",
+        ] {
+            assert!(operations.contains(operation), "no refusal at {operation}");
+        }
+        let operations = collection_refusals(&bytes, |ctx| {
+            parse_trim_record_layout(ctx, &bytes, 0, 2)?;
+            parse_trim_record(ctx, &bytes, 0, 2)?;
+            Ok(())
+        });
+        assert!(operations.contains("catia_trim_primitive_lengths"));
+        assert!(operations.contains("catia_trim_packet_handles"));
     }
 
     #[test]
@@ -1617,24 +1686,30 @@ fn parse_vertex_points(
 }
 
 pub(crate) fn parse_trim_chain(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     end: usize,
     record_count: usize,
     width: usize,
-) -> Option<Vec<TrimRecord>> {
-    parse_trim_chain_start(bytes, end, record_count, width).map(|(_, records)| records)
+) -> Result<Option<Vec<TrimRecord>>, CodecError> {
+    Ok(parse_trim_chain_start(ctx, bytes, end, record_count, width)?.map(|(_, records)| records))
 }
 
 fn parse_trim_chain_start(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     end: usize,
     record_count: usize,
     width: usize,
-) -> Option<(usize, Vec<TrimRecord>)> {
-    let compact = parse_trim_chain_with_length_encoding(bytes, end, record_count, width, false);
-    let wide_u16be = (width == 2)
-        .then(|| parse_trim_chain_with_length_encoding(bytes, end, record_count, width, true));
-    match (compact, wide_u16be.flatten()) {
+) -> Result<Option<(usize, Vec<TrimRecord>)>, CodecError> {
+    let compact =
+        parse_trim_chain_with_length_encoding(ctx, bytes, end, record_count, width, false)?;
+    let wide_u16be = if width == 2 {
+        parse_trim_chain_with_length_encoding(ctx, bytes, end, record_count, width, true)?
+    } else {
+        None
+    };
+    Ok(match (compact, wide_u16be) {
         (Some((compact_start, compact)), Some((wide_start, wide)))
             if compact_start == wide_start && compact == wide =>
         {
@@ -1642,16 +1717,17 @@ fn parse_trim_chain_start(
         }
         (Some(records), None) | (None, Some(records)) => Some(records),
         (None, None) | (Some(_), Some(_)) => None,
-    }
+    })
 }
 
 fn parse_trim_chain_with_length_encoding(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     end: usize,
     record_count: usize,
     width: usize,
     wide_u16be: bool,
-) -> Option<(usize, Vec<TrimRecord>)> {
+) -> Result<Option<(usize, Vec<TrimRecord>)>, CodecError> {
     struct Frame {
         end: usize,
         remaining: usize,
@@ -1666,33 +1742,75 @@ fn parse_trim_chain_with_length_encoding(
         }
     }
 
-    let prefix = bytes.get(..end)?;
+    let Some(prefix) = bytes.get(..end) else {
+        return Ok(None);
+    };
     let mut predecessors = HashMap::<usize, Vec<usize>>::new();
     for (start, marker) in prefix.windows(2).enumerate() {
         if marker[0] != 0x01 || !TRIM_KINDS.contains(&marker[1]) {
             continue;
         }
         if let Some(layout) =
-            parse_trim_record_layout_with_length_encoding(prefix, start, width, wide_u16be)
+            parse_trim_record_layout_with_length_encoding(ctx, prefix, start, width, wide_u16be)?
         {
-            predecessors.entry(layout.end).or_default().push(start);
+            crate::resource::admit_map_entry(
+                ctx,
+                &mut predecessors,
+                &layout.end,
+                "catia_trim_predecessor_ends",
+            )?;
+            let starts = predecessors.entry(layout.end).or_default();
+            crate::resource::push(ctx, starts, start, "catia_trim_predecessor_starts")?;
         }
     }
 
     let mut solutions = Vec::new();
-    let mut reversed = Vec::with_capacity(record_count);
-    let mut frames = vec![Frame {
-        end,
-        remaining: record_count,
-        next_predecessor: 0,
-    }];
+    let mut reversed = Vec::<TrimRecord>::new();
+    crate::resource::reserve_vec(ctx, &mut reversed, record_count, "catia_trim_reversed")?;
+    let mut frames = Vec::new();
+    crate::resource::push(
+        ctx,
+        &mut frames,
+        Frame {
+            end,
+            remaining: record_count,
+            next_predecessor: 0,
+        },
+        "catia_trim_search_frames",
+    )?;
     while !frames.is_empty() && solutions.len() <= 1 {
         let frame = frames.len() - 1;
         if frames[frame].remaining == 0 {
             let chain_start = frames[frame].end;
-            let mut records = reversed.clone();
+            let mut records = Vec::new();
+            let retained_bytes = reversed
+                .len()
+                .checked_mul(std::mem::size_of::<TrimRecord>())
+                .and_then(|bytes| u64::try_from(bytes).ok())
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("catia_trim_solution_records", u64::MAX, u64::MAX)
+                })?;
+            ctx.charge_retained(retained_bytes, "catia_trim_solution_records")?;
+            crate::resource::reserve_vec(
+                ctx,
+                &mut records,
+                reversed.len(),
+                "catia_trim_solution_records",
+            )?;
+            for record in &reversed {
+                records.push(TrimRecord {
+                    packet: record.packet.try_clone_with_context(ctx)?,
+                    frame_vector: record.frame_vector,
+                    kind: record.kind,
+                });
+            }
             records.reverse();
-            solutions.push((chain_start, records));
+            crate::resource::push(
+                ctx,
+                &mut solutions,
+                (chain_start, records),
+                "catia_trim_solutions",
+            )?;
             backtrack(&mut frames, &mut reversed);
             continue;
         }
@@ -1705,21 +1823,27 @@ fn parse_trim_chain_with_length_encoding(
             continue;
         };
         frames[frame].next_predecessor += 1;
-        let Some(record) = parse_trim_record_with_length_encoding(prefix, start, width, wide_u16be)
+        let Some(record) =
+            parse_trim_record_with_length_encoding(ctx, prefix, start, width, wide_u16be)?
         else {
             continue;
         };
         let remaining = frames[frame].remaining - 1;
-        reversed.push(record);
-        frames.push(Frame {
-            end: start,
-            remaining,
-            next_predecessor: 0,
-        });
+        crate::resource::push(ctx, &mut reversed, record, "catia_trim_reversed")?;
+        crate::resource::push(
+            ctx,
+            &mut frames,
+            Frame {
+                end: start,
+                remaining,
+                next_predecessor: 0,
+            },
+            "catia_trim_search_frames",
+        )?;
     }
-    <[(usize, Vec<TrimRecord>); 1]>::try_from(solutions)
+    Ok(<[(usize, Vec<TrimRecord>); 1]>::try_from(solutions)
         .ok()
-        .map(|[solution]| solution)
+        .map(|[solution]| solution))
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1742,180 +1866,247 @@ pub(in crate::families::standard) struct TrimRecordLayout {
 
 #[cfg(test)]
 pub(super) fn parse_trim_record_layout(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     width: usize,
-) -> Option<TrimRecordLayout> {
-    let compact = parse_trim_record_layout_with_length_encoding(bytes, start, width, false);
-    let wide_u16be = (width == 2)
-        .then(|| parse_trim_record_layout_with_length_encoding(bytes, start, width, true));
-    match (compact, wide_u16be.flatten()) {
-        (Some(compact), Some(wide)) if compact == wide => Some(compact),
-        (Some(layout), None) | (None, Some(layout)) => Some(layout),
-        (None, None) | (Some(_), Some(_)) => None,
-    }
-}
-
-fn parse_trim_record_layout_with_length_encoding(
-    bytes: &[u8],
-    start: usize,
-    width: usize,
-    wide_u16be: bool,
-) -> Option<TrimRecordLayout> {
-    if wide_u16be && width != 2 {
-        return None;
-    }
-    if bytes.get(start) != Some(&0x01) {
-        return None;
-    }
-    let kind = *bytes.get(start + 1)?;
-    if !TRIM_KINDS.contains(&kind) {
-        return None;
-    }
-    let mask = kind & 0x0f;
-    let mut position = start + 2;
-    let a = if mask & 1 != 0 {
-        parse_count(bytes, &mut position)?
-    } else {
-        0
-    };
-    let b_start = position;
-    let b = if mask & 2 != 0 {
-        parse_count(bytes, &mut position)?
-    } else {
-        0
-    };
-    let c = if mask & 4 != 0 {
-        parse_count(bytes, &mut position)?
-    } else {
-        0
-    };
-    if bytes.get(position) != Some(&0xff) {
-        return None;
-    }
-    position += 1;
-    let handle_count = usize::try_from(View::u32_le_at(bytes, position)?).ok()?;
-    position += 4;
-    if handle_count == 0 {
-        return None;
-    }
-    let frame_vector = if mask & 8 != 0 {
-        let components = [
-            f64::from(View::f32_le_at(bytes, position)?),
-            f64::from(View::f32_le_at(bytes, position + 4)?),
-            f64::from(View::f32_le_at(bytes, position + 8)?),
-        ];
-        position += 12;
-        let norm2 = components.iter().map(|value| value * value).sum::<f64>();
-        let components = FiniteVector::new(components)?;
-        if (norm2 - 1.0).abs() >= FRAME_VECTOR_NORM2_TOLERANCE {
-            return None;
-        }
-        Some(components)
+) -> Result<Option<TrimRecordLayout>, CodecError> {
+    let compact = parse_trim_record_layout_with_length_encoding(ctx, bytes, start, width, false)?;
+    let wide_u16be = if width == 2 {
+        parse_trim_record_layout_with_length_encoding(ctx, bytes, start, width, true)?
     } else {
         None
     };
-
-    // A two-strip packet stores K0 and K1 as two raw bytes before the H lane.
-    // The bytes are not a handle.  At width two they happen to occupy one
-    // handle-sized slot; at width three they do not, so sizing the lane as
-    // `(N + 1) * width` would consume one byte from the next packet.
-    let packed_two_strip_lengths =
-        kind == 0x42 && b == 2 && bytes.get(b_start).is_some_and(|encoded| *encoded == 2);
-    let primitive_count = b.checked_add(c)?;
-    if !packed_two_strip_lengths && primitive_count > bytes.len().saturating_sub(position) {
-        return None;
-    }
-    let lane = if packed_two_strip_lengths {
-        TrimLengthLane::PackedTwoStrip
-    } else {
-        let mut lengths = Vec::with_capacity(primitive_count);
-        for _ in 0..primitive_count {
-            let length = if wide_u16be {
-                let value = View::u16_be_at(bytes, position)?;
-                position += 2;
-                usize::from(value)
-            } else {
-                parse_count(bytes, &mut position)?
-            };
-            lengths.push(length);
-        }
-        if 3usize.checked_mul(a)?.checked_add(lengths.iter().sum())? != handle_count {
-            return None;
-        }
-        TrimLengthLane::Decoded(lengths)
-    };
-    let handle_offset = position;
-    let byte_count = match &lane {
-        TrimLengthLane::PackedTwoStrip => 2usize.checked_add(handle_count.checked_mul(width)?)?,
-        TrimLengthLane::Decoded(_) => handle_count.checked_mul(width)?,
-    };
-    let end = handle_offset.checked_add(byte_count)?;
-    bytes.get(handle_offset..end)?;
-    Some(TrimRecordLayout {
-        kind,
-        independent_count: a,
-        strip_count: b,
-        lane,
-        frame_vector,
-        handle_offset,
-        handle_count,
-        end,
+    Ok(match (compact, wide_u16be) {
+        (Some(compact), Some(wide)) if compact == wide => Some(compact),
+        (Some(layout), None) | (None, Some(layout)) => Some(layout),
+        (None, None) | (Some(_), Some(_)) => None,
     })
 }
 
-#[cfg(test)]
-pub(super) fn parse_trim_record(bytes: &[u8], start: usize, width: usize) -> Option<TrimRecord> {
-    let compact = parse_trim_record_with_length_encoding(bytes, start, width, false);
-    let wide_u16be =
-        (width == 2).then(|| parse_trim_record_with_length_encoding(bytes, start, width, true));
-    match (compact, wide_u16be.flatten()) {
-        (Some(compact), Some(wide)) if compact == wide => Some(compact),
-        (Some(record), None) | (None, Some(record)) => Some(record),
-        (None, None) | (Some(_), Some(_)) => None,
-    }
-}
-
-fn parse_trim_record_with_length_encoding(
+fn parse_trim_record_layout_with_length_encoding(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     width: usize,
     wide_u16be: bool,
-) -> Option<TrimRecord> {
-    let layout = parse_trim_record_layout_with_length_encoding(bytes, start, width, wide_u16be)?;
-    let mut position = layout.handle_offset;
-    let lengths = match layout.lane {
-        TrimLengthLane::Decoded(lengths) => lengths,
-        TrimLengthLane::PackedTwoStrip => {
-            let packed = bytes.get(position..position + 2)?;
-            position += 2;
-            let lengths = vec![usize::from(packed[0]), usize::from(packed[1])];
-            if lengths.iter().sum::<usize>() != layout.handle_count {
+) -> Result<Option<TrimRecordLayout>, CodecError> {
+    (|| -> Option<Result<TrimRecordLayout, CodecError>> {
+        if wide_u16be && width != 2 {
+            return None;
+        }
+        if bytes.get(start) != Some(&0x01) {
+            return None;
+        }
+        let kind = *bytes.get(start + 1)?;
+        if !TRIM_KINDS.contains(&kind) {
+            return None;
+        }
+        let mask = kind & 0x0f;
+        let mut position = start + 2;
+        let a = if mask & 1 != 0 {
+            parse_count(bytes, &mut position)?
+        } else {
+            0
+        };
+        let b_start = position;
+        let b = if mask & 2 != 0 {
+            parse_count(bytes, &mut position)?
+        } else {
+            0
+        };
+        let c = if mask & 4 != 0 {
+            parse_count(bytes, &mut position)?
+        } else {
+            0
+        };
+        if bytes.get(position) != Some(&0xff) {
+            return None;
+        }
+        position += 1;
+        let handle_count = usize::try_from(View::u32_le_at(bytes, position)?).ok()?;
+        position += 4;
+        if handle_count == 0 {
+            return None;
+        }
+        let frame_vector = if mask & 8 != 0 {
+            let components = [
+                f64::from(View::f32_le_at(bytes, position)?),
+                f64::from(View::f32_le_at(bytes, position + 4)?),
+                f64::from(View::f32_le_at(bytes, position + 8)?),
+            ];
+            position += 12;
+            let norm2 = components.iter().map(|value| value * value).sum::<f64>();
+            let components = FiniteVector::new(components)?;
+            if (norm2 - 1.0).abs() >= FRAME_VECTOR_NORM2_TOLERANCE {
                 return None;
             }
-            lengths
-        }
-    };
-    let mut handles = Vec::with_capacity(layout.handle_count);
-    for _ in 0..layout.handle_count {
-        let handle = read_handle(bytes, position, width)?;
-        handles.push(handle);
-        position += width;
-    }
+            Some(components)
+        } else {
+            None
+        };
 
-    let (strip_lengths, fan_lengths) = lengths.split_at_checked(layout.strip_count)?;
-    let packet = TrimPacket::try_from((
-        layout.independent_count,
-        strip_lengths.to_vec(),
-        fan_lengths.to_vec(),
-        handles,
-    ))
-    .ok()?;
-    Some(TrimRecord {
-        packet,
-        frame_vector: layout.frame_vector,
-        kind: layout.kind,
+        // A two-strip packet stores K0 and K1 as two raw bytes before the H lane.
+        // The bytes are not a handle.  At width two they happen to occupy one
+        // handle-sized slot; at width three they do not, so sizing the lane as
+        // `(N + 1) * width` would consume one byte from the next packet.
+        let packed_two_strip_lengths =
+            kind == 0x42 && b == 2 && bytes.get(b_start).is_some_and(|encoded| *encoded == 2);
+        let primitive_count = b.checked_add(c)?;
+        if !packed_two_strip_lengths
+            && primitive_count > bytes.get(position..).map_or(0, |rest| rest.len())
+        {
+            return None;
+        }
+        let lane = if packed_two_strip_lengths {
+            TrimLengthLane::PackedTwoStrip
+        } else {
+            let mut lengths = Vec::new();
+            if let Err(error) = crate::resource::reserve_vec(
+                ctx,
+                &mut lengths,
+                primitive_count,
+                "catia_trim_primitive_lengths",
+            ) {
+                return Some(Err(error));
+            }
+            for _ in 0..primitive_count {
+                let length = if wide_u16be {
+                    let value = View::u16_be_at(bytes, position)?;
+                    position += 2;
+                    usize::from(value)
+                } else {
+                    parse_count(bytes, &mut position)?
+                };
+                lengths.push(length);
+            }
+            if 3usize.checked_mul(a)?.checked_add(lengths.iter().sum())? != handle_count {
+                return None;
+            }
+            TrimLengthLane::Decoded(lengths)
+        };
+        let handle_offset = position;
+        let byte_count = match &lane {
+            TrimLengthLane::PackedTwoStrip => {
+                2usize.checked_add(handle_count.checked_mul(width)?)?
+            }
+            TrimLengthLane::Decoded(_) => handle_count.checked_mul(width)?,
+        };
+        let end = handle_offset.checked_add(byte_count)?;
+        bytes.get(handle_offset..end)?;
+        Some(Ok(TrimRecordLayout {
+            kind,
+            independent_count: a,
+            strip_count: b,
+            lane,
+            frame_vector,
+            handle_offset,
+            handle_count,
+            end,
+        }))
+    })()
+    .transpose()
+}
+
+#[cfg(test)]
+pub(super) fn parse_trim_record(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    start: usize,
+    width: usize,
+) -> Result<Option<TrimRecord>, CodecError> {
+    let compact = parse_trim_record_with_length_encoding(ctx, bytes, start, width, false)?;
+    let wide_u16be = if width == 2 {
+        parse_trim_record_with_length_encoding(ctx, bytes, start, width, true)?
+    } else {
+        None
+    };
+    Ok(match (compact, wide_u16be) {
+        (Some(compact), Some(wide)) if compact == wide => Some(compact),
+        (Some(record), None) | (None, Some(record)) => Some(record),
+        (None, None) | (Some(_), Some(_)) => None,
     })
+}
+
+fn parse_trim_record_with_length_encoding(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    start: usize,
+    width: usize,
+    wide_u16be: bool,
+) -> Result<Option<TrimRecord>, CodecError> {
+    let Some(layout) =
+        parse_trim_record_layout_with_length_encoding(ctx, bytes, start, width, wide_u16be)?
+    else {
+        return Ok(None);
+    };
+    (|| -> Option<Result<TrimRecord, CodecError>> {
+        let mut position = layout.handle_offset;
+        let lengths = match layout.lane {
+            TrimLengthLane::Decoded(lengths) => lengths,
+            TrimLengthLane::PackedTwoStrip => {
+                let packed = bytes.get(position..position + 2)?;
+                position += 2;
+                let mut lengths = Vec::new();
+                if let Err(error) =
+                    crate::resource::reserve_vec(ctx, &mut lengths, 2, "catia_trim_packed_lengths")
+                {
+                    return Some(Err(error));
+                }
+                lengths.push(usize::from(packed[0]));
+                lengths.push(usize::from(packed[1]));
+                if lengths.iter().sum::<usize>() != layout.handle_count {
+                    return None;
+                }
+                lengths
+            }
+        };
+        let mut handles = Vec::new();
+        if let Err(error) = crate::resource::reserve_vec(
+            ctx,
+            &mut handles,
+            layout.handle_count,
+            "catia_trim_packet_handles",
+        ) {
+            return Some(Err(error));
+        }
+        for _ in 0..layout.handle_count {
+            let handle = read_handle(bytes, position, width)?;
+            handles.push(handle);
+            position += width;
+        }
+
+        let (strip_lengths, fan_lengths) = lengths.split_at_checked(layout.strip_count)?;
+        let strip_lengths = match crate::resource::copy_retained_slice(
+            ctx,
+            strip_lengths,
+            "catia_trim_strip_lengths",
+        ) {
+            Ok(lengths) => lengths,
+            Err(error) => return Some(Err(error)),
+        };
+        let fan_lengths = match crate::resource::copy_retained_slice(
+            ctx,
+            fan_lengths,
+            "catia_trim_fan_lengths",
+        ) {
+            Ok(lengths) => lengths,
+            Err(error) => return Some(Err(error)),
+        };
+        let packet = TrimPacket::try_from((
+            layout.independent_count,
+            strip_lengths,
+            fan_lengths,
+            handles,
+        ))
+        .ok()?;
+        Some(Ok(TrimRecord {
+            packet,
+            frame_vector: layout.frame_vector,
+            kind: layout.kind,
+        }))
+    })()
+    .transpose()
 }
 
 pub(crate) fn boundary_cycles(

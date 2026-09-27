@@ -389,13 +389,25 @@ fn full_route_raw_payload_refuses_retained_bytes_before_copy() {
     let mut options = DecodeOptions::default();
     options.policy.limits.max_retained_bytes =
         u64::try_from(retained_len - 1).expect("small fixture");
-    let error = CatiaCodec
-        .decode(&mut Cursor::new(bytes), &options)
-        .expect_err("retained copy exceeds byte limit");
-    assert!(matches!(error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && limit.operation == "retain CATIA raw payload"));
+    for _ in 0..1024 {
+        let error = CatiaCodec
+            .decode(&mut Cursor::new(bytes.clone()), &options)
+            .expect_err("retained copy exceeds byte limit");
+        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            error
+        else {
+            panic!("expected a retained-byte resource refusal");
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes
+        );
+        if limit.operation == "retain CATIA raw payload" {
+            return;
+        }
+        options.policy.limits.max_retained_bytes = limit.used + limit.additional;
+    }
+    panic!("adaptive retained-byte cap did not reach the raw payload copy");
 }
 
 #[test]
