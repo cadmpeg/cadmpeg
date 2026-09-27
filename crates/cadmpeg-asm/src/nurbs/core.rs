@@ -100,7 +100,7 @@ pub(super) fn surface_block(
     // Grid is stored v-major (v outer, u inner); transpose to the IR's u-major
     // order where index `u * v_count + v` is pole `(u, v)`.
     let poles = propagate_resource!(control_points(ctx, &mut cur, n_poles_u * n_poles_v, marker)?);
-    let grid = poles.into_transposed_grid(n_poles_u, n_poles_v)?;
+    let grid = propagate_resource!(poles.into_counted_transposed_grid(ctx, n_poles_u, n_poles_v)?);
     let surface = NurbsSurface::new(
         NurbsSurfaceAxis::new(degree_u as u32, u_knots, is_periodic(enums[0])),
         NurbsSurfaceAxis::new(degree_v as u32, v_knots, is_periodic(enums[1])),
