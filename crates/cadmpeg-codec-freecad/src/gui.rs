@@ -1256,10 +1256,12 @@ fn append_native_provider(
     let id = crate::native::native_id_charged(ctx, "gui-view-provider", name)?;
     reserve_vec_items(ctx, providers, 1, "FCStd GUI provider records")?;
     providers.push(GuiViewProviderRecord {
-        id: id.clone(),
+        id: retained_string(ctx, &id, "FCStd GUI provider record identity")?,
         object: object
             .map(|object| {
-                cadmpeg_core::text::NonBlankString::new(object).ok_or_else(|| {
+                cadmpeg_core::text::NonBlankString::new(retained_string(
+                    ctx, object, "FCStd GUI provider object identity",
+                )?).ok_or_else(|| {
                     CodecError::Malformed("GUI provider object must not be empty".into())
                 })
             })
