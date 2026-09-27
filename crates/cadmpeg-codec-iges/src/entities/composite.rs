@@ -95,14 +95,21 @@ impl CompositePointContext<'_, '_, '_, '_> {
             .is_some_and(|entry| composite_point_member(entry))
     }
 
-    fn member_point(&self, sequence: u32) -> Option<Point3> {
-        let entry = self.entries.get(&sequence).copied()?;
+    fn member_point(&self, sequence: u32) -> Result<Option<Point3>, CodecError> {
+        let Some(entry) = self.entries.get(&sequence).copied() else {
+            return Ok(None);
+        };
         if !composite_point_member(entry) {
-            return None;
+            return Ok(None);
         }
-        let record = self.records.get(&sequence).copied()?;
-        let [x, y, z] = [record.number(1)?, record.number(2)?, record.number(3)?];
-        let transform = resolve_transform(
+        let Some(record) = self.records.get(&sequence).copied() else {
+            return Ok(None);
+        };
+        let [Some(x), Some(y), Some(z)] = [record.number(1), record.number(2), record.number(3)]
+        else {
+            return Ok(None);
+        };
+        let transform = match resolve_transform(
             entry.transform,
             self.entries,
             self.records,
@@ -110,14 +117,19 @@ impl CompositePointContext<'_, '_, '_, '_> {
             self.global.real_precision(),
             &mut BTreeSet::new(),
             self.ctx,
-        )
-        .ok()?;
+        ) {
+            Ok(transform) => transform,
+            Err(error) => {
+                error.non_resource()?;
+                return Ok(None);
+            }
+        };
         let point = transform.apply_point(Point3::new(
             x * self.global.length_factor_mm(),
             y * self.global.length_factor_mm(),
             z * self.global.length_factor_mm(),
-        ))?;
-        Some(point.get())
+        ));
+        Ok(point.map(|point| point.get()))
     }
 }
 
@@ -143,7 +155,7 @@ fn composite_point_adjacency_valid(
         if !context.is_point(*sequence) {
             continue;
         }
-        let Some(point) = context.member_point(*sequence) else {
+        let Some(point) = context.member_point(*sequence)? else {
             return Ok(false);
         };
         if position > 0 && !context.is_point(child_sequences[position - 1]) {

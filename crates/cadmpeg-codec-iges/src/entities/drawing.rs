@@ -7,6 +7,7 @@ use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::CadIr;
@@ -184,7 +185,7 @@ pub(super) fn project(
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> ProjectionOutcome {
+) -> Result<ProjectionOutcome, CodecError> {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -310,22 +311,30 @@ pub(super) fn project(
             let transform_valid = if entry.transform == 0 {
                 true
             } else {
-                u32::try_from(entry.transform).ok().is_some_and(|sequence| {
-                    entries.get(&sequence).is_some_and(|target| {
-                        target.entity_type == 124
-                            && target.form == 0
-                            && resolve_transform(
-                                entry.transform,
-                                &entries,
-                                &records,
-                                global.length_factor_mm(),
-                                global.real_precision(),
-                                &mut BTreeSet::new(),
-                                ctx,
-                            )
-                            .is_ok()
-                    })
-                })
+                let target_valid = u32::try_from(entry.transform).ok().is_some_and(|sequence| {
+                    entries
+                        .get(&sequence)
+                        .is_some_and(|target| target.entity_type == 124 && target.form == 0)
+                });
+                if target_valid {
+                    match resolve_transform(
+                        entry.transform,
+                        &entries,
+                        &records,
+                        global.length_factor_mm(),
+                        global.real_precision(),
+                        &mut BTreeSet::new(),
+                        ctx,
+                    ) {
+                        Ok(_) => true,
+                        Err(error) => {
+                            error.non_resource()?;
+                            false
+                        }
+                    }
+                } else {
+                    false
+                }
             };
             let clipping_valid = (3..=8).all(|index| {
                 record.integer_or(index, 0).is_some_and(|value| {
@@ -569,7 +578,7 @@ pub(super) fn project(
         }
     }
 
-    ProjectionOutcome { decoded, losses }
+    Ok(ProjectionOutcome { decoded, losses })
 }
 
 #[cfg(test)]

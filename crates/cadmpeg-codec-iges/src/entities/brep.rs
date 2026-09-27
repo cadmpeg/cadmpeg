@@ -753,7 +753,8 @@ pub(super) fn project(
             Some(ctx),
         ) {
             Ok(transform) => (entry.transform != 0).then_some(transform),
-            Err(message) => {
+            Err(error) => {
+                let message = error.non_resource()?;
                 losses.push(entity_loss(entry, message));
                 continue;
             }

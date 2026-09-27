@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Pointer-defined analytic surface projection.
 
-use super::geometry::{admit, entity_loss, resolve_transform, source_object, ProjectionOutcome};
+use super::geometry::{
+    admit, entity_loss, resolve_transform, source_object, ProjectionOutcome,
+    TransformResolutionError,
+};
 use super::pointer;
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -152,7 +156,7 @@ fn surface_transform(
     records: &BTreeMap<u32, &ParameterRecord>,
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> Result<Transform, String> {
+) -> Result<Transform, TransformResolutionError> {
     resolve_transform(
         entry.transform,
         entries,
@@ -171,7 +175,7 @@ pub(super) fn project(
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
     sequences: &mut super::geometry::SourceSequences,
-) -> ProjectionOutcome {
+) -> Result<ProjectionOutcome, CodecError> {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -193,7 +197,8 @@ pub(super) fn project(
         };
         let transform = match surface_transform(entry, &entries, &records, global, ctx) {
             Ok(transform) => transform,
-            Err(message) => {
+            Err(error) => {
+                let message = error.non_resource()?;
                 losses.push(entity_loss(entry, message));
                 continue;
             }
@@ -552,7 +557,7 @@ pub(super) fn project(
         decoded.insert(entry.sequence);
     }
 
-    ProjectionOutcome { decoded, losses }
+    Ok(ProjectionOutcome { decoded, losses })
 }
 
 #[cfg(test)]

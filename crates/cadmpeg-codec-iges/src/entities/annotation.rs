@@ -11,6 +11,7 @@ use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::parameter::{DefaultTailCount, ParameterRecord};
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
@@ -1034,7 +1035,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> ProjectionOutcome {
+) -> Result<ProjectionOutcome, CodecError> {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -1050,68 +1051,89 @@ pub(super) fn project(
         .iter()
         .filter_map(|entry| classify(entry.entity_type, entry.form).map(|kind| (entry, kind)))
     {
-        let valid = records.get(&entry.sequence).is_some_and(|record| {
-            let resolved_transform = resolve_transform(
-                entry.transform,
-                &entries,
-                &records,
-                global.length_factor_mm(),
-                global.real_precision(),
-                &mut BTreeSet::new(),
-                ctx,
-            )
-            .ok();
-            let transform_valid = resolved_transform.is_some();
-            entry.status.use_flag(global.global_table()) == Some(UseFlag::Annotation)
-                && transform_valid
-                && match kind {
-                    AnnotationKind::AngularDimension
-                    | AnnotationKind::CurveDimension
-                    | AnnotationKind::DiameterDimension
-                    | AnnotationKind::LinearDimension
-                    | AnnotationKind::OrdinateDimension
-                    | AnnotationKind::PointDimension
-                    | AnnotationKind::RadiusDimension => {
-                        dimension_valid(entry, record, &entries, &records, global.global_table())
+        let valid = records
+            .get(&entry.sequence)
+            .map(|record| -> Result<bool, CodecError> {
+                let resolved_transform = match resolve_transform(
+                    entry.transform,
+                    &entries,
+                    &records,
+                    global.length_factor_mm(),
+                    global.real_precision(),
+                    &mut BTreeSet::new(),
+                    ctx,
+                ) {
+                    Ok(transform) => Some(transform),
+                    Err(error) => {
+                        error.non_resource()?;
+                        None
                     }
-                    AnnotationKind::FlagNote | AnnotationKind::GeneralLabel => flag_or_label_valid(
-                        entry,
-                        record,
-                        &entries,
-                        &records,
-                        global.global_table(),
-                    ),
-                    AnnotationKind::GeneralNote => general_note_valid_for_global_table(
-                        record,
-                        &entries,
-                        global.global_table(),
-                        entry.form,
-                    ),
-                    AnnotationKind::NewGeneralNote => new_general_note_valid(record, &entries),
-                    AnnotationKind::Leader => {
-                        leader_valid_for_global_table(entry, record, global.global_table())
-                    }
-                    AnnotationKind::GeneralSymbol => general_symbol_valid(
-                        record,
-                        &entries,
-                        &records,
-                        entry.form,
-                        global.global_table(),
-                    ),
-                    AnnotationKind::SectionedArea => resolved_transform.is_some_and(|transform| {
-                        sectioned_area_valid(
-                            ir,
-                            record,
-                            &entries,
-                            entry.form,
-                            global.global_table(),
-                            transform,
-                            global.length_factor_mm(),
-                            global.minimum_resolution_mm(),
-                        )
-                    }),
-                }
-        });
+                };
+                let transform_valid = resolved_transform.is_some();
+                Ok(
+                    entry.status.use_flag(global.global_table()) == Some(UseFlag::Annotation)
+                        && transform_valid
+                        && match kind {
+                            AnnotationKind::AngularDimension
+                            | AnnotationKind::CurveDimension
+                            | AnnotationKind::DiameterDimension
+                            | AnnotationKind::LinearDimension
+                            | AnnotationKind::OrdinateDimension
+                            | AnnotationKind::PointDimension
+                            | AnnotationKind::RadiusDimension => dimension_valid(
+                                entry,
+                                record,
+                                &entries,
+                                &records,
+                                global.global_table(),
+                            ),
+                            AnnotationKind::FlagNote | AnnotationKind::GeneralLabel => {
+                                flag_or_label_valid(
+                                    entry,
+                                    record,
+                                    &entries,
+                                    &records,
+                                    global.global_table(),
+                                )
+                            }
+                            AnnotationKind::GeneralNote => general_note_valid_for_global_table(
+                                record,
+                                &entries,
+                                global.global_table(),
+                                entry.form,
+                            ),
+                            AnnotationKind::NewGeneralNote => {
+                                new_general_note_valid(record, &entries)
+                            }
+                            AnnotationKind::Leader => {
+                                leader_valid_for_global_table(entry, record, global.global_table())
+                            }
+                            AnnotationKind::GeneralSymbol => general_symbol_valid(
+                                record,
+                                &entries,
+                                &records,
+                                entry.form,
+                                global.global_table(),
+                            ),
+                            AnnotationKind::SectionedArea => {
+                                resolved_transform.is_some_and(|transform| {
+                                    sectioned_area_valid(
+                                        ir,
+                                        record,
+                                        &entries,
+                                        entry.form,
+                                        global.global_table(),
+                                        transform,
+                                        global.length_factor_mm(),
+                                        global.minimum_resolution_mm(),
+                                    )
+                                })
+                            }
+                        },
+                )
+            })
+            .transpose()?
+            .unwrap_or(false);
         if valid {
             decoded.insert(entry.sequence);
         } else {
@@ -1141,7 +1163,7 @@ pub(super) fn project(
         }
     }
 
-    ProjectionOutcome { decoded, losses }
+    Ok(ProjectionOutcome { decoded, losses })
 }
 
 #[cfg(test)]

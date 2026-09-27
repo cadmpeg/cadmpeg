@@ -343,7 +343,8 @@ pub(super) fn project(
             Some(ctx),
         ) {
             Ok(transform) => transform,
-            Err(message) => {
+            Err(error) => {
+                let message = error.non_resource()?;
                 losses.push(entity_loss(entry, message));
                 continue;
             }
@@ -780,7 +781,8 @@ pub(super) fn project(
             Some(ctx),
         ) {
             Ok(transform) => transform,
-            Err(message) => {
+            Err(error) => {
+                let message = error.non_resource()?;
                 losses.push(entity_loss(entry, message));
                 continue;
             }

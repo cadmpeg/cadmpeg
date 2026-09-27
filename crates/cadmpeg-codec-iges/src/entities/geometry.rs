@@ -629,6 +629,39 @@ fn validate_declared_transform_frame(
         .ok_or(DeclaredTransformFrameError::WrongDeterminant)
 }
 
+#[derive(Debug)]
+pub(crate) enum TransformResolutionError {
+    Invalid(String),
+    Resource(CodecError),
+}
+
+impl From<String> for TransformResolutionError {
+    fn from(message: String) -> Self {
+        Self::Invalid(message)
+    }
+}
+
+impl From<&str> for TransformResolutionError {
+    fn from(message: &str) -> Self {
+        Self::Invalid(message.to_owned())
+    }
+}
+
+impl From<CodecError> for TransformResolutionError {
+    fn from(error: CodecError) -> Self {
+        Self::Resource(error)
+    }
+}
+
+impl TransformResolutionError {
+    pub(crate) fn non_resource(self) -> Result<String, CodecError> {
+        match self {
+            Self::Invalid(message) => Ok(message),
+            Self::Resource(error) => Err(error),
+        }
+    }
+}
+
 pub(crate) fn resolve_transform(
     sequence: i64,
     entries: &BTreeMap<u32, &DirectoryEntry>,
@@ -637,7 +670,7 @@ pub(crate) fn resolve_transform(
     precision: RealPrecision,
     path: &mut BTreeSet<u32>,
     ctx: Option<&DecodeContext<'_>>,
-) -> Result<Transform, String> {
+) -> Result<Transform, TransformResolutionError> {
     if sequence == 0 {
         return Ok(Transform::identity());
     }
@@ -648,22 +681,23 @@ pub(crate) fn resolve_transform(
     }
     let _nested = ctx
         .map(|ctx| ctx.enter_nested("iges_transform_chain"))
-        .transpose()
-        .map_err(|error| error.to_string())?;
+        .transpose()?;
     let depth_limit = ctx
         .and_then(|ctx| usize::try_from(ctx.policy().limits.max_recursion_depth).ok())
         .map_or(MAX_TRANSFORM_DEPTH, |policy| {
             policy.min(MAX_TRANSFORM_DEPTH)
         });
     if path.len() >= depth_limit {
-        return Err(format!(
-            "transformation chain exceeds {MAX_TRANSFORM_DEPTH} entities"
-        ));
+        return Err(format!("transformation chain exceeds {MAX_TRANSFORM_DEPTH} entities").into());
     }
-    if !path.insert(sequence) {
+    if path.contains(&sequence) {
         return Err("transformation chain is cyclic".into());
     }
-    let result = (|| {
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, "iges transform chain path")?;
+    }
+    path.insert(sequence);
+    let result: Result<Transform, TransformResolutionError> = (|| {
         let entry = entries
             .get(&sequence)
             .copied()
@@ -672,7 +706,7 @@ pub(crate) fn resolve_transform(
             return Err(format!(
                 "transformation D{sequence} is type {} form {}, expected defining type 124 form 0 or 1",
                 entry.entity_type, entry.form
-            ));
+            ).into());
         }
         let record = records
             .get(&sequence)
@@ -709,13 +743,13 @@ pub(crate) fn resolve_transform(
             Err(DeclaredTransformFrameError::NotOrthonormal) => {
                 return Err(format!(
                     "transformation D{sequence} linear part is not orthonormal within its declared numeric precision"
-                ));
+                ).into());
             }
             Err(DeclaredTransformFrameError::WrongDeterminant) => {
                 return Err(format!(
                     "transformation D{sequence} determinant disagrees with form {} within its declared numeric precision",
                     entry.form
-                ));
+                ).into());
             }
         }
 
@@ -756,9 +790,12 @@ pub(crate) fn resolve_transform(
             path,
             ctx,
         )?;
-        parent.compose(local).map_err(|_| {
-            format!("transformation D{sequence} has non-finite coefficients after composition")
-        })
+        parent
+            .compose(local)
+            .map_err(|_| {
+                format!("transformation D{sequence} has non-finite coefficients after composition")
+            })
+            .map_err(TransformResolutionError::from)
     })();
     path.remove(&sequence);
     result
@@ -1414,7 +1451,8 @@ pub(crate) fn project_geometry(
             Some(ctx),
         ) {
             Ok(transform) => transform,
-            Err(message) => {
+            Err(error) => {
+                let message = error.non_resource()?;
                 losses.push(entity_loss(entry, message));
                 continue;
             }
@@ -1599,7 +1637,8 @@ pub(crate) fn project_geometry(
             Some(ctx),
         ) {
             Ok(transform) => transform,
-            Err(message) => {
+            Err(error) => {
+                let message = error.non_resource()?;
                 losses.push(entity_loss(entry, message));
                 continue;
             }
@@ -1692,7 +1731,8 @@ pub(crate) fn project_geometry(
             Some(ctx),
         ) {
             Ok(transform) => transform,
-            Err(message) => {
+            Err(error) => {
+                let message = error.non_resource()?;
                 losses.push(entity_loss(entry, message));
                 continue;
             }
@@ -1756,7 +1796,8 @@ pub(crate) fn project_geometry(
             Some(ctx),
         ) {
             Ok(transform) => transform,
-            Err(message) => {
+            Err(error) => {
+                let message = error.non_resource()?;
                 losses.push(entity_loss(entry, message));
                 continue;
             }
@@ -2020,7 +2061,8 @@ pub(crate) fn project_geometry(
             Some(ctx),
         ) {
             Ok(transform) => transform,
-            Err(message) => {
+            Err(error) => {
+                let message = error.non_resource()?;
                 losses.push(entity_loss(entry, message));
                 continue;
             }
@@ -2245,8 +2287,15 @@ pub(crate) fn project_geometry(
         &mut admitted_entities,
         "iges_geometry_composites_offsets",
     )?;
-    super::analytic_surfaces::project(ir, directory, parameters, global, Some(ctx), &mut sequences)
-        .merge_into(&mut decoded, &mut losses);
+    super::analytic_surfaces::project(
+        ir,
+        directory,
+        parameters,
+        global,
+        Some(ctx),
+        &mut sequences,
+    )?
+    .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(
         ctx,
         ir,
@@ -2293,7 +2342,7 @@ pub(crate) fn project_geometry(
     super::brep::project(ir, directory, parameters, global, ctx, &mut sequences)?
         .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_brep")?;
-    super::csg::project(ir, directory, parameters, global, Some(ctx))
+    super::csg::project(ir, directory, parameters, global, Some(ctx))?
         .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_csg")?;
     let (structure_projection, placement_rejections) = super::structure::project(
@@ -2330,10 +2379,10 @@ pub(crate) fn project_geometry(
         trailing_pointer_analysis,
         global,
         Some(ctx),
-    )
+    )?
     .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_drawing")?;
-    super::annotation::project(ir, directory, parameters, global, Some(ctx))
+    super::annotation::project(ir, directory, parameters, global, Some(ctx))?
         .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_annotation")?;
     let analytic_surface_points = analytic_surface_locations
