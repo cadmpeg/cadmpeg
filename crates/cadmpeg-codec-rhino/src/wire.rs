@@ -86,6 +86,30 @@ pub(crate) fn copy_retained_string(
         .map_err(|error| CodecError::malformed(error.to_string()))
 }
 
+/// Formats retained text after measuring and charging its exact byte length.
+pub(crate) fn admitted_format(
+    ctx: &DecodeContext<'_>,
+    arguments: fmt::Arguments<'_>,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    struct ByteCount(usize);
+
+    impl fmt::Write for ByteCount {
+        fn write_str(&mut self, value: &str) -> fmt::Result {
+            self.0 = self.0.checked_add(value.len()).ok_or(fmt::Error)?;
+            Ok(())
+        }
+    }
+
+    let mut bytes = ByteCount(0);
+    fmt::write(&mut bytes, arguments)
+        .map_err(|_| CodecError::malformed("retained text length overflow"))?;
+    let mut text = admitted_retained_string(ctx, bytes.0, operation)?;
+    fmt::write(&mut text, arguments)
+        .map_err(|_| CodecError::malformed("retained text formatting failed"))?;
+    Ok(text)
+}
+
 impl<T> ExactVec<T> {
     /// Charges and allocates storage for a count bounded by the input window.
     pub(crate) fn new(
