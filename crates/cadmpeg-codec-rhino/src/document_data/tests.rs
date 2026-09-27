@@ -317,6 +317,24 @@ fn document_setting_losses_refuse_collection_limit() {
 }
 
 #[test]
+fn unit_binding_loss_copy_refuses_retained_limit() {
+    let scan = retained_setting_scan();
+    let mut limit = 0_u64;
+    for _ in 0..16 {
+        let refusal = metadata_refusal(&scan, u64::MAX, limit);
+        if matches!(&refusal, cadmpeg_core::CodecError::ResourceLimit(item) if item.operation == "Rhino unit-binding loss message")
+        {
+            return;
+        }
+        let cadmpeg_core::CodecError::ResourceLimit(item) = refusal else {
+            panic!("expected a retained-byte refusal, got {refusal:?}");
+        };
+        limit = (item.used + item.additional).max(limit + 1);
+    }
+    panic!("unit-binding loss copy was not reached");
+}
+
+#[test]
 fn opaque_setting_records_refuse_collection_limit() {
     let scan = retained_setting_scan();
     assert_metadata_refusal(

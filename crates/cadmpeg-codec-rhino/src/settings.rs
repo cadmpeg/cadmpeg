@@ -1851,7 +1851,11 @@ pub(crate) fn parse_rendering_attributes(
                 ));
             }
             if let Some(warning) = checksum_warning(data, &mapping)? {
-                warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{warning}"))?;
+                warnings.push_coded_admitted(
+                    ctx,
+                    crate::loss::RhinoLossCode::IntegrityFailure,
+                    format_args!("{warning}"),
+                )?;
             }
             let mut mapping_payload =
                 BoundedReader::new(data, mapping.body().start, mapping.body().end)?;
@@ -1877,7 +1881,11 @@ pub(crate) fn parse_rendering_attributes(
         }
         material_payload.skip_remaining()?;
         if let Some(warning) = checksum_warning_excluding(data, &material, &obsolete_mappings)? {
-            warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{warning}"))?;
+            warnings.push_coded_admitted(
+                ctx,
+                crate::loss::RhinoLossCode::IntegrityFailure,
+                format_args!("{warning}"),
+            )?;
         }
         children.push(material.range());
         payload.skip(material.next_offset() - payload.position())?;
@@ -1937,7 +1945,11 @@ pub(crate) fn parse_rendering_attributes(
                     ));
                 }
                 if let Some(warning) = checksum_warning(data, &channel)? {
-                    warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{warning}"))?;
+                    warnings.push_coded_admitted(
+                        ctx,
+                        crate::loss::RhinoLossCode::IntegrityFailure,
+                        format_args!("{warning}"),
+                    )?;
                 }
                 let mut channel_payload =
                     BoundedReader::new(data, channel.body().start, channel.body().end)?;
@@ -1964,7 +1976,11 @@ pub(crate) fn parse_rendering_attributes(
             }
             mapping_payload.skip_remaining()?;
             if let Some(warning) = checksum_warning_excluding(data, &mapping, &channels)? {
-                warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{warning}"))?;
+                warnings.push_coded_admitted(
+                    ctx,
+                    crate::loss::RhinoLossCode::IntegrityFailure,
+                    format_args!("{warning}"),
+                )?;
             }
             children.push(mapping.range());
             payload.skip(mapping.next_offset() - payload.position())?;
@@ -1979,7 +1995,11 @@ pub(crate) fn parse_rendering_attributes(
     }
     payload.skip_remaining()?;
     if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
-        warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{warning}"))?;
+        warnings.push_coded_admitted(
+            ctx,
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format_args!("{warning}"),
+        )?;
     }
     reader.skip(chunk.next_offset() - reader.position())?;
     Ok(start..reader.position())
@@ -2018,7 +2038,11 @@ fn skip_model_attributes(
         ));
     }
     if let Some(warning) = checksum_warning(data, &chunk)? {
-        warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{warning}"))?;
+        warnings.push_coded_admitted(
+            ctx,
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format_args!("{warning}"),
+        )?;
     }
     payload.skip(chunk.next_offset() - payload.position())?;
     Ok(chunk.range())
@@ -2137,7 +2161,11 @@ pub(crate) fn parse_direct_linetype<'a>(
     }
     payload.skip_remaining()?;
     if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
-        warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{warning}"))?;
+        warnings.push_coded_admitted(
+            ctx,
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format_args!("{warning}"),
+        )?;
     }
     reader.skip(chunk.next_offset() - reader.position())?;
     Ok(EmbeddedDescriptor {
@@ -2264,7 +2292,11 @@ pub(crate) fn parse_direct_section_style<'a>(
     // result because the cascade has passed it.
     payload.skip_remaining()?;
     if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
-        warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{warning}"))?;
+        warnings.push_coded_admitted(
+            ctx,
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format_args!("{warning}"),
+        )?;
     }
     reader.skip(chunk.next_offset() - reader.position())?;
     Ok(EmbeddedDescriptor {
@@ -2377,9 +2409,13 @@ fn parse_layer(
     let id = serialized_id.filter(|id| !id.is_nil());
     let parent_compatible = writer_version.is_some_and(|version| version > 200_505_110);
     if version.1 >= 6 && writer_version.is_none() {
-        losses.push(crate::loss::writer_stamp_unverified(
-            "layer parent link and expanded state were not read because the archive has no writer-version stamp",
-        ));
+        crate::wire::reserve_collection(ctx, losses, 1, "Rhino layer losses")?;
+        losses.push(crate::wire::admitted_loss(
+            ctx,
+            crate::loss::RhinoLossCode::SourceWriterStampUnverified,
+            format_args!("layer parent link and expanded state were not read because the archive has no writer-version stamp"),
+            "Rhino layer loss text",
+        )?);
     }
     let hierarchy = if version.1 >= 6 && parent_compatible {
         Some(LayerHierarchy {
@@ -2466,10 +2502,13 @@ fn parse_layer(
             Err(FramingError::Resource(limit)) => return Err(FramingError::Resource(limit)),
             Err(error) => {
                 source_requires_opaque = true;
-                warnings.push_admitted(ctx, format_args!(
+                warnings.push_admitted(
+                    ctx,
+                    format_args!(
                     "layer per-viewport userdata at offset {} could not be transferred: {error}",
                     descriptor.range.start
-                ))?;
+                ),
+                )?;
             }
         }
     }
@@ -2671,7 +2710,8 @@ pub(crate) fn parse_metadata(
                     Ok((layer, source_requires_opaque)) => {
                         if let Some(id) = layer.id {
                             if ids.contains(&id) {
-                                warnings.push_coded_admitted(ctx,
+                                warnings.push_coded_admitted(
+                                    ctx,
                                     crate::loss::RhinoLossCode::DuplicateRecordResolved,
                                     format_args!(
                                     "duplicate layer UUID {id}; first record owns archive identity"
@@ -2745,7 +2785,8 @@ pub(crate) fn parse_metadata(
                     _ => {}
                 }
                 if duplicate_singleton {
-                    warnings.push_coded_admitted(ctx,
+                    warnings.push_coded_admitted(
+                        ctx,
                         crate::loss::RhinoLossCode::DuplicateRecordResolved,
                         format_args!(
                             "duplicate singleton metadata record {:#x}; later record wins",
@@ -2772,10 +2813,13 @@ pub(crate) fn parse_metadata(
                         record: record.clone(),
                     });
                 }
-                warnings.push_admitted(ctx, format_args!(
-                    "metadata record {:#x} at {} degraded: {}",
-                    record.typecode, record.range.start, error
-                ))?;
+                warnings.push_admitted(
+                    ctx,
+                    format_args!(
+                        "metadata record {:#x} at {} degraded: {}",
+                        record.typecode, record.range.start, error
+                    ),
+                )?;
             }
         }
     }
