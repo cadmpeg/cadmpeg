@@ -8150,11 +8150,16 @@ fn mesh_candidate_point_pairs(
     let Some(edge_vertices) = topology.edge_vertices(ctx)? else {
         return Ok(None);
     };
-    let pairs = edge_vertices
-        .into_iter()
-        .map(|[start, end]| Some([*point_assignment.get(start)?, *point_assignment.get(end)?]))
-        .collect::<Option<Vec<[usize; 2]>>>();
-    Ok(pairs.map(|pairs| pairs.into_iter().map(Some).collect()))
+    let mut pairs = Vec::new();
+    for [start, end] in edge_vertices {
+        let (Some(start), Some(end)) =
+            (point_assignment.get(start), point_assignment.get(end))
+        else {
+            return Ok(None);
+        };
+        crate::resource::push(ctx, &mut pairs, Some([*start, *end]), "catia_mesh_candidate_point_pairs")?;
+    }
+    Ok(Some(pairs))
 }
 
 fn endpoint_pairs_respect_candidate_domains(
@@ -8177,31 +8182,39 @@ fn endpoint_pairs_respect_candidate_domains(
 }
 
 fn restore_unique_endpoint_pair_orientations(
+    ctx: &DecodeContext<'_>,
     pairs: &[[usize; 2]],
     candidates: &[Vec<[usize; 2]>],
-) -> Option<Vec<[usize; 2]>> {
+) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
     if pairs.len() != candidates.len() {
-        return None;
+        return Ok(None);
     }
-    pairs
-        .iter()
-        .zip(candidates)
-        .map(|(&pair, candidates)| {
-            let mut matching = candidates
-                .iter()
-                .copied()
-                .filter(|candidate| same_unordered_pair(*candidate, pair))
-                .collect::<Vec<_>>();
-            matching.sort_unstable();
-            matching.dedup();
-            match matching.as_slice() {
-                [oriented] => Some(*oriented),
-                [] if candidates.is_empty() => Some(pair),
-                [] => None,
-                _ => Some(pair),
+    let mut oriented = Vec::new();
+    for (&pair, candidates) in pairs.iter().zip(candidates) {
+        let mut unique = None;
+        let mut multiple = false;
+        for &candidate in candidates {
+            if !same_unordered_pair(candidate, pair) {
+                continue;
             }
-        })
-        .collect()
+            if unique.is_some_and(|previous| previous != candidate) {
+                multiple = true;
+                break;
+            }
+            unique = Some(candidate);
+        }
+        let direction = if multiple {
+            pair
+        } else if let Some(unique) = unique {
+            unique
+        } else if candidates.is_empty() {
+            pair
+        } else {
+            return Ok(None);
+        };
+        crate::resource::push(ctx, &mut oriented, direction, "catia_oriented_endpoint_pairs")?;
+    }
+    Ok(Some(oriented))
 }
 
 fn charge_materialized_items(
@@ -8417,13 +8430,26 @@ mod face_domain_support_tests {
     #[test]
     fn unique_candidate_restores_endpoint_pair_orientation() {
         assert_eq!(
-            restore_unique_endpoint_pair_orientations(
+            crate::test_support::with_service_context(|ctx| restore_unique_endpoint_pair_orientations(
+                ctx,
                 &[[0, 1], [2, 3], [4, 5]],
                 &[vec![[1, 0]], vec![[2, 3], [3, 2]], Vec::new()],
-            ),
+            )).expect("service resource budget"),
             Some(vec![[1, 0], [2, 3], [4, 5]])
         );
-        assert!(restore_unique_endpoint_pair_orientations(&[[0, 1]], &[vec![[2, 3]]]).is_none());
+        assert!(crate::test_support::with_service_context(|ctx| restore_unique_endpoint_pair_orientations(ctx, &[[0, 1]], &[vec![[2, 3]]])).expect("service resource budget").is_none());
+    }
+
+    #[test]
+    fn endpoint_pair_orientation_result_refuses_before_growth() {
+        let result = crate::test_support::with_collection_limit(0, |ctx| {
+            restore_unique_endpoint_pair_orientations(ctx, &[[0, 1]], &[vec![[1, 0]]])
+        });
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "catia_oriented_endpoint_pairs"
+        ));
     }
 
     #[test]
@@ -11587,7 +11613,7 @@ where
                 cached
             } else {
                 let Some(oriented_pairs) =
-                    restore_unique_endpoint_pair_orientations(pairs, &completed_edge_candidates)
+                    restore_unique_endpoint_pair_orientations(ctx, pairs, &completed_edge_candidates)?
                 else {
                     return Ok(ControlFlow::Continue(()));
                 };
