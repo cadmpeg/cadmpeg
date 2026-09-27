@@ -438,3 +438,169 @@ fn feature_revolution_extent_refuses_before_vec_growth() {
         "creo feature revolution extents",
     );
 }
+
+#[test]
+fn replay_id_array_refuses_before_nested_vec_growth() {
+    let bytes = [10, 11];
+    item(
+        run(&bytes, 1, u64::MAX, |ctx| {
+            super::super::replay_ids(ctx, &bytes, 2, 0)
+                .transpose()?
+                .ok_or_else(|| CodecError::malformed("replay ids"))
+                .map(|_| ())
+        })
+        .expect_err("two replay IDs need two items"),
+        "creo replay affected ids",
+    );
+    assert!(run(&bytes, 2, u64::MAX, |ctx| {
+        super::super::replay_ids(ctx, &bytes, 2, 0)
+            .transpose()?
+            .ok_or_else(|| CodecError::malformed("replay ids"))
+    })
+    .is_ok());
+}
+
+#[test]
+fn explicit_replay_array_record_refuses_before_outer_vec_growth() {
+    let row = super::unanchored_replay_row(1, 40, None, &[0xf8, 1, 10, 0xf8, 1, 20]);
+    let suffix = row
+        .body
+        .windows(2)
+        .position(|bytes| bytes == [0xe1, 0xe1])
+        .expect("replay suffix");
+    item(
+        run(&row.body, 1, u64::MAX, |ctx| {
+            super::super::explicit_replay_pair_before_suffix(ctx, &row, suffix)
+                .transpose()?
+                .ok_or_else(|| CodecError::malformed("replay pair"))
+                .map(|_| ())
+        })
+        .expect_err("the first explicit array needs an outer item"),
+        "creo explicit replay arrays",
+    );
+    assert!(run(&row.body, 4, u64::MAX, |ctx| {
+        super::super::explicit_replay_pair_before_suffix(ctx, &row, suffix)
+            .transpose()?
+            .ok_or_else(|| CodecError::malformed("replay pair"))
+    })
+    .is_ok());
+}
+
+#[test]
+fn unanchored_replay_candidate_refuses_before_vec_growth() {
+    let row = super::unanchored_replay_row(1, 40, None, &[0xf8, 1, 10, 0xf8, 1, 20]);
+    item(
+        run(&row.body, 4, u64::MAX, |ctx| {
+            super::super::unique_unanchored_replay_pair(ctx, &row, [None; 2])
+                .transpose()?
+                .ok_or_else(|| CodecError::malformed("replay candidate"))
+                .map(|_| ())
+        })
+        .expect_err("one candidate needs one more item"),
+        "creo replay candidates",
+    );
+    assert!(run(&row.body, 5, u64::MAX, |ctx| {
+        super::super::unique_unanchored_replay_pair(ctx, &row, [None; 2])
+            .transpose()?
+            .ok_or_else(|| CodecError::malformed("replay candidate"))
+    })
+    .is_ok());
+}
+
+#[test]
+fn replay_extent_state_refuses_before_btree_insertion() {
+    let row = super::replay_row(1, &[0xf8, 1, 10, 0xf8, 1, 20]);
+    item(
+        run(&row.body, 0, u64::MAX, |ctx| {
+            super::super::replay_affected_ids(ctx, std::slice::from_ref(&row))
+        })
+        .expect_err("one extent state needs one item"),
+        "creo replay extent states",
+    );
+}
+
+#[test]
+fn replay_affected_record_refuses_before_vec_growth() {
+    let row = super::replay_row(1, &[0xf8, 1, 10, 0xf8, 1, 20]);
+    item(
+        run(&row.body, 3, u64::MAX, |ctx| {
+            super::super::replay_affected_ids(ctx, std::slice::from_ref(&row))
+        })
+        .expect_err("one replay record needs a fourth item"),
+        "creo replay affected-id records",
+    );
+    assert_eq!(
+        run(&row.body, 4, u64::MAX, |ctx| {
+            super::super::replay_affected_ids(ctx, std::slice::from_ref(&row))
+        })
+        .expect("one replay record admitted")
+        .len(),
+        1
+    );
+}
+
+#[test]
+fn surface_merge_extent_state_refuses_before_btree_insertion() {
+    let row = super::surface_merge_row(1, 40, &[]);
+    item(
+        run(&row.body, 0, u64::MAX, |ctx| {
+            super::super::surface_merge_replay_affected_ids(ctx, std::slice::from_ref(&row), &[])
+        })
+        .expect_err("one surface merge state needs one item"),
+        "creo surface merge extent states",
+    );
+}
+
+#[test]
+fn surface_merge_nested_arrays_refuse_before_each_vec_growth() {
+    let row = super::surface_merge_row(
+        1,
+        40,
+        &[
+            0xf8, 1, 10, 0xf8, 1, 20, 0xf0, 0xf7, 0x80, 0x99, 0xf8, 1, 30,
+        ],
+    );
+    for admitted in 0..4 {
+        item(
+            run(&row.body, admitted, u64::MAX, |ctx| {
+                super::super::positional_surface_merge_affected_ids(ctx, &row, [None; 3])
+                    .transpose()?
+                    .ok_or_else(|| CodecError::malformed("surface merge arrays"))
+            })
+            .expect_err("one of four nested arrays needs another item"),
+            "creo replay affected ids",
+        );
+    }
+    assert!(run(&row.body, 4, u64::MAX, |ctx| {
+        super::super::positional_surface_merge_affected_ids(ctx, &row, [None; 3])
+            .transpose()?
+            .ok_or_else(|| CodecError::malformed("surface merge arrays"))
+    })
+    .is_ok());
+}
+
+#[test]
+fn surface_merge_record_refuses_before_vec_growth() {
+    let row = super::surface_merge_row(
+        1,
+        40,
+        &[
+            0xf8, 1, 10, 0xf8, 1, 20, 0xf0, 0xf7, 0x80, 0x99, 0xf8, 1, 30,
+        ],
+    );
+    item(
+        run(&row.body, 5, u64::MAX, |ctx| {
+            super::super::surface_merge_replay_affected_ids(ctx, std::slice::from_ref(&row), &[])
+        })
+        .expect_err("one surface merge record needs another item"),
+        "creo surface merge affected-id records",
+    );
+    assert_eq!(
+        run(&row.body, 6, u64::MAX, |ctx| {
+            super::super::surface_merge_replay_affected_ids(ctx, std::slice::from_ref(&row), &[])
+        })
+        .expect("one surface merge record admitted")
+        .len(),
+        1
+    );
+}
