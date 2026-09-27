@@ -9,12 +9,15 @@ use crate::records::feature::body_ops::DesignCopyPasteBodiesOperation;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
+use cadmpeg_core::CodecError;
 
 pub(super) fn exact_copy_paste_bodies_operation(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<DesignCopyPasteBodiesOperation> {
+) -> Result<Option<DesignCopyPasteBodiesOperation>, CodecError> {
+    let parsed = (|| -> Option<Result<DesignCopyPasteBodiesOperation, CodecError>> {
     if scope.kind() != scope::DesignFeatureKind::CopyPasteBodies
         || scope.reference_members().len() < 2
     {
@@ -41,7 +44,15 @@ pub(super) fn exact_copy_paste_bodies_operation(
     if body_group_count != scope.reference_members().len().checked_sub(1)? {
         return None;
     }
-    let mut operands = Vec::with_capacity(body_group_count);
+    let operand_count = u64::try_from(body_group_count).ok()?;
+    let operation = "parse F3D copied body operands";
+    if let Err(error) = ctx.charge_collection_items(operand_count, operation) {
+        return Some(Err(error));
+    }
+    let mut operands = Vec::new();
+    if operands.try_reserve(body_group_count).is_err() {
+        return Some(Err(ctx.refuse_codec_limit(operation, 0, operand_count)));
+    }
     let mut body_group_cursor = body_group_count_at.checked_add(4)?;
     for expected in scope.reference_members().values().skip(1) {
         let actual = marked_record_reference(bytes, body_group_cursor)?;
@@ -70,7 +81,15 @@ pub(super) fn exact_copy_paste_bodies_operation(
     if reference_count != body_count.checked_mul(2)? {
         return None;
     }
-    let mut bodies = Vec::with_capacity(body_count);
+    let body_count_u64 = u64::try_from(body_count).ok()?;
+    let operation = "parse F3D copied bodies";
+    if let Err(error) = ctx.charge_collection_items(body_count_u64, operation) {
+        return Some(Err(error));
+    }
+    let mut bodies = Vec::new();
+    if bodies.try_reserve(body_count).is_err() {
+        return Some(Err(ctx.refuse_codec_limit(operation, 0, body_count_u64)));
+    }
     let references_at = count_at.checked_add(5)?;
     let body_reference = |at: usize, trailing_zeros: usize| {
         if bytes.get(at) != Some(&1)
@@ -98,7 +117,8 @@ pub(super) fn exact_copy_paste_bodies_operation(
             },
         });
     }
-    DesignCopyPasteBodiesOperation::try_new(
+    Some(DesignCopyPasteBodiesOperation::try_new_charged(
+        ctx,
         bodies,
         body_group_record_index,
         body_group_class_tag.try_into().ok()?,
@@ -106,6 +126,10 @@ pub(super) fn exact_copy_paste_bodies_operation(
         relation_record_index,
         relation_class_tag.try_into().ok()?,
         u64::try_from(relation_at).ok()?,
-    )
-    .ok()
+    ))
+    })();
+    match parsed.transpose() {
+        Err(CodecError::Malformed(_)) => Ok(None),
+        result => result,
+    }
 }

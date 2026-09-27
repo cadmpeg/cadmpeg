@@ -288,12 +288,23 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             draft.layout_fixture_tail();
         })
         .unwrap();
+    let operation_arena = cadmpeg_core::decode::DecodeArena::new();
+    let operation_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let operation_ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &operation_bytes,
+        &operation_arena,
+        &operation_policy,
+    )
+    .expect("operation decode context")
+    .0;
     let operation =
         crate::design::decode::scopes::copy_paste_bodies::exact_copy_paste_bodies_operation(
+            &operation_ctx,
             &operation_bytes,
             &IndexedRecordOffsets::build(&operation_bytes),
             &operation_scope,
         )
+        .expect("operation decode resources")
         .expect("single-body CopyPasteBodies relation");
     assert_eq!(operation.body_group_record_index, 55);
     assert_eq!(operation.body_group_byte_offset(), body_group_at as u64);

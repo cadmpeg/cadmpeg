@@ -4,6 +4,8 @@
 use crate::records::identity::Located;
 use crate::records::references::DesignClassTag;
 use crate::records::serde_column::SliceColumn;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use serde::{Deserialize, Serialize};
 
@@ -208,6 +210,17 @@ impl Serialize for DesignCopyPasteBodiesOperation {
     }
 }
 
+enum CopyPasteBodiesError {
+    Payload(String),
+    Resource(CodecError),
+}
+
+impl From<&'static str> for CopyPasteBodiesError {
+    fn from(message: &'static str) -> Self {
+        Self::Payload(message.into())
+    }
+}
+
 impl DesignCopyPasteBodiesOperation {
     pub(crate) fn try_new(
         bodies: Vec<DesignCopiedBody>,
@@ -218,6 +231,46 @@ impl DesignCopyPasteBodiesOperation {
         relation_class_tag: DesignClassTag,
         relation_byte_offset: u64,
     ) -> Result<Self, String> {
+        Self::try_new_inner(
+            None, bodies, body_group_record_index, body_group_class_tag,
+            body_group_byte_offset, relation_record_index, relation_class_tag,
+            relation_byte_offset,
+        ).map_err(|error| match error {
+            CopyPasteBodiesError::Payload(message) => message,
+            CopyPasteBodiesError::Resource(error) => error.to_string(),
+        })
+    }
+
+    pub(crate) fn try_new_charged(
+        ctx: &DecodeContext<'_>,
+        bodies: Vec<DesignCopiedBody>,
+        body_group_record_index: u32,
+        body_group_class_tag: DesignClassTag,
+        body_group_byte_offset: u64,
+        relation_record_index: u32,
+        relation_class_tag: DesignClassTag,
+        relation_byte_offset: u64,
+    ) -> Result<Self, CodecError> {
+        Self::try_new_inner(
+            Some(ctx), bodies, body_group_record_index, body_group_class_tag,
+            body_group_byte_offset, relation_record_index, relation_class_tag,
+            relation_byte_offset,
+        ).map_err(|error| match error {
+            CopyPasteBodiesError::Payload(message) => CodecError::Malformed(message),
+            CopyPasteBodiesError::Resource(error) => error,
+        })
+    }
+
+    fn try_new_inner(
+        ctx: Option<&DecodeContext<'_>>,
+        bodies: Vec<DesignCopiedBody>,
+        body_group_record_index: u32,
+        body_group_class_tag: DesignClassTag,
+        body_group_byte_offset: u64,
+        relation_record_index: u32,
+        relation_class_tag: DesignClassTag,
+        relation_byte_offset: u64,
+    ) -> Result<Self, CopyPasteBodiesError> {
         if bodies.is_empty() {
             return Err("bodies must not be empty".into());
         }
@@ -225,8 +278,19 @@ impl DesignCopyPasteBodiesOperation {
         let mut operand_offset = body_group_byte_offset.saturating_add(26);
         let mut source_offset = relation_byte_offset.saturating_add(25);
         for body in &bodies {
-            if !suffixes.insert(body.source.value) || !suffixes.insert(body.copied.value) {
-                return Err("source and copied body suffixes must be pairwise distinct".into());
+            for suffix in [body.source.value, body.copied.value] {
+                if suffixes.contains(&suffix) {
+                    return Err("source and copied body suffixes must be pairwise distinct".into());
+                }
+                if let Some(ctx) = ctx {
+                    let operation = "index F3D copied body suffixes";
+                    ctx.charge_collection_items(1, operation)
+                        .map_err(CopyPasteBodiesError::Resource)?;
+                    suffixes.try_reserve(1).map_err(|_| {
+                        CopyPasteBodiesError::Resource(ctx.refuse_codec_limit(operation, 0, 1))
+                    })?;
+                }
+                suffixes.insert(suffix);
             }
             if body.operand.offset != operand_offset
                 || body.source.offset != source_offset
