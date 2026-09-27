@@ -1264,9 +1264,8 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             return Err(malformed(name, "selected grip is out of range or deleted"));
         }
     }
-    let symmetry_blocks = symmetry_blocks
-        .into_iter()
-        .map(|block| {
+    let mut typed_symmetry_blocks = Vec::new();
+    for block in symmetry_blocks {
             let plane = block
                 .plane
                 .ok_or_else(|| malformed(name, "symmetry block has no plane"))?;
@@ -1338,9 +1337,8 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     }
                 }
             };
-            Ok(SymmetryBlock { plane, kind })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
+            push_charged(ctx, &mut typed_symmetry_blocks, SymmetryBlock { plane, kind }, "type T-spline symmetry blocks")?;
+    }
     let mut grip_owners =
         ctx.alloc_filled(grip_vertices.len(), None, "f3d subd secondary-grip owners")?;
     for connectivity in &derived_grips {
@@ -1418,33 +1416,32 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     let vertex_ir = compact(ctx, vertex_live.iter().copied())?;
     let edge_ir = compact(ctx, edge_roots.iter().map(Option::is_some))?;
     let face_ir = compact(ctx, face_roots.iter().map(Option::is_some))?;
-    let symmetries = symmetry_blocks
-        .iter()
-        .map(|block| {
+    let mut symmetries = Vec::new();
+    for block in typed_symmetry_blocks {
             let plane = symmetry_plane(name, block.plane)?;
-            let (kind, face_pairs, edge_pairs, vertex_pairs) = match &block.kind {
+            let (kind, face_pairs, edge_pairs, vertex_pairs) = match block.kind {
                 SymmetryKind::Correspondence { face, edge, vertex } => (
                     SubdSymmetryKind::Correspondence {},
-                    remap_symmetry_pairs(ctx, name, face, &face_ir, "face")?,
-                    remap_symmetry_pairs(ctx, name, edge, &edge_ir, "edge")?,
-                    remap_symmetry_pairs(ctx, name, vertex, &vertex_ir, "vertex")?,
+                    remap_symmetry_pairs(ctx, name, &face, &face_ir, "face")?,
+                    remap_symmetry_pairs(ctx, name, &edge, &edge_ir, "edge")?,
+                    remap_symmetry_pairs(ctx, name, &vertex, &vertex_ir, "vertex")?,
                 ),
                 SymmetryKind::Radial {
                     segments,
                     sweep,
                     maps,
                 } => (
-                    SubdSymmetryKind::radial_from_parts(*segments, *sweep, maps.clone())
+                    SubdSymmetryKind::radial_from_parts(segments, sweep, maps)
                         .map_err(|error| malformed(name, error))?,
                     Vec::new(),
                     Vec::new(),
                     Vec::new(),
                 ),
             };
-            SubdSymmetry::new(kind, plane, face_pairs, edge_pairs, vertex_pairs)
-                .map_err(|error| malformed(name, error))
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
+            let symmetry = SubdSymmetry::new(kind, plane, face_pairs, edge_pairs, vertex_pairs)
+                .map_err(|error| malformed(name, error))?;
+            push_charged(ctx, &mut symmetries, symmetry, "project T-spline symmetries")?;
+    }
     let edge_knot_intervals_ir = collect_charged(
         ctx,
         edge_knot_intervals.iter().copied().flatten(),
@@ -1761,6 +1758,20 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         )
     }
 
+    fn symmetry_quad_source() -> String {
+        format!(
+            "#TS0200\n{QUAD_TOPOLOGY}\
+             0m odd-grip-map\n0m gvp 0\n0m gvp 1\n0m gvp 2\n0m gvp 3\n0m gv 0\n\
+             0m cg 0 4 1 0 0 0 4\n\
+             0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n0g 0.5 0 0 1\n\
+             100edges 0 2\n100verts 1\n50000grip 0\n50000grip 1\n\
+             105sym 0\n105plane 0 2 0 1 0 1 0 0 0 0 1 0\n\
+             105a fr 0 0\n105a er 0 0 1 2\n105a e 2 1\n\
+             105a vr 0 1\n105a v 1 0\n\
+             tol 0.00001\nver 6021\nbehavior-version 6.5.0\n"
+        )
+    }
+
     fn refusal_at_operation(source: &str, operation: &str) -> cadmpeg_core::CodecError {
         for limit in 0..512 {
             let error = parse_small_limit(source, limit, u64::MAX);
@@ -1794,6 +1805,8 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
     tsm_quad_projection_limit_test!(tsm_creased_edge_index_refuses_collection_limit, quad_source(), "index T-spline creased edges");
     tsm_quad_projection_limit_test!(tsm_edge_projection_refuses_collection_limit, quad_source(), "project T-spline edges");
     tsm_quad_projection_limit_test!(tsm_derived_wedges_refuse_collection_limit, derived_quad_source(), "project T-spline grip wedges");
+    tsm_quad_projection_limit_test!(tsm_typed_symmetry_refuses_collection_limit, symmetry_quad_source(), "type T-spline symmetry blocks");
+    tsm_quad_projection_limit_test!(tsm_projected_symmetry_refuses_collection_limit, symmetry_quad_source(), "project T-spline symmetries");
 
     fn fan_limit(items: u64) -> cadmpeg_core::CodecError {
         let mut policy = DecodePolicy::service();
