@@ -65,6 +65,30 @@ fn copy_incidence_degree_rows(
     Ok(copy)
 }
 
+fn copy_incidence_edge_rows(
+    ctx: &DecodeContext<'_>,
+    rows: &[EdgeRow],
+) -> Result<Vec<EdgeRow>, CodecError> {
+    let mut copy = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut copy, rows.len(), "catia_incidence_edge_copy_rows")?;
+    for row in rows {
+        copy.push(row.clone_charged(ctx)?);
+    }
+    Ok(copy)
+}
+
+fn singleton_incidence_pairs(
+    ctx: &DecodeContext<'_>,
+    pairs: &[[usize; 2]],
+) -> Result<Vec<Vec<[usize; 2]>>, CodecError> {
+    let mut singleton = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut singleton, pairs.len(), "catia_incidence_singleton_rows")?;
+    for &pair in pairs {
+        singleton.push(ctx.alloc_filled(1, pair, "catia_incidence_singleton_pair")?);
+    }
+    Ok(singleton)
+}
+
 fn prune_incidence_choices(
     ctx: &DecodeContext<'_>,
     choices: &mut [Vec<[usize; 2]>],
@@ -162,15 +186,9 @@ fn prune_incidence_choices_with_explicit_support(
         edge: usize,
         retained: HashSet<usize>,
     ) -> Result<Option<()>, CodecError> {
-        charge_collection_items(
-            ctx,
-            edge_supports[edge].difference(&retained).count(),
-            "catia incidence removed support points",
-        )?;
-        let removed = edge_supports[edge]
-            .difference(&retained)
-            .copied()
-            .collect::<Vec<_>>();
+        let mut removed = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut removed, edge_supports[edge].difference(&retained).count(), "catia incidence removed support points")?;
+        removed.extend(edge_supports[edge].difference(&retained).copied());
         for face in unique_faces(edge_faces[edge]) {
             for &point in &removed {
                 let Some(count) = supports[face].get_mut(&point) else {
@@ -940,6 +958,12 @@ struct FaceFactorCheckpoint {
     active: Vec<Vec<u64>>,
 }
 
+enum FaceFactorRefinement {
+    Rejected,
+    Untracked,
+    Tracked(FaceFactorCheckpoint),
+}
+
 struct FaceConfigurationDomain {
     width: usize,
     face: usize,
@@ -1126,15 +1150,12 @@ impl FaceFactorGraph {
     }
 
     fn full_state(&self, ctx: &DecodeContext<'_>) -> Result<Vec<Vec<u64>>, CodecError> {
-        charge_collection_items(
-            ctx,
-            self.domain_lengths.len(),
-            "catia face factor active rows",
-        )?;
-        self.domain_lengths
-            .iter()
-            .map(|length| full_configuration_mask(ctx, *length))
-            .collect()
+        let mut rows = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut rows, self.domain_lengths.len(), "catia face factor active rows")?;
+        for &length in &self.domain_lengths {
+            rows.push(full_configuration_mask(ctx, length)?);
+        }
+        Ok(rows)
     }
 
     fn propagate(
@@ -1146,8 +1167,7 @@ impl FaceFactorGraph {
     ) -> Result<Option<bool>, CodecError> {
         let mut queue = VecDeque::new();
         for arc in initial {
-            charge_collection_items(ctx, 1, "catia face factor propagation queue")?;
-            queue.push_back(arc);
+            crate::resource::push_back(ctx, &mut queue, arc, "catia face factor propagation queue")?;
         }
         while let Some(arc_index) = queue.pop_front() {
             let arc = &self.arcs[arc_index];
@@ -1177,8 +1197,7 @@ impl FaceFactorGraph {
                 return Ok(Some(false));
             }
             for &incoming in &self.incoming[arc.left] {
-                charge_collection_items(ctx, 1, "catia face factor propagation queue")?;
-                queue.push_back(incoming);
+                crate::resource::push_back(ctx, &mut queue, incoming, "catia face factor propagation queue")?;
             }
         }
         Ok(Some(true))
@@ -1212,13 +1231,14 @@ impl PreparedFaceFactors {
 
     fn refine_edges(
         &mut self,
+        ctx: &DecodeContext<'_>,
         assigned: &[(usize, [usize; 2])],
-    ) -> Result<Option<FaceFactorCheckpoint>, ()> {
+    ) -> Result<FaceFactorRefinement, CodecError> {
         let Some(active) = &mut self.active else {
-            return Ok(None);
+            return Ok(FaceFactorRefinement::Untracked);
         };
         let checkpoint = FaceFactorCheckpoint {
-            active: active.clone(),
+            active: crate::resource::copy_retained_rows(ctx, active, "catia_face_factor_checkpoint_rows", "catia_face_factor_checkpoint_words")?,
         };
         for &(edge, pair) in assigned {
             let Some(factors) = self.factors_by_edge.get(edge) else {
@@ -1227,8 +1247,8 @@ impl PreparedFaceFactors {
             for &factor in factors {
                 let face = self.factor_faces[factor];
                 let Some(configurations) = self.domains.get(face).and_then(Option::as_ref) else {
-                    active.clone_from(&checkpoint.active);
-                    return Err(());
+                    self.active = Some(checkpoint.active);
+                    return Ok(FaceFactorRefinement::Rejected);
                 };
                 for (configuration, pairs) in configurations.iter().enumerate() {
                     if !configuration_mask_contains(&active[factor], configuration)
@@ -1242,21 +1262,17 @@ impl PreparedFaceFactors {
                         !(1 << (configuration % u64::BITS as usize));
                 }
                 if active[factor].iter().all(|word| *word == 0) {
-                    active.clone_from(&checkpoint.active);
-                    return Err(());
+                    self.active = Some(checkpoint.active);
+                    return Ok(FaceFactorRefinement::Rejected);
                 }
             }
         }
-        Ok(Some(checkpoint))
-    }
-
-    fn restore_checkpoint(&mut self, checkpoint: &FaceFactorCheckpoint) {
-        self.active = Some(checkpoint.active.clone());
+        Ok(FaceFactorRefinement::Tracked(checkpoint))
     }
 
     fn restore(&mut self, checkpoint: Option<FaceFactorCheckpoint>) {
         if let Some(checkpoint) = checkpoint {
-            self.restore_checkpoint(&checkpoint);
+            self.active = Some(checkpoint.active);
         }
     }
 
@@ -2439,12 +2455,14 @@ impl IncidenceComponentSearch<'_, '_> {
         face: usize,
         point: usize,
         witness: (usize, [usize; 2]),
-    ) {
+    ) -> Result<(), CodecError> {
         let mut witnesses = self.degree_support_witnesses.borrow_mut();
+        crate::resource::admit_map_entry(self.ctx, &mut witnesses, &(face, point), "catia_incidence_witness_keys")?;
         let entry = witnesses.entry((face, point)).or_default();
         if !entry.contains(&witness) {
-            entry.push(witness);
+            crate::resource::push(self.ctx, entry, witness, "catia_incidence_witness_pairs")?;
         }
+        Ok(())
     }
 
     fn degree_candidate_fits(&self, edge: usize, pair: [usize; 2]) -> bool {
@@ -2489,7 +2507,7 @@ impl IncidenceComponentSearch<'_, '_> {
         faces: &[usize],
         selected: Option<(usize, [usize; 2])>,
         coordinate_domains: Option<&MeshCoordinateRootDomains>,
-    ) -> bool {
+    ) -> Result<bool, CodecError> {
         let selected_degree = |face: usize, point: usize| {
             selected.map_or(0, |(edge, pair)| {
                 let selected_faces = self.edge_faces[edge];
@@ -2522,7 +2540,7 @@ impl IncidenceComponentSearch<'_, '_> {
             })
         };
 
-        faces.iter().copied().all(|face| {
+        for &face in faces {
             let start = self
                 .constraints
                 .partition_point(|&(constraint_face, _)| constraint_face < face);
@@ -2530,15 +2548,9 @@ impl IncidenceComponentSearch<'_, '_> {
                 .partition_point(|&(constraint_face, _)| constraint_face == face)
                 + start;
             let constrained_points = &self.constraints[start..end];
-            let support_exists = |point| {
-                let witnesses = {
-                    self.degree_support_witnesses
-                        .borrow()
-                        .get(&(face, point))
-                        .cloned()
-                        .unwrap_or_default()
-                };
-                for (supporting_edge, supporting_pair) in witnesses.into_iter().rev() {
+            let support_exists = |point| -> Result<bool, CodecError> {
+                let witnesses = self.degree_support_witnesses.borrow();
+                for &(supporting_edge, supporting_pair) in witnesses.get(&(face, point)).into_iter().flatten().rev() {
                     let candidate_still_available = self.choices[supporting_edge]
                         .contains(&supporting_pair)
                         || coordinate_domains
@@ -2547,7 +2559,7 @@ impl IncidenceComponentSearch<'_, '_> {
                                 domains.supports_edge_candidate(supporting_edge, supporting_pair)
                             });
                     if !self.degree_support_budget.charge() {
-                        return true;
+                        return Ok(true);
                     }
                     if selected.is_none_or(|(edge, _)| supporting_edge != edge)
                         && self.active[supporting_edge]
@@ -2556,9 +2568,10 @@ impl IncidenceComponentSearch<'_, '_> {
                         && supporting_point_fits(supporting_edge, point)
                         && supporting_pair_fits(supporting_edge, supporting_pair)
                     {
-                        return true;
+                        return Ok(true);
                     }
                 }
+                drop(witnesses);
                 let indexed_edges = self
                     .point_support_edges
                     .get(face)
@@ -2567,7 +2580,7 @@ impl IncidenceComponentSearch<'_, '_> {
                     indexed_edges.map_or(self.face_edges[face].as_slice(), Vec::as_slice);
                 for &supporting_edge in supporting_edges {
                     if !self.degree_support_budget.charge() {
-                        return true;
+                        return Ok(true);
                     }
                     if selected.is_some_and(|(edge, _)| supporting_edge == edge)
                         || !self.active[supporting_edge]
@@ -2592,35 +2605,38 @@ impl IncidenceComponentSearch<'_, '_> {
                                 face,
                                 point,
                                 (supporting_edge, witness),
-                            );
-                            return true;
+                            )?;
+                            return Ok(true);
                         }
                         if self.degree_support_budget.exhausted() {
-                            return true;
+                            return Ok(true);
                         }
                         continue;
                     }
                     for supporting_pair in self.candidate_pairs(supporting_edge, Some(point), None)
                     {
                         if !self.degree_support_budget.charge() {
-                            return true;
+                            return Ok(true);
                         }
                         if supporting_pair.contains(&point) && fits(supporting_pair) {
                             self.remember_degree_support_witness(
                                 face,
                                 point,
                                 (supporting_edge, supporting_pair),
-                            );
-                            return true;
+                            )?;
+                            return Ok(true);
                         }
                     }
                 }
-                false
+                Ok(false)
             };
-            constrained_points.iter().all(|&(_, point)| {
-                degree_after_selection(face, point) != 1 || support_exists(point)
-            })
-        })
+            for &(_, point) in constrained_points {
+                if degree_after_selection(face, point) == 1 && !support_exists(point)? {
+                    return Ok(false);
+                }
+            }
+        }
+        Ok(true)
     }
 
     fn degree_support_preserved(
@@ -2628,12 +2644,11 @@ impl IncidenceComponentSearch<'_, '_> {
         edge: usize,
         pair: [usize; 2],
         coordinate_domains: Option<&MeshCoordinateRootDomains>,
-    ) -> bool {
-        let mut faces = self.edge_faces[edge].to_vec();
+    ) -> Result<bool, CodecError> {
+        let mut faces = self.edge_faces[edge];
         faces.sort_unstable();
-        faces.dedup();
-        let preserved =
-            self.degree_frontiers_supported(&faces, Some((edge, pair)), coordinate_domains);
+        let length = if faces[0] == faces[1] { 1 } else { 2 };
+        let preserved = self.degree_frontiers_supported(&faces[..length], Some((edge, pair)), coordinate_domains)?;
         #[cfg(test)]
         if !self.degree_support_budget.exhausted() {
             assert_eq!(
@@ -2641,7 +2656,7 @@ impl IncidenceComponentSearch<'_, '_> {
                 self.degree_support_preserved_by_constraint_scan(edge, pair, coordinate_domains)
             );
         }
-        preserved
+        Ok(preserved)
     }
 
     #[cfg(test)]
@@ -2724,10 +2739,10 @@ impl IncidenceComponentSearch<'_, '_> {
         coordinate_domains: Option<&MeshCoordinateRootDomains>,
     ) -> Result<bool, CodecError> {
         if let Some(mesh_assignments) = self.mesh_assignments {
-            let mut faces = self.edge_faces[edge].to_vec();
+            let mut faces = self.edge_faces[edge];
             faces.sort_unstable();
-            faces.dedup();
-            for face in faces {
+            let length = if faces[0] == faces[1] { 1 } else { 2 };
+            for &face in &faces[..length] {
                 let Some(domain) = mesh_assignments.get(face) else {
                     return Ok(false);
                 };
@@ -2802,7 +2817,7 @@ impl IncidenceComponentSearch<'_, '_> {
         if !self.degree_candidate_fits(edge, pair) {
             return Ok(false);
         }
-        if !self.degree_support_preserved(edge, pair, coordinate_domains) {
+        if !self.degree_support_preserved(edge, pair, coordinate_domains)? {
             return Ok(false);
         }
         Ok(true)
@@ -3018,7 +3033,11 @@ impl IncidenceComponentSearch<'_, '_> {
         let Some(mesh_assignments) = self.mesh_assignments else {
             return Ok(Some(quotient_states));
         };
-        let mut faces = faces.into_iter().collect::<Vec<_>>();
+        let mut faces_collection = Vec::new();
+        for face in faces {
+            crate::resource::push(self.ctx, &mut faces_collection, face, "catia_incidence_advanced_faces")?;
+        }
+        let mut faces = faces_collection;
         faces.sort_unstable();
         faces.dedup();
         for &face in &faces {
@@ -3342,7 +3361,7 @@ impl IncidenceComponentSearch<'_, '_> {
             &affected_faces,
             None,
             next_coordinate_domains.as_deref(),
-        ) {
+        )? {
             if self.budget.exhausted() {
                 self.state = IncidenceSearchState::Exhausted;
             }
@@ -3353,9 +3372,10 @@ impl IncidenceComponentSearch<'_, '_> {
         crate::resource::reserve_vec(self.ctx, &mut assigned_pairs, assigned.len(), "catia face factor assigned pairs")?;
         assigned_pairs.extend(assigned.iter().map(|(edge, pair, _)| (*edge, *pair)));
         let factor_checkpoint = match &mut self.face_configuration_domains {
-            Some(factors) => match factors.refine_edges(&assigned_pairs) {
-                Ok(checkpoint) => checkpoint,
-                Err(()) => {
+            Some(factors) => match factors.refine_edges(self.ctx, &assigned_pairs)? {
+                FaceFactorRefinement::Tracked(checkpoint) => Some(checkpoint),
+                FaceFactorRefinement::Untracked => None,
+                FaceFactorRefinement::Rejected => {
                     self.rollback_face_configuration(assigned);
                     return Ok(None);
                 }
@@ -3585,9 +3605,10 @@ impl IncidenceComponentSearch<'_, '_> {
             let undo = self.adjust(edge, pair)?;
             self.assignment[edge] = Some(pair);
             let factor_checkpoint = match &mut self.face_configuration_domains {
-                Some(factors) => match factors.refine_edges(&[(edge, pair)]) {
-                    Ok(checkpoint) => checkpoint,
-                    Err(()) => {
+                Some(factors) => match factors.refine_edges(self.ctx, &[(edge, pair)])? {
+                    FaceFactorRefinement::Tracked(checkpoint) => Some(checkpoint),
+                    FaceFactorRefinement::Untracked => None,
+                    FaceFactorRefinement::Rejected => {
                         self.assignment[edge] = None;
                         self.restore_adjustment(undo);
                         continue;
@@ -3595,15 +3616,12 @@ impl IncidenceComponentSearch<'_, '_> {
                 },
                 None => None,
             };
-            let mut faces = self.edge_faces[edge].to_vec();
-            faces.sort_unstable();
-            faces.dedup();
             if self
                 .partial_solution_filter
                 .is_none_or(|constraint| (constraint.valid)(&self.assignment))
             {
                 if let Some(next_states) =
-                    self.advance_ordered_faces(faces, copy_quotient_states(self.ctx, quotient_states)?)?
+                    self.advance_ordered_faces(self.edge_faces[edge], copy_quotient_states(self.ctx, quotient_states)?)?
                 {
                     self.search_with_quotient(
                         &next_states,
@@ -4559,11 +4577,7 @@ where
                 return Ok(ControlFlow::Continue(()));
             }
             if let Some(quotient) = mesh_quotient {
-                let mut singleton = Vec::new();
-                crate::resource::reserve_vec(ctx, &mut singleton, pairs.len(), "catia_incidence_singleton_rows")?;
-                for &pair in &pairs {
-                    singleton.push(ctx.alloc_filled(1, pair, "catia_incidence_singleton_pair")?);
-                }
+                let singleton = singleton_incidence_pairs(ctx, &pairs)?;
                 let mut quotient = quotient.clone_charged(ctx)?;
                 let Some(domains) = mesh_assignments else {
                     if !quotient.point_assignment_exists(
@@ -4914,21 +4928,24 @@ where
         }
         if components.is_empty() {
             rejection = IncidenceRejection::FixedAssignment;
-            let Some(pairs) = fixed.into_iter().collect::<Option<Vec<_>>>() else {
+            if fixed.iter().any(Option::is_none) {
                 return Ok(None);
-            };
+            }
+            let mut pairs = Vec::new();
+            crate::resource::reserve_vec(ctx, &mut pairs, fixed.len(), "catia_incidence_fixed_pairs")?;
+            for pair in &fixed {
+                if let Some(pair) = pair {
+                    pairs.push(*pair);
+                }
+            }
             let boundary_closed = boundary_domains_close(ctx, mesh_assignments, &pairs)?;
             let solution_valid = solution_valid(&pairs)?;
             if !boundary_closed || !solution_valid {
                 return Ok(None);
             }
             if let Some(quotient) = mesh_quotient {
-                let singleton = pairs
-                    .iter()
-                    .copied()
-                    .map(|pair| vec![pair])
-                    .collect::<Vec<_>>();
-                let mut quotient = quotient.clone();
+                let singleton = singleton_incidence_pairs(ctx, &pairs)?;
+                let mut quotient = quotient.clone_charged(ctx)?;
                 let Some(closure_limit) =
                     quotient.coordinate_domain_preparation_limit(point_count, &singleton)
                 else {
@@ -5001,18 +5018,20 @@ where
             let mut found = false;
             let mut accept_first =
                 |solution: &[MeshEndpointPair]| -> Result<ControlFlow<()>, CodecError> {
-                    let mut completed = fixed.clone();
+                    let mut completed = crate::resource::copy_slice(ctx, &fixed, "catia_incidence_preflight_assignment")?;
                     for &(edge, pair) in solution {
                         completed[edge] = Some(pair);
                     }
                     let coordinate_feasible = if let Some(domains) = coordinate_domains.as_ref() {
-                        let candidates = completed
-                            .iter()
-                            .enumerate()
-                            .map(|(edge, pair)| {
-                                pair.map_or_else(|| choices[edge].clone(), |pair| vec![pair])
-                            })
-                            .collect::<Vec<_>>();
+                        let mut candidates = Vec::new();
+                        crate::resource::reserve_vec(ctx, &mut candidates, completed.len(), "catia_incidence_preflight_candidate_rows")?;
+                        for (edge, pair) in completed.iter().enumerate() {
+                            candidates.push(if let Some(pair) = pair {
+                                ctx.alloc_filled(1, *pair, "catia_incidence_preflight_fixed_candidate")?
+                            } else {
+                                crate::resource::copy_slice(ctx, &choices[edge], "catia_incidence_preflight_open_candidates")?
+                            });
+                        }
                         domains
                             .refine_candidates(
                                 ctx,
@@ -5167,20 +5186,30 @@ pub(crate) fn reconstruct_incidence_candidates(
             assignment_count += 1;
             let oriented;
             let pairs = if let Some(ports) = edge_ports {
+                let mut selected_pairs = Vec::new();
+                crate::resource::reserve_vec(ctx, &mut selected_pairs, pairs.len(), "catia_incidence_port_selected_pairs")?;
+                selected_pairs.extend(pairs.iter().copied().map(Some));
                 let Some(propagated) = propagate_edge_port_points(
                     ctx,
                     ports,
-                    &pairs.iter().copied().map(Some).collect::<Vec<_>>(),
+                    &selected_pairs,
                 )?
                 else {
                     invalid = true;
                     return Ok(ControlFlow::Break(()));
                 };
-                let Some(pairs) = propagated.into_iter().collect::<Option<Vec<_>>>() else {
+                if propagated.iter().any(Option::is_none) {
                     invalid = true;
                     return Ok(ControlFlow::Break(()));
-                };
-                oriented = pairs;
+                }
+                let mut completed = Vec::new();
+                crate::resource::reserve_vec(ctx, &mut completed, propagated.len(), "catia_incidence_port_completed_pairs")?;
+                for pair in propagated {
+                    if let Some(pair) = pair {
+                        completed.push(pair);
+                    }
+                }
+                oriented = completed;
                 oriented.as_slice()
             } else {
                 pairs
@@ -5192,7 +5221,7 @@ pub(crate) fn reconstruct_incidence_candidates(
                 }
                 return Ok(ControlFlow::Continue(()));
             }
-            solution_pairs = Some(pairs.to_vec());
+            solution_pairs = Some(crate::resource::copy_retained_slice(ctx, pairs, "catia_incidence_solution_pairs")?);
             Ok(ControlFlow::Continue(()))
         },
     )?;
@@ -5204,8 +5233,8 @@ pub(crate) fn reconstruct_incidence_candidates(
     };
     reconstruct_incidence(
         ctx,
-        edge_rows.to_vec(),
-        vertex_points.to_vec(),
+        copy_incidence_edge_rows(ctx, edge_rows)?,
+        crate::resource::copy_retained_slice(ctx, vertex_points, "catia_incidence_vertex_points")?,
         edge_faces,
         &solution_pairs,
         face_count,
@@ -5268,11 +5297,7 @@ where
     F: Fn(&[[usize; 2]]) -> Result<bool, CodecError>,
     V: FnMut(&[[usize; 2]]) -> Result<ControlFlow<()>, CodecError>,
 {
-    charge_collection_items(ctx, edge_candidates.len(), "catia incidence choice rows")?;
-    for candidates in edge_candidates {
-        charge_collection_items(ctx, candidates.len(), "catia incidence choice pairs")?;
-    }
-    let mut choices = edge_candidates.to_vec();
+    let mut choices = crate::resource::copy_retained_rows(ctx, edge_candidates, "catia incidence choice rows", "catia incidence choice pairs")?;
     for candidates in &mut choices {
         for pair in candidates.iter_mut() {
             pair.sort_unstable();
@@ -5321,8 +5346,8 @@ where
         }
         Ok(reconstruct_incidence(
             ctx,
-            edge_rows.to_vec(),
-            vertex_points.to_vec(),
+            copy_incidence_edge_rows(ctx, edge_rows)?,
+            crate::resource::copy_retained_slice(ctx, vertex_points, "catia_incidence_validation_points")?,
             edge_faces,
             points,
             face_count,

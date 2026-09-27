@@ -20,6 +20,41 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
+#[test]
+fn incidence_factor_checkpoint_refuses_nested_mask_copies() {
+    use crate::solve::incidence::{FaceFactorRefinement, PreparedFaceFactors};
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let mut factors = PreparedFaceFactors {
+            domains: Vec::new(),
+            factor_faces: Vec::new(),
+            factor_by_face: Vec::new(),
+            factors_by_edge: Vec::new(),
+            active: Some(vec![vec![1u64, 2u64]]),
+        };
+        factors.refine_edges(ctx, &[])
+    };
+    crate::test_support::with_service_context(|ctx| {
+        assert!(matches!(run(ctx).expect("service budget"), FaceFactorRefinement::Tracked(_)));
+    });
+    let mut refusals = BTreeSet::new();
+    for cap in 0..=4 {
+        match crate::test_support::with_collection_limit(cap, run) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                refusals.insert(limit.operation);
+            }
+            Ok(FaceFactorRefinement::Tracked(_)) => break,
+            _ => panic!("unexpected face factor checkpoint result"),
+        }
+    }
+    assert_eq!(
+        refusals,
+        BTreeSet::from(["catia_face_factor_checkpoint_rows", "catia_face_factor_checkpoint_words"])
+    );
+}
+
 fn sparse_degrees(faces: &[&[u8]]) -> Vec<BTreeMap<usize, u8>> {
     faces
         .iter()
@@ -496,6 +531,72 @@ fn incidence_component_caches_implicit_frontier_support() {
         *search.degree_support_witnesses.borrow(),
         HashMap::from([((0, 0), vec![(1, [0, 1])]), ((0, 1), vec![(1, [0, 1])]),])
     );
+}
+
+#[test]
+fn incidence_implicit_frontier_witness_refuses_map_and_pair_growth() {
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let choices = vec![vec![[0, 1]], Vec::new()];
+    let edge_faces = [[0, 0], [0, 0]];
+    let face_edges = vec![vec![0, 1]];
+    let coordinate_domains = crate::test_support::with_service_context(|ctx| {
+        let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+            ctx, &choices, 2, &[[0, 1], [0, 1]],
+        )
+        .expect("service budget")
+        .expect("initial quotient");
+        quotient.prepare_coordinate_root_domains(ctx, 2, &choices, None)
+            .expect("service budget")
+            .expect("coordinate domains")
+    });
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        let search = crate::solve::incidence::IncidenceComponentSearch {
+            ctx,
+            choices: &choices,
+            explicit_point_supports: Vec::new(),
+            point_support_edges: Vec::new(),
+            degree_support_witnesses: RefCell::new(HashMap::new()),
+            edge_faces: &edge_faces,
+            face_edges: &face_edges,
+            mesh_assignments: None,
+            face_configuration_domains: None,
+            coordinate_domains: Some(&coordinate_domains),
+            active: vec![true; 2],
+            edges: &[0, 1],
+            constraints: vec![(0, 0), (0, 1)],
+            assignment: vec![None; 2],
+            degrees: vec![BTreeMap::new()],
+            solutions: Vec::new(),
+            solution_filter: None,
+            solution_visitor: None,
+            partial_solution_filter: None,
+            dead_states: HashSet::new(),
+            budget: &budget,
+            degree_support_budget: &budget,
+            coordinate_propagation_budget: &budget,
+            boundary_propagation_budget: &budget,
+            state: IncidenceSearchState::Open,
+        };
+        search.candidate_fits(0, [0, 1])
+    };
+    crate::test_support::with_service_context(|ctx| {
+        assert!(run(ctx).expect("service budget"));
+    });
+    let mut refusals = BTreeSet::new();
+    for cap in 0..=128 {
+        match crate::test_support::with_collection_limit(cap, run) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                refusals.insert(limit.operation);
+            }
+            Ok(true) => break,
+            _ => panic!("unexpected implicit frontier result"),
+        }
+    }
+    assert!(refusals.contains("catia_incidence_witness_keys"));
+    assert!(refusals.contains("catia_incidence_witness_pairs"));
 }
 
 #[test]
