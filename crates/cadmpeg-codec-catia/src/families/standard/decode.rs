@@ -7804,57 +7804,44 @@ fn bind_standard_a5_owner_surfaces(
     if carriers.is_empty() || owners.is_empty() || ir.model.faces.is_empty() {
         return Ok(0);
     }
-    let owner_carriers = owners
-        .iter()
-        .map(|owner| {
-            carriers
-                .iter()
-                .enumerate()
-                .filter_map(|(carrier, value)| {
-                    owner_matches_a5_carrier(&owner.numeric_tail, &value.geometry)
-                        .then_some(carrier)
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
+    let mut owner_carriers = Vec::new();
+    for owner in &owners {
+        let matched = crate::resource::collect_vec(
+            ctx,
+            carriers.iter().enumerate().filter_map(|(carrier, value)| {
+                owner_matches_a5_carrier(&owner.numeric_tail, &value.geometry).then_some(carrier)
+            }),
+            "catia_a5_owner_carrier_indices",
+        )?;
+        crate::resource::push(ctx, &mut owner_carriers, matched, "catia_a5_owner_carrier_rows")?;
+    }
     let witnesses = standard_face_boundary_witnesses(ctx, ir)?;
-    let surface_indices = ir
-        .model
-        .surfaces
-        .iter()
-        .enumerate()
-        .map(|(index, surface)| (surface.id.clone(), index))
-        .collect::<HashMap<_, _>>();
-    let unknown_faces = ir
-        .model
-        .faces
-        .iter()
-        .enumerate()
-        .filter_map(|(face, value)| {
+    let mut surface_indices = HashMap::new();
+    for (index, surface) in ir.model.surfaces.iter().enumerate() {
+        crate::resource::insert_map(ctx, &mut surface_indices, surface.id.as_str(), index, "catia_a5_surface_indices")?;
+    }
+    let unknown_faces = crate::resource::collect_vec(ctx, ir.model.faces.iter().enumerate().filter_map(|(face, value)| {
             let ordinal = value
                 .id
                 .as_str()
                 .strip_prefix("catia:standard:face#")?
                 .parse::<usize>()
                 .ok()?;
-            let surface = *surface_indices.get(&value.surface)?;
+            let surface = *surface_indices.get(value.surface.as_str())?;
             matches!(
                 ir.model.surfaces[surface].geometry,
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
             )
             .then_some((face, ordinal, surface))
-        })
-        .collect::<Vec<_>>();
-    let mut face_edges = Vec::with_capacity(unknown_faces.len());
+        }), "catia_a5_unknown_face_rows")?;
+    let mut face_edges = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut face_edges, unknown_faces.len(), "catia_a5_face_edge_rows")?;
     for &(face, ordinal, _) in &unknown_faces {
         let Some(Some(bounds)) = face_bounds.get(ordinal) else {
             face_edges.push(Vec::new());
             continue;
         };
-        let containing_owners = owners
-            .iter()
-            .enumerate()
-            .filter_map(|(owner, value)| {
+        let containing_owners = crate::resource::collect_vec(ctx, owners.iter().enumerate().filter_map(|(owner, value)| {
                 (!owner_carriers[owner].is_empty()
                     && owner_contains_face_bounds(
                         value.reference_encoding,
@@ -7862,37 +7849,34 @@ fn bind_standard_a5_owner_surfaces(
                         *bounds,
                     ))
                 .then_some(owner)
-            })
-            .collect::<Vec<_>>();
-        let possible_carriers = containing_owners
-            .iter()
-            .flat_map(|owner| owner_carriers[*owner].iter().copied())
-            .collect::<HashSet<_>>();
-        let face_carriers = possible_carriers
-            .into_iter()
-            .filter(|carrier| {
-                let surface = &carriers[*carrier].geometry;
-                witnesses.get(face).is_some_and(|points| {
+            }), "catia_a5_containing_owner_indices")?;
+        let mut possible_carriers = HashSet::new();
+        for carrier in containing_owners.iter().flat_map(|owner| owner_carriers[*owner].iter().copied()) {
+            crate::resource::insert_set(ctx, &mut possible_carriers, carrier, "catia_a5_possible_carriers")?;
+        }
+        let mut face_carriers = HashSet::new();
+        for carrier in possible_carriers {
+                let surface = &carriers[carrier].geometry;
+                if witnesses.get(face).is_some_and(|points| {
                     points.len() >= 3
                         && points
                             .iter()
                             .all(|point| point_on_nurbs_surface(*point, surface) == Some(true))
-                })
-            })
-            .collect::<HashSet<_>>();
-        face_edges.push(
-            containing_owners
-                .into_iter()
-                .filter_map(|owner| {
-                    let labels = owner_carriers[owner]
-                        .iter()
-                        .filter(|carrier| face_carriers.contains(carrier))
-                        .copied()
-                        .collect::<Vec<_>>();
-                    (!labels.is_empty()).then_some((owner, labels))
-                })
-                .collect(),
-        );
+                }) {
+                    crate::resource::insert_set(ctx, &mut face_carriers, carrier, "catia_a5_face_carriers")?;
+                }
+        }
+        let mut edges = Vec::new();
+        for owner in containing_owners {
+            let labels = crate::resource::collect_vec(ctx, owner_carriers[owner]
+                .iter()
+                .filter(|carrier| face_carriers.contains(carrier))
+                .copied(), "catia_a5_face_carrier_labels")?;
+            if !labels.is_empty() {
+                crate::resource::push(ctx, &mut edges, (owner, labels), "catia_a5_face_owner_edges")?;
+            }
+        }
+        face_edges.push(edges);
     }
     let Some(bindings) =
         invariant_face_carrier_bindings(ctx, &face_edges, owners.len(), Some(budget))?
@@ -7905,7 +7889,7 @@ fn bind_standard_a5_owner_surfaces(
             continue;
         };
         ir.model.surfaces[surface].geometry = SurfaceGeometry::Solved(
-            SolvedSurfaceGeometry::Nurbs(carriers[carrier].geometry.clone()),
+            SolvedSurfaceGeometry::Nurbs(crate::resource::copy_nurbs_surface(ctx, &carriers[carrier].geometry, "catia_a5_bound_surface_copy")?),
         );
         annotations
             .derived(&ir.model.surfaces[surface].id, "geometry")

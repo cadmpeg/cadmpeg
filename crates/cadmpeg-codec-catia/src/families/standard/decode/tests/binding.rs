@@ -7,6 +7,7 @@ use crate::families::standard::decode::associate_standard_freeform_e5_rolling_ba
 use crate::families::standard::decode::associate_standard_freeform_e5_surfaces;
 use crate::families::standard::decode::standard_freeform_e5_carrier_ids;
 use crate::families::standard::decode::build_standard_edge_curve;
+use crate::families::standard::decode::bind_standard_a5_owner_surfaces;
 use crate::families::standard::decode::combine_propagated_endpoint_pairs;
 use crate::families::standard::decode::corroborate_successor_endpoint_points;
 use crate::families::standard::decode::emit_standard_topology;
@@ -37,6 +38,7 @@ use crate::families::standard::decode::unique_native_identity_points;
 use crate::families::standard::decode::witness_arc_end;
 use crate::families::standard::decode::StandardRollingBallSource;
 use crate::families::standard::decode::StandardSurfaceProcedure;
+use crate::families::standard::decode::StandardConsolidatedSource;
 use crate::families::standard::records::StandardCurveGeometry;
 use crate::families::standard::records::StandardCurveSupport;
 use crate::families::standard::records::StandardFaceBounds;
@@ -280,6 +282,65 @@ fn a5_face_witness_index_refuses_before_point_map_growth() {
     })
     .expect("service context admits witness index")
     .is_empty());
+}
+
+#[test]
+fn a5_owner_binding_refuses_before_carrier_row_growth() {
+    let mut bytes = crate::test_support::test_a5a8::a5_surface_stream();
+    bytes.extend(crate::test_support::test_b2::b2_all_compact_owner_packet_stream());
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert!(!crate::families::a5a8::records::a5_surfaces_from_records(
+        &bytes,
+        &records,
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .is_empty());
+    assert!(!crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records).is_empty());
+    let mut ir = CadIr::empty();
+    let surface_id = SurfaceId::mint("catia:standard:surface#a5-limit").expect("identity grammar");
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+        source_object: None,
+    });
+    ir.model.faces.push(Face {
+        id: FaceId::mint("catia:standard:face#0").expect("identity grammar"),
+        shell: ShellId::mint("catia:standard:shell#0").expect("identity grammar"),
+        surface: surface_id,
+        sense: Sense::Forward,
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+        name: None,
+        color: None,
+        tolerance: None,
+    });
+    let source = StandardConsolidatedSource { data: &bytes, records: &records };
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        bind_standard_a5_owner_surfaces(
+            ctx,
+            &mut ir.clone(),
+            &mut AnnotationBuilder::new(),
+            source,
+            &[],
+            &cadmpeg_core::decode::WorkBudget::new(100),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            bind_standard_a5_owner_surfaces(
+                ctx,
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                source,
+                &[],
+                &cadmpeg_core::decode::WorkBudget::new(100),
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        })
+        .expect("service context admits owner search"),
+        0
+    );
 }
 
 #[test]
