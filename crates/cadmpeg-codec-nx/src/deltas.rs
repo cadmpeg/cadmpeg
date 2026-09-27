@@ -456,7 +456,11 @@ const COMPOSITE_CURVE: &[Token] = &[
     Token::Ref,
 ];
 
-fn transmit_header(stream: &[u8]) -> Option<TransmitHeader> {
+fn transmit_header(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+) -> Result<Option<TransmitHeader>, CodecError> {
+    let Some((description_bytes, schema_bytes, references, end)) = (|| {
     (stream.get(..2) == Some(b"PS")).then_some(())?;
     let description_len = usize::try_from(View::u32_be_at(stream, 2)?).ok()?;
     let description_start = 6usize;
@@ -482,43 +486,80 @@ fn transmit_header(stream: &[u8]) -> Option<TransmitHeader> {
     (View::u16_be_at(stream, at) == Some(0)).then_some(())?;
     at = at.checked_add(2)?;
 
-    Some(TransmitHeader {
+        Some((description_bytes, schema_bytes, [first, second], at))
+    })() else {
+        return Ok(None);
+    };
+    let description = String::from_utf8(ctx.copy_retained(description_bytes, "NX deltas description")?)
+        .ok();
+    let schema = String::from_utf8(ctx.copy_retained(schema_bytes, "NX deltas schema")?)
+        .ok();
+    Ok(description.zip(schema).and_then(|(description, schema)| Some(TransmitHeader {
         state: TransmitState::new(
-            String::from_utf8(description_bytes.to_vec()).ok()?,
-            String::from_utf8(schema_bytes.to_vec()).ok()?,
-            [first, second],
+            description,
+            schema,
+            references,
         )
         .ok()?,
-        end: at,
-    })
+        end,
+    })))
 }
 
-fn term_use_numeric_tails(stream: &[u8], census: &Census) -> Vec<TermUseNumericTail> {
-    let mut event_starts = census
+fn term_use_numeric_tails(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    census: &Census,
+) -> Result<Vec<TermUseNumericTail>, CodecError> {
+    let count = census
         .records
-        .iter()
-        .map(|record| record.offset)
-        .chain(census.tombstones.iter().map(|tombstone| tombstone.offset))
-        .chain(census.body_revisions.iter().map(|revision| revision.offset))
-        .collect::<Vec<_>>();
+        .len()
+        .checked_add(census.tombstones.len())
+        .and_then(|n| n.checked_add(census.body_revisions.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX deltas event starts", 0, u64_from_index(census.records.len())))?;
+    let bytes = count
+        .checked_mul(std::mem::size_of::<usize>())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX deltas event start bytes", 0, u64_from_index(count)))?;
+    let _reservation = ctx.reserve_scoped(u64_from_index(bytes), "NX deltas event starts")?;
+    ctx.charge_collection_items(u64_from_index(count), "NX deltas event starts")?;
+    let mut event_starts = Vec::new();
+    event_starts
+        .try_reserve(count)
+        .map_err(|_| ctx.refuse_codec_limit("NX deltas event starts", 0, u64_from_index(count)))?;
+    event_starts.extend(
+        census
+            .records
+            .iter()
+            .map(|record| record.offset)
+            .chain(census.tombstones.iter().map(|tombstone| tombstone.offset))
+            .chain(census.body_revisions.iter().map(|revision| revision.offset)),
+    );
+    let sort_work = u64_from_index(count)
+        .checked_mul(u64::from(usize::BITS - count.leading_zeros()))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX deltas event start sort", 0, u64_from_index(count)))?;
+    ctx.charge_work(sort_work, "sort NX deltas event starts")?;
     event_starts.sort_unstable();
     event_starts.dedup();
 
-    census
-        .records
-        .iter()
-        .filter(|record| matches!(record.family, RecordFamily::TermUse))
-        .filter_map(|record| {
-            let (term_use, parsed_end) = crate::intersection::term_use_at(stream, record.offset)?;
-            (parsed_end == record.end && term_use.xmt == record.xmt).then_some(())?;
-            let tail = TermUseNumericTail::read(stream, record.end, term_use.xmt, term_use.form)?;
-            let next_event =
-                event_starts.get(event_starts.partition_point(|start| *start <= record.end));
-            next_event
-                .is_none_or(|start| *start >= tail.end())
-                .then_some(tail)
-        })
-        .collect()
+    let mut tails = Vec::new();
+    for record in &census.records {
+        if !matches!(record.family, RecordFamily::TermUse) {
+            continue;
+        }
+        let Some((term_use, parsed_end)) = crate::intersection::term_use_at(stream, record.offset) else {
+            continue;
+        };
+        if parsed_end != record.end || term_use.xmt != record.xmt {
+            continue;
+        }
+        let Some(tail) = TermUseNumericTail::read(stream, record.end, term_use.xmt, term_use.form) else {
+            continue;
+        };
+        let next_event = event_starts.get(event_starts.partition_point(|start| *start <= record.end));
+        if next_event.is_none_or(|start| *start >= tail.end()) {
+            census::push_event(ctx, &mut tails, tail, "NX deltas term use numeric tails")?;
+        }
+    }
+    Ok(tails)
 }
 
 fn tagged_reference_lanes(
@@ -4148,6 +4189,19 @@ mod terminal_null_reference_tests {
 #[cfg(test)]
 mod transmit_header_tests {
     use super::census::walk;
+
+    #[test]
+    fn deltas_census_route_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let bytes = header(&[0x04, 0x27, 0x04, 0x28]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let error = walk(&ctx, &bytes).expect_err("retained refusal");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes));
+    }
 
     fn header(references: &[u8]) -> Vec<u8> {
         let description = b": TRANSMIT FILE (deltas) created by modeller version 3501171";
