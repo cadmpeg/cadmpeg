@@ -9341,27 +9341,28 @@ impl MeshSelectionSearch<'_, '_> {
         &self,
         face: usize,
         quotient: &mut MeshQuotient,
-    ) -> MeshQuotientSignature {
-        let mut roots = self.assignments[face]
-            .iter()
-            .flat_map(|assignment| &assignment.boundaries)
-            .flatten()
-            .flat_map(|use_| [use_.edge * 2, use_.edge * 2 + 1])
-            .map(|node| quotient.union.find(node))
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
+    ) -> Result<MeshQuotientSignature, CodecError> {
+        let mut root_set = HashSet::new();
+        for use_ in self.assignments[face].iter().flat_map(|assignment| &assignment.boundaries).flatten() {
+            for node in [use_.edge * 2, use_.edge * 2 + 1] {
+                crate::resource::insert_set(self.ctx, &mut root_set, quotient.union.find(node), "catia_face_projection_roots")?;
+            }
+        }
+        let mut roots = Vec::new();
+        crate::resource::reserve_vec(self.ctx, &mut roots, root_set.len(), "catia_face_projection_root_order")?;
+        roots.extend(root_set);
         roots.sort_unstable();
-        let mut signature = roots
-            .into_iter()
-            .map(|root| {
-                let mut domain = quotient.domains[root].iter().copied().collect::<Vec<_>>();
-                domain.sort_unstable();
-                (quotient.members(root).to_vec(), domain)
-            })
-            .collect::<Vec<_>>();
+        let mut signature = Vec::new();
+        crate::resource::reserve_vec(self.ctx, &mut signature, roots.len(), "catia_face_projection_signature_rows")?;
+        for root in roots {
+            let mut domain = Vec::new();
+            crate::resource::reserve_vec(self.ctx, &mut domain, quotient.domains[root].len(), "catia_face_projection_domain_points")?;
+            domain.extend(quotient.domains[root].iter().copied());
+            domain.sort_unstable();
+            signature.push((crate::resource::copy_slice(self.ctx, quotient.members(root), "catia_face_projection_member_nodes")?, domain));
+        }
         signature.sort_unstable();
-        signature
+        Ok(signature)
     }
 
     #[cfg(test)]
@@ -9379,23 +9380,16 @@ impl MeshSelectionSearch<'_, '_> {
         changed_edges: Option<&HashSet<usize>>,
         budget: &WorkBudget<'_>,
     ) -> Result<bool, CodecError> {
-        let mut queue = self
-            .selected
-            .iter()
-            .enumerate()
-            .filter_map(|(face, selected)| {
-                (selected.is_none()
-                    && changed_edges.is_none_or(|changed_edges| {
-                        self.assignments[face]
-                            .iter()
-                            .flat_map(|assignment| &assignment.boundaries)
-                            .flatten()
-                            .any(|use_| changed_edges.contains(&use_.edge))
-                    }))
-                .then_some(face)
-            })
-            .collect::<VecDeque<_>>();
-        let mut queued = queue.iter().copied().collect::<HashSet<_>>();
+        let mut queue = VecDeque::new();
+        let mut queued = HashSet::new();
+        for (face, selected) in self.selected.iter().enumerate() {
+            if selected.is_none() && changed_edges.is_none_or(|changed_edges| {
+                self.assignments[face].iter().flat_map(|assignment| &assignment.boundaries).flatten().any(|use_| changed_edges.contains(&use_.edge))
+            }) {
+                crate::resource::push_back(self.ctx, &mut queue, face, "catia_forced_equation_queue")?;
+                crate::resource::insert_set(self.ctx, &mut queued, face, "catia_forced_equation_queued")?;
+            }
+        }
         while let Some(face) = queue.pop_front() {
             if !budget.charge() {
                 return Ok(true);
@@ -9404,7 +9398,7 @@ impl MeshSelectionSearch<'_, '_> {
             if self.selected[face].is_some() {
                 continue;
             }
-            let before = quotient.clone();
+            let before = quotient.clone_charged(self.ctx)?;
             let mut changed = false;
             let deterministic = self.assignments[face].len() == 1
                 && self.assignments[face][0]
@@ -9416,10 +9410,13 @@ impl MeshSelectionSearch<'_, '_> {
                 let [choice] = self.possible_face_choices[face].as_slice() else {
                     return Ok(false);
                 };
-                choice.clone()
+                crate::resource::copy_slice(self.ctx, choice, "catia_forced_deterministic_equations")?
             } else {
-                let cache_key = (face, self.face_projection_signature(face, quotient));
-                let cached = self.face_equation_cache.borrow().get(&cache_key).cloned();
+                let cache_key = (face, self.face_projection_signature(face, quotient)?);
+                let cached = {
+                    let cache = self.face_equation_cache.borrow();
+                    cache.get(&cache_key).map(|equations| crate::resource::copy_slice(self.ctx, equations, "catia_forced_cached_equations")).transpose()?
+                };
                 if let Some(cached) = cached {
                     cached
                 } else {
@@ -9432,12 +9429,29 @@ impl MeshSelectionSearch<'_, '_> {
                     else {
                         return Ok(budget.exhausted());
                     };
-                    let equations = common.into_iter().collect::<Vec<_>>();
+                    let mut equations = Vec::new();
+                    crate::resource::reserve_vec(self.ctx, &mut equations, common.len(), "catia_forced_common_equations")?;
+                    equations.extend(common);
+                    let cached_equations = crate::resource::copy_retained_slice(self.ctx, &equations, "catia_forced_cached_equation_copy")?;
                     let mut cache = self.face_equation_cache.borrow_mut();
                     if cache.len() >= MAX_FACE_EQUATION_CACHE_ENTRIES {
                         cache.clear();
                     }
-                    cache.insert(cache_key, equations.clone());
+                    let Some(key_row_bytes) = cache_key.1.len().checked_mul(std::mem::size_of::<(Vec<usize>, Vec<usize>)>()) else {
+                        return Err(self.ctx.refuse_codec_limit("catia_forced_equation_cache_key", u64::MAX, u64::MAX));
+                    };
+                    let Some(key_bytes) = cache_key.1.iter().try_fold(
+                        key_row_bytes,
+                        |total, (members, domain)| {
+                            total
+                                .checked_add(members.len().checked_mul(std::mem::size_of::<usize>())?)?
+                                .checked_add(domain.len().checked_mul(std::mem::size_of::<usize>())?)
+                        },
+                    ).and_then(|bytes| u64::try_from(bytes).ok()) else {
+                        return Err(self.ctx.refuse_codec_limit("catia_forced_equation_cache_key", u64::MAX, u64::MAX));
+                    };
+                    self.ctx.charge_retained(key_bytes, "catia_forced_equation_cache_key")?;
+                    crate::resource::insert_map(self.ctx, &mut cache, cache_key, cached_equations, "catia_forced_equation_cache")?;
                     equations
                 }
             };
@@ -9472,8 +9486,8 @@ impl MeshSelectionSearch<'_, '_> {
                         .flatten()
                         .any(|use_| changed_edges.contains(&use_.edge))
                 {
-                    queued.insert(dependent);
-                    queue.push_back(dependent);
+                    crate::resource::insert_set(self.ctx, &mut queued, dependent, "catia_forced_equation_queued")?;
+                    crate::resource::push_back(self.ctx, &mut queue, dependent, "catia_forced_equation_queue")?;
                 }
             }
         }
