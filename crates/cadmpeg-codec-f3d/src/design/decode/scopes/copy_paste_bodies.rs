@@ -8,18 +8,32 @@ use crate::records::feature::body_ops;
 use crate::records::feature::body_ops::DesignCopyPasteBodiesOperation;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 
 pub(super) fn exact_copy_paste_bodies_operation(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<DesignCopyPasteBodiesOperation> {
+) -> Result<Option<DesignCopyPasteBodiesOperation>, CodecError> {
     if scope.kind() != scope::DesignFeatureKind::CopyPasteBodies
         || scope.reference_members().len() < 2
     {
-        return None;
+        return Ok(None);
     }
+    let body_count = scope.reference_members().len() - 1;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(body_count), "f3d CopyPasteBodies operands")?;
+    let mut operands = Vec::new();
+    operands.try_reserve(body_count).map_err(|_| {
+        ctx.refuse_codec_limit("f3d CopyPasteBodies operands allocation", 0, 1)
+    })?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(body_count), "f3d CopyPasteBodies bodies")?;
+    let mut bodies = Vec::new();
+    bodies.try_reserve(body_count).map_err(|_| {
+        ctx.refuse_codec_limit("f3d CopyPasteBodies bodies allocation", 0, 1)
+    })?;
+    Ok((|| {
     let start = usize::try_from(scope.byte_offset()).ok()?;
     let body_group_record_index = marked_record_reference(bytes, start + 29)?;
     let relation_record_index = marked_record_reference(bytes, start + 40)?;
@@ -31,7 +45,7 @@ pub(super) fn exact_copy_paste_bodies_operation(
         .checked_add(1)?;
     let body_group_at = records.first_at_or_after(search_at, body_group_record_index)?;
     let (body_group_class_tag, body_group_after_tag) =
-        lp_ascii_filtered(bytes, body_group_at, 0..=2000, u8::is_ascii_graphic)?;
+        lp_ascii_filtered(bytes, body_group_at, 3..=3, u8::is_ascii_digit)?;
     let body_group_after_index = body_group_after_tag.checked_add(4)?;
     if bytes.get(body_group_after_index..body_group_after_index + 10)? != [0; 10] {
         return None;
@@ -41,7 +55,6 @@ pub(super) fn exact_copy_paste_bodies_operation(
     if body_group_count != scope.reference_members().len().checked_sub(1)? {
         return None;
     }
-    let mut operands = Vec::with_capacity(body_group_count);
     let mut body_group_cursor = body_group_count_at.checked_add(4)?;
     for expected in scope.reference_members().values().skip(1) {
         let actual = marked_record_reference(bytes, body_group_cursor)?;
@@ -56,7 +69,7 @@ pub(super) fn exact_copy_paste_bodies_operation(
     }
     let relation_at = records.first_at_or_after(search_at, relation_record_index)?;
     let (relation_class_tag, after_tag) =
-        lp_ascii_filtered(bytes, relation_at, 0..=2000, u8::is_ascii_graphic)?;
+        lp_ascii_filtered(bytes, relation_at, 3..=3, u8::is_ascii_digit)?;
     let after_index = after_tag.checked_add(4)?;
     if bytes.get(after_index..after_index + 8)? != [0; 8] {
         return None;
@@ -66,11 +79,9 @@ pub(super) fn exact_copy_paste_bodies_operation(
         return None;
     }
     let reference_count = usize::try_from(View::u32_le_at(bytes, count_at + 1)?).ok()?;
-    let body_count = scope.reference_members().len().checked_sub(1)?;
     if reference_count != body_count.checked_mul(2)? {
         return None;
     }
-    let mut bodies = Vec::with_capacity(body_count);
     let references_at = count_at.checked_add(5)?;
     let body_reference = |at: usize, trailing_zeros: usize| {
         if bytes.get(at) != Some(&1)
@@ -108,4 +119,5 @@ pub(super) fn exact_copy_paste_bodies_operation(
         u64::try_from(relation_at).ok()?,
     )
     .ok()
+    })())
 }

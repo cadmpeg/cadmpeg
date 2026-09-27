@@ -289,10 +289,12 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         .unwrap();
     let operation =
         crate::design::decode::scopes::copy_paste_bodies::exact_copy_paste_bodies_operation(
+            &cadmpeg_test_support::service_decode_context(),
             &operation_bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&operation_bytes),
             &operation_scope,
         )
+        .unwrap()
         .expect("single-body CopyPasteBodies relation");
     assert_eq!(operation.body_group_record_index, 55);
     assert_eq!(operation.body_group_byte_offset(), body_group_at as u64);

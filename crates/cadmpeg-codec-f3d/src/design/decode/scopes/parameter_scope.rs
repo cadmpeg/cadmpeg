@@ -416,7 +416,7 @@ pub(crate) fn decode_parameter_scopes(
             }
             bind_component_pattern_occurrences(&mut scope, component_occurrences);
             {
-                let construction = exact_copy_paste_bodies_operation(bytes, &records, &scope);
+                let construction = exact_copy_paste_bodies_operation(ctx, bytes, &records, &scope)?;
                 if let scope::DesignScopePayloadMut::CopyPasteBodies(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
