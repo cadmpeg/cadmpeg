@@ -9,7 +9,7 @@ use super::draft::{
     thicken_feature_definition,
 };
 use super::knit::{filled_surface_feature_definition, knit_surface_feature_definition};
-use super::outputs::{feature_reference_name, sweep_output_kind, sweep_solid};
+use super::outputs::{feature_reference_name, insert_feature_source_property, sweep_output_kind, sweep_solid};
 use cadmpeg_core::CodecError;
 
 use crate::container::ContainerScan;
@@ -408,19 +408,21 @@ pub(in super::super) fn reference_named_feature_definition(
 }
 
 pub(in super::super) fn retain_native_feature_parameters(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     source_properties: &mut BTreeMap<String, String>,
     definition: &IrFeatureDefinition,
     parameters: &BTreeMap<String, String>,
-) {
+) -> Result<(), CodecError> {
     if matches!(
         definition,
         IrFeatureDefinition::Operation(IrFeatureOperation::Native { .. })
     ) {
-        return;
+        return Ok(());
     }
     for (name, value) in parameters {
-        source_properties.insert(format!("native_parameter.{name}"), value.clone());
+        insert_feature_source_property(ctx, source_properties, format_args!("native_parameter.{name}"), value)?;
     }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -12,6 +12,72 @@ use cadmpeg_ir::ids::{BodyId, CoedgeId, EdgeId, FaceId, LoopId, RegionId, ShellI
 use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Face, Loop as IrLoop, Region, Sense, Shell};
 use std::collections::BTreeMap;
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+use super::insert_feature_source_property;
+
+#[test]
+fn feature_source_property_refuses_before_btree_node() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let mut properties = BTreeMap::new();
+    let error = insert_feature_source_property(&ctx, &mut properties, "recipe", "Extrude")
+        .expect_err("one property needs one map node");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo feature source property nodes"));
+    assert!(properties.is_empty());
+}
+
+#[test]
+fn feature_source_property_refuses_before_key_copy() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let mut properties = BTreeMap::new();
+    let error = insert_feature_source_property(&ctx, &mut properties, "recipe", "Extrude")
+        .expect_err("key bytes exceed the retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo feature source property key"));
+}
+
+#[test]
+fn feature_source_property_refuses_before_value_copy() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 6;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let mut properties = BTreeMap::new();
+    let error = insert_feature_source_property(&ctx, &mut properties, "recipe", "Extrude")
+        .expect_err("value bytes exceed the retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo feature source property value"));
+}
+
+#[test]
+fn feature_source_property_keeps_key_order_and_replacement() {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let mut properties = BTreeMap::new();
+    insert_feature_source_property(&ctx, &mut properties, "z", 1)
+        .expect("first property fits");
+    insert_feature_source_property(&ctx, &mut properties, "a", 2)
+        .expect("second property fits");
+    insert_feature_source_property(&ctx, &mut properties, "z", 3)
+        .expect("replacement fits");
+    assert_eq!(properties.into_iter().collect::<Vec<_>>(), vec![("a".into(), "2".into()), ("z".into(), "3".into())]);
+}
+
 #[test]
 fn generated_edge_outputs_follow_producer_history_before_ir_feature_insertion() {
     let feature_row = |feature_id| crate::feature::rows::FeatureRow {
