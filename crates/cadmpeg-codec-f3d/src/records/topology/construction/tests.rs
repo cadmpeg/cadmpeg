@@ -117,6 +117,91 @@ fn construction_frame_collections_reject_duplicates_and_keep_failed_edits_atomic
 }
 
 #[test]
+fn construction_frame_borrowed_wire_matches_owned_wire_bytes() {
+    for wire in [
+        serde_json::json!({
+            "member_count_offset": 20,
+            "opaque_index": 1, "opaque_index_offset": 80,
+            "opaque_scalar": 0.0, "opaque_scalar_offset": 84, "variant": false
+        }),
+        serde_json::to_value(frame_wire()).unwrap(),
+    ] {
+        let frame: DesignConstructionOperandGroupFrame = serde_json::from_value(wire).unwrap();
+        let owned = DesignConstructionOperandGroupFrameWire::from(frame.clone());
+        assert_eq!(
+            serde_json::to_vec(&frame).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+}
+
+#[test]
+fn construction_frame_native_retained_limit_refuses_before_clone() {
+    #[derive(serde::Serialize)]
+    struct NestedRecord<'a> {
+        id: &'static str,
+        value: &'a DesignConstructionOperandGroupFrame,
+    }
+    let frame = DesignConstructionOperandGroupFrame::try_from(frame_wire()).unwrap();
+    let record = NestedRecord {
+        id: "f3d:native:construction-frame#0",
+        value: &frame,
+    };
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_construction_operand_groups",
+        || super::CONSTRUCTION_FRAME_CLONE_COUNT.with(|count| count.set(0)),
+        || super::CONSTRUCTION_FRAME_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+
+#[test]
+fn construction_group_borrowed_wire_matches_owned_wire_bytes() {
+    let wire = json!({
+        "id":"f3d:native:construction-group#0", "scope_record_index":7,
+        "scope_reference_ordinal":0, "record_index":9,"byte_offset":0,
+        "class_tag":"277", "members":[10,11],"member_offsets":[26,37],
+        "lost_edge_references":["edge#1"], "frame":frame_wire(),
+        "role":0,"role_offset":100,"paired_class_tag":"278","paired_byte_offset":200
+    });
+    let mut group: DesignConstructionOperandGroup = serde_json::from_value(wire).unwrap();
+    for role in [
+        super::DesignConstructionOperandRole::Other(super::DesignOperandRole::from_raw(0)),
+        super::DesignConstructionOperandRole::ExtrudeBodiesA,
+        super::DesignConstructionOperandRole::ExtrudeProfile,
+        super::DesignConstructionOperandRole::ExtrudeFaces {
+            encoding: super::DesignExtrudeFaceEncoding::SelectedStart,
+            usage: super::DesignExtrudeFaceRole::Start,
+        },
+    ] {
+        group.operand_role = role;
+        let owned = super::DesignConstructionOperandGroupSerde::from(group.clone());
+        assert_eq!(
+            serde_json::to_vec(&group).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+}
+
+#[test]
+fn construction_group_native_retained_limit_refuses_before_clone() {
+    let wire = json!({
+        "id":"f3d:native:construction-group#0", "scope_record_index":7,
+        "scope_reference_ordinal":0, "record_index":9,"byte_offset":0,
+        "class_tag":"277", "members":[10,11],"member_offsets":[26,37],
+        "frame":frame_wire(), "role":0,"role_offset":100,
+        "paired_class_tag":"278","paired_byte_offset":200
+    });
+    let group: DesignConstructionOperandGroup = serde_json::from_value(wire).unwrap();
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &group,
+        "design_construction_operand_groups",
+        || super::CONSTRUCTION_GROUP_CLONE_COUNT.with(|count| count.set(0)),
+        || super::CONSTRUCTION_GROUP_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+
+#[test]
 fn construction_group_owns_member_stride_and_derives_role_offset() {
     let wire = json!({
         "id":"stream:group", "scope_record_index":7, "scope_reference_ordinal":0,

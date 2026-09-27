@@ -63,11 +63,8 @@ impl DesignConstructionOperandRole {
 }
 
 /// Construction-operand group owned by a feature scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignConstructionOperandGroupSerde",
-    into = "DesignConstructionOperandGroupSerde"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignConstructionOperandGroupSerde")]
 pub(crate) struct DesignConstructionOperandGroup {
     /// Globally unique deterministic identifier.
     pub(crate) id: String,
@@ -93,6 +90,90 @@ pub(crate) struct DesignConstructionOperandGroup {
     paired_class_tag: DesignClassTag,
     /// Same-index paired-header byte offset.
     pub(crate) paired_byte_offset: u64,
+}
+
+#[cfg(test)]
+thread_local! {
+    static CONSTRUCTION_GROUP_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignConstructionOperandGroup {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        CONSTRUCTION_GROUP_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            scope_record_index: self.scope_record_index,
+            scope_reference_ordinal: self.scope_reference_ordinal,
+            record_index: self.record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag.clone(),
+            members: self.members.clone(),
+            lost_edge_references: self.lost_edge_references.clone(),
+            frame: self.frame.clone(),
+            operand_role: self.operand_role,
+            paired_class_tag: self.paired_class_tag.clone(),
+            paired_byte_offset: self.paired_byte_offset,
+        }
+    }
+}
+
+impl Serialize for DesignConstructionOperandGroup {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct BorrowedWire<'a> {
+            id: &'a str,
+            scope_record_index: u32,
+            scope_reference_ordinal: u32,
+            record_index: u32,
+            byte_offset: u64,
+            class_tag: &'a str,
+            members: SliceColumn<'a, Located<u32>, u32>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            lost_edge_references: &'a Vec<String>,
+            member_offsets: SliceColumn<'a, Located<u32>, u64>,
+            frame: &'a DesignConstructionOperandGroupFrame,
+            role: u64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            extrude_role: Option<DesignExtrudeOperandRoleTag>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            extrude_face_role: Option<DesignExtrudeFaceRole>,
+            role_offset: u64,
+            paired_class_tag: &'a str,
+            paired_byte_offset: u64,
+        }
+        let (extrude_role, extrude_face_role) = match self.operand_role.extrude() {
+            Some(DesignExtrudeOperandRole::Bodies) => {
+                (Some(DesignExtrudeOperandRoleTag::Bodies), None)
+            }
+            Some(DesignExtrudeOperandRole::Profile) => {
+                (Some(DesignExtrudeOperandRoleTag::Profile), None)
+            }
+            Some(DesignExtrudeOperandRole::Faces(face_role)) => {
+                (Some(DesignExtrudeOperandRoleTag::Faces), Some(face_role))
+            }
+            None => (None, None),
+        };
+        BorrowedWire {
+            id: &self.id,
+            scope_record_index: self.scope_record_index,
+            scope_reference_ordinal: self.scope_reference_ordinal,
+            record_index: self.record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag.as_str(),
+            members: SliceColumn::new(&self.members, |member| member.value),
+            lost_edge_references: &self.lost_edge_references,
+            member_offsets: SliceColumn::new(&self.members, |member| member.offset),
+            frame: &self.frame,
+            role: self.role().raw(),
+            extrude_role,
+            extrude_face_role,
+            role_offset: self.role_offset(),
+            paired_class_tag: self.paired_class_tag.as_str(),
+            paired_byte_offset: self.paired_byte_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Unchecked construction-group input.
@@ -268,6 +349,7 @@ impl TryFrom<DesignConstructionOperandGroupSerde> for DesignConstructionOperandG
     }
 }
 
+#[cfg(test)]
 impl From<DesignConstructionOperandGroup> for DesignConstructionOperandGroupSerde {
     fn from(group: DesignConstructionOperandGroup) -> Self {
         let role_offset = group.role_offset();
@@ -310,11 +392,8 @@ impl From<DesignConstructionOperandGroup> for DesignConstructionOperandGroupSerd
 }
 
 /// Serialized framing of a construction-operand group.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignConstructionOperandGroupFrameWire",
-    into = "DesignConstructionOperandGroupFrameWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignConstructionOperandGroupFrameWire")]
 pub(crate) struct DesignConstructionOperandGroupFrame {
     /// Byte offset of the member count.
     pub(crate) member_count_offset: u64,
@@ -345,6 +424,79 @@ pub(crate) struct DesignConstructionOperandGroupFrame {
     opaque_scalar: cadmpeg_ir::scalar::NonNegativeReal,
     /// Boolean tail variant.
     pub(crate) variant: bool,
+}
+
+#[cfg(test)]
+thread_local! {
+    static CONSTRUCTION_FRAME_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignConstructionOperandGroupFrame {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        CONSTRUCTION_FRAME_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            member_count_offset: self.member_count_offset,
+            auxiliary_records: self.auxiliary_records.clone(),
+            auxiliary_paths: self.auxiliary_paths.clone(),
+            trailing_records: self.trailing_records,
+            trailing_transforms: self.trailing_transforms.clone(),
+            trailing_dual_transforms: self.trailing_dual_transforms.clone(),
+            trailing_flags: self.trailing_flags.clone(),
+            opaque_index: self.opaque_index,
+            opaque_index_offset: self.opaque_index_offset,
+            opaque_scalar: self.opaque_scalar,
+            variant: self.variant,
+        }
+    }
+}
+
+impl Serialize for DesignConstructionOperandGroupFrame {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct BorrowedWire<'a> {
+            member_count_offset: u64,
+            #[serde(skip_serializing_if = "SliceColumn::is_empty")]
+            auxiliary_record_indices: SliceColumn<'a, Located<u32>, u32>,
+            #[serde(skip_serializing_if = "SliceColumn::is_empty")]
+            auxiliary_record_offsets: SliceColumn<'a, Located<u32>, u64>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            auxiliary_paths: &'a Vec<DesignConstructionOperandPath>,
+            #[serde(skip_serializing_if = "SliceColumn::is_empty")]
+            trailing_record_indices: SliceColumn<'a, Located<u32>, u32>,
+            #[serde(skip_serializing_if = "SliceColumn::is_empty")]
+            trailing_record_offsets: SliceColumn<'a, Located<u32>, u64>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            trailing_transforms: &'a Vec<DesignConstructionOperandTransform>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            trailing_dual_transforms: &'a Vec<DesignConstructionOperandDualTransform>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            trailing_flags: &'a Vec<DesignConstructionOperandFlag>,
+            opaque_index: u32,
+            opaque_index_offset: u64,
+            opaque_scalar: f64,
+            opaque_scalar_offset: u64,
+            variant: bool,
+        }
+        let trailing = self.trailing_records.as_slice();
+        BorrowedWire {
+            member_count_offset: self.member_count_offset,
+            auxiliary_record_indices: SliceColumn::new(&self.auxiliary_records, |row| row.value),
+            auxiliary_record_offsets: SliceColumn::new(&self.auxiliary_records, |row| row.offset),
+            auxiliary_paths: &self.auxiliary_paths,
+            trailing_record_indices: SliceColumn::new(trailing, |row| row.value),
+            trailing_record_offsets: SliceColumn::new(trailing, |row| row.offset),
+            trailing_transforms: &self.trailing_transforms,
+            trailing_dual_transforms: &self.trailing_dual_transforms,
+            trailing_flags: &self.trailing_flags,
+            opaque_index: self.opaque_index.get(),
+            opaque_index_offset: self.opaque_index_offset(),
+            opaque_scalar: self.opaque_scalar().get(),
+            opaque_scalar_offset: self.opaque_scalar_offset(),
+            variant: self.variant,
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Construction-frame fields before aggregate validation.
@@ -616,6 +768,7 @@ impl TryFrom<DesignConstructionOperandGroupFrameWire> for DesignConstructionOper
     }
 }
 
+#[cfg(test)]
 impl From<DesignConstructionOperandGroupFrame> for DesignConstructionOperandGroupFrameWire {
     fn from(frame: DesignConstructionOperandGroupFrame) -> Self {
         let opaque_scalar_offset = frame.opaque_scalar_offset();
