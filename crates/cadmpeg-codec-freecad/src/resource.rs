@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fallible collection admission for FreeCAD decoding.
 
-use cadmpeg_core::decode::{DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit};
+use cadmpeg_core::decode::{DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit, ScopedReservation};
 use cadmpeg_core::CodecError;
 use std::collections::HashSet;
 use std::hash::Hash;
@@ -105,6 +105,16 @@ pub(crate) fn retained_suffix(
     operation: &'static str,
 ) -> Result<String, CodecError> {
     let mut output = retained_string(ctx, value, operation)?;
+    append_retained(ctx, &mut output, suffix, operation)?;
+    Ok(output)
+}
+
+pub(crate) fn append_retained(
+    ctx: &DecodeContext<'_>,
+    output: &mut String,
+    suffix: &str,
+    operation: &'static str,
+) -> Result<(), CodecError> {
     ctx.charge_retained(suffix.len() as u64, operation)?;
     output.try_reserve(suffix.len()).map_err(|_| {
         CodecError::ResourceLimit(ResourceLimit {
@@ -117,7 +127,70 @@ pub(crate) fn retained_suffix(
         })
     })?;
     output.push_str(suffix);
+    Ok(())
+}
+
+pub(crate) fn retained_join<S: AsRef<str>>(
+    ctx: &DecodeContext<'_>,
+    parts: &[S],
+    separator: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let mut count = 0_usize;
+    for part in parts {
+        count = count.checked_add(part.as_ref().len())
+            .ok_or_else(|| retained_allocation_failed(ctx, u64::MAX, operation))?;
+    }
+    let gaps = if parts.is_empty() { 0 } else { parts.len() - 1 };
+    count = count.checked_add(separator.len().checked_mul(gaps)
+        .ok_or_else(|| retained_allocation_failed(ctx, u64::MAX, operation))?)
+        .ok_or_else(|| retained_allocation_failed(ctx, u64::MAX, operation))?;
+    ctx.charge_retained(count as u64, operation)?;
+    let mut output = String::new();
+    output.try_reserve_exact(count)
+        .map_err(|_| retained_allocation_failed(ctx, count as u64, operation))?;
+    for (index, part) in parts.iter().enumerate() {
+        if index != 0 {
+            output.push_str(separator);
+        }
+        output.push_str(part.as_ref());
+    }
     Ok(output)
+}
+
+pub(crate) fn materialized_bytes<'a>(
+    ctx: &'a DecodeContext<'_>,
+    count: usize,
+    operation: &'static str,
+) -> Result<(Vec<u8>, ScopedReservation<'a>), CodecError> {
+    let reservation = ctx.reserve_scoped(count as u64, operation)?;
+    let mut bytes = Vec::new();
+    bytes.try_reserve_exact(count).map_err(|_| {
+        CodecError::ResourceLimit(ResourceLimit {
+            dimension: ResourceDimension::MaterializedBytes,
+            reason: ResourceFailure::AllocationFailed,
+            limit: ctx.policy().limits.max_materialized_bytes,
+            used: 0,
+            additional: count as u64,
+            operation,
+        })
+    })?;
+    Ok((bytes, reservation))
+}
+
+fn retained_allocation_failed(
+    ctx: &DecodeContext<'_>,
+    count: u64,
+    operation: &'static str,
+) -> CodecError {
+    CodecError::ResourceLimit(ResourceLimit {
+        dimension: ResourceDimension::RetainedBytes,
+        reason: ResourceFailure::AllocationFailed,
+        limit: ctx.policy().limits.max_retained_bytes,
+        used: 0,
+        additional: count,
+        operation,
+    })
 }
 
 pub(crate) fn insert_hash_set<T: Eq + Hash>(

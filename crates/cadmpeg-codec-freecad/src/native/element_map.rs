@@ -3,6 +3,9 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+use crate::resource::{collection_vec, reserve_vec_items, retained_string};
 
 /// One persisted element map owned by an exact-shape property.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -166,20 +169,24 @@ impl From<ElementMapNodes> for Vec<ElementMapNode> {
 impl ElementMapNodes {
     /// Construct one root from legacy name groups, which have no child maps.
     pub(crate) fn from_root_names(
+        ctx: &DecodeContext<'_>,
         map_id: u64,
         groups: BTreeMap<String, Vec<Vec<ElementMappedName>>>,
-    ) -> Self {
-        Self(vec![ElementMapNode {
+    ) -> Result<Self, CodecError> {
+        let mut root_groups = collection_vec(ctx, groups.len(), "FreeCAD legacy root map groups")?;
+        for (indexed_name, names) in groups {
+            root_groups.push(ElementMapGroup {
+                indexed_name,
+                children: Vec::new(),
+                names,
+            });
+        }
+        let mut nodes = collection_vec(ctx, 1, "FreeCAD legacy root map node")?;
+        nodes.push(ElementMapNode {
             map_id,
-            groups: groups
-                .into_iter()
-                .map(|(indexed_name, names)| ElementMapGroup {
-                    indexed_name,
-                    children: Vec::new(),
-                    names,
-                })
-                .collect(),
-        }])
+            groups: root_groups,
+        });
+        Ok(Self(nodes))
     }
 
     /// Returns the owning shape map.
@@ -188,7 +195,7 @@ impl ElementMapNodes {
     }
 
     /// Add a topology binding without exposing child-map descriptors for mutation.
-    pub(crate) fn bind_root_topology(&mut self, indexed_name: &str, source_index: usize, id: &str) {
+    pub(crate) fn bind_root_topology(&mut self, ctx: &DecodeContext<'_>, indexed_name: &str, source_index: usize, id: &str) -> Result<(), CodecError> {
         let index = self.0.len() - 1;
         for group in &mut self.0[index].groups {
             if group.indexed_name != indexed_name {
@@ -199,10 +206,12 @@ impl ElementMapNodes {
             };
             for name in names {
                 if !name.topology_ids.iter().any(|existing| existing == id) {
-                    name.topology_ids.push(id.to_owned());
+                    reserve_vec_items(ctx, &mut name.topology_ids, 1, "FreeCAD element topology bindings")?;
+                    name.topology_ids.push(retained_string(ctx, id, "FreeCAD element topology identity")?);
                 }
             }
         }
+        Ok(())
     }
 
     /// Returns nodes in serialized order.

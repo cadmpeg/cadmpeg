@@ -1033,7 +1033,7 @@ impl CodecBackend for FcstdCodec {
             ir.native
                 .namespace_mut("fcstd")
                 .set_arena(ctx, "design_census", &design_census)?;
-            element_map::bind_topology(&mut element_maps, &topology_occurrences);
+            element_map::bind_topology(ctx, &mut element_maps, &topology_occurrences)?;
             let gui_graph = if let Some(gui_view) = scan.data.get("GuiDocument.xml") {
                 gui::transfer(
                     ctx,
