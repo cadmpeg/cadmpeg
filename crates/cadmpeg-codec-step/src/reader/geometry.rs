@@ -293,15 +293,22 @@ impl UnitScales {
 fn resolve_source_curve_parameter_scales(
     exchange: &Exchange,
     unit_scales: &UnitScales,
-) -> BTreeMap<u64, FiniteReal> {
-    exchange
-        .records()
-        .keys()
-        .filter_map(|id| {
-            source_curve_parameter_scale(*id, exchange, unit_scales, &mut BTreeSet::new())
-                .map(|scale| (*id, scale))
-        })
-        .collect()
+    ctx: &DecodeContext<'_>,
+) -> Result<BTreeMap<u64, FiniteReal>, CodecError> {
+    let mut scales = BTreeMap::new();
+    for &id in exchange.records().keys() {
+        if let Some(scale) = source_curve_parameter_scale(
+            id,
+            exchange,
+            unit_scales,
+            &mut BTreeSet::new(),
+            ctx,
+        )? {
+            ctx.charge_collection_items(1, "step_source_curve_parameter_scales")?;
+            scales.insert(id, scale);
+        }
+    }
+    Ok(scales)
 }
 
 fn source_curve_parameter_scale(
@@ -309,25 +316,44 @@ fn source_curve_parameter_scale(
     exchange: &Exchange,
     unit_scales: &UnitScales,
     active: &mut BTreeSet<u64>,
-) -> Option<FiniteReal> {
-    if !active.insert(id) {
-        return None;
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<FiniteReal>, CodecError> {
+    let _depth = ctx.enter_nested("step_source_curve_parameter_walk")?;
+    if active.contains(&id) {
+        return Ok(None);
     }
-    let scale = (|| {
-        let record = exchange.records().get(&id)?;
+    ctx.charge_collection_items(1, "step_source_curve_parameter_active")?;
+    active.insert(id);
+    let scale = source_curve_parameter_scale_value(id, exchange, unit_scales, active, ctx);
+    active.remove(&id);
+    scale
+}
+
+fn source_curve_parameter_scale_value(
+    id: u64,
+    exchange: &Exchange,
+    unit_scales: &UnitScales,
+    active: &mut BTreeSet<u64>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<FiniteReal>, CodecError> {
+        let Some(record) = exchange.records().get(&id) else {
+            return Ok(None);
+        };
         if record.partial("LINE").is_some() {
-            let magnitude = named_parameter(record, "LINE", 2)
+            let Some(magnitude) = named_parameter(record, "LINE", 2)
                 .and_then(Value::reference)
                 .and_then(|vector| exchange.records().get(&vector))
                 .filter(|vector| vector.partial("VECTOR").is_some())
                 .and_then(|vector| named_parameter(vector, "VECTOR", 2))
                 .and_then(Value::number)
-                .and_then(PositiveReal::new)?;
+                .and_then(PositiveReal::new) else {
+                    return Ok(None);
+                };
             let scale = magnitude.get() * unit_scales.length([id]).get();
-            return FiniteReal::new(scale);
+            return Ok(FiniteReal::new(scale));
         }
         if record.partial("CIRCLE").is_some() || record.partial("ELLIPSE").is_some() {
-            return Some(FiniteReal::from(unit_scales.angle([id])));
+            return Ok(Some(FiniteReal::from(unit_scales.angle([id]))));
         }
         if record.partial("PARABOLA").is_some()
             || record.partial("HYPERBOLA").is_some()
@@ -342,7 +368,7 @@ fn source_curve_parameter_scale(
                 )
             })
         {
-            return Some(FiniteReal::ONE);
+            return Ok(Some(FiniteReal::ONE));
         }
         let parent = ["CURVE_REPLICA", "TRIMMED_CURVE", "OFFSET_CURVE_3D"]
             .into_iter()
@@ -363,11 +389,11 @@ fn source_curve_parameter_scale(
                     })
                     .then(|| surface_curve_basis(record))
                     .flatten()
-            })?;
-        source_curve_parameter_scale(parent, exchange, unit_scales, active)
-    })();
-    active.remove(&id);
-    scale
+            });
+        match parent {
+            Some(parent) => source_curve_parameter_scale(parent, exchange, unit_scales, active, ctx),
+            None => Ok(None),
+        }
 }
 
 pub(super) fn decode(
@@ -391,7 +417,7 @@ pub(super) fn decode(
     let unit_scales = resolve_unit_scales(exchange, scale, angle_scale, &mut losses);
     let angle_scale = angle_scale.get();
     let source_curve_parameter_scales =
-        resolve_source_curve_parameter_scales(exchange, &unit_scales);
+        resolve_source_curve_parameter_scales(exchange, &unit_scales, ctx)?;
     let mut typed = HashSet::new();
     let mut points = BTreeMap::new();
     let mut points2 = BTreeMap::new();
