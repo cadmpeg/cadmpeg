@@ -13,7 +13,6 @@ use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::SurfaceId;
 
 use crate::container::ContainerScan;
 use crate::curve::CurveTopologyRow;
@@ -398,16 +397,22 @@ pub(in crate::decode) fn reconciled_model_plane(
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     surface_id: u32,
 ) -> Option<PlaneEquation> {
-    let model_id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, surface_id);
-    let model_surfaces = ir
+    let mut model_surfaces = ir
         .model
         .surfaces
         .iter()
-        .filter(|surface| surface.id == model_id)
-        .collect::<Vec<_>>();
-    let model_plane = match model_surfaces.as_slice() {
-        [] => None,
-        [surface] => match source_carriers.surface_geometry(surface) {
+        .filter(|surface| {
+            crate::identity::matches_numbered_identity(
+                surface.id.as_str(),
+                "creo:visibgeom:surface#",
+                surface_id,
+            )
+        });
+    let first = model_surfaces.next();
+    let second = model_surfaces.next();
+    let model_plane = match (first, second) {
+        (None, None) => None,
+        (Some(surface), None) => match source_carriers.surface_geometry(surface) {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
                 let origin = plane_surface.origin().get();
                 let normal = plane_surface.frame().axis().as_raw();

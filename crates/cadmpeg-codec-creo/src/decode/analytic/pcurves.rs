@@ -12,7 +12,7 @@ use cadmpeg_ir::geometry::{
     pcurve::{PcurveGeometry, PcurveNurbs},
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{CurveId, SurfaceId};
+use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveLength;
 use cadmpeg_ir::units::OrthonormalFrame3;
@@ -41,15 +41,17 @@ const PCURVE_CARRIER_PARALLEL_EPS_SQUARED: f64 = 1e-18;
 const PCURVE_CARRIER_SAMPLE_PARAMETERS: [f64; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
 
 fn unique_model_surface(surfaces: &[Surface], face_id: u32) -> Option<&Surface> {
-    let visible_id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, face_id);
-    let nonvisible_id = SurfaceId::compose(&crate::identity::NOVISGEOM_SURFACE, face_id);
-    let active_datum_id = SurfaceId::compose(&crate::identity::ACTDATUM_SURFACE, face_id);
-    for id in [visible_id, nonvisible_id, active_datum_id] {
-        if !surfaces.iter().any(|surface| surface.id == id) {
+    for prefix in [
+        "creo:visibgeom:surface#",
+        "creo:novisgeom:surface#",
+        "creo:actdatums:surface#",
+    ] {
+        let mut matches = surfaces.iter().filter(|surface| {
+            crate::identity::matches_numbered_identity(surface.id.as_str(), prefix, face_id)
+        });
+        let Some(surface) = matches.next() else {
             continue;
-        }
-        let mut matches = surfaces.iter().filter(|surface| surface.id == id);
-        let surface = matches.next()?;
+        };
         return matches.next().is_none().then_some(surface);
     }
     None
@@ -582,24 +584,25 @@ fn collect_support_cone_plane_witness(
 }
 
 fn unique_model_surface_mut(surfaces: &mut [Surface], face_id: u32) -> Option<&mut Surface> {
-    let ids = [
-        SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, face_id),
-        SurfaceId::compose(&crate::identity::NOVISGEOM_SURFACE, face_id),
-        SurfaceId::compose(&crate::identity::ACTDATUM_SURFACE, face_id),
-    ];
-    for id in ids {
-        let matches = surfaces
+    for prefix in [
+        "creo:visibgeom:surface#",
+        "creo:novisgeom:surface#",
+        "creo:actdatums:surface#",
+    ] {
+        let mut matches = surfaces
             .iter()
             .enumerate()
-            .filter_map(|(index, surface)| (surface.id == id).then_some(index))
-            .collect::<Vec<_>>();
-        if matches.is_empty() {
+            .filter_map(|(index, surface)| {
+                crate::identity::matches_numbered_identity(surface.id.as_str(), prefix, face_id)
+                    .then_some(index)
+            });
+        let Some(index) = matches.next() else {
             continue;
-        }
-        let [index] = matches.as_slice() else {
-            return None;
         };
-        return surfaces.get_mut(*index);
+        if matches.next().is_some() {
+            return None;
+        }
+        return surfaces.get_mut(index);
     }
     None
 }
