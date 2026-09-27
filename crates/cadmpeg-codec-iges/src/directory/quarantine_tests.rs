@@ -18,6 +18,36 @@ use crate::test_support::{code_count, decode, strict_options};
 use crate::IgesCodec;
 
 #[test]
+fn directory_quarantine_identity_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let record = super::QuarantinedDirectoryRecord {
+        sequence: 3,
+        source_offset: 160,
+        bytes: Vec::new(),
+        defect: super::DirectoryDefect::UnpairedCard,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        record.identity(&ctx),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "iges directory quarantine identity"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        record.identity(&ctx).unwrap(),
+        "iges:quarantine:directory#3"
+    );
+}
+
+#[test]
 fn directory_quarantine_loss_refuses_message_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;

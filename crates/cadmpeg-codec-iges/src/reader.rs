@@ -280,6 +280,25 @@ fn append_generic_losses(
     Ok(())
 }
 
+fn record_retained_transfer(
+    ctx: &DecodeContext<'_>,
+    ledger: &mut TransferLedger,
+    source: String,
+    target: String,
+    note: &'static str,
+) -> Result<(), CodecError> {
+    reserve_vec_growth(ctx, &mut ledger.entries, 1, "iges transfer ledger rows")?;
+    let note = format_retained(ctx, format_args!("{note}"), "iges transfer ledger note")?;
+    ledger.record(
+        source,
+        TransferOutcome::Retained {
+            target,
+            note: Some(note),
+        },
+    );
+    Ok(())
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ParseMode {
     Decode,
@@ -756,34 +775,45 @@ fn decode_with_occurrence_limits(
             // it names that state truthfully if a later pass admits it.
             "native record retained; no standalone neutral projection was required"
         };
-        transfer_ledger.record(
-            format!("D{}", entry.sequence),
-            TransferOutcome::Retained {
-                target: format!("iges:entity:directory#{}", entry.sequence),
-                note: Some(note.into()),
-            },
-        );
+        let source = format_retained(
+            ctx,
+            format_args!("D{}", entry.sequence),
+            "iges transfer ledger directory source",
+        )?;
+        let target = format_retained(
+            ctx,
+            format_args!("iges:entity:directory#{}", entry.sequence),
+            "iges transfer ledger directory target",
+        )?;
+        record_retained_transfer(ctx, &mut transfer_ledger, source, target, note)?;
     }
     for record in &parse.quarantined_directory {
-        transfer_ledger.record(
-            format!("D{}", record.sequence),
-            TransferOutcome::Retained {
-                target: record.identity(),
-                note: Some(
-                    "quarantined directory record retained; typed Directory fields were not recovered"
-                        .into(),
-                ),
-            },
-        );
+        let source = format_retained(
+            ctx,
+            format_args!("D{}", record.sequence),
+            "iges transfer ledger quarantine source",
+        )?;
+        record_retained_transfer(
+            ctx,
+            &mut transfer_ledger,
+            source,
+            record.identity(ctx)?,
+            "quarantined directory record retained; typed Directory fields were not recovered",
+        )?;
     }
     for record in &parse.quarantined_parameters {
-        transfer_ledger.record(
-            format!("D{}:parameter", record.sequence),
-            TransferOutcome::Retained {
-                target: record.identity(),
-                note: Some("quarantined parameter data retained; tokens were not recovered".into()),
-            },
-        );
+        let source = format_retained(
+            ctx,
+            format_args!("D{}:parameter", record.sequence),
+            "iges transfer ledger quarantine source",
+        )?;
+        record_retained_transfer(
+            ctx,
+            &mut transfer_ledger,
+            source,
+            record.identity(ctx)?,
+            "quarantined parameter data retained; tokens were not recovered",
+        )?;
     }
     transfer_ledger
         .verify(&cadmpeg_ir::index::ModelIndex::new(&ir))
