@@ -1204,17 +1204,11 @@ impl<'a> DecodeContext<'a> {
                 }
             }
         }
-        let loop_ids = hatch
-            .loops
-            .iter()
-            .enumerate()
-            .map(|(index, hatch_loop)| {
-                (
-                    hatch_loop.kind,
-                    format!("rhino:object:curve#{key}.hatch-loop-{index}"),
-                )
-            })
-            .collect::<Vec<_>>();
+        let loop_ids = hatch_loop_ids(
+            self.expand.ctx(),
+            key.as_str(),
+            hatch.loops.iter().map(|hatch_loop| hatch_loop.kind),
+        )?;
         let mut parameters = BTreeMap::from([
             ("pattern_index".to_string(), hatch.pattern_index.to_string()),
             (
@@ -1290,8 +1284,7 @@ impl<'a> DecodeContext<'a> {
                 for warning in hatch.warnings {
                     self.scan_diagnostic(source_order, &warning);
                 }
-                let mut links = loop_ids.into_iter().map(|(_, id)| id).collect::<Vec<_>>();
-                links.push(feature_id.to_string());
+                let links = hatch_source_links(self.expand.ctx(), loop_ids, &feature_id)?;
                 self.append_links(source_order, &links)?;
                 self.geometry_transferred = true;
                 self.mark_native_retained(source_order, RhinoLossCode::HatchFillNotTransferred);
@@ -5966,6 +5959,55 @@ fn commit_curve_tree(
             .map_err(|error| error.to_string())?;
     }
     Ok(id)
+}
+
+fn hatch_loop_ids(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    key: &str,
+    kinds: impl ExactSizeIterator<Item = crate::hatch::LoopKind>,
+) -> Result<Vec<(crate::hatch::LoopKind, String)>, cadmpeg_core::CodecError> {
+    use std::fmt::Write;
+
+    let mut ids = crate::wire::admitted_collection(ctx, kinds.len(), "Rhino hatch loop IDs")?;
+    for (index, kind) in kinds.enumerate() {
+        let mut value = index;
+        let mut digits = 1_usize;
+        while value >= 10 {
+            value /= 10;
+            digits += 1;
+        }
+        let length = "rhino:object:curve#"
+            .len()
+            .checked_add(key.len())
+            .and_then(|length| length.checked_add(".hatch-loop-".len()))
+            .and_then(|length| length.checked_add(digits))
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("hatch loop ID length overflow"))?;
+        let mut id =
+            crate::wire::admitted_retained_string(ctx, length, "Rhino hatch loop ID text")?;
+        write!(&mut id, "rhino:object:curve#{key}.hatch-loop-{index}")
+            .map_err(|_| cadmpeg_core::CodecError::malformed("hatch loop ID formatting failed"))?;
+        ids.push((kind, id));
+    }
+    Ok(ids)
+}
+
+fn hatch_source_links(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    loop_ids: Vec<(crate::hatch::LoopKind, String)>,
+    feature_id: &cadmpeg_ir::features::FeatureId,
+) -> Result<Vec<String>, cadmpeg_core::CodecError> {
+    let count = loop_ids
+        .len()
+        .checked_add(1)
+        .ok_or_else(|| cadmpeg_core::CodecError::malformed("hatch source link count overflow"))?;
+    let mut links = crate::wire::admitted_collection(ctx, count, "Rhino hatch source links")?;
+    links.extend(loop_ids.into_iter().map(|(_, id)| id));
+    links.push(crate::wire::copy_retained_string(
+        ctx,
+        feature_id.as_str(),
+        "Rhino hatch feature link text",
+    )?);
+    Ok(links)
 }
 
 /// The hatch plane's placement, scaled into millimetres.
