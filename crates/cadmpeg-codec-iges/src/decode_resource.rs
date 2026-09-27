@@ -4,6 +4,33 @@
 use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::{self, Write};
+
+struct TextLength(usize);
+
+impl Write for TextLength {
+    fn write_str(&mut self, text: &str) -> fmt::Result {
+        self.0 = self.0.checked_add(text.len()).ok_or(fmt::Error)?;
+        Ok(())
+    }
+}
+
+pub(crate) fn format_retained(
+    ctx: &DecodeContext<'_>,
+    args: fmt::Arguments<'_>,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let mut length = TextLength(0);
+    fmt::write(&mut length, args).map_err(|_| refuse_local_limit(operation, u64::MAX, 1))?;
+    let count = u64_from_index(length.0);
+    ctx.charge_retained(count, operation)?;
+    let mut text = String::new();
+    text.try_reserve_exact(length.0)
+        .map_err(|_| refuse_local_limit(operation, count, count))?;
+    fmt::write(&mut text, args)
+        .map_err(|_| CodecError::Malformed("IGES formatted text cannot be rendered".into()))?;
+    Ok(text)
+}
 
 pub(crate) fn reserve_vec<T>(
     ctx: &DecodeContext<'_>,
@@ -59,7 +86,11 @@ pub(crate) fn reserve_optional_vec_growth<T>(
     match ctx {
         Some(ctx) => reserve_vec_growth(ctx, values, additional, operation),
         None => values.try_reserve(additional).map_err(|_| {
-            refuse_local_limit(operation, u64_from_index(additional), u64_from_index(additional))
+            refuse_local_limit(
+                operation,
+                u64_from_index(additional),
+                u64_from_index(additional),
+            )
         }),
     }
 }
@@ -136,17 +167,46 @@ pub(crate) fn collect_optional_vec<T>(
 
 #[cfg(test)]
 mod tests {
-    use super::collect_optional_vec;
+    use super::{collect_optional_vec, format_retained};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn formatted_retained_text_refuses_before_reservation() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 4;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("valid test fixture");
+        let result = format_retained(&ctx, format_args!("item{}", 7), "iges formatted test");
+        assert!(matches!(
+            result,
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.used == 0
+                    && limit.additional == 5
+                    && limit.operation == "iges formatted test"
+        ));
+
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("valid test fixture");
+        assert_eq!(
+            format_retained(&ctx, format_args!("item{}", 7), "iges formatted test")
+                .expect("valid test fixture"),
+            "item7"
+        );
+    }
 
     #[test]
     fn optional_collection_keeps_an_earlier_missing_value() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = collect_optional_vec(&ctx, [None, Some(7_u8)], "iges optional test").unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("valid test fixture");
+        let result = collect_optional_vec(&ctx, [None, Some(7_u8)], "iges optional test")
+            .expect("valid test fixture");
         assert_eq!(result, None);
     }
 
@@ -155,7 +215,8 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("valid test fixture");
         let result = collect_optional_vec(&ctx, [Some(3_u8), Some(7_u8)], "iges optional test");
         assert!(matches!(
             result,
@@ -166,10 +227,10 @@ mod tests {
         ));
 
         let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        let result =
-            collect_optional_vec(&ctx, [Some(3_u8), Some(7_u8)], "iges optional test").unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("valid test fixture");
+        let result = collect_optional_vec(&ctx, [Some(3_u8), Some(7_u8)], "iges optional test")
+            .expect("valid test fixture");
         assert_eq!(result, Some(vec![3, 7]));
     }
 }

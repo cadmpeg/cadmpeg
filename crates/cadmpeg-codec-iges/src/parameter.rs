@@ -3104,11 +3104,29 @@ fn macro_keyword(bytes: &[u8], span: &Range<usize>, keyword: &[u8]) -> bool {
 /// stream. Statement spans exclude their record delimiters; `record_end`
 /// points immediately after the terminating `ENDM` delimiter, so the caller
 /// can retain any remaining card bytes as the ordinary Parameter Data comment.
-pub(crate) fn macro_parameter_data(
+pub(crate) enum MacroDataError {
+    Defect(ParameterDefect, usize),
+    Refusal(CodecError),
+}
+
+impl From<(ParameterDefect, usize)> for MacroDataError {
+    fn from((defect, offset): (ParameterDefect, usize)) -> Self {
+        Self::Defect(defect, offset)
+    }
+}
+
+impl From<CodecError> for MacroDataError {
+    fn from(error: CodecError) -> Self {
+        Self::Refusal(error)
+    }
+}
+
+pub(crate) fn macro_parameter_data_with_context(
     bytes: &[u8],
     parameter_delimiter: u8,
     record_delimiter: u8,
-) -> Result<MacroParameterData, (ParameterDefect, usize)> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<MacroParameterData, MacroDataError> {
     let mut statements = Vec::new();
     let mut start = 0_usize;
     let mut cursor = 0_usize;
@@ -3123,8 +3141,9 @@ pub(crate) fn macro_parameter_data(
         }
         let raw_statement = start..cursor;
         if trim_macro_span(bytes, raw_statement.clone()).is_empty() {
-            return Err((ParameterDefect::MacroStatementEmpty, start));
+            return Err((ParameterDefect::MacroStatementEmpty, start).into());
         }
+        reserve_optional_vec_growth(ctx, &mut statements, 1, "iges macro statement spans")?;
         statements.push(raw_statement.clone());
         let record_end = cursor + 1;
         if macro_keyword(bytes, &raw_statement, b"ENDM") {
@@ -3140,7 +3159,8 @@ pub(crate) fn macro_parameter_data(
                 return Err((
                     ParameterDefect::MacroHeaderMalformed,
                     entity_type_span.start,
-                ));
+                )
+                    .into());
             }
             let (keyword_span, keyword_delimiter, after_keyword) = macro_next_field(
                 bytes,
@@ -3151,7 +3171,7 @@ pub(crate) fn macro_parameter_data(
             if keyword_delimiter != parameter_delimiter
                 || !macro_keyword(bytes, &keyword_span, b"MACRO")
             {
-                return Err((ParameterDefect::MacroHeaderMalformed, keyword_span.start));
+                return Err((ParameterDefect::MacroHeaderMalformed, keyword_span.start).into());
             }
             let (defined_type_span, defined_type_delimiter, after_defined_type) =
                 macro_next_field(bytes, after_keyword, parameter_delimiter, record_delimiter)?;
@@ -3159,25 +3179,29 @@ pub(crate) fn macro_parameter_data(
                 return Err((
                     ParameterDefect::MacroArgumentListMissing,
                     defined_type_span.end,
-                ));
+                )
+                    .into());
             }
             if defined_type_delimiter != parameter_delimiter {
                 return Err((
                     ParameterDefect::MacroHeaderMalformed,
                     defined_type_span.start,
-                ));
+                )
+                    .into());
             }
             let Some(defined_entity_type) = macro_integer(bytes, &defined_type_span) else {
                 return Err((
                     ParameterDefect::MacroHeaderMalformed,
                     defined_type_span.start,
-                ));
+                )
+                    .into());
             };
             if !crate::profile::macro_instance_type(defined_entity_type) {
                 return Err((
                     ParameterDefect::MacroEntityTypeOutOfRange,
                     defined_type_span.start,
-                ));
+                )
+                    .into());
             }
             if bytes
                 .get(after_defined_type..first.end)
@@ -3186,7 +3210,8 @@ pub(crate) fn macro_parameter_data(
                 return Err((
                     ParameterDefect::MacroArgumentListMissing,
                     after_defined_type,
-                ));
+                )
+                    .into());
             }
             return Ok(MacroParameterData {
                 statement_spans: statements,
@@ -3199,7 +3224,20 @@ pub(crate) fn macro_parameter_data(
         start = record_end;
         cursor = record_end;
     }
-    Err((ParameterDefect::MacroTerminatorMissing, start))
+    Err((ParameterDefect::MacroTerminatorMissing, start).into())
+}
+
+#[cfg(test)]
+pub(crate) fn macro_parameter_data(
+    bytes: &[u8],
+    parameter_delimiter: u8,
+    record_delimiter: u8,
+) -> Result<MacroParameterData, (ParameterDefect, usize)> {
+    match macro_parameter_data_with_context(bytes, parameter_delimiter, record_delimiter, None) {
+        Ok(data) => Ok(data),
+        Err(MacroDataError::Defect(defect, offset)) => Err((defect, offset)),
+        Err(MacroDataError::Refusal(error)) => panic!("test-only macro allocation: {error}"),
+    }
 }
 
 fn tokenize_macro(
@@ -3208,8 +3246,11 @@ fn tokenize_macro(
     record_delimiter: u8,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<(Vec<Token>, usize), TokenizeFailure> {
-    let data = macro_parameter_data(bytes, parameter_delimiter, record_delimiter)
-        .map_err(|(defect, offset)| TokenizeFailure::Defect(defect, offset))?;
+    let data = macro_parameter_data_with_context(bytes, parameter_delimiter, record_delimiter, ctx)
+        .map_err(|error| match error {
+            MacroDataError::Defect(defect, offset) => TokenizeFailure::Defect(defect, offset),
+            MacroDataError::Refusal(error) => TokenizeFailure::Refusal(error),
+        })?;
     let mut tokens = Vec::new();
     charge_token(ctx, &mut tokens).map_err(TokenizeFailure::Refusal)?;
     tokens.push(Token {

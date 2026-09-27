@@ -4,6 +4,36 @@
 use crate::parameter::{macro_parameter_data, ParameterDefect};
 
 #[test]
+fn macro_statement_spans_refuse_collection_limit_before_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let bytes = b"306,MACRO,621,X;BODY;ENDM;";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let result = crate::parameter::macro_parameter_data_with_context(bytes, b',', b';', Some(&ctx));
+    assert!(matches!(
+        result,
+        Err(crate::parameter::MacroDataError::Refusal(
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+        )) if limit.dimension == ResourceDimension::CollectionItems
+            && limit.used == 0
+            && limit.additional == 1
+            && limit.operation == "iges macro statement spans"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        crate::parameter::macro_parameter_data_with_context(bytes, b',', b';', Some(&ctx))
+            .ok()
+            .map(|data| data.statement_spans.len()),
+        Some(3)
+    );
+}
+
+#[test]
 fn macro_parameter_data_keeps_language_delimiters_outside_hollerith_payloads() {
     let bytes = b"306,MACRO,621,X,Y;LET $S=3Ha;b;ENDM;comment bytes";
     let data = macro_parameter_data(bytes, b',', b';').unwrap();

@@ -2,7 +2,7 @@
 //! Versioned `native.iges` physical cards and entity records.
 
 use crate::card::{CardScan, ScannedLine, Section};
-use crate::decode_resource::reserve_vec_growth;
+use crate::decode_resource::{format_retained, reserve_vec_growth};
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord, SourceStatus, UseFlag};
 use crate::entities::drawing::drawing_property_value;
 use crate::entities::geometry::{
@@ -16,7 +16,7 @@ use crate::global::{RealPrecision, ResolvedGlobal};
 use crate::graph::expectation::{ExpectationLabel, ReferenceExpectation};
 use crate::graph::{ParameterResolver, ReferenceEdge, ReferenceKind};
 use crate::parameter::{
-    connect_node_layout, signal_string_layout, text_node_layout, DefaultTailCount,
+    connect_node_layout, signal_string_layout, text_node_layout, DefaultTailCount, MacroDataError,
     OverdeclaredCount, ParameterRecord, QuarantinedParameterRecord, ResolvedGroups, TextNodeLayout,
     Token, TokenValue, TrailingPointerAnalysis,
 };
@@ -2183,36 +2183,75 @@ pub(crate) fn store(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let macro_definitions = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 306)
-        .filter_map(|entry| {
-            let record = by_directory.get(&entry.sequence).copied()?;
-            let data = crate::parameter::macro_parameter_data(
-                &record.bytes,
-                global.parameter_delimiter,
-                global.record_delimiter,
-            )
-            .ok()?;
-            let first = data.statement_spans.first()?.clone();
-            let last = data.statement_spans.last()?.clone();
-            let language_statements = data
-                .statement_spans
-                .iter()
-                .skip(1)
-                .take(data.statement_spans.len().saturating_sub(2))
-                .map(|span| record.bytes[span.clone()].to_vec())
-                .collect();
-            Some(NativeMacroDefinition {
-                id: format!("iges:native:macro-definition#D{}", entry.sequence),
-                source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                defined_entity_type: data.defined_entity_type,
-                macro_statement: record.bytes[first].to_vec(),
-                language_statements,
-                end_statement: record.bytes[last].to_vec(),
-            })
-        })
-        .collect::<Vec<_>>();
+    let mut macro_definitions = Vec::new();
+    for entry in directory.iter().filter(|entry| entry.entity_type == 306) {
+        let Some(record) = by_directory.get(&entry.sequence).copied() else {
+            continue;
+        };
+        let data = match crate::parameter::macro_parameter_data_with_context(
+            &record.bytes,
+            global.parameter_delimiter,
+            global.record_delimiter,
+            Some(ctx),
+        ) {
+            Ok(data) => data,
+            Err(MacroDataError::Defect(_, _)) => continue,
+            Err(MacroDataError::Refusal(error)) => return Err(error),
+        };
+        let Some(first) = data.statement_spans.first() else {
+            continue;
+        };
+        let Some(last) = data.statement_spans.last() else {
+            continue;
+        };
+        let Some(language_end) = data.statement_spans.len().checked_sub(1) else {
+            continue;
+        };
+        let Some(language_spans) = data.statement_spans.get(1..language_end) else {
+            continue;
+        };
+        let mut language_statements = Vec::new();
+        for span in language_spans {
+            reserve_vec_growth(
+                ctx,
+                &mut language_statements,
+                1,
+                "iges native macro statements",
+            )?;
+            language_statements.push(ctx.copy_retained(
+                &record.bytes[span.clone()],
+                "iges native macro statement bytes",
+            )?);
+        }
+        reserve_vec_growth(
+            ctx,
+            &mut macro_definitions,
+            1,
+            "iges native macro definitions",
+        )?;
+        macro_definitions.push(NativeMacroDefinition {
+            id: format_retained(
+                ctx,
+                format_args!("iges:native:macro-definition#D{}", entry.sequence),
+                "iges native macro definition id",
+            )?,
+            source_entity: format_retained(
+                ctx,
+                format_args!("iges:entity:directory#{}", entry.sequence),
+                "iges native macro source id",
+            )?,
+            defined_entity_type: data.defined_entity_type,
+            macro_statement: ctx.copy_retained(
+                &record.bytes[first.clone()],
+                "iges native macro header bytes",
+            )?,
+            language_statements,
+            end_statement: ctx.copy_retained(
+                &record.bytes[last.clone()],
+                "iges native macro terminator bytes",
+            )?,
+        });
+    }
     let macro_instances = directory
         .iter()
         .filter(|entry| crate::profile::macro_instance_type(entry.entity_type))
