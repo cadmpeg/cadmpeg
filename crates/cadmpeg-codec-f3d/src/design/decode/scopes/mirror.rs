@@ -2,12 +2,11 @@
 //! Exact mirror scopes and mirror construction binding.
 
 use super::shared_frames::marked_record_reference;
-use crate::bytes::lp_ascii_filtered;
-use crate::bytes::lp_utf16_bounded;
 use crate::container::ContainerScan;
 use crate::design::decode::operands::parse_face_operand;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::{cached_owned_record_offsets, copy_scoped_stream, IndexedRecordOffsets};
+use crate::design::decode::text::lp_utf16_bounded_charged;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::ids::native_stream;
@@ -53,9 +52,8 @@ fn exact_legacy_mirror_scope_count(
     if paired.checked_sub(*start)? != mirror_441_count::LEN {
         return None;
     }
-    let (paired_class_tag, paired_after_tag) =
-        lp_ascii_filtered(bytes, *paired, 0..=2000, u8::is_ascii_graphic)?;
-    if paired_class_tag != "267"
+    let (paired_class_tag, paired_after_tag) = borrowed_ascii_tag(bytes, *paired)?;
+    if paired_class_tag != b"267"
         || paired_after_tag != paired.checked_add(7)?
         || View::u32_le_at(bytes, paired_after_tag) != Some(count_record_index)
     {
@@ -305,7 +303,7 @@ pub(crate) fn bind_mirror_constructions(
         let Some(plane_header) = headers_by_record.get(&(stream.as_str(), *plane_member)) else {
             continue;
         };
-        let work_plane = compact_feature_reference(bytes, plane_header).and_then(
+        let work_plane = compact_feature_reference(ctx, bytes, plane_header)?.and_then(
             |(plane_reference, plane_reference_offset)| {
                 plane_reference
                     .checked_add(1)
@@ -358,15 +356,17 @@ pub(crate) fn bind_mirror_constructions(
             };
         let seed_feature = match seed_group.members() {
             _ if seed_group.role() != DesignOperandRole::BODIES_B => None,
-            [crate::records::identity::Located { value: member, .. }] => headers_by_record
+            [crate::records::identity::Located { value: member, .. }] => match headers_by_record
                 .get(&(stream.as_str(), *member))
-                .and_then(|header| compact_feature_reference(bytes, header))
-                .filter(|(record_index, _)| {
+            {
+                Some(header) => compact_feature_reference(ctx, bytes, header)?.filter(|(record_index, _)| {
                     scopes.iter().any(|scope| {
                         native_stream(&scope.id) == Some(stream.as_str())
                             && scope.record_index == *record_index
                     })
                 }),
+                None => None,
+            },
             _ => None,
         };
         ctx.charge_work(
@@ -448,52 +448,75 @@ pub(crate) fn bind_mirror_constructions(
     Ok(())
 }
 
-fn compact_feature_reference(bytes: &[u8], header: &DesignRecordHeader) -> Option<(u32, u64)> {
-    let start = usize::try_from(header.byte_offset).ok()?;
-    if bytes.get(start + 11..start + 21)? != [0; 10]
-        || bytes.get(start + 21) != Some(&1)
-        || View::u32_le_at(bytes, start + 22)? != header.record_index.checked_add(3)?
-        || bytes.get(start + 26..start + 32)? != [0; 6]
-        || View::u32_le_at(bytes, start + 32)? != 1
-    {
+fn borrowed_ascii_tag(bytes: &[u8], at: usize) -> Option<(&[u8], usize)> {
+    let count = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
+    if count > 2000 {
         return None;
     }
-    let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, start + 36, 1..=256)?;
-    let (context_id, after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
+    let start = at.checked_add(4)?;
+    let end = start.checked_add(count)?;
+    let raw = bytes.get(start..end)?;
+    raw.iter().all(u8::is_ascii_graphic).then_some((raw, end))
+}
+
+fn compact_feature_reference(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    header: &DesignRecordHeader,
+) -> Result<Option<(u32, u64)>, CodecError> {
+    let Some(start) = usize::try_from(header.byte_offset).ok() else {
+        return Ok(None);
+    };
+    if bytes.get(start + 11..start + 21) != Some(&[0; 10][..])
+        || bytes.get(start + 21) != Some(&1)
+        || View::u32_le_at(bytes, start + 22) != header.record_index.checked_add(3)
+        || bytes.get(start + 26..start + 32) != Some(&[0; 6][..])
+        || View::u32_le_at(bytes, start + 32) != Some(1)
+    {
+        return Ok(None);
+    }
+    let Some((asset_id, after_asset_id)) = lp_utf16_bounded_charged(ctx, bytes, start + 36, 1..=256)? else {
+        return Ok(None);
+    };
+    let Some((context_id, after_context_id)) = lp_utf16_bounded_charged(ctx, bytes, after_asset_id, 1..=256)? else {
+        return Ok(None);
+    };
     if !crate::bytes::is_guid_relaxed(&asset_id)
         || !crate::bytes::is_guid_relaxed(&context_id)
-        || View::u32_le_at(bytes, after_context_id)? != 2
-        || bytes.get(after_context_id + 4..after_context_id + 8)? != [0; 4]
+        || View::u32_le_at(bytes, after_context_id) != Some(2)
+        || bytes.get(after_context_id + 4..after_context_id + 8) != Some(&[0; 4][..])
     {
-        return None;
+        return Ok(None);
     }
-    let paired_at = next_indexed_record_offset(bytes, after_context_id + 8)?;
-    let nested_one_at = next_indexed_record_offset(bytes, paired_at + 11)?;
-    let nested_two_at = next_indexed_record_offset(bytes, nested_one_at + 11)?;
-    let identity_at = next_indexed_record_offset(bytes, nested_two_at + 11)?;
-    let next_at = next_indexed_record_offset(bytes, identity_at + 11)?;
-    for (offset, expected) in [
-        (paired_at, header.record_index),
-        (nested_one_at, header.record_index.checked_add(1)?),
-        (nested_two_at, header.record_index.checked_add(2)?),
-        (identity_at, header.record_index.checked_add(3)?),
-        (next_at, header.record_index.checked_add(4)?),
-    ] {
-        let (_, after_tag) = lp_ascii_filtered(bytes, offset, 0..=2000, u8::is_ascii_graphic)?;
-        if View::u32_le_at(bytes, after_tag)? != expected {
+    Ok((|| {
+        let paired_at = next_indexed_record_offset(bytes, after_context_id + 8)?;
+        let nested_one_at = next_indexed_record_offset(bytes, paired_at + 11)?;
+        let nested_two_at = next_indexed_record_offset(bytes, nested_one_at + 11)?;
+        let identity_at = next_indexed_record_offset(bytes, nested_two_at + 11)?;
+        let next_at = next_indexed_record_offset(bytes, identity_at + 11)?;
+        for (offset, expected) in [
+            (paired_at, header.record_index),
+            (nested_one_at, header.record_index.checked_add(1)?),
+            (nested_two_at, header.record_index.checked_add(2)?),
+            (identity_at, header.record_index.checked_add(3)?),
+            (next_at, header.record_index.checked_add(4)?),
+        ] {
+            let (_, after_tag) = borrowed_ascii_tag(bytes, offset)?;
+            if View::u32_le_at(bytes, after_tag)? != expected {
+                return None;
+            }
+        }
+        if identity_at.checked_add(29)? != next_at
+            || bytes.get(identity_at + 11..identity_at + 21)? != [0; 10]
+            || bytes.get(identity_at + 25..identity_at + 29)? != [0; 4]
+        {
             return None;
         }
-    }
-    if identity_at.checked_add(29)? != next_at
-        || bytes.get(identity_at + 11..identity_at + 21)? != [0; 10]
-        || bytes.get(identity_at + 25..identity_at + 29)? != [0; 4]
-    {
-        return None;
-    }
-    Some((
-        View::u32_le_at(bytes, identity_at + 21)?,
-        u64::try_from(identity_at + 21).ok()?,
-    ))
+        Some((
+            View::u32_le_at(bytes, identity_at + 21)?,
+            u64::try_from(identity_at + 21).ok()?,
+        ))
+    })())
 }
 
 #[cfg(test)]
