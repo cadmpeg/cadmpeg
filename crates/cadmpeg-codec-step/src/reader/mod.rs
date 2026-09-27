@@ -397,7 +397,7 @@ fn decode_exchange_mode(
         "step_implicit_face_plane",
     )?;
     let mut topology = topology::decode(exchange, &mut session.ir, &carrier_index, session.ctx)?;
-    geometry::infer_edge_parameter_ranges(&mut session.ir, Some(session.ctx))?;
+    geometry::infer_edge_parameter_ranges(&mut session.ir, session.ctx)?;
     let owned_carriers = geometry::topology_owned_carriers(&session.ir, &carrier_index);
     session.charge_stage("step_topology_association")?;
     geometry::associate_topology_carriers(

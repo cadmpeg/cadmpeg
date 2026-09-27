@@ -81,42 +81,50 @@ pub(super) fn placement_transform(
 /// Infer the carrier interval trimmed by each edge's endpoint vertices.
 pub(super) fn infer_edge_parameter_ranges(
     ir: &mut CadIr,
-    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let points = ir
-        .model
-        .points
-        .iter()
-        .map(|point| (point.id.as_str(), point.position().get()))
-        .collect::<HashMap<_, _>>();
-    let vertices = ir
-        .model
-        .vertices
-        .iter()
-        .filter_map(|vertex| {
-            points
-                .get(vertex.point.as_str())
-                .copied()
-                .map(|point| (vertex.id.as_str(), point))
-        })
-        .collect::<HashMap<_, _>>();
-    let candidates = ir
-        .model
-        .edges
-        .iter()
-        .enumerate()
-        .filter(|(_, edge)| edge.param_range().is_none())
-        .filter_map(|(index, edge)| {
-            let curve = edge.curve().cloned()?;
-            let start = vertices.get(edge.start.as_str()).copied()?;
-            let end = vertices.get(edge.end.as_str()).copied()?;
-            Some((index, curve, start, end))
-        })
-        .collect::<Vec<_>>();
-    let work = u64_from_index(candidates.len()).saturating_mul(RANGE_INFERENCE_WORK_UNITS);
-    if let Some(ctx) = ctx {
-        ctx.charge_work(work, "step_edge_parameter_inference")?;
+    let mut points = HashMap::new();
+    for point in &ir.model.points {
+        ctx.charge_collection_items(1, "step_parameter_inference_points")?;
+        points.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("step_parameter_inference_points", 0, 1)
+        })?;
+        points.insert(point.id.as_str(), point.position().get());
     }
+    let mut vertices = HashMap::new();
+    for vertex in &ir.model.vertices {
+        if let Some(point) = points.get(vertex.point.as_str()).copied() {
+            ctx.charge_collection_items(1, "step_parameter_inference_vertices")?;
+            vertices.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("step_parameter_inference_vertices", 0, 1)
+            })?;
+            vertices.insert(vertex.id.as_str(), point);
+        }
+    }
+    let mut candidates = Vec::new();
+    for (index, edge) in ir.model.edges.iter().enumerate() {
+        if edge.param_range().is_some() {
+            continue;
+        }
+        let Some((curve, start, end)) = edge.curve().and_then(|curve| {
+            Some((
+                curve,
+                vertices.get(edge.start.as_str()).copied()?,
+                vertices.get(edge.end.as_str()).copied()?,
+            ))
+        }) else {
+            continue;
+        };
+        ctx.charge_collection_items(1, "step_parameter_inference_candidates")?;
+        candidates.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("step_parameter_inference_candidates", 0, 1)
+        })?;
+        candidates.push((index, curve, start, end));
+    }
+    let work = u64_from_index(candidates.len())
+        .checked_mul(RANGE_INFERENCE_WORK_UNITS)
+        .ok_or_else(|| ctx.refuse_codec_limit("step_edge_parameter_inference", 0, 1))?;
+    ctx.charge_work(work, "step_edge_parameter_inference")?;
 
     let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
     let inferred = candidates.into_iter().try_fold(
@@ -153,6 +161,10 @@ pub(super) fn infer_edge_parameter_ranges(
                 return Ok(inferred);
             };
             if let Some(range) = edge_parameter_range(solved, start_parameter, end_parameter) {
+                ctx.charge_collection_items(1, "step_parameter_inference_ranges")?;
+                inferred.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("step_parameter_inference_ranges", 0, 1)
+                })?;
                 inferred.push((edge_index, range));
             }
             Ok::<_, CodecError>(inferred)
@@ -162,6 +174,12 @@ pub(super) fn infer_edge_parameter_ranges(
 
     for (index, range) in inferred {
         if let Some(edge) = ir.model.edges.get_mut(index) {
+            if let Some(curve) = edge.curve() {
+                ctx.charge_retained(
+                    u64_from_index(curve.as_str().len()),
+                    "step_parameter_inference_edge_curve",
+                )?;
+            }
             edge.carrier =
                 cadmpeg_ir::topology::EdgeCarrier::new(edge.curve().cloned(), Some(range))
                     .map_err(CodecError::malformed)?;
