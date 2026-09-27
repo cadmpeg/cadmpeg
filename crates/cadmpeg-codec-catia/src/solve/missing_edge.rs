@@ -3657,7 +3657,12 @@ fn standard_mesh_assignment_corner_points(
             let Some(pair) = edge_points[run.edge] else {
                 continue;
             };
-            let candidates = HashSet::from(pair);
+            let mut candidates = HashSet::new();
+            for point in pair {
+                if let Err(error) = crate::resource::insert_set(ctx, &mut candidates, point, "catia_corner_candidate_points") {
+                    return Some(Err(error));
+                }
+            }
             let positions = [
                 (run.face, run.cycle, run.start),
                 (
@@ -3673,32 +3678,26 @@ fn standard_mesh_assignment_corner_points(
                         return None;
                     }
                 } else {
-                    corner_points.insert(position, candidates.clone());
+                    let copied = match crate::resource::copy_retained_set(ctx, &candidates, "catia_corner_point_copy") {
+                        Ok(copied) => copied,
+                        Err(error) => return Some(Err(error)),
+                    };
+                    if let Err(error) = crate::resource::insert_map(ctx, &mut corner_points, position, copied, "catia_corner_point_entries") {
+                        return Some(Err(error));
+                    }
                 }
             }
-            run_constraints.push((positions[0], positions[1], pair));
+            if let Err(error) = crate::resource::push(ctx, &mut run_constraints, (positions[0], positions[1], pair), "catia_corner_run_constraints") {
+                return Some(Err(error));
+            }
         }
         loop {
             let before = corner_points.values().map(HashSet::len).sum::<usize>();
             for &(left, right, pair) in &run_constraints {
-                let left_single = <[usize; 1]>::try_from(
-                    corner_points
-                        .get(&left)?
-                        .iter()
-                        .copied()
-                        .collect::<Vec<_>>(),
-                )
-                .ok()
-                .map(|[point]| point);
-                let right_single = <[usize; 1]>::try_from(
-                    corner_points
-                        .get(&right)?
-                        .iter()
-                        .copied()
-                        .collect::<Vec<_>>(),
-                )
-                .ok()
-                .map(|[point]| point);
+                let left_points = corner_points.get(&left)?;
+                let right_points = corner_points.get(&right)?;
+                let left_single = (left_points.len() == 1).then(|| left_points.iter().copied().next()).flatten();
+                let right_single = (right_points.len() == 1).then(|| right_points.iter().copied().next()).flatten();
                 if let Some(point) = left_single {
                     corner_points
                         .get_mut(&right)?
@@ -3737,53 +3736,45 @@ fn standard_mesh_missing_edge_endpoint_assignments(
     else {
         return Ok(None);
     };
-    Ok(Some(
-        assignments
-            .into_iter()
-            .map(|face| {
-                face.into_iter()
-                    .map(|assignment| {
-                        assignment
-                            .into_iter()
-                            .map(|placement| {
-                                let endpoint_pairs =
-                                    corner_points
-                                        .get(&(placement.face, placement.cycle, placement.start))
-                                        .zip(corner_points.get(&(
-                                            placement.face,
-                                            placement.cycle,
-                                            placement.end(
-                                                cycle_lengths[placement.face][placement.cycle],
-                                            ),
-                                        )))
-                                        .map(|(starts, ends)| {
-                                            let mut pairs = starts
-                                                .iter()
-                                                .flat_map(|&start| {
-                                                    ends.iter()
-                                                        .filter(move |&&end| start != end)
-                                                        .map(move |&end| {
-                                                            let mut pair = [start, end];
-                                                            pair.sort_unstable();
-                                                            pair
-                                                        })
-                                                })
-                                                .collect::<Vec<_>>();
-                                            pairs.sort_unstable();
-                                            pairs.dedup();
-                                            pairs
-                                        });
-                                MeshEdgePlacementEndpointCandidate {
-                                    placement,
-                                    endpoint_pairs,
-                                }
-                            })
-                            .collect()
-                    })
-                    .collect()
-            })
-            .collect(),
-    ))
+    let mut faces = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut faces, assignments.len(), "catia_placement_endpoint_face_rows")?;
+    for face in assignments {
+        let mut face_assignments = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut face_assignments, face.len(), "catia_placement_endpoint_assignment_rows")?;
+        for assignment in face {
+            let mut placements = Vec::new();
+            crate::resource::reserve_vec(ctx, &mut placements, assignment.len(), "catia_placement_endpoint_placement_rows")?;
+            for placement in assignment {
+                let endpoint_pairs = if let Some((starts, ends)) = corner_points
+                    .get(&(placement.face, placement.cycle, placement.start))
+                    .zip(corner_points.get(&(
+                        placement.face,
+                        placement.cycle,
+                        placement.end(cycle_lengths[placement.face][placement.cycle]),
+                    ))) {
+                    let mut pairs = Vec::new();
+                    for &start in starts {
+                        for &end in ends {
+                            if start != end {
+                                let mut pair = [start, end];
+                                pair.sort_unstable();
+                                crate::resource::push(ctx, &mut pairs, pair, "catia_placement_endpoint_candidate_pairs")?;
+                            }
+                        }
+                    }
+                    pairs.sort_unstable();
+                    pairs.dedup();
+                    Some(pairs)
+                } else {
+                    None
+                };
+                placements.push(MeshEdgePlacementEndpointCandidate { placement, endpoint_pairs });
+            }
+            face_assignments.push(placements);
+        }
+        faces.push(face_assignments);
+    }
+    Ok(Some(faces))
 }
 
 /// Enforce resolved edge endpoint pairs and complete opposite-face placement
@@ -3817,34 +3808,20 @@ fn standard_mesh_pruned_missing_edge_endpoint_assignments(
                 .enumerate()
                 .filter_map(|(edge, incident)| incident.contains(&face).then_some(edge))
             {
-                let candidates = assignments
-                    .iter()
-                    .filter_map(|assignment| {
-                        assignment
-                            .iter()
-                            .find(|candidate| candidate.placement.edge == edge)
-                    })
-                    .collect::<Vec<_>>();
-                if candidates.len() != assignments.len()
-                    || candidates
-                        .iter()
-                        .any(|candidate| candidate.endpoint_pairs.is_none())
-                {
-                    face_domains.insert((face, edge), None);
-                    continue;
+                let mut domain = HashSet::new();
+                let mut complete = true;
+                for assignment in assignments {
+                    let Some(pairs) = assignment.iter()
+                        .find(|candidate| candidate.placement.edge == edge)
+                        .and_then(|candidate| candidate.endpoint_pairs.as_ref()) else {
+                        complete = false;
+                        break;
+                    };
+                    for &pair in pairs {
+                        crate::resource::insert_set(ctx, &mut domain, pair, "catia_placement_face_domain_pairs")?;
+                    }
                 }
-                let domain = candidates
-                    .into_iter()
-                    .flat_map(|candidate| {
-                        candidate
-                            .endpoint_pairs
-                            .as_ref()
-                            .into_iter()
-                            .flatten()
-                            .copied()
-                    })
-                    .collect::<HashSet<_>>();
-                face_domains.insert((face, edge), Some(domain));
+                crate::resource::insert_map(ctx, &mut face_domains, (face, edge), complete.then_some(domain), "catia_placement_face_domain_entries")?;
             }
         }
         for assignments in &mut faces {

@@ -550,6 +550,25 @@ fn placement_endpoint_pairs_refuse_collection_limit() {
 }
 
 #[test]
+fn placement_corner_and_face_domain_copies_refuse_before_growth() {
+    let operations = placement_missing_edge_limit_operations();
+    for operation in [
+        "catia_corner_candidate_points",
+        "catia_corner_point_copy",
+        "catia_corner_point_entries",
+        "catia_corner_run_constraints",
+        "catia_placement_endpoint_face_rows",
+        "catia_placement_endpoint_assignment_rows",
+        "catia_placement_endpoint_placement_rows",
+        "catia_placement_endpoint_candidate_pairs",
+        "catia_placement_face_domain_entries",
+        "catia_placement_face_domain_pairs",
+    ] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
 fn compact_standard_ports_reuse_handles_in_the_global_trim_namespace() {
     let ports = crate::test_support::with_service_context(|ctx| {
         crate::solve::missing_edge::standard_global_edge_port_identities(
