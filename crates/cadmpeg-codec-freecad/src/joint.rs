@@ -370,10 +370,10 @@ fn joint_kind(
 
 fn enumeration_value(ctx: &DecodeContext<'_>, property: &PropertyRecord) -> Result<String, CodecError> {
     let document = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
-        malformed(format!(
+        crate::resource::malformed_charged(ctx, format_args!(
             "joint enumeration property {} has invalid XML: {error}",
             property.id
-        ))
+        ), "fcstd joint diagnostic")
     })?;
     let root = document.root_element();
     if !root.has_tag_name("Property") {
@@ -577,6 +577,32 @@ pub(crate) mod tests {
     use super::joint_kind;
     use crate::test_support::test_archive::{archive, assert_valid_document};
     use crate::FcstdCodec;
+
+    #[test]
+    fn joint_invalid_enumeration_xml_diagnostic_refuses_at_retained_limit() {
+        let property = crate::native::PropertyRecord {
+            id: "property".into(),
+            owner: "joint".into(),
+            name: "JointType".into(),
+            type_name: "App::PropertyEnumeration".into(),
+            family: crate::native::PropertyFamily::Unknown,
+            status: None,
+            body: crate::native::PropertyBody::Transient,
+            order: 0,
+            xml: crate::native::RetainedXml::from_text("<Property".into(), 0)
+                .expect("valid retained span"),
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        let error = super::enumeration_value(&ctx, &property)
+            .expect_err("diagnostic text must be admitted");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+            if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && failure.operation == "fcstd joint diagnostic"), "{error:?}");
+    }
 
     #[test]
     fn joint_record_collection_refuses_at_caller_limit() {
