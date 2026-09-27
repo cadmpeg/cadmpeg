@@ -3754,7 +3754,7 @@ fn project_design_history(
         lanes,
     )?;
     crate::history::configuration::project_compact_and_generated(
-        Some(ctx),
+        ctx,
         &mut ir.model.features,
         &semantic_projection,
         lanes,
@@ -3777,7 +3777,7 @@ fn project_design_history(
     crate::pmi::enrich_history_parameters(&mut parameter_projection, pmi_dimensions);
     ir.model.parameters = crate::history::parameters::project_parameters(&parameter_projection);
     crate::history::configuration::project_configuration_design_states(
-        Some(ctx),
+        ctx,
         ir,
         histories,
         lanes,

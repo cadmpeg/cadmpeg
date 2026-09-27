@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral-to-native history write preparation.
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     BodySelection, DesignParameter, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection,
@@ -302,7 +303,15 @@ fn project_feature_model_with_native_inputs(
         &native.feature_input_lanes,
         None,
     );
-    project_compact_and_generated(None, features, &histories, &native.feature_input_lanes)?;
+    let projection_bytes = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&projection_bytes, &arena, &DecodePolicy::service())?;
+    project_compact_and_generated(&ctx, features, &histories, &native.feature_input_lanes)?;
     crate::resolved_features::operations::bind_revolution_operations(
         features,
         &histories,
