@@ -767,7 +767,9 @@ fn historical_transition_separates_membership_and_revision_changes() {
         },
     );
 
-    let transition = historical_transition(&current, Some(&previous)).unwrap();
+    let transition = with_history_decode_context(|ctx| {
+        historical_transition(ctx, &current, Some(&previous)).unwrap().unwrap()
+    });
     assert_eq!(transition.previous_state_id, Some(10));
     assert_eq!(transition.topology.bodies.inserted, [2]);
     assert_eq!(transition.topology.bodies.updated, [1]);

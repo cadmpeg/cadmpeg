@@ -236,6 +236,44 @@ fn history_topology_slot_index_refuses_collection_limit() {
         if limit.operation == "index F3D historical topology slots"));
 }
 
+fn transition_error(max_items: u64) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use crate::history_records::{AsmEntityVersion, AsmHistoricalTopology, AsmTopologyCache};
+
+    let mut history = one_state_history();
+    history.states[0].entity_versions.push(AsmEntityVersion {
+        entity_ref: 1,
+        record_ref: 1,
+    });
+    history.states[0].topology_cache = AsmTopologyCache::Complete(AsmHistoricalTopology {
+        bodies: vec![1],
+        ..Default::default()
+    });
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_items;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    super::super::bind_historical_transitions(&ctx, &mut history.states).unwrap_err()
+}
+
+macro_rules! historical_transition_limit_test {
+    ($name:ident, $limit:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            let error = transition_error($limit);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == $operation));
+        }
+    };
+}
+
+historical_transition_limit_test!(history_transition_node_index_refuses_limit, 0, "index F3D transition nodes");
+historical_transition_limit_test!(history_transition_vector_refuses_limit, 1, "collect F3D historical transitions");
+historical_transition_limit_test!(history_transition_version_map_refuses_limit, 2, "index F3D transition versions");
+historical_transition_limit_test!(history_transition_version_keys_refuses_limit, 3, "collect F3D transition version keys");
+historical_transition_limit_test!(history_transition_entity_index_refuses_limit, 4, "index F3D current transition entities");
+historical_transition_limit_test!(history_transition_delta_refuses_limit, 5, "collect F3D transition delta");
+
 #[test]
 fn history_archived_count_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
