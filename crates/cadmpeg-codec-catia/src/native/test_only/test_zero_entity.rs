@@ -430,7 +430,10 @@ fn derived_zero_entity_endpoint_pairs(
             }
         }
     }
-    crate::families::zero_entity::topology::endpoint_pair_candidates(&occurrences)
+    crate::test_support::with_service_context(|ctx| {
+        crate::families::zero_entity::topology::endpoint_pair_candidates(ctx, &occurrences)
+    })
+    .expect("test endpoint pairs fit the service profile")
 }
 
 pub(super) fn validate_zero_entity_endpoint_locus_candidates(
@@ -439,7 +442,10 @@ pub(super) fn validate_zero_entity_endpoint_locus_candidates(
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let derived_pairs = derived_zero_entity_endpoint_pairs(runs);
     let expected = zero_entity_endpoint_locus_candidates(
-        crate::families::zero_entity::topology::endpoint_locus_candidates(&derived_pairs),
+        crate::test_support::with_service_context(|ctx| {
+            crate::families::zero_entity::topology::endpoint_locus_candidates(ctx, &derived_pairs)
+        })
+        .expect("test endpoint loci fit the service profile"),
     );
     if endpoint_loci != expected {
         return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
