@@ -47,6 +47,42 @@ fn pmi_refuses(records: &str, operation: &str) {
     assert!(refused, "no collection limit refused {operation}");
 }
 
+fn pmi_retained_refuses(records: &str, operation: &str) {
+    let source = format!("{HEADER}{records}{TAIL}");
+    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid PMI exchange");
+    let arena = DecodeArena::new();
+    let (setup_ctx, _) =
+        DecodeContext::from_root_bytes(source.as_bytes(), &arena, &DecodePolicy::default())
+            .expect("source fits setup policy");
+    let mut setup_ir = cadmpeg_ir::document::CadIr::empty();
+    let geometry = crate::reader::geometry::decode(&exchange, &mut setup_ir, &setup_ctx)
+        .expect("geometry setup");
+    let index = crate::reader::index::CarrierIndex::from_ir(&setup_ir, &setup_ctx)
+        .expect("carrier setup");
+    let topology = crate::reader::topology::decode(&exchange, &mut setup_ir, &index, &setup_ctx)
+        .expect("topology setup");
+    let refused = (0..=256).any(|limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+            .expect("root fits retained policy");
+        matches!(
+            super::super::decode(
+                &exchange,
+                &geometry.value,
+                &topology.value,
+                &mut setup_ir.clone(),
+                Some(&ctx),
+            ),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::RetainedBytes
+                    && refusal.operation == operation
+        )
+    });
+    assert!(refused, "no retained limit refused {operation}");
+}
+
 #[test]
 fn pmi_base_aspects_refuse_collection_limit() {
     pmi_refuses("#1=DATUM('D');", "step_pmi_base_aspects");
@@ -676,4 +712,69 @@ fn pmi_measure_id_walk_refuses_depth_limit() {
             if refusal.dimension == ResourceDimension::RecursionDepth
                 && refusal.operation == "step_pmi_measure_id_walk"
     ));
+}
+
+fn measure_eval_refusal(limit: u64, depth_limit: Option<u64>, record: &str) -> CodecError {
+    let source = format!("{HEADER}{record}{TAIL}");
+    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid measure exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    if let Some(depth_limit) = depth_limit {
+        policy.limits.max_recursion_depth = depth_limit;
+    }
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    let mut losses = Vec::new();
+    let mut measurements = super::super::MeasureContext {
+        length_scale: 1.0,
+        angle_scale: 1.0,
+        graph_limit: 64,
+        losses: &mut losses,
+    };
+    super::super::measure(
+        &crate::parse::Value::Reference(1),
+        &exchange,
+        &mut measurements,
+        Some(&ctx),
+    )
+    .expect_err("measure evaluation exceeds the limit")
+}
+
+#[test]
+fn pmi_measure_eval_active_refuses_collection_limit() {
+    assert!(matches!(
+        measure_eval_refusal(0, None, "#1=MEASURE_REPRESENTATION_ITEM();"),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_pmi_measure_eval_active"
+    ));
+}
+
+#[test]
+fn pmi_measure_eval_walk_refuses_depth_limit() {
+    assert!(matches!(
+        measure_eval_refusal(8, Some(0), "#1=MEASURE_REPRESENTATION_ITEM();"),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::RecursionDepth
+                && refusal.operation == "step_pmi_measure_eval_walk"
+    ));
+}
+
+#[test]
+fn pmi_measure_loss_slot_refuses_collection_limit() {
+    assert!(matches!(
+        measure_eval_refusal(1, None, "#1=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(1.),$);"),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_pmi_losses"
+    ));
+}
+
+#[test]
+fn pmi_defined_area_unit_text_refuses_retained_limit() {
+    pmi_retained_refuses(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=(LENGTH_MEASURE_WITH_UNIT() MEASURE_WITH_UNIT(LENGTH_MEASURE(0.05),#1));#3=ITEM();#4=(FLATNESS_TOLERANCE('tol','',#2,#3) GEOMETRIC_TOLERANCE_WITH_DEFINED_AREA_UNIT(.PROJECTED.,#2));",
+        "step_pmi_defined_area_unit_text",
+    );
 }
