@@ -1095,9 +1095,9 @@ fn parse_view(
             VIEW_TRACE_IMAGE if !child.short() => {
                 let (value, file_reference_range) =
                     parse_trace_image(data, child.body().clone(), archive, scale, losses)?;
-                let nested_children = file_reference_range.clone().into_iter().collect::<Vec<_>>();
+                let nested_children = file_reference_range.as_slice();
                 if let Some(warning) =
-                    view_child_checksum_warning_excluding(data, &child, &nested_children)?
+                    view_child_checksum_warning_excluding(data, &child, nested_children)?
                 {
                     losses.push(located_integrity_loss(
                         child.header_start,
@@ -1121,9 +1121,9 @@ fn parse_view(
             VIEW_WALLPAPER_V3 if !child.short() => {
                 let (value, file_reference_range) =
                     parse_wallpaper(data, child.body().clone(), archive, losses)?;
-                let nested_children = file_reference_range.clone().into_iter().collect::<Vec<_>>();
+                let nested_children = file_reference_range.as_slice();
                 if let Some(warning) =
-                    view_child_checksum_warning_excluding(data, &child, &nested_children)?
+                    view_child_checksum_warning_excluding(data, &child, nested_children)?
                 {
                     losses.push(located_integrity_loss(
                         child.header_start,
