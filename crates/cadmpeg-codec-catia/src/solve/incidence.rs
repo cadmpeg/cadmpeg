@@ -1998,7 +1998,7 @@ pub(super) fn compact_boundary_domain_viable(
     Ok(match domain {
         MeshFaceBoundaryDomain::Ordered(_) => true,
         MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
-            incidence_cycles(edges, &edge_points).is_some_and(|cycles| cycles.len() == 1)
+            incidence_cycles(ctx, edges, &edge_points)?.is_some_and(|cycles| cycles.len() == 1)
         }
         MeshFaceBoundaryDomain::DeferredValidation(domain) => {
             deferred_boundary_closes(ctx, domain, &edge_points)?
@@ -2092,7 +2092,7 @@ fn advance_compact_boundary_domains<'a>(
                 assignments.clone()
             }
             MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
-                let Some(cycles) = incidence_cycles(edges, &points) else {
+                let Some(cycles) = incidence_cycles(ctx, edges, &points)? else {
                     return Ok(CompactBoundaryAdvanceOutcome::Rejected);
                 };
                 let [cycle] = cycles.as_slice() else {
@@ -3679,7 +3679,7 @@ pub(super) fn deferred_boundary_assignment(
     );
     incident.sort_unstable();
     incident.dedup();
-    let Some(incidence) = incidence_cycles(&incident, edge_points) else {
+    let Some(incidence) = incidence_cycles(ctx, &incident, edge_points)? else {
         return Ok(None);
     };
     if incidence.len() != domain.cycles.len() {
@@ -3774,7 +3774,7 @@ fn deferred_boundary_closes(
     );
     incident.sort_unstable();
     incident.dedup();
-    let Some(incidence) = incidence_cycles(&incident, edge_points) else {
+    let Some(incidence) = incidence_cycles(ctx, &incident, edge_points)? else {
         return Ok(false);
     };
     if incidence.len() != domain.cycles.len() {
@@ -3835,7 +3835,7 @@ fn boundary_domains_close(
         let closes = match domain {
             MeshFaceBoundaryDomain::Ordered(_) => true,
             MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
-                incidence_cycles(edges, edge_points).is_some_and(|cycles| cycles.len() == 1)
+                incidence_cycles(ctx, edges, edge_points)?.is_some_and(|cycles| cycles.len() == 1)
             }
             MeshFaceBoundaryDomain::DeferredValidation(domain) => {
                 deferred_boundary_closes(ctx, domain, edge_points)?
@@ -3898,7 +3898,7 @@ fn component_incidence_faces_viable(
             };
             points[edge] = pair;
         }
-        if incidence_cycles(&face_edges[face], &points).is_none() {
+        if incidence_cycles(ctx, &face_edges[face], &points)?.is_none() {
             return Ok(false);
         }
         let Some(domain) = domains.and_then(|domains| domains.get(face)) else {
@@ -3920,7 +3920,7 @@ fn component_incidence_faces_viable(
                 })
             }
             MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
-                incidence_cycles(edges, &points).is_some_and(|cycles| cycles.len() == 1)
+                incidence_cycles(ctx, edges, &points)?.is_some_and(|cycles| cycles.len() == 1)
             }
             MeshFaceBoundaryDomain::DeferredValidation(domain) => {
                 deferred_boundary_closes(ctx, domain, &points)?
@@ -3996,7 +3996,7 @@ pub(super) fn partial_face_orientability_viable(
             }
             component.sort_unstable();
             let trail = if points.iter().all(|point| degrees[point] == 2) {
-                let Some(cycles) = incidence_cycles(&component, &edge_points) else {
+                let Some(cycles) = incidence_cycles(ctx, &component, &edge_points)? else {
                     return Ok(false);
                 };
                 let [cycle] = cycles.as_slice() else {

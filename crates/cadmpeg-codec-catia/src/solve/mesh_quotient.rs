@@ -6991,7 +6991,7 @@ fn materialize_boundary_domains(
                 vec![assignment]
             }
             MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
-                let Some(cycles) = incidence_cycles(edges, edge_pairs) else {
+                let Some(cycles) = incidence_cycles(ctx, edges, edge_pairs)? else {
                     return Ok(None);
                 };
                 let [cycle] = cycles.as_slice() else {
