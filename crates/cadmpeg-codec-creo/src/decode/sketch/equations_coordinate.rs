@@ -1161,24 +1161,28 @@ pub(in crate::decode) fn solve_section_coordinate_equations(
                 }
             }
         }
-        let mut matrix = component_equations
-            .into_iter()
-            .map(|equation_index| &equations[equation_index])
-            .map(|equation| {
-                let mut row = SectionLinearRow {
-                    coefficients: BTreeMap::new(),
-                    rhs: equation.rhs,
-                };
-                for (variable, coefficient) in &equation.terms {
-                    let global = indices[variable];
-                    if *coefficient != 0.0 {
-                        row.coefficients
-                            .insert(local_columns[&global], *coefficient);
-                    }
+        let mut matrix = Vec::new();
+        ctx.try_reserve_items(
+            &mut matrix,
+            component_equations.len(),
+            "creo section matrix rows",
+        )?;
+        for equation_index in component_equations {
+            let equation = &equations[equation_index];
+            let mut row = SectionLinearRow {
+                coefficients: BTreeMap::new(),
+                rhs: equation.rhs,
+            };
+            for (variable, coefficient) in &equation.terms {
+                let global = indices[variable];
+                if *coefficient != 0.0 {
+                    ctx.charge_collection_items(1, "creo section matrix coefficients")?;
+                    row.coefficients
+                        .insert(local_columns[&global], *coefficient);
                 }
-                row
-            })
-            .collect::<Vec<_>>();
+            }
+            matrix.push(row);
+        }
         let Some(component_solution) = uniquely_solved_linear_variables(&mut matrix, columns.len())
         else {
             for global in columns {
@@ -1550,6 +1554,42 @@ mod tests {
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo section component equations")
+        );
+    }
+
+    #[test]
+    fn section_matrix_rows_refuse_before_vector_reserve() {
+        let equations = [SectionCoordinateEquation::point_value(
+            1,
+            SectionAxis::U,
+            1.0,
+        )];
+        let error = with_collection_limit(13, |ctx| {
+            super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
+        })
+        .expect_err("the first matrix row follows component equation admission");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section matrix rows")
+        );
+    }
+
+    #[test]
+    fn section_matrix_coefficients_refuse_before_tree_insert() {
+        let equations = [SectionCoordinateEquation::point_value(
+            1,
+            SectionAxis::U,
+            1.0,
+        )];
+        let error = with_collection_limit(14, |ctx| {
+            super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
+        })
+        .expect_err("the first sparse coefficient follows one matrix row");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section matrix coefficients")
         );
     }
 
