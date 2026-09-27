@@ -328,7 +328,11 @@ fn image_reference<'a>(
         ImageReference {
             full_path: value.full_path,
             relative_path: value.relative_path,
-            content_sha1: hex(&value.content_hash.content_sha1),
+            content_sha1: hex(
+                ctx,
+                &value.content_hash.content_sha1,
+                "Rhino image content SHA-1",
+            )?,
             embedded_file_uuid: value.embedded_file_id.map(|id| id.to_string()),
         },
         source_range,

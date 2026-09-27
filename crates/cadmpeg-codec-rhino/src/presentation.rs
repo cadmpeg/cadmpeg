@@ -2147,8 +2147,16 @@ fn parse_texture(
             referenced_byte_count: value.content_hash.byte_count,
             hash_time: value.content_hash.hash_time,
             content_time: value.content_hash.content_time,
-            name_sha1: hex(&value.content_hash.name_sha1),
-            content_sha1: hex(&value.content_hash.content_sha1),
+            name_sha1: hex(
+                ctx,
+                &value.content_hash.name_sha1,
+                "Rhino texture name SHA-1",
+            )?,
+            content_sha1: hex(
+                ctx,
+                &value.content_hash.content_sha1,
+                "Rhino texture content SHA-1",
+            )?,
             path_status: value.path_status,
             embedded_file_uuid: value.embedded_file_id.map(|id| id.to_string()),
         })
