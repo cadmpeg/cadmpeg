@@ -625,7 +625,7 @@ pub(super) fn decode(
         ctx, "step_topology_losses")?;
     }
     let vertices = vertex_defs(exchange, ctx)?;
-    let edges = edge_defs(exchange);
+    let edges = edge_defs(exchange, ctx)?;
     let oriented = oriented_defs(exchange, ctx)?;
     let shells = shell_defs(exchange);
     let point_positions = carrier_index;
@@ -2027,7 +2027,10 @@ fn vertex_defs(
     }
     Ok(vertices)
 }
-fn edge_defs(exchange: &Exchange) -> BTreeMap<u64, Rc<EdgeDef>> {
+fn edge_defs(
+    exchange: &Exchange,
+    ctx: &DecodeContext<'_>,
+) -> Result<BTreeMap<u64, Rc<EdgeDef>>, CodecError> {
     let mut edges = BTreeMap::new();
     let mut cache = BTreeMap::new();
     let mut active = BTreeSet::new();
@@ -2038,11 +2041,11 @@ fn edge_defs(exchange: &Exchange) -> BTreeMap<u64, Rc<EdgeDef>> {
         "SUBEDGE",
         "EDGE",
     ]) {
-        if let Some(edge) = edge_def_for(id, exchange, &mut active, &mut cache) {
-            edges.insert(id, edge);
+        if let Some(edge) = edge_def_for(id, exchange, &mut active, &mut cache, ctx)? {
+            insert_topology_map(&mut edges, id, edge, ctx, "step_edge_definitions")?;
         }
     }
-    edges
+    Ok(edges)
 }
 
 fn edge_def_for(
@@ -2050,66 +2053,59 @@ fn edge_def_for(
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
     cache: &mut BTreeMap<u64, Option<Rc<EdgeDef>>>,
-) -> Option<Rc<EdgeDef>> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Rc<EdgeDef>>, CodecError> {
     if let Some(edge) = cache.get(&id) {
-        return edge.clone();
+        return Ok(edge.clone());
     }
-    if !active.insert(id) {
-        return None;
+    let _depth = ctx.enter_nested("step_edge_definition_recursion")?;
+    if active.contains(&id) {
+        return Ok(None);
     }
-    let result = (|| match most_specific(
-        exchange.records().get(&id)?,
-        &[
-            "EDGE_CURVE",
-            "SEAM_EDGE",
-            "ORIENTED_EDGE",
-            "SUBEDGE",
-            "EDGE",
-        ],
-    )? {
-        "EDGE_CURVE" => {
-            let record = exchange.records().get(&id)?;
-            let (start, end) = edge_vertices(record)?;
-            Some(EdgeDef::Curve {
-                start,
-                end,
-                curve: edge_geometry(record)?,
-                same: edge_same_sense(record)?,
-            })
+    insert_topology_set(active, id, ctx, "step_edge_definition_active")?;
+    let result = if let Some(record) = exchange.records().get(&id) {
+        match most_specific(record, &["EDGE_CURVE", "SEAM_EDGE", "ORIENTED_EDGE", "SUBEDGE", "EDGE"]) {
+            Some("EDGE_CURVE") => edge_vertices(record)
+                .zip(edge_geometry(record))
+                .zip(edge_same_sense(record))
+                .map(|(((start, end), curve), same)| EdgeDef::Curve { start, end, curve, same }),
+            Some("EDGE") => edge_vertices(record)
+                .map(|(start, end)| EdgeDef::Bare { start, end }),
+            Some("SUBEDGE") => {
+                if let Some(((start, end), parent)) = edge_vertices(record).zip(subedge_parent(record)) {
+                    edge_def_for(parent, exchange, active, cache, ctx)?
+                        .map(|basis| EdgeDef::Subedge { start, end, parent, basis })
+                } else {
+                    None
+                }
+            }
+            Some("ORIENTED_EDGE" | "SEAM_EDGE") => {
+                if let Some((element, forward)) = oriented_edge_reference(record)
+                    .zip(oriented_edge_forward(record))
+                {
+                    edge_def_for(element, exchange, active, cache, ctx)?
+                        .map(|basis| EdgeDef::Oriented { element, basis, forward })
+                } else {
+                    None
+                }
+            }
+            _ => None,
         }
-        "EDGE" => {
-            let (start, end) = edge_vertices(exchange.records().get(&id)?)?;
-            Some(EdgeDef::Bare { start, end })
-        }
-        "SUBEDGE" => {
-            let record = exchange.records().get(&id)?;
-            let (start, end) = edge_vertices(record)?;
-            let parent = subedge_parent(record)?;
-            let basis = edge_def_for(parent, exchange, active, cache)?;
-            Some(EdgeDef::Subedge {
-                start,
-                end,
-                parent,
-                basis,
-            })
-        }
-        "ORIENTED_EDGE" | "SEAM_EDGE" => {
-            let record = exchange.records().get(&id)?;
-            let element = oriented_edge_reference(record)?;
-            let basis = edge_def_for(element, exchange, active, cache)?;
-            let forward = oriented_edge_forward(record)?;
-            Some(EdgeDef::Oriented {
-                element,
-                basis,
-                forward,
-            })
-        }
-        _ => None,
-    })()
-    .map(Rc::new);
+    } else {
+        None
+    };
     active.remove(&id);
-    cache.insert(id, result.clone());
-    result
+    let result = if let Some(definition) = result {
+        ctx.charge_retained(
+            u64_from_index(std::mem::size_of::<EdgeDef>() + 2 * std::mem::size_of::<usize>()),
+            "step_edge_definition_node",
+        )?;
+        Some(Rc::new(definition))
+    } else {
+        None
+    };
+    insert_topology_map(&mut *cache, id, result.clone(), ctx, "step_edge_definition_cache")?;
+    Ok(result)
 }
 
 fn edge_curve_id_reported(
