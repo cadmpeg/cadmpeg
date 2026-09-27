@@ -749,7 +749,7 @@ pub(in super::super) fn round_support_envelope_cylinder(
     feature_id: u32,
     envelope: Type24RoundEnvelope,
 ) -> Option<crate::surface::PositionalCylinderFrame> {
-    let ([first_cap, second_cap], support_planes) =
+    let ([first_cap, second_cap], support_ids, local_planes) =
         resolved_round_support_planes(scan, ir, source_carriers, feature_id)?;
     let axis = normalize(first_cap.normal)?;
     let second_cap_normal = normalize(second_cap.normal)?;
@@ -766,17 +766,23 @@ pub(in super::super) fn round_support_envelope_cylinder(
     }
 
     let mut agreed_pair: Option<([f64; 3], f64, f64)> = None;
-    for first in 0..support_planes.len() {
-        let first_normal = normalize(support_planes[first].normal)?;
-        for second in first + 1..support_planes.len() {
-            let second_normal = normalize(support_planes[second].normal)?;
+    for (first_index, first_id) in support_ids.iter().enumerate() {
+        let Some(first) = reconciled_model_plane(&local_planes, ir, source_carriers, *first_id) else {
+            continue;
+        };
+        let first_normal = normalize(first.normal)?;
+        for second_id in support_ids.iter().skip(first_index + 1) {
+            let Some(second) = reconciled_model_plane(&local_planes, ir, source_carriers, *second_id) else {
+                continue;
+            };
+            let second_normal = normalize(second.normal)?;
             if (dot(first_normal, second_normal).abs() - 1.0).abs() > EPS_ROUND_CAP_PARALLEL {
                 continue;
             }
             let gap = dot(
                 first_normal,
                 std::array::from_fn(|index| {
-                    support_planes[second].origin[index] - support_planes[first].origin[index]
+                    second.origin[index] - first.origin[index]
                 }),
             )
             .abs();
@@ -786,8 +792,8 @@ pub(in super::super) fn round_support_envelope_cylinder(
             if dot(first_normal, axis).abs() > EPS_ROUND_SUPPORT_ORTHOGONAL {
                 return None;
             }
-            let first_offset = dot(first_normal, support_planes[first].origin);
-            let second_offset = dot(first_normal, support_planes[second].origin);
+            let first_offset = dot(first_normal, first.origin);
+            let second_offset = dot(first_normal, second.origin);
             let pair = (
                 first_normal,
                 0.5 * gap,
@@ -860,12 +866,12 @@ pub(in super::super) fn round_support_envelope_cylinder(
     )
 }
 
-fn resolved_round_support_planes(
-    scan: &ContainerScan,
+fn resolved_round_support_planes<'a>(
+    scan: &'a ContainerScan<'_>,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
-) -> Option<([PlaneEquation; 2], Vec<PlaneEquation>)> {
+) -> Option<([PlaneEquation; 2], &'a [u32], std::collections::BTreeMap<u32, PlaneEquation>)> {
     let affected_ids = agreed_feature_geometry_ids(
         &scan.features.affected_ids,
         &scan.features.replay_affected_ids,
@@ -895,20 +901,18 @@ fn resolved_round_support_planes(
     if cap_gap <= EPS_ROUND_CAP_GAP {
         return None;
     }
-    let support_planes = support_ids
+    let mut resolved_count = 0;
+    support_ids
         .iter()
         .filter_map(|id| reconciled_model_plane(&local_planes, ir, source_carriers, *id))
-        .collect::<Vec<_>>();
-    (support_planes.len() >= 2).then_some(())?;
-    support_planes
-        .iter()
         .all(|plane| {
+            resolved_count += 1;
             normalize(plane.normal).is_some_and(|normal| {
                 dot(first_cap_normal, normal).abs() <= EPS_ROUND_SUPPORT_ORTHOGONAL
             })
         })
         .then_some(())?;
-    Some((caps, support_planes))
+    (resolved_count >= 2).then_some((caps, support_ids, local_planes))
 }
 
 pub(in super::super) fn round_placed_cylinder_radii(
