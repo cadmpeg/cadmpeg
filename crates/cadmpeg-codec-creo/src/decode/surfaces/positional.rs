@@ -47,6 +47,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
         let Some(frame) = surface_prototype_frame_bounds(scan, section, prototype.offset)? else {
             continue;
         };
+        ctx.try_reserve_items(&mut associations, 1, "creo paired sphere associations")?;
         associations.push((prototype, associated_row, section, frame));
     }
     for (prototype, associated_row, section, (frame_start, frame_end)) in &associations {
@@ -75,18 +76,14 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
         if associated_prototype_count != 1 {
             continue;
         }
-        let rows = scan
-            .surfaces
-            .rows
-            .iter()
-            .filter(|row| {
-                row.offset >= *frame_start
-                    && row.offset < *frame_end
-                    && row.feature_id == associated_row.feature_id
-                    && row.kind == crate::surface::SurfaceKind::TorusOrSphere
-            })
-            .collect::<Vec<_>>();
-        let [first_row, second_row] = rows.as_slice() else {
+        let mut rows = scan.surfaces.rows.iter().filter(|row| {
+            row.offset >= *frame_start
+                && row.offset < *frame_end
+                && row.feature_id == associated_row.feature_id
+                && row.kind == crate::surface::SurfaceKind::TorusOrSphere
+        });
+        let (Some(first_row), Some(second_row), None) = (rows.next(), rows.next(), rows.next())
+        else {
             continue;
         };
         let envelopes = [first_row, second_row].map(|row| {
@@ -100,7 +97,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
         else {
             continue;
         };
-        for row in rows {
+        for row in [first_row, second_row] {
             let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id);
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
