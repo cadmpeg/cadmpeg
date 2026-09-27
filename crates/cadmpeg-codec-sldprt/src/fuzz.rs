@@ -8,8 +8,11 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 /// Exercise outer-container scanning.
-pub fn container(data: &[u8]) {
-    crate::container::scan_bytes(data);
+pub fn container(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service())?;
+    drop(crate::container::scan(&ctx, root)?);
+    Ok(())
 }
 
 /// Exercise embedded Parasolid stream extraction.
