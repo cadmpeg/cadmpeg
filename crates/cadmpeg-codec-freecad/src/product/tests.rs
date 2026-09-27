@@ -15,6 +15,8 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::collections::HashSet;
 use std::io::Cursor;
 
+mod graph_diagnostic_tests;
+
 #[test]
 fn local_copy_on_change_target_identity_refuses_at_retained_limit() {
     let target = native::LinkTarget::optional_from_wire(native::LinkTargetWire {
@@ -1573,7 +1575,11 @@ fn a_stated_zero_element_count_is_a_scalar_link_and_never_a_floored_one() {
             std::num::NonZeroU64::MIN
         ))
     );
-    assert_eq!(super::occurrence_count(occurrence).expect("count").get(), 1);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert_eq!(super::occurrence_count(&ctx, occurrence).expect("count").get(), 1);
 
     // A stated zero with a populated carrier is an inconsistent link array.
     let populated = r#"<Document SchemaVersion="4" FileVersion="1">
