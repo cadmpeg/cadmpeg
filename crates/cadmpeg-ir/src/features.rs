@@ -6429,6 +6429,16 @@ impl<T: PartialEq> DistinctMembers<T> {
         self.0.push(value);
         true
     }
+
+    /// Fallibly reserves and inserts a member unless it is already present.
+    pub fn try_insert(&mut self, value: T) -> Result<bool, std::collections::TryReserveError> {
+        if self.0.contains(&value) {
+            return Ok(false);
+        }
+        self.0.try_reserve(1)?;
+        self.0.push(value);
+        Ok(true)
+    }
 }
 
 impl<T> DistinctMembers<T> {

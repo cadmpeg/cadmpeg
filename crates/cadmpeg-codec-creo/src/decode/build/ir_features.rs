@@ -566,7 +566,7 @@ pub(super) fn finish_feature_transfers(
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<(usize, usize), cadmpeg_core::CodecError> {
     let prototype_feature_dependencies = surface_prototype_feature_dependencies(ctx, scan)?;
-    link_feature_sketch_history(scan, ir);
+    link_feature_sketch_history(ctx, scan, ir)?;
     reconcile_feature_links(ctx, scan, ir, &prototype_feature_dependencies)?;
     let feature_result_topology_count = emit_feature_result_topologies(ctx, scan, ir)?;
     let feature_result_edge_count = ir
