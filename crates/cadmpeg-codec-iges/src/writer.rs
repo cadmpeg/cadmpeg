@@ -7097,7 +7097,7 @@ fn encode_file(
             .ok_or_else(|| {
                 CodecError::NotImplemented("IGES directory sequence overflows".into())
             })?;
-        let fragments = crate::parameter::layout_parameter_cards(&entity.parameter_text())?;
+        let fragments = crate::parameter::layout_parameter_cards(&entity.parameter_text(), None)?;
         let parameter_count = fragments.len();
         let parameter_count = u32::try_from(parameter_count)
             .map_err(|_| CodecError::NotImplemented("IGES parameter count overflows".into()))?;

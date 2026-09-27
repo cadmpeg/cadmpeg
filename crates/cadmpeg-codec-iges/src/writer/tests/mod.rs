@@ -855,7 +855,7 @@ fn generated_reals_round_trip_without_writer_quantization() {
 fn generated_parameter_cards_preserve_field_boundaries() {
     let token = number(real(f64::MAX));
     let parameters = format!("128,{token},{token},{token},{token};");
-    let fragments = crate::parameter::layout_parameter_cards(parameters.as_bytes())
+    let fragments = crate::parameter::layout_parameter_cards(parameters.as_bytes(), None)
         .expect("ordinary generated real tokens fit one card");
     assert!(fragments.len() > 1);
     assert!(fragments.iter().all(|fragment| fragment.len() <= 64));
@@ -870,7 +870,7 @@ fn generated_parameter_cards_preserve_field_boundaries() {
 #[test]
 fn generated_parameter_field_wider_than_a_card_is_refused() {
     let parameters = format!("{};", "1".repeat(65));
-    let error = crate::parameter::layout_parameter_cards(parameters.as_bytes())
+    let error = crate::parameter::layout_parameter_cards(parameters.as_bytes(), None)
         .expect_err("a field wider than the data area must fail");
     assert!(error.to_string().contains("field exceeds one card"));
 }

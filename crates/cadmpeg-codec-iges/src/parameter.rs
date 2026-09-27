@@ -2687,7 +2687,10 @@ fn layout_hollerith(bytes: &[u8], start: usize) -> Result<Option<(usize, usize)>
 /// card. Numeric fields are moved to the next card when their delimiter would
 /// otherwise cross the card boundary. Bytes after the record delimiter are
 /// comment payload and may use the remaining card space without token rules.
-pub(crate) fn layout_parameter_cards(bytes: &[u8]) -> Result<Vec<Vec<u8>>, CodecError> {
+pub(crate) fn layout_parameter_cards(
+    bytes: &[u8],
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Vec<Vec<u8>>, CodecError> {
     let mut fields = Vec::new();
     let mut cursor = 0_usize;
     loop {
@@ -2703,6 +2706,7 @@ pub(crate) fn layout_parameter_cards(bytes: &[u8]) -> Result<Vec<Vec<u8>>, Codec
             CodecError::Malformed("IGES Parameter Data delimiter is missing".into())
         })?;
         end += 1;
+        reserve_optional_vec_growth(ctx, &mut fields, 1, "iges parameter layout fields")?;
         fields.push(start..end);
         cursor = end;
         if *delimiter == b';' {
@@ -2711,7 +2715,7 @@ pub(crate) fn layout_parameter_cards(bytes: &[u8]) -> Result<Vec<Vec<u8>>, Codec
     }
 
     let mut cards = Vec::new();
-    let mut card = Vec::with_capacity(64);
+    let mut card = layout_parameter_card(ctx)?;
     for field in fields.iter().map(|range| &bytes[range.clone()]) {
         let leading = field
             .iter()
@@ -2730,13 +2734,15 @@ pub(crate) fn layout_parameter_cards(bytes: &[u8]) -> Result<Vec<Vec<u8>>, Codec
         }
         if card.len() + minimum > 64 {
             card.resize(64, b' ');
+            reserve_optional_vec_growth(ctx, &mut cards, 1, "iges parameter layout cards")?;
             cards.push(std::mem::take(&mut card));
-            card = Vec::with_capacity(64);
+            card = layout_parameter_card(ctx)?;
         }
         for byte in field.iter().copied() {
             if card.len() == 64 {
+                reserve_optional_vec_growth(ctx, &mut cards, 1, "iges parameter layout cards")?;
                 cards.push(std::mem::take(&mut card));
-                card = Vec::with_capacity(64);
+                card = layout_parameter_card(ctx)?;
             }
             card.push(byte);
         }
@@ -2744,15 +2750,27 @@ pub(crate) fn layout_parameter_cards(bytes: &[u8]) -> Result<Vec<Vec<u8>>, Codec
 
     for byte in bytes[cursor..].iter().copied() {
         if card.len() == 64 {
+            reserve_optional_vec_growth(ctx, &mut cards, 1, "iges parameter layout cards")?;
             cards.push(std::mem::take(&mut card));
-            card = Vec::with_capacity(64);
+            card = layout_parameter_card(ctx)?;
         }
         card.push(byte);
     }
     if !card.is_empty() {
+        reserve_optional_vec_growth(ctx, &mut cards, 1, "iges parameter layout cards")?;
         cards.push(card);
     }
     Ok(cards)
+}
+
+fn layout_parameter_card(ctx: Option<&DecodeContext<'_>>) -> Result<Vec<u8>, CodecError> {
+    if let Some(ctx) = ctx {
+        ctx.charge_retained(64, "iges parameter layout card bytes")?;
+    }
+    let mut card = Vec::new();
+    card.try_reserve_exact(64)
+        .map_err(|_| refuse_local_limit("iges parameter layout card bytes", 64, 64))?;
+    Ok(card)
 }
 
 /// Both parse results of the Parameter Data section.
