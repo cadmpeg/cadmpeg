@@ -14,10 +14,12 @@
 //! spun surface).
 
 use std::collections::HashMap;
+use std::borrow::Cow;
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface},
+    nurbs::{NurbsCurve, NurbsPoles3, NurbsSurface},
     CurveGeometry, SolvedCurveGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -139,13 +141,13 @@ pub(super) fn scan_sweep_carriers(
 /// The nine poles are four rational quadratic quarter arcs. Odd poles are the
 /// intersections of adjacent endpoint tangents and therefore carry weight
 /// `sqrt(2) / 2`.
-pub(super) fn profile_nurbs(
-    geometry: &CurveGeometry,
+pub(super) fn profile_nurbs<'a>(
+    geometry: &'a CurveGeometry,
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<NurbsCurve> {
+) -> Option<Cow<'a, NurbsCurve>> {
     let (center, frame, major_radius, minor_radius) = match geometry {
-        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => return Some(curve.clone()),
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => return Some(Cow::Borrowed(curve)),
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let radius = circle_curve.radius().get();
             (
@@ -203,7 +205,7 @@ pub(super) fn profile_nurbs(
         Some(weights),
         false,
     ) {
-        Ok(curve) => Some(curve),
+        Ok(curve) => Some(Cow::Owned(curve)),
         Err(error) => {
             refusal.note(format_args!("sldprt sweep profile arc: {record}"), &error);
             None
@@ -211,45 +213,123 @@ pub(super) fn profile_nurbs(
     }
 }
 
+fn reserve_curve_vec<T>(
+    ctx: &DecodeContext<'_>,
+    values: &mut Vec<T>,
+    additional: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let count = u64::try_from(additional)
+        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_collection_items(count, operation)?;
+    values.try_reserve(additional).map_err(|_| {
+        ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+    })
+}
+
+fn curve_rows<T: Copy>(
+    ctx: &DecodeContext<'_>,
+    values: &[T],
+    width: usize,
+    operation: &'static str,
+) -> Result<Vec<Vec<T>>, CodecError> {
+    let mut rows = Vec::new();
+    reserve_curve_vec(ctx, &mut rows, values.len() / width, operation)?;
+    for values in values.chunks(width) {
+        let mut row = Vec::new();
+        reserve_curve_vec(ctx, &mut row, values.len(), operation)?;
+        row.extend_from_slice(values);
+        rows.push(row);
+    }
+    Ok(rows)
+}
+
+fn profile_knots(
+    ctx: &DecodeContext<'_>,
+    profile: &NurbsCurve,
+) -> Result<Vec<f64>, CodecError> {
+    let source = profile.knots().as_slice();
+    let mut knots = Vec::new();
+    reserve_curve_vec(ctx, &mut knots, source.len(), "copy sweep profile knots")?;
+    knots.extend_from_slice(source);
+    Ok(knots)
+}
+
+fn charge_grid_admission(
+    ctx: &DecodeContext<'_>,
+    rows: usize,
+    poles: usize,
+    passes: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let items = rows.checked_add(poles).and_then(|count| count.checked_mul(passes))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_collection_items(
+        u64::try_from(items).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
+        operation,
+    )
+}
+
 /// Build the ruled NURBS patch of a swept surface over `v` in
 /// `[v_start, v_end]` millimetres of travel along the unit direction.
 pub(super) fn swept_nurbs(
+    ctx: &DecodeContext<'_>,
     profile: &NurbsCurve,
     direction: SumSquaresUnitVector3,
     v_start: f64,
     v_end: f64,
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<NurbsSurface> {
+) -> Result<Option<NurbsSurface>, CodecError> {
     let direction = direction.as_raw();
     if !(v_start.is_finite() && v_end.is_finite()) || v_end <= v_start {
-        return None;
+        return Ok(None);
     }
     let n = profile.pole_count();
-    let profile_weights = profile.weights();
-    let mut control = Vec::with_capacity(n * 2);
-    let mut weights = profile_weights.as_ref().map(|_| Vec::with_capacity(n * 2));
-    for (i, pole) in profile.control_points().iter().enumerate() {
+    let count = n.checked_mul(2).ok_or_else(|| {
+        ctx.refuse_codec_limit("construct swept surface poles", u64::MAX - 1, u64::MAX)
+    })?;
+    ctx.charge_work(
+        u64::try_from(count).map_err(|_| ctx.refuse_codec_limit("solve swept surface poles", u64::MAX - 1, u64::MAX))?,
+        "solve swept surface poles",
+    )?;
+    let mut control = Vec::new();
+    reserve_curve_vec(ctx, &mut control, count, "construct swept surface poles")?;
+    let mut weights = matches!(profile.pole_rows(), NurbsPoles3::Rational { .. }).then(Vec::new);
+    if let Some(weights) = &mut weights {
+        reserve_curve_vec(ctx, weights, count, "construct swept surface weights")?;
+    }
+    for i in 0..n {
+        let (pole, weight) = match profile.pole_rows() {
+            NurbsPoles3::Polynomial { points } => (points[i].get(), None),
+            NurbsPoles3::Rational { points } => (points[i].point.get(), Some(points[i].weight)),
+        };
         for v in [v_start, v_end] {
             control.push(Point3::new(
                 pole.x + v * direction.x,
                 pole.y + v * direction.y,
                 pole.z + v * direction.z,
             ));
-            if let (Some(out), Some(w)) = (&mut weights, profile_weights.as_ref()) {
-                out.push(w[i]);
+            if let (Some(out), Some(weight)) = (&mut weights, weight) {
+                out.push(weight);
             }
         }
     }
+    let control_rows = curve_rows(ctx, &control, 2, "construct swept surface pole rows")?;
+    let weight_rows = weights.as_ref().map(|values| {
+        curve_rows(ctx, values, 2, "construct swept surface weight rows")
+    }).transpose()?;
+    charge_grid_admission(ctx, n, count, if weight_rows.is_some() { 2 } else { 1 }, "admit swept surface poles")?;
+    let knots = profile_knots(ctx, profile)?;
     match cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_checked_lanes(
-        control.chunks(2_usize).map(<[_]>::to_vec).collect(),
-        weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+        control_rows,
+        weight_rows,
     )
     .and_then(|poles| {
         NurbsSurface::new(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 profile.degree(),
-                profile.knots().clone(),
+                knots,
                 profile.periodic(),
             ),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
@@ -261,13 +341,13 @@ pub(super) fn swept_nurbs(
             false,
         )
     }) {
-        Ok(surface) => Some(surface),
+        Ok(surface) => Ok(Some(surface)),
         Err(error) => {
             refusal.note(
                 format_args!("sldprt swept ruled surface patch: {record}"),
                 &error,
             );
-            None
+            Ok(None)
         }
     }
 }
@@ -276,21 +356,33 @@ pub(super) fn swept_nurbs(
 /// profile revolved `2π` about the axis through `base`, with the angular
 /// parameter (`v`, radians) following `A × (C - Z)`.
 pub(super) fn spun_nurbs(
+    ctx: &DecodeContext<'_>,
     profile: &NurbsCurve,
     base: Point3,
     axis: SumSquaresUnitVector3,
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<NurbsSurface> {
+) -> Result<Option<NurbsSurface>, CodecError> {
     use std::f64::consts::{FRAC_PI_2, PI};
     let axis = axis.as_raw();
-    let n = profile.control_points().len();
+    let n = profile.pole_count();
+    let count = n.checked_mul(9).ok_or_else(|| {
+        ctx.refuse_codec_limit("construct spun surface poles", u64::MAX - 1, u64::MAX)
+    })?;
+    ctx.charge_work(
+        u64::try_from(count).map_err(|_| ctx.refuse_codec_limit("solve spun surface poles", u64::MAX - 1, u64::MAX))?,
+        "solve spun surface poles",
+    )?;
     let half_sqrt2 = std::f64::consts::SQRT_2 / 2.0;
-    let mut control = Vec::with_capacity(n * 9);
-    let mut weights = Vec::with_capacity(n * 9);
-    let profile_weights = profile.pole_rows().weights();
-    for (i, pole) in profile.control_points().iter().enumerate() {
-        let pole_weight = profile_weights.as_ref().map_or(1.0, |w| w[i]);
+    let mut control = Vec::new();
+    reserve_curve_vec(ctx, &mut control, count, "construct spun surface poles")?;
+    let mut weights = Vec::new();
+    reserve_curve_vec(ctx, &mut weights, count, "construct spun surface weights")?;
+    for i in 0..n {
+        let (pole, pole_weight) = match profile.pole_rows() {
+            NurbsPoles3::Polynomial { points } => (points[i].get(), 1.0),
+            NurbsPoles3::Rational { points } => (points[i].point.get(), points[i].weight.get()),
+        };
         let offset = [pole.x - base.x, pole.y - base.y, pole.z - base.z];
         let along = offset[0] * axis.x + offset[1] * axis.y + offset[2] * axis.z;
         let center = Point3::new(
@@ -332,11 +424,13 @@ pub(super) fn spun_nurbs(
                 let offset = if scale.is_finite() {
                     scale * component
                 } else {
-                    cadmpeg_ir::math::product_quotient(
+                    let Some(value) = cadmpeg_ir::math::product_quotient(
                         [radius, std::f64::consts::SQRT_2, component],
                         [1.0],
-                    )?
-                    .get()
+                    ) else {
+                        return Ok(None);
+                    };
+                    value.get()
                 };
                 *coordinate += offset;
             }
@@ -358,23 +452,27 @@ pub(super) fn spun_nurbs(
         2.0 * PI,
         2.0 * PI,
     ];
+    let knots = profile_knots(ctx, profile)?;
+    let control_rows = curve_rows(ctx, &control, 9, "construct spun surface pole rows")?;
+    let weight_rows = curve_rows(ctx, &weights, 9, "construct spun surface weight rows")?;
+    charge_grid_admission(ctx, n, count, 2, "admit spun surface poles")?;
     match NurbsSurface::from_lanes(
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
             profile.degree(),
-            profile.knots().to_vec(),
+            knots,
             profile.periodic(),
         ),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(2, v_knots, true),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
-            control.chunks(9_usize).map(<[_]>::to_vec).collect(),
-            Some(weights).map(|values| values.chunks(9_usize).map(<[_]>::to_vec).collect()),
+            control_rows,
+            Some(weight_rows),
         ),
         false,
     ) {
-        Ok(surface) => Some(surface),
+        Ok(surface) => Ok(Some(surface)),
         Err(error) => {
             refusal.note(format_args!("sldprt spun surface patch: {record}"), &error);
-            None
+            Ok(None)
         }
     }
 }
@@ -394,6 +492,16 @@ mod tests {
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::math::Vector3;
     use cadmpeg_ir::units::SumSquaresUnitVector3;
+
+    fn with_service_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        ).expect("empty test root fits service policy");
+        f(&ctx)
+    }
 
     fn scan_with_service_context(bytes: &[u8]) -> HashMap<u16, SweepCarrier> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -642,13 +750,15 @@ mod tests {
             false,
         )
         .expect("valid line profile");
-        let surface = spun_nurbs(
+        let surface = with_service_context(|ctx| spun_nurbs(
+            ctx,
             &profile,
             Point3::new(0.0, 0.0, 0.0),
             SumSquaresUnitVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
             &"test spun construction",
             &mut crate::lane_refusal::LaneRefusals::new(),
-        )
+        ))
+        .expect("spun surface fits service policy")
         .expect("valid spun surface");
         // The revolution is the standard rational quadratic NURBS circle: four
         // 90-degree Bézier segments with corner weights √2/2 and breakpoint
@@ -689,19 +799,125 @@ mod tests {
             false,
         )
         .expect("valid line profile");
-        let surface = swept_nurbs(
+        let surface = with_service_context(|ctx| swept_nurbs(
+            ctx,
             &profile,
             SumSquaresUnitVector3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap(),
             -2.0,
             3.0,
             &"test swept construction",
             &mut crate::lane_refusal::LaneRefusals::new(),
-        )
+        ))
+        .expect("swept surface fits service policy")
         .expect("swept surface");
         let p = eval_surface(&surface, 0.5, 1.5);
         assert!((p.x - 0.5).abs() < 1.0e-12);
         assert!((p.y - 1.5).abs() < 1.0e-12);
         assert!(p.z.abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn swept_surface_refuses_collection_limit() {
+        let profile = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        ).expect("valid line profile");
+        let direction = SumSquaresUnitVector3::new(Vector3::new(0.0, 1.0, 0.0))
+            .expect("unit direction");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 3;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &policy,
+        ).expect("empty root fits policy");
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = swept_nurbs(
+            &ctx, &profile, direction, 0.0, 1.0, &"sweep", &mut crate::lane_refusal::LaneRefusals::new(),
+        ) else { panic!("four derived poles exceed three collection items") };
+        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+        assert!(with_service_context(|ctx| swept_nurbs(
+            ctx, &profile, direction, 0.0, 1.0, &"sweep", &mut crate::lane_refusal::LaneRefusals::new(),
+        )).expect("service budget").is_some());
+    }
+
+    #[test]
+    fn spun_surface_refuses_collection_limit() {
+        let profile = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
+            None,
+            false,
+        ).expect("valid line profile");
+        let axis = SumSquaresUnitVector3::new(Vector3::new(0.0, 0.0, 1.0))
+            .expect("unit axis");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 17;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &policy,
+        ).expect("empty root fits policy");
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = spun_nurbs(
+            &ctx, &profile, Point3::new(0.0, 0.0, 0.0), axis, &"spin", &mut crate::lane_refusal::LaneRefusals::new(),
+        ) else { panic!("eighteen derived poles exceed seventeen collection items") };
+        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+        assert!(with_service_context(|ctx| spun_nurbs(
+            ctx, &profile, Point3::new(0.0, 0.0, 0.0), axis, &"spin", &mut crate::lane_refusal::LaneRefusals::new(),
+        )).expect("service budget").is_some());
+    }
+
+    #[test]
+    fn swept_surface_refuses_work_limit() {
+        let profile = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        ).expect("valid line profile");
+        let direction = SumSquaresUnitVector3::new(Vector3::new(0.0, 1.0, 0.0))
+            .expect("unit direction");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 3;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &policy,
+        ).expect("empty root fits policy");
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = swept_nurbs(
+            &ctx, &profile, direction, 0.0, 1.0, &"sweep", &mut crate::lane_refusal::LaneRefusals::new(),
+        ) else { panic!("four pole evaluations exceed three work units") };
+        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+        assert!(with_service_context(|ctx| swept_nurbs(
+            ctx, &profile, direction, 0.0, 1.0, &"sweep", &mut crate::lane_refusal::LaneRefusals::new(),
+        )).expect("service budget").is_some());
+    }
+
+    #[test]
+    fn spun_surface_refuses_work_limit() {
+        let profile = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
+            None,
+            false,
+        ).expect("valid line profile");
+        let axis = SumSquaresUnitVector3::new(Vector3::new(0.0, 0.0, 1.0))
+            .expect("unit axis");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 17;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &policy,
+        ).expect("empty root fits policy");
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = spun_nurbs(
+            &ctx, &profile, Point3::new(0.0, 0.0, 0.0), axis, &"spin", &mut crate::lane_refusal::LaneRefusals::new(),
+        ) else { panic!("eighteen pole evaluations exceed seventeen work units") };
+        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+        assert!(with_service_context(|ctx| spun_nurbs(
+            ctx, &profile, Point3::new(0.0, 0.0, 0.0), axis, &"spin", &mut crate::lane_refusal::LaneRefusals::new(),
+        )).expect("service budget").is_some());
     }
 
     #[test]
@@ -718,22 +934,24 @@ mod tests {
         )
         .expect("valid profile");
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-        let first = swept_nurbs(
+        let first = with_service_context(|ctx| swept_nurbs(
+            ctx,
             &profile,
             SumSquaresUnitVector3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
             0.0,
             f64::MAX,
             &"sweep construction at byte 16 for surface attr 3",
             &mut refusal,
-        );
-        let second = swept_nurbs(
+        )).expect("first ruling fits service policy");
+        let second = with_service_context(|ctx| swept_nurbs(
+            ctx,
             &profile,
             SumSquaresUnitVector3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
             0.0,
             f64::MAX,
             &"sweep construction at byte 64 for surface attr 9",
             &mut refusal,
-        );
+        )).expect("second ruling fits service policy");
         assert!(first.is_none(), "the refused ruling states no surface");
         assert!(second.is_none(), "the refused ruling states no surface");
         let records = refusal.take_records();
@@ -764,13 +982,15 @@ mod tests {
                 false,
             )
             .unwrap();
-            let surface = super::spun_nurbs(
+            let surface = with_service_context(|ctx| super::spun_nurbs(
+                ctx,
                 &profile,
                 Point3::new(0., 0., 0.),
                 SumSquaresUnitVector3::new(Vector3::new(0., 0., 1.)).unwrap(),
                 &"audit",
                 &mut crate::lane_refusal::LaneRefusals::new(),
-            )
+            ))
+            .unwrap()
             .unwrap();
             assert_eq!(surface.control_grid()[0][0], Point3::new(radius, 0., 0.));
         }

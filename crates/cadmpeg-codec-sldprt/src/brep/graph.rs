@@ -638,33 +638,34 @@ struct WalkedFace {
 /// surface patch is derived because its ruling extent comes from the face's
 /// vertex points rather than a stored interval.
 fn resolve_sweep_surface(
+    ctx: &DecodeContext<'_>,
     carriers: &CarrierIndex,
     tables: &topology::Tables,
     face: &WalkedFace,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<(
+) -> Result<Option<(
     SolvedSurfaceGeometry,
     usize,
     &'static str,
     Option<Exactness>,
-)> {
-    let construction = carriers.sweep(face.surface_attr)?;
-    let profile = carriers.curve(construction.profile_attr)?;
+)> , cadmpeg_core::CodecError> {
+    let Some(construction) = carriers.sweep(face.surface_attr) else { return Ok(None) };
+    let Some(profile) = carriers.curve(construction.profile_attr) else { return Ok(None) };
     let record = format!(
         "sldprt sweep construction at byte {} for surface attr {}",
         construction.offset, face.surface_attr
     );
-    let curve = sweep::profile_nurbs(&profile.carrier().geometry, &record, refusal)?;
+    let Some(curve) = sweep::profile_nurbs(&profile.carrier().geometry, &record, refusal) else { return Ok(None) };
     let profile_derived = matches!(profile, IndexedCurve::Derived(_));
     match &construction.kind {
-        SweepKind::Spun { base, axis } => Some((
-            SolvedSurfaceGeometry::Nurbs(sweep::spun_nurbs(
-                &curve, *base, *axis, &record, refusal,
-            )?),
+        SweepKind::Spun { base, axis } => Ok(sweep::spun_nurbs(
+                ctx, &curve, *base, *axis, &record, refusal,
+            )?.map(|surface| (
+            SolvedSurfaceGeometry::Nurbs(surface),
             construction.offset,
             "00_44",
             profile_derived.then_some(Exactness::Derived),
-        )),
+        ))),
         SweepKind::Swept { direction } => {
             let unit_direction = *direction;
             let direction = direction.as_raw();
@@ -697,15 +698,19 @@ fn resolve_sweep_surface(
                 }
             }
             if point_lo > point_hi {
-                return None;
+                return Ok(None);
             }
-            let pole_travel: Vec<f64> =
-                curve.pole_rows().raw_points().iter().map(project).collect();
-            let pole_lo = pole_travel.iter().copied().fold(f64::INFINITY, f64::min);
-            let pole_hi = pole_travel
-                .iter()
-                .copied()
-                .fold(f64::NEG_INFINITY, f64::max);
+            let mut pole_lo = f64::INFINITY;
+            let mut pole_hi = f64::NEG_INFINITY;
+            for index in 0..curve.pole_count() {
+                let point = match curve.pole_rows() {
+                    cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => points[index].get(),
+                    cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => points[index].point.get(),
+                };
+                let travel = project(&point);
+                pole_lo = pole_lo.min(travel);
+                pole_hi = pole_hi.max(travel);
+            }
             let v_start = point_lo - pole_hi;
             let v_end = point_hi - pole_lo;
             // Two independently derived pads on the same swept extent: an
@@ -716,19 +721,20 @@ fn resolve_sweep_surface(
                 EPS_SWEEP_EXTENT_ABSOLUTE_MM,
                 (v_end - v_start) * EPS_SWEEP_EXTENT_RELATIVE,
             );
-            Some((
-                SolvedSurfaceGeometry::Nurbs(sweep::swept_nurbs(
+            Ok(sweep::swept_nurbs(
+                    ctx,
                     &curve,
                     unit_direction,
                     v_start - pad,
                     v_end + pad,
                     &record,
                     refusal,
-                )?),
+                )?.map(|surface| (
+                SolvedSurfaceGeometry::Nurbs(surface),
                 construction.offset,
                 "00_43",
                 Some(Exactness::Derived),
-            ))
+            )))
         }
     }
 }
@@ -2223,7 +2229,7 @@ fn decode_graph(
                     });
                 } else if let Some((geometry, offset, tag, exactness)) = {
                     let mut sweep_refusal = crate::lane_refusal::LaneRefusals::new();
-                    let resolved = resolve_sweep_surface(carriers, t, f, &mut sweep_refusal);
+                    let resolved = resolve_sweep_surface(ctx, carriers, t, f, &mut sweep_refusal)?;
                     out.losses
                         .extend(sweep_refusal.take_records().into_iter().map(|record| {
                             crate::loss::spline_lane_refusal(&format!(
