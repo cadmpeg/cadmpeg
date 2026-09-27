@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sheet-metal features: base flange, edge flange and hem, with the bend and width forms they state.
 
+use crate::records::serde_column::SliceColumn;
 use cadmpeg_ir::scalar::PositiveReal;
 use serde::{Deserialize, Serialize};
 /// Fixed construction carried by a planar sheet-metal `BaseFlange` scope.
@@ -353,11 +354,8 @@ impl DesignEdgeFlangeEdge {
 }
 
 /// Fixed construction carried by a sheet-metal `EdgeFlange` scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignEdgeFlangeOperationSerde",
-    into = "DesignEdgeFlangeOperationSerde"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignEdgeFlangeOperationSerde")]
 pub(crate) struct DesignEdgeFlangeOperation {
     /// Selected flange edges and their aggregate operand group.
     pub(crate) selection: DesignEdgeFlangeSelection,
@@ -379,6 +377,119 @@ pub(crate) struct DesignEdgeFlangeOperation {
     pub(crate) height_datum: DesignSheetMetalHeightDatum,
     /// Bend position relative to the selected edge.
     pub(crate) bend_position: DesignBendPosition,
+}
+
+#[cfg(test)]
+thread_local! {
+    static EDGE_FLANGE_OPERATION_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignEdgeFlangeOperation {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        EDGE_FLANGE_OPERATION_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            selection: self.selection.clone(),
+            height_owner_record_index: self.height_owner_record_index,
+            angle_owner_record_index: self.angle_owner_record_index,
+            auxiliary_reference_record_indices: self.auxiliary_reference_record_indices.clone(),
+            settings_record_index: self.settings_record_index,
+            bend_radius: self.bend_radius,
+            bend_radius_offset: self.bend_radius_offset,
+            height_datum: self.height_datum,
+            bend_position: self.bend_position,
+        }
+    }
+}
+
+struct FlangeEdgeColumn<'a, T> {
+    shape: &'a DesignEdgeFlangeShape,
+    value: fn(&DesignEdgeFlangeEdge) -> T,
+}
+
+impl<T: Serialize> Serialize for FlangeEdgeColumn<'_, T> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.shape.edges().map(self.value))
+    }
+}
+
+struct FlangeOwnerColumn<'a>(&'a DesignEdgeFlangeShape);
+
+impl Serialize for FlangeOwnerColumn<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.owner_indices())
+    }
+}
+
+impl Serialize for DesignEdgeFlangeOperation {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct BorrowedWire<'a> {
+            edge_wrapper_record_indices: FlangeEdgeColumn<'a, u32>,
+            edge_group_record_indices: FlangeEdgeColumn<'a, u32>,
+            edge_operand_record_indices: FlangeEdgeColumn<'a, u32>,
+            aggregate_group_record_index: u32,
+            aggregate_operand_record_indices: FlangeEdgeColumn<'a, u32>,
+            height_owner_record_index: u32,
+            height_extent: DesignEdgeFlangeHeightExtent,
+            angle_owner_record_index: u32,
+            width_mode: Option<DesignEdgeWidthMode>,
+            width_distance_owner_record_indices: FlangeOwnerColumn<'a>,
+            #[serde(skip_serializing_if = "SliceColumn::is_empty")]
+            width_distance_owner_record_indices_by_edge:
+                SliceColumn<'a, DesignFlangeEdgeWidth<[u32; 2]>, [u32; 2]>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            auxiliary_reference_record_indices: &'a Vec<u32>,
+            width_parameter_source: DesignEdgeFlangeWidthParameterSource,
+            settings_record_index: u32,
+            bend_radius: f64,
+            bend_radius_offset: u64,
+            reference_side_code: u32,
+            height_datum: DesignSheetMetalHeightDatum,
+            bend_position: DesignBendPosition,
+        }
+        let shape = self.selection.shape();
+        let per_edge = match shape {
+            DesignEdgeFlangeShape::TwoSidesPerEdge { edges, .. } => edges.as_slice(),
+            _ => &[],
+        };
+        BorrowedWire {
+            edge_wrapper_record_indices: FlangeEdgeColumn {
+                shape,
+                value: |edge| edge.wrapper_record_index,
+            },
+            edge_group_record_indices: FlangeEdgeColumn {
+                shape,
+                value: |edge| edge.group_record_index.get(),
+            },
+            edge_operand_record_indices: FlangeEdgeColumn {
+                shape,
+                value: DesignEdgeFlangeEdge::operand_record_index,
+            },
+            aggregate_group_record_index: self.selection.aggregate_group_record_index(),
+            aggregate_operand_record_indices: FlangeEdgeColumn {
+                shape,
+                value: |edge| edge.aggregate_operand_record_index,
+            },
+            height_owner_record_index: self.height_owner_record_index,
+            height_extent: shape.height(),
+            angle_owner_record_index: self.angle_owner_record_index,
+            width_mode: Some(shape.mode()),
+            width_distance_owner_record_indices: FlangeOwnerColumn(shape),
+            width_distance_owner_record_indices_by_edge: SliceColumn::new(per_edge, |row| {
+                row.owners
+            }),
+            auxiliary_reference_record_indices: &self.auxiliary_reference_record_indices,
+            width_parameter_source: shape.source(),
+            settings_record_index: self.settings_record_index,
+            bend_radius: self.bend_radius.get(),
+            bend_radius_offset: self.bend_radius_offset,
+            reference_side_code: 4,
+            height_datum: self.height_datum,
+            bend_position: self.bend_position,
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Flange edge shape paired with its aggregate operand group.
@@ -484,6 +595,7 @@ impl TryFrom<DesignEdgeFlangeOperationSerde> for DesignEdgeFlangeOperation {
     }
 }
 
+#[cfg(test)]
 impl From<DesignEdgeFlangeOperation> for DesignEdgeFlangeOperationSerde {
     fn from(operation: DesignEdgeFlangeOperation) -> Self {
         let width_mode = Some(operation.selection.shape().mode());
