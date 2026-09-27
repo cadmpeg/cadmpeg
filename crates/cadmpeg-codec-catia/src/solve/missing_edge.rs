@@ -3499,19 +3499,18 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
         return Ok(None);
     };
     let point_count = vertex_points.len();
-    let complete_domain = (0..point_count)
-        .flat_map(|left| ((left + 1)..point_count).map(move |right| [left, right]))
-        .collect::<Vec<_>>();
-    let mut candidates = edge_candidates
-        .iter()
-        .map(|domain| {
-            if domain.is_empty() {
-                complete_domain.clone()
-            } else {
-                domain.clone()
-            }
-        })
-        .collect::<Vec<_>>();
+    let mut complete_domain = Vec::new();
+    for left in 0..point_count {
+        for right in (left + 1)..point_count {
+            crate::resource::push(ctx, &mut complete_domain, [left, right], "catia_prune_complete_point_pairs")?;
+        }
+    }
+    let mut candidates = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut candidates, edge_candidates.len(), "catia_prune_candidate_rows")?;
+    for domain in edge_candidates {
+        let source = if domain.is_empty() { &complete_domain } else { domain };
+        candidates.push(crate::resource::copy_retained_slice(ctx, source, "catia_prune_candidate_pairs")?);
+    }
     let Some(mut faces) = standard_mesh_boundary_assignments(ctx, bytes, edge_faces, None)? else {
         return Ok(None);
     };
@@ -3521,7 +3520,8 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
             faces.iter().map(Vec::len).sum::<usize>(),
             candidates.iter().map(Vec::len).sum::<usize>(),
         );
-        let mut face_supports = Vec::with_capacity(faces.len());
+        let mut face_supports = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut face_supports, faces.len(), "catia_prune_face_support_rows")?;
         for assignments in &mut faces {
             let mut evaluated = Vec::new();
             'assignment: for (index, assignment) in assignments.iter().enumerate() {
@@ -3533,6 +3533,7 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
                         continue 'assignment;
                     };
                     for (edge, domain) in boundary_support.by_edge {
+                        crate::resource::admit_map_entry(ctx, &mut support, &edge, "catia_prune_support_edges")?;
                         support
                             .entry(edge)
                             .and_modify(|stored| stored.retain(|pair| domain.contains(pair)))
@@ -3540,35 +3541,34 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
                     }
                 }
                 if support.values().all(|domain| !domain.is_empty()) {
-                    evaluated.push((index, support));
+                    crate::resource::push(ctx, &mut evaluated, (index, support), "catia_prune_evaluated_assignments")?;
                 }
             }
             if evaluated.is_empty() {
                 return Ok(None);
             }
-            *assignments = evaluated
-                .iter()
-                .map(|(index, _)| assignments[*index].clone())
-                .collect();
-            face_supports.push(
-                evaluated
-                    .into_iter()
-                    .map(|(_, support)| support)
-                    .collect::<Vec<_>>(),
-            );
+            let mut retained_assignments = Vec::new();
+            crate::resource::reserve_vec(ctx, &mut retained_assignments, evaluated.len(), "catia_prune_retained_assignments")?;
+            for (index, _) in &evaluated {
+                retained_assignments.push(MeshFaceBoundaryAssignment {
+                    boundaries: crate::resource::copy_retained_rows(ctx, &assignments[*index].boundaries, "catia_prune_retained_boundary_rows", "catia_prune_retained_boundary_uses")?,
+                });
+            }
+            *assignments = retained_assignments;
+            let mut support_rows = Vec::new();
+            crate::resource::reserve_vec(ctx, &mut support_rows, evaluated.len(), "catia_prune_assignment_supports")?;
+            support_rows.extend(evaluated.into_iter().map(|(_, support)| support));
+            face_supports.push(support_rows);
         }
         for (edge, domain) in candidates.iter_mut().enumerate() {
             let mut allowed = None::<HashSet<[usize; 2]>>;
-            let mut incident = edge_faces[edge].to_vec();
+            let mut incident = edge_faces[edge];
             incident.sort_unstable();
-            incident.dedup();
-            for face in incident {
-                let support = face_supports[face]
-                    .iter()
-                    .filter_map(|assignment| assignment.get(&edge))
-                    .flatten()
-                    .copied()
-                    .collect::<HashSet<_>>();
+            for face in incident.into_iter().take(if incident[0] == incident[1] { 1 } else { 2 }) {
+                let mut support = HashSet::new();
+                for &pair in face_supports[face].iter().filter_map(|assignment| assignment.get(&edge)).flatten() {
+                    crate::resource::insert_set(ctx, &mut support, pair, "catia_prune_incident_support_pairs")?;
+                }
                 if support.is_empty() {
                     return Ok(None);
                 }
