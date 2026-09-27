@@ -47,6 +47,74 @@ const EPS_TOPOLOGY_TRANSFER_GEOMETRY: f64 = 1.0e-9;
 const EPS_TOPOLOGY_TRANSFER_DEGENERATE: f64 = 1.0e-10;
 const EPS_TOPOLOGY_TRANSFER_EXACT_GEOMETRY: f64 = 1.0e-12;
 
+fn copy_shape_for_transfer(
+    ctx: &DecodeContext<'_>,
+    shape: &TextTShape,
+    operation: &'static str,
+) -> Result<TextTShape, CodecError> {
+    let mut children = collection_vec(ctx, shape.children.len(), operation)?;
+    children.extend(shape.children.iter().cloned());
+    let geometry = match &shape.geometry {
+        TextTShapeGeometry::Vertex { tolerance, point, representations } => {
+            let mut copies = collection_vec(ctx, representations.len(), operation)?;
+            copies.extend(representations.iter().cloned());
+            TextTShapeGeometry::Vertex {
+                tolerance: *tolerance,
+                point: *point,
+                representations: copies,
+            }
+        }
+        TextTShapeGeometry::Edge {
+            tolerance,
+            same_parameter,
+            same_range,
+            degenerated,
+            representations,
+        } => {
+            let mut copies = collection_vec(ctx, representations.len(), operation)?;
+            for representation in representations {
+                let copy = match representation {
+                    TextEdgeRepresentation::PcurvePair {
+                        curves,
+                        continuity,
+                        surface,
+                        location,
+                        parameter_range,
+                        uv_endpoints,
+                    } => TextEdgeRepresentation::PcurvePair {
+                        curves: *curves,
+                        continuity: retained_string(ctx, continuity, operation)?,
+                        surface: *surface,
+                        location: *location,
+                        parameter_range: *parameter_range,
+                        uv_endpoints: *uv_endpoints,
+                    },
+                    TextEdgeRepresentation::Regularity {
+                        continuity,
+                        surfaces,
+                        locations,
+                    } => TextEdgeRepresentation::Regularity {
+                        continuity: retained_string(ctx, continuity, operation)?,
+                        surfaces: *surfaces,
+                        locations: *locations,
+                    },
+                    other => other.clone(),
+                };
+                copies.push(copy);
+            }
+            TextTShapeGeometry::Edge {
+                tolerance: *tolerance,
+                same_parameter: *same_parameter,
+                same_range: *same_range,
+                degenerated: *degenerated,
+                representations: copies,
+            }
+        }
+        other => other.clone(),
+    };
+    Ok(TextTShape { geometry, flags: shape.flags, children })
+}
+
 struct IndexedPolygon {
     samples: PolylineSamples<FiniteReal, FinitePoint3>,
     deflection: cadmpeg_ir::scalar::NonNegativeReal,
@@ -540,7 +608,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         output: &mut Vec<RegionId>,
     ) -> Result<(), CodecError> {
         let _depth = ctx.enter_nested("transfer FCStd topology nesting")?;
-        let shape = self.shape(shape_index)?.clone();
+        let shape = copy_shape_for_transfer(ctx, self.shape(shape_index)?, "FreeCAD region shape copy")?;
         if matches!(
             shape.kind(),
             TextShapeKind::Compound | TextShapeKind::CompSolid
@@ -640,7 +708,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         transform: Transform,
         reversed: bool,
     ) -> Result<Vec<ShellId>, CodecError> {
-        let shape = self.shape(shape_index)?.clone();
+        let shape = copy_shape_for_transfer(ctx, self.shape(shape_index)?, "FreeCAD shell shape copy")?;
         let key = self.topology_label(shape_index, transform)?;
         let shell_id = ShellId::compose(
             &cadmpeg_ir::identity_namespace!("fcstd", "model", "shell"),
@@ -872,7 +940,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             .compose(self.tables.location(face_use.location)?)
             .map_err(location_transform_error)?;
         let face_reversed = reversed ^ is_reversed(face_use.orientation);
-        let shape = self.shape(face_use.shape)?.clone();
+        let shape = copy_shape_for_transfer(self.ctx, self.shape(face_use.shape)?, "FreeCAD face shape copy")?;
         let TextTShapeGeometry::Face {
             tolerance,
             surface,
@@ -1020,7 +1088,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             let wire_transform = face_transform
                 .compose(self.tables.location(wire_use.location)?)
                 .map_err(location_transform_error)?;
-            let wire = self.shape(wire_use.shape)?.clone();
+            let wire = copy_shape_for_transfer(self.ctx, self.shape(wire_use.shape)?, "FreeCAD wire shape copy")?;
             let edge_count = wire.children.iter().filter(|child| {
                 self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Edge
             }).count();
@@ -1154,7 +1222,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             )?;
             return Ok(id);
         }
-        let shape = self.shape(edge_use.shape)?.clone();
+        let shape = copy_shape_for_transfer(self.ctx, self.shape(edge_use.shape)?, "FreeCAD edge shape copy")?;
         let TextTShapeGeometry::Edge {
             tolerance,
             degenerated,
