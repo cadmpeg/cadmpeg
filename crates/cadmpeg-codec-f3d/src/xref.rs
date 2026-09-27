@@ -14,7 +14,7 @@ use std::collections::HashSet;
 
 use serde::Deserialize;
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::products::{ExternalDocument, Occurrence, OccurrenceParent, PrototypeReference};
@@ -233,13 +233,14 @@ fn parse_component_reference_data(bytes: &[u8]) -> Result<serde_json::Value, Cod
 }
 
 /// Parse the top-level `RedirectionsStream.dat` table, if present.
-pub(crate) fn decode(scan: &ContainerScan) -> Result<Option<XrefTable>, CodecError> {
-    decode_with_scopes(scan, &[])
+pub(crate) fn decode(ctx: &DecodeContext<'_>, scan: &ContainerScan) -> Result<Option<XrefTable>, CodecError> {
+    decode_with_scopes(ctx, scan, &[])
 }
 
 /// Parse the external-reference table and bind its occurrences to exact
 /// `Component Insert` constructions already decoded from the Design streams.
 pub(crate) fn decode_with_scopes(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
 ) -> Result<Option<XrefTable>, CodecError> {
@@ -250,7 +251,7 @@ pub(crate) fn decode_with_scopes(
     let Ok(bytes) = scan.entry_bytes(REDIRECTIONS_ENTRY) else {
         return Ok(None);
     };
-    let mut table = parse(bytes)?;
+    let mut table = parse(ctx, bytes)?;
     bind_occurrences(scan, &mut table, scopes)?;
     Ok(Some(table))
 }
@@ -265,7 +266,7 @@ fn ordinal_at(position: usize) -> Result<u32, CodecError> {
 }
 
 /// Parse `RedirectionsStream.dat` bytes into an [`XrefTable`].
-fn parse(bytes: &[u8]) -> Result<XrefTable, CodecError> {
+fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<XrefTable, CodecError> {
     let parsed: RedirectionsJson = serde_json::from_slice(bytes).map_err(|error| {
         CodecError::malformed(format_args!(
             "{REDIRECTIONS_ENTRY} is not valid JSON: {error}"
@@ -287,16 +288,16 @@ fn parse(bytes: &[u8]) -> Result<XrefTable, CodecError> {
             "designs must contain the document entry",
         ));
     }
-    let designs = parsed
-        .designs
-        .into_iter()
-        .enumerate()
-        .map(|(ordinal, design)| {
+    let mut designs = Vec::new();
+    for (ordinal, design) in parsed.designs.into_iter().enumerate() {
+            ctx.charge_collection_items(1, "admit F3D xref designs")?;
+            designs.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("admit F3D xref designs", 0, 1))?;
             require_text(
                 &design.target_file_name,
                 format_args!("designs[{ordinal}].targetFileName"),
             )?;
-            Ok(XrefDesign {
+            designs.push(XrefDesign {
                 id: format!("f3d:xref:design#{ordinal}"),
                 ordinal: ordinal_at(ordinal)?,
                 file_version: design.file_version,
@@ -304,9 +305,8 @@ fn parse(bytes: &[u8]) -> Result<XrefTable, CodecError> {
                 display_name: design.display_name,
                 lineage_urn: design.lineage_urn,
                 version_urn: design.version_urn,
-            })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
+            });
+    }
     let references = match parsed.references {
         ReferencesJson::List(references) if !references.is_empty() => references,
         ReferencesJson::List(_) => {
@@ -316,14 +316,16 @@ fn parse(bytes: &[u8]) -> Result<XrefTable, CodecError> {
         }
         ReferencesJson::Leaf {} => Vec::new(),
     };
-    let references = references
-        .into_iter()
-        .enumerate()
-        .map(|(ordinal, reference)| reference.into_record(ordinal))
-        .collect::<Result<Vec<_>, CodecError>>()?;
+    let mut admitted_references = Vec::new();
+    for (ordinal, reference) in references.into_iter().enumerate() {
+        ctx.charge_collection_items(1, "admit F3D xref references")?;
+        admitted_references.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("admit F3D xref references", 0, 1))?;
+        admitted_references.push(reference.into_record(ordinal)?);
+    }
     Ok(XrefTable {
         designs,
-        references,
+        references: admitted_references,
         placement_failures: Vec::new(),
         placement_overrides: Vec::new(),
     })
