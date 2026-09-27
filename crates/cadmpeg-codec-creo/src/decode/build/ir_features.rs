@@ -43,34 +43,29 @@ use crate::decode::sketch_transfer::recipe::{
 };
 
 fn refresh_feature_outputs(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let output_updates =
-        ir.model
-            .features
-            .iter()
-            .filter_map(|feature| {
-                let feature_id = feature
-                    .id
-                    .as_str()
-                    .strip_prefix("creo:model:feature#")
-                    .and_then(|value| value.parse::<u32>().ok())?;
-                Some(
-                    feature_output_bodies(scan, ir, feature_id)
-                        .try_into()
-                        .map(|outputs| (feature.id.clone(), outputs))
-                        .map_err(cadmpeg_core::CodecError::malformed),
-                )
-            })
-            .collect::<Result<
-                BTreeMap<_, cadmpeg_ir::features::DistinctMembers<cadmpeg_ir::ids::BodyId>>,
-                _,
-            >>()?;
-    for feature in &mut ir.model.features {
-        if let Some(outputs) = output_updates.get(&feature.id) {
-            feature.evaluation.set_outputs(outputs.clone());
-        }
+    let mut output_updates = Vec::new();
+    for (index, feature) in ir.model.features.iter().enumerate() {
+        let Some(feature_id) = feature
+            .id
+            .as_str()
+            .strip_prefix("creo:model:feature#")
+            .and_then(|value| value.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        let outputs = cadmpeg_ir::features::DistinctMembers::try_from_reserved_vec(
+            feature_output_bodies(scan, ir, feature_id),
+        )
+        .map_err(cadmpeg_core::CodecError::malformed)?;
+        ctx.try_reserve_items(&mut output_updates, 1, "creo feature output update rows")?;
+        output_updates.push((index, outputs));
+    }
+    for (index, outputs) in output_updates {
+        ir.model.features[index].evaluation.set_outputs(outputs);
     }
     Ok(())
 }
@@ -226,7 +221,7 @@ pub(super) fn emit_model_features(
             native_ref: None,
         };
         source_carriers.admit_feature(ctx, ir, feature)?;
-        refresh_feature_outputs(scan, ir)?;
+        refresh_feature_outputs(ctx, scan, ir)?;
         geometry_generator_feature_count += 1;
     }
     let operation_ordinal_base = ir.model.features.len();
@@ -401,7 +396,7 @@ pub(super) fn emit_model_features(
                     .try_into()
                     .map_err(cadmpeg_core::CodecError::malformed)?,
             );
-            refresh_feature_outputs(scan, ir)?;
+            refresh_feature_outputs(ctx, scan, ir)?;
             continue;
         }
         let (operation_annotation_kind, operation_exactness) = if operation.display_state_conflict {
@@ -442,7 +437,7 @@ pub(super) fn emit_model_features(
             native_ref,
         };
         source_carriers.admit_feature(ctx, ir, feature)?;
-        refresh_feature_outputs(scan, ir)?;
+        refresh_feature_outputs(ctx, scan, ir)?;
     }
     for feature_id in row_feature_ids {
         let id = IrFeatureId::compose(&crate::identity::MODEL_FEATURE, feature_id);
@@ -544,7 +539,7 @@ pub(super) fn emit_model_features(
             native_ref: owning_feature_definition_ref(scan, feature_id),
         };
         source_carriers.admit_feature(ctx, ir, feature)?;
-        refresh_feature_outputs(scan, ir)?;
+        refresh_feature_outputs(ctx, scan, ir)?;
     }
     for (child, parent) in regeneration_edges {
         ir.model
