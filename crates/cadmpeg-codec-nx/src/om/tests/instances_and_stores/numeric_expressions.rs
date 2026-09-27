@@ -10,6 +10,10 @@ use crate::om::ExpressionUnit;
 
 #[test]
 fn om_numeric_expression_types_only_canonical_parameter_names() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
     for name in ["p12foo", "p12_", "p4294967296_radius"] {
         let text = format!("(Number [mm]) {name}: 5; ");
         let mut bytes = b"hostglobalvariables".to_vec();
@@ -17,7 +21,7 @@ fn om_numeric_expression_types_only_canonical_parameter_names() {
         bytes.extend_from_slice(text.as_bytes());
         bytes.push(0);
 
-        let expressions = numeric_expressions(&bytes);
+        let expressions = numeric_expressions(&ctx, &bytes).unwrap();
         assert_eq!(expressions.len(), 1);
         assert_eq!(expressions[0].name.as_str(), name);
         assert_eq!(expressions[0].name.index(), None);
@@ -29,13 +33,17 @@ fn om_numeric_expression_types_only_canonical_parameter_names() {
 
 #[test]
 fn om_numeric_expression_evaluates_constant_arithmetic_formula() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
     let text = b"(Number [mm]) p9: (193.94 - 6) / 2 + 1.5e1; ";
     let mut bytes = b"hostglobalvariables".to_vec();
     bytes.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
     bytes.extend_from_slice(text);
     bytes.push(0);
 
-    let expressions = numeric_expressions(&bytes);
+    let expressions = numeric_expressions(&ctx, &bytes).unwrap();
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].expression, "(193.94 - 6) / 2 + 1.5e1");
     assert_eq!(
@@ -48,6 +56,10 @@ fn om_numeric_expression_evaluates_constant_arithmetic_formula() {
 
 #[test]
 fn om_numeric_expression_accepts_inches_and_terminal_comments() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
     let texts = [
         b"(Number [in]) p1: 0.5; ".as_slice(),
         b"(Number [in]) p2: p1 * 2; // Used By ...\n".as_slice(),
@@ -60,7 +72,7 @@ fn om_numeric_expression_accepts_inches_and_terminal_comments() {
         bytes.push(0);
     }
 
-    let expressions = numeric_expressions(&bytes);
+    let expressions = numeric_expressions(&ctx, &bytes).unwrap();
 
     assert_eq!(expressions.len(), 3);
     assert_eq!(expressions[0].unit, ExpressionUnit::Inch);
@@ -83,6 +95,57 @@ fn om_numeric_expression_accepts_inches_and_terminal_comments() {
             .map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(4.0)
     );
+}
+
+#[test]
+fn om_numeric_expressions_refuse_collection_limit() {
+    let text = b"(Number [mm]) p1: 2; ";
+    let mut bytes = b"hostglobalvariables".to_vec();
+    bytes.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
+    bytes.extend_from_slice(text);
+    bytes.push(0);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .unwrap();
+    let error = numeric_expressions(&ctx, &bytes).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn om_numeric_expressions_refuse_retained_limit() {
+    let text = b"(Number [mm]) p1: 2; ";
+    let mut bytes = b"hostglobalvariables".to_vec();
+    bytes.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
+    bytes.extend_from_slice(text);
+    bytes.push(0);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .unwrap();
+    let error = numeric_expressions(&ctx, &bytes).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn om_numeric_expressions_refuse_work_limit() {
+    let text = b"(Number [mm]) p1: 2; ";
+    let mut bytes = b"hostglobalvariables".to_vec();
+    bytes.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
+    bytes.extend_from_slice(text);
+    bytes.push(0);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .unwrap();
+    let error = numeric_expressions(&ctx, &bytes).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 #[test]
@@ -188,8 +251,12 @@ fn om_record_references_require_adjacent_persistent_tagged_pairs() {
 
 #[test]
 fn om_numeric_expression_table_is_independent_of_entity_indexing() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
     let bytes = b"hostglobalvariables\x99\x04P(Number [degrees]) p8_CircularPattern_pattern_Circular_Dir_offset_angle: 120; \x00";
-    let expressions = numeric_expressions(bytes);
+    let expressions = numeric_expressions(&ctx, bytes).unwrap();
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, None);
     assert_eq!(

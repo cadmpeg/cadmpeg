@@ -4473,7 +4473,7 @@ pub(super) fn expression_declarations(container: &Container) -> Vec<ExpressionDe
 }
 
 /// Decode explicit numeric expressions from all indexed OM sections.
-pub(super) fn expressions(container: &Container) -> Vec<Expression> {
+pub(super) fn expressions(ctx: &DecodeContext<'_>, container: &Container) -> Result<Vec<Expression>, CodecError> {
     let declarations = expression_declarations(container);
     let mut declarations_by_name = BTreeMap::<(&str, &str), Vec<&ExpressionDeclaration>>::new();
     for declaration in &declarations {
@@ -4510,7 +4510,7 @@ pub(super) fn expressions(container: &Container) -> Vec<Expression> {
         let Some(payload) = container.data.get(offset..offset.saturating_add(size)) else {
             continue;
         };
-        for expression in crate::om::numeric_expressions(payload) {
+        for expression in crate::om::numeric_expressions(ctx, payload)? {
             let Some(table_offset) = payload[..expression.offset]
                 .windows(b"hostglobalvariables".len())
                 .rposition(|window| window == b"hostglobalvariables")
@@ -4568,7 +4568,7 @@ pub(super) fn expressions(container: &Container) -> Vec<Expression> {
         }
     }
     evaluate_expression_graphs(&mut expressions);
-    expressions
+    Ok(expressions)
 }
 
 fn evaluate_expression_graphs(expressions: &mut [Expression]) {
@@ -5802,7 +5802,7 @@ mod tests {
         );
         assert!(super::string_values(&container).is_empty());
         assert!(super::object_references(&container).is_empty());
-        let expressions = super::expressions(&container);
+        let expressions = with_test_ctx(|ctx| super::expressions(ctx, &container).unwrap());
         assert_eq!(expressions.len(), 1);
         assert_eq!(
             expressions[0].owner.as_ref().map(|owner| owner.object_id),
@@ -5948,7 +5948,7 @@ mod tests {
         bytes.extend_from_slice(text);
         bytes.push(0);
 
-        let expressions = crate::om::numeric_expressions(&bytes);
+        let expressions = with_test_ctx(|ctx| crate::om::numeric_expressions(ctx, &bytes).unwrap());
         assert_eq!(expressions.len(), 1);
         assert_eq!(expressions[0].name.as_str(), "p9");
         assert_eq!(expressions[0].expression, "p2 * 2 + p7_radius");

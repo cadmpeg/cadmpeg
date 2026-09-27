@@ -3550,25 +3550,44 @@ pub(crate) fn surface_payload_strings<'a>(
 /// records are self-framed as `handle, 04, length, text, 00`, so expression
 /// decoding does not depend on an object-id table having the same cardinality
 /// as an external entity-index array.
-pub(crate) fn numeric_expressions(bytes: &[u8]) -> Vec<NumericExpression<'_>> {
+pub(crate) fn numeric_expressions<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
+) -> Result<Vec<NumericExpression<'a>>, CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+        "scan NX numeric expressions",
+    )?;
     if !bytes
         .windows(b"hostglobalvariables".len())
         .any(|window| window == b"hostglobalvariables")
     {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    bytes
+    let mut expressions = Vec::new();
+    for (offset, _) in bytes
         .windows(b"(Number [".len())
         .enumerate()
         .filter(|(_, window)| *window == b"(Number [")
-        .filter_map(|(offset, _)| {
-            numeric_expression_at(
-                &bytes[offset.saturating_sub(3)..],
-                offset.saturating_sub(3),
-                None,
-            )
-        })
-        .collect()
+    {
+        let Some(expression) = numeric_expression_at(
+            &bytes[offset.saturating_sub(3)..],
+            offset.saturating_sub(3),
+            None,
+        ) else {
+            continue;
+        };
+        ctx.charge_collection_items(1, "nx numeric expressions")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<NumericExpression<'_>>()),
+            "retain NX numeric expression",
+        )?;
+        expressions
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("nx numeric expressions", 0, 1))?;
+        expressions.push(expression);
+    }
+    Ok(expressions)
 }
 
 /// Locate independently size-framed OM sections and their type registries.
