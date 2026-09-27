@@ -108,6 +108,20 @@ impl IndexedRecordOffsets {
     }
 }
 
+/// Copy a stream identity for a mutable decode pass under a scoped byte charge.
+pub(in crate::design) fn copy_scoped_stream<'a>(
+    ctx: &'a DecodeContext<'_>,
+    stream: &str,
+) -> Result<(cadmpeg_core::decode::ScopedReservation<'a>, String), CodecError> {
+    let reservation = ctx.reserve_scoped(stream.len() as u64, "f3d scoped stream identity")?;
+    let mut copy = String::new();
+    copy.try_reserve(stream.len()).map_err(|_| {
+        ctx.refuse_codec_limit("f3d scoped stream allocation", 0, 1)
+    })?;
+    copy.push_str(stream);
+    Ok((reservation, copy))
+}
+
 /// Cache a stream index under its borrowed identity after charging the map slot.
 pub(in crate::design) fn cached_borrowed_record_offsets<'a, 's>(
     ctx: &DecodeContext<'_>,

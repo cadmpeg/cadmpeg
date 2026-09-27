@@ -18,7 +18,8 @@ use crate::design::decode::scopes::parameter_scope::payload_prologue;
 use crate::design::decode::scopes::shared_frames::marked_record_reference;
 use crate::design::decode::sketch::{
     indexed_record_header_at, next_indexed_record_offset, next_indexed_record_offset_with_index,
-    cached_borrowed_record_offsets, cached_owned_record_offsets, IndexedRecordOffsets,
+    cached_borrowed_record_offsets, cached_owned_record_offsets, copy_scoped_stream,
+    IndexedRecordOffsets,
 };
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
@@ -321,9 +322,10 @@ pub(crate) fn bind_work_point_input_carriers(
     for scope in scopes.iter_mut().filter(|scope| {
         scope.kind() == crate::records::feature::scope::DesignFeatureKind::WorkPoint
     }) {
-        let Some(stream) = native_stream(&scope.id).map(str::to_owned) else {
+        let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
+        let (_stream_reservation, stream) = copy_scoped_stream(ctx, stream)?;
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, &stream)
         else {
             continue;
@@ -497,9 +499,10 @@ pub(crate) fn bind_work_plane_constructions(
         if let Some(frame) = scope.work_plane_frame_mut() {
             frame.work_plane_construction = None;
         }
-        let Some(stream) = native_stream(&scope.id).map(str::to_owned) else {
+        let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
+        let (_stream_reservation, stream) = copy_scoped_stream(ctx, stream)?;
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, &stream)
         else {
             continue;
