@@ -84,6 +84,29 @@ fn certified_nurbs_tubes_cover_a_wide_finite_parameter_span() {
 }
 
 #[test]
+fn certified_nurbs_tubes_refuse_collection_limit() {
+    let curve = PcurveNurbs::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+        None,
+        false,
+    )
+    .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = match super::certified_nurbs_tubes(&curve, 0.5, Some(&ctx)) {
+        Err(error) => error,
+        Ok(_) => panic!("one certified span needs a tube"),
+    };
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.operation == "f3d certified nurbs tube"));
+}
+
+#[test]
 fn profile_polyline_keeps_a_finite_midpoint_near_the_float_limit() {
     let sketch_id = SketchId::mint("synthetic:test:id#high-domain-profile").unwrap();
     let lower = f64::MAX * 0.5;

@@ -1981,26 +1981,27 @@ fn certified_nurbs_tubes(
                     span[0].mul_add(1.0 - fraction, span[1] * fraction)
                 }
             };
-            let start = *geometric!(cadmpeg_ir::eval::nurbs_pcurve_uv(
+            let start = *geometric!(cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
                 degree as u32,
                 knots,
                 &control_points,
                 weights.as_deref(),
                 parameter(index),
-            )
-            .ok())
+            ))?)
             .as_raw();
-            let end = *geometric!(cadmpeg_ir::eval::nurbs_pcurve_uv(
+            let end = *geometric!(cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
                 degree as u32,
                 knots,
                 &control_points,
                 weights.as_deref(),
                 parameter(index + 1),
-            )
-            .ok())
+            ))?)
             .as_raw();
             if let Some(ctx) = ctx {
                 ctx.charge_collection_items(1, "f3d certified nurbs tube")?;
+                tubes.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d certified nurbs tube allocation", 0, 1)
+                })?;
             }
             tubes.push(CertifiedCurveTube { start, end, error });
         }
