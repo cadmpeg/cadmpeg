@@ -10,9 +10,72 @@ use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 
 use crate::container::{self};
 use crate::CreoCodec;
+
+fn fc05_circles_service(parameters: &[crate::curve::CurveParameterRecord]) -> Vec<crate::curve::Fc05Circle> {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    crate::curve::fc05_circles(&ctx, parameters).expect("service FC05 circles")
+}
+
+fn fc05_circle_parameter() -> crate::curve::CurveParameterRecord {
+    let mut payload = visibgeom_payload(0, 1);
+    payload.extend_from_slice(b"topol_ref_data\0\x07\x09\x04\x01\xf6\xfc\x05");
+    for [x, z, t, y] in [
+        [4.0, 3.0, 2.0, 2.0],
+        [3.0, 4.0, 2.0 + std::f64::consts::FRAC_PI_2, 2.0],
+        [2.0, 3.0, 2.0 + std::f64::consts::PI, 2.0],
+        [3.0, 2.0, 2.0 + 3.0 * std::f64::consts::FRAC_PI_2, 2.0],
+    ] {
+        world(&mut payload, x);
+        world(&mut payload, z);
+        world(&mut payload, t);
+        world(&mut payload, y);
+    }
+    payload.push(0xff);
+    payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
+    let data = build_prt("c", &[("VisibGeom", payload)]);
+    let mut scan = container::scan_bytes_ok(data);
+    scan.curves.parameters.remove(0)
+}
+
+fn assert_fc05_circle_collection_refusal(limit: u64, operation: &'static str) {
+    let parameter = fc05_circle_parameter();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = crate::curve::fc05_circles(&ctx, &[parameter])
+        .expect_err("one four-point circle exceeds limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+#[test]
+fn fc05_circles_refuse_unique_parameter_count_node() {
+    assert_fc05_circle_collection_refusal(0, "creo unique-row count nodes");
+}
+
+#[test]
+fn fc05_circles_refuse_unique_parameter_projection() {
+    assert_fc05_circle_collection_refusal(1, "creo unique-row projection");
+}
+
+#[test]
+fn fc05_circles_refuse_point_rows() {
+    assert_fc05_circle_collection_refusal(2, "creo fc05 point rows");
+}
+
+#[test]
+fn fc05_circles_refuse_output_vector() {
+    assert_fc05_circle_collection_refusal(6, "creo fc05 circles");
+}
 
 #[test]
 fn scan_discovers_labeled_curve_prototypes() {
@@ -495,7 +558,7 @@ fn scan_validates_fc05_circle_from_record_points() {
     assert!((direction[1] - (-2.0_f64).sin()).abs() < 1.0e-12);
     let mut unknown_parameter = scan.curves.parameters[0].clone();
     unknown_parameter.body.splice(114..122, [0x39, 0x29, 0x00]);
-    let carriers = crate::curve::fc05_circles(&[unknown_parameter]);
+    let carriers = fc05_circles_service(&[unknown_parameter]);
     let [carrier] = carriers.as_slice() else {
         panic!("circle geometry is independent of an unresolved parameter token");
     };
@@ -508,7 +571,7 @@ fn scan_validates_fc05_circle_from_record_points() {
     assert_eq!(carrier.sample_direction_row_frame.get(), [1.0, 0.0]);
     let mut trailing = scan.curves.parameters[0].clone();
     trailing.body.push(0xfe);
-    assert!(crate::curve::fc05_circles(&[trailing]).is_empty());
+    assert!(fc05_circles_service(&[trailing]).is_empty());
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
