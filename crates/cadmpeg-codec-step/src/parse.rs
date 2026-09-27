@@ -738,9 +738,10 @@ impl Parser<'_, '_, '_> {
         }
         self.name("ENDSEC")?;
         self.punct(&TokenKind::Semicolon)?;
-        let (header_admission, header_diagnostic) = match validate_header(&header) {
+        let (header_admission, header_diagnostic) = match validate_header(&header, self.budget) {
             Ok(admitted) => admitted,
-            Err(message) => return self.err(message),
+            Err(ValidationError::Invalid(message)) => return self.err(message),
+            Err(ValidationError::Resource(error)) => return Err(ParseError::Resource(error)),
         };
         let implementation_level = header_admission.implementation_level.level();
         if let Some(diagnostic) = header_diagnostic {
@@ -763,14 +764,16 @@ impl Parser<'_, '_, '_> {
             )?;
         }
         let schema_names_for_matching =
-            schema_names_for_matching(&header_admission.schema_identifiers);
+            schema_names_for_matching(&header_admission.schema_identifiers, self.budget)?;
         let header_data_references = match validate_header_sections(
             implementation_level,
             &header,
             &schema_names_for_matching,
+            self.budget,
         ) {
             Ok(references) => references,
-            Err(message) => return self.err(message),
+            Err(ValidationError::Invalid(message)) => return self.err(message),
+            Err(ValidationError::Resource(error)) => return Err(ParseError::Resource(error)),
         };
         let mut anchors = Vec::new();
         if let Some(level) = implementation_level.edition3_sections_forbidden_by() {
@@ -904,8 +907,12 @@ impl Parser<'_, '_, '_> {
                     &schema_names_for_matching,
                     implementation_level,
                     &mut data_section_names,
+                    self.budget,
                 ) {
-                    return self.err(message);
+                    match message {
+                        ValidationError::Invalid(message) => return self.err(message),
+                        ValidationError::Resource(error) => return Err(ParseError::Resource(error)),
+                    }
                 }
                 parameters
             } else {
@@ -1527,37 +1534,76 @@ fn value_storage_bytes(value: &Value) -> u64 {
 
 /// Validate the three required header records, and admit the `FILE_SCHEMA`
 /// identifier list.
+enum ValidationError {
+    Invalid(&'static str),
+    Resource(CodecError),
+}
+
+impl From<CodecError> for ValidationError {
+    fn from(error: CodecError) -> Self {
+        Self::Resource(error)
+    }
+}
+
+impl ValidationError {
+    fn with_message(self, message: &'static str) -> Self {
+        match self {
+            Self::Invalid(_) => Self::Invalid(message),
+            Self::Resource(error) => Self::Resource(error),
+        }
+    }
+}
+
+fn invalid<T>(message: &'static str) -> Result<T, ValidationError> {
+    Err(ValidationError::Invalid(message))
+}
+
+fn push_validated<T>(
+    budget: Option<&DecodeContext<'_>>,
+    values: &mut Vec<T>,
+    value: T,
+    operation: &'static str,
+) -> Result<(), ValidationError> {
+    push_charged(budget, values, value, operation)
+        .map_err(|error| ValidationError::Resource(error.into_codec_error()))
+}
+
 fn validate_header(
     header: &[HeaderRecord],
-) -> Result<(HeaderAdmission, Option<ParseDiagnostic>), &'static str> {
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<(HeaderAdmission, Option<ParseDiagnostic>), ValidationError> {
     const REQUIRED: [&str; 3] = ["FILE_DESCRIPTION", "FILE_NAME", "FILE_SCHEMA"];
     let [description_record, file_name_record, schema_record, ..] = header else {
-        return Err("HEADER must begin with FILE_DESCRIPTION, FILE_NAME, and FILE_SCHEMA");
+        return invalid("HEADER must begin with FILE_DESCRIPTION, FILE_NAME, and FILE_SCHEMA");
     };
     if [description_record, file_name_record, schema_record]
         .iter()
         .zip(REQUIRED)
         .any(|(record, expected)| record.name != expected)
     {
-        return Err("HEADER must begin with FILE_DESCRIPTION, FILE_NAME, and FILE_SCHEMA");
+        return invalid("HEADER must begin with FILE_DESCRIPTION, FILE_NAME, and FILE_SCHEMA");
     }
     if REQUIRED
         .iter()
         .any(|name| header.iter().filter(|record| record.name == *name).count() != 1)
     {
-        return Err("HEADER contains a duplicate required entity");
+        return invalid("HEADER contains a duplicate required entity");
     }
 
     let [description_strings, implementation_level_value @ Value::String(implementation_level_bytes)] =
         description_record.parameters.as_slice()
     else {
-        return Err("FILE_DESCRIPTION has invalid parameters");
+        return invalid("FILE_DESCRIPTION has invalid parameters");
     };
     if !is_string_list(Some(description_strings)) {
-        return Err("FILE_DESCRIPTION has invalid parameters");
+        return invalid("FILE_DESCRIPTION has invalid parameters");
     }
-    let Ok(implementation_level_text) = crate::strings::decode(implementation_level_bytes) else {
-        return Err("FILE_DESCRIPTION has an unsupported implementation level");
+    let Some(implementation_level_text) = decoded_bytes(
+        implementation_level_bytes,
+        ImplementationLevel::LegacyEdition1,
+        budget,
+    )? else {
+        return invalid("FILE_DESCRIPTION has an unsupported implementation level");
     };
     let declaration = DeclaredImplementationLevel::new(implementation_level_text);
     let implementation_diagnostic = declaration.is_unverified().then(|| ParseDiagnostic {
@@ -1569,22 +1615,22 @@ fn validate_header(
         ),
     });
     let implementation_level = declaration.level();
-    if !is_decodable_string_list(Some(description_strings), implementation_level)
-        || !is_decodable_string(implementation_level_value, implementation_level)
+    if !is_decodable_string_list(Some(description_strings), implementation_level, budget)?
+        || !is_decodable_string(implementation_level_value, implementation_level, budget)?
     {
-        return Err("FILE_DESCRIPTION has invalid string encoding");
+        return invalid("FILE_DESCRIPTION has invalid string encoding");
     }
-    if !string_list_within_limit(Some(description_strings), implementation_level, 256)
-        || !string_within_limit(implementation_level_value, implementation_level, 256)
+    if !string_list_within_limit(Some(description_strings), implementation_level, 256, budget)?
+        || !string_within_limit(implementation_level_value, implementation_level, 256, budget)?
     {
-        return Err("FILE_DESCRIPTION contains a string longer than 256 characters");
+        return invalid("FILE_DESCRIPTION contains a string longer than 256 characters");
     }
 
     // Producer metadata after the author and organization lists may be unset.
     let [file_name_value, file_name_timestamp, authors, organizations, preprocessor, originating_system, authorization] =
         file_name_record.parameters.as_slice()
     else {
-        return Err("FILE_NAME has invalid parameters");
+        return invalid("FILE_NAME has invalid parameters");
     };
     if !matches!(file_name_value, Value::String(_))
         || !matches!(file_name_timestamp, Value::String(_))
@@ -1594,57 +1640,63 @@ fn validate_header(
         || !is_string_or_omitted(Some(originating_system))
         || !is_string_or_omitted(Some(authorization))
     {
-        return Err("FILE_NAME has invalid parameters");
+        return invalid("FILE_NAME has invalid parameters");
     }
-    let Some(time_stamp) = decoded_string(file_name_timestamp, implementation_level) else {
-        return Err("FILE_NAME has invalid string encoding");
+    let Some(time_stamp) = decoded_string(file_name_timestamp, implementation_level, budget)? else {
+        return invalid("FILE_NAME has invalid string encoding");
     };
-    if !is_decodable_string(file_name_value, implementation_level)
-        || !is_decodable_string_list(Some(authors), implementation_level)
-        || !is_decodable_string_list(Some(organizations), implementation_level)
-        || !is_decodable_string_or_omitted(preprocessor, implementation_level)
-        || !is_decodable_string_or_omitted(originating_system, implementation_level)
-        || !is_decodable_string_or_omitted(authorization, implementation_level)
+    if !is_decodable_string(file_name_value, implementation_level, budget)?
+        || !is_decodable_string_list(Some(authors), implementation_level, budget)?
+        || !is_decodable_string_list(Some(organizations), implementation_level, budget)?
+        || !is_decodable_string_or_omitted(preprocessor, implementation_level, budget)?
+        || !is_decodable_string_or_omitted(originating_system, implementation_level, budget)?
+        || !is_decodable_string_or_omitted(authorization, implementation_level, budget)?
     {
-        return Err("FILE_NAME has invalid string encoding");
+        return invalid("FILE_NAME has invalid string encoding");
     }
-    if !string_within_limit(file_name_value, implementation_level, 256)
-        || !string_within_limit(file_name_timestamp, implementation_level, 256)
-        || !string_list_within_limit(Some(authors), implementation_level, 256)
-        || !string_list_within_limit(Some(organizations), implementation_level, 256)
-        || !string_or_omitted_within_limit(preprocessor, implementation_level, 256)
-        || !string_or_omitted_within_limit(originating_system, implementation_level, 256)
-        || !string_or_omitted_within_limit(authorization, implementation_level, 256)
+    if !string_within_limit(file_name_value, implementation_level, 256, budget)?
+        || !string_within_limit(file_name_timestamp, implementation_level, 256, budget)?
+        || !string_list_within_limit(Some(authors), implementation_level, 256, budget)?
+        || !string_list_within_limit(Some(organizations), implementation_level, 256, budget)?
+        || !string_or_omitted_within_limit(preprocessor, implementation_level, 256, budget)?
+        || !string_or_omitted_within_limit(originating_system, implementation_level, 256, budget)?
+        || !string_or_omitted_within_limit(authorization, implementation_level, 256, budget)?
     {
-        return Err("FILE_NAME contains a string longer than 256 characters");
+        return invalid("FILE_NAME contains a string longer than 256 characters");
     }
     if !time_stamp.is_empty() && !valid_timestamp_text(&time_stamp) {
-        return Err("FILE_NAME has an invalid timestamp");
+        return invalid("FILE_NAME has an invalid timestamp");
     }
 
     let schema = &schema_record.parameters;
     let Some(Value::List(identifiers)) = schema.first() else {
-        return Err("FILE_SCHEMA must contain one schema identifier list");
+        return invalid("FILE_SCHEMA must contain one schema identifier list");
     };
     if schema.len() != 1 || identifiers.is_empty() {
-        return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
+        return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
     }
-    let mut admitted = Vec::with_capacity(identifiers.len());
+    let mut admitted = Vec::new();
     let mut normalized_identifiers = BTreeSet::new();
     for value in identifiers {
         let Value::String(bytes) = value else {
-            return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
+            return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
         };
-        let Ok(identifier) = crate::strings::decode_with_level(bytes, implementation_level) else {
-            return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
+        let Some(identifier) = decoded_bytes(bytes, implementation_level, budget)? else {
+            return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
         };
-        if !normalized_identifiers.insert(identifier.trim().to_ascii_uppercase()) {
-            return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
+        let trimmed = identifier.trim();
+        if let Some(ctx) = budget {
+            ctx.charge_retained(u64_from_index(trimmed.len()), "step_schema_identifier_normalized")?;
+            ctx.charge_collection_items(1, "step_schema_identifier_names")?;
+        }
+        let normalized = trimmed.to_ascii_uppercase();
+        if !normalized_identifiers.insert(normalized) {
+            return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
         }
         let Some(identifier) = AdmittedSchemaIdentifier::admit(identifier) else {
-            return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
+            return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
         };
-        admitted.push(identifier);
+        push_validated(budget, &mut admitted, identifier, "step_schema_identifiers")?;
     }
     Ok((
         HeaderAdmission {
@@ -1686,23 +1738,24 @@ fn validate_header_sections(
     implementation_level: ImplementationLevel,
     header: &[HeaderRecord],
     schema_identifiers: &[String],
-) -> Result<Vec<HeaderDataReferences>, &'static str> {
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<Vec<HeaderDataReferences>, ValidationError> {
     let has = |name: &str| header.iter().any(|record| record.name == name);
     if implementation_level == ImplementationLevel::LegacyEdition1 && has("FILE_POPULATION") {
-        return Err("2;1 forbids FILE_POPULATION in HEADER");
+        return invalid("2;1 forbids FILE_POPULATION in HEADER");
     }
     if implementation_level == ImplementationLevel::LegacyEdition1 && has("SECTION_LANGUAGE") {
-        return Err("2;1 forbids SECTION_LANGUAGE in HEADER");
+        return invalid("2;1 forbids SECTION_LANGUAGE in HEADER");
     }
     if implementation_level == ImplementationLevel::LegacyEdition1 && has("SECTION_CONTEXT") {
-        return Err("2;1 forbids SECTION_CONTEXT in HEADER");
+        return invalid("2;1 forbids SECTION_CONTEXT in HEADER");
     }
     match implementation_level {
         ImplementationLevel::LegacyEdition2 if has("SCHEMA_POPULATION") => {
-            return Err("3;1 forbids SCHEMA_POPULATION in HEADER");
+            return invalid("3;1 forbids SCHEMA_POPULATION in HEADER");
         }
         ImplementationLevel::Edition3Class1 if has("SCHEMA_POPULATION") => {
-            return Err("4;1 forbids SCHEMA_POPULATION in HEADER");
+            return invalid("4;1 forbids SCHEMA_POPULATION in HEADER");
         }
         _ => {}
     }
@@ -1718,16 +1771,16 @@ fn validate_header_sections(
             continue;
         }
         if user_defined {
-            return Err("built-in HEADER entities must precede user-defined entities");
+            return invalid("built-in HEADER entities must precede user-defined entities");
         }
         match record.name.as_str() {
             "SCHEMA_POPULATION" => {
                 if schema_population_seen {
-                    return Err("HEADER contains duplicate SCHEMA_POPULATION");
+                    return invalid("HEADER contains duplicate SCHEMA_POPULATION");
                 }
                 schema_population_seen = true;
-                if !valid_schema_population(&record.parameters, implementation_level) {
-                    return Err("SCHEMA_POPULATION has invalid parameters");
+                if !valid_schema_population(&record.parameters, implementation_level, budget)? {
+                    return invalid("SCHEMA_POPULATION has invalid parameters");
                 }
             }
             "FILE_POPULATION" => {
@@ -1735,27 +1788,61 @@ fn validate_header_sections(
                     &record.parameters,
                     schema_identifiers,
                     implementation_level,
+                    budget,
                 )
-                .map_err(|()| "FILE_POPULATION has invalid parameters")?;
-                references.push(HeaderDataReferences::FilePopulation(sections));
+                .map_err(|error| error.with_message("FILE_POPULATION has invalid parameters"))?;
+                push_validated(
+                    budget,
+                    &mut references,
+                    HeaderDataReferences::FilePopulation(sections),
+                    "step_header_data_references",
+                )?;
             }
             "SECTION_LANGUAGE" => {
-                let section = valid_section_language(&record.parameters, implementation_level)
-                    .map_err(|()| "SECTION_LANGUAGE has invalid parameters")?;
-                if !language_sections.insert(section.clone()) {
-                    return Err("HEADER contains duplicate SECTION_LANGUAGE section");
+                let section = valid_section_language(&record.parameters, implementation_level, budget)
+                    .map_err(|error| error.with_message("SECTION_LANGUAGE has invalid parameters"))?;
+                if let Some(ctx) = budget {
+                    ctx.charge_collection_items(1, "step_section_language_names")?;
+                    ctx.charge_retained(
+                        u64_from_index(section.as_ref().map_or(0, String::len)),
+                        "step_section_language_name_copy",
+                    )?;
                 }
-                references.extend(section.map(HeaderDataReferences::Section));
+                if !language_sections.insert(section.clone()) {
+                    return invalid("HEADER contains duplicate SECTION_LANGUAGE section");
+                }
+                if let Some(section) = section {
+                    push_validated(
+                        budget,
+                        &mut references,
+                        HeaderDataReferences::Section(section),
+                        "step_header_data_references",
+                    )?;
+                }
             }
             "SECTION_CONTEXT" => {
-                let section = valid_section_context(&record.parameters, implementation_level)
-                    .map_err(|()| "SECTION_CONTEXT has invalid parameters")?;
-                if !context_sections.insert(section.clone()) {
-                    return Err("HEADER contains duplicate SECTION_CONTEXT section");
+                let section = valid_section_context(&record.parameters, implementation_level, budget)
+                    .map_err(|error| error.with_message("SECTION_CONTEXT has invalid parameters"))?;
+                if let Some(ctx) = budget {
+                    ctx.charge_collection_items(1, "step_section_context_names")?;
+                    ctx.charge_retained(
+                        u64_from_index(section.as_ref().map_or(0, String::len)),
+                        "step_section_context_name_copy",
+                    )?;
                 }
-                references.extend(section.map(HeaderDataReferences::Section));
+                if !context_sections.insert(section.clone()) {
+                    return invalid("HEADER contains duplicate SECTION_CONTEXT section");
+                }
+                if let Some(section) = section {
+                    push_validated(
+                        budget,
+                        &mut references,
+                        HeaderDataReferences::Section(section),
+                        "step_header_data_references",
+                    )?;
+                }
             }
-            _ => return Err("HEADER contains an unsupported entity"),
+            _ => return invalid("HEADER contains an unsupported entity"),
         }
     }
     Ok(references)
@@ -1764,163 +1851,210 @@ fn validate_header_sections(
 fn valid_schema_population(
     parameters: &[Value],
     implementation_level: ImplementationLevel,
-) -> bool {
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
     let [Value::List(identifications)] = parameters else {
-        return false;
+        return Ok(false);
     };
-    !identifications.is_empty()
-        && identifications.iter().all(|identification| {
-            let Value::List(values) = identification else {
-                return false;
-            };
-            let [Value::String(address), time_stamp, digest] = values.as_slice() else {
-                return false;
-            };
-            decoded_bytes(address, implementation_level).is_some()
-                && valid_optional_timestamp(time_stamp, implementation_level)
-                && valid_optional_base64(digest, implementation_level)
-        })
+    if identifications.is_empty() {
+        return Ok(false);
+    }
+    for identification in identifications {
+        let Value::List(values) = identification else {
+            return Ok(false);
+        };
+        let [Value::String(address), time_stamp, digest] = values.as_slice() else {
+            return Ok(false);
+        };
+        if decoded_bytes(address, implementation_level, budget)?.is_none()
+            || !valid_optional_timestamp(time_stamp, implementation_level, budget)?
+            || !valid_optional_base64(digest, implementation_level, budget)?
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 fn admit_file_population(
     parameters: &[Value],
     schema_identifiers: &[String],
     implementation_level: ImplementationLevel,
-) -> Result<BTreeSet<String>, ()> {
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<BTreeSet<String>, ValidationError> {
     let [Value::String(schema), Value::String(determination), governed_sections] = parameters
     else {
-        return Err(());
+        return invalid("FILE_POPULATION has invalid parameters");
     };
-    let schema = decoded_bytes(schema, implementation_level).ok_or(())?;
+    let Some(schema) = decoded_bytes(schema, implementation_level, budget)? else {
+        return invalid("FILE_POPULATION has invalid parameters");
+    };
     if !valid_schema_identifier(&schema)
-        || decoded_bytes(determination, implementation_level).is_none()
-        || !schema_identifier_matches(schema_identifiers, &schema)
+        || decoded_bytes(determination, implementation_level, budget)?.is_none()
+        || !schema_identifier_matches(schema_identifiers, &schema, budget)?
     {
-        return Err(());
+        return invalid("FILE_POPULATION has invalid parameters");
     }
     match governed_sections {
         Value::Omitted => Ok(BTreeSet::new()),
         Value::List(sections) if !sections.is_empty() => {
             let mut names = BTreeSet::new();
             for section in sections {
-                let section = decoded_string(section, implementation_level).ok_or(())?;
+                let Some(section) = decoded_string(section, implementation_level, budget)? else {
+                    return invalid("FILE_POPULATION has invalid parameters");
+                };
+                if let Some(ctx) = budget {
+                    ctx.charge_collection_items(1, "step_file_population_sections")?;
+                }
                 if !names.insert(section) {
-                    return Err(());
+                    return invalid("FILE_POPULATION has invalid parameters");
                 }
             }
             Ok(names)
         }
-        _ => Err(()),
+        _ => invalid("FILE_POPULATION has invalid parameters"),
     }
 }
 
 fn valid_section_language(
     parameters: &[Value],
     implementation_level: ImplementationLevel,
-) -> Result<Option<String>, ()> {
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<Option<String>, ValidationError> {
     let [section, language] = parameters else {
-        return Err(());
+        return invalid("SECTION_LANGUAGE has invalid parameters");
     };
-    let Some(language) = decoded_string(language, implementation_level) else {
-        return Err(());
+    let Some(language) = decoded_string(language, implementation_level, budget)? else {
+        return invalid("SECTION_LANGUAGE has invalid parameters");
     };
     if language.len() != 3 || !language.bytes().all(|byte| byte.is_ascii_alphabetic()) {
-        return Err(());
+        return invalid("SECTION_LANGUAGE has invalid parameters");
     }
-    valid_optional_section_name(section, implementation_level)
+    valid_optional_section_name(section, implementation_level, budget)
 }
 
 fn valid_section_context(
     parameters: &[Value],
     implementation_level: ImplementationLevel,
-) -> Result<Option<String>, ()> {
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<Option<String>, ValidationError> {
     let [section, Value::List(contexts)] = parameters else {
-        return Err(());
+        return invalid("SECTION_CONTEXT has invalid parameters");
     };
-    if contexts.is_empty()
-        || !contexts
-            .iter()
-            .all(|context| decoded_string(context, implementation_level).is_some())
-    {
-        return Err(());
+    if contexts.is_empty() {
+        return invalid("SECTION_CONTEXT has invalid parameters");
     }
-    valid_optional_section_name(section, implementation_level)
+    for context in contexts {
+        if decoded_string(context, implementation_level, budget)?.is_none() {
+            return invalid("SECTION_CONTEXT has invalid parameters");
+        }
+    }
+    valid_optional_section_name(section, implementation_level, budget)
 }
 
 fn valid_optional_section_name(
     value: &Value,
     implementation_level: ImplementationLevel,
-) -> Result<Option<String>, ()> {
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<Option<String>, ValidationError> {
     match value {
         Value::Omitted => Ok(None),
-        value => decoded_string(value, implementation_level)
+        value => decoded_string(value, implementation_level, budget)?
             .map(Some)
-            .ok_or(()),
+            .ok_or(ValidationError::Invalid("invalid section name")),
     }
 }
 
-fn is_decodable_string(value: &Value, implementation_level: ImplementationLevel) -> bool {
-    decoded_string(value, implementation_level).is_some()
+fn is_decodable_string(
+    value: &Value,
+    implementation_level: ImplementationLevel,
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
+    Ok(decoded_string(value, implementation_level, budget)?.is_some())
 }
 
 fn is_decodable_string_list(
     value: Option<&Value>,
     implementation_level: ImplementationLevel,
-) -> bool {
-    matches!(
-        value,
-        Some(Value::List(values))
-            if !values.is_empty()
-                && values
-                    .iter()
-                    .all(|value| is_decodable_string(value, implementation_level))
-    )
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
+    let Some(Value::List(values)) = value else {
+        return Ok(false);
+    };
+    if values.is_empty() {
+        return Ok(false);
+    }
+    for value in values {
+        if !is_decodable_string(value, implementation_level, budget)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 fn is_decodable_string_or_omitted(
     value: &Value,
     implementation_level: ImplementationLevel,
-) -> bool {
-    matches!(value, Value::Omitted) || is_decodable_string(value, implementation_level)
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
+    if matches!(value, Value::Omitted) {
+        return Ok(true);
+    }
+    is_decodable_string(value, implementation_level, budget)
 }
 
 fn string_within_limit(
     value: &Value,
     implementation_level: ImplementationLevel,
     limit: usize,
-) -> bool {
-    decoded_string(value, implementation_level).is_some_and(|value| value.chars().count() <= limit)
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
+    Ok(decoded_string(value, implementation_level, budget)?
+        .is_some_and(|value| value.chars().count() <= limit))
 }
 
 fn string_list_within_limit(
     value: Option<&Value>,
     implementation_level: ImplementationLevel,
     limit: usize,
-) -> bool {
-    matches!(
-        value,
-        Some(Value::List(values))
-            if !values.is_empty()
-                && values.iter().all(|value| {
-                    string_within_limit(value, implementation_level, limit)
-                })
-    )
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
+    let Some(Value::List(values)) = value else {
+        return Ok(false);
+    };
+    if values.is_empty() {
+        return Ok(false);
+    }
+    for value in values {
+        if !string_within_limit(value, implementation_level, limit, budget)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 fn string_or_omitted_within_limit(
     value: &Value,
     implementation_level: ImplementationLevel,
     limit: usize,
-) -> bool {
-    matches!(value, Value::Omitted) || string_within_limit(value, implementation_level, limit)
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
+    if matches!(value, Value::Omitted) {
+        return Ok(true);
+    }
+    string_within_limit(value, implementation_level, limit, budget)
 }
 
-fn valid_optional_timestamp(value: &Value, implementation_level: ImplementationLevel) -> bool {
+fn valid_optional_timestamp(
+    value: &Value,
+    implementation_level: ImplementationLevel,
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
     match value {
-        Value::Omitted => true,
-        Value::String(_) => decoded_string(value, implementation_level)
-            .is_some_and(|value| valid_timestamp_text(&value)),
-        _ => false,
+        Value::Omitted => Ok(true),
+        Value::String(_) => Ok(decoded_string(value, implementation_level, budget)?
+            .is_some_and(|value| valid_timestamp_text(&value))),
+        _ => Ok(false),
     }
 }
 
@@ -2010,12 +2144,16 @@ fn parse_ascii_digits(bytes: &[u8]) -> usize {
         .fold(0, |value, byte| value * 10 + usize::from(byte - b'0'))
 }
 
-fn valid_optional_base64(value: &Value, implementation_level: ImplementationLevel) -> bool {
+fn valid_optional_base64(
+    value: &Value,
+    implementation_level: ImplementationLevel,
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
     match value {
-        Value::Omitted => true,
-        Value::String(_) => decoded_string(value, implementation_level)
-            .is_some_and(|value| valid_base64_text(value.as_bytes())),
-        _ => false,
+        Value::Omitted => Ok(true),
+        Value::String(_) => Ok(decoded_string(value, implementation_level, budget)?
+            .is_some_and(|value| valid_base64_text(value.as_bytes()))),
+        _ => Ok(false),
     }
 }
 
@@ -2051,24 +2189,49 @@ fn valid_base64_text(bytes: &[u8]) -> bool {
     quantum_len == 0
 }
 
-fn decoded_string(value: &Value, implementation_level: ImplementationLevel) -> Option<String> {
+fn decoded_string(
+    value: &Value,
+    implementation_level: ImplementationLevel,
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<Option<String>, CodecError> {
     let Value::String(bytes) = value else {
-        return None;
+        return Ok(None);
     };
-    decoded_bytes(bytes, implementation_level)
+    decoded_bytes(bytes, implementation_level, budget)
 }
 
-fn decoded_bytes(bytes: &[u8], implementation_level: ImplementationLevel) -> Option<String> {
-    crate::strings::decode_with_level(bytes, implementation_level).ok()
+fn decoded_bytes(
+    bytes: &[u8],
+    implementation_level: ImplementationLevel,
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<Option<String>, CodecError> {
+    let result = match budget {
+        Some(ctx) => crate::strings::decode_with_context(bytes, implementation_level, ctx),
+        None => crate::strings::decode_with_level(bytes, implementation_level)
+            .map_err(crate::strings::StringDecodeFailure::Invalid),
+    };
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(crate::strings::StringDecodeFailure::Invalid(_)) => Ok(None),
+        Err(crate::strings::StringDecodeFailure::Resource(error)) => Err(error),
+    }
 }
 
-fn schema_identifier_matches(schema_identifiers: &[String], schema_name: &str) -> bool {
-    let schema_name = schema_name.trim().to_ascii_uppercase();
-    schema_identifiers.iter().any(|identifier| {
+fn schema_identifier_matches(
+    schema_identifiers: &[String],
+    schema_name: &str,
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
+    let trimmed = schema_name.trim();
+    if let Some(ctx) = budget {
+        ctx.charge_retained(u64_from_index(trimmed.len()), "step_schema_name_matching")?;
+    }
+    let schema_name = trimmed.to_ascii_uppercase();
+    Ok(schema_identifiers.iter().any(|identifier| {
         let identifier = identifier.trim();
         identifier == schema_name
             || split_schema_identifier(identifier).is_some_and(|(name, _)| name == schema_name)
-    })
+    }))
 }
 
 fn validate_header_data_references(
@@ -2100,34 +2263,53 @@ fn valid_data_parameters(
     schema_identifiers: &[String],
     implementation_level: ImplementationLevel,
     section_names: &mut BTreeSet<String>,
-) -> Result<(), &'static str> {
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<(), ValidationError> {
     let [Value::String(section_name), Value::List(schema)] = parameters else {
-        return Err("DATA section parameters must contain a name and one schema");
+        return invalid("DATA section parameters must contain a name and one schema");
     };
     let [Value::String(schema_name)] = schema.as_slice() else {
-        return Err("DATA section parameters must contain a name and one schema");
+        return invalid("DATA section parameters must contain a name and one schema");
     };
-    let section_name = crate::strings::decode_with_level(section_name, implementation_level)
-        .map_err(|_| "DATA section parameters contain an invalid string")?;
-    if !section_names.insert(section_name) {
-        return Err("DATA section names must be unique");
+    let Some(section_name) = decoded_bytes(section_name, implementation_level, budget)? else {
+        return invalid("DATA section parameters contain an invalid string");
+    };
+    if let Some(ctx) = budget {
+        ctx.charge_collection_items(1, "step_data_section_names")?;
     }
-    let schema_name = crate::strings::decode_with_level(schema_name, implementation_level)
-        .map_err(|_| "DATA section parameters contain an invalid string")?;
+    if !section_names.insert(section_name) {
+        return invalid("DATA section names must be unique");
+    }
+    let Some(schema_name) = decoded_bytes(schema_name, implementation_level, budget)? else {
+        return invalid("DATA section parameters contain an invalid string");
+    };
     if !valid_schema_identifier(&schema_name)
-        || !schema_identifier_matches(schema_identifiers, &schema_name)
+        || !schema_identifier_matches(schema_identifiers, &schema_name, budget)?
     {
-        return Err("DATA section schema is not listed in FILE_SCHEMA");
+        return invalid("DATA section schema is not listed in FILE_SCHEMA");
     }
     Ok(())
 }
 
 /// The admitted `FILE_SCHEMA` identifiers, for schema-name matching.
-fn schema_names_for_matching(admitted: &[AdmittedSchemaIdentifier]) -> Vec<String> {
-    admitted
-        .iter()
-        .map(|identifier| identifier.text().to_ascii_uppercase())
-        .collect()
+fn schema_names_for_matching(
+    admitted: &[AdmittedSchemaIdentifier],
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<Vec<String>, ParseError> {
+    let mut names = Vec::new();
+    for identifier in admitted {
+        let source = identifier.text();
+        if let Some(ctx) = budget {
+            ctx.charge_retained(u64_from_index(source.len()), "step_schema_matching_name")?;
+        }
+        push_charged(
+            budget,
+            &mut names,
+            source.to_ascii_uppercase(),
+            "step_schema_matching_names",
+        )?;
+    }
+    Ok(names)
 }
 
 fn is_string_list(value: Option<&Value>) -> bool {

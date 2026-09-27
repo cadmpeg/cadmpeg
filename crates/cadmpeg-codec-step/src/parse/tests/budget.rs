@@ -16,6 +16,230 @@ use super::super::{
 };
 
 #[test]
+fn header_string_validation_refuses_retained_limit() {
+    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(SOURCE).expect("valid header");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
+        .expect("root fits retained policy");
+    assert!(matches!(
+        super::super::validate_header(exchange.header(), Some(&ctx)),
+        Err(super::super::ValidationError::Resource(CodecError::ResourceLimit(refusal)))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_string_text"
+    ));
+}
+
+#[test]
+fn header_string_refusal_reaches_parse_caller() {
+    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let refused = (1..=8192).any(|limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
+            .expect("root fits retained policy");
+        matches!(
+            crate::parse::parse_with_context(SOURCE, &ctx),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::RetainedBytes
+                    && refusal.operation == "step_string_text"
+        )
+    });
+    assert!(refused, "header text must refuse through parse_with_context");
+}
+
+#[test]
+fn section_language_string_validation_refuses_retained_limit() {
+    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));SECTION_LANGUAGE($,'ENG');ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(SOURCE).expect("valid section language");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
+        .expect("root fits retained policy");
+    assert!(matches!(
+        super::super::validate_header_sections(
+            super::super::ImplementationLevel::Edition3Class2,
+            exchange.header(),
+            &[String::from("AP242")],
+            Some(&ctx),
+        ),
+        Err(super::super::ValidationError::Resource(CodecError::ResourceLimit(refusal)))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_string_text"
+    ));
+}
+
+#[test]
+fn data_section_name_validation_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"DATA", &arena, &policy)
+        .expect("root fits retained policy");
+    let parameters = [
+        Value::String(b"section".to_vec()),
+        Value::List(vec![Value::String(b"AP242".to_vec())]),
+    ];
+    let mut section_names = std::collections::BTreeSet::new();
+    assert!(matches!(
+        super::super::valid_data_parameters(
+            &parameters,
+            &[String::from("AP242")],
+            super::super::ImplementationLevel::LegacyEdition1,
+            &mut section_names,
+            Some(&ctx),
+        ),
+        Err(super::super::ValidationError::Resource(CodecError::ResourceLimit(refusal)))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_string_text"
+    ));
+}
+
+const EXTENDED_HEADER_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));SCHEMA_POPULATION((('part.step',$,$)));FILE_POPULATION('AP242','INCLUDE_ALL_COMPATIBLE',('main'));SECTION_LANGUAGE('main','eng');SECTION_CONTEXT('main',('design'));ENDSEC;DATA('main',('AP242'));#1=ITEM();ENDSEC;END-ISO-10303-21;";
+
+fn validation_refuses(
+    operation: &str,
+    dimension: ResourceDimension,
+    source: &[u8],
+    run: impl Fn(&crate::parse::Exchange, &DecodeContext<'_>) -> Result<(), super::super::ValidationError>,
+) {
+    let (exchange, _) = crate::parse::parse(source).expect("valid header source");
+    let refused = (0..=1024).any(|limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+            _ => unreachable!("test only selects collection or retained limits"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+            .expect("root fits selected policy");
+        matches!(
+            run(&exchange, &ctx),
+            Err(super::super::ValidationError::Resource(CodecError::ResourceLimit(refusal)))
+                if refusal.dimension == dimension && refusal.operation == operation
+        )
+    });
+    assert!(refused, "no {dimension:?} limit refused {operation}");
+}
+
+fn header_validation_refuses(operation: &str, dimension: ResourceDimension) {
+    validation_refuses(
+        operation,
+        dimension,
+        EXTENDED_HEADER_SOURCE,
+        |exchange, ctx| super::super::validate_header(exchange.header(), Some(ctx)).map(|_| ()),
+    );
+}
+
+fn header_section_validation_refuses(operation: &str, dimension: ResourceDimension) {
+    validation_refuses(
+        operation,
+        dimension,
+        EXTENDED_HEADER_SOURCE,
+        |exchange, ctx| {
+            super::super::validate_header_sections(
+                super::super::ImplementationLevel::Edition3Class2,
+                exchange.header(),
+                &[String::from("AP242")],
+                Some(ctx),
+            )
+            .map(|_| ())
+        },
+    );
+}
+
+macro_rules! header_limit_test {
+    ($name:ident, $operation:literal, $dimension:expr) => {
+        #[test]
+        fn $name() {
+            header_validation_refuses($operation, $dimension);
+        }
+    };
+}
+
+macro_rules! section_limit_test {
+    ($name:ident, $operation:literal, $dimension:expr) => {
+        #[test]
+        fn $name() {
+            header_section_validation_refuses($operation, $dimension);
+        }
+    };
+}
+
+header_limit_test!(schema_identifier_normalization_refuses_retained_limit, "step_schema_identifier_normalized", ResourceDimension::RetainedBytes);
+header_limit_test!(schema_identifier_name_set_refuses_collection_limit, "step_schema_identifier_names", ResourceDimension::CollectionItems);
+header_limit_test!(admitted_schema_identifier_vec_refuses_collection_limit, "step_schema_identifiers", ResourceDimension::CollectionItems);
+section_limit_test!(file_population_sections_refuse_collection_limit, "step_file_population_sections", ResourceDimension::CollectionItems);
+section_limit_test!(header_data_references_refuse_collection_limit, "step_header_data_references", ResourceDimension::CollectionItems);
+section_limit_test!(section_language_names_refuse_collection_limit, "step_section_language_names", ResourceDimension::CollectionItems);
+section_limit_test!(section_context_names_refuse_collection_limit, "step_section_context_names", ResourceDimension::CollectionItems);
+section_limit_test!(section_language_name_copy_refuses_retained_limit, "step_section_language_name_copy", ResourceDimension::RetainedBytes);
+section_limit_test!(section_context_name_copy_refuses_retained_limit, "step_section_context_name_copy", ResourceDimension::RetainedBytes);
+
+#[test]
+fn matching_schema_names_refuse_collection_limit() {
+    let (exchange, _) = crate::parse::parse(EXTENDED_HEADER_SOURCE).expect("valid schema header");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(EXTENDED_HEADER_SOURCE, &arena, &policy)
+        .expect("root fits collection policy");
+    assert!(matches!(
+        super::super::schema_names_for_matching(&exchange.schema_identifiers, Some(&ctx)),
+        Err(super::super::ParseError::Resource(CodecError::ResourceLimit(refusal)))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_schema_matching_names"
+    ));
+}
+
+#[test]
+fn matching_schema_name_text_refuses_retained_limit() {
+    let (exchange, _) = crate::parse::parse(EXTENDED_HEADER_SOURCE).expect("valid schema header");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(EXTENDED_HEADER_SOURCE, &arena, &policy)
+        .expect("root fits retained policy");
+    assert!(matches!(
+        super::super::schema_names_for_matching(&exchange.schema_identifiers, Some(&ctx)),
+        Err(super::super::ParseError::Resource(CodecError::ResourceLimit(refusal)))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_schema_matching_name"
+    ));
+}
+
+#[test]
+fn data_section_name_set_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"DATA", &arena, &policy)
+        .expect("root fits collection policy");
+    let parameters = [
+        Value::String(b"main".to_vec()),
+        Value::List(vec![Value::String(b"AP242".to_vec())]),
+    ];
+    let mut section_names = std::collections::BTreeSet::new();
+    assert!(matches!(
+        super::super::valid_data_parameters(
+            &parameters,
+            &[String::from("AP242")],
+            super::super::ImplementationLevel::LegacyEdition1,
+            &mut section_names,
+            Some(&ctx),
+        ),
+        Err(super::super::ValidationError::Resource(CodecError::ResourceLimit(refusal)))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_data_section_names"
+    ));
+}
+
+#[test]
 fn header_record_vector_refuses_collection_limit() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(1);ENDSEC;END-ISO-10303-21;";
     let arena = DecodeArena::new();

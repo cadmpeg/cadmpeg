@@ -384,7 +384,7 @@ pub(super) fn decode(
     let mut vectors2 = BTreeMap::new();
     let mut placements = BTreeMap::new();
     let mut placements2 = BTreeMap::new();
-    match linear_uncertainty(exchange) {
+    match linear_uncertainty(exchange, ctx)? {
         LinearUncertainty::Value(uncertainty) => ir.tolerances.linear = uncertainty,
         LinearUncertainty::Empty { unresolved } => {
             if unresolved > 0 {
@@ -3571,13 +3571,14 @@ fn si_prefix(prefix: &str) -> Option<f64> {
 fn context_length_uncertainties(
     context: &RawRecord,
     exchange: &Exchange,
-) -> (Vec<PositiveLength>, usize) {
+    ctx: &DecodeContext<'_>,
+) -> Result<(Vec<PositiveLength>, usize), CodecError> {
     let Some(references) = context
         .partial("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT")
         .and_then(|partial| partial.parameters.first())
         .and_then(Value::list)
     else {
-        return (Vec::new(), 0);
+        return Ok((Vec::new(), 0));
     };
     let mut measures = Vec::new();
     let mut unresolved = 0;
@@ -3604,7 +3605,9 @@ fn context_length_uncertainties(
             let named_distance_accuracy = measure
                 .partial("UNCERTAINTY_MEASURE_WITH_UNIT")
                 .and_then(|partial| partial.parameters.get(2))
-                .and_then(string_value)
+                .map(|value| string_value(value, exchange, ctx))
+                .transpose()?
+                .flatten()
                 .is_some_and(|name| name.eq_ignore_ascii_case("distance_accuracy_value"));
             measures.push((named_distance_accuracy, result));
         } else if unit_scale_radians(unit, exchange, &mut BTreeSet::new()).is_none() {
@@ -3618,12 +3621,12 @@ fn context_length_uncertainties(
         .map(|(_, value)| *value)
         .collect::<Vec<_>>();
     if named.len() == 1 {
-        return (named, unresolved);
+        return Ok((named, unresolved));
     }
-    (
+    Ok((
         measures.into_iter().map(|(_, value)| value).collect(),
         unresolved,
-    )
+    ))
 }
 
 /// The document projection of the per-context linear uncertainty candidates.
@@ -3642,12 +3645,15 @@ enum LinearUncertainty {
     },
 }
 
-fn linear_uncertainty(exchange: &Exchange) -> LinearUncertainty {
+fn linear_uncertainty(
+    exchange: &Exchange,
+    ctx: &DecodeContext<'_>,
+) -> Result<LinearUncertainty, CodecError> {
     let mut candidates: Vec<PositiveLength> = Vec::new();
     let mut unresolved = 0;
     for (_, context) in exchange.entities("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT") {
         let (context_candidates, context_unresolved) =
-            context_length_uncertainties(context, exchange);
+            context_length_uncertainties(context, exchange, ctx)?;
         unresolved += context_unresolved;
         for candidate in context_candidates {
             // Exact equality: the candidates come from one file, so equal
@@ -3660,7 +3666,7 @@ fn linear_uncertainty(exchange: &Exchange) -> LinearUncertainty {
     candidates.sort_by(|left, right| left.get().total_cmp(&right.get()));
 
     let mut candidates = candidates.into_iter();
-    match (candidates.next(), candidates.next()) {
+    Ok(match (candidates.next(), candidates.next()) {
         (Some(first), Some(second)) => LinearUncertainty::Ambiguous {
             first,
             second,
@@ -3669,14 +3675,22 @@ fn linear_uncertainty(exchange: &Exchange) -> LinearUncertainty {
         },
         (Some(value), None) => LinearUncertainty::Value(value),
         (None, _) => LinearUncertainty::Empty { unresolved },
-    }
+    })
 }
 
-fn string_value(value: &Value) -> Option<String> {
+fn string_value(
+    value: &Value,
+    exchange: &Exchange,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<String>, CodecError> {
     let Value::String(bytes) = value else {
-        return None;
+        return Ok(None);
     };
-    crate::strings::decode(bytes).ok()
+    match exchange.decode_string_with_context(bytes, Some(ctx)) {
+        Ok(value) => Ok(Some(value)),
+        Err(crate::strings::StringDecodeFailure::Invalid(_)) => Ok(None),
+        Err(crate::strings::StringDecodeFailure::Resource(error)) => Err(error),
+    }
 }
 
 fn trim_parameter(
