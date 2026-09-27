@@ -31,15 +31,18 @@ const EPS_ROUND_CAP_PARALLEL: f64 = 1.0e-10;
 const EPS_ROUND_RADIUS_RECONCILIATION: f64 = 1.0e-9;
 const EPS_ROUND_SUPPORT_ORTHOGONAL: f64 = 1.0e-9;
 
-pub(in super::super) fn parallel_support_radius(
-    planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>,
-) -> Option<f64> {
-    let planes = planes.into_iter().collect::<Vec<_>>();
-    let mut radii = Vec::new();
-    for first in 0..planes.len() {
-        for second in first + 1..planes.len() {
-            let first_normal = normalize(planes[first].1)?;
-            let second_normal = normalize(planes[second].1)?;
+pub(in super::super) fn parallel_support_radius<I>(planes: I) -> Option<f64>
+where
+    I: IntoIterator<Item = ([f64; 3], [f64; 3])>,
+    I::IntoIter: Clone,
+{
+    let planes = planes.into_iter();
+    let mut first_radius: Option<f64> = None;
+    let mut agrees = true;
+    for (first_index, first) in planes.clone().enumerate() {
+        for second in planes.clone().skip(first_index + 1) {
+            let first_normal = normalize(first.1)?;
+            let second_normal = normalize(second.1)?;
             let alignment = first_normal
                 .iter()
                 .zip(second_normal)
@@ -48,31 +51,34 @@ pub(in super::super) fn parallel_support_radius(
             if alignment.abs() < 1.0 - EPS_GEOMETRY_AGREEMENT {
                 continue;
             }
-            let gap = planes[second]
+            let gap = second
                 .0
                 .iter()
-                .zip(planes[first].0)
+                .zip(first.0)
                 .zip(first_normal)
                 .map(|((second, first), normal)| (second - first) * normal)
                 .sum::<f64>()
                 .abs();
-            let scale = planes[first]
+            let scale = first
                 .0
                 .iter()
-                .chain(&planes[second].0)
+                .chain(&second.0)
                 .map(|value| value.abs())
                 .fold(1.0, f64::max);
             if gap > EPS_GEOMETRY_AGREEMENT * scale {
-                radii.push(0.5 * gap);
+                let candidate = 0.5 * gap;
+                if let Some(radius) = first_radius {
+                    agrees &= (candidate - radius).abs()
+                        <= EPS_GEOMETRY_AGREEMENT * radius.abs().max(1.0);
+                } else {
+                    first_radius = Some(candidate);
+                }
             }
         }
     }
-    let radius = *radii.first()?;
+    let radius = first_radius?;
     let scale = radius.abs().max(1.0);
-    radii
-        .iter()
-        .all(|candidate| (candidate - radius).abs() <= EPS_GEOMETRY_AGREEMENT * scale)
-        .then_some(radius)
+    (agrees && (radius - radius).abs() <= EPS_GEOMETRY_AGREEMENT * scale).then_some(radius)
 }
 
 pub(in super::super) fn slot_fillet_cylinder(
@@ -558,35 +564,21 @@ fn complete_direct_placed_cylinder_radius_agreement(
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
 ) -> Option<bool> {
-    let cylinder_rows = || scan
-        .surfaces
-        .rows
-        .iter()
-        .filter(|row| {
-            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
-        });
-    cylinder_rows().all(|row| {
-            unique_surface_parameter_record(scan, row)
-                .and_then(SurfaceParameterRecord::type24_generated_round_radius)
-                .is_some()
-        }).then_some(())?;
-    cylinder_rows().all(|row| round_placed_cylinder_radius(ir, row, source_carriers).is_some())
-        .then_some(())?;
-    Some(cylinder_rows().all(|row| {
-                let Some(direct) = unique_surface_parameter_record(scan, row)
-                    .and_then(SurfaceParameterRecord::type24_generated_round_radius) else {
-                    return false;
-                };
-                let Some(placed) = round_placed_cylinder_radius(ir, row, source_carriers) else {
-                    return false;
-                };
-                let scale = direct.abs().max(placed.abs()).max(1.0);
-                direct.is_finite()
-                    && direct > 0.0
-                    && placed.is_finite()
-                    && placed > 0.0
-                    && (direct - placed).abs() <= EPS_ROUND_RADIUS_RECONCILIATION * scale
-            }))
+    let mut agrees = true;
+    for row in scan.surfaces.rows.iter().filter(|row| {
+        row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
+    }) {
+        let direct = unique_surface_parameter_record(scan, row)
+            .and_then(SurfaceParameterRecord::type24_generated_round_radius)?;
+        let placed = round_placed_cylinder_radius(ir, row, source_carriers)?;
+        let scale = direct.abs().max(placed.abs()).max(1.0);
+        agrees &= direct.is_finite()
+            && direct > 0.0
+            && placed.is_finite()
+            && placed > 0.0
+            && (direct - placed).abs() <= EPS_ROUND_RADIUS_RECONCILIATION * scale;
+    }
+    Some(agrees)
 }
 
 fn mixed_round_radius_samples(
@@ -1004,7 +996,10 @@ fn equal_distance_chamfer_setback(
     support_planes: &[PlaneEquation],
 ) -> Option<f64> {
     (!cones.is_empty() && !support_planes.is_empty()).then_some(())?;
-    let setbacks = cones
+    let mut first_setback: Option<f64> = None;
+    let mut scale: f64 = 1.0;
+    let mut max_difference: f64 = 0.0;
+    for setback in cones
         .iter()
         .map(|cone| {
             let axis = normalize(cone.axis())?;
@@ -1028,8 +1023,17 @@ fn equal_distance_chamfer_setback(
                 })
                 .min_by(f64::total_cmp)
         })
-        .collect::<Option<Vec<_>>>()?;
-    unique_positive_length(&setbacks).map(PositiveLength::get)
+    {
+        let setback = setback?;
+        if let Some(first) = first_setback {
+            max_difference = max_difference.max((setback - first).abs());
+        } else {
+            first_setback = Some(setback);
+        }
+        scale = scale.max(setback.abs());
+    }
+    let setback = PositiveLength::new(first_setback?)?;
+    (max_difference <= EPS_GEOMETRY_AGREEMENT * scale).then_some(setback.get())
 }
 
 fn chamfer_cone_equation(
