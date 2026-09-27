@@ -2226,77 +2226,91 @@ pub(super) fn closest_pcurve_parameters(
     pcurve: &PcurveGeometry,
     point: Point2,
     seed: Option<f64>,
-) -> Option<Vec<f64>> {
+) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
     let PcurveGeometry::Nurbs { nurbs } = pcurve else {
-        return None;
+        return Ok(None);
     };
-    let degree = usize::try_from(nurbs.degree()).ok()?;
+    let Ok(degree) = usize::try_from(nurbs.degree()) else {
+        return Ok(None);
+    };
     let count = nurbs.control_points().len();
-    let domain = [*nurbs.knots().get(degree)?, *nurbs.knots().get(count)?];
+    let (Some(lower), Some(upper)) = (nurbs.knots().get(degree), nurbs.knots().get(count)) else {
+        return Ok(None);
+    };
+    let domain = [*lower, *upper];
     if !domain[0].is_finite() || !domain[1].is_finite() || domain[0] >= domain[1] {
-        return None;
+        return Ok(None);
     }
     if seed.is_some_and(|seed| !seed.is_finite()) {
-        return None;
+        return Ok(None);
     }
     let search_seed = seed.map(|seed| canonical_periodic_parameter(domain, nurbs.periodic(), seed));
     let control_points = nurbs.pole_rows().raw_points();
     let weights = nurbs.pole_rows().weights();
-    let homogeneous = homogeneous_pcurve_spans(
+    let Some(homogeneous) = homogeneous_pcurve_spans(
         degree,
         nurbs.knots(),
         &control_points,
         weights.as_deref(),
         point,
-    )?;
-    let candidates = if degree != 1 || nurbs.weights().is_some() {
-        let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
-        closest_parameter_candidates(
-            stationary_rational_distance_candidates(&homogeneous, search_seed, &geometry_budget)?,
-            search_seed,
-        )?
-    } else {
-        let candidates = nurbs
-            .control_points()
-            .windows(2)
-            .enumerate()
-            .filter_map(|(index, segment)| {
-                let start = segment[0];
-                let end = segment[1];
-                let direction = Point2::new(end.u - start.u, end.v - start.v);
-                let squared_length = direction.u * direction.u + direction.v * direction.v;
-                if !squared_length.is_finite() || squared_length == 0.0 {
-                    return None;
-                }
-                let fraction = (((point.u - start.u) * direction.u
-                    + (point.v - start.v) * direction.v)
-                    / squared_length)
-                    .clamp(0.0, 1.0);
-                let span_start = *nurbs.knots().get(index + 1)?;
-                let span_end = *nurbs.knots().get(index + 2)?;
-                if !span_start.is_finite() || !span_end.is_finite() || span_start >= span_end {
-                    return None;
-                }
-                let projected = Point2::new(
-                    start.u + fraction * direction.u,
-                    start.v + fraction * direction.v,
-                );
-                let squared_distance =
-                    (projected.u - point.u).powi(2) + (projected.v - point.v).powi(2);
-                Some((
-                    span_start + fraction * (span_end - span_start),
-                    squared_distance,
-                ))
-            })
-            .collect::<Vec<_>>();
-        closest_parameter_candidates(candidates, search_seed)?
+    )?
+    else {
+        return Ok(None);
     };
-    Some(lift_periodic_parameters(
-        candidates,
-        domain,
-        nurbs.periodic(),
-        seed,
-    ))
+    Ok((|| {
+        let candidates = if degree != 1 || nurbs.weights().is_some() {
+            let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+            closest_parameter_candidates(
+                stationary_rational_distance_candidates(
+                    &homogeneous,
+                    search_seed,
+                    &geometry_budget,
+                )?,
+                search_seed,
+            )?
+        } else {
+            let candidates = nurbs
+                .control_points()
+                .windows(2)
+                .enumerate()
+                .filter_map(|(index, segment)| {
+                    let start = segment[0];
+                    let end = segment[1];
+                    let direction = Point2::new(end.u - start.u, end.v - start.v);
+                    let squared_length = direction.u * direction.u + direction.v * direction.v;
+                    if !squared_length.is_finite() || squared_length == 0.0 {
+                        return None;
+                    }
+                    let fraction = (((point.u - start.u) * direction.u
+                        + (point.v - start.v) * direction.v)
+                        / squared_length)
+                        .clamp(0.0, 1.0);
+                    let span_start = *nurbs.knots().get(index + 1)?;
+                    let span_end = *nurbs.knots().get(index + 2)?;
+                    if !span_start.is_finite() || !span_end.is_finite() || span_start >= span_end {
+                        return None;
+                    }
+                    let projected = Point2::new(
+                        start.u + fraction * direction.u,
+                        start.v + fraction * direction.v,
+                    );
+                    let squared_distance =
+                        (projected.u - point.u).powi(2) + (projected.v - point.v).powi(2);
+                    Some((
+                        span_start + fraction * (span_end - span_start),
+                        squared_distance,
+                    ))
+                })
+                .collect::<Vec<_>>();
+            closest_parameter_candidates(candidates, search_seed)?
+        };
+        Some(lift_periodic_parameters(
+            candidates,
+            domain,
+            nurbs.periodic(),
+            seed,
+        ))
+    })())
 }
 
 struct HomogeneousCurveSpans<const DIMENSION: usize> {
@@ -2311,17 +2325,23 @@ fn homogeneous_pcurve_spans(
     control_points: &[Point2],
     weights: Option<&[f64]>,
     point: Point2,
-) -> Option<HomogeneousCurveSpans<3>> {
+) -> Result<Option<HomogeneousCurveSpans<3>>, cadmpeg_core::CodecError> {
     let count = control_points.len();
+    let Some(expected_knots) = count
+        .checked_add(degree)
+        .and_then(|length| length.checked_add(1))
+    else {
+        return Ok(None);
+    };
     if degree == 0
         || count <= degree
-        || knots.len() != count.checked_add(degree)?.checked_add(1)?
+        || knots.len() != expected_knots
         || knots.iter().any(|knot| !knot.is_finite())
         || !cadmpeg_ir::geometry::nurbs::knots_nondecreasing(knots)
         || control_points.iter().any(|control| !control.is_finite())
         || !point.is_finite()
     {
-        return None;
+        return Ok(None);
     }
     let weights = match weights {
         Some(weights)
@@ -2330,35 +2350,35 @@ fn homogeneous_pcurve_spans(
                     .iter()
                     .all(|weight| weight.is_finite() && *weight > 0.0) =>
         {
-            weights.to_vec()
+            let mut copied = alloc_filled(count, 0.0, "nx blend curve weights")?;
+            copied.copy_from_slice(weights);
+            copied
         }
-        Some(_) => return None,
-        None => alloc_filled(count, 1.0, "nx blend curve weights").ok()?,
+        Some(_) => return Ok(None),
+        None => alloc_filled(count, 1.0, "nx blend curve weights")?,
     };
     let coordinate_scale = control_points
         .iter()
         .flat_map(|control| [control.u, control.v])
         .chain([point.u, point.v])
         .fold(1.0_f64, |scale, value| scale.max(value.abs()));
-    let controls = control_points
-        .iter()
-        .zip(weights)
-        .map(|(control, weight)| {
-            [
-                weight * (control.u - point.u),
-                weight * (control.v - point.v),
-                weight,
-            ]
-        })
-        .collect::<Vec<_>>();
-    if controls.iter().flatten().any(|value| !value.is_finite()) {
-        return None;
+    let mut controls = alloc_filled(count, [0.0; 3], "nx blend pcurve controls")?;
+    for ((control, weight), slot) in control_points.iter().zip(weights).zip(&mut controls) {
+        *slot = [
+            weight * (control.u - point.u),
+            weight * (control.v - point.v),
+            weight,
+        ];
     }
-    let spans = homogeneous_spans(degree, knots, controls)?;
-    Some(HomogeneousCurveSpans {
-        spans,
-        coordinate_tolerance: 64.0 * f64::EPSILON * coordinate_scale,
-    })
+    if controls.iter().flatten().any(|value| !value.is_finite()) {
+        return Ok(None);
+    }
+    Ok(
+        homogeneous_spans(degree, knots, controls).map(|spans| HomogeneousCurveSpans {
+            spans,
+            coordinate_tolerance: 64.0 * f64::EPSILON * coordinate_scale,
+        }),
+    )
 }
 
 fn stationary_rational_distance_candidates<const DIMENSION: usize>(
