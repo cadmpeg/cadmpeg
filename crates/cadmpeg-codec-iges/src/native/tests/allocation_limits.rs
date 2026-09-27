@@ -520,3 +520,101 @@ fn native_network_instance_connect_point_slots_and_designator_refuse_limits() {
         assert_retained_refusal_at(&bytes, operation);
     }
 }
+
+#[test]
+fn native_connect_point_slot_and_function_bytes_refuse_limits() {
+    let bytes = owned_test_file(&[native_entity(
+        132,
+        0,
+        "132,0,0,0,0,0,0,2HID,0,4HNAME,0,1,0,0,0;",
+    )]);
+    assert_native_arena(&bytes, "connect_points");
+    assert_collection_refusal_at(&bytes, "iges native connect point slots");
+    for operation in [
+        "iges native connect point id",
+        "iges native connect point source",
+        "iges native connect function identifier",
+        "iges native connect function name",
+    ] {
+        assert_retained_refusal_at(&bytes, operation);
+    }
+}
+
+#[test]
+fn native_rectangular_array_outer_and_position_slots_refuse_limits() {
+    let bytes = owned_test_file(&[native_entity(412, 0, "412,0,1,0,0,0,1,1,1,1,0,1,0,1;")]);
+    assert_native_arena(&bytes, "rectangular_arrays");
+    for operation in [
+        "iges native rectangular array slots",
+        "iges native rectangular position slots",
+    ] {
+        assert_collection_refusal_at(&bytes, operation);
+    }
+    for operation in [
+        "iges native rectangular array id",
+        "iges native rectangular array source",
+    ] {
+        assert_retained_refusal_at(&bytes, operation);
+    }
+}
+
+#[test]
+fn native_circular_array_outer_and_position_slots_refuse_limits() {
+    let bytes = owned_test_file(&[native_entity(414, 0, "414,0,1,0,0,0,1,0,1,1,0,1;")]);
+    assert_native_arena(&bytes, "circular_arrays");
+    for operation in [
+        "iges native circular array slots",
+        "iges native circular position slots",
+    ] {
+        assert_collection_refusal_at(&bytes, operation);
+    }
+    for operation in [
+        "iges native circular array id",
+        "iges native circular array source",
+    ] {
+        assert_retained_refusal_at(&bytes, operation);
+    }
+}
+
+#[test]
+fn native_external_reference_slots_and_copied_names_refuse_limits() {
+    for (form, parameters, payload_operation) in [
+        (
+            0,
+            "416,4Hfile,3Hsym;",
+            "iges native external file identifier",
+        ),
+        (4, "416,3Hlib,3Hsym;", "iges native external library name"),
+    ] {
+        let bytes = owned_test_file(&[native_entity(416, form, parameters)]);
+        assert_native_arena(&bytes, "external_references");
+        assert_collection_refusal_at(&bytes, "iges native external reference slots");
+        for operation in [
+            "iges native external reference id",
+            "iges native external reference source",
+            "iges native external symbolic name",
+            payload_operation,
+        ] {
+            assert_retained_refusal_at(&bytes, operation);
+        }
+    }
+}
+
+#[test]
+fn native_group_outer_and_member_slots_refuse_limits() {
+    let bytes = owned_test_file(&[
+        native_entity(116, 0, "116,1,2,3,0;"),
+        native_entity(402, 1, "402,1,1;"),
+    ]);
+    assert_native_arena(&bytes, "groups");
+    for operation in ["iges native group slots", "iges native group member slots"] {
+        assert_collection_refusal_at(&bytes, operation);
+    }
+    for operation in [
+        "iges native group id",
+        "iges native group source",
+        "iges native group member",
+    ] {
+        assert_retained_refusal_at(&bytes, operation);
+    }
+}

@@ -4177,270 +4177,392 @@ pub(crate) fn store(
             })
         },
     )?;
-    let connect_points = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 132 && entry.form == 0)
-        .map(|entry| {
-            Ok::<_, CodecError>({
-                let record = by_directory.get(&entry.sequence).copied();
-                let optional_entity_link = |index| -> Result<Option<String>, CodecError> {
-                    Ok(record
-                        .and_then(|record| record.integer(index))
-                        .filter(|sequence| *sequence != 0)
-                        .map(|sequence| {
-                            parameter_resolver.resolve_any(entry.sequence, index, sequence)
-                        })
-                        .transpose()?
-                        .flatten()
-                        .map(|sequence| format!("iges:entity:directory#{sequence}")))
-                };
-                let optional_template_link = |index| -> Result<Option<String>, CodecError> {
-                    Ok(record
-                        .and_then(|record| record.integer(index))
-                        .filter(|sequence| *sequence != 0)
-                        .map(|sequence| {
-                            parameter_resolver.resolve_type(
-                                entry.sequence,
-                                index,
-                                sequence,
-                                312,
-                                &[0, 1],
-                            )
-                        })
-                        .transpose()?
-                        .flatten()
-                        .map(|sequence| format!("iges:entity:directory#{sequence}")))
-                };
-                NativeConnectPoint {
-                    id: format!("iges:product:connect-point#D{}", entry.sequence),
-                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                    position: [
-                        record.and_then(|record| record.number(1)),
-                        record.and_then(|record| record.number(2)),
-                        record.and_then(|record| record.number(3)),
-                    ],
-                    display_geometry: optional_entity_link(4)?,
-                    type_flag: record.and_then(|record| record.integer(5)),
-                    function_flag: record.and_then(|record| record.integer(6)),
-                    function_identifier: record
-                        .and_then(|record| record.string(7))
-                        .map(<[u8]>::to_vec),
-                    identifier_display_template: optional_template_link(8)?,
-                    function_name: record
-                        .and_then(|record| record.string(9))
-                        .map(<[u8]>::to_vec),
-                    name_display_template: optional_template_link(10)?,
-                    identifier: record.and_then(|record| record.integer(11)),
-                    function_code: record.and_then(|record| record.integer(12)),
-                    swap_flag: record.and_then(|record| record.integer(13)),
-                    owner: record
-                        .and_then(|record| record.integer(14))
-                        .filter(|sequence| *sequence != 0)
-                        .map(|sequence| {
-                            parameter_resolver.resolve(
-                                entry.sequence,
-                                14,
-                                sequence,
-                                ReferenceExpectation::AnyOf {
-                                    first: 320,
-                                    second: 420,
-                                    rest: vec![],
-                                },
-                                |target| matches!(target.entity_type, 320 | 420),
-                            )
-                        })
-                        .transpose()?
-                        .flatten()
-                        .map(|sequence| format!("iges:entity:directory#{sequence}")),
-                    transformation: (entry.transform > 0)
-                        .then(|| format!("iges:native:transformation#D{}", entry.transform)),
-                }
+    let connect_points = collect_native_items(
+        ctx,
+        directory
+            .iter()
+            .filter(|entry| entry.entity_type == 132 && entry.form == 0),
+        "iges native connect point slots",
+        |entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let optional_entity_link = |index| -> Result<Option<String>, CodecError> {
+                record
+                    .and_then(|record| record.integer(index))
+                    .filter(|sequence| *sequence != 0)
+                    .map(|sequence| parameter_resolver.resolve_any(entry.sequence, index, sequence))
+                    .transpose()?
+                    .flatten()
+                    .map(|sequence| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:entity:directory#{sequence}"),
+                            "iges native connect point link",
+                        )
+                    })
+                    .transpose()
+            };
+            let optional_template_link = |index| -> Result<Option<String>, CodecError> {
+                record
+                    .and_then(|record| record.integer(index))
+                    .filter(|sequence| *sequence != 0)
+                    .map(|sequence| {
+                        parameter_resolver.resolve_type(
+                            entry.sequence,
+                            index,
+                            sequence,
+                            312,
+                            &[0, 1],
+                        )
+                    })
+                    .transpose()?
+                    .flatten()
+                    .map(|sequence| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:entity:directory#{sequence}"),
+                            "iges native connect point template",
+                        )
+                    })
+                    .transpose()
+            };
+            Ok(NativeConnectPoint {
+                id: format_retained(
+                    ctx,
+                    format_args!("iges:product:connect-point#D{}", entry.sequence),
+                    "iges native connect point id",
+                )?,
+                source_entity: format_retained(
+                    ctx,
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native connect point source",
+                )?,
+                position: [
+                    record.and_then(|record| record.number(1)),
+                    record.and_then(|record| record.number(2)),
+                    record.and_then(|record| record.number(3)),
+                ],
+                display_geometry: optional_entity_link(4)?,
+                type_flag: record.and_then(|record| record.integer(5)),
+                function_flag: record.and_then(|record| record.integer(6)),
+                function_identifier: record
+                    .and_then(|record| record.string(7))
+                    .map(|bytes| {
+                        ctx.copy_retained(bytes, "iges native connect function identifier")
+                    })
+                    .transpose()?,
+                identifier_display_template: optional_template_link(8)?,
+                function_name: record
+                    .and_then(|record| record.string(9))
+                    .map(|bytes| ctx.copy_retained(bytes, "iges native connect function name"))
+                    .transpose()?,
+                name_display_template: optional_template_link(10)?,
+                identifier: record.and_then(|record| record.integer(11)),
+                function_code: record.and_then(|record| record.integer(12)),
+                swap_flag: record.and_then(|record| record.integer(13)),
+                owner: record
+                    .and_then(|record| record.integer(14))
+                    .filter(|sequence| *sequence != 0)
+                    .map(|sequence| {
+                        parameter_resolver.resolve(
+                            entry.sequence,
+                            14,
+                            sequence,
+                            ReferenceExpectation::AnyOf {
+                                first: 320,
+                                second: 420,
+                                rest: vec![],
+                            },
+                            |target| matches!(target.entity_type, 320 | 420),
+                        )
+                    })
+                    .transpose()?
+                    .flatten()
+                    .map(|sequence| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:entity:directory#{sequence}"),
+                            "iges native connect point owner",
+                        )
+                    })
+                    .transpose()?,
+                transformation: (entry.transform > 0)
+                    .then(|| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native connect point transform",
+                        )
+                    })
+                    .transpose()?,
             })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    let rectangular_arrays = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 412 && entry.form == 0)
-        .map(|entry| {
-            Ok::<_, CodecError>({
-                let record = by_directory.get(&entry.sequence).copied();
-                let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
-                let count =
-                    overdeclared_counts.counted_tail_at(entry.sequence, record, end, 11, 13, 1);
-                NativeRectangularArray {
-                    id: format!("iges:product:rectangular-array#D{}", entry.sequence),
-                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                    base: record
-                        .and_then(|record| record.integer(1))
-                        .map(|sequence| {
-                            parameter_resolver.resolve(
-                                entry.sequence,
-                                1,
-                                sequence,
-                                ReferenceExpectation::Named(ExpectationLabel::ArrayBaseEntity),
-                                |target| array_base_type(target.entity_type, target.form),
-                            )
-                        })
-                        .transpose()?
-                        .flatten()
-                        .map(|sequence| format!("iges:entity:directory#{sequence}")),
-                    scale: record.and_then(|record| record.number(2)),
-                    origin: [
-                        record.and_then(|record| record.number(3)),
-                        record.and_then(|record| record.number(4)),
-                        record.and_then(|record| record.number(5)),
-                    ],
-                    columns: record.and_then(|record| record.integer(6)),
-                    rows: record.and_then(|record| record.integer(7)),
-                    column_spacing: record.and_then(|record| record.number(8)),
-                    row_spacing: record.and_then(|record| record.number(9)),
-                    rotation: record.and_then(|record| record.number(10)),
-                    do_dont_flag: record.and_then(|record| record.integer(12)),
-                    positions: (0..count)
-                        .map(|index| record.and_then(|record| record.integer(13 + index)))
-                        .collect(),
-                    transformation: (entry.transform > 0)
-                        .then(|| format!("iges:native:transformation#D{}", entry.transform)),
-                }
+        },
+    )?;
+    let rectangular_arrays = collect_native_items(
+        ctx,
+        directory
+            .iter()
+            .filter(|entry| entry.entity_type == 412 && entry.form == 0),
+        "iges native rectangular array slots",
+        |entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
+            let count = overdeclared_counts.counted_tail_at(entry.sequence, record, end, 11, 13, 1);
+            Ok(NativeRectangularArray {
+                id: format_retained(
+                    ctx,
+                    format_args!("iges:product:rectangular-array#D{}", entry.sequence),
+                    "iges native rectangular array id",
+                )?,
+                source_entity: format_retained(
+                    ctx,
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native rectangular array source",
+                )?,
+                base: record
+                    .and_then(|record| record.integer(1))
+                    .map(|sequence| {
+                        parameter_resolver.resolve(
+                            entry.sequence,
+                            1,
+                            sequence,
+                            ReferenceExpectation::Named(ExpectationLabel::ArrayBaseEntity),
+                            |target| array_base_type(target.entity_type, target.form),
+                        )
+                    })
+                    .transpose()?
+                    .flatten()
+                    .map(|sequence| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:entity:directory#{sequence}"),
+                            "iges native rectangular array base",
+                        )
+                    })
+                    .transpose()?,
+                scale: record.and_then(|record| record.number(2)),
+                origin: [
+                    record.and_then(|record| record.number(3)),
+                    record.and_then(|record| record.number(4)),
+                    record.and_then(|record| record.number(5)),
+                ],
+                columns: record.and_then(|record| record.integer(6)),
+                rows: record.and_then(|record| record.integer(7)),
+                column_spacing: record.and_then(|record| record.number(8)),
+                row_spacing: record.and_then(|record| record.number(9)),
+                rotation: record.and_then(|record| record.number(10)),
+                do_dont_flag: record.and_then(|record| record.integer(12)),
+                positions: collect_result_vec(
+                    ctx,
+                    count,
+                    "iges native rectangular position slots",
+                    |index| Ok(record.and_then(|record| record.integer(13 + index))),
+                )?,
+                transformation: (entry.transform > 0)
+                    .then(|| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native rectangular array transform",
+                        )
+                    })
+                    .transpose()?,
             })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    let circular_arrays = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 414 && entry.form == 0)
-        .map(|entry| {
-            Ok::<_, CodecError>({
-                let record = by_directory.get(&entry.sequence).copied();
-                let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
-                let count =
-                    overdeclared_counts.counted_tail_at(entry.sequence, record, end, 9, 11, 1);
-                NativeCircularArray {
-                    id: format!("iges:product:circular-array#D{}", entry.sequence),
-                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                    base: record
-                        .and_then(|record| record.integer(1))
-                        .map(|sequence| {
-                            parameter_resolver.resolve(
-                                entry.sequence,
-                                1,
-                                sequence,
-                                ReferenceExpectation::Named(ExpectationLabel::ArrayBaseEntity),
-                                |target| array_base_type(target.entity_type, target.form),
-                            )
-                        })
-                        .transpose()?
-                        .flatten()
-                        .map(|sequence| format!("iges:entity:directory#{sequence}")),
-                    location_count: record.and_then(|record| record.integer(2)),
-                    center: [
-                        record.and_then(|record| record.number(3)),
-                        record.and_then(|record| record.number(4)),
-                        record.and_then(|record| record.number(5)),
-                    ],
-                    radius: record.and_then(|record| record.number(6)),
-                    start_angle: record.and_then(|record| record.number(7)),
-                    delta_angle: record.and_then(|record| record.number(8)),
-                    do_dont_flag: record.and_then(|record| record.integer(10)),
-                    positions: (0..count)
-                        .map(|index| record.and_then(|record| record.integer(11 + index)))
-                        .collect(),
-                    transformation: (entry.transform > 0)
-                        .then(|| format!("iges:native:transformation#D{}", entry.transform)),
-                }
+        },
+    )?;
+    let circular_arrays = collect_native_items(
+        ctx,
+        directory
+            .iter()
+            .filter(|entry| entry.entity_type == 414 && entry.form == 0),
+        "iges native circular array slots",
+        |entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
+            let count = overdeclared_counts.counted_tail_at(entry.sequence, record, end, 9, 11, 1);
+            Ok(NativeCircularArray {
+                id: format_retained(
+                    ctx,
+                    format_args!("iges:product:circular-array#D{}", entry.sequence),
+                    "iges native circular array id",
+                )?,
+                source_entity: format_retained(
+                    ctx,
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native circular array source",
+                )?,
+                base: record
+                    .and_then(|record| record.integer(1))
+                    .map(|sequence| {
+                        parameter_resolver.resolve(
+                            entry.sequence,
+                            1,
+                            sequence,
+                            ReferenceExpectation::Named(ExpectationLabel::ArrayBaseEntity),
+                            |target| array_base_type(target.entity_type, target.form),
+                        )
+                    })
+                    .transpose()?
+                    .flatten()
+                    .map(|sequence| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:entity:directory#{sequence}"),
+                            "iges native circular array base",
+                        )
+                    })
+                    .transpose()?,
+                location_count: record.and_then(|record| record.integer(2)),
+                center: [
+                    record.and_then(|record| record.number(3)),
+                    record.and_then(|record| record.number(4)),
+                    record.and_then(|record| record.number(5)),
+                ],
+                radius: record.and_then(|record| record.number(6)),
+                start_angle: record.and_then(|record| record.number(7)),
+                delta_angle: record.and_then(|record| record.number(8)),
+                do_dont_flag: record.and_then(|record| record.integer(10)),
+                positions: collect_result_vec(
+                    ctx,
+                    count,
+                    "iges native circular position slots",
+                    |index| Ok(record.and_then(|record| record.integer(11 + index))),
+                )?,
+                transformation: (entry.transform > 0)
+                    .then(|| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native circular array transform",
+                        )
+                    })
+                    .transpose()?,
             })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    let external_references = directory
+        },
+    )?;
+    let mut external_references = Vec::new();
+    for entry in directory
         .iter()
         .filter(|entry| entry.entity_type == 416 && matches!(entry.form, 0..=4))
-        .filter_map(|entry| {
+    {
+        let record = by_directory.get(&entry.sequence).copied();
+        let (reference_kind, file_index, symbolic_index, library_index) = match entry.form {
+            0 => (
+                ExternalReferenceKind::ExternalDefinition,
+                Some(1),
+                Some(2),
+                None,
+            ),
+            1 => (
+                ExternalReferenceKind::ExternalFileDefinition,
+                Some(1),
+                None,
+                None,
+            ),
+            2 => (
+                ExternalReferenceKind::ExternalLogical,
+                Some(1),
+                Some(2),
+                None,
+            ),
+            3 => (ExternalReferenceKind::NativeDefinition, None, Some(1), None),
+            4 => (
+                ExternalReferenceKind::NativeLibraryDefinition,
+                None,
+                Some(2),
+                Some(1),
+            ),
+            _ => continue,
+        };
+        reserve_vec_growth(
+            ctx,
+            &mut external_references,
+            1,
+            "iges native external reference slots",
+        )?;
+        external_references.push(NativeExternalReference {
+            id: format_retained(
+                ctx,
+                format_args!("iges:product:external-reference#D{}", entry.sequence),
+                "iges native external reference id",
+            )?,
+            source_entity: format_retained(
+                ctx,
+                format_args!("iges:entity:directory#{}", entry.sequence),
+                "iges native external reference source",
+            )?,
+            reference_kind,
+            file_identifier: file_index
+                .and_then(|index| {
+                    record.and_then(|record| record.string(index)).map(|bytes| {
+                        ctx.copy_retained(bytes, "iges native external file identifier")
+                    })
+                })
+                .transpose()?,
+            symbolic_name: symbolic_index
+                .and_then(|index| {
+                    record
+                        .and_then(|record| record.string(index))
+                        .map(|bytes| ctx.copy_retained(bytes, "iges native external symbolic name"))
+                })
+                .transpose()?,
+            library_name: library_index
+                .and_then(|index| {
+                    record
+                        .and_then(|record| record.string(index))
+                        .map(|bytes| ctx.copy_retained(bytes, "iges native external library name"))
+                })
+                .transpose()?,
+        });
+    }
+    let groups = collect_native_items(
+        ctx,
+        directory
+            .iter()
+            .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 1 | 7 | 14 | 15)),
+        "iges native group slots",
+        |entry| {
             let record = by_directory.get(&entry.sequence).copied();
-            let (reference_kind, file_index, symbolic_index, library_index) = match entry.form {
-                0 => (
-                    ExternalReferenceKind::ExternalDefinition,
-                    Some(1),
-                    Some(2),
-                    None,
-                ),
-                1 => (
-                    ExternalReferenceKind::ExternalFileDefinition,
-                    Some(1),
-                    None,
-                    None,
-                ),
-                2 => (
-                    ExternalReferenceKind::ExternalLogical,
-                    Some(1),
-                    Some(2),
-                    None,
-                ),
-                3 => (ExternalReferenceKind::NativeDefinition, None, Some(1), None),
-                4 => (
-                    ExternalReferenceKind::NativeLibraryDefinition,
-                    None,
-                    Some(2),
-                    Some(1),
-                ),
-                _ => return None,
-            };
-            Some(NativeExternalReference {
-                id: format!("iges:product:external-reference#D{}", entry.sequence),
-                source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                reference_kind,
-                file_identifier: file_index.and_then(|index| {
-                    record
-                        .and_then(|record| record.string(index))
-                        .map(<[u8]>::to_vec)
-                }),
-                symbolic_name: symbolic_index.and_then(|index| {
-                    record
-                        .and_then(|record| record.string(index))
-                        .map(<[u8]>::to_vec)
-                }),
-                library_name: library_index.and_then(|index| {
-                    record
-                        .and_then(|record| record.string(index))
-                        .map(<[u8]>::to_vec)
-                }),
-            })
-        })
-        .collect::<Vec<_>>();
-    let groups = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 1 | 7 | 14 | 15))
-        .map(|entry| {
-            Ok::<_, CodecError>({
-                let record = by_directory.get(&entry.sequence).copied();
-                let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
-                let count = overdeclared_counts.counted_tail(entry.sequence, record, end, 1, 1);
-                NativeGroup {
-                    id: format!("iges:product:group#D{}", entry.sequence),
-                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                    ordered: matches!(entry.form, 14 | 15),
-                    back_pointers_required: matches!(entry.form, 1 | 14),
-                    declared_member_count: record.and_then(|record| record.integer(1)),
-                    members: (0..count)
-                        .map(|index| {
-                            Ok::<_, CodecError>({
-                                record
-                                    .and_then(|record| record.integer(2 + index))
-                                    .map(|sequence| {
-                                        parameter_resolver.resolve_any(
-                                            entry.sequence,
-                                            2 + index,
-                                            sequence,
-                                        )
-                                    })
-                                    .transpose()?
-                                    .flatten()
-                                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
+            let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
+            let count = overdeclared_counts.counted_tail(entry.sequence, record, end, 1, 1);
+            Ok(NativeGroup {
+                id: format_retained(
+                    ctx,
+                    format_args!("iges:product:group#D{}", entry.sequence),
+                    "iges native group id",
+                )?,
+                source_entity: format_retained(
+                    ctx,
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native group source",
+                )?,
+                ordered: matches!(entry.form, 14 | 15),
+                back_pointers_required: matches!(entry.form, 1 | 14),
+                declared_member_count: record.and_then(|record| record.integer(1)),
+                members: collect_result_vec(
+                    ctx,
+                    count,
+                    "iges native group member slots",
+                    |index| {
+                        record
+                            .and_then(|record| record.integer(2 + index))
+                            .map(|sequence| {
+                                parameter_resolver.resolve_any(entry.sequence, 2 + index, sequence)
                             })
-                        })
-                        .collect::<Result<Vec<_>, CodecError>>()?,
-                }
+                            .transpose()?
+                            .flatten()
+                            .map(|sequence| {
+                                format_retained(
+                                    ctx,
+                                    format_args!("iges:entity:directory#{sequence}"),
+                                    "iges native group member",
+                                )
+                            })
+                            .transpose()
+                    },
+                )?,
             })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
+        },
+    )?;
     let mut associativities = directory
         .iter()
         .filter(|entry| entry.entity_type == 302)
