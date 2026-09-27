@@ -173,28 +173,29 @@ fn interval_certified_linear_bezier(
     geometry: &NurbsCurve,
     record: &ParameterRecord,
     global: &ProjectedGlobal,
-) -> bool {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
     if record.integer(0) != Some(126) {
-        return false;
+        return Ok(false);
     }
     let Ok(degree) = usize::try_from(geometry.degree()) else {
-        return false;
+        return Ok(false);
     };
     let Some(control_count) = degree.checked_add(1) else {
-        return false;
+        return Ok(false);
     };
     if degree < 2
         || geometry.weights().is_some()
         || geometry.periodic()
         || geometry.control_points().len() != control_count
     {
-        return false;
+        return Ok(false);
     }
     let Some(lower) = geometry.knots().first().copied() else {
-        return false;
+        return Ok(false);
     };
     let Some(upper) = geometry.knots().last().copied() else {
-        return false;
+        return Ok(false);
     };
     if lower >= upper
         || geometry.knots()[..control_count]
@@ -212,43 +213,43 @@ fn interval_certified_linear_bezier(
                 !distance.is_finite() || distance <= 0.0
             })
     {
-        return false;
+        return Ok(false);
     }
 
     let Some(k) = record.count(1) else {
-        return false;
+        return Ok(false);
     };
     let Some(source_degree) = record
         .integer(2)
         .and_then(|value| usize::try_from(value).ok())
     else {
-        return false;
+        return Ok(false);
     };
     if source_degree != degree || k.checked_add(1) != Some(control_count) {
-        return false;
+        return Ok(false);
     }
     let Some(knot_count) = control_count
         .checked_add(degree)
         .and_then(|count| count.checked_add(1))
     else {
-        return false;
+        return Ok(false);
     };
     let Some(weight_start) = 7usize.checked_add(knot_count) else {
-        return false;
+        return Ok(false);
     };
     let Some(pole_start) = weight_start.checked_add(control_count) else {
-        return false;
+        return Ok(false);
     };
     let precision = global.real_precision();
     let mut coordinate_values = [
-        Vec::with_capacity(control_count),
-        Vec::with_capacity(control_count),
-        Vec::with_capacity(control_count),
+        reserve_optional_vec(ctx, control_count, "iges ruled linear x values")?,
+        reserve_optional_vec(ctx, control_count, "iges ruled linear y values")?,
+        reserve_optional_vec(ctx, control_count, "iges ruled linear z values")?,
     ];
     let mut coordinate_uncertainties = [
-        Vec::with_capacity(control_count),
-        Vec::with_capacity(control_count),
-        Vec::with_capacity(control_count),
+        reserve_optional_vec(ctx, control_count, "iges ruled linear x uncertainties")?,
+        reserve_optional_vec(ctx, control_count, "iges ruled linear y uncertainties")?,
+        reserve_optional_vec(ctx, control_count, "iges ruled linear z uncertainties")?,
     ];
     for control_index in 0..control_count {
         for coordinate in 0..3 {
@@ -256,22 +257,22 @@ fn interval_certified_linear_bezier(
                 .checked_add(control_index * 3)
                 .and_then(|index| index.checked_add(coordinate))
             else {
-                return false;
+                return Ok(false);
             };
             let Some(value) = record.number(index) else {
-                return false;
+                return Ok(false);
             };
             let uncertainty = record.number_uncertainty(index, value, precision);
             coordinate_values[coordinate].push(value);
             coordinate_uncertainties[coordinate].push(uncertainty);
         }
     }
-    coordinate_values
+    Ok(coordinate_values
         .into_iter()
         .zip(coordinate_uncertainties)
         .all(|(values, uncertainties)| {
             super::geometry::declared_affine_progression(&values, &uncertainties)
-        })
+        }))
 }
 
 fn equal_arc_length_parameterization(
@@ -282,7 +283,8 @@ fn equal_arc_length_parameterization(
     second_interval: [f64; 2],
     records: &BTreeMap<u32, &ParameterRecord>,
     global: &ProjectedGlobal,
-) -> bool {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
     // A normalized parameter is an arc-length parameter only for a constant-
     // speed carrier. The test is deliberately structural; numerical sampling
     // cannot prove the Form 0 correspondence.
@@ -295,26 +297,25 @@ fn equal_arc_length_parameterization(
     };
     let Some((first, second)) = curve_geometry(first_sequence).zip(curve_geometry(second_sequence))
     else {
-        return false;
+        return Ok(false);
     };
     let valid_interval = |interval: [f64; 2]| {
         interval[0].is_finite() && interval[1].is_finite() && interval[0] < interval[1]
     };
     if !valid_interval(first_interval) || !valid_interval(second_interval) {
-        return false;
+        return Ok(false);
     }
-    let constant_speed = |sequence: u32, geometry: &CurveGeometry| {
+    let constant_speed = |sequence: u32, geometry: &CurveGeometry| -> Result<bool, CodecError> {
         if constant_speed_curve(geometry) {
-            return true;
+            return Ok(true);
         }
         let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = geometry else {
-            return false;
+            return Ok(false);
         };
-        records
-            .get(&sequence)
-            .is_some_and(|record| interval_certified_linear_bezier(curve, record, global))
+        let Some(record) = records.get(&sequence) else { return Ok(false); };
+        interval_certified_linear_bezier(curve, record, global, ctx)
     };
-    constant_speed(first_sequence, first) && constant_speed(second_sequence, second)
+    Ok(constant_speed(first_sequence, first)? && constant_speed(second_sequence, second)?)
 }
 
 fn bounded_evaluable_curve(
@@ -1321,7 +1322,8 @@ pub(super) fn project(
                 second_interval,
                 &records,
                 global,
-            )
+                ctx,
+            )?
         {
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "equal-arc-length ruled projection has no exact normalized arc-length carrier"))?;
             continue;
