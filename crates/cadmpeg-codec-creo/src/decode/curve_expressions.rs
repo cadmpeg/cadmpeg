@@ -244,32 +244,73 @@ fn curve_expression_parameter_order(
 }
 
 fn curve_expression_parameter_names(
+    ctx: &DecodeContext<'_>,
     assignments: &[crate::curve::CurveExpressionAssignment],
-) -> Vec<Option<String>> {
-    let counts = assignments
-        .iter()
-        .fold(BTreeMap::new(), |mut counts, assignment| {
-            if let Some((name, _)) = assignment.parameter_target() {
-                *counts
-                    .entry(crate::curve::expression_identifier_key(name))
-                    .or_insert(0usize) += 1;
+) -> Result<Vec<Option<String>>, CodecError> {
+    let mut counts = BTreeMap::new();
+    for assignment in assignments {
+        if let Some((name, _)) = assignment.parameter_target() {
+            let mut key = ctx.copy_retained_text(name, "creo curve-expression name key")?;
+            key.make_ascii_lowercase();
+            match counts.entry(key) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "creo curve-expression unique names")?;
+                    entry.insert(1usize);
+                }
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    *entry.get_mut() += 1;
+                }
             }
-            counts
-        });
+        }
+    }
     let mut occurrences = BTreeMap::new();
-    assignments
-        .iter()
-        .map(|assignment| {
-            let (name, _) = assignment.parameter_target()?;
-            let key = crate::curve::expression_identifier_key(name);
+    let mut names = Vec::new();
+    for assignment in assignments {
+        let name = if let Some((name, _)) = assignment.parameter_target() {
+            let mut key = ctx.copy_retained_text(name, "creo curve-expression occurrence key")?;
+            key.make_ascii_lowercase();
             if counts[&key] == 1 {
-                return Some(name.to_owned());
+                Some(ctx.copy_retained_text(name, "creo curve-expression parameter name")?)
+            } else {
+                let occurrence = match occurrences.entry(key) {
+                    std::collections::btree_map::Entry::Vacant(entry) => {
+                        ctx.charge_collection_items(1, "creo curve-expression occurrences")?;
+                        entry.insert(0usize)
+                    }
+                    std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                };
+                *occurrence += 1;
+                let mut output =
+                    ctx.copy_retained_text(name, "creo curve-expression parameter name")?;
+                let mut digits = [0u8; 20];
+                let mut value = *occurrence;
+                let mut width = 0;
+                loop {
+                    digits[width] = (value % 10) as u8;
+                    width += 1;
+                    value /= 10;
+                    if value == 0 {
+                        break;
+                    }
+                }
+                ctx.try_reserve_retained_text(
+                    &mut output,
+                    width + 1,
+                    "creo curve-expression parameter suffix",
+                )?;
+                output.push('#');
+                for &digit in digits[..width].iter().rev() {
+                    output.push(char::from(b'0' + digit));
+                }
+                Some(output)
             }
-            let occurrence = occurrences.entry(key).or_insert(0usize);
-            *occurrence += 1;
-            Some(format!("{name}#{occurrence}"))
-        })
-        .collect()
+        } else {
+            None
+        };
+        ctx.try_reserve_items(&mut names, 1, "creo curve-expression parameter name slots")?;
+        names.push(name);
+    }
+    Ok(names)
 }
 
 pub(super) fn transfer_curve_expression_features(
@@ -323,7 +364,7 @@ pub(super) fn transfer_curve_expression_features(
         else {
             continue;
         };
-        let parameter_names = curve_expression_parameter_names(&record.assignments);
+        let parameter_names = curve_expression_parameter_names(ctx, &record.assignments)?;
         let mut emitted_assignment_indices = record
             .assignments
             .iter()
