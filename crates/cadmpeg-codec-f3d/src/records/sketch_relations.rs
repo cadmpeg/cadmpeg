@@ -79,17 +79,21 @@ pub(super) const SKETCH_CONSTRAINT_MASK: u64 = {
 /// Decode the constraint kinds and unknown bits selected by a sketch-relation mask.
 #[must_use]
 pub(crate) fn constraint_kinds_from_state(state: u64) -> (Vec<SketchConstraintKind>, u64) {
-    let mut kinds = if state == 0 {
-        vec![SketchConstraintKind::Coincident]
-    } else {
-        Vec::new()
-    };
-    for (bit, kind) in SKETCH_CONSTRAINT_DEFINITIONS {
-        if state & bit != 0 {
-            kinds.push(kind);
-        }
-    }
-    (kinds, state & !SKETCH_CONSTRAINT_MASK)
+    (
+        constraint_kinds_iter(state).collect(),
+        state & !SKETCH_CONSTRAINT_MASK,
+    )
+}
+
+pub(crate) fn constraint_kinds_iter(state: u64) -> impl Iterator<Item = SketchConstraintKind> {
+    std::iter::once(SketchConstraintKind::Coincident)
+        .filter(move |_| state == 0)
+        .chain(
+            SKETCH_CONSTRAINT_DEFINITIONS
+                .into_iter()
+                .filter(move |(bit, _)| state & bit != 0)
+                .map(|(_, kind)| kind),
+        )
 }
 
 /// An indexed relation reference before or after sketch identity resolution.
