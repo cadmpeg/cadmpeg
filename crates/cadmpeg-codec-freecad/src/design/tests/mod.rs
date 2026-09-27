@@ -12,6 +12,86 @@ mod taper;
 use cadmpeg_ir::features::FeatureDefinition;
 
 #[test]
+fn design_constraint_parameter_admissions_refuse_at_matching_limits() {
+    let object = crate::native::ObjectRecord {
+        id: "fcstd:native:object#Sketch".into(),
+        name: "Sketch".into(),
+        type_name: "Sketcher::SketchObject".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: Default::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    let property = crate::native::PropertyRecord {
+        id: "constraint-property".into(),
+        owner: object.id.clone(),
+        name: "Constraints".into(),
+        type_name: "Sketcher::PropertyConstraintList".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Transient,
+        order: 0,
+        xml: crate::native::RetainedXml::from_text(
+            "<Property><ConstraintList count=\"1\"><Constrain Type=\"6\" Value=\"4\" Name=\"Width\"/></ConstraintList></Property>".into(), 0,
+        ).expect("valid XML span"),
+    };
+    let sketch = cadmpeg_ir::sketches::SketchId::mint("test:test:sketch#one")
+        .expect("valid sketch identity");
+    for operation in [
+        "fcstd constraint expression path",
+        "fcstd constraint parameter name",
+    ] {
+        crate::test_support::assert_retained_refusal_at(&[], operation, |ctx| {
+            super::parse_constraints(ctx, &object, &[&property], &sketch, &[])
+        });
+    }
+    crate::test_support::assert_collection_refusal_at(
+        &[], "fcstd constraint parameter properties", |ctx| {
+            super::parse_constraints(ctx, &object, &[&property], &sketch, &[])
+        },
+    );
+}
+
+#[test]
+fn design_native_operand_position_refuses_at_retained_limit() {
+    let object = crate::native::ObjectRecord {
+        id: "fcstd:native:object#Sketch".into(),
+        name: "Sketch".into(),
+        type_name: "Sketcher::SketchObject".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: Default::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    let property = crate::native::PropertyRecord {
+        id: "constraint-property".into(),
+        owner: object.id.clone(),
+        name: "Constraints".into(),
+        type_name: "Sketcher::PropertyConstraintList".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Transient,
+        order: 0,
+        xml: crate::native::RetainedXml::from_text(
+            "<Property><ConstraintList count=\"1\"><Constrain Type=\"99\" First=\"-3\" FirstPos=\"1\"/></ConstraintList></Property>".into(), 0,
+        ).expect("valid XML span"),
+    };
+    let sketch = cadmpeg_ir::sketches::SketchId::mint("test:test:sketch#one")
+        .expect("valid sketch identity");
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd native operand position kind", |ctx| {
+            super::parse_constraints(ctx, &object, &[&property], &sketch, &[])
+        },
+    );
+}
+
+#[test]
 fn design_native_parameter_value_refuses_at_retained_limit() {
     let property = crate::native::PropertyRecord {
         id: "native-property".into(),
