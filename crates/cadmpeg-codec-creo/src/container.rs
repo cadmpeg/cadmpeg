@@ -1756,18 +1756,23 @@ fn datum_cylinders(
 }
 
 fn structural_feature_ids(
+    ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
     surface_rows: &[SurfaceRow],
     curve_rows: &[CurveTopologyRow],
-) -> std::collections::BTreeSet<u32> {
+) -> Result<std::collections::BTreeSet<u32>, CodecError> {
     let mut ids = std::collections::BTreeSet::new();
-    ids.extend(
-        surface_rows
-            .iter()
-            .map(|row| row.feature_id)
-            .chain(curve_rows.iter().map(|row| row.feature_id))
-            .filter(|id| *id != 0),
-    );
+    for id in surface_rows
+        .iter()
+        .map(|row| row.feature_id)
+        .chain(curve_rows.iter().map(|row| row.feature_id))
+        .filter(|id| *id != 0)
+    {
+        if !ids.contains(&id) {
+            ctx.charge_collection_items(1, "creo structural feature ids")?;
+            ids.insert(id);
+        }
+    }
     for section in sections
         .iter()
         .filter(|section| section.section.role() == SectionRole::PsbGeometry)
@@ -1786,7 +1791,8 @@ fn structural_feature_ids(
                 if next == cursor {
                     break;
                 }
-                if id != 0 {
+                if id != 0 && !ids.contains(&id) {
+                    ctx.charge_collection_items(1, "creo structural feature ids")?;
                     ids.insert(id);
                 }
                 cursor = next;
@@ -1794,7 +1800,44 @@ fn structural_feature_ids(
             from = start;
         }
     }
-    ids
+    Ok(ids)
+}
+
+fn candidate_feature_ids(
+    ctx: &DecodeContext<'_>,
+    structural: &BTreeSet<u32>,
+    additions: impl IntoIterator<Item = u32>,
+) -> Result<BTreeSet<u32>, CodecError> {
+    ctx.charge_collection_items(
+        u64::try_from(structural.len())
+            .map_err(|_| CodecError::malformed("structural feature ID count exceeds u64"))?,
+        "creo candidate structural feature ids",
+    )?;
+    let mut ids = structural.clone();
+    for id in additions {
+        if !ids.contains(&id) {
+            ctx.charge_collection_items(1, "creo candidate feature ids")?;
+            ids.insert(id);
+        }
+    }
+    Ok(ids)
+}
+
+fn complete_feature_ids(
+    ctx: &DecodeContext<'_>,
+    mut structural: BTreeSet<u32>,
+    additions: impl IntoIterator<Item = u32>,
+) -> Result<Vec<u32>, CodecError> {
+    for id in additions {
+        if !structural.contains(&id) {
+            ctx.charge_collection_items(1, "creo complete feature ids")?;
+            structural.insert(id);
+        }
+    }
+    let mut ordered = Vec::new();
+    ctx.try_reserve_items(&mut ordered, structural.len(), "creo ordered feature ids")?;
+    ordered.extend(structural);
+    Ok(ordered)
 }
 
 fn stored_operation_schema_class(
@@ -2651,18 +2694,19 @@ pub(crate) fn scan_bytes<'a>(
     let feature_operations = feature_operations(ctx, &sections)?;
     let feature_reference_names = feature_reference_names(ctx, &sections)?;
     let structural_feature_ids =
-        structural_feature_ids(&sections, &surface_rows, &curve_topology_rows);
-    let mut candidate_feature_ids = structural_feature_ids.clone();
-    candidate_feature_ids.extend(
+        structural_feature_ids(ctx, &sections, &surface_rows, &curve_topology_rows)?;
+    let candidate_feature_ids = candidate_feature_ids(
+        ctx,
+        &structural_feature_ids,
         feature_operations
             .iter()
-            .map(|operation| operation.feature_id),
-    );
-    candidate_feature_ids.extend(
-        feature_reference_names
-            .iter()
-            .map(|reference| reference.feature_id),
-    );
+            .map(|operation| operation.feature_id)
+            .chain(
+                feature_reference_names
+                    .iter()
+                    .map(|reference| reference.feature_id),
+            ),
+    )?;
     let mut feature_rows = feature_rows(ctx, &sections, &candidate_feature_ids)?;
     feature_rows.retain(|row| {
         feature_row_has_model_identity(
@@ -2672,9 +2716,11 @@ pub(crate) fn scan_bytes<'a>(
             &feature_reference_names,
         )
     });
-    let mut feature_ids = structural_feature_ids;
-    feature_ids.extend(feature_rows.iter().map(|row| row.feature_id));
-    let feature_ids = feature_ids.into_iter().collect::<Vec<_>>();
+    let feature_ids = complete_feature_ids(
+        ctx,
+        structural_feature_ids,
+        feature_rows.iter().map(|row| row.feature_id),
+    )?;
     let feature_round_replay_scalars = feature::rows::round_replay_scalars(ctx, &feature_rows)?;
     let feature_choices = feature::rows::choices(ctx, &feature_rows)?;
     let feature_choice_fields = feature::rows::choice_fields(ctx, &feature_choices)?;
@@ -3123,7 +3169,10 @@ mod feature_row_definition_tests {
         };
 
         assert_eq!(
-            structural_feature_ids(&[], &[surface], &[curve]),
+            crate::decode::with_test_decode_ctx(|ctx| {
+                structural_feature_ids(ctx, &[], &[surface], &[curve])
+            })
+            .expect("structural feature ids admitted"),
             std::collections::BTreeSet::from([40, 41])
         );
     }

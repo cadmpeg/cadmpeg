@@ -400,6 +400,124 @@ fn feature_entity_surface_id_node_refuses_before_insertion() {
 }
 
 #[test]
+fn structural_feature_id_node_refuses_before_btree_insertion() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let row = crate::surface::SurfaceRow {
+        id: 7,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 4,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 0,
+    };
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("root input is admitted");
+        super::structural_feature_ids(&ctx, &[], std::slice::from_ref(&row), &[])
+    };
+    assert_eq!(run(1).expect("one structural ID admitted").len(), 1);
+    let error = run(0).expect_err("one structural ID needs a BTreeSet node");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo structural feature ids"));
+}
+
+#[test]
+fn candidate_structural_feature_ids_refuse_before_btree_clone() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("root input is admitted");
+        super::candidate_feature_ids(&ctx, &BTreeSet::from([4]), std::iter::empty())
+    };
+    assert_eq!(
+        run(1).expect("one clone node admitted"),
+        BTreeSet::from([4])
+    );
+    let error = run(0).expect_err("cloned structural node needs an item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo candidate structural feature ids"));
+}
+
+#[test]
+fn candidate_added_feature_id_refuses_before_btree_insertion() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("root input is admitted");
+        super::candidate_feature_ids(&ctx, &BTreeSet::from([4]), [5])
+    };
+    assert_eq!(
+        run(2).expect("two candidate nodes admitted"),
+        BTreeSet::from([4, 5])
+    );
+    let error = run(1).expect_err("new candidate node needs an item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo candidate feature ids"));
+}
+
+#[test]
+fn completed_feature_id_refuses_before_btree_insertion() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("root input is admitted");
+        super::complete_feature_ids(&ctx, BTreeSet::from([4]), [5])
+    };
+    assert_eq!(run(3).expect("complete feature IDs admitted"), vec![4, 5]);
+    let error = run(0).expect_err("new complete node needs an item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo complete feature ids"));
+}
+
+#[test]
+fn ordered_feature_ids_refuse_before_vec_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("root input is admitted");
+        super::complete_feature_ids(&ctx, BTreeSet::from([4]), [5])
+    };
+    let error = run(2).expect_err("ordered vector needs two items after the new node");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo ordered feature ids"));
+}
+
+#[test]
 fn two_chart_pcurve_count_node_refuses_before_insertion() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
