@@ -130,7 +130,7 @@ fn opaque_history_record_slot_refuses_collection_limit() {
         parse_records(
             ctx,
             &[],
-            &[record.clone()],
+            std::slice::from_ref(&record),
             ArchiveVersion::V5,
             &mut Diagnostics::new(),
             0x1000_0026,

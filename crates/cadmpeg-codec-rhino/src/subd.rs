@@ -83,7 +83,10 @@ impl std::fmt::Display for SubdEnumDiagnostic {
                 write!(f, "SubD symmetry type {value} mapped to neutral Unset")
             }
             Self::SymmetryCoordinateSystem(value) => {
-                write!(f, "SubD symmetry coordinate system {value} mapped to neutral Unset")
+                write!(
+                    f,
+                    "SubD symmetry coordinate system {value} mapped to neutral Unset"
+                )
             }
         }
     }

@@ -481,7 +481,11 @@ pub(crate) fn gradient_json(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     gradient: &Gradient,
 ) -> Result<String, CodecError> {
-    crate::wire::admitted_json(ctx, &gradient_semantic(gradient), "Rhino hatch gradient JSON")
+    crate::wire::admitted_json(
+        ctx,
+        &gradient_semantic(gradient),
+        "Rhino hatch gradient JSON",
+    )
 }
 
 fn parse_userdata(
@@ -826,11 +830,10 @@ pub(crate) mod tests {
                 gradient.colors[1].position,
                 crate::test_support::finite(1.0)
             );
-            let semantic: serde_json::Value =
-                serde_json::from_str(
-                    &gradient_json(expand.ctx(), &gradient).expect("gradient JSON admitted"),
-                )
-                .expect("gradient JSON object");
+            let semantic: serde_json::Value = serde_json::from_str(
+                &gradient_json(expand.ctx(), &gradient).expect("gradient JSON admitted"),
+            )
+            .expect("gradient JSON object");
             assert_eq!(semantic["type"], "linear");
             assert_eq!(semantic["type_value"], 1);
             assert_eq!(semantic["start"], serde_json::json!([2.0, 4.0, 6.0]));

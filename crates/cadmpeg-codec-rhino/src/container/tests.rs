@@ -62,7 +62,10 @@ fn source_metadata_refuses_collection_limit() {
         super::SourceMetaDetail::FlatLegacyArchive,
     )
     .expect("service profile admits source metadata");
-    assert_eq!(meta.attributes.get("archive_version"), Some(&"1".to_string()));
+    assert_eq!(
+        meta.attributes.get("archive_version"),
+        Some(&"1".to_string())
+    );
 }
 
 #[test]
@@ -102,11 +105,9 @@ fn container_only_loss_refuses_collection_limit() {
         CodecError::ResourceLimit(limit)
             if limit.operation == "Rhino container-only losses"
     ));
-    let decoded = super::container_only_result(
-        &cadmpeg_test_support::service_decode_context(),
-        &scan,
-    )
-    .expect("service profile admits notes and loss");
+    let decoded =
+        super::container_only_result(&cadmpeg_test_support::service_decode_context(), &scan)
+            .expect("service profile admits notes and loss");
     assert_eq!(decoded.body.notes.len(), 2);
     assert_eq!(decoded.body.losses.len(), 1);
 }

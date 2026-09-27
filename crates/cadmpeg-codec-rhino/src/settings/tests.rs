@@ -1723,7 +1723,30 @@ fn layer_description_refuses_retained_limit() {
     extension.push(0);
     let error = layer_text_refusal(&extension, 1);
     assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino layer description")
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino layer loss text")
+    );
+    let mut limit = 1;
+    let mut found_description = false;
+    for _ in 0..32 {
+        let cadmpeg_core::CodecError::ResourceLimit(refusal) =
+            layer_text_refusal(&extension, limit)
+        else {
+            panic!("expected a retained resource refusal at limit {limit}");
+        };
+        if refusal.operation == "Rhino layer description" {
+            found_description = true;
+            break;
+        }
+        let next = refusal
+            .used
+            .checked_add(refusal.additional)
+            .expect("fixture budget fits");
+        assert!(next > limit, "retained limit must advance");
+        limit = next;
+    }
+    assert!(
+        found_description,
+        "description was not refused at its own admission"
     );
     let admitted = layer_metadata_with_description(" description ");
     assert_eq!(

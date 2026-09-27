@@ -468,8 +468,17 @@ fn append_file_reference_diagnostics(
         let code = diagnostic
             .code
             .unwrap_or(crate::loss::RhinoLossCode::IntegrityFailure);
-        push_view_loss(ctx, losses, code, source_offset, tag,
-            format_args!("file reference at offset {}: {}", source_offset, diagnostic.message))?;
+        push_view_loss(
+            ctx,
+            losses,
+            code,
+            source_offset,
+            tag,
+            format_args!(
+                "file reference at offset {}: {}",
+                source_offset, diagnostic.message
+            ),
+        )?;
     }
     Ok(())
 }
@@ -1094,9 +1103,17 @@ fn scan_viewport_userdata(
                     let code = warning
                         .code
                         .unwrap_or(crate::loss::RhinoLossCode::IntegrityFailure);
-                    push_view_loss(ctx, losses, code, child.header_start,
+                    push_view_loss(
+                        ctx,
+                        losses,
+                        code,
+                        child.header_start,
                         "VIEW/VIEWPORT_USERDATA",
-                        format_args!("viewport userdata at offset {}: {}", child.header_start, warning.message))?;
+                        format_args!(
+                            "viewport userdata at offset {}: {}",
+                            child.header_start, warning.message
+                        ),
+                    )?;
                 }
                 parsed?;
                 has_untyped_content = true;
@@ -1168,7 +1185,10 @@ fn parse_view(
             VIEW_VIEWPORT | VIEW_CPLANE | VIEW_TARGET | VIEW_POSITION | VIEW_NAME | VIEW_WALLPAPER
         ) {
             if let Some(warning) = direct_view_child_checksum_warning(data, &child)? {
-                push_view_loss(ctx, losses, crate::loss::RhinoLossCode::IntegrityFailure,
+                push_view_loss(
+                    ctx,
+                    losses,
+                    crate::loss::RhinoLossCode::IntegrityFailure,
                     child.header_start,
                     view_checksum_tag(child.typecode),
                     format_args!("{warning}"),
@@ -1186,10 +1206,26 @@ fn parse_view(
                         return Err(FramingError::Resource(limit));
                     }
                     Err(error) => {
-                        let message = crate::wire::admitted_format(ctx, format_args!("viewport retained: {error}"), "Rhino view parse warning")?;
-                        crate::wire::reserve_collection(ctx, &mut parse_warnings, 1, "Rhino view parse warnings")?;
-                        parse_warnings.push(crate::wire::copy_retained_string(ctx, &message, "Rhino view parse warning copy")?);
-                        push_view_loss(ctx, losses, crate::loss::RhinoLossCode::PresentationRecordDropped,
+                        let message = crate::wire::admitted_format(
+                            ctx,
+                            format_args!("viewport retained: {error}"),
+                            "Rhino view parse warning",
+                        )?;
+                        crate::wire::reserve_collection(
+                            ctx,
+                            &mut parse_warnings,
+                            1,
+                            "Rhino view parse warnings",
+                        )?;
+                        parse_warnings.push(crate::wire::copy_retained_string(
+                            ctx,
+                            &message,
+                            "Rhino view parse warning copy",
+                        )?);
+                        push_view_loss(
+                            ctx,
+                            losses,
+                            crate::loss::RhinoLossCode::PresentationRecordDropped,
                             child.header_start,
                             "VIEW/VIEWPORT",
                             format_args!("{message}"),
@@ -1204,7 +1240,10 @@ fn parse_view(
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(data, &child, nested_children)?
                 {
-                    push_view_loss(ctx, losses, crate::loss::RhinoLossCode::IntegrityFailure,
+                    push_view_loss(
+                        ctx,
+                        losses,
+                        crate::loss::RhinoLossCode::IntegrityFailure,
                         child.header_start,
                         "VIEW/TRACE_IMAGE",
                         format_args!("{warning}"),
@@ -1230,7 +1269,10 @@ fn parse_view(
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(data, &child, nested_children)?
                 {
-                    push_view_loss(ctx, losses, crate::loss::RhinoLossCode::IntegrityFailure,
+                    push_view_loss(
+                        ctx,
+                        losses,
+                        crate::loss::RhinoLossCode::IntegrityFailure,
                         child.header_start,
                         "VIEW/WALLPAPER",
                         format_args!("{warning}"),
@@ -1271,7 +1313,10 @@ fn parse_view(
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(data, &child, &nested_children)?
                 {
-                    push_view_loss(ctx, losses, crate::loss::RhinoLossCode::IntegrityFailure,
+                    push_view_loss(
+                        ctx,
+                        losses,
+                        crate::loss::RhinoLossCode::IntegrityFailure,
                         child.header_start,
                         "VIEW/ATTRIBUTES",
                         format_args!("{warning}"),
@@ -1281,33 +1326,60 @@ fn parse_view(
             }
             VIEW_VIEWPORT_USERDATA => {
                 if child.short() {
-                    push_view_loss(ctx, losses, crate::loss::RhinoLossCode::ViewportUserdataDropped,
-                        child.header_start, "VIEW/VIEWPORT_USERDATA",
-                        format_args!("viewport userdata at offset {} must be a long chunk", child.header_start))?;
+                    push_view_loss(
+                        ctx,
+                        losses,
+                        crate::loss::RhinoLossCode::ViewportUserdataDropped,
+                        child.header_start,
+                        "VIEW/VIEWPORT_USERDATA",
+                        format_args!(
+                            "viewport userdata at offset {} must be a long chunk",
+                            child.header_start
+                        ),
+                    )?;
                 } else {
                     match scan_viewport_userdata(ctx, data, child.body().clone(), archive, losses) {
                         Ok(scan) => {
                             if let Some(warning) =
                                 view_child_checksum_warning_excluding(data, &child, &scan.children)?
                             {
-                                push_view_loss(ctx, losses, crate::loss::RhinoLossCode::IntegrityFailure,
+                                push_view_loss(
+                                    ctx,
+                                    losses,
+                                    crate::loss::RhinoLossCode::IntegrityFailure,
                                     child.header_start,
                                     "VIEW/VIEWPORT_USERDATA",
                                     format_args!("{warning}"),
                                 )?;
                             }
                             if scan.has_untyped_content {
-                                push_view_loss(ctx, losses, crate::loss::RhinoLossCode::ViewportUserdataDropped,
-                                    child.header_start, "VIEW/VIEWPORT_USERDATA",
-                                    format_args!("viewport userdata at offset {} has no typed CADIR owner", child.header_start))?;
+                                push_view_loss(
+                                    ctx,
+                                    losses,
+                                    crate::loss::RhinoLossCode::ViewportUserdataDropped,
+                                    child.header_start,
+                                    "VIEW/VIEWPORT_USERDATA",
+                                    format_args!(
+                                        "viewport userdata at offset {} has no typed CADIR owner",
+                                        child.header_start
+                                    ),
+                                )?;
                             }
                         }
                         Err(FramingError::Resource(limit)) => {
                             return Err(FramingError::Resource(limit));
                         }
-                        Err(error) => push_view_loss(ctx, losses, crate::loss::RhinoLossCode::ViewportUserdataDropped,
-                            child.header_start, "VIEW/VIEWPORT_USERDATA",
-                            format_args!("viewport userdata at offset {} could not be framed: {error}", child.header_start))?,
+                        Err(error) => push_view_loss(
+                            ctx,
+                            losses,
+                            crate::loss::RhinoLossCode::ViewportUserdataDropped,
+                            child.header_start,
+                            "VIEW/VIEWPORT_USERDATA",
+                            format_args!(
+                                "viewport userdata at offset {} could not be framed: {error}",
+                                child.header_start
+                            ),
+                        )?,
                     }
                 }
             }
@@ -1358,7 +1430,10 @@ fn parse_view(
         _ => None,
     };
     if let Some(warning) = checksum_warning {
-        push_view_loss(ctx, losses, crate::loss::RhinoLossCode::IntegrityFailure,
+        push_view_loss(
+            ctx,
+            losses,
+            crate::loss::RhinoLossCode::IntegrityFailure,
             record.header_start,
             "VIEW/RECORD",
             format_args!("{warning}"),
@@ -1407,7 +1482,9 @@ fn parse_list(
     let mut reader = match BoundedReader::new(data, record.body().start, record.body().end) {
         Ok(reader) => reader,
         Err(error) => {
-            push_list_loss(ctx, &mut losses,
+            push_list_loss(
+                ctx,
+                &mut losses,
                 record.range.start,
                 list_tag,
                 format_args!(
@@ -1421,7 +1498,9 @@ fn parse_list(
     let signed_count = match reader.i32() {
         Ok(value) => value,
         Err(error) => {
-            push_list_loss(ctx, &mut losses,
+            push_list_loss(
+                ctx,
+                &mut losses,
                 record.range.start,
                 list_tag,
                 format_args!(
@@ -1433,7 +1512,9 @@ fn parse_list(
         }
     };
     let Ok(count) = usize::try_from(signed_count) else {
-        push_list_loss(ctx, &mut losses,
+        push_list_loss(
+            ctx,
+            &mut losses,
             record.range.start,
             list_tag,
             format_args!(
@@ -1444,7 +1525,9 @@ fn parse_list(
         return Ok((Vec::new(), losses));
     };
     if count > 1 << 16 {
-        push_list_loss(ctx, &mut losses,
+        push_list_loss(
+            ctx,
+            &mut losses,
             record.range.start,
             list_tag,
             format_args!(
@@ -1460,7 +1543,9 @@ fn parse_list(
         let view = match chunk_at(data, reader.position(), reader.end(), archive, false) {
             Ok(view) => view,
             Err(error) => {
-                push_list_loss(ctx, &mut losses,
+                push_list_loss(
+                    ctx,
+                    &mut losses,
                     reader.position(),
                     "VIEW/RECORD",
                     format_args!(
@@ -1513,7 +1598,9 @@ fn parse_list(
             )?,
         }
         if let Err(error) = reader.skip(next - reader.position()) {
-            push_list_loss(ctx, &mut losses,
+            push_list_loss(
+                ctx,
+                &mut losses,
                 view.header_start,
                 "VIEW/RECORD",
                 format_args!(
@@ -1664,10 +1751,12 @@ pub(crate) fn install(
                             cadmpeg_core::decode::u64_from_index("VIEW/NAMED_CPLANES".len()),
                             "Rhino view setting loss tag",
                         )?;
-                        losses.push(loss.with_provenance(
-                            SourceProvenance::root("rhino", record.range.start as u64)
-                                .with_tag("VIEW/NAMED_CPLANES"),
-                        ));
+                        losses.push(
+                            loss.with_provenance(
+                                SourceProvenance::root("rhino", record.range.start as u64)
+                                    .with_tag("VIEW/NAMED_CPLANES"),
+                            ),
+                        );
                         crate::wire::reserve_collection(
                             ctx,
                             &mut opaque_records,
@@ -1714,8 +1803,16 @@ pub(crate) fn install(
                 )?;
                 losses.append(&mut parse_losses);
                 if has_parse_losses {
-                    crate::wire::reserve_collection(ctx, &mut opaque_records, 1, "Rhino opaque view records")?;
-                    opaque_records.push(OpaqueRecord { table_typecode: table.typecode, record: record.clone() });
+                    crate::wire::reserve_collection(
+                        ctx,
+                        &mut opaque_records,
+                        1,
+                        "Rhino opaque view records",
+                    )?;
+                    opaque_records.push(OpaqueRecord {
+                        table_typecode: table.typecode,
+                        record: record.clone(),
+                    });
                 }
             }
             if record.typecode == ACTIVE_VIEWS {
@@ -1751,8 +1848,16 @@ pub(crate) fn install(
                 )?;
                 losses.append(&mut parse_losses);
                 if has_parse_losses {
-                    crate::wire::reserve_collection(ctx, &mut opaque_records, 1, "Rhino opaque view records")?;
-                    opaque_records.push(OpaqueRecord { table_typecode: table.typecode, record: record.clone() });
+                    crate::wire::reserve_collection(
+                        ctx,
+                        &mut opaque_records,
+                        1,
+                        "Rhino opaque view records",
+                    )?;
+                    opaque_records.push(OpaqueRecord {
+                        table_typecode: table.typecode,
+                        record: record.clone(),
+                    });
                 }
             }
         }
@@ -1812,6 +1917,28 @@ mod tests {
             matches!(error, FramingError::Resource(limit) if limit.operation == operation),
             "{error:?}"
         );
+    }
+
+    fn reaches_resource_operation(
+        mut limit: u64,
+        operation: &'static str,
+        mut run: impl FnMut(u64) -> cadmpeg_core::CodecError,
+    ) {
+        for _ in 0..64 {
+            let cadmpeg_core::CodecError::ResourceLimit(refusal) = run(limit) else {
+                panic!("expected a resource refusal at limit {limit}");
+            };
+            if refusal.operation == operation {
+                return;
+            }
+            let next = refusal
+                .used
+                .checked_add(refusal.additional)
+                .expect("fixture budget fits");
+            assert!(next > limit, "resource limit must advance");
+            limit = next;
+        }
+        panic!("did not reach {operation}");
     }
 
     fn serialized_plane(bytes: &mut Vec<u8>) {
@@ -2193,8 +2320,14 @@ mod tests {
         });
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.operation == "Rhino opaque view records")
+            if refusal.operation == "Rhino view list losses")
         );
+        reaches_resource_operation(0, "Rhino opaque view records", |limit| {
+            with_collection_limit(scan.data, limit, |ctx| {
+                super::install(ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty())
+                    .expect_err("opaque named-view list exceeds the collection limit")
+            })
+        });
     }
 
     #[test]
@@ -2206,8 +2339,14 @@ mod tests {
         });
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.operation == "Rhino opaque view records")
+            if refusal.operation == "Rhino view list losses")
         );
+        reaches_resource_operation(0, "Rhino opaque view records", |limit| {
+            with_collection_limit(scan.data, limit, |ctx| {
+                super::install(ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty())
+                    .expect_err("opaque active-view list exceeds the collection limit")
+            })
+        });
         let installed = super::install(
             &cadmpeg_test_support::service_decode_context(),
             &scan,
@@ -2259,8 +2398,9 @@ mod tests {
     #[test]
     fn view_id_refuses_retained_limit() {
         assert!(
-            matches!(view_record_retained_refusal(74), cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "Rhino view ID")
+            matches!(view_record_retained_refusal(74), cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "Rhino view loss message")
         );
+        reaches_resource_operation(74, "Rhino view ID", view_record_retained_refusal);
         let archive = ArchiveVersion::V5;
         let (bytes, record) = one_end_marker_view(archive);
         let admitted = parse_list(
@@ -2498,8 +2638,9 @@ mod tests {
         assert!(matches!(
             view_collection_refusal(2),
             cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino view list records"
+                if limit.operation == "Rhino view losses"
         ));
+        reaches_resource_operation(2, "Rhino view list records", view_collection_refusal);
     }
 
     #[test]

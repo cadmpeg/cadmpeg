@@ -1511,64 +1511,178 @@ pub(crate) fn project(
             };
         }
         put!("measurement", format_args!("{}", dimension.measurement))?;
-        put!("annotation_type", format_args!("{}", dimension.annotation_type))?;
-        put!("detail_measured", format_args!("{}", dimension.detail_measured))?;
-        put!("distance_scale", format_args!("{}", dimension.distance_scale.get()))?;
+        put!(
+            "annotation_type",
+            format_args!("{}", dimension.annotation_type)
+        )?;
+        put!(
+            "detail_measured",
+            format_args!("{}", dimension.detail_measured)
+        )?;
+        put!(
+            "distance_scale",
+            format_args!("{}", dimension.distance_scale.get())
+        )?;
         put!("rich_text", format_args!("{}", dimension.rich_text))?;
         put!("user_text", format_args!("{}", dimension.user_text))?;
-        put!("use_default_text_point", format_args!("{}", dimension.use_default_text_point))?;
-        put!("user_text_point", format_args!("{},{}", dimension.user_text_point[0], dimension.user_text_point[1]))?;
-        put!("flip_arrows", format_args!("{},{}", dimension.flip_arrows[0], dimension.flip_arrows[1]))?;
-        put!("arrow_position", format_args!("{}", dimension.arrow_position))?;
-        put!("allow_text_scaling", format_args!("{}", dimension.allow_text_scaling))?;
-        put!("plane_origin", format_args!("{}", CommaValues(&dimension.plane.origin[..])))?;
-        put!("plane_x_axis", format_args!("{}", CommaValues(&dimension.plane.xaxis[..])))?;
-        put!("plane_y_axis", format_args!("{}", CommaValues(&dimension.plane.yaxis[..])))?;
-        put!("plane_z_axis", format_args!("{}", CommaValues(&dimension.plane.zaxis[..])))?;
-        put!("plane_equation", format_args!("{}", CommaValues(&dimension.plane.equation[..])))?;
-        put!("horizontal_direction", format_args!("{}", CommaValues(&dimension.horizontal_direction[..])))?;
+        put!(
+            "use_default_text_point",
+            format_args!("{}", dimension.use_default_text_point)
+        )?;
+        put!(
+            "user_text_point",
+            format_args!(
+                "{},{}",
+                dimension.user_text_point[0], dimension.user_text_point[1]
+            )
+        )?;
+        put!(
+            "flip_arrows",
+            format_args!("{},{}", dimension.flip_arrows[0], dimension.flip_arrows[1])
+        )?;
+        put!(
+            "arrow_position",
+            format_args!("{}", dimension.arrow_position)
+        )?;
+        put!(
+            "allow_text_scaling",
+            format_args!("{}", dimension.allow_text_scaling)
+        )?;
+        put!(
+            "plane_origin",
+            format_args!("{}", CommaValues(&dimension.plane.origin[..]))
+        )?;
+        put!(
+            "plane_x_axis",
+            format_args!("{}", CommaValues(&dimension.plane.xaxis[..]))
+        )?;
+        put!(
+            "plane_y_axis",
+            format_args!("{}", CommaValues(&dimension.plane.yaxis[..]))
+        )?;
+        put!(
+            "plane_z_axis",
+            format_args!("{}", CommaValues(&dimension.plane.zaxis[..]))
+        )?;
+        put!(
+            "plane_equation",
+            format_args!("{}", CommaValues(&dimension.plane.equation[..]))
+        )?;
+        put!(
+            "horizontal_direction",
+            format_args!("{}", CommaValues(&dimension.horizontal_direction[..]))
+        )?;
         match &dimension.family {
             DimensionFamily::Modern { dimstyle_id } => {
                 put!("dimstyle_id", format_args!("{dimstyle_id}"))?;
             }
-            DimensionFamily::Legacy { dimstyle_index, text_display_mode, text_height, justification } => {
+            DimensionFamily::Legacy {
+                dimstyle_index,
+                text_display_mode,
+                text_height,
+                justification,
+            } => {
                 put!("dimstyle_index", format_args!("{dimstyle_index}"))?;
                 put!("text_display_mode", format_args!("{text_display_mode}"))?;
                 put!("text_height", format_args!("{}", text_height.get()))?;
                 put!("justification", format_args!("{justification}"))?;
             }
-            DimensionFamily::V2 { default_text, points, angular_radius } => {
+            DimensionFamily::V2 {
+                default_text,
+                points,
+                angular_radius,
+            } => {
                 put!("v2_default_text", format_args!("{default_text}"))?;
                 put!("v2_points", format_args!("{}", SemicolonPoints(points)))?;
                 if let Some(radius) = angular_radius {
                     let angle = dimension.measurement;
                     put!("v2_angle_radians", format_args!("{angle}"))?;
-                    put!("v2_numeric_value_degrees", format_args!("{}", angle * 180.0 / std::f64::consts::PI))?;
+                    put!(
+                        "v2_numeric_value_degrees",
+                        format_args!("{}", angle * 180.0 / std::f64::consts::PI)
+                    )?;
                     put!("v2_radius", format_args!("{}", radius.get()))?;
                 }
             }
         }
         match &dimension.definition {
-            Definition::Linear { definition_point, dimension_line_point } => {
-                put!("definition_point", format_args!("{},{}", definition_point[0], definition_point[1]))?;
-                put!("dimension_line_point", format_args!("{},{}", dimension_line_point[0], dimension_line_point[1]))?;
+            Definition::Linear {
+                definition_point,
+                dimension_line_point,
+            } => {
+                put!(
+                    "definition_point",
+                    format_args!("{},{}", definition_point[0], definition_point[1])
+                )?;
+                put!(
+                    "dimension_line_point",
+                    format_args!("{},{}", dimension_line_point[0], dimension_line_point[1])
+                )?;
             }
-            Definition::Angular { first_direction, second_direction, first_extension_offset, second_extension_offset, dimension_line_point } => {
-                put!("first_direction", format_args!("{},{}", first_direction[0], first_direction[1]))?;
-                put!("second_direction", format_args!("{},{}", second_direction[0], second_direction[1]))?;
-                put!("first_extension_offset", format_args!("{}", first_extension_offset.get()))?;
-                put!("second_extension_offset", format_args!("{}", second_extension_offset.get()))?;
-                put!("dimension_line_point", format_args!("{},{}", dimension_line_point[0], dimension_line_point[1]))?;
+            Definition::Angular {
+                first_direction,
+                second_direction,
+                first_extension_offset,
+                second_extension_offset,
+                dimension_line_point,
+            } => {
+                put!(
+                    "first_direction",
+                    format_args!("{},{}", first_direction[0], first_direction[1])
+                )?;
+                put!(
+                    "second_direction",
+                    format_args!("{},{}", second_direction[0], second_direction[1])
+                )?;
+                put!(
+                    "first_extension_offset",
+                    format_args!("{}", first_extension_offset.get())
+                )?;
+                put!(
+                    "second_extension_offset",
+                    format_args!("{}", second_extension_offset.get())
+                )?;
+                put!(
+                    "dimension_line_point",
+                    format_args!("{},{}", dimension_line_point[0], dimension_line_point[1])
+                )?;
             }
-            Definition::Radial { radius_point, dimension_line_point, .. } => {
-                put!("radius_point", format_args!("{},{}", radius_point[0], radius_point[1]))?;
-                put!("dimension_line_point", format_args!("{},{}", dimension_line_point[0], dimension_line_point[1]))?;
+            Definition::Radial {
+                radius_point,
+                dimension_line_point,
+                ..
+            } => {
+                put!(
+                    "radius_point",
+                    format_args!("{},{}", radius_point[0], radius_point[1])
+                )?;
+                put!(
+                    "dimension_line_point",
+                    format_args!("{},{}", dimension_line_point[0], dimension_line_point[1])
+                )?;
             }
-            Definition::Ordinate { definition_point, leader_point, measured_direction, kink_offsets } => {
-                put!("definition_point", format_args!("{},{}", definition_point[0], definition_point[1]))?;
-                put!("leader_point", format_args!("{},{}", leader_point[0], leader_point[1]))?;
-                put!("measured_direction", format_args!("{}", measured_direction.value()))?;
-                put!("kink_offsets", format_args!("{},{}", kink_offsets[0].get(), kink_offsets[1].get()))?;
+            Definition::Ordinate {
+                definition_point,
+                leader_point,
+                measured_direction,
+                kink_offsets,
+            } => {
+                put!(
+                    "definition_point",
+                    format_args!("{},{}", definition_point[0], definition_point[1])
+                )?;
+                put!(
+                    "leader_point",
+                    format_args!("{},{}", leader_point[0], leader_point[1])
+                )?;
+                put!(
+                    "measured_direction",
+                    format_args!("{}", measured_direction.value())
+                )?;
+                put!(
+                    "kink_offsets",
+                    format_args!("{},{}", kink_offsets[0].get(), kink_offsets[1].get())
+                )?;
             }
             Definition::CenterMark { radius } => {
                 put!("radius", format_args!("{}", radius.get()))?;
@@ -1594,24 +1708,42 @@ pub(crate) fn project(
     // non-nil -> charge and keep the raw UUID in parameters.
     let mut references = BTreeMap::new();
     let mut unresolved = Vec::new();
-    let mut reference = |role: &'static str, id: Option<Uuid>, code: RhinoLossCode| -> Result<(), cadmpeg_core::CodecError> { match id {
-        None => Ok(()),
-        Some(id) if id.is_nil() => {
-            ctx.charge_collection_items(1, "Rhino dimension reference entries")?;
-            let role = crate::wire::copy_retained_string(ctx, role, "Rhino dimension reference key")?;
-            let role = cadmpeg_core::text::NonBlankString::new(role)
-                .ok_or_else(|| cadmpeg_core::CodecError::malformed("generated dimension reference role is blank"))?;
-            let mut selections = crate::wire::admitted_collection(ctx, 1, "Rhino dimension reference selections")?;
-            selections.push(ReferenceSelection::new(ReferenceTarget::Null, Vec::new()));
-            references.insert(role, selections);
-            Ok(())
+    let mut reference = |role: &'static str,
+                         id: Option<Uuid>,
+                         code: RhinoLossCode|
+     -> Result<(), cadmpeg_core::CodecError> {
+        match id {
+            None => Ok(()),
+            Some(id) if id.is_nil() => {
+                ctx.charge_collection_items(1, "Rhino dimension reference entries")?;
+                let role =
+                    crate::wire::copy_retained_string(ctx, role, "Rhino dimension reference key")?;
+                let role = cadmpeg_core::text::NonBlankString::new(role).ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed(
+                        "generated dimension reference role is blank",
+                    )
+                })?;
+                let mut selections = crate::wire::admitted_collection(
+                    ctx,
+                    1,
+                    "Rhino dimension reference selections",
+                )?;
+                selections.push(ReferenceSelection::new(ReferenceTarget::Null, Vec::new()));
+                references.insert(role, selections);
+                Ok(())
+            }
+            Some(_) => {
+                crate::wire::reserve_collection(
+                    ctx,
+                    &mut unresolved,
+                    1,
+                    "Rhino unresolved dimension references",
+                )?;
+                unresolved.push(code);
+                Ok(())
+            }
         }
-        Some(_) => {
-            crate::wire::reserve_collection(ctx, &mut unresolved, 1, "Rhino unresolved dimension references")?;
-            unresolved.push(code);
-            Ok(())
-        }
-    }};
+    };
     reference(
         "dimstyle_id",
         match &dimension.family {
@@ -1635,8 +1767,12 @@ pub(crate) fn project(
             })
         })
         .transpose()?;
-    let key = cadmpeg_ir::ids::IdentityKey::try_new(crate::wire::copy_retained_string(ctx, key, "Rhino dimension identity key")?)
-        .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
+    let key = cadmpeg_ir::ids::IdentityKey::try_new(crate::wire::copy_retained_string(
+        ctx,
+        key,
+        "Rhino dimension identity key",
+    )?)
+    .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
     let annotation_id = SemanticAnnotationId::try_from(crate::wire::admitted_format(
         ctx,
         format_args!("rhino:dimension:annotation#{}", key.as_str()),
@@ -1646,22 +1782,46 @@ pub(crate) fn project(
     let mut text = Vec::new();
     if !dimension.user_text.is_empty() {
         crate::wire::reserve_collection(ctx, &mut text, 1, "Rhino dimension annotation text")?;
-        text.push(crate::wire::copy_retained_string(ctx, &dimension.user_text, "Rhino dimension annotation text copy")?);
+        text.push(crate::wire::copy_retained_string(
+            ctx,
+            &dimension.user_text,
+            "Rhino dimension annotation text copy",
+        )?);
     }
     let annotation = SemanticAnnotation {
         id: annotation_id,
-        object: crate::wire::copy_retained_string(ctx, object, "Rhino dimension annotation object")?,
+        object: crate::wire::copy_retained_string(
+            ctx,
+            object,
+            "Rhino dimension annotation object",
+        )?,
         kind: SemanticAnnotationKind::Dimension,
-        runtime_type: crate::wire::copy_retained_string(ctx, runtime_type, "Rhino dimension runtime type")?,
+        runtime_type: crate::wire::copy_retained_string(
+            ctx,
+            runtime_type,
+            "Rhino dimension runtime type",
+        )?,
         order,
         text,
         references,
         value: Some(value),
-        format: (!dimension.rich_text.is_empty()).then(|| crate::wire::copy_retained_string(ctx, &dimension.rich_text, "Rhino dimension format text")).transpose()?,
+        format: (!dimension.rich_text.is_empty())
+            .then(|| {
+                crate::wire::copy_retained_string(
+                    ctx,
+                    &dimension.rich_text,
+                    "Rhino dimension format text",
+                )
+            })
+            .transpose()?,
         position,
         parameters,
         assets: Vec::new(),
-        native_ref: crate::wire::copy_retained_string(ctx, object, "Rhino dimension native reference")?,
+        native_ref: crate::wire::copy_retained_string(
+            ctx,
+            object,
+            "Rhino dimension native reference",
+        )?,
     };
     Ok((annotation, unresolved))
 }
@@ -1687,7 +1847,11 @@ pub(crate) fn semantic_json(
         }
     }
     let (annotation, _) = project(ctx, dimension, "embedded-history-dimension", None, "", 0)?;
-    crate::wire::admitted_canonical_json(ctx, &DimensionJson(&annotation), "Rhino dimension semantic JSON")
+    crate::wire::admitted_canonical_json(
+        ctx,
+        &DimensionJson(&annotation),
+        "Rhino dimension semantic JSON",
+    )
 }
 
 #[cfg(test)]
@@ -2479,9 +2643,11 @@ pub(crate) mod tests {
         .expect("required invariant");
         assert_eq!(linear.measurement, 60.0);
         assert_eq!(linear.horizontal_direction.get(), [1.0, 0.0]);
-        let semantic: serde_json::Value =
-            serde_json::from_str(&semantic_json(&cadmpeg_test_support::service_decode_context(), &linear).expect("required invariant"))
-                .expect("required invariant");
+        let semantic: serde_json::Value = serde_json::from_str(
+            &semantic_json(&cadmpeg_test_support::service_decode_context(), &linear)
+                .expect("required invariant"),
+        )
+        .expect("required invariant");
         assert_eq!(semantic["kind"], "dimension");
         assert_eq!(semantic["runtime_type"], "linear_dimension");
         assert!(
@@ -2592,8 +2758,9 @@ pub(crate) mod tests {
                 if limit.operation == "Rhino dimension parameter entries"
         ));
         let ctx = cadmpeg_test_support::service_decode_context();
-        let (annotation, _) = super::project(&ctx, &dimension, "embedded-history-dimension", None, "", 0)
-            .expect("service profile admits projection");
+        let (annotation, _) =
+            super::project(&ctx, &dimension, "embedded-history-dimension", None, "", 0)
+                .expect("service profile admits projection");
         let baseline = serde_json::json!({
             "kind": "dimension",
             "runtime_type": annotation.runtime_type,
@@ -2604,11 +2771,9 @@ pub(crate) mod tests {
             "parameters": annotation.parameters,
         })
         .to_string();
-        let semantic = super::semantic_json(
-            &cadmpeg_test_support::service_decode_context(),
-            &dimension,
-        )
-        .expect("service profile admits semantic JSON");
+        let semantic =
+            super::semantic_json(&cadmpeg_test_support::service_decode_context(), &dimension)
+                .expect("service profile admits semantic JSON");
         assert_eq!(semantic, baseline);
     }
 

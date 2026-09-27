@@ -74,10 +74,10 @@ fn assert_attribute_resource(error: &crate::chunks::FramingError, operation: &st
     );
 }
 
-fn attribute_userdata_refusal(bytes: &[u8]) -> crate::chunks::FramingError {
+fn attribute_userdata_refusal_at(bytes: &[u8], limit: u64) -> crate::chunks::FramingError {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = limit;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
         .expect("root bytes admitted");
     crate::objects::parse_attribute_userdata(
@@ -90,11 +90,16 @@ fn attribute_userdata_refusal(bytes: &[u8]) -> crate::chunks::FramingError {
     .expect_err("attribute userdata descriptor exceeds collection limit")
 }
 
+fn attribute_userdata_refusal(bytes: &[u8]) -> crate::chunks::FramingError {
+    attribute_userdata_refusal_at(bytes, 0)
+}
+
 #[test]
 fn unknown_attribute_userdata_refuses_collection_limit() {
     let bytes = long_chunk(ArchiveVersion::V4, 0x0002_0001, &[]);
+    assert_attribute_resource(&attribute_userdata_refusal(&bytes), "Rhino diagnostics");
     assert_attribute_resource(
-        &attribute_userdata_refusal(&bytes),
+        &attribute_userdata_refusal_at(&bytes, 1),
         "Rhino attribute userdata descriptors",
     );
 }
@@ -1740,5 +1745,7 @@ fn degraded_object_warning_refuses_retained_limit() {
         &error,
     )
     .expect("service profile admits degraded warning");
-    assert!(matches!(result, ObjectRecord::Degraded { warning, .. } if warning.contains("degraded")));
+    assert!(
+        matches!(result, ObjectRecord::Degraded { warning, .. } if warning.contains("degraded"))
+    );
 }

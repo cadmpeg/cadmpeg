@@ -834,7 +834,12 @@ impl<'a> DecodeContext<'a> {
             ObjectReference::Missing => RhinoLossCode::ReferenceMemberUnresolved,
             ObjectReference::Ambiguous => RhinoLossCode::ReferenceMemberAmbiguous,
         };
-        crate::wire::reserve_collection(self.expand.ctx(), &mut self.report.typed_losses, 1, "Rhino typed decode losses")?;
+        crate::wire::reserve_collection(
+            self.expand.ctx(),
+            &mut self.report.typed_losses,
+            1,
+            "Rhino typed decode losses",
+        )?;
         self.report.typed_losses.push(crate::wire::admitted_loss(
             self.expand.ctx(),
             code,
@@ -988,10 +993,13 @@ impl<'a> DecodeContext<'a> {
                             error,
                             crate::curves::GeometryError::UnsupportedVersion { .. }
                         );
-                        self.scan_warning(source_order, format_args!(
+                        self.scan_warning(
+                            source_order,
+                            format_args!(
                                 "mesh {}: {error}",
                                 if future { "retained" } else { "failed" }
-                            ))?;
+                            ),
+                        )?;
                         if !future {
                             self.mark_failed(source_order);
                         }
@@ -1013,7 +1021,10 @@ impl<'a> DecodeContext<'a> {
                     if self.commit_geometry(source_order, value)? {
                         self.mark_decoded(source_order);
                     } else if procedural_surface {
-                        self.scan_warning(source_order, format_args!("procedural surface candidate rejected by IR validation"))?;
+                        self.scan_warning(
+                            source_order,
+                            format_args!("procedural surface candidate rejected by IR validation"),
+                        )?;
                         self.commit_unknown_surface(source_order)?;
                     } else {
                         self.mark_failed(source_order);
@@ -1025,7 +1036,9 @@ impl<'a> DecodeContext<'a> {
                         error,
                         crate::curves::GeometryError::UnsupportedVersion { .. }
                     );
-                    self.scan_warning(source_order, format_args!(
+                    self.scan_warning(
+                        source_order,
+                        format_args!(
                             "simple geometry {}: {error}",
                             if procedural_surface {
                                 "degraded and retained"
@@ -1034,7 +1047,8 @@ impl<'a> DecodeContext<'a> {
                             } else {
                                 "failed"
                             }
-                        ))?;
+                        ),
+                    )?;
                     if procedural_surface {
                         self.commit_unknown_surface(source_order)?;
                     } else if !future {
@@ -1110,7 +1124,10 @@ impl<'a> DecodeContext<'a> {
                             scale,
                             &mut dimension,
                         ) {
-                            self.scan_warning(source_order, format_args!("dimension extension retained: {error}"))?;
+                            self.scan_warning(
+                                source_order,
+                                format_args!("dimension extension retained: {error}"),
+                            )?;
                             continue;
                         }
                     }
@@ -1131,7 +1148,9 @@ impl<'a> DecodeContext<'a> {
                         order,
                     ) {
                         Ok(value) => value,
-                        Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Err(error),
+                        Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => {
+                            return Err(error)
+                        }
                         Err(error) => {
                             self.scan_warning(source_order, format_args!("{error}"))?;
                             continue;
@@ -1169,7 +1188,10 @@ impl<'a> DecodeContext<'a> {
                             }
                         }
                         Err(CandidateError::Codec(error)) => return Err(error),
-                        Err(error) => self.scan_warning(source_order, format_args!("dimension candidate rejected: {error}"))?,
+                        Err(error) => self.scan_warning(
+                            source_order,
+                            format_args!("dimension candidate rejected: {error}"),
+                        )?,
                     }
                 }
                 Err(crate::chunks::FramingError::Resource(limit)) => {
@@ -1209,10 +1231,13 @@ impl<'a> DecodeContext<'a> {
                     error,
                     crate::curves::GeometryError::UnsupportedVersion { .. }
                 );
-                self.scan_warning(source_order, format_args!(
+                self.scan_warning(
+                    source_order,
+                    format_args!(
                         "hatch {}: {error}",
                         if future { "retained" } else { "failed" }
-                    ))?;
+                    ),
+                )?;
                 if !future {
                     self.mark_failed(source_order);
                 }
@@ -1263,7 +1288,10 @@ impl<'a> DecodeContext<'a> {
             {
                 Ok(transform) => transform,
                 Err(error) => {
-                    self.scan_warning(source_order, format_args!("hatch placement failed: {error}"))?;
+                    self.scan_warning(
+                        source_order,
+                        format_args!("hatch placement failed: {error}"),
+                    )?;
                     self.mark_failed(source_order);
                     return Ok(());
                 }
@@ -1273,7 +1301,10 @@ impl<'a> DecodeContext<'a> {
                 Ok(()) => {}
                 Err(ReferenceFailure::Codec(error)) => return Err(error),
                 Err(ReferenceFailure::Semantic(error)) => {
-                    self.scan_warning(source_order, format_args!("hatch loop placement failed: {error}"))?;
+                    self.scan_warning(
+                        source_order,
+                        format_args!("hatch loop placement failed: {error}"),
+                    )?;
                     self.mark_failed(source_order);
                     return Ok(());
                 }
@@ -1285,13 +1316,38 @@ impl<'a> DecodeContext<'a> {
             hatch.loops.iter().map(|hatch_loop| hatch_loop.kind),
         )?;
         let mut parameters = BTreeMap::new();
-        insert_feature_property(self.expand.ctx(), &mut parameters, format_args!("pattern_index"), format_args!("{}", hatch.pattern_index))?;
-        insert_feature_property(self.expand.ctx(), &mut parameters, format_args!("pattern_scale"), format_args!("{}", hatch.pattern_scale.get()))?;
-        insert_feature_property(self.expand.ctx(), &mut parameters, format_args!("pattern_rotation"), format_args!("{}", hatch.pattern_rotation.get()))?;
-        insert_feature_property(self.expand.ctx(), &mut parameters, format_args!("basepoint"), format_args!("{},{}", hatch.basepoint[0].get(), hatch.basepoint[1].get()))?;
+        insert_feature_property(
+            self.expand.ctx(),
+            &mut parameters,
+            format_args!("pattern_index"),
+            format_args!("{}", hatch.pattern_index),
+        )?;
+        insert_feature_property(
+            self.expand.ctx(),
+            &mut parameters,
+            format_args!("pattern_scale"),
+            format_args!("{}", hatch.pattern_scale.get()),
+        )?;
+        insert_feature_property(
+            self.expand.ctx(),
+            &mut parameters,
+            format_args!("pattern_rotation"),
+            format_args!("{}", hatch.pattern_rotation.get()),
+        )?;
+        insert_feature_property(
+            self.expand.ctx(),
+            &mut parameters,
+            format_args!("basepoint"),
+            format_args!("{},{}", hatch.basepoint[0].get(), hatch.basepoint[1].get()),
+        )?;
         if let Some(gradient) = hatch.gradient.as_ref() {
             let gradient = crate::hatch::gradient_json(self.expand.ctx(), gradient)?;
-            insert_feature_property_owned(self.expand.ctx(), &mut parameters, format_args!("gradient"), gradient)?;
+            insert_feature_property_owned(
+                self.expand.ctx(),
+                &mut parameters,
+                format_args!("gradient"),
+                gradient,
+            )?;
         }
         for (index, (kind, id)) in loop_ids.iter().enumerate() {
             insert_feature_property(
@@ -1358,7 +1414,10 @@ impl<'a> DecodeContext<'a> {
             }
             Err(CandidateError::Codec(error)) => return Err(error),
             Err(error) => {
-                self.scan_warning(source_order, format_args!("hatch candidate rejected: {error}"))?;
+                self.scan_warning(
+                    source_order,
+                    format_args!("hatch candidate rejected: {error}"),
+                )?;
                 self.mark_failed(source_order);
             }
         }
@@ -1390,7 +1449,10 @@ impl<'a> DecodeContext<'a> {
         };
         let Some(construction) = crate::polyedge::semantic_json(self.expand.ctx(), &polyedge)?
         else {
-            self.scan_warning(source_order, format_args!("polyedge semantic serialization failed"))?;
+            self.scan_warning(
+                source_order,
+                format_args!("polyedge semantic serialization failed"),
+            )?;
             return Ok(());
         };
         let Some(key) = self.checked_object_key(identity, source_order)? else {
@@ -1453,7 +1515,10 @@ impl<'a> DecodeContext<'a> {
                 );
             }
             Err(CandidateError::Codec(error)) => return Err(error),
-            Err(error) => self.scan_warning(source_order, format_args!("polyedge candidate rejected: {error}"))?,
+            Err(error) => self.scan_warning(
+                source_order,
+                format_args!("polyedge candidate rejected: {error}"),
+            )?,
         }
         Ok(())
     }
@@ -1479,10 +1544,13 @@ impl<'a> DecodeContext<'a> {
                     error,
                     crate::curves::GeometryError::UnsupportedVersion { .. }
                 );
-                self.scan_warning(source_order, format_args!(
+                self.scan_warning(
+                    source_order,
+                    format_args!(
                         "detail {}: {error}",
                         if future { "retained" } else { "failed" }
-                    ))?;
+                    ),
+                )?;
                 if !future {
                     self.mark_failed(source_order);
                 }
@@ -1500,11 +1568,31 @@ impl<'a> DecodeContext<'a> {
         );
         let view = &self.scan.data[detail.view_range.clone()];
         let mut source_properties = BTreeMap::new();
-        insert_feature_property(self.expand.ctx(), &mut source_properties, format_args!("view_bytes"), format_args!("{}", view.len()))?;
-        insert_feature_property(self.expand.ctx(), &mut source_properties, format_args!("view_sha256"), format_args!("{}", sha256_hex(view)))?;
+        insert_feature_property(
+            self.expand.ctx(),
+            &mut source_properties,
+            format_args!("view_bytes"),
+            format_args!("{}", view.len()),
+        )?;
+        insert_feature_property(
+            self.expand.ctx(),
+            &mut source_properties,
+            format_args!("view_sha256"),
+            format_args!("{}", sha256_hex(view)),
+        )?;
         let mut parameters = BTreeMap::new();
-        insert_feature_property(self.expand.ctx(), &mut parameters, format_args!("boundary"), format_args!("{curve_id}"))?;
-        insert_feature_property(self.expand.ctx(), &mut parameters, format_args!("page_per_model_ratio"), format_args!("{}", detail.page_per_model_ratio.get()))?;
+        insert_feature_property(
+            self.expand.ctx(),
+            &mut parameters,
+            format_args!("boundary"),
+            format_args!("{curve_id}"),
+        )?;
+        insert_feature_property(
+            self.expand.ctx(),
+            &mut parameters,
+            format_args!("page_per_model_ratio"),
+            format_args!("{}", detail.page_per_model_ratio.get()),
+        )?;
         let feature = Feature {
             id: feature_id.clone(),
             ordinal: detail.source_range.start as u64,
@@ -1549,7 +1637,10 @@ impl<'a> DecodeContext<'a> {
             }
             Err(CandidateError::Codec(error)) => return Err(error),
             Err(error) => {
-                self.scan_warning(source_order, format_args!("detail candidate rejected: {error}"))?;
+                self.scan_warning(
+                    source_order,
+                    format_args!("detail candidate rejected: {error}"),
+                )?;
                 self.mark_failed(source_order);
             }
         }
@@ -1581,10 +1672,13 @@ impl<'a> DecodeContext<'a> {
                     error,
                     crate::curves::GeometryError::UnsupportedVersion { .. }
                 );
-                self.scan_warning(source_order, format_args!(
+                self.scan_warning(
+                    source_order,
+                    format_args!(
                         "NURBS cage {}: {error}",
                         if future { "retained" } else { "failed" }
-                    ))?;
+                    ),
+                )?;
                 if !future {
                     self.mark_failed(source_order);
                 }
@@ -1622,10 +1716,30 @@ impl<'a> DecodeContext<'a> {
             )?;
         }
         let mut parameters = BTreeMap::new();
-        insert_feature_property(self.expand.ctx(), &mut parameters, format_args!("dimension"), format_args!("{}", cage.dimension))?;
-        insert_feature_property(self.expand.ctx(), &mut parameters, format_args!("rational"), format_args!("{}", cage.rational()))?;
-        insert_feature_property(self.expand.ctx(), &mut parameters, format_args!("orders"), format_args!("{},{},{}", cage.orders[0], cage.orders[1], cage.orders[2]))?;
-        insert_feature_property(self.expand.ctx(), &mut parameters, format_args!("counts"), format_args!("{},{},{}", cage.counts[0], cage.counts[1], cage.counts[2]))?;
+        insert_feature_property(
+            self.expand.ctx(),
+            &mut parameters,
+            format_args!("dimension"),
+            format_args!("{}", cage.dimension),
+        )?;
+        insert_feature_property(
+            self.expand.ctx(),
+            &mut parameters,
+            format_args!("rational"),
+            format_args!("{}", cage.rational()),
+        )?;
+        insert_feature_property(
+            self.expand.ctx(),
+            &mut parameters,
+            format_args!("orders"),
+            format_args!("{},{},{}", cage.orders[0], cage.orders[1], cage.orders[2]),
+        )?;
+        insert_feature_property(
+            self.expand.ctx(),
+            &mut parameters,
+            format_args!("counts"),
+            format_args!("{},{},{}", cage.counts[0], cage.counts[1], cage.counts[2]),
+        )?;
         let feature = Feature {
             id: feature_id.clone(),
             ordinal: cage.source_range.start as u64,
@@ -1655,7 +1769,10 @@ impl<'a> DecodeContext<'a> {
             }
             Err(CandidateError::Codec(error)) => return Err(error),
             Err(error) => {
-                self.scan_warning(source_order, format_args!("NURBS cage candidate rejected: {error}"))?;
+                self.scan_warning(
+                    source_order,
+                    format_args!("NURBS cage candidate rejected: {error}"),
+                )?;
                 self.mark_failed(source_order);
             }
         }
@@ -1685,10 +1802,13 @@ impl<'a> DecodeContext<'a> {
                     error,
                     crate::curves::GeometryError::UnsupportedVersion { .. }
                 );
-                self.scan_warning(source_order, format_args!(
+                self.scan_warning(
+                    source_order,
+                    format_args!(
                         "morph control {}: {error}",
                         if future { "retained" } else { "failed" }
-                    ))?;
+                    ),
+                )?;
                 if !future {
                     self.mark_failed(source_order);
                 }
@@ -1725,7 +1845,10 @@ impl<'a> DecodeContext<'a> {
             }
             Err(CandidateError::Codec(error)) => return Err(error),
             Err(error) => {
-                self.scan_warning(source_order, format_args!("morph candidate rejected: {error}"))?;
+                self.scan_warning(
+                    source_order,
+                    format_args!("morph candidate rejected: {error}"),
+                )?;
                 self.mark_failed(source_order);
             }
         }
@@ -1759,10 +1882,13 @@ impl<'a> DecodeContext<'a> {
                     error,
                     crate::curves::GeometryError::UnsupportedVersion { .. }
                 );
-                self.scan_warning(source_order, format_args!(
+                self.scan_warning(
+                    source_order,
+                    format_args!(
                         "curve-on-surface {}: {error}",
                         if future { "retained" } else { "failed" }
-                    ))?;
+                    ),
+                )?;
                 if !future {
                     self.mark_failed(source_order);
                 }
@@ -1789,11 +1915,26 @@ impl<'a> DecodeContext<'a> {
         );
         let mut source_properties = BTreeMap::new();
         if let Some(id) = model_id.as_ref() {
-            insert_feature_property(self.expand.ctx(), &mut source_properties, format_args!("model_curve"), format_args!("{id}"))?;
+            insert_feature_property(
+                self.expand.ctx(),
+                &mut source_properties,
+                format_args!("model_curve"),
+                format_args!("{id}"),
+            )?;
         }
         let mut parameters = BTreeMap::new();
-        insert_feature_property(self.expand.ctx(), &mut parameters, format_args!("parameter_curve"), format_args!("{parameter_id}"))?;
-        insert_feature_property(self.expand.ctx(), &mut parameters, format_args!("support_surface"), format_args!("{surface_id}"))?;
+        insert_feature_property(
+            self.expand.ctx(),
+            &mut parameters,
+            format_args!("parameter_curve"),
+            format_args!("{parameter_id}"),
+        )?;
+        insert_feature_property(
+            self.expand.ctx(),
+            &mut parameters,
+            format_args!("support_surface"),
+            format_args!("{surface_id}"),
+        )?;
         let feature = Feature {
             id: feature_id.clone(),
             ordinal: construction.source_range.start as u64,
@@ -1887,7 +2028,10 @@ impl<'a> DecodeContext<'a> {
             }
             Err(CandidateError::Codec(error)) => return Err(error),
             Err(error) => {
-                self.scan_warning(source_order, format_args!("curve-on-surface candidate rejected: {error}"))?;
+                self.scan_warning(
+                    source_order,
+                    format_args!("curve-on-surface candidate rejected: {error}"),
+                )?;
                 self.mark_failed(source_order);
             }
         }
@@ -2329,7 +2473,10 @@ impl<'a> DecodeContext<'a> {
                 )? {
                     self.mark_decoded(source_order);
                 } else {
-                    self.scan_warning(source_order, format_args!("SubD candidate rejected atomically by IR validation"))?;
+                    self.scan_warning(
+                        source_order,
+                        format_args!("SubD candidate rejected atomically by IR validation"),
+                    )?;
                     self.mark_failed(source_order);
                 }
             }
@@ -2338,10 +2485,13 @@ impl<'a> DecodeContext<'a> {
             }
             Err(error) => {
                 let future = matches!(error, crate::subd::SubdError::UnsupportedVersion { .. });
-                self.scan_warning(source_order, format_args!(
+                self.scan_warning(
+                    source_order,
+                    format_args!(
                         "SubD {}: {error}",
                         if future { "retained" } else { "failed" }
-                    ))?;
+                    ),
+                )?;
                 if !future {
                     self.mark_failed(source_order);
                 }
@@ -2401,7 +2551,10 @@ impl<'a> DecodeContext<'a> {
             Ok(link) => link,
             Err(CandidateError::Codec(error)) => return Err(error),
             Err(findings) => {
-                self.scan_warning(source_order, format_args!("SubD validation rejected candidate: {findings}"))?;
+                self.scan_warning(
+                    source_order,
+                    format_args!("SubD validation rejected candidate: {findings}"),
+                )?;
                 return Ok(false);
             }
         };
@@ -2438,13 +2591,19 @@ impl<'a> DecodeContext<'a> {
                 if self.commit_extrusion(source_order, extrusion)? {
                     self.mark_decoded(source_order);
                 } else {
-                    self.scan_warning(source_order, format_args!("extrusion candidate rejected atomically"))?;
+                    self.scan_warning(
+                        source_order,
+                        format_args!("extrusion candidate rejected atomically"),
+                    )?;
                     self.commit_unknown_surface(source_order)?;
                 }
             }
             Err(crate::curves::GeometryError::Codec(error)) => return Err(error),
             Err(error) => {
-                self.scan_warning(source_order, format_args!("extrusion degraded and retained: {error}"))?;
+                self.scan_warning(
+                    source_order,
+                    format_args!("extrusion degraded and retained: {error}"),
+                )?;
                 self.commit_unknown_surface(source_order)?;
             }
         }
@@ -2463,10 +2622,21 @@ impl<'a> DecodeContext<'a> {
     pub(crate) fn commit(mut self) -> Result<Decoded, cadmpeg_core::CodecError> {
         let ctx = self.expand.ctx();
         for loss in &self.scan.metadata.losses {
-            crate::wire::reserve_collection(ctx, &mut self.report.phase_losses, 1, "Rhino phase decode losses")?;
-            self.report.phase_losses.push(loss.clone_admitted(ctx, "Rhino phase decode loss copy")?);
+            crate::wire::reserve_collection(
+                ctx,
+                &mut self.report.phase_losses,
+                1,
+                "Rhino phase decode losses",
+            )?;
+            self.report
+                .phase_losses
+                .push(loss.clone_admitted(ctx, "Rhino phase decode loss copy")?);
         }
-        append_report_losses(ctx, &mut self.report.typed_losses, crate::annotations::install(ctx, self.scan, &mut self.ir)?)?;
+        append_report_losses(
+            ctx,
+            &mut self.report.typed_losses,
+            crate::annotations::install(ctx, self.scan, &mut self.ir)?,
+        )?;
         let document_data = crate::document_data::install(ctx, self.scan, &mut self.ir)?;
         append_report_losses(ctx, &mut self.report.typed_losses, document_data.losses)?;
         for source in document_data.opaque_records {
@@ -2477,7 +2647,11 @@ impl<'a> DecodeContext<'a> {
         for source in presentation.opaque_records {
             self.retain_opaque_record(&source)?;
         }
-        append_report_losses(ctx, &mut self.report.typed_losses, crate::product::install(ctx, self.scan, &mut self.ir)?)?;
+        append_report_losses(
+            ctx,
+            &mut self.report.typed_losses,
+            crate::product::install(ctx, self.scan, &mut self.ir)?,
+        )?;
         let views = crate::views::install(ctx, self.scan, &mut self.ir)?;
         append_report_losses(ctx, &mut self.report.typed_losses, views.losses)?;
         for source in views.opaque_records {
@@ -2501,7 +2675,12 @@ impl<'a> DecodeContext<'a> {
         let mut omissions: Vec<LossNote> = Vec::new();
         for (class, outcome) in &outcomes {
             if outcome.retained > 0 {
-                crate::wire::reserve_collection(ctx, &mut omissions, 1, "Rhino class omission losses")?;
+                crate::wire::reserve_collection(
+                    ctx,
+                    &mut omissions,
+                    1,
+                    "Rhino class omission losses",
+                )?;
                 omissions.push(
                     crate::wire::admitted_loss(ctx, RhinoLossCode::ObjectFamilyNotTransferred, format_args!(
                             "retained {} object record(s) for class {class}; geometry is not decoded",
@@ -2511,38 +2690,63 @@ impl<'a> DecodeContext<'a> {
                 );
             }
             if let Some((code, count)) = outcome.native {
-                crate::wire::reserve_collection(ctx, &mut omissions, 1, "Rhino class omission losses")?;
+                crate::wire::reserve_collection(
+                    ctx,
+                    &mut omissions,
+                    1,
+                    "Rhino class omission losses",
+                )?;
                 omissions.push(
-                    crate::wire::admitted_loss(ctx, code, format_args!(
-                        "framed and read {} object record(s) for class {class}; construction \
+                    crate::wire::admitted_loss(
+                        ctx,
+                        code,
+                        format_args!(
+                            "framed and read {} object record(s) for class {class}; construction \
                          state is retained as native passthrough",
-                        count.get()
-                    ), "Rhino final decode loss message")?
+                            count.get()
+                        ),
+                        "Rhino final decode loss message",
+                    )?
                     .with_provenance(loss_provenance(ctx, class, outcome)?),
                 );
             }
             if outcome.attribute_degraded > 0 {
                 crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino final decode losses")?;
                 losses.push(
-                    crate::wire::admitted_loss(ctx, RhinoLossCode::ObjectAttributesDegraded, format_args!(
+                    crate::wire::admitted_loss(
+                        ctx,
+                        RhinoLossCode::ObjectAttributesDegraded,
+                        format_args!(
                             "{} object record(s) for class {class} have degraded attributes",
                             outcome.attribute_degraded
-                        ), "Rhino final decode loss message")?
-                        .with_provenance(loss_provenance(ctx, class, outcome)?),
+                        ),
+                        "Rhino final decode loss message",
+                    )?
+                    .with_provenance(loss_provenance(ctx, class, outcome)?),
                 );
             }
             if outcome.failed_framed > 0 {
                 crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino final decode losses")?;
                 losses.push(
-                    crate::wire::admitted_loss(ctx, RhinoLossCode::ObjectFramingUndecodable, format_args!(
+                    crate::wire::admitted_loss(
+                        ctx,
+                        RhinoLossCode::ObjectFramingUndecodable,
+                        format_args!(
                             "{} framed object record(s) for class {class} could not be decoded",
                             outcome.failed_framed
-                        ), "Rhino final decode loss message")?
-                        .with_provenance(loss_provenance(ctx, class, outcome)?),
+                        ),
+                        "Rhino final decode loss message",
+                    )?
+                    .with_provenance(loss_provenance(ctx, class, outcome)?),
                 );
             }
         }
-        crate::wire::reserve_collection(ctx, &mut self.report.typed_losses, omissions.len(), "Rhino typed decode losses")?;
+        crate::wire::reserve_collection(
+            ctx,
+            &mut self.report.typed_losses,
+            omissions.len(),
+            "Rhino typed decode losses",
+        )?;
         self.report.typed_losses.extend(omissions);
         for diagnostic in self.scan.definitions.diagnostics() {
             crate::wire::reserve_collection(
@@ -2553,18 +2757,30 @@ impl<'a> DecodeContext<'a> {
             )?;
             losses.push(diagnostic.to_loss(self.expand.ctx())?);
         }
-        crate::wire::reserve_collection(ctx, &mut losses, self.report.typed_losses.len(), "Rhino final decode losses")?;
+        crate::wire::reserve_collection(
+            ctx,
+            &mut losses,
+            self.report.typed_losses.len(),
+            "Rhino final decode losses",
+        )?;
         losses.append(&mut self.report.typed_losses);
-        for diagnostic in self.scan.warnings.iter() {
+        for diagnostic in &self.scan.warnings {
             crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino final decode losses")?;
             losses.push(crate::wire::admitted_loss(
                 ctx,
-                diagnostic.code.unwrap_or(RhinoLossCode::ContainerScanDiagnostic),
+                diagnostic
+                    .code
+                    .unwrap_or(RhinoLossCode::ContainerScanDiagnostic),
                 format_args!("{}", diagnostic.message),
                 "Rhino final decode loss message",
             )?);
         }
-        crate::wire::reserve_collection(ctx, &mut losses, self.report.phase_losses.len(), "Rhino final decode losses")?;
+        crate::wire::reserve_collection(
+            ctx,
+            &mut losses,
+            self.report.phase_losses.len(),
+            "Rhino final decode losses",
+        )?;
         losses.append(&mut self.report.phase_losses);
         let mut phase_families = BTreeMap::<String, (usize, String)>::new();
         for diagnostic in &self.report.phase_warnings {
@@ -2586,11 +2802,15 @@ impl<'a> DecodeContext<'a> {
                 });
             if !phase_families.contains_key(family) {
                 ctx.charge_collection_items(1, "Rhino warning family groups")?;
-                let family_key = crate::wire::copy_retained_string(ctx, family, "Rhino warning family key")?;
-                let first_detail = crate::wire::copy_retained_string(ctx, detail, "Rhino warning family detail")?;
+                let family_key =
+                    crate::wire::copy_retained_string(ctx, family, "Rhino warning family key")?;
+                let first_detail =
+                    crate::wire::copy_retained_string(ctx, detail, "Rhino warning family detail")?;
                 phase_families.insert(family_key, (0, first_detail));
             }
-            let entry = phase_families.get_mut(family).ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino warning family group missing"))?;
+            let entry = phase_families.get_mut(family).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("Rhino warning family group missing")
+            })?;
             entry.0 += 1;
         }
         for (family, (count, first)) in phase_families {
@@ -2631,7 +2851,9 @@ impl<'a> DecodeContext<'a> {
                 RETAINED_RECORD_CAP
             ), "Rhino final decode note")?
         } else {
-            crate::wire::admitted_format(ctx, format_args!(
+            crate::wire::admitted_format(
+                ctx,
+                format_args!(
                 "decoded {decoded}/{total} Rhino object records; retained metadata/digests for {} \
                  object records and {} opaque records, with complete bytes for {byte_records}; \
                  document cap {} bytes, per-record cap {} bytes",
@@ -2639,7 +2861,9 @@ impl<'a> DecodeContext<'a> {
                 self.opaque_records.len(),
                 RETAINED_DOCUMENT_CAP,
                 RETAINED_RECORD_CAP
-            ), "Rhino final decode note")?
+            ),
+                "Rhino final decode note",
+            )?
         };
         let mut notes = Vec::new();
         crate::wire::reserve_collection(ctx, &mut notes, 1, "Rhino final decode notes")?;
@@ -2818,10 +3042,9 @@ impl<'a> DecodeContext<'a> {
         let class = self.scan.objects[source_order]
             .class_uuid()
             .unwrap_or_else(crate::wire::Uuid::nil);
-        self.report.phase_warnings.push_admitted(
-            self.expand.ctx(),
-            format_args!("{class}: {message}"),
-        )
+        self.report
+            .phase_warnings
+            .push_admitted(self.expand.ctx(), format_args!("{class}: {message}"))
     }
 
     fn scan_unbound_unit_warning(
@@ -2847,13 +3070,11 @@ impl<'a> DecodeContext<'a> {
         let class = self.scan.objects[source_order]
             .class_uuid()
             .unwrap_or_else(crate::wire::Uuid::nil);
-        self.report
-            .phase_warnings
-            .push_coded_admitted(
-                self.expand.ctx(),
-                diagnostic.code,
-                format_args!("{class}: {}", diagnostic.message),
-            )
+        self.report.phase_warnings.push_coded_admitted(
+            self.expand.ctx(),
+            diagnostic.code,
+            format_args!("{class}: {}", diagnostic.message),
+        )
     }
 
     fn scan_warnings_for_class(
@@ -2992,7 +3213,10 @@ impl<'a> DecodeContext<'a> {
                     .checked_mul(2)
                     .and_then(|count| count.checked_add(3))
                 else {
-                    self.scan_warning(source_order, format_args!("point-cloud entity count overflow"))?;
+                    self.scan_warning(
+                        source_order,
+                        format_args!("point-cloud entity count overflow"),
+                    )?;
                     return Ok(false);
                 };
                 if !self.charge_entities(source_order, entity_count)? {
@@ -3228,7 +3452,9 @@ impl<'a> DecodeContext<'a> {
             Err(findings) => {
                 self.report.phase_warnings.push_admitted(
                     self.expand.ctx(),
-                    format_args!("procedural-surface: candidate rejected by IR validation: {findings}"),
+                    format_args!(
+                        "procedural-surface: candidate rejected by IR validation: {findings}"
+                    ),
                 )?;
                 return Ok(false);
             }
@@ -3364,7 +3590,10 @@ impl<'a> DecodeContext<'a> {
                 return Ok(false);
             }
             Err(CandidateError::Validation(findings)) => {
-                self.scan_warning(source_order, format_args!("extrusion candidate rejected by IR validation: {findings}"))?;
+                self.scan_warning(
+                    source_order,
+                    format_args!("extrusion candidate rejected by IR validation: {findings}"),
+                )?;
                 return Ok(false);
             }
             Err(CandidateError::Codec(error)) => return Err(error),
@@ -3415,7 +3644,10 @@ impl<'a> DecodeContext<'a> {
                 self.append_link(source_order, &link)?;
             }
             Err(CandidateError::Codec(error)) => return Err(error),
-            Err(findings) => self.scan_warning(source_order, format_args!("unknown surface validation rejected candidate: {findings}"))?,
+            Err(findings) => self.scan_warning(
+                source_order,
+                format_args!("unknown surface validation rejected candidate: {findings}"),
+            )?,
         }
         Ok(())
     }
@@ -3538,10 +3770,13 @@ impl<'a> DecodeContext<'a> {
                     error,
                     crate::curves::GeometryError::UnsupportedVersion { .. }
                 );
-                self.scan_warning(source_order, format_args!(
+                self.scan_warning(
+                    source_order,
+                    format_args!(
                         "Brep {}: {error}",
                         if future { "retained" } else { "failed" }
-                    ))?;
+                    ),
+                )?;
                 if !future {
                     self.mark_failed(source_order);
                 }
@@ -3569,8 +3804,14 @@ impl<'a> DecodeContext<'a> {
         }
         let identity = &object.identity;
         for loss in &raw.losses {
-            crate::wire::reserve_collection(self.expand.ctx(), &mut self.report.phase_losses, 1, "Rhino phase decode losses")?;
-            let mut copied = loss.clone_admitted(self.expand.ctx(), "Rhino phase decode loss copy")?;
+            crate::wire::reserve_collection(
+                self.expand.ctx(),
+                &mut self.report.phase_losses,
+                1,
+                "Rhino phase decode losses",
+            )?;
+            let mut copied =
+                loss.clone_admitted(self.expand.ctx(), "Rhino phase decode loss copy")?;
             copied.message = crate::wire::admitted_format(
                 self.expand.ctx(),
                 format_args!("{}: {}", object.class_uuid, loss.message),
@@ -3626,11 +3867,10 @@ impl<'a> DecodeContext<'a> {
                     typed_losses,
                 } = staged;
                 let full_topology = matches!(kind, BrepTransferKind::FullTopology);
-                let emitted_geometry = !draft.model().curves.is_empty()
-                    || !draft.model().surfaces.is_empty();
-                let cache_only = !full_topology
-                    && !emitted_geometry
-                    && !draft.model().tessellations.is_empty();
+                let emitted_geometry =
+                    !draft.model().curves.is_empty() || !draft.model().surfaces.is_empty();
+                let cache_only =
+                    !full_topology && !emitted_geometry && !draft.model().tessellations.is_empty();
                 let entity_count = draft.entity_count();
                 let mut budget = self.expansion_budget;
                 let committed = budget.entities(entity_count).and_then(|()| {
@@ -3642,7 +3882,10 @@ impl<'a> DecodeContext<'a> {
                     .map_err(|error| error.to_string())?
                 });
                 if let Err(error) = committed {
-                    self.scan_warning(source_order, format_args!("Brep draft rejected before commit: {error}"))?;
+                    self.scan_warning(
+                        source_order,
+                        format_args!("Brep draft rejected before commit: {error}"),
+                    )?;
                 } else {
                     self.expansion_budget = budget;
                     self.append_links(source_order, &links)?;
@@ -3671,19 +3914,30 @@ impl<'a> DecodeContext<'a> {
                         }
                     }
                     if cache_only {
-                        self.scan_warning(source_order, format_args!("Brep emitted cache tessellations without decoded geometry"))?;
+                        self.scan_warning(
+                            source_order,
+                            format_args!(
+                                "Brep emitted cache tessellations without decoded geometry"
+                            ),
+                        )?;
                     }
                     self.geometry_transferred |= full_topology || emitted_geometry;
                     if full_topology {
                         self.mark_decoded(source_order);
                     } else {
-                        self.scan_warning(source_order, format_args!("Brep topology invalid; decoded child carriers retained"))?;
+                        self.scan_warning(
+                            source_order,
+                            format_args!("Brep topology invalid; decoded child carriers retained"),
+                        )?;
                     }
                 }
             }
             Err(crate::curves::GeometryError::Codec(error)) => return Err(error),
             Err(error) => {
-                self.scan_warning(source_order, format_args!("Brep geometry/topology degraded: {error}"))?;
+                self.scan_warning(
+                    source_order,
+                    format_args!("Brep geometry/topology degraded: {error}"),
+                )?;
             }
         }
         Ok(())
@@ -4124,9 +4378,13 @@ fn stage_extrusion_caps(
         kind: BodyKind::Sheet,
         regions: region_ids,
         transform: None,
-        name: association.name.as_deref().map(|name| {
-            crate::wire::copy_retained_string(ctx, name, "Rhino extrusion cap body name")
-        }).transpose()?,
+        name: association
+            .name
+            .as_deref()
+            .map(|name| {
+                crate::wire::copy_retained_string(ctx, name, "Rhino extrusion cap body name")
+            })
+            .transpose()?,
         color: association.color,
         visible: association.visible,
     });
@@ -4389,7 +4647,11 @@ fn stage_brep_carriers(
                     Ok(id) => id,
                     Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
                     Err(error) => {
-                        child_cause = Some(crate::wire::admitted_format(expand.ctx(), format_args!("C3 slot {index}: {error}"), "Rhino Brep fallback cause")?);
+                        child_cause = Some(crate::wire::admitted_format(
+                            expand.ctx(),
+                            format_args!("C3 slot {index}: {error}"),
+                            "Rhino Brep fallback cause",
+                        )?);
                         continue;
                     }
                 };
@@ -4397,11 +4659,19 @@ fn stage_brep_carriers(
                 c3.insert(index, id);
             }
             Ok(_) => {
-                child_cause = Some(crate::wire::admitted_format(expand.ctx(), format_args!("C3 slot {index} is not a curve"), "Rhino Brep fallback cause")?);
+                child_cause = Some(crate::wire::admitted_format(
+                    expand.ctx(),
+                    format_args!("C3 slot {index} is not a curve"),
+                    "Rhino Brep fallback cause",
+                )?);
             }
             Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
             Err(error) => {
-                child_cause = Some(crate::wire::admitted_format(expand.ctx(), format_args!("C3 slot {index}: {error}"), "Rhino Brep fallback cause")?);
+                child_cause = Some(crate::wire::admitted_format(
+                    expand.ctx(),
+                    format_args!("C3 slot {index}: {error}"),
+                    "Rhino Brep fallback cause",
+                )?);
             }
         }
     }
@@ -4428,7 +4698,11 @@ fn stage_brep_carriers(
                 let surface_key = match IdentityKey::try_new(key.to_owned()) {
                     Ok(key) => key,
                     Err(error) => {
-                        child_cause = Some(crate::wire::admitted_format(expand.ctx(), format_args!("surface slot {index}: {error}"), "Rhino Brep fallback cause")?);
+                        child_cause = Some(crate::wire::admitted_format(
+                            expand.ctx(),
+                            format_args!("surface slot {index}: {error}"),
+                            "Rhino Brep fallback cause",
+                        )?);
                         continue;
                     }
                 };
@@ -4500,15 +4774,27 @@ fn stage_brep_carriers(
                 }
                 Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
                 Err(error) => {
-                    child_cause = Some(crate::wire::admitted_format(expand.ctx(), format_args!("surface slot {index}: {error}"), "Rhino Brep fallback cause")?);
+                    child_cause = Some(crate::wire::admitted_format(
+                        expand.ctx(),
+                        format_args!("surface slot {index}: {error}"),
+                        "Rhino Brep fallback cause",
+                    )?);
                 }
             },
             Ok(_) => {
-                child_cause = Some(crate::wire::admitted_format(expand.ctx(), format_args!("surface slot {index} is not a surface"), "Rhino Brep fallback cause")?);
+                child_cause = Some(crate::wire::admitted_format(
+                    expand.ctx(),
+                    format_args!("surface slot {index} is not a surface"),
+                    "Rhino Brep fallback cause",
+                )?);
             }
             Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
             Err(error) => {
-                child_cause = Some(crate::wire::admitted_format(expand.ctx(), format_args!("surface slot {index}: {error}"), "Rhino Brep fallback cause")?);
+                child_cause = Some(crate::wire::admitted_format(
+                    expand.ctx(),
+                    format_args!("surface slot {index}: {error}"),
+                    "Rhino Brep fallback cause",
+                )?);
             }
         }
     }
@@ -4580,9 +4866,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         key.as_str(),
         &surfaces,
     )?;
-    staged
-        .warnings
-        .append_admitted(ctx, &mut pcurve_warnings)?;
+    staged.warnings.append_admitted(ctx, &mut pcurve_warnings)?;
     staged.draft.model_mut().pcurves = pcurves;
     let body_id = cadmpeg_ir::ids::BodyId::compose(
         &cadmpeg_ir::identity_namespace!("rhino", "object", "body"),
@@ -4959,7 +5243,12 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     );
     let (body_kind, body_kind_substituted) = brep.body_kind(ctx, writer_version)?;
     if let Some(loss) = body_kind_substituted {
-        crate::wire::reserve_collection(ctx, &mut staged.typed_losses, 1, "Rhino staged Brep typed losses")?;
+        crate::wire::reserve_collection(
+            ctx,
+            &mut staged.typed_losses,
+            1,
+            "Rhino staged Brep typed losses",
+        )?;
         staged.typed_losses.push(loss);
     }
     crate::curves::reserve_collection(
@@ -4976,9 +5265,11 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         },
         regions: body_regions,
         transform: None,
-        name: association.name.as_deref().map(|name| {
-            crate::wire::copy_retained_string(ctx, name, "Rhino staged Brep body name")
-        }).transpose()?,
+        name: association
+            .name
+            .as_deref()
+            .map(|name| crate::wire::copy_retained_string(ctx, name, "Rhino staged Brep body name"))
+            .transpose()?,
         color: association.color,
         visible: association.visible,
     });
@@ -4990,16 +5281,22 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     )?;
     for curve in &staged.draft.model().curves {
         staged.links.push(crate::wire::admitted_format(
-            ctx, format_args!("{}", curve.id), "Rhino staged Brep link text",
+            ctx,
+            format_args!("{}", curve.id),
+            "Rhino staged Brep link text",
         )?);
     }
     for surface in &staged.draft.model().surfaces {
         staged.links.push(crate::wire::admitted_format(
-            ctx, format_args!("{}", surface.id), "Rhino staged Brep link text",
+            ctx,
+            format_args!("{}", surface.id),
+            "Rhino staged Brep link text",
         )?);
     }
     staged.links.push(crate::wire::admitted_format(
-        ctx, format_args!("{body_id}"), "Rhino staged Brep link text",
+        ctx,
+        format_args!("{body_id}"),
+        "Rhino staged Brep link text",
     )?);
     let derived_ids = {
         let model = staged.draft.model();
@@ -5156,9 +5453,6 @@ fn scale_plane_pcurves(
     staged: &mut BrepDraft,
     scale: MillimeterScale,
 ) -> Result<(), crate::curves::GeometryError> {
-    if scale == MillimeterScale::IDENTITY {
-        return Ok(());
-    }
     fn insert_id(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         values: &mut BTreeSet<String>,
@@ -5173,6 +5467,9 @@ fn scale_plane_pcurves(
             )?);
         }
         Ok(())
+    }
+    if scale == MillimeterScale::IDENTITY {
+        return Ok(());
     }
     let mut plane_surfaces = BTreeSet::new();
     for surface in &staged.draft.model().surfaces {
@@ -6547,7 +6844,9 @@ pub(crate) fn decode(
                     expand.ctx(),
                     &mut context.report.typed_losses,
                     RhinoLossCode::HistoryEmbeddedGeometryDropped,
-                    format_args!("{failed} embedded history geometry value(s) could not be decoded"),
+                    format_args!(
+                        "{failed} embedded history geometry value(s) could not be decoded"
+                    ),
                 )?;
             }
             if dropped_dependencies != 0 {
@@ -6741,10 +7040,10 @@ fn full_source_attributes(
             crate::settings::UnitSystem::None => attribute!("unit_system", "none"),
             crate::settings::UnitSystem::Unset => attribute!("unit_system", "unset"),
             crate::settings::UnitSystem::Standard(value) => {
-                attribute!("unit_system", format_args!("standard:{}", value.value()))
+                attribute!("unit_system", format_args!("standard:{}", value.value()));
             }
             crate::settings::UnitSystem::Custom(unit) => {
-                attribute!("unit_system", format_args!("custom:{}", unit.name()))
+                attribute!("unit_system", format_args!("custom:{}", unit.name()));
             }
         }
         if let crate::settings::UnitSystem::Custom(unit) = &units.unit {

@@ -1997,7 +1997,10 @@ pub(crate) fn degraded_object_record(
         range: record.range.clone(),
         warning: crate::wire::admitted_format(
             ctx,
-            format_args!("bounded object record at {} degraded: {error}", record.range.start),
+            format_args!(
+                "bounded object record at {} degraded: {error}",
+                record.range.start
+            ),
             "Rhino degraded object warning",
         )?,
     })
@@ -2030,7 +2033,7 @@ pub(crate) fn resolve_identities(
                     index,
                     &mut seen_ids,
                 )?;
-                for warning in local_warnings.iter() {
+                for warning in &local_warnings {
                     warnings.push_coded_admitted(
                         ctx,
                         warning.code,
