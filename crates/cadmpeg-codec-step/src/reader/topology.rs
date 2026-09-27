@@ -1314,7 +1314,7 @@ fn build_wire_set(
     let mut used_vertices = BTreeSet::new();
     let mut wire_edges = Vec::new();
     let mut built_edges = Vec::new();
-    for edge_id in used_edges {
+    for edge_id in used_edges.iter().filter_map(Value::reference) {
         let edge = edefs.get(&edge_id)?;
         let (start, end) = edge.curve_vertices();
         let edge_suffix = IdentityKeyTail::empty()
@@ -2653,7 +2653,7 @@ fn build_one(
             )
             .ok_or(BuildError::Absent)?;
             let members = require_carrier(
-                named_refs(sr, shell_type, 1),
+                named_reference_values(sr, shell_type, 1),
                 failure,
                 shell_step,
                 CarrierKind::ShellFaceList,
@@ -2667,7 +2667,7 @@ fn build_one(
         }
         let sid = shell_identity(id, shell_step, scope_root);
         let mut face_ids = vec![];
-        for face_step in face_steps {
+        for face_step in face_steps.iter().filter_map(Value::reference) {
             if !used_faces.insert((shell_step, face_step)) {
                 continue;
             }
@@ -5182,13 +5182,14 @@ fn connected_face_set_type(record: &RawRecord) -> Option<&'static str> {
     most_specific(record, &["CONNECTED_FACE_SUB_SET", "CONNECTED_FACE_SET"])
 }
 
-fn connected_set_members(record: &RawRecord, set_type: &str) -> Option<Vec<u64>> {
+fn connected_set_members<'a>(record: &'a RawRecord, set_type: &str) -> Option<&'a [Value]> {
     let base_type = match set_type {
         "CONNECTED_EDGE_SUB_SET" => "CONNECTED_EDGE_SET",
         "CONNECTED_FACE_SUB_SET" => "CONNECTED_FACE_SET",
         _ => set_type,
     };
-    named_refs(record, set_type, 1).or_else(|| named_refs(record, base_type, 1))
+    named_reference_values(record, set_type, 1)
+        .or_else(|| named_reference_values(record, base_type, 1))
 }
 
 fn validate_subset_parent(
