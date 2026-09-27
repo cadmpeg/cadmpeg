@@ -53,6 +53,10 @@ const DEFAULT_HELICAL_SWEEP_TOLERANCE: f64 = 0.1;
 const DEFAULT_PART_SPIRAL_SEGMENT_TURNS: f64 = 1.0;
 const U64_UPPER_EXCLUSIVE: f64 = 18_446_744_073_709_551_616.0;
 
+fn malformed_design(ctx: &DecodeContext<'_>, message: std::fmt::Arguments<'_>) -> CodecError {
+    crate::resource::malformed_charged(ctx, message, "fcstd design diagnostic")
+}
+
 pub(crate) fn transfer(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -710,6 +714,7 @@ fn unique_named_property<'a>(properties: &[&'a PropertyRecord], name: &str) -> N
 }
 
 fn direct_spreadsheet_value<'a, 'input: 'a>(
+    ctx: &DecodeContext<'_>,
     xml: &'a roxmltree::Document<'input>,
     tag: &str,
     property_id: &str,
@@ -719,17 +724,17 @@ fn direct_spreadsheet_value<'a, 'input: 'a>(
         .filter(|node| node.has_tag_name(tag))
         .count();
     if total == 0 {
-        return Err(malformed(format!("{property_id} has no {tag} value")));
+        return Err(malformed_design(ctx, format_args!("{property_id} has no {tag} value")));
     }
     if total > 1 {
-        return Err(malformed(format!(
+        return Err(malformed_design(ctx, format_args!(
             "{property_id} has multiple {tag} values"
         )));
     }
     xml.root_element()
         .children()
         .find(|node| node.has_tag_name(tag))
-        .ok_or_else(|| malformed(format!("{property_id} has no direct {tag} value")))
+        .ok_or_else(|| malformed_design(ctx, format_args!("{property_id} has no direct {tag} value")))
 }
 
 fn append_spreadsheet(
@@ -743,30 +748,30 @@ fn append_spreadsheet(
     })
     .map_err(|_| malformed("spreadsheet has multiple cells properties"))?
     .ok_or_else(|| {
-        CodecError::malformed(format_args!(
+        malformed_design(ctx, format_args!(
             "spreadsheet {} has no cells property",
             object.id
         ))
     })?;
     let xml = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
-        CodecError::malformed(format_args!("invalid spreadsheet {}: {error}", property.id))
+        malformed_design(ctx, format_args!("invalid spreadsheet {}: {error}", property.id))
     })?;
-    let cells = direct_spreadsheet_value(&xml, "Cells", &property.id)?;
+    let cells = direct_spreadsheet_value(ctx, &xml, "Cells", &property.id)?;
     let declared = cells
         .attribute("Count")
         .and_then(|value| value.parse::<usize>().ok())
         .ok_or_else(|| {
-            CodecError::malformed(format_args!("{} has invalid Cells Count", property.id))
+            malformed_design(ctx, format_args!("{} has invalid Cells Count", property.id))
         })?;
     if declared > MAX_SKETCH_RECORDS {
-        return Err(CodecError::malformed(format_args!(
+        return Err(malformed_design(ctx, format_args!(
             "{} cell count exceeds {MAX_SKETCH_RECORDS}",
             property.id
         )));
     }
     let found = cells.children().filter(|node| node.has_tag_name("Cell")).count();
     if declared != found {
-        return Err(CodecError::malformed(format_args!(
+        return Err(malformed_design(ctx, format_args!(
             "{} declares {declared} cells but contains {}",
             property.id,
             found
@@ -776,7 +781,7 @@ fn append_spreadsheet(
     let mut merged_ranges: Vec<SpreadsheetRange> = Vec::new();
     for (index, cell) in cells.children().filter(|node| node.has_tag_name("Cell")).enumerate() {
         let address = cell.attribute("address").ok_or_else(|| {
-            CodecError::malformed(format_args!("{} cell has no address", property.id))
+            malformed_design(ctx, format_args!("{} cell has no address", property.id))
         })?;
         let content = cell.attribute("content").unwrap_or_default();
         let name = cell.attribute("alias").unwrap_or(address);
@@ -799,7 +804,7 @@ fn append_spreadsheet(
             }
         }
         let cell_address = CellAddress::parse(address).ok_or_else(|| {
-            CodecError::malformed(format_args!("{} cell has invalid address", property.id))
+            malformed_design(ctx, format_args!("{} cell has invalid address", property.id))
         })?;
         let address_key = crate::native::encoded_segment_charged(
             ctx, address, "fcstd spreadsheet cell address key",
@@ -888,7 +893,7 @@ fn spreadsheet_dimensions(
         property.name == property_name && property.type_name == type_name
     })
     .map_err(|_| {
-        malformed(format!(
+        malformed_design(ctx, format_args!(
             "spreadsheet has multiple {property_name} properties"
         ))
     })?
@@ -896,21 +901,21 @@ fn spreadsheet_dimensions(
         return Ok(Vec::new());
     };
     let xml = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
-        CodecError::malformed(format_args!(
+        malformed_design(ctx, format_args!(
             "invalid spreadsheet dimension {}: {error}",
             property.id
         ))
     })?;
-    let root = direct_spreadsheet_value(&xml, container, &property.id)?;
+    let root = direct_spreadsheet_value(ctx, &xml, container, &property.id)?;
     let found = root.children().filter(|node| node.has_tag_name(element)).count();
     let declared = root
         .attribute("Count")
         .and_then(|value| value.parse::<usize>().ok())
         .ok_or_else(|| {
-            CodecError::malformed(format_args!("{} has invalid dimension count", property.id))
+            malformed_design(ctx, format_args!("{} has invalid dimension count", property.id))
         })?;
     if declared != found || declared > MAX_SKETCH_RECORDS {
-        return Err(CodecError::malformed(format_args!(
+        return Err(malformed_design(ctx, format_args!(
             "{} dimension count does not match its records",
             property.id
         )));
@@ -918,13 +923,13 @@ fn spreadsheet_dimensions(
     let mut dimensions = collection_vec(ctx, found, "fcstd spreadsheet dimensions")?;
     for record in root.children().filter(|node| node.has_tag_name(element)) {
             let name = record.attribute("name").ok_or_else(|| {
-                CodecError::malformed(format_args!("{} dimension has no name", property.id))
+                malformed_design(ctx, format_args!("{} dimension has no name", property.id))
             })?;
             let pixels = record
                 .attribute(value_name)
                 .and_then(|value| value.parse::<u32>().ok())
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
+                    malformed_design(ctx, format_args!(
                         "{} dimension has invalid size",
                         property.id
                     ))
@@ -933,7 +938,7 @@ fn spreadsheet_dimensions(
                 CellAddress::parse(&crate::resource::retained_suffix(ctx, name, "1", "fcstd spreadsheet column address")?)
                     .map(cadmpeg_ir::CellAddress::col)
                     .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
+                        malformed_design(ctx, format_args!(
                             "{} dimension has invalid column {name}",
                             property.id
                         ))
@@ -943,14 +948,14 @@ fn spreadsheet_dimensions(
                     .ok()
                     .filter(|row| *row > 0)
                     .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
+                        malformed_design(ctx, format_args!(
                             "{} dimension has invalid row {name}",
                             property.id
                         ))
                     })?
             };
             let index = std::num::NonZeroU32::new(index).ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                malformed_design(ctx, format_args!(
                     "{} dimension index must be nonzero",
                     property.id
                 ))
@@ -1133,6 +1138,7 @@ fn sketch_carrier<'a, 'input>(
 }
 
 fn validate_sketch_carrier(
+    ctx: &DecodeContext<'_>,
     kind: &str,
     carrier: &roxmltree::Node<'_, '_>,
     ordinal: usize,
@@ -1157,7 +1163,7 @@ fn validate_sketch_carrier(
     if carrier.tag_name().name() == expected {
         return Ok(());
     }
-    Err(CodecError::malformed(format_args!(
+    Err(malformed_design(ctx, format_args!(
         "sketch Geometry record {ordinal} declares {kind} but carries <{}>, expected <{expected}>",
         carrier.tag_name().name()
     )))
@@ -1178,7 +1184,7 @@ fn external_geometry_metadata(
         });
     let extension = extensions.next();
     if extensions.next().is_some() {
-        return Err(malformed(format!(
+        return Err(malformed_design(ctx, format_args!(
             "sketch ExternalGeo Geometry record {ordinal} has multiple ExternalGeometryExtension values"
         )));
     }
@@ -1186,7 +1192,7 @@ fn external_geometry_metadata(
     let geometry_ref = node.attribute("ref");
     if let (Some(extension_ref), Some(geometry_ref)) = (extension_ref, geometry_ref) {
         if extension_ref != geometry_ref {
-            return Err(malformed(format!(
+            return Err(malformed_design(ctx, format_args!(
                 "sketch ExternalGeo Geometry record {ordinal} has conflicting Ref and ref values"
             )));
         }
@@ -1200,7 +1206,7 @@ fn external_geometry_metadata(
         .and_then(|extension| extension.attribute("Flags"))
         .map(|value| {
             value.parse::<u64>().map_err(|_| {
-                malformed(format!(
+                malformed_design(ctx, format_args!(
                     "sketch ExternalGeo Geometry record {ordinal} has invalid Flags"
                 ))
             })
@@ -1210,7 +1216,7 @@ fn external_geometry_metadata(
         .attribute("flags")
         .map(|value| {
             value.parse::<u64>().map_err(|_| {
-                malformed(format!(
+                malformed_design(ctx, format_args!(
                     "sketch ExternalGeo Geometry record {ordinal} has invalid flags"
                 ))
             })
@@ -1218,7 +1224,7 @@ fn external_geometry_metadata(
         .transpose()?;
     if let (Some(extension_flags), Some(geometry_flags)) = (extension_flags, geometry_flags) {
         if extension_flags != geometry_flags {
-            return Err(malformed(format!(
+            return Err(malformed_design(ctx, format_args!(
                 "sketch ExternalGeo Geometry record {ordinal} has conflicting Flags and flags values"
             )));
         }
@@ -1233,7 +1239,7 @@ fn validate_external_geo_prefix(
     owner: &str,
 ) -> Result<(), CodecError> {
     if records.len() < EXTERNAL_GEO_AXIS_COUNT {
-        return Err(malformed(format!(
+        return Err(malformed_design(ctx, format_args!(
             "{owner} must contain the two reserved ExternalGeo axis records"
         )));
     }
@@ -1242,20 +1248,20 @@ fn validate_external_geo_prefix(
     {
         let node = records[index];
         let id = node.attribute("id").ok_or_else(|| {
-            malformed(format!(
+            malformed_design(ctx, format_args!(
                 "{owner} reserved ExternalGeo record {} has no id",
                 index + 1
             ))
         })?;
         if id.parse::<i64>().ok() != Some(expected_value) {
-            return Err(malformed(format!(
+            return Err(malformed_design(ctx, format_args!(
                 "{owner} reserved ExternalGeo record {} has id {id}, expected {expected_label}",
                 index + 1
             )));
         }
         let (reference, _) = external_geometry_metadata(ctx, node, index + 1)?;
         if reference.is_some() {
-            return Err(malformed(format!(
+            return Err(malformed_design(ctx, format_args!(
                 "{owner} reserved ExternalGeo record {} has an external reference",
                 index + 1
             )));
@@ -1281,7 +1287,7 @@ fn external_link_indices(
                 continue;
             };
             if indices.contains_key(&key) {
-                return Err(malformed(format!(
+                return Err(malformed_design(ctx, format_args!(
                     "sketch ExternalGeometry links contain duplicate key {key}"
                 )));
             }
@@ -1320,13 +1326,13 @@ fn parse_sketch(
     let mut matched_references = BTreeSet::new();
     if let Some(geometry) = property(properties, "Geometry") {
         if geometry.type_name != "Part::PropertyGeometryList" {
-            return Err(CodecError::malformed(format_args!(
+            return Err(malformed_design(ctx, format_args!(
                 "{} has runtime type {}, expected Part::PropertyGeometryList",
                 geometry.id, geometry.type_name
             )));
         }
         let xml = roxmltree::Document::parse(geometry.xml.text()).map_err(|error| {
-            CodecError::malformed(format_args!(
+            malformed_design(ctx, format_args!(
                 "invalid sketch geometry {}: {error}",
                 geometry.id
             ))
@@ -1335,7 +1341,7 @@ fn parse_sketch(
         for (index, node) in records.into_iter().enumerate() {
             let carrier = sketch_carrier(node);
             if let (Some(kind), Some(carrier)) = (node.attribute("type"), carrier.as_ref()) {
-                validate_sketch_carrier(kind, carrier, index + 1)?;
+                validate_sketch_carrier(ctx, kind, carrier, index + 1)?;
             }
             let native_kind = node
                 .attribute("type")
@@ -1372,13 +1378,13 @@ fn parse_sketch(
     }
     if let Some(external_geometry) = property(properties, "ExternalGeo") {
         if external_geometry.type_name != "Part::PropertyGeometryList" {
-            return Err(CodecError::malformed(format_args!(
+            return Err(malformed_design(ctx, format_args!(
                 "{} has runtime type {}, expected Part::PropertyGeometryList",
                 external_geometry.id, external_geometry.type_name
             )));
         }
         let xml = roxmltree::Document::parse(external_geometry.xml.text()).map_err(|error| {
-            CodecError::malformed(format_args!(
+            malformed_design(ctx, format_args!(
                 "invalid external sketch geometry {}: {error}",
                 external_geometry.id
             ))
@@ -1389,7 +1395,7 @@ fn parse_sketch(
         let references = property(properties, "ExternalGeometry");
         if let Some(references) = references {
             if references.type_name != "App::PropertyLinkSubList" {
-                return Err(malformed(format!(
+                return Err(malformed_design(ctx, format_args!(
                     "{} has runtime type {}, expected App::PropertyLinkSubList",
                     references.id, references.type_name
                 )));
@@ -1407,7 +1413,7 @@ fn parse_sketch(
                 .and_then(|cache_reference| link_indices.get(cache_reference).copied());
             if let (Some(cache_reference), None) = (cache_reference.as_deref(), reference_index) {
                 if !missing {
-                    return Err(malformed(format!(
+                    return Err(malformed_design(ctx, format_args!(
                         "sketch ExternalGeo Geometry record {} reference {cache_reference} has no matching ExternalGeometry link",
                         external_index + 3
                     )));
@@ -1419,7 +1425,7 @@ fn parse_sketch(
             }
             let carrier = sketch_carrier(node);
             if let (Some(kind), Some(carrier)) = (node.attribute("type"), carrier.as_ref()) {
-                validate_sketch_carrier(kind, carrier, external_index + 3)?;
+                validate_sketch_carrier(ctx, kind, carrier, external_index + 3)?;
             }
             let native_kind = node
                 .attribute("type")
@@ -1942,13 +1948,13 @@ fn parse_constraints(
         return Ok((Vec::new(), Vec::new()));
     };
     if property.type_name != "Sketcher::PropertyConstraintList" {
-        return Err(CodecError::malformed(format_args!(
+        return Err(malformed_design(ctx, format_args!(
             "{} has runtime type {}, expected Sketcher::PropertyConstraintList",
             property.id, property.type_name
         )));
     }
     let xml = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
-        CodecError::malformed(format_args!(
+        malformed_design(ctx, format_args!(
             "invalid sketch constraints {}: {error}",
             property.id
         ))
@@ -1965,7 +1971,7 @@ fn parse_constraints(
             },
         };
         let operands = constraint_operands(ctx, node).map_err(|error| match error {
-            CodecError::Malformed(message) => CodecError::malformed(format_args!(
+            CodecError::Malformed(message) => malformed_design(ctx, format_args!(
                 "{} constraint {}: {message}", property.id, index + 1
             )),
             error => error,
@@ -2123,7 +2129,7 @@ fn parse_constraints(
         for (entity, position) in operands.iter()
             .filter(|(entity, position)| *entity < 0 || resolve(*entity, *position).is_none()) {
             let native_kind = cadmpeg_core::text::NonBlankString::new(format!("position:{position}"))
-                .ok_or_else(|| CodecError::malformed(format_args!(
+                .ok_or_else(|| malformed_design(ctx, format_args!(
                     "{} constraint {} has an empty source operand kind", property.id, index + 1
                 )))?;
             reserve_vec_items(ctx, &mut native_operands, 1, "fcstd native constraint operands")?;
@@ -2683,7 +2689,7 @@ fn direct_counted_records<'a, 'input>(
     let mut containers = xml.root_element().children()
         .filter(|node| node.is_element() && node.has_tag_name(container_tag));
     let Some(container) = containers.next() else {
-        return Err(CodecError::malformed(format_args!(
+        return Err(malformed_design(ctx, format_args!(
             "{owner} must contain exactly one direct {container_tag} value"
         )));
     };
@@ -2694,7 +2700,7 @@ fn direct_counted_records<'a, 'input>(
             .count()
             != 1
     {
-        return Err(CodecError::malformed(format_args!(
+        return Err(malformed_design(ctx, format_args!(
             "{owner} must contain exactly one direct {container_tag} value"
         )));
     }
@@ -2702,16 +2708,16 @@ fn direct_counted_records<'a, 'input>(
         .attribute("count")
         .and_then(|value| value.parse::<usize>().ok())
         .ok_or_else(|| {
-            CodecError::malformed(format_args!("{owner} has an invalid record count"))
+            malformed_design(ctx, format_args!("{owner} has an invalid record count"))
         })?;
     if declared > MAX_SKETCH_RECORDS {
-        return Err(CodecError::malformed(format_args!(
+        return Err(malformed_design(ctx, format_args!(
             "{owner} record count exceeds {MAX_SKETCH_RECORDS}"
         )));
     }
     let found = container.children().filter(roxmltree::Node::is_element).count();
     if container.children().filter(roxmltree::Node::is_element).any(|node| !node.has_tag_name(record_tag)) {
-        return Err(CodecError::malformed(format_args!(
+        return Err(malformed_design(ctx, format_args!(
             "{owner} has a non-{record_tag} direct child"
         )));
     }
@@ -2721,12 +2727,12 @@ fn direct_counted_records<'a, 'input>(
         .count()
         != found
     {
-        return Err(CodecError::malformed(format_args!(
+        return Err(malformed_design(ctx, format_args!(
             "{owner} has nested {record_tag} records"
         )));
     }
     if declared != found {
-        return Err(CodecError::malformed(format_args!(
+        return Err(malformed_design(ctx, format_args!(
             "{owner} declares {declared} records but contains {}",
             found
         )));
@@ -3939,6 +3945,7 @@ struct ExtrudeDrafts {
 /// the sweep direction. That refusal is reported, not swallowed: dropping it
 /// would delete the whole feature over one property.
 fn taper_angle(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     key: &str,
 ) -> Result<Option<cadmpeg_ir::scalar::SlopeAngle>, CodecError> {
@@ -3947,7 +3954,7 @@ fn taper_angle(
     };
     cadmpeg_ir::scalar::SlopeAngle::try_from(degrees.get().to_radians())
         .map(Some)
-        .map_err(|error| CodecError::malformed(format!("{key}: {error}")))
+        .map_err(|error| malformed_design(ctx, format_args!("{key}: {error}")))
 }
 
 /// Whether the record states the legacy two-length extent.
@@ -3993,13 +4000,13 @@ fn extrusion_definition(
     // second side: reading a property its kind does not carry is over-reach,
     // and refusing the whole feature over it deletes what the record states.
     let taper_second = if extrude_side_type(properties) == Some(1) {
-        taper_angle(properties, "TaperAngle2")?
+        taper_angle(ctx, properties, "TaperAngle2")?
     } else {
         None
     };
     let drafts = ExtrudeDrafts {
-        taper: taper_angle(properties, "TaperAngle")?,
-        taper_reverse: taper_angle(properties, "TaperAngleRev")?,
+        taper: taper_angle(ctx, properties, "TaperAngle")?,
+        taper_reverse: taper_angle(ctx, properties, "TaperAngleRev")?,
         taper_second,
     };
     Ok(extrusion_shape(
@@ -6866,7 +6873,7 @@ pub(crate) fn census(
     let mut census = collection_vec(ctx, count, "FreeCAD design census records")?;
     for object in objects.iter().filter(|object| is_design_object(&object.type_name)) {
             let feature = features_by_native.get(object.id.as_str()).ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                malformed_design(ctx, format_args!(
                     "design object {} has no neutral history projection",
                     object.id
                 ))
@@ -6876,7 +6883,7 @@ pub(crate) fn census(
                 FeatureDefinition::Operation(operation) => (operation, false),
             };
             let value = serde_json::to_value(definition).map_err(|error| {
-                CodecError::malformed(format_args!(
+                malformed_design(ctx, format_args!(
                     "cannot classify design feature {}: {error}",
                     feature.id
                 ))
@@ -6885,7 +6892,7 @@ pub(crate) fn census(
                 .get("definition")
                 .and_then(serde_json::Value::as_str)
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
+                    malformed_design(ctx, format_args!(
                         "design feature {} has no semantic family tag",
                         feature.id
                     ))
