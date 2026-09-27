@@ -5657,14 +5657,14 @@ pub(crate) struct CurveTransfer {
     pub(crate) procedural: Vec<(CurveId, ProceduralCurve)>,
 }
 
-fn clone_nurbs_curve(ctx: &DecodeContext<'_>, nurbs: &NurbsCurve) -> Result<NurbsCurve, CodecError> {
+pub(crate) fn clone_nurbs_curve(ctx: &DecodeContext<'_>, nurbs: &NurbsCurve) -> Result<NurbsCurve, CodecError> {
     let count = nurbs.knots().len().checked_add(nurbs.pole_count())
         .ok_or_else(|| crate::resource::collection_allocation_failed(ctx, u64::MAX, "FreeCAD NURBS curve copy"))?;
     ctx.charge_collection_items(count as u64, "FreeCAD NURBS curve copy")?;
     nurbs.try_clone().map_err(|_| crate::resource::collection_allocation_failed(ctx, count as u64, "FreeCAD NURBS curve copy"))
 }
 
-fn clone_nurbs_surface(ctx: &DecodeContext<'_>, nurbs: &NurbsSurface) -> Result<NurbsSurface, CodecError> {
+pub(crate) fn clone_nurbs_surface(ctx: &DecodeContext<'_>, nurbs: &NurbsSurface) -> Result<NurbsSurface, CodecError> {
     let count = nurbs.u_count().checked_mul(nurbs.v_count())
         .and_then(|count| count.checked_add(nurbs.u_count()))
         .and_then(|count| count.checked_add(nurbs.u_knots().len()))
@@ -5690,7 +5690,7 @@ fn clone_surface_geometry(ctx: &DecodeContext<'_>, geometry: &SurfaceGeometry) -
     }
 }
 
-fn clone_source_association(ctx: &DecodeContext<'_>, source: &SourceObjectAssociation) -> Result<SourceObjectAssociation, CodecError> {
+pub(crate) fn clone_source_association(ctx: &DecodeContext<'_>, source: &SourceObjectAssociation) -> Result<SourceObjectAssociation, CodecError> {
     Ok(SourceObjectAssociation {
         format: source.format,
         object_id: cadmpeg_core::text::NonBlankString::new(retained_string(ctx, source.object_id.as_str(), "FreeCAD geometry source association")?)

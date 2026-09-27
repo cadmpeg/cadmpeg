@@ -1536,13 +1536,16 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 .find(|curve| curve.id == base_id)
                 .ok_or_else(|| {
                     CodecError::malformed(format_args!("missing curve table entry {source}"))
-                })?
-                .clone();
+                })?;
+            let geometry = transform_curve(self.ctx, &base.geometry, transform)?;
+            let source_object = base.source_object.as_ref()
+                .map(|source| crate::brep::clone_source_association(self.ctx, source))
+                .transpose()?;
             reserve_vec_items(self.ctx, &mut ir.model.curves, 1, "FreeCAD curves records")?;
             ir.model.curves.push(Curve {
                 id: copied_identity(self.ctx, id.as_str(), "FreeCAD located curve record identity")?,
-                geometry: transform_curve(&base.geometry, transform)?,
-                source_object: base.source_object,
+                geometry,
+                source_object,
             });
         }
         Ok(id)
@@ -1577,8 +1580,11 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 .find(|surface| surface.id == base_id)
                 .ok_or_else(|| {
                     CodecError::malformed(format_args!("missing surface table entry {source}"))
-                })?
-                .clone();
+                })?;
+            let geometry = transform_surface(self.ctx, &base.geometry, transform)?;
+            let source_object = base.source_object.as_ref()
+                .map(|source| crate::brep::clone_source_association(self.ctx, source))
+                .transpose()?;
             let has_procedural_construction =
                 ir.model.procedural_surfaces.iter().any(|surface| {
                     ir.model.procedural_surface_owner(&surface.id) == Some(&base_id)
@@ -1586,8 +1592,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             reserve_vec_items(self.ctx, &mut ir.model.surfaces, 1, "FreeCAD surfaces records")?;
             ir.model.surfaces.push(Surface {
                 id: copied_identity(self.ctx, id.as_str(), "FreeCAD located surface record identity")?,
-                geometry: transform_surface(&base.geometry, transform)?,
-                source_object: base.source_object,
+                geometry,
+                source_object,
             });
             if has_procedural_construction {
                 ir.model
@@ -2055,23 +2061,22 @@ fn uniform_scale(transform: Transform) -> Result<cadmpeg_ir::scalar::PositiveRea
 }
 
 fn transform_curve(
+    ctx: &DecodeContext<'_>,
     geometry: &CurveGeometry,
     transform: Transform,
 ) -> Result<CurveGeometry, CodecError> {
     ensure_similarity(transform)?;
+    let solved = geometry.solved().ok_or_else(|| {
+        cadmpeg_core::CodecError::NotImplemented("carrier has no solved geometry".into())
+    })?;
+    let basis = match solved {
+        SolvedCurveGeometry::Nurbs(nurbs) =>
+            SolvedCurveGeometry::Nurbs(crate::brep::clone_nurbs_curve(ctx, nurbs)?),
+        other => other.clone(),
+    };
     Ok(CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
         cadmpeg_ir::geometry::PlacedCurve::try_new(
-            Box::new(
-                geometry
-                    .clone()
-                    .solved()
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::NotImplemented(
-                            "carrier has no solved geometry".into(),
-                        )
-                    })?
-                    .clone(),
-            ),
+            Box::new(basis),
             transform,
         )
         .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -2079,23 +2084,22 @@ fn transform_curve(
 }
 
 fn transform_surface(
+    ctx: &DecodeContext<'_>,
     geometry: &SurfaceGeometry,
     transform: Transform,
 ) -> Result<SurfaceGeometry, CodecError> {
     ensure_similarity(transform)?;
+    let solved = geometry.solved().ok_or_else(|| {
+        cadmpeg_core::CodecError::NotImplemented("carrier has no solved geometry".into())
+    })?;
+    let basis = match solved {
+        SolvedSurfaceGeometry::Nurbs(nurbs) =>
+            SolvedSurfaceGeometry::Nurbs(crate::brep::clone_nurbs_surface(ctx, nurbs)?),
+        other => other.clone(),
+    };
     Ok(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
         cadmpeg_ir::geometry::PlacedSurface::try_new(
-            Box::new(
-                geometry
-                    .clone()
-                    .solved()
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::NotImplemented(
-                            "carrier has no solved geometry".into(),
-                        )
-                    })?
-                    .clone(),
-            ),
+            Box::new(basis),
             transform,
         )
         .map_err(cadmpeg_core::CodecError::malformed)?,

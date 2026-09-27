@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::tests::{assert_codec_collection_refusal, assert_codec_retained_refusal, triangulated_face_archive};
-use super::{copy_shape_for_transfer, pcurve_geometry, Builder, PcurveGeometryError};
+use super::{copy_shape_for_transfer, pcurve_geometry, transform_curve, transform_surface, Builder, PcurveGeometryError};
 use crate::brep::{NurbsCurve2d, ShapePayload, ShapePayloadRecord, Tables, TextCurve2d, TextEdgeRepresentation, TextPolygon3d, TextTShape, TextTShapeGeometry, TextTShapes};
 use crate::test_support::assert_retained_refusal_at;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -13,6 +13,59 @@ use cadmpeg_ir::ids::EdgeId;
 use cadmpeg_ir::ids::{CurveId, RegionId, ShellId, SurfaceId, VertexId};
 use cadmpeg_ir::scalar::NonNegativeReal;
 use cadmpeg_ir::transform::Transform;
+
+#[test]
+fn placed_nurbs_curve_basis_refuses_at_collection_limit() {
+    let nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_finite_lanes(
+        1,
+        vec![FiniteReal::ZERO, FiniteReal::ZERO, FiniteReal::ONE, FiniteReal::ONE],
+        vec![FinitePoint3::ZERO; 2],
+        None,
+        false,
+    ).expect("valid NURBS curve");
+    let geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(nurbs));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 5;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert!(matches!(transform_curve(&ctx, &geometry, placed_transform()),
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "FreeCAD NURBS curve copy"));
+}
+
+#[test]
+fn placed_nurbs_surface_basis_refuses_at_collection_limit() {
+    use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    let knots = vec![FiniteReal::ZERO, FiniteReal::ZERO, FiniteReal::ONE, FiniteReal::ONE];
+    let axis = || NurbsSurfaceAxis::new(1, knots.clone(), false);
+    let nurbs = NurbsSurface::from_finite_lanes(
+        axis(), axis(), NurbsSurfaceLanes::new(vec![vec![FinitePoint3::ZERO; 2]; 2], None), false,
+    ).expect("valid NURBS surface");
+    let geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(nurbs));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 13;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert!(matches!(transform_surface(&ctx, &geometry, placed_transform()),
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "FreeCAD NURBS surface copy"));
+}
+
+#[test]
+fn placed_geometry_source_association_refuses_at_retained_limit() {
+    let source = cadmpeg_ir::SourceObjectAssociation {
+        format: cadmpeg_ir::CodecFormat::Fcstd,
+        object_id: cadmpeg_core::text::NonBlankString::new("source").expect("nonblank source"),
+        name: None,
+        color: None,
+        visible: None,
+        layer: None,
+        instance_path: Vec::new(),
+    };
+    assert_retained_refusal_at(&[], "FreeCAD geometry source association", |ctx| {
+        crate::brep::clone_source_association(ctx, &source)
+    });
+}
 
 fn pcurve_nurbs(rational: bool) -> TextCurve2d {
     TextCurve2d::Nurbs(NurbsCurve2d {
