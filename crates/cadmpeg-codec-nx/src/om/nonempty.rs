@@ -16,7 +16,7 @@ impl<T> NonEmpty<T> {
         })
     }
 
-    pub(crate) fn iter(&self) -> impl DoubleEndedIterator<Item = &T> {
+    pub(crate) fn iter(&self) -> impl DoubleEndedIterator<Item = &T> + Clone {
         std::iter::once(&self.first).chain(&self.rest)
     }
 

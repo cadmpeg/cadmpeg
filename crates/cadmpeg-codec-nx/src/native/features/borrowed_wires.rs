@@ -8,6 +8,8 @@ use super::{
     ColumnIndexRowKind, FeatureBodyReference, FeatureDatumCsysConstruction,
     FeatureDatumCsysDescriptor, FeatureInputBlockIdentityGroup, FeatureInputColumnTarget,
     FeatureInputColumnTargetRow, FeatureOperationObjectReference, FeatureParameterUse,
+    FeaturePayloadScalar, FeatureScalarPayload, FeatureSketchConstructionInputs,
+    FeatureSketchPayloadScalarLane,
 };
 use crate::iter_wire::IterWire;
 
@@ -200,17 +202,93 @@ impl Serialize for FeatureDatumCsysDescriptor {
     }
 }
 
+impl Serialize for FeaturePayloadScalar {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut wire = serializer.serialize_map(None)?;
+        wire.serialize_entry("id", &self.id)?;
+        wire.serialize_entry("operation_label", &self.operation_label)?;
+        match &self.payload {
+            FeatureScalarPayload::DatumCsys { datum_csys_payload } => {
+                wire.serialize_entry("datum_csys_payload", datum_csys_payload)?
+            }
+            FeatureScalarPayload::Construction {
+                construction_payload,
+            } => wire.serialize_entry("construction_payload", construction_payload)?,
+        }
+        wire.serialize_entry("ordinal", &self.ordinal)?;
+        wire.serialize_entry("field_code", &self.field_code)?;
+        wire.serialize_entry("value", &self.scalar.value().get())?;
+        wire.serialize_entry("raw_value", &self.scalar.raw())?;
+        wire.serialize_entry("payload_offset", &self.payload_offset)?;
+        wire.serialize_entry("source_offset", &self.source_offset)?;
+        wire.end()
+    }
+}
+
+impl Serialize for FeatureSketchConstructionInputs {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut wire = serializer.serialize_map(None)?;
+        wire.serialize_entry("id", &self.id)?;
+        wire.serialize_entry("operation_label", &self.operation_label)?;
+        wire.serialize_entry("sketch_record", &self.sketch_record)?;
+        wire.serialize_entry(
+            "member_references",
+            &IterWire(self.members.iter().map(|member| member.reference.as_str())),
+        )?;
+        wire.serialize_entry(
+            "member_data_blocks",
+            &IterWire(self.members.iter().map(|member| member.data_block.as_str())),
+        )?;
+        wire.serialize_entry("terminal_reference", &self.terminal_reference)?;
+        wire.serialize_entry("terminal_data_block", &self.terminal_data_block)?;
+        wire.end()
+    }
+}
+
+impl Serialize for FeatureSketchPayloadScalarLane {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut wire = serializer.serialize_map(None)?;
+        wire.serialize_entry("id", &self.id)?;
+        wire.serialize_entry("operation_label", &self.operation_label)?;
+        wire.serialize_entry("construction_payload", &self.construction_payload)?;
+        wire.serialize_entry("ordinal", &self.ordinal)?;
+        wire.serialize_entry("discriminator", self.lane.form().discriminator())?;
+        wire.serialize_entry(
+            "values",
+            &IterWire(self.lane.iter().map(|(_, scalar, _)| scalar.value().get())),
+        )?;
+        wire.serialize_entry(
+            "raw_values",
+            &IterWire(self.lane.iter().map(|(_, scalar, _)| scalar.raw())),
+        )?;
+        wire.serialize_entry(
+            "value_payload_offsets",
+            &IterWire(self.lane.iter().map(|(offset, _, _)| offset)),
+        )?;
+        wire.serialize_entry("terminator_payload_offset", &self.lane.end())?;
+        wire.serialize_entry("source_offset", &self.source_offset)?;
+        wire.serialize_entry(
+            "value_source_offsets",
+            &IterWire(self.lane.iter().map(|(_, _, source)| *source)),
+        )?;
+        wire.serialize_entry("terminator_source_offset", &self.terminator_source_offset)?;
+        wire.end()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::{
         FeatureBodyReferenceWire, FeatureDatumCsysConstructionWire, FeatureDatumCsysDescriptorWire,
         FeatureInputBlockIdentityGroupWire, FeatureInputColumnTargetWire,
-        FeatureOperationObjectReferenceWire, FeatureParameterUseWire,
+        FeatureOperationObjectReferenceWire, FeatureParameterUseWire, FeaturePayloadScalarWire,
+        FeatureSketchConstructionInputsWire, FeatureSketchPayloadScalarLaneWire,
     };
     use super::{
         FeatureBodyReference, FeatureDatumCsysConstruction, FeatureDatumCsysDescriptor,
         FeatureInputBlockIdentityGroup, FeatureInputColumnTarget, FeatureOperationObjectReference,
-        FeatureParameterUse,
+        FeatureParameterUse, FeaturePayloadScalar, FeatureSketchConstructionInputs,
+        FeatureSketchPayloadScalarLane,
     };
 
     macro_rules! route_tests {
@@ -286,6 +364,27 @@ mod tests {
         FeatureDatumCsysDescriptor,
         FeatureDatumCsysDescriptorWire,
         r#"{"id":"nx:feature:datum-csys-descriptor#0","operation_label":"operation","construction":"construction","reference_ordinal":7,"data_block":"block","prefix":[2,1],"identity":"012345678901234567890123456789","suffix":[63,65],"source_offset":10,"identity_source_offset":12}"#
+    );
+    route_tests!(
+        payload_scalar_borrowed_wire_preserves_bytes,
+        payload_scalar_native_limit_refuses_before_clone,
+        FeaturePayloadScalar,
+        FeaturePayloadScalarWire,
+        r#"{"id":"nx:feature:payload-scalar#0","operation_label":"operation","datum_csys_payload":"payload","ordinal":0,"field_code":100,"value":2.0,"raw_value":[48,0,0,0,0,0,0,0],"payload_offset":10,"source_offset":20}"#
+    );
+    route_tests!(
+        sketch_construction_inputs_borrowed_wire_preserves_bytes,
+        sketch_construction_inputs_native_limit_refuses_before_clone,
+        FeatureSketchConstructionInputs,
+        FeatureSketchConstructionInputsWire,
+        r#"{"id":"nx:feature:sketch-inputs#0","operation_label":"operation","sketch_record":"sketch","member_references":["reference"],"member_data_blocks":["block"],"terminal_reference":"terminal","terminal_data_block":"last"}"#
+    );
+    route_tests!(
+        sketch_scalar_lane_borrowed_wire_preserves_bytes,
+        sketch_scalar_lane_native_limit_refuses_before_clone,
+        FeatureSketchPayloadScalarLane,
+        FeatureSketchPayloadScalarLaneWire,
+        r#"{"id":"nx:feature:sketch-scalar-lane#0","operation_label":"operation","construction_payload":"payload","ordinal":0,"discriminator":[37,37,65,0,4,1,7,1,192,69,16,0,128,134,2,0,1,0],"values":[2.5,4.0],"raw_values":[[80,32,0,0],[80,128,0,0]],"value_payload_offsets":[18,22],"terminator_payload_offset":26,"source_offset":100,"value_source_offsets":[118,122],"terminator_source_offset":126}"#
     );
 
     #[test]
