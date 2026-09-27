@@ -20,11 +20,6 @@ pub(crate) fn named_entries_charged<V>(
                 ctx, &[record, " states a property with a blank key"], "", operation,
             )?));
         };
-        if keyed.contains_key(&key) {
-            return Err(CodecError::Malformed(retained_join(
-                ctx, &[record, " states the property ", key.as_str(), " a second time"], "", operation,
-            )?));
-        }
         ctx.charge_collection_items(1, operation)?;
         keyed.insert(key, value);
     }
