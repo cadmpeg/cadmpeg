@@ -180,7 +180,7 @@ pub(super) fn decode(
             targets([id], ctx)?,
             None,
             PmiDefinition::DatumTarget {
-                form: datum_target_form(&form),
+                form: datum_target_form(&form, ctx)?,
                 identification,
                 basis: Vec::new(),
             },
@@ -255,11 +255,11 @@ pub(super) fn decode(
         typed.extend(datum_records);
     }
 
-    for id in exchange.matching_entity_ids(|name| dimension_kind(Some(name)).is_some()) {
+    for id in exchange.matching_entity_ids(is_dimension_name) {
         let Some(record) = exchange.records().get(&id) else {
             continue;
         };
-        let Some((dimension_name, mut kind)) = dimension_descriptor(record) else {
+        let Some((dimension_name, mut kind)) = dimension_descriptor(record, ctx)? else {
             continue;
         };
         let mut name = None;
@@ -302,12 +302,15 @@ pub(super) fn decode(
                 }
                 category
             } else {
-                name.clone()
+                None
             };
-            kind = match category.as_deref().map(str::to_ascii_lowercase).as_deref() {
-                Some("diameter") => DimensionKind::Diameter,
-                Some("radius") => DimensionKind::Radius,
-                _ => kind,
+            let category = category.as_deref().or(name.as_deref());
+            kind = if category.is_some_and(|value| value.eq_ignore_ascii_case("diameter")) {
+                DimensionKind::Diameter
+            } else if category.is_some_and(|value| value.eq_ignore_ascii_case("radius")) {
+                DimensionKind::Radius
+            } else {
+                kind
             };
         }
         let nominal = characteristic_values.get(&id).copied();
@@ -1484,14 +1487,44 @@ fn pmi_id(id: u64) -> PmiId {
     PmiId::from(ids::presentation(kind!("pmi"), id))
 }
 
-fn datum_target_form(value: &str) -> DatumTargetForm {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "point" => DatumTargetForm::Point,
-        "line" => DatumTargetForm::Line,
-        "rectangle" => DatumTargetForm::Rectangle,
-        "circle" => DatumTargetForm::Circle,
-        "circular curve" => DatumTargetForm::CircularCurve,
-        _ => DatumTargetForm::Other(value.to_owned()),
+fn clone_pmi_text(
+    value: &str,
+    ctx: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    if let Some(ctx) = ctx {
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(value.len()), operation)?;
+    }
+    let mut copy = String::new();
+    copy.try_reserve_exact(value.len()).map_err(|_| match ctx {
+        Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
+        None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
+    })?;
+    copy.push_str(value);
+    Ok(copy)
+}
+
+fn datum_target_form(
+    value: &str,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<DatumTargetForm, CodecError> {
+    let form = value.trim();
+    if form.eq_ignore_ascii_case("point") {
+        Ok(DatumTargetForm::Point)
+    } else if form.eq_ignore_ascii_case("line") {
+        Ok(DatumTargetForm::Line)
+    } else if form.eq_ignore_ascii_case("rectangle") {
+        Ok(DatumTargetForm::Rectangle)
+    } else if form.eq_ignore_ascii_case("circle") {
+        Ok(DatumTargetForm::Circle)
+    } else if form.eq_ignore_ascii_case("circular curve") {
+        Ok(DatumTargetForm::CircularCurve)
+    } else {
+        Ok(DatumTargetForm::Other(clone_pmi_text(
+            value,
+            ctx,
+            "step_pmi_datum_target_form_copy",
+        )?))
     }
 }
 
@@ -1523,7 +1556,7 @@ fn is_pmi_entity_name(name: &str) -> bool {
             | "DRAUGHTING_CALLOUT"
             | "FEATURE_FOR_DATUM_TARGET_RELATIONSHIP"
             | "GEOMETRIC_ITEM_SPECIFIC_USAGE"
-    ) || dimension_kind(Some(name)).is_some()
+    ) || is_dimension_name(name)
         || tolerance_kind(Some(name)).is_some()
         || is_datum_target_name(name)
         || is_presentation_annotation(name)
@@ -1661,8 +1694,25 @@ fn is_measure_record(record: &RawRecord) -> bool {
     })
 }
 
-fn dimension_kind(name: Option<&str>) -> Option<DimensionKind> {
-    match name? {
+fn is_dimension_name(name: &str) -> bool {
+    name == "DIMENSIONAL_SIZE"
+        || name.starts_with("DIMENSIONAL_SIZE_")
+        || name == "DIMENSIONAL_LOCATION"
+        || name.starts_with("DIMENSIONAL_LOCATION_")
+        || name == "ANGULAR_SIZE"
+        || name.starts_with("ANGULAR_SIZE_")
+        || name == "ANGULAR_LOCATION"
+        || name.starts_with("ANGULAR_LOCATION_")
+        || matches!(name, "DIAMETER_SIZE" | "RADIUS_SIZE")
+        || name.ends_with("_SIZE")
+        || name.ends_with("_LOCATION")
+}
+
+fn dimension_kind(
+    name: &str,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<DimensionKind>, CodecError> {
+    Ok(match name {
         name if name == "DIMENSIONAL_SIZE" || name.starts_with("DIMENSIONAL_SIZE_") => {
             Some(DimensionKind::Size)
         }
@@ -1679,16 +1729,24 @@ fn dimension_kind(name: Option<&str>) -> Option<DimensionKind> {
         "DIAMETER_SIZE" => Some(DimensionKind::Diameter),
         "RADIUS_SIZE" => Some(DimensionKind::Radius),
         name if name.ends_with("_SIZE") || name.ends_with("_LOCATION") => {
-            Some(DimensionKind::Other(name.to_ascii_lowercase()))
+            let mut name = clone_pmi_text(name, ctx, "step_pmi_other_dimension_name")?;
+            name.make_ascii_lowercase();
+            Some(DimensionKind::Other(name))
         }
         _ => None,
-    }
+    })
 }
 
-fn dimension_descriptor(record: &RawRecord) -> Option<(&str, DimensionKind)> {
-    record.partials.iter().find_map(|partial| {
-        dimension_kind(Some(partial.name.as_str())).map(|kind| (partial.name.as_str(), kind))
-    })
+fn dimension_descriptor<'a>(
+    record: &'a RawRecord,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<(&'a str, DimensionKind)>, CodecError> {
+    for partial in &record.partials {
+        if let Some(kind) = dimension_kind(partial.name.as_str(), ctx)? {
+            return Ok(Some((partial.name.as_str(), kind)));
+        }
+    }
+    Ok(None)
 }
 
 fn tolerance_kind(name: Option<&str>) -> Option<GeometricToleranceKind> {
@@ -1747,7 +1805,7 @@ fn characteristic_values(
             exchange
                 .records()
                 .get(&id)
-                .is_some_and(|record| dimension_descriptor(record).is_some())
+                .is_some_and(|record| record.partials.iter().any(|partial| is_dimension_name(&partial.name)))
         })
         else {
             continue;
