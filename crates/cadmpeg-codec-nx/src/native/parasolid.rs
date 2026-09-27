@@ -396,11 +396,8 @@ pub(super) fn parasolid_group_members(
 }
 
 /// One completely bounded record in a Parasolid deltas stream.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "ParasolidDeltasRecordWire",
-    into = "ParasolidDeltasRecordWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "ParasolidDeltasRecordWire")]
 pub(super) struct ParasolidDeltasRecord {
     /// Globally unique record identity.
     pub(super) id: String,
@@ -414,6 +411,44 @@ pub(super) struct ParasolidDeltasRecord {
     pub(super) byte_len: u64,
     /// Record tag offset in the inflated stream.
     pub(super) inflated_offset: u64,
+}
+
+impl Serialize for ParasolidDeltasRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use crate::deltas::record_family::RecordFamilyReferences;
+        use serde::ser::SerializeStruct;
+
+        let (group_selector, group_linked_reference_status) = match &self.family {
+            RecordFamily::Group {
+                selector,
+                linked_reference_status,
+                ..
+            } => (Some(*selector), Some(*linked_reference_status)),
+            _ => (None, None),
+        };
+        let mut wire = serializer.serialize_struct(
+            "ParasolidDeltasRecordWire",
+            10 + usize::from(group_selector.is_some())
+                + usize::from(group_linked_reference_status.is_some()),
+        )?;
+        wire.serialize_field("id", &self.id)?;
+        wire.serialize_field("stream_ordinal", &self.stream_ordinal)?;
+        wire.serialize_field("family", self.family.family_name())?;
+        wire.serialize_field("kind", &self.family.kind())?;
+        wire.serialize_field("xmt", &self.xmt)?;
+        wire.serialize_field("node_id", &self.family.node_id())?;
+        wire.serialize_field("references", &RecordFamilyReferences(&self.family))?;
+        if let Some(value) = group_selector {
+            wire.serialize_field("group_selector", &value)?;
+        }
+        if let Some(value) = group_linked_reference_status {
+            wire.serialize_field("group_linked_reference_status", &value)?;
+        }
+        wire.serialize_field("position", &self.family.position())?;
+        wire.serialize_field("byte_len", &self.byte_len)?;
+        wire.serialize_field("inflated_offset", &self.inflated_offset)?;
+        wire.end()
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -442,6 +477,7 @@ struct ParasolidDeltasRecordWire {
     inflated_offset: u64,
 }
 
+#[cfg(test)]
 impl From<ParasolidDeltasRecord> for ParasolidDeltasRecordWire {
     fn from(value: ParasolidDeltasRecord) -> Self {
         let (group_selector, group_linked_reference_status) = match &value.family {
@@ -503,7 +539,33 @@ impl TryFrom<ParasolidDeltasRecordWire> for ParasolidDeltasRecord {
 
 #[cfg(test)]
 mod deltas_record_wire_tests {
-    use super::ParasolidDeltasRecord;
+    use super::{ParasolidDeltasRecord, ParasolidDeltasRecordWire};
+
+    #[test]
+    fn deltas_record_borrowed_wire_matches_owned_bytes() {
+        for json in [
+            r#"{"id":"nx:deltas:record#group","stream_ordinal":0,"family":"GROUP","kind":90,"xmt":10,"node_id":7,"references":[3,4,5,6,30],"group_selector":4,"group_linked_reference_status":0,"position":null,"byte_len":22,"inflated_offset":0}"#,
+            r#"{"id":"nx:deltas:record#type70","stream_ordinal":0,"family":"TYPE_70","kind":70,"xmt":6,"node_id":0,"references":[3,1,1,0,52,52],"position":null,"byte_len":32,"inflated_offset":0}"#,
+            r#"{"id":"nx:deltas:record#empty","stream_ordinal":0,"family":"ENTITY_52","kind":82,"xmt":40,"node_id":null,"references":[],"position":null,"byte_len":10,"inflated_offset":0}"#,
+        ] {
+            let record: ParasolidDeltasRecord = serde_json::from_str(json).unwrap();
+            assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
+            assert_eq!(
+                serde_json::to_vec(&record).unwrap(),
+                serde_json::to_vec(&ParasolidDeltasRecordWire::from(record.clone())).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn deltas_record_retained_limit_refuses_before_reference_collection() {
+        let json = r#"{"id":"nx:deltas:record#group","stream_ordinal":0,"family":"GROUP","kind":90,"xmt":10,"node_id":7,"references":[3,4,5,6,30],"group_selector":4,"group_linked_reference_status":0,"position":null,"byte_len":22,"inflated_offset":0}"#;
+        let record: ParasolidDeltasRecord = serde_json::from_str(json).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(json).unwrap(),
+        );
+    }
 
     #[test]
     fn record_family_owns_fixed_and_empty_reference_payloads() {
