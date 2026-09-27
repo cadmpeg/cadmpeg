@@ -2348,10 +2348,14 @@ pub(super) fn project(
                     use_curve: None,
                 });
             }
-            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()) else {
-                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "boundary loop contains no coedges"))?;
-                valid = false;
-                break;
+            let ring = match cadmpeg_ir::topology::LoopRing::new_admitted(coedge_ids, Vec::new(), ctx) {
+                Ok(ring) => ring,
+                Err(cadmpeg_ir::topology::LoopRingAdmissionError::Invalid(_)) => {
+                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "boundary loop contains no coedges"))?;
+                    valid = false;
+                    break;
+                }
+                Err(cadmpeg_ir::topology::LoopRingAdmissionError::Resource(error)) => return Err(error),
             };
             candidate.model_mut().loops.push(Loop {
                 id: loop_id.clone(),
