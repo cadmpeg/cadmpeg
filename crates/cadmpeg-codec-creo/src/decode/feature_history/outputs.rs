@@ -12,6 +12,8 @@ use crate::decode::sketch_transfer::recipe::{
     feature_schema_class, unique_feature_revolution_extent,
 };
 use crate::feature::schema::SchemaClass;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{EdgeSelection, GeneratedEdgeRef};
 use cadmpeg_ir::ids::{BodyId, EdgeId, SurfaceId};
@@ -688,35 +690,55 @@ pub(super) fn section_definition_for_history_feature<'a>(
 }
 
 pub(in super::super) fn feature_source_properties(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
-) -> BTreeMap<String, String> {
+) -> Result<BTreeMap<String, String>, CodecError> {
     let mut properties = BTreeMap::new();
     if let Some(recipe) = current_feature_recipe(&scan.features.operations, feature_id) {
-        properties.insert("recipe".to_string(), recipe.name().to_string());
+        insert_feature_source_property(ctx, &mut properties, "recipe", recipe.name())?;
     }
     let schema_class = feature_schema_class(scan, feature_id);
     if let Some(schema_class) = schema_class {
-        properties.insert(
-            "featdefs_schema_class".to_string(),
-            schema_class.to_string(),
-        );
+        insert_feature_source_property(ctx, &mut properties, "featdefs_schema_class", schema_class)?;
     }
     let row_schema_classes = feature_row_schema_classes(scan, feature_id);
     if !row_schema_classes.is_empty() {
-        properties.insert(
-            "featdefs_row_schema_classes".to_string(),
-            row_schema_classes
-                .iter()
-                .map(SchemaClass::to_string)
-                .collect::<Vec<_>>()
-                .join(","),
-        );
+        insert_feature_source_property(ctx, &mut properties, "featdefs_row_schema_classes", SchemaClassList(&row_schema_classes))?;
     }
     if schema_class.is_none() && !row_schema_classes.is_empty() {
-        properties.insert("featdefs_schema_state".to_string(), "ambiguous".to_string());
+        insert_feature_source_property(ctx, &mut properties, "featdefs_schema_state", "ambiguous")?;
     }
-    properties
+    Ok(properties)
+}
+
+pub(in super::super) struct SchemaClassList<'a>(pub &'a BTreeSet<SchemaClass>);
+
+impl std::fmt::Display for SchemaClassList<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, schema_class) in self.0.iter().enumerate() {
+            if index > 0 {
+                formatter.write_str(",")?;
+            }
+            write!(formatter, "{schema_class}")?;
+        }
+        Ok(())
+    }
+}
+
+pub(in super::super) fn insert_feature_source_property(
+    ctx: &DecodeContext<'_>,
+    properties: &mut BTreeMap<String, String>,
+    key: impl std::fmt::Display,
+    value: impl std::fmt::Display,
+) -> Result<(), CodecError> {
+    let key = ctx.format_retained(key, "creo feature source property key")?;
+    let value = ctx.format_retained(value, "creo feature source property value")?;
+    if !properties.contains_key(&key) {
+        ctx.charge_collection_items(1, "creo feature source property nodes")?;
+    }
+    properties.insert(key, value);
+    Ok(())
 }
 
 #[cfg(test)]

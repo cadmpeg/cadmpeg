@@ -31,7 +31,7 @@ use super::super::feature_history::named::{
 };
 use super::super::feature_history::outputs::{
     feature_output_bodies, feature_parameters, feature_reference_name, feature_source_properties,
-    schema_operation_kind,
+    insert_feature_source_property, schema_operation_kind, SchemaClassList,
 };
 use super::super::native::annotate;
 use super::super::sketch_ids::owning_feature_definition_ref;
@@ -224,14 +224,11 @@ pub(super) fn emit_model_features(
         let current_operation =
             current_feature_operation(&scan.features.operations, operation.feature_id);
         let outputs = feature_output_bodies(scan, ir, operation.feature_id);
-        let mut source_properties = feature_source_properties(scan, operation.feature_id);
+        let mut source_properties = feature_source_properties(ctx, scan, operation.feature_id)?;
         if let Some(prefix) = current_operation
             .and_then(crate::feature::operations::FeatureOperation::stored_name_prefix)
         {
-            source_properties.insert(
-                "mdl_stored_name_prefix".to_string(),
-                char::from(prefix).to_string(),
-            );
+            insert_feature_source_property(ctx, &mut source_properties, "mdl_stored_name_prefix", char::from(prefix))?;
         }
         let parameters = feature_parameters(scan, operation.feature_id);
         let schema_class = feature_schema_class(scan, operation.feature_id);
@@ -295,7 +292,7 @@ pub(super) fn emit_model_features(
                 )
             },
         )?;
-        retain_native_feature_parameters(&mut source_properties, &definition, &parameters);
+        retain_native_feature_parameters(ctx, &mut source_properties, &definition, &parameters)?;
         let dependencies = feature_dependencies(
             scan,
             ir,
@@ -464,7 +461,7 @@ pub(super) fn emit_model_features(
             Exactness::ByteExact,
         );
         let parameters = feature_parameters(scan, feature_id);
-        let mut source_properties = feature_source_properties(scan, feature_id);
+        let mut source_properties = feature_source_properties(ctx, scan, feature_id)?;
         let definition = schema_class.map_or_else(
             || match named_feature_definition(ctx, scan, ir, source_carriers, feature_id, kind)?
                 .or_else(|| {
@@ -493,27 +490,12 @@ pub(super) fn emit_model_features(
         )?;
         let row_schema_classes = row_feature_schema_classes(&scan.features.rows, feature_id);
         if schema_class.is_none() {
-            source_properties.insert(
-                "featdefs_schema_state".to_string(),
-                if row_schema_classes.is_empty() {
-                    "absent"
-                } else {
-                    "ambiguous"
-                }
-                .to_string(),
-            );
+            insert_feature_source_property(ctx, &mut source_properties, "featdefs_schema_state", if row_schema_classes.is_empty() { "absent" } else { "ambiguous" })?;
         }
         if !row_schema_classes.is_empty() {
-            source_properties.insert(
-                "featdefs_row_schema_classes".to_string(),
-                row_schema_classes
-                    .iter()
-                    .map(SchemaClass::to_string)
-                    .collect::<Vec<_>>()
-                    .join(","),
-            );
+            insert_feature_source_property(ctx, &mut source_properties, "featdefs_row_schema_classes", SchemaClassList(&row_schema_classes))?;
         }
-        retain_native_feature_parameters(&mut source_properties, &definition, &parameters);
+        retain_native_feature_parameters(ctx, &mut source_properties, &definition, &parameters)?;
         let feature = Feature {
             id,
             ordinal: ir.model.features.len() as u64,
