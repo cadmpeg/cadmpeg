@@ -2,11 +2,10 @@
 //! Parse body members, bounds, bindings, and visibility.
 
 use cadmpeg_core::container::ContainerRole;
-use std::fmt::Write;
 
 use crate::bytes::take_reference;
 use crate::container::ContainerScan;
-use crate::design::decode::text::lp_utf16_bounded_charged;
+use crate::design::decode::text::{design_record_id_charged, lp_utf16_bounded_charged};
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::native_scope_charged;
 use crate::design::RECIPES;
@@ -25,30 +24,6 @@ use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::{HashMap, HashSet};
-
-fn body_record_id_charged(
-    ctx: &DecodeContext<'_>,
-    stream: &str,
-    kind: &'static str,
-    offset: u64,
-) -> Result<String, CodecError> {
-    let mut id = native_scope_charged(ctx, stream)?;
-    let mut digits = 1;
-    let mut quotient = offset;
-    while quotient >= 10 {
-        quotient /= 10;
-        digits += 1;
-    }
-    let suffix_bytes = kind.len() + 2 + digits;
-    ctx.charge_retained(u64_from_index(suffix_bytes), "f3d body record identifier")?;
-    id.try_reserve(suffix_bytes).map_err(|_| {
-        ctx.refuse_codec_limit("f3d body record identifier allocation", 0, 1)
-    })?;
-    write!(&mut id, ":{kind}#{offset}").map_err(|_| {
-        CodecError::Malformed("F3D body record identifier formatting failed".into())
-    })?;
-    Ok(id)
-}
 
 /// Decode the `BodiesRoot` member list following the doubled `BodiesRoot`
 /// marker in each design `BulkStream` entry in `scan`: each member's entity
@@ -111,21 +86,14 @@ pub(crate) fn decode_body_members(
                 decoded.clear();
                 break;
             };
-            let mut id = native_scope_charged(ctx, &entry.name)?;
-            let mut digits = 1;
-            let mut quotient = cursor;
-            while quotient >= 10 {
-                quotient /= 10;
-                digits += 1;
-            }
-            let suffix_bytes = "design-body-member".len() + 2 + digits;
-            ctx.charge_retained(u64_from_index(suffix_bytes), "f3d body member identifier")?;
-            id.try_reserve(suffix_bytes).map_err(|_| {
-                ctx.refuse_codec_limit("f3d body member identifier allocation", 0, 1)
-            })?;
-            write!(&mut id, ":design-body-member#{cursor}").map_err(|_| {
-                CodecError::Malformed("F3D body member identifier formatting failed".into())
-            })?;
+            let id = design_record_id_charged(
+                ctx,
+                &entry.name,
+                ":design-body-member#",
+                u64_from_index(cursor),
+                "f3d body member identifier",
+                "f3d body member identifier allocation",
+            )?;
             decoded.push(DesignBodyMember {
                 id,
                 byte_offset: u64_from_index(cursor),
@@ -248,7 +216,14 @@ pub(crate) fn decode_body_bounds(
             })
         };
         let record = DesignBodyBounds::from_parts(crate::records::bodies::DesignBodyBoundsWire {
-                id: body_record_id_charged(ctx, &entry.name, "design-body-bounds", entity.byte_offset)?,
+                id: design_record_id_charged(
+                    ctx,
+                    &entry.name,
+                    ":design-body-bounds#",
+                    entity.byte_offset,
+                    "f3d body record identifier",
+                    "f3d body record identifier allocation",
+                )?,
                 entity_suffix: entity.entity_id.suffix(),
                 entity_byte_offset: entity.byte_offset,
                 record_indices,
@@ -381,11 +356,13 @@ pub(super) fn decode_stream(
                 })
             });
             let recipe = ConstructionRecipe {
-                id: body_record_id_charged(
+                id: design_record_id_charged(
                     ctx,
                     stream,
-                    "construction-recipe",
+                    ":construction-recipe#",
                     u64_from_index(offset),
+                    "f3d body record identifier",
+                    "f3d body record identifier allocation",
                 )?,
                 byte_offset: u64_from_index(offset),
                 kind,
@@ -1211,11 +1188,13 @@ pub(crate) fn decode_design_body_bindings(
             for (ordinal, binding) in (0..pair_count).zip(&record.bindings) {
                 let body = crate::brep::resolve_body_selector(&source_bodies, binding.asm_key)?;
                 let record = DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
-                        id: body_record_id_charged(
+                        id: design_record_id_charged(
                             ctx,
                             &entry.name,
-                            "design-body-binding",
+                            ":design-body-binding#",
                             u64_from_index(binding.asm_key_offset),
+                            "f3d body record identifier",
+                            "f3d body record identifier allocation",
                         )?,
                         stream: copy_body_map_name(ctx, &entry.name, "f3d body-binding stream")?,
                         pair_count,
