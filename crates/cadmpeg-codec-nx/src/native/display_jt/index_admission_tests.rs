@@ -75,6 +75,19 @@ fn display_jt_index_row_storage_refuses_before_vector_reservation() {
 }
 
 #[test]
+fn display_jt_index_row_entity_refuses_before_identity_allocation() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_entities = 0;
+    assert_eq!(
+        refused_at(policy, None, None),
+        (
+            ResourceDimension::Entities,
+            "admit DisplayJT index row".to_string()
+        )
+    );
+}
+
+#[test]
 fn display_jt_index_row_identity_refuses_before_format_allocation() {
     let rows = std::mem::size_of::<super::DisplayJtIndexRow>() as u64;
     let row_id = "nx:display-jt:index#0-row-0".len() as u64;

@@ -3,6 +3,8 @@
 
 pub(crate) mod admission;
 #[cfg(test)]
+mod document_admission_tests;
+#[cfg(test)]
 mod index_admission_tests;
 mod packet_role;
 mod version;
@@ -2947,6 +2949,7 @@ pub(super) fn display_jt_indices(
                 }
                 previous_header_offset = Some(header_offset);
                 if let Some(ctx) = ctx {
+                    ctx.charge_entities(1, "admit DisplayJT index row")?;
                     ctx.charge_retained(
                         u64::try_from("nx:display-jt:index#".len()).unwrap_or(u64::MAX)
                             + decimal_digits(index_ordinal)
@@ -2964,6 +2967,7 @@ pub(super) fn display_jt_indices(
                 });
             }
             if let Some(ctx) = ctx {
+                ctx.charge_entities(1, "admit DisplayJT index entity")?;
                 ctx.charge_retained(
                     u64::try_from("nx:display-jt:index#".len()).unwrap_or(u64::MAX)
                         + decimal_digits(index_ordinal),
@@ -2999,97 +3003,126 @@ pub(super) fn display_jt_indices(
 
 /// Decode complete standard JT headers and tables of contents from an outer index.
 pub(super) fn display_jt_documents(
+    ctx: Option<&DecodeContext<'_>>,
     container: &Container,
     indices: &[DisplayJtIndex],
-) -> Vec<DisplayJtDocument> {
-    let entries = container
+) -> Result<Vec<DisplayJtDocument>, CodecError> {
+    let mut entries = container
         .entries
         .iter()
-        .filter(|entry| entry.name == "/Root/UG_PART/DisplayJT")
-        .collect::<Vec<_>>();
-    let [entry] = entries.as_slice() else {
-        return Vec::new();
+        .filter(|entry| entry.name == "/Root/UG_PART/DisplayJT");
+    let Some(entry) = entries.next() else {
+        return Ok(Vec::new());
     };
+    if entries.next().is_some() {
+        return Ok(Vec::new());
+    }
     let Some((stream_source_offset, stream_byte_len)) = entry.file_span() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(stream) = container.bounded_entry_bytes(stream_source_offset, stream_byte_len) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let [index] = indices else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let mut documents = Vec::new();
     let mut rows = index.rows.iter().peekable();
     while let Some(row) = rows.next() {
+        if let Some(ctx) = ctx {
+            ctx.charge_work(1, "scan DisplayJT document")?;
+        }
         let Ok(document_start) = usize::try_from(row.header_offset) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let document_end = rows
             .peek()
             .map_or(stream.len(), |next| next.header_offset as usize);
         let Some(document) = stream.get(document_start..document_end) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(version_bytes) = document.get(..jt_hdr::BYTE_ORDER) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(version_field) = std::str::from_utf8(version_bytes).ok() else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
+        if let Some(ctx) = ctx {
+            ctx.charge_retained(
+                u64::try_from(version_field.len()).unwrap_or(u64::MAX),
+                "retain DisplayJT version text",
+            )?;
+        }
         let Ok(version) = JtVersionField::new(version_field.to_owned()) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(&byte_order) = document.get(jt_hdr::BYTE_ORDER) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if byte_order != 0 || document.get(jt_hdr::RESERVED..jt_hdr::TOC_OFFSET) != Some(&[0; 4]) {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let Some(toc_offset) = View::u32_le_at(document, jt_hdr::TOC_OFFSET) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(lsg_segment_id) = document
             .get(jt_hdr::LSG_SEGMENT_ID..jt_hdr::LEN)
             .and_then(|bytes| <[u8; 16]>::try_from(bytes).ok())
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Ok(toc_start) = usize::try_from(toc_offset) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(toc_count) = View::u32_le_at(document, toc_start) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Ok(toc_count_usize) = usize::try_from(toc_count) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if toc_count_usize == 0 {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let Some(toc_end) = toc_start
             .checked_add(4)
             .and_then(|start| start.checked_add(toc_count_usize.checked_mul(jt_toc::LEN)?))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if toc_end > document.len() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let document_key = row
             .id
             .rsplit_once('#')
             .map_or(row.id.as_str(), |(_, key)| key);
+        if let Some(ctx) = ctx {
+            ctx.charge_work(u64::from(toc_count), "scan DisplayJT table of contents")?;
+            ctx.charge_collection_items(u64::from(toc_count), "admit DisplayJT toc entries")?;
+            let entry_size = u64::try_from(std::mem::size_of::<DisplayJtTocEntry>())
+                .map_err(|_| ctx.refuse_codec_limit("retain DisplayJT toc entries", 0, u64::MAX))?;
+            ctx.charge_retained(
+                u64::from(toc_count)
+                    .checked_mul(entry_size)
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit("retain DisplayJT toc entries", 0, u64::MAX)
+                    })?,
+                "retain DisplayJT toc entries",
+            )?;
+        }
         let mut toc_entries = Vec::new();
         if toc_entries.try_reserve_exact(toc_count_usize).is_err() {
-            return Vec::new();
+            return match ctx {
+                Some(ctx) => Err(ctx.refuse_codec_limit("allocate DisplayJT toc entries", 0, 1)),
+                None => Ok(Vec::new()),
+            };
         }
         for ordinal in 0..toc_count_usize {
             let offset = toc_start + 4 + ordinal * jt_toc::LEN;
             let Some(bytes) = View::over_retained(&document[offset..offset + jt_toc::LEN])
                 .array::<{ jt_toc::LEN }>()
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             let [segment_id @ .., o0, o1, o2, o3, l0, l1, l2, l3, a0, a1, a2, a3] = bytes;
             let segment_offset = assemble_u32_le([o0, o1, o2, o3]);
@@ -3099,13 +3132,21 @@ pub(super) fn display_jt_documents(
                 .ok()
                 .and_then(|start| start.checked_add(segment_byte_len as usize))
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             if segment_byte_len == 0
                 || (segment_offset as usize) < toc_end
                 || segment_end > document.len()
             {
-                return Vec::new();
+                return Ok(Vec::new());
+            }
+            if let Some(ctx) = ctx {
+                ctx.charge_entities(1, "admit DisplayJT toc entry")?;
+                let id_len = u64::try_from("nx:display-jt:toc-entry#".len()).unwrap_or(u64::MAX)
+                    + u64::try_from(document_key.len()).unwrap_or(u64::MAX)
+                    + 1
+                    + decimal_digits(ordinal);
+                ctx.charge_retained(id_len, "retain DisplayJT toc identity")?;
             }
             toc_entries.push(DisplayJtTocEntry {
                 id: format!("nx:display-jt:toc-entry#{document_key}-{ordinal}"),
@@ -3116,6 +3157,26 @@ pub(super) fn display_jt_documents(
                 attributes,
                 source_offset: stream_source_offset + document_start as u64 + offset as u64,
             });
+        }
+        if let Some(ctx) = ctx {
+            ctx.charge_entities(1, "admit DisplayJT document entity")?;
+            let id_len = u64::try_from("nx:display-jt:document#".len()).unwrap_or(u64::MAX)
+                + u64::try_from(document_key.len()).unwrap_or(u64::MAX);
+            ctx.charge_retained(id_len, "retain DisplayJT document identity")?;
+            ctx.charge_retained(
+                u64::try_from(row.id.len()).unwrap_or(u64::MAX),
+                "retain DisplayJT document index reference",
+            )?;
+            ctx.charge_collection_items(1, "admit DisplayJT document")?;
+            let document_size = u64::try_from(std::mem::size_of::<DisplayJtDocument>())
+                .map_err(|_| ctx.refuse_codec_limit("retain DisplayJT document", 0, u64::MAX))?;
+            ctx.charge_retained(document_size, "retain DisplayJT document")?;
+        }
+        if documents.try_reserve_exact(1).is_err() {
+            return match ctx {
+                Some(ctx) => Err(ctx.refuse_codec_limit("allocate DisplayJT documents", 0, 1)),
+                None => Ok(Vec::new()),
+            };
         }
         documents.push(DisplayJtDocument {
             id: format!("nx:display-jt:document#{document_key}"),
@@ -3128,7 +3189,7 @@ pub(super) fn display_jt_documents(
             source_offset: stream_source_offset + document_start as u64,
         });
     }
-    documents
+    Ok(documents)
 }
 
 /// Decode every segment declared by complete embedded JT documents.
@@ -6029,7 +6090,7 @@ mod tests {
         assert_eq!(indices[0].declared_count(), 1);
         assert_eq!(indices[0].rows.first().header_offset, 28);
         assert_eq!(indices[0].rows.first().value.get(), 100);
-        let documents = super::display_jt_documents(&container, &indices);
+        let documents = super::display_jt_documents(None, &container, &indices).unwrap();
         assert_eq!(
             (documents[0].version.major(), documents[0].version.minor()),
             (9, 4)
