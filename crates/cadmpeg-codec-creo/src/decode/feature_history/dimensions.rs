@@ -22,6 +22,42 @@ use super::super::sketch_ids::{
 };
 use super::super::uniqueness::exactly_one;
 
+fn insert_dimension_property(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    properties: &mut BTreeMap<String, String>,
+    key: &'static str,
+    value: impl std::fmt::Display,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let key = ctx.copy_retained_text(key, "creo dimension property key")?;
+    let value = ctx.format_retained(value, "creo dimension property value")?;
+    if !properties.contains_key(&key) {
+        ctx.charge_collection_items(1, "creo dimension property nodes")?;
+    }
+    properties.insert(key, value);
+    Ok(())
+}
+
+struct HexToken<'a>(&'a [u8]);
+
+impl std::fmt::Display for HexToken<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for byte in self.0 {
+            write!(formatter, "{byte:02x}")?;
+        }
+        Ok(())
+    }
+}
+
+fn dimension_expression(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: Option<f64>,
+) -> Result<String, cadmpeg_core::CodecError> {
+    value
+        .map(|value| ctx.format_retained(value, "creo dimension expression"))
+        .transpose()
+        .map(|value| value.unwrap_or_default())
+}
+
 pub(in super::super) fn feature_dimension_parameter_id(
     sketch: &SketchId,
     external_id: u32,
@@ -256,27 +292,17 @@ pub(in super::super) fn transfer_feature_dimensions(
             "section_dimension",
             Exactness::Derived,
         );
-        let mut properties = BTreeMap::from([
-            (
-                "definition_id".to_string(),
-                definition.identity.id().to_string(),
-            ),
-            ("source_ordinal".to_string(), source_ordinal.to_string()),
-            ("external_id".to_string(), dimension.external_id.to_string()),
-            (
-                "dimension_type".to_string(),
-                dimension.dimension_type.to_string(),
-            ),
-            (
-                "direction_byte".to_string(),
-                dimension.direction_byte.to_string(),
-            ),
-        ]);
+        let mut properties = BTreeMap::new();
+        insert_dimension_property(ctx, &mut properties, "definition_id", definition.identity.id())?;
+        insert_dimension_property(ctx, &mut properties, "source_ordinal", source_ordinal)?;
+        insert_dimension_property(ctx, &mut properties, "external_id", dimension.external_id)?;
+        insert_dimension_property(ctx, &mut properties, "dimension_type", dimension.dimension_type)?;
+        insert_dimension_property(ctx, &mut properties, "direction_byte", dimension.direction_byte)?;
         if let Some(auxiliary) = dimension.auxiliary_value {
-            properties.insert("auxiliary_value".to_string(), auxiliary.to_string());
+            insert_dimension_property(ctx, &mut properties, "auxiliary_value", auxiliary)?;
         }
         if dimension.value.resolved().is_none() {
-            properties.insert("value_state".to_string(), "unresolved".to_string());
+            insert_dimension_property(ctx, &mut properties, "value_state", "unresolved")?;
         }
         if let Some(token) = dimension.value.unresolved_token() {
             let encoding = match token {
@@ -285,23 +311,11 @@ pub(in super::super) fn transfer_feature_dimensions(
                 _ => None,
             };
             if let Some(encoding) = encoding {
-                properties.insert("value_encoding".to_string(), encoding.to_string());
-                let value_token = token.iter().fold(
-                    String::with_capacity(token.len() * 2),
-                    |mut encoded, byte| {
-                        const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
-                        encoded.push(char::from(HEX_DIGITS[usize::from(*byte >> 4)]));
-                        encoded.push(char::from(HEX_DIGITS[usize::from(*byte & 0x0f)]));
-                        encoded
-                    },
-                );
-                properties.insert("value_token".to_string(), value_token);
+                insert_dimension_property(ctx, &mut properties, "value_encoding", encoding)?;
+                insert_dimension_property(ctx, &mut properties, "value_token", HexToken(token))?;
             }
         }
-        let expression = dimension
-            .value
-            .resolved()
-            .map_or_else(String::new, |value| value.to_string());
+        let expression = dimension_expression(ctx, dimension.value.resolved())?;
         let value = dimension
             .value
             .resolved()

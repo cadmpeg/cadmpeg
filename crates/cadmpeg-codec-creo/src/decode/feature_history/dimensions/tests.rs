@@ -2,6 +2,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     Feature, FeatureDefinition as IrFeatureDefinition, FeatureOperation as IrFeatureOperation,
@@ -10,8 +12,81 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::AnnotationBuilder;
 
 use super::super::dimensions::{
-    planned_feature_dimension_parameter_ids, transfer_feature_dimensions,
+    dimension_expression, insert_dimension_property, planned_feature_dimension_parameter_ids,
+    transfer_feature_dimensions, HexToken,
 };
+
+#[test]
+fn dimension_property_refuses_before_btree_node() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let mut properties = BTreeMap::new();
+    let error = insert_dimension_property(&ctx, &mut properties, "external_id", 7)
+        .expect_err("one property needs one BTreeMap node");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo dimension property nodes"));
+}
+
+#[test]
+fn dimension_property_refuses_before_key_copy() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let mut properties = BTreeMap::new();
+    let error = insert_dimension_property(&ctx, &mut properties, "external_id", 7)
+        .expect_err("property key exceeds retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo dimension property key"));
+}
+
+#[test]
+fn dimension_property_refuses_before_value_copy() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = "external_id".len() as u64;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let mut properties = BTreeMap::new();
+    let error = insert_dimension_property(&ctx, &mut properties, "external_id", 7)
+        .expect_err("property value exceeds retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo dimension property value"));
+}
+
+#[test]
+fn dimension_expression_refuses_before_retained_text() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = dimension_expression(&ctx, Some(5.0))
+        .expect_err("nonempty expression exceeds retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo dimension expression"));
+}
+
+#[test]
+fn dimension_hex_token_keeps_lowercase_byte_order() {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let mut properties = BTreeMap::new();
+    insert_dimension_property(&ctx, &mut properties, "value_token", HexToken(&[0x00, 0xf1, 0x7f]))
+        .expect("three token bytes fit service limits");
+    assert_eq!(properties["value_token"], "00f17f");
+    assert_eq!(dimension_expression(&ctx, Some(5.0)).expect("expression fits"), "5");
+}
 
 #[test]
 fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
