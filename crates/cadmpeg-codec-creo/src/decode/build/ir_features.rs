@@ -30,7 +30,7 @@ use super::super::feature_history::named::{
     retain_native_feature_parameters,
 };
 use super::super::feature_history::outputs::{
-    feature_output_bodies, feature_parameters, feature_reference_name, feature_source_properties,
+    copy_body_id, feature_output_bodies, feature_parameters, feature_reference_name, feature_source_properties,
     insert_feature_source_property, schema_operation_kind, SchemaClassList,
 };
 use super::super::native::annotate;
@@ -58,7 +58,7 @@ fn refresh_feature_outputs(
             continue;
         };
         let outputs = cadmpeg_ir::features::DistinctMembers::try_from_reserved_vec(
-            feature_output_bodies(scan, ir, feature_id),
+            feature_output_bodies(ctx, scan, ir, feature_id)?,
         )
         .map_err(cadmpeg_core::CodecError::malformed)?;
         ctx.try_reserve_items(&mut output_updates, 1, "creo feature output update rows")?;
@@ -214,8 +214,9 @@ pub(super) fn emit_model_features(
                 } else {
                     IrFeatureDefinition::Operation(IrFeatureOperation::StoredGeometry {})
                 },
-                feature_output_bodies(scan, ir, feature_id)
-                    .try_into()
+                cadmpeg_ir::features::DistinctMembers::try_from_reserved_vec(
+                    feature_output_bodies(ctx, scan, ir, feature_id)?,
+                )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
             native_ref: None,
@@ -232,7 +233,7 @@ pub(super) fn emit_model_features(
         }
         let current_operation =
             current_feature_operation(&scan.features.operations, operation.feature_id);
-        let outputs = feature_output_bodies(scan, ir, operation.feature_id);
+        let outputs = feature_output_bodies(ctx, scan, ir, operation.feature_id)?;
         let mut source_properties = feature_source_properties(ctx, scan, operation.feature_id)?;
         if let Some(prefix) = current_operation
             .and_then(crate::feature::operations::FeatureOperation::stored_name_prefix)
@@ -385,15 +386,20 @@ pub(super) fn emit_model_features(
             if existing.native_ref.is_none() {
                 existing.native_ref = native_ref;
             }
-            let mut combined_outputs = existing.evaluation.outputs().clone();
+            let mut combined_outputs = Vec::new();
+            for body in existing.evaluation.outputs().iter() {
+                let copy = copy_body_id(ctx, body)?;
+                ctx.try_reserve_items(&mut combined_outputs, 1, "creo combined feature outputs")?;
+                combined_outputs.push(copy);
+            }
             for output in outputs {
                 if !combined_outputs.contains(&output) {
+                    ctx.try_reserve_items(&mut combined_outputs, 1, "creo combined feature outputs")?;
                     combined_outputs.push(output);
                 }
             }
             existing.evaluation.set_outputs(
-                combined_outputs
-                    .try_into()
+                cadmpeg_ir::features::DistinctMembers::try_from_reserved_vec(combined_outputs)
                     .map_err(cadmpeg_core::CodecError::malformed)?,
             );
             refresh_feature_outputs(ctx, scan, ir)?;
@@ -430,8 +436,7 @@ pub(super) fn emit_model_features(
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 definition,
-                outputs
-                    .try_into()
+                cadmpeg_ir::features::DistinctMembers::try_from_reserved_vec(outputs)
                     .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
             native_ref,
@@ -532,8 +537,9 @@ pub(super) fn emit_model_features(
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 definition,
-                feature_output_bodies(scan, ir, feature_id)
-                    .try_into()
+                cadmpeg_ir::features::DistinctMembers::try_from_reserved_vec(
+                    feature_output_bodies(ctx, scan, ir, feature_id)?,
+                )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
             native_ref: owning_feature_definition_ref(scan, feature_id),
@@ -559,7 +565,7 @@ pub(super) fn finish_feature_transfers(
 ) -> Result<(usize, usize), cadmpeg_core::CodecError> {
     let prototype_feature_dependencies = surface_prototype_feature_dependencies(ctx, scan)?;
     link_feature_sketch_history(scan, ir);
-    reconcile_feature_links(scan, ir, &prototype_feature_dependencies)?;
+    reconcile_feature_links(ctx, scan, ir, &prototype_feature_dependencies)?;
     let feature_result_topology_count = emit_feature_result_topologies(ctx, scan, ir)?;
     let feature_result_edge_count = ir
         .model

@@ -16,63 +16,72 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{EdgeSelection, GeneratedEdgeRef};
-use cadmpeg_ir::ids::{BodyId, EdgeId, SurfaceId};
+use cadmpeg_ir::ids::{BodyId, EdgeId};
 use cadmpeg_ir::topology::BodyKind;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
+pub(in super::super) fn copy_body_id(ctx: &DecodeContext<'_>, body: &BodyId) -> Result<BodyId, CodecError> {
+    BodyId::mint(ctx.copy_retained_text(body.as_str(), "creo feature output body IDs")?)
+        .map_err(CodecError::malformed)
+}
+
 pub(in super::super) fn feature_output_bodies(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
-) -> Vec<BodyId> {
-    feature_output_bodies_with_history(scan, ir, feature_id, &mut BTreeSet::new())
+) -> Result<Vec<BodyId>, CodecError> {
+    feature_output_bodies_with_history(ctx, scan, ir, feature_id, &mut BTreeSet::new())
 }
 
 fn feature_output_bodies_with_history(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
     visiting: &mut BTreeSet<u32>,
-) -> Vec<BodyId> {
-    if !visiting.insert(feature_id) {
-        return Vec::new();
+) -> Result<Vec<BodyId>, CodecError> {
+    let _depth = ctx.enter_nested("creo feature output history")?;
+    if visiting.contains(&feature_id) {
+        return Ok(Vec::new());
     }
+    ctx.charge_collection_items(1, "creo feature output visiting nodes")?;
+    visiting.insert(feature_id);
     let affected_geometry = agreed_feature_geometry_ids(
         &scan.features.affected_ids,
         &scan.features.replay_affected_ids,
         feature_id,
     );
-    let generated_surfaces =
-        scan.surfaces
-            .rows
-            .iter()
-            .filter(|row| row.feature_id == feature_id)
-            .map(|row| SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id))
-            .chain(
-                scan.features
-                    .entity_tables
-                    .iter()
-                    .filter(|table| table.feature_id == feature_id)
-                    .flat_map(crate::feature::entity::FeatureEntityTable::surface_ids)
-                    .map(|surface_id| {
-                        SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, surface_id)
-                    }),
-            )
-            .chain(affected_geometry.into_iter().flatten().map(|surface_id| {
-                SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, surface_id)
-            }));
-    let mut outputs = evaluated_sweep_output_bodies(ir, feature_id);
+    let generated_surfaces = scan
+        .surfaces
+        .rows
+        .iter()
+        .filter(|row| row.feature_id == feature_id)
+        .map(|row| row.id)
+        .chain(
+            scan.features
+                .entity_tables
+                .iter()
+                .filter(|table| table.feature_id == feature_id)
+                .flat_map(crate::feature::entity::FeatureEntityTable::surface_ids_iter),
+        )
+        .chain(affected_geometry.into_iter().flatten().copied());
+    let mut outputs = evaluated_sweep_output_bodies(ctx, ir, feature_id)?;
     let edge_outputs = match feature_edge_selection(scan, ir, feature_id) {
-        Some(EdgeSelection::Resolved { edges, .. }) => bodies_containing_edges(ir, &edges),
+        Some(EdgeSelection::Resolved { edges, .. }) => bodies_containing_edges(ctx, ir, &edges)?,
         Some(EdgeSelection::Generated { edges, .. }) => {
-            generated_edge_output_bodies(scan, ir, &edges, visiting)
+            generated_edge_output_bodies(ctx, scan, ir, &edges, visiting)?
         }
         _ => Vec::new(),
     };
-    let generated_input_outputs = generated_input_output_bodies(scan, ir, feature_id, visiting);
-    for surface in generated_surfaces {
-        for face in ir.model.faces.iter().filter(|face| face.surface == surface) {
+    let generated_input_outputs = generated_input_output_bodies(ctx, scan, ir, feature_id, visiting)?;
+    for surface_id in generated_surfaces {
+        let (surface, _reservation) = ctx.format_scoped(
+            format_args!("creo:visibgeom:surface#{surface_id}"),
+            "creo generated surface lookup",
+        )?;
+        for face in ir.model.faces.iter().filter(|face| face.surface.as_str() == surface) {
             let Some(shell) = exactly_one(
                 ir.model
                     .shells
@@ -90,57 +99,69 @@ fn feature_output_bodies_with_history(
                 continue;
             };
             if !outputs.contains(&region.body) {
-                outputs.push(region.body.clone());
+                let body = copy_body_id(ctx, &region.body)?;
+                ctx.try_reserve_items(&mut outputs, 1, "creo feature output bodies")?;
+                outputs.push(body);
             }
         }
     }
     for body in edge_outputs.into_iter().chain(generated_input_outputs) {
         if !outputs.contains(&body) {
+            ctx.try_reserve_items(&mut outputs, 1, "creo feature output bodies")?;
             outputs.push(body);
         }
     }
     visiting.remove(&feature_id);
-    outputs
+    Ok(outputs)
 }
 
 fn generated_input_output_bodies(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
     visiting: &mut BTreeSet<u32>,
-) -> Vec<BodyId> {
-    let feature_id_text = format!("creo:model:feature#{feature_id}");
+) -> Result<Vec<BodyId>, CodecError> {
+    let (feature_id_text, reservation) = ctx.format_scoped(
+        format_args!("creo:model:feature#{feature_id}"),
+        "creo generated input feature lookup",
+    )?;
     let Some(feature) = exactly_one(
         ir.model
             .features
             .iter()
             .filter(|feature| feature.id.as_str() == feature_id_text),
     ) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    feature_generated_dependencies(feature.evaluation.definition())
-        .into_iter()
-        .filter_map(|producer| {
-            producer
-                .as_str()
-                .strip_prefix("creo:model:feature#")
-                .and_then(|value| value.parse::<u32>().ok())
-        })
-        .flat_map(|producer_id| feature_output_bodies_with_history(scan, ir, producer_id, visiting))
-        .fold(Vec::new(), |mut outputs, body| {
+    drop(feature_id_text);
+    drop(reservation);
+    let mut outputs = Vec::new();
+    for producer in feature_generated_dependencies(ctx, feature.evaluation.definition())? {
+        let Some(producer_id) = producer
+            .as_str()
+            .strip_prefix("creo:model:feature#")
+            .and_then(|value| value.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        for body in feature_output_bodies_with_history(ctx, scan, ir, producer_id, visiting)? {
             if !outputs.contains(&body) {
+                ctx.try_reserve_items(&mut outputs, 1, "creo generated input output bodies")?;
                 outputs.push(body);
             }
-            outputs
-        })
+        }
+    }
+    Ok(outputs)
 }
 
 fn generated_edge_output_bodies(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     edges: &[GeneratedEdgeRef],
     visiting: &mut BTreeSet<u32>,
-) -> Vec<BodyId> {
+) -> Result<Vec<BodyId>, CodecError> {
     let mut outputs = Vec::new();
     for edge in edges {
         let Some(producer_id) = edge
@@ -151,81 +172,102 @@ fn generated_edge_output_bodies(
         else {
             continue;
         };
-        for body in feature_output_bodies_with_history(scan, ir, producer_id, visiting) {
+        for body in feature_output_bodies_with_history(ctx, scan, ir, producer_id, visiting)? {
             if !outputs.contains(&body) {
+                ctx.try_reserve_items(&mut outputs, 1, "creo generated edge output bodies")?;
                 outputs.push(body);
             }
         }
     }
-    outputs
+    Ok(outputs)
 }
 
-fn bodies_containing_edges(ir: &CadIr, edges: &[EdgeId]) -> Vec<BodyId> {
-    let selected = edges.iter().collect::<BTreeSet<_>>();
-    let mut shell_ids = ir
-        .model
-        .coedges
-        .iter()
-        .filter(|coedge| selected.contains(&coedge.edge))
-        .filter_map(|coedge| {
+fn bodies_containing_edges(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    edges: &[EdgeId],
+) -> Result<Vec<BodyId>, CodecError> {
+    let mut selected = BTreeSet::new();
+    for edge in edges {
+        if !selected.contains(edge) {
+            ctx.charge_collection_items(1, "creo selected edge nodes")?;
+            selected.insert(edge);
+        }
+    }
+    let mut shell_ids = BTreeSet::new();
+    for coedge in ir.model.coedges.iter().filter(|coedge| selected.contains(&coedge.edge)) {
             let lp = exactly_one(
                 ir.model
                     .loops
                     .iter()
                     .filter(|lp| lp.id == coedge.owner_loop),
-            )?;
-            exactly_one(ir.model.faces.iter().filter(|face| face.id == lp.face))
-                .map(|face| face.shell.clone())
-        })
-        .collect::<BTreeSet<_>>();
-    shell_ids.extend(
-        ir.model
-            .shells
-            .iter()
-            .filter(|shell| {
-                shell
-                    .wire_edges()
-                    .iter()
-                    .any(|edge| selected.contains(edge))
-            })
-            .map(|shell| shell.id.clone()),
-    );
-    shell_ids
-        .into_iter()
-        .filter_map(|shell_id| {
-            let shell = exactly_one(ir.model.shells.iter().filter(|shell| shell.id == shell_id))?;
+            );
+            let Some(face) = lp.and_then(|lp| exactly_one(ir.model.faces.iter().filter(|face| face.id == lp.face))) else {
+                continue;
+            };
+            if !shell_ids.contains(&face.shell) {
+                ctx.charge_collection_items(1, "creo selected shell nodes")?;
+                shell_ids.insert(&face.shell);
+            }
+    }
+    for shell in ir.model.shells.iter().filter(|shell| {
+        shell.wire_edges().iter().any(|edge| selected.contains(edge))
+    }) {
+        if !shell_ids.contains(&shell.id) {
+            ctx.charge_collection_items(1, "creo selected shell nodes")?;
+            shell_ids.insert(&shell.id);
+        }
+    }
+    let mut bodies = Vec::new();
+    for shell_id in shell_ids {
+            let Some(shell) = exactly_one(ir.model.shells.iter().filter(|shell| shell.id == *shell_id)) else {
+                continue;
+            };
             let region = exactly_one(
                 ir.model
                     .regions
                     .iter()
                     .filter(|region| region.id == shell.region),
-            )?;
-            exactly_one(ir.model.bodies.iter().filter(|body| body.id == region.body))
-                .is_some()
-                .then(|| region.body.clone())
-        })
-        .fold(Vec::new(), |mut bodies, body| {
+            );
+            let Some(region) = region.filter(|region| exactly_one(ir.model.bodies.iter().filter(|body| body.id == region.body)).is_some()) else {
+                continue;
+            };
+            let body = copy_body_id(ctx, &region.body)?;
             if !bodies.contains(&body) {
+                ctx.try_reserve_items(&mut bodies, 1, "creo bodies containing selected edges")?;
                 bodies.push(body);
             }
-            bodies
-        })
+    }
+    Ok(bodies)
 }
 
-pub(in super::super) fn evaluated_sweep_output_bodies(ir: &CadIr, feature_id: u32) -> Vec<BodyId> {
-    [
+pub(in super::super) fn evaluated_sweep_output_bodies(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    feature_id: u32,
+) -> Result<Vec<BodyId>, CodecError> {
+    let mut outputs = Vec::new();
+    for namespace in [
         &crate::identity::FEATURE_EXTRUSION,
         &crate::identity::FEATURE_REVOLUTION,
-    ]
-    .into_iter()
-    .map(|namespace| {
-        BodyId::compose(
-            namespace,
-            cadmpeg_ir::ids::IdentityKey::from(feature_id).colon(cadmpeg_ir::identity_key!("body")),
-        )
-    })
-    .filter(|id| exactly_one(ir.model.bodies.iter().filter(|body| body.id == *id)).is_some())
-    .collect()
+    ] {
+        let (candidate, _reservation) = ctx.format_scoped(
+            format_args!(
+                "{}:{}:{}#{feature_id}:body",
+                namespace.format(),
+                namespace.scope(),
+                namespace.kind(),
+            ),
+            "creo evaluated sweep body candidate",
+        )?;
+        if exactly_one(ir.model.bodies.iter().filter(|body| body.id.as_str() == candidate)).is_some() {
+            ctx.charge_retained(candidate.len() as u64, "creo evaluated sweep body IDs")?;
+            let body = BodyId::mint(candidate).map_err(CodecError::malformed)?;
+            ctx.try_reserve_items(&mut outputs, 1, "creo evaluated sweep output bodies")?;
+            outputs.push(body);
+        }
+    }
+    Ok(outputs)
 }
 
 pub(in super::super) fn evaluated_sweep_body_kind(

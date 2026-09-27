@@ -699,7 +699,7 @@ fn evaluated_sweep_bodies_are_feature_outputs() {
         visible: None,
     });
     assert_eq!(
-        evaluated_sweep_output_bodies(&ir, 40),
+        crate::decode::with_test_decode_ctx(|ctx| evaluated_sweep_output_bodies(ctx, &ir, 40)).expect("service profile admits output bodies"),
         vec![
             BodyId::mint("creo:feature:extrusion#40:body".to_string()).expect("identity grammar"),
             BodyId::mint("creo:feature:revolution#40:body".to_string()).expect("identity grammar"),
