@@ -925,6 +925,10 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                 ));
             }
             let candidate = solve_section_coordinate_equations(ctx, &branched, stored_coordinates)?;
+            ctx.charge_collection_items(
+                stored_coordinates.len() as u64,
+                "creo section stored coordinate copies",
+            )?;
             let mut values = stored_coordinates.clone();
             for (point, coordinates) in &candidate {
                 for (coordinate, value) in SectionAxis::ALL
@@ -932,7 +936,15 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                     .zip(coordinates.iter().copied())
                 {
                     if let Some(value) = value {
-                        values.insert((*point, coordinate), value);
+                        match values.entry((*point, coordinate)) {
+                            std::collections::btree_map::Entry::Vacant(entry) => {
+                                ctx.charge_collection_items(1, "creo section branch values")?;
+                                entry.insert(value);
+                            }
+                            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                                entry.insert(value);
+                            }
+                        }
                     }
                 }
             }
@@ -969,11 +981,13 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                             if component.contains(global)
                                 && !stored_coordinates.contains_key(&variable)
                             {
+                                ctx.charge_collection_items(1, "creo section candidate values")?;
                                 candidate_values.insert(variable, value);
                             }
                         }
                     }
                 }
+                ctx.try_reserve_items(&mut solutions, 1, "creo section candidate solutions")?;
                 solutions.push(candidate_values);
             }
         }
@@ -992,6 +1006,7 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                     (*candidate - value).abs() <= EPS_DISTANCE_AGREEMENT * scale
                 })
             }) {
+                ctx.charge_collection_items(1, "creo section resolved values")?;
                 resolved.insert(variable, value);
             }
         }
@@ -1791,6 +1806,84 @@ mod tests {
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits
                 && limit.operation == "explore Creo section distance signs")
+        );
+    }
+
+    fn unsigned_value_fixture(
+        ctx: &DecodeContext<'_>,
+    ) -> Result<BTreeMap<SectionCoordinateVariable, f64>, cadmpeg_core::CodecError> {
+        let equations = [
+            SectionCoordinateEquation::point_value(1, SectionAxis::U, 0.0),
+            SectionCoordinateEquation::point_value(2, SectionAxis::U, 1.0),
+        ];
+        let stored = BTreeMap::from([((1, SectionAxis::U), 0.0)]);
+        super::solve_unsigned_dimension_coordinates(
+            ctx,
+            &equations,
+            &stored,
+            &[(1, 2, SectionAxis::U, 1.0)],
+        )
+    }
+
+    fn unsigned_value_with_limit(limit: u64) -> cadmpeg_core::CodecError {
+        with_collection_limit(limit, unsigned_value_fixture)
+            .expect_err("the selected unsigned value boundary exceeds the allowance")
+    }
+
+    #[test]
+    fn unsigned_value_fixture_preserves_the_unique_distance_solution() {
+        let solved = crate::decode::with_test_decode_ctx(unsigned_value_fixture)
+            .expect("service profile admits the distance solution");
+        assert_eq!(solved, BTreeMap::from([((2, SectionAxis::U), 1.0)]));
+    }
+
+    #[test]
+    fn unsigned_stored_coordinates_refuse_before_tree_clone() {
+        let error = unsigned_value_with_limit(79);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section stored coordinate copies")
+        );
+    }
+
+    #[test]
+    fn unsigned_branch_values_refuse_before_tree_insert() {
+        let error = unsigned_value_with_limit(80);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section branch values")
+        );
+    }
+
+    #[test]
+    fn unsigned_candidate_values_refuse_before_tree_insert() {
+        let error = unsigned_value_with_limit(81);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section candidate values")
+        );
+    }
+
+    #[test]
+    fn unsigned_candidate_solutions_refuse_before_vector_growth() {
+        let error = unsigned_value_with_limit(82);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section candidate solutions")
+        );
+    }
+
+    #[test]
+    fn unsigned_resolved_values_refuse_before_tree_insert() {
+        let error = unsigned_value_with_limit(136);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section resolved values")
         );
     }
 
