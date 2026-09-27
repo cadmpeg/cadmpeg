@@ -84,3 +84,22 @@ pub(super) fn admit_temporary_clones<'a, 'ctx, T: Serialize + 'a>(
         None => Ok(None),
     }
 }
+
+/// Admit scratch storage before validation constructs candidate collections.
+pub(super) fn admit_validation_candidates<'ctx>(
+    ctx: Option<&'ctx DecodeContext<'_>>,
+    source_units: usize,
+    operation: &'static str,
+) -> Result<Option<ScopedReservation<'ctx>>, NativeConvertError> {
+    let Some(ctx) = ctx else {
+        return Ok(None);
+    };
+    let count = u64::try_from(source_units)
+        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(count, operation)?;
+    ctx.charge_collection_items(count, operation)?;
+    let bytes = count
+        .checked_mul(64)
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    Ok(Some(ctx.reserve_scoped(bytes, operation)?))
+}

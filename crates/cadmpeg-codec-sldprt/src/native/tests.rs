@@ -354,6 +354,353 @@ fn native_store_materialized_limit_refuses_before_feature_validation_clone() {
 }
 
 #[test]
+fn native_body_validation_collection_limit_refuses_before_candidates() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Body-Delete/Keep 1" Type="Body-Delete/Keep " id="41"/></Keywords>"#,
+    ));
+    let mut payload =
+        resolved_feature_classes_with_ids(&[("moDeleteBody_c", "Body-Delete/Keep 1", 41)]);
+    payload.extend([0xff, 0xff, 0x01, 0x00]);
+    payload.extend(18u16.to_le_bytes());
+    payload.extend(b"moDeleteBodyData_c");
+    payload.extend([0x08, 0x00]);
+    let mut state = [0u8; 83];
+    state[0..2].copy_from_slice(&0x89a4u16.to_le_bytes());
+    state[2..11].copy_from_slice(&[0x2b, 0x80, 0x02, 0, 0, 0, 0, 0, 0]);
+    state[11..15].copy_from_slice(&287u32.to_le_bytes());
+    state[15..19].copy_from_slice(&287u32.to_le_bytes());
+    state[47..63].fill(0xff);
+    payload.extend(state);
+    payload.extend([0x30, 0x80]);
+    payload.extend(1u32.to_le_bytes());
+    payload.extend([0; 4]);
+    payload.extend(11000u32.to_le_bytes());
+    payload.extend([0; 8]);
+    payload.extend(2u32.to_le_bytes());
+    payload.extend(287u32.to_le_bytes());
+    payload.extend(115u32.to_le_bytes());
+    payload.extend(u32::MAX.to_le_bytes());
+    payload.extend([0; 12]);
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &payload,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(decoded.ir());
+    let lane = native
+        .feature_input_lanes
+        .iter()
+        .find(|lane| !lane.body_selections.is_empty())
+        .unwrap();
+    let record = &lane.body_selections[0];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = u64::try_from(lane.native_payload.len()).unwrap() - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error =
+        super::body_selection_disagrees_with_payload(Some(&limited), lane, record).unwrap_err();
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "validate SLDPRT body selection candidates"
+    ));
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert!(!super::body_selection_disagrees_with_payload(Some(&service), lane, record).unwrap());
+}
+
+#[test]
+fn native_edge_validation_collection_limit_refuses_before_candidates() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut lane = emitter_models()
+        .iter()
+        .flat_map(|model| &model.feature_input_lanes)
+        .find(|lane| !lane.edge_selections.is_empty())
+        .unwrap()
+        .clone();
+    let marker = lane.native_payload.len() + 12;
+    lane.native_payload.extend(1u32.to_le_bytes());
+    lane.native_payload
+        .extend([0x00, 0x02, 0x00, 0x00, 0, 0, 0, 0]);
+    lane.native_payload.extend([
+        0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2, 0x54, 0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2,
+        0x54,
+    ]);
+    lane.native_payload.extend([0, 0]);
+    lane.native_payload.extend(0x818bu32.to_le_bytes());
+    lane.native_payload.extend([
+        0x00, 0x81, 0x03, 0x01, 0x2c, 0, 0, 0, 0x63, 0x18, 0x58, 0x69,
+    ]);
+    lane.native_payload.extend(7u32.to_le_bytes());
+    let mut record = lane.edge_selections[0].clone();
+    record.offset = u64::try_from(marker).unwrap();
+    record.local_edge_ids = vec![7];
+    record.components = crate::resolved_features::selections::compact_edge_component_path_at(
+        &lane.native_payload,
+        marker,
+    )
+    .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = u64::try_from(lane.native_payload.len()).unwrap() - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::edge_selection_disagrees_with_payload(Some(&limited), &lane, &record, &[])
+        .unwrap_err();
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "validate SLDPRT edge selection candidates"
+    ));
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert!(
+        !super::edge_selection_disagrees_with_payload(Some(&service), &lane, &record, &[]).unwrap()
+    );
+}
+
+#[test]
+fn native_surface_validation_collection_limit_refuses_before_candidates() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut lane = emitter_models()
+        .iter()
+        .flat_map(|model| &model.feature_input_lanes)
+        .find(|lane| !lane.surface_selections.is_empty())
+        .unwrap()
+        .clone();
+    let marker = lane.native_payload.len() + 12;
+    lane.native_payload.extend(6u32.to_le_bytes());
+    lane.native_payload.extend([0x04, 0x02, 0, 0]);
+    lane.native_payload.extend(0x1234u32.to_le_bytes());
+    lane.native_payload.extend([
+        0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2, 0x54, 0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2,
+        0x54,
+    ]);
+    lane.native_payload.extend([0, 0]);
+    lane.native_payload.extend(0x8c20u32.to_le_bytes());
+    let signature = [0x34, 0x80, 0x37, 0, 0x89, 0, 0, 0, 0xe2, 0x56, 0xdf, 0x5e];
+    lane.native_payload.extend(signature);
+    lane.native_payload.extend(12u32.to_le_bytes());
+    lane.native_payload.extend([0; 24]);
+    let mut record = lane.surface_selections[0].clone();
+    record.offset = u64::try_from(marker).unwrap();
+    record.components = vec![crate::records::FeatureInputComponentPathEntry {
+        instance: Some(0x8c20),
+        type_signature: signature,
+        local_id: Some(12),
+    }];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = u64::try_from(lane.native_payload.len()).unwrap() - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error =
+        super::surface_selection_disagrees_with_payload(Some(&limited), &lane, &record, &[])
+            .unwrap_err();
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "validate SLDPRT surface selection candidates"
+    ));
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert!(
+        !super::surface_selection_disagrees_with_payload(Some(&service), &lane, &record, &[])
+            .unwrap()
+    );
+}
+
+#[test]
+fn native_derived_lane_collection_limit_refuses_before_reconstruction() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_compact_relation_pair(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = sldprt_native(decoded.ir());
+    let lane_count = u64::try_from(native.feature_input_lanes.len()).unwrap();
+    let payload_bytes = native
+        .feature_input_lanes
+        .iter()
+        .map(|lane| u64::try_from(lane.native_payload.len()).unwrap())
+        .sum::<u64>();
+    assert!(payload_bytes > 0);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = lane_count * 2 + payload_bytes - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::lanes::admit(&native, Some(&limited)).unwrap_err();
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "validate SLDPRT derived lanes"
+    ));
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    super::lanes::admit(&native, Some(&service)).unwrap();
+}
+
+#[test]
+fn native_generated_surface_validation_limit_refuses_before_identity_rows() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let class_name = "moWzdHoleSurfIdRep_c";
+    let prefix = [0xc3, 0x80, 0xc5, 0x00];
+    let mut payload = [0xff, 0xff, 0x01, 0x00].to_vec();
+    payload.extend(u16::try_from(class_name.len()).unwrap().to_le_bytes());
+    payload.extend(class_name.as_bytes());
+    payload.extend([0, 0]);
+    payload.extend(prefix);
+    payload.extend(89u32.to_le_bytes());
+    payload.extend(0x52e4_6185u32.to_le_bytes());
+    payload.extend(2u32.to_le_bytes());
+    let mut lane = crate::records::FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: vec![crate::records::FeatureInputClass {
+            id: "class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            name: class_name.into(),
+        }],
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    lane.generated_surface_identities =
+        crate::resolved_features::selections::generated_surface_identities(&lane);
+    assert_eq!(lane.generated_surface_identities.len(), 1);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = u64::try_from(lane.native_payload.len()).unwrap() - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::generated_surface_identities_disagree_with_payload(Some(&limited), &lane)
+        .unwrap_err();
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "validate SLDPRT generated surface identities"
+    ));
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert!(
+        !super::generated_surface_identities_disagree_with_payload(Some(&service), &lane).unwrap()
+    );
+}
+
+#[test]
+fn native_scalar_operand_validation_limit_refuses_before_resolution() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_compact_relation_pair(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = sldprt_native(decoded.ir());
+    let lane = native
+        .feature_input_lanes
+        .iter()
+        .find(|lane| {
+            lane.scalars
+                .iter()
+                .any(|scalar| !scalar.operands.is_empty())
+        })
+        .unwrap();
+    let scalar = lane
+        .scalars
+        .iter()
+        .find(|scalar| !scalar.operands.is_empty())
+        .unwrap();
+    let source_items = lane.sketch_entities.len() + scalar.operands.len();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = u64::try_from(source_items).unwrap() - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::resolved_scalar_operand_markers(&limited, lane, scalar).unwrap_err();
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "validate SLDPRT scalar operand candidates"
+    ));
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        super::resolved_scalar_operand_markers(&service, lane, scalar)
+            .unwrap()
+            .len(),
+        scalar.operands.len()
+    );
+}
+
+#[test]
+fn native_history_class_validation_limit_refuses_before_lookup_maps() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_resolved_features(
+                &triangle_body(),
+                &[0, 1],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = sldprt_native(decoded.ir());
+    let source_items = native
+        .feature_input_lanes
+        .iter()
+        .map(|lane| lane.names.len() + lane.classes.len())
+        .sum::<usize>();
+    assert!(source_items > 0);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = u64::try_from(source_items).unwrap() - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut histories = native.feature_histories.clone();
+    let error =
+        super::bind_history_classes_charged(&limited, &mut histories, &native.feature_input_lanes)
+            .unwrap_err();
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "validate SLDPRT history class candidates"
+    ));
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    super::bind_history_classes_charged(&service, &mut histories, &native.feature_input_lanes)
+        .unwrap();
+}
+
+#[test]
 fn native_history_borrowed_view_matches_cleared_record_json_bytes() {
     let decoded = SldprtCodec
         .decode(
