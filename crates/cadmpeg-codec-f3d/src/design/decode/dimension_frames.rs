@@ -30,6 +30,7 @@ use crate::records::{
     topology::edge_identity::DesignEdgeOperand,
 };
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
@@ -624,6 +625,7 @@ pub(super) fn contiguous_i32_program(bytes: &[u8], start: usize, end: usize) -> 
 /// Decode paired typed sketch loci nested immediately after dimensional
 /// parameter-companion prefixes.
 pub(crate) fn decode_dimension_locus_pairs(
+    ctx: &DecodeContext<'_>,
     inputs: &DimensionDecodeInputs<'_>,
 ) -> Result<Vec<DesignDimensionLocusPair>, CodecError> {
     let &DimensionDecodeInputs {
@@ -685,13 +687,14 @@ pub(crate) fn decode_dimension_locus_pairs(
             .collect::<HashSet<_>>();
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some((start, end)) = companion_owned_interval(
+            ctx,
             companion,
             parameters.values().copied(),
             owners,
             scopes,
             headers,
             bytes.len(),
-        ) else {
+        )? else {
             continue;
         };
         let Some(mut pair) = find_dimension_locus_pair(
@@ -853,6 +856,7 @@ fn parse_dimension_locus_pair(
 /// Decode dimension frames whose ordered operand run contains a null record
 /// reference followed by one typed sketch-geometry reference.
 pub(crate) fn decode_dimension_null_locus_pairs(
+    ctx: &DecodeContext<'_>,
     inputs: &DimensionDecodeInputs<'_>,
     pairs: &[DesignDimensionLocusPair],
     groups: &[DesignDimensionLocusGroup],
@@ -931,13 +935,14 @@ pub(crate) fn decode_dimension_null_locus_pairs(
             .collect::<HashSet<_>>();
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some((start, end)) = companion_owned_interval(
+            ctx,
             companion,
             parameters.values().copied(),
             owners,
             scopes,
             headers,
             bytes.len(),
-        ) else {
+        )? else {
             continue;
         };
         let Some(mut pair) = find_dimension_null_locus_pair(
@@ -1061,6 +1066,7 @@ fn parse_dimension_null_locus_pair(
 /// Decode paired `EntityGenesis` dimensional frames carrying annotation data
 /// and a direct backlink to the governed parameter owner.
 pub(crate) fn decode_dimension_annotation_frames(
+    ctx: &DecodeContext<'_>,
     inputs: &DimensionDecodeInputs<'_>,
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignDimensionAnnotationFrame>, CodecError> {
@@ -1141,22 +1147,26 @@ pub(crate) fn decode_dimension_annotation_frames(
             .map(|owner| (owner.record_index(), owner.companion_record_index()))
             .collect::<HashMap<_, _>>();
         let bytes = scan.entry_bytes(&entry.name)?;
-        let mut intervals = companions
-            .iter()
-            .filter(|companion| native_stream(companion.id()) == Some(stream))
-            .filter_map(|companion| {
-                let (start, end) = companion_owned_interval(
-                    companion,
-                    parameters.values().copied(),
-                    owners,
-                    scopes,
-                    headers,
-                    bytes.len(),
-                )?;
-                Some((start, end, Some(companion.record_index())))
-            })
-            .collect::<Vec<_>>();
-        intervals.extend(scopes.iter().filter_map(|scope| {
+        let mut intervals = Vec::new();
+        for companion in companions.iter().filter(|companion| native_stream(companion.id()) == Some(stream)) {
+            let Some((start, end)) = companion_owned_interval(
+                ctx,
+                companion,
+                parameters.values().copied(),
+                owners,
+                scopes,
+                headers,
+                bytes.len(),
+            )? else {
+                continue;
+            };
+            ctx.charge_collection_items(1, "f3d dimension annotation intervals")?;
+            intervals.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d dimension annotation intervals allocation", 0, 1)
+            })?;
+            intervals.push((start, end, Some(companion.record_index())));
+        }
+        for interval in scopes.iter().filter_map(|scope| {
             if native_stream(&scope.id) != Some(stream) {
                 return None;
             }
@@ -1178,7 +1188,13 @@ pub(crate) fn decode_dimension_annotation_frames(
                 .min()?;
             let start = usize::try_from(scope.byte_offset()).ok()?;
             (start < end).then_some((start, end, None))
-        }));
+        }) {
+            ctx.charge_collection_items(1, "f3d dimension annotation intervals")?;
+            intervals.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d dimension annotation intervals allocation", 0, 1)
+            })?;
+            intervals.push(interval);
+        }
         for (start, end, containing_companion_record_index) in intervals {
             let mut position = start;
             while position < end {
@@ -1629,6 +1645,7 @@ fn parse_dimension_presentation_frame(
 /// Decode counted typed sketch loci nested immediately after dimensional
 /// parameter-companion prefixes.
 pub(crate) fn decode_dimension_locus_groups(
+    ctx: &DecodeContext<'_>,
     inputs: &DimensionDecodeInputs<'_>,
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignDimensionLocusGroup>, CodecError> {
@@ -1696,13 +1713,14 @@ pub(crate) fn decode_dimension_locus_groups(
             .collect::<HashSet<_>>();
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some((start, end)) = companion_owned_interval(
+            ctx,
             companion,
             parameters.values().copied(),
             owners,
             scopes,
             headers,
             bytes.len(),
-        ) else {
+        )? else {
             continue;
         };
         let candidates = find_dimension_locus_groups(
@@ -1757,14 +1775,17 @@ fn find_dimension_locus_groups(
 }
 
 pub(super) fn companion_owned_interval<'a>(
+    ctx: &DecodeContext<'_>,
     companion: &DesignParameterCompanion,
     parameters: impl IntoIterator<Item = &'a DesignParameter>,
     owners: &[DesignParameterOwner],
     scopes: &[DesignParameterScope],
     headers: &[DesignRecordHeader],
     stream_length: usize,
-) -> Option<(usize, usize)> {
-    let native_scope = native_stream(companion.id())?;
+) -> Result<Option<(usize, usize)>, CodecError> {
+    let Some(native_scope) = native_stream(companion.id()) else {
+        return Ok(None);
+    };
     let owning_scope_record_index = owners
         .iter()
         .find(|owner| {
@@ -1772,17 +1793,25 @@ pub(super) fn companion_owned_interval<'a>(
                 && owner.record_index() == companion.owner_record_index()
         })
         .map(crate::records::parameters::DesignParameterOwner::scope_record_index);
-    let foreign_scope_members = scopes
-        .iter()
-        .filter(|scope| {
+    let mut foreign_scope_members = HashSet::new();
+    for member in scopes.iter().filter(|scope| {
             native_stream(&scope.id) == Some(native_scope)
                 && Some(scope.record_index) != owning_scope_record_index
         })
-        .flat_map(|scope| scope.reference_members().values().copied())
-        .collect::<HashSet<_>>();
-    let start = usize::try_from(companion.byte_offset())
-        .ok()?
-        .checked_add(58)?;
+        .flat_map(|scope| scope.reference_members().values().copied()) {
+        if !foreign_scope_members.contains(&member) {
+            ctx.charge_collection_items(1, "f3d companion foreign scope members")?;
+            foreign_scope_members.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d companion foreign scope members allocation", 0, 1)
+            })?;
+            foreign_scope_members.insert(member);
+        }
+    }
+    let Some(start) = usize::try_from(companion.byte_offset())
+        .ok()
+        .and_then(|offset| offset.checked_add(58)) else {
+        return Ok(None);
+    };
     let end = owners
         .iter()
         .filter(|owner| {
@@ -1820,7 +1849,7 @@ pub(super) fn companion_owned_interval<'a>(
         )
         .min()
         .unwrap_or(stream_length);
-    (start <= end && end <= stream_length).then_some((start, end))
+    Ok((start <= end && end <= stream_length).then_some((start, end)))
 }
 
 fn parse_dimension_locus_group(

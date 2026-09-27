@@ -1070,3 +1070,144 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
     )
     .is_none());
 }
+
+#[test]
+fn companion_interval_refuses_foreign_scope_member_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let companion = crate::records::parameters::DesignParameterCompanion::unbound(
+        "f3d:native:parameter-companion#11".into(),
+        0,
+        crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
+        11,
+        10,
+        std::num::NonZeroU64::MIN,
+        42,
+    );
+    let scope = crate::records::feature::scope::DesignParameterScope::try_new(
+        crate::records::feature::scope::DesignParameterScopeDraft {
+            id: "f3d:native:parameter-scope#12".into(),
+            byte_offset: 80,
+            class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
+                .unwrap(),
+            record_index: 12,
+            frame_length: 200,
+            kind_offset: 180,
+            feature_ordinal: std::num::NonZeroU32::MIN,
+            feature_ordinal_offset: 0,
+            history_state_id: None,
+            previous_history_state_id: None,
+            previous_history_state_id_offset: None,
+            reference_count_offset: 89,
+            reference_members: crate::records::identity::ReferenceRun::from_columns(
+                vec![55],
+                vec![100],
+                "reference_members",
+            )
+            .unwrap(),
+            payload: crate::records::feature::scope::DesignFeatureKind::Extrude
+                .try_into()
+                .unwrap(),
+            unclosed_construction_operand_groups: Vec::new(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "261".to_owned(),
+            )
+            .unwrap(),
+            paired_byte_offset: 280,
+        }
+        .with_fixture_layout(),
+    )
+    .unwrap();
+    let header = crate::records::decal::DesignRecordHeader {
+        id: "f3d:native:record-header#55".into(),
+        record_index: 55,
+        class_tag: crate::records::references::DesignClassTag::try_from("302".to_owned())
+            .unwrap(),
+        byte_offset: 70,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let refusal = super::companion_owned_interval(
+        &limited,
+        &companion,
+        std::iter::empty(),
+        &[],
+        &[scope.clone()],
+        std::slice::from_ref(&header),
+        100,
+    );
+    assert!(matches!(
+        refusal,
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d companion foreign scope members"
+    ));
+    let admitted = super::companion_owned_interval(
+        &cadmpeg_test_support::service_decode_context(),
+        &companion,
+        std::iter::empty(),
+        &[],
+        &[scope],
+        &[header],
+        100,
+    );
+    assert_eq!(admitted.unwrap(), Some((58, 70)));
+}
+
+#[test]
+fn dimension_annotation_interval_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use std::io::{Cursor, Write};
+    use zip::CompressionMethod;
+
+    const STREAM: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let companion = crate::records::parameters::DesignParameterCompanion::unbound(
+        format!("{}:parameter-companion#0", crate::ids::native_scope(STREAM)),
+        0,
+        crate::records::references::DesignClassTag::try_from("408".to_owned()).unwrap(),
+        11,
+        10,
+        std::num::NonZeroU64::MIN,
+        42,
+    );
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(STREAM, stored).unwrap();
+    zip.write_all(&[0; 58]).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let companions = [companion];
+        let inputs = super::DimensionDecodeInputs {
+            scan,
+            placements: &[],
+            parameters: &[],
+            owners: &[],
+            companions: &companions,
+            scopes: &[],
+            headers: &[],
+            points: &[],
+            curves: &[],
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let refusal = super::decode_dimension_annotation_frames(&limited, &inputs, &[]);
+        assert!(matches!(
+            refusal,
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == "f3d dimension annotation intervals"
+        ));
+        let admitted = super::decode_dimension_annotation_frames(
+            &cadmpeg_test_support::service_decode_context(),
+            &inputs,
+            &[],
+        )
+        .unwrap();
+        assert!(admitted.is_empty());
+    });
+}

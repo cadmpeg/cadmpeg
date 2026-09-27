@@ -2354,12 +2354,14 @@ impl<'a> F3dDecodeSession<'a> {
         };
         self.native.design_dimension_locus_pairs =
             crate::design::decode::dimension_frames::decode_dimension_locus_pairs(
+                ctx,
                 &dimension_inputs,
             )?
             .try_into()
             .map_err(|error: String| CodecError::malformed(format_args!("{error}")))?;
         self.native.design_dimension_annotation_frames =
             crate::design::decode::dimension_frames::decode_dimension_annotation_frames(
+                ctx,
                 &dimension_inputs,
                 &self.native.design_entity_headers,
             )?;
@@ -2371,11 +2373,13 @@ impl<'a> F3dDecodeSession<'a> {
             )?;
         self.native.design_dimension_locus_groups =
             crate::design::decode::dimension_frames::decode_dimension_locus_groups(
+                ctx,
                 &dimension_inputs,
                 &self.native.design_entity_headers,
             )?;
         self.native.design_dimension_null_locus_pairs =
             crate::design::decode::dimension_frames::decode_dimension_null_locus_pairs(
+                ctx,
                 &dimension_inputs,
                 &self.native.design_dimension_locus_pairs,
                 &self.native.design_dimension_locus_groups,
