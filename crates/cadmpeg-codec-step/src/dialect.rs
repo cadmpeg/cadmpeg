@@ -334,22 +334,46 @@ fn copy_declared(text: &str, ctx: Option<&DecodeContext<'_>>) -> Result<String, 
 /// how STEP satisfies it: the codec decodes an unrecognized schema by recording
 /// the string and reading the exchange with the AP242 entity vocabulary
 /// anyway, which is a recovery, not a verified read.
-pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
+pub(crate) fn dialect_loss(
+    matched: &DialectMatch,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<LossNote>, CodecError> {
     let Admission::Unverified { using } = matched.admission() else {
-        return None;
+        return Ok(None);
     };
-    let declaration = matched
-        .declared()
-        .get(DECLARED_FILE_SCHEMA_IDENTIFIER)
-        .map_or_else(
-            || "The exchange declares no FILE_SCHEMA identifier".to_owned(),
-            |identifier| format!("FILE_SCHEMA identifier {identifier}"),
-        );
-    Some(StepLossCode::SourceDialectUnverified.note(format!(
-        "{declaration}; it satisfies no declared STEP dialect, so this decode read the exchange \
+    let operation = "step_dialect_unverified_loss_text";
+    let message = match matched.declared().get(DECLARED_FILE_SCHEMA_IDENTIFIER) {
+        Some(identifier) => format_dialect_loss(
+            ctx,
+            operation,
+            format_args!(
+                "FILE_SCHEMA identifier {identifier}; it satisfies no declared STEP dialect, so this decode read the exchange \
 with the entity vocabulary verified for {FORMAT}:{}",
-        using.as_str()
-    )))
+                using.as_str()
+            ),
+        )?,
+        None => format_dialect_loss(
+            ctx,
+            operation,
+            format_args!(
+                "The exchange declares no FILE_SCHEMA identifier; it satisfies no declared STEP dialect, so this decode read the exchange \
+with the entity vocabulary verified for {FORMAT}:{}",
+                using.as_str()
+            ),
+        )?,
+    };
+    Ok(Some(StepLossCode::SourceDialectUnverified.note(message)))
+}
+
+fn format_dialect_loss(
+    ctx: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+    arguments: std::fmt::Arguments<'_>,
+) -> Result<String, CodecError> {
+    match ctx {
+        Some(ctx) => crate::decode_alloc::charged_format(ctx, operation, arguments),
+        None => Ok(arguments.to_string()),
+    }
 }
 
 /// Refuses the three alternate encodings this codec identifies and does not

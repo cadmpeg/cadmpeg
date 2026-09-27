@@ -145,7 +145,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         // The `schema` attribute above stays: it is the joined identifier list,
         // and retiring the ad-hoc attribute keys is a later phase.
         let primary = StepDialect::classify(exchange, Some(ctx))?;
-        let dialect_loss = crate::dialect::dialect_loss(&primary);
+        let dialect_loss = crate::dialect::dialect_loss(&primary, Some(ctx))?;
         let ir = CadIr::empty();
 
         let mut body = DecodeBody::new(if ctx.container_only() {
@@ -164,8 +164,10 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                 format_args!("external reference {} -> {}", entry.name, entry.uri),
             )?);
         }
-        body.losses.extend(dialect_loss);
-        body.losses.extend(diagnostics.iter().map(|diagnostic| {
+        if let Some(loss) = dialect_loss {
+            push_decode_loss(&mut body.losses, loss, ctx)?;
+        }
+        for diagnostic in diagnostics {
             let (code, tag) = match diagnostic.kind {
                 crate::parse::ParseDiagnosticKind::ComplexPartialsNotAlphabetical => {
                     (StepLossCode::ParseNoncanonicalSyntax, "complex_entity")
@@ -182,14 +184,20 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                     "implementation_level",
                 ),
             };
-            code.note(diagnostic.message.clone()).with_provenance(
+            let message = crate::decode_alloc::charged_format(
+                ctx,
+                "step_decode_diagnostic_message",
+                format_args!("{}", diagnostic.message),
+            )?;
+            let loss = code.note(message).with_provenance(
                 cadmpeg_ir::SourceProvenance::root(
                     crate::dialect::FORMAT,
                     diagnostic.offset as u64,
                 )
                 .with_tag(tag),
-            )
-        }));
+            );
+            push_decode_loss(&mut body.losses, loss, ctx)?;
+        }
 
         Ok(Self {
             ir,
@@ -243,6 +251,19 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             opaque_offsets,
         }
     }
+}
+
+fn push_decode_loss(
+    losses: &mut Vec<LossNote>,
+    loss: LossNote,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "step_decode_loss_notes")?;
+    losses
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("step_decode_loss_notes", 0, 1))?;
+    losses.push(loss);
+    Ok(())
 }
 
 pub(crate) struct AnalyzedExchange {
