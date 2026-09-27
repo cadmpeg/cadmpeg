@@ -1151,9 +1151,10 @@ fn extension_id(
     name: &str,
     order: usize,
 ) -> Result<String, CodecError> {
-    let order = order.to_string();
     match ctx {
         Some(ctx) => {
+            let order = crate::resource::retained_format(ctx, format_args!("{order}"),
+                "FCStd extension order text")?;
             let child = crate::resource::retained_join(ctx, &[&order, name], ":", "FCStd extension identity key")?;
             crate::native::native_child_id_charged(ctx, "extension", owner, &child)
         }

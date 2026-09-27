@@ -59,13 +59,27 @@ fn persistence_extension_identity_refuses_at_retained_limit() {
     let child = "2:Proxy";
     let expected = crate::native::native_child_id("extension", owner, child);
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = (child.len() + expected.len()) as u64 - 1;
+    policy.limits.max_retained_bytes = ("2".len() + child.len() + expected.len()) as u64 - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     assert!(matches!(super::extension_id(Some(&ctx), owner, "Proxy", 2),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "FreeCAD native child identity"));
     assert_eq!(super::extension_id(None, owner, "Proxy", 2).expect("writer ID"), expected);
+}
+
+#[test]
+fn persistence_extension_order_refuses_at_retained_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    let error = super::extension_id(Some(&ctx), "fcstd:native:object#Body", "Proxy", 2)
+        .expect_err("extension order text must be admitted");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+        if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && failure.operation == "FCStd extension order text"), "{error:?}");
 }
 
 fn parse_with_retained_limit(document: &str, limit: u64) -> cadmpeg_core::CodecError {
