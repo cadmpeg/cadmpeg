@@ -364,7 +364,9 @@ impl<'a> Builder<'a> {
             ir.model.tessellations.push(
                 Tessellation::from_parts(
                     cadmpeg_ir::tessellation::TessellationId::mint(crate::native::model_id(
-                        "tessellation", &self.payload.id, index.to_string(),
+                        "tessellation",
+                        &self.payload.id,
+                        index.to_string(),
                     ))
                     .map_err(|error| CodecError::malformed(error.to_string()))?,
                     cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(

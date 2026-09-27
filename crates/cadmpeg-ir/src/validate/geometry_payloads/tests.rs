@@ -15,7 +15,8 @@ fn tessellation_counts_must_be_consistent() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.tessellations.push(
         Tessellation::new(
-            crate::tessellation::TessellationId::mint("synthetic:test:tessellation#invalid-counts").expect("valid identity"),
+            crate::tessellation::TessellationId::mint("synthetic:test:tessellation#invalid-counts")
+                .expect("valid identity"),
             TessellationMesh::List {
                 vertices: vec![
                     Point3::new(0.0, 0.0, 0.0),
@@ -50,7 +51,8 @@ fn tessellation_triangle_groups_and_texture_assignments_validate() {
 
     let texture = AssetId::mint("synthetic:test:asset#mesh-texture").expect("identity grammar");
     let valid = Tessellation::new(
-        crate::tessellation::TessellationId::mint("synthetic:test:tessellation#valid-groups").expect("valid identity"),
+        crate::tessellation::TessellationId::mint("synthetic:test:tessellation#valid-groups")
+            .expect("valid identity"),
         TessellationMesh::List {
             vertices: vec![
                 Point3::new(0.0, 0.0, 0.0),

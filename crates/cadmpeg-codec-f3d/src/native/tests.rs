@@ -223,8 +223,11 @@ fn diff_reports_design_material_assignment_changes() {
         .unwrap()[0];
     let mut assignment_fields = assignment.fields();
     assignment_fields.insert("entity_suffix".into(), serde_json::json!(123_456));
-    *assignment = cadmpeg_ir::NativeRecord::new(cadmpeg_ir::ids::Identity::new(assignment.id()).expect("valid identity"), assignment_fields)
-        .expect("valid native identity");
+    *assignment = cadmpeg_ir::NativeRecord::new(
+        cadmpeg_ir::ids::Identity::new(assignment.id()).expect("valid identity"),
+        assignment_fields,
+    )
+    .expect("valid native identity");
     let report = cadmpeg_ir::diff(decoded.ir(), &edited);
     let arena = report
         .per_arena

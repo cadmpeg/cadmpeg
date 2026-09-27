@@ -935,7 +935,9 @@ impl<'a> DecodeContext<'a> {
                             cadmpeg_ir::tessellation::TessellationId::mint(format!(
                                 "rhino:object:tessellation#{key}"
                             ))
-                            .map_err(|error| cadmpeg_core::CodecError::Malformed(error.to_string()))?,
+                            .map_err(|error| {
+                                cadmpeg_core::CodecError::Malformed(error.to_string())
+                            })?,
                         ),
                         scale,
                         userdata: &object.userdata,
@@ -4589,8 +4591,9 @@ fn stage_brep_carriers(
                     writer_version,
                     association: Some(association.clone()),
                     id: crate::mesh::MeshId::Ready(
-                        cadmpeg_ir::tessellation::TessellationId::mint(id)
-                            .map_err(|error| cadmpeg_core::CodecError::Malformed(error.to_string()))?,
+                        cadmpeg_ir::tessellation::TessellationId::mint(id).map_err(|error| {
+                            cadmpeg_core::CodecError::Malformed(error.to_string())
+                        })?,
                     ),
                     scale,
                     userdata: &slot.userdata,

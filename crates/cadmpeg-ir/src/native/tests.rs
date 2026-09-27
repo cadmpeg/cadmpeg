@@ -439,7 +439,11 @@ fn native_loss_counts_carry_a_nonempty_arena_population() {
         .insert("empty".into(), Vec::new());
     native.namespace_mut("future").arenas_mut().insert(
         "records".into(),
-        vec![NativeRecord::new(crate::ids::Identity::new("test:native:record#counted").expect("valid identity"), serde_json::Map::new()).unwrap()],
+        vec![NativeRecord::new(
+            crate::ids::Identity::new("test:native:record#counted").expect("valid identity"),
+            serde_json::Map::new(),
+        )
+        .unwrap()],
     );
     let counts = native.loss_counts();
     assert_eq!(counts.len(), 1);
@@ -515,7 +519,11 @@ fn deeply_nested_native_values_survive_every_stored_record_reader() {
     }
     let id = "test:native:record#deep";
     let fields = serde_json::Map::from_iter([("nested".to_owned(), nested.clone())]);
-    let constructed = NativeRecord::new(crate::ids::Identity::new(id).expect("valid identity"), fields.clone()).unwrap();
+    let constructed = NativeRecord::new(
+        crate::ids::Identity::new(id).expect("valid identity"),
+        fields.clone(),
+    )
+    .unwrap();
     let typed = Record {
         id: id.into(),
         nested: nested.clone(),
@@ -680,7 +688,11 @@ fn flat_fields_build_a_record_no_reader_has_to_measure() {
         Some(serde_json::json!(["step:test:target#0"]))
     );
     assert_eq!(
-        NativeRecord::new(crate::ids::Identity::new(id).expect("valid identity"), record.fields()).unwrap(),
+        NativeRecord::new(
+            crate::ids::Identity::new(id).expect("valid identity"),
+            record.fields()
+        )
+        .unwrap(),
         record,
         "the measured constructor admits what the flat one builds"
     );
@@ -720,17 +732,19 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
     let mut right = left.clone();
     right.native.namespace_mut("f3d").arenas_mut().insert(
         "act_guids".into(),
-        vec![
-            NativeRecord::new(crate::ids::Identity::new("f3d:test:act-guid#0").expect("valid identity"), serde_json::Map::new())
-                .expect("valid native identity"),
-        ],
+        vec![NativeRecord::new(
+            crate::ids::Identity::new("f3d:test:act-guid#0").expect("valid identity"),
+            serde_json::Map::new(),
+        )
+        .expect("valid native identity")],
     );
     right.native.namespace_mut("sldprt").arenas_mut().insert(
         "configurations".into(),
-        vec![
-            NativeRecord::new(crate::ids::Identity::new("sldprt:test:configuration#0").expect("valid identity"), serde_json::Map::new())
-                .expect("valid native identity"),
-        ],
+        vec![NativeRecord::new(
+            crate::ids::Identity::new("sldprt:test:configuration#0").expect("valid identity"),
+            serde_json::Map::new(),
+        )
+        .expect("valid native identity")],
     );
     right.native.finalize();
 
@@ -763,8 +777,11 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
         .namespace_mut("sldprt")
         .arenas_mut()
         .get_mut("configurations")
-        .unwrap()[0] = NativeRecord::new(crate::ids::Identity::new("f3d:test:act-guid#0").expect("valid identity"), serde_json::Map::new())
-        .expect("valid native identity");
+        .unwrap()[0] = NativeRecord::new(
+        crate::ids::Identity::new("f3d:test:act-guid#0").expect("valid identity"),
+        serde_json::Map::new(),
+    )
+    .expect("valid native identity");
     right.native.finalize();
     assert!(validate_neutral(&right, Vec::new())
         .expect("resource allocation did not fail")

@@ -330,7 +330,8 @@ fn standalone_mesh_round_trips_across_archive_versions() {
     let mut ir = CadIr::empty();
     ir.model.tessellations.push(
         Tessellation::new(
-            cadmpeg_ir::tessellation::TessellationId::mint("cadir:model:tessellation#mesh").expect("valid identity"),
+            cadmpeg_ir::tessellation::TessellationId::mint("cadir:model:tessellation#mesh")
+                .expect("valid identity"),
             cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
                 vec![
                     Point3::new(0.0, 0.0, 0.0),
@@ -400,7 +401,8 @@ fn standalone_mesh_round_trips_across_archive_versions() {
 #[test]
 fn admitted_mesh_values_outside_rhino_float_range_are_a_writer_limit() {
     let mesh = Tessellation::new(
-        cadmpeg_ir::tessellation::TessellationId::mint("cadir:model:tessellation#wide-coordinates").expect("valid identity"),
+        cadmpeg_ir::tessellation::TessellationId::mint("cadir:model:tessellation#wide-coordinates")
+            .expect("valid identity"),
         cadmpeg_ir::tessellation::TessellationMesh::List {
             vertices: vec![
                 Point3::new(f64::MAX, 0.0, 0.0),
@@ -423,7 +425,8 @@ fn mesh_precision_is_target_specific_and_reported() {
     let mut ir = CadIr::empty();
     ir.model.tessellations.push(
         Tessellation::new(
-            cadmpeg_ir::tessellation::TessellationId::mint("cadir:model:tessellation#precision").expect("valid identity"),
+            cadmpeg_ir::tessellation::TessellationId::mint("cadir:model:tessellation#precision")
+                .expect("valid identity"),
             cadmpeg_ir::tessellation::TessellationMesh::List {
                 vertices: vec![
                     Point3::new(0.1, 0.0, 0.0),
@@ -492,7 +495,8 @@ fn mesh_auxiliary_channels_round_trip_by_kind() {
     .collect::<Vec<_>>();
     ir.model.tessellations.push(
         cadmpeg_ir::tessellation::Tessellation::new(
-            cadmpeg_ir::tessellation::TessellationId::mint("cadir:model:tessellation#channels").expect("valid identity"),
+            cadmpeg_ir::tessellation::TessellationId::mint("cadir:model:tessellation#channels")
+                .expect("valid identity"),
             cadmpeg_ir::tessellation::TessellationMesh::List {
                 vertices,
                 triangles: vec![[0, 1, 2]],
@@ -531,7 +535,10 @@ fn mesh_channel_bytes_cannot_impersonate_nested_chunk_framing() {
     uv_data[4..12].copy_from_slice(&160_i64.to_le_bytes());
     ir.model.tessellations.push(
         Tessellation::new(
-            cadmpeg_ir::tessellation::TessellationId::mint("cadir:model:tessellation#chunk-like-channel").expect("valid identity"),
+            cadmpeg_ir::tessellation::TessellationId::mint(
+                "cadir:model:tessellation#chunk-like-channel",
+            )
+            .expect("valid identity"),
             cadmpeg_ir::tessellation::TessellationMesh::List {
                 vertices: vec![
                     Point3::new(0.0, 0.0, 0.0),
@@ -727,7 +734,8 @@ fn unsupported_retained_native_records_are_refused_before_output() {
         .or_default()
         .push(
             cadmpeg_ir::NativeRecord::new(
-                cadmpeg_ir::ids::Identity::new("rhino:presentation:material#unsupported").expect("valid identity"),
+                cadmpeg_ir::ids::Identity::new("rhino:presentation:material#unsupported")
+                    .expect("valid identity"),
                 serde_json::Map::new(),
             )
             .expect("valid native identity"),

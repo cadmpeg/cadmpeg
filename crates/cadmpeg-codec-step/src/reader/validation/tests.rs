@@ -35,7 +35,8 @@ fn complex_validation_measure_carrier_is_decoded() {
         loss.message
             .contains("geometric validation property #41 has an unsupported value")
     }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -203,7 +204,10 @@ fn numerical_followup_mesh_volume_and_centroid_are_translation_invariant() {
         )
         .unwrap();
         let mut tessellation = Tessellation::new(
-            cadmpeg_ir::tessellation::TessellationId::mint("test:step:tessellation#numerical-followup").expect("valid identity"),
+            cadmpeg_ir::tessellation::TessellationId::mint(
+                "test:step:tessellation#numerical-followup",
+            )
+            .expect("valid identity"),
             mesh,
             Vec::new(),
         )
@@ -242,7 +246,10 @@ fn numerical_seventh_mesh_mass_properties_preserve_uniform_scale() {
         )
         .unwrap();
         let mut tessellation = Tessellation::new(
-            cadmpeg_ir::tessellation::TessellationId::mint("test:step:tessellation#numerical-followup").expect("valid identity"),
+            cadmpeg_ir::tessellation::TessellationId::mint(
+                "test:step:tessellation#numerical-followup",
+            )
+            .expect("valid identity"),
             mesh,
             Vec::new(),
         )
