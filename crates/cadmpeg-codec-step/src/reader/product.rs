@@ -423,6 +423,7 @@ pub(super) fn decode(
         &mut losses,
         &mut ambiguous_placements,
         &mut competing_placements,
+        ctx,
     )?;
     for (&usage_id, source_ids) in &ambiguous_placements {
         if competing_placements.contains_key(&usage_id) {
@@ -678,34 +679,39 @@ fn apply_body_placements(
     losses: &mut Vec<LossNote>,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<(), CodecError> {
-    let pds = exchange
-        .entities("PRODUCT_DEFINITION_SHAPE")
-        .filter_map(|(id, record)| {
-            Some((
-                id,
-                named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2)
-                    .and_then(ValueExt::reference)?,
-            ))
-        })
-        .collect::<BTreeMap<_, _>>();
-    let definition_representations = definition_representations(exchange, &pds);
-    let assembly_representations = usages
-        .values()
-        .flat_map(|usage| {
-            definition_representations
-                .get(&usage.child_definition)
-                .into_iter()
-                .flatten()
-                .copied()
-        })
-        .collect::<BTreeSet<_>>();
-    let body_indices = ir
-        .model
-        .bodies
-        .iter()
-        .enumerate()
-        .map(|(index, body)| (body.id.clone(), index))
-        .collect::<BTreeMap<_, _>>();
+    let mut pds = BTreeMap::new();
+    for (id, record) in exchange.entities("PRODUCT_DEFINITION_SHAPE") {
+        if let Some(definition) = named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2)
+            .and_then(ValueExt::reference)
+        {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "step_body_placement_shapes")?;
+            }
+            pds.insert(id, definition);
+        }
+    }
+    let definition_representations = definition_representations(exchange, &pds, ctx)?;
+    let mut assembly_representations = BTreeSet::new();
+    for representation in usages.values().flat_map(|usage| {
+        definition_representations
+            .get(&usage.child_definition)
+            .into_iter()
+            .flatten()
+    }) {
+        if !assembly_representations.contains(representation) {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "step_assembly_representations")?;
+            }
+            assembly_representations.insert(*representation);
+        }
+    }
+    let mut body_indices = BTreeMap::new();
+    for (index, body) in ir.model.bodies.iter().enumerate() {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "step_body_placement_indices")?;
+        }
+        body_indices.insert(body.id.clone(), index);
+    }
     let mut representation_cache = BTreeMap::new();
     let mut placements_by_body = BTreeMap::<BodyId, Vec<(u64, Transform)>>::new();
     let drawing_owned_items = drawing_owned_items(exchange, ctx)?;
@@ -902,16 +908,17 @@ fn shape_bindings(
     topology: &TopologyData,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<BTreeMap<u64, Vec<BodyId>>, CodecError> {
-    let pds = exchange
-        .entities("PRODUCT_DEFINITION_SHAPE")
-        .filter_map(|(id, record)| {
-            Some((
-                id,
-                named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2)
-                    .and_then(ValueExt::reference)?,
-            ))
-        })
-        .collect::<BTreeMap<_, _>>();
+    let mut pds = BTreeMap::new();
+    for (id, record) in exchange.entities("PRODUCT_DEFINITION_SHAPE") {
+        if let Some(definition) = named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2)
+            .and_then(ValueExt::reference)
+        {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "step_shape_binding_shapes")?;
+            }
+            pds.insert(id, definition);
+        }
+    }
     let mut result = BTreeMap::<u64, Vec<BodyId>>::new();
     let mut representation_cache = BTreeMap::new();
     for record in exchange
@@ -975,26 +982,37 @@ fn shape_binding<'a>(
 fn definition_representations(
     exchange: &Exchange,
     pds: &BTreeMap<u64, u64>,
-) -> BTreeMap<u64, BTreeSet<u64>> {
-    exchange
-        .entities("SHAPE_DEFINITION_REPRESENTATION")
-        .filter_map(|(_, record)| {
-            let shape = named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 0)
-                .and_then(ValueExt::reference)?;
-            let definition = *pds.get(&shape)?;
-            Some((
-                definition,
-                named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 1)
-                    .and_then(ValueExt::reference)?,
-            ))
-        })
-        .fold(
-            BTreeMap::<u64, BTreeSet<u64>>::new(),
-            |mut result, (definition, representation)| {
-                result.entry(definition).or_default().insert(representation);
-                result
-            },
-        )
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<BTreeMap<u64, BTreeSet<u64>>, CodecError> {
+    let mut result = BTreeMap::<u64, BTreeSet<u64>>::new();
+    for (_, record) in exchange.entities("SHAPE_DEFINITION_REPRESENTATION") {
+        let Some(shape) = named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 0)
+            .and_then(ValueExt::reference)
+        else {
+            continue;
+        };
+        let Some(&definition) = pds.get(&shape) else {
+            continue;
+        };
+        let Some(representation) = named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 1)
+            .and_then(ValueExt::reference)
+        else {
+            continue;
+        };
+        if !result.contains_key(&definition) {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "step_definition_representation_groups")?;
+            }
+        }
+        let representations = result.entry(definition).or_default();
+        if !representations.contains(&representation) {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "step_definition_representation_members")?;
+            }
+            representations.insert(representation);
+        }
+    }
+    Ok(result)
 }
 
 fn occurrence_placements(
@@ -1004,26 +1022,35 @@ fn occurrence_placements(
     losses: &mut Vec<LossNote>,
     ambiguous: &mut BTreeMap<u64, Vec<u64>>,
     competing: &mut BTreeMap<u64, Vec<u64>>,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Result<BTreeMap<u64, Transform>, CodecError> {
-    let pds = exchange
-        .records()
-        .iter()
-        .filter_map(|(&id, record)| {
-            Some((
-                id,
-                named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2)
-                    .and_then(ValueExt::reference)?,
-            ))
-        })
-        .collect::<BTreeMap<_, _>>();
-    let definition_representations = definition_representations(exchange, &pds);
+    let mut pds = BTreeMap::new();
+    for (&id, record) in exchange.records() {
+        if let Some(definition) = named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2)
+            .and_then(ValueExt::reference)
+        {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "step_occurrence_placement_shapes")?;
+            }
+            pds.insert(id, definition);
+        }
+    }
+    let definition_representations = definition_representations(exchange, &pds, ctx)?;
     let mut definitions_by_representation = BTreeMap::<u64, BTreeSet<u64>>::new();
     for (&definition, representations) in &definition_representations {
         for &representation in representations {
-            definitions_by_representation
-                .entry(representation)
-                .or_default()
-                .insert(definition);
+            if !definitions_by_representation.contains_key(&representation) {
+                if let Some(ctx) = ctx {
+                    ctx.charge_collection_items(1, "step_represented_definition_groups")?;
+                }
+            }
+            let definitions = definitions_by_representation.entry(representation).or_default();
+            if !definitions.contains(&definition) {
+                if let Some(ctx) = ctx {
+                    ctx.charge_collection_items(1, "step_represented_definition_members")?;
+                }
+                definitions.insert(definition);
+            }
         }
     }
     let mut result = BTreeMap::new();
