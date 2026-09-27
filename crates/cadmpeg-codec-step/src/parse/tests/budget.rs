@@ -16,6 +16,25 @@ use super::super::{
 };
 
 #[test]
+fn header_record_vector_refuses_collection_limit() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(1);ENDSEC;END-ISO-10303-21;";
+    let arena = DecodeArena::new();
+    let refusal_at_header = (0..64).any(|limit| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+            .expect("root fits selected policy");
+        matches!(
+            crate::parse::parse_with_context(source, &ctx),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == "step_parse_header_records"
+        )
+    });
+    assert!(refusal_at_header, "one limit must refuse the header allocation");
+}
+
+#[test]
 fn anchor_list_slots_are_admitted_before_vector_allocation() {
     let value = Value::List((0..8).map(Value::Integer).collect());
     let anchors = BTreeMap::new();
