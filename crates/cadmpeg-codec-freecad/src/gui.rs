@@ -651,6 +651,7 @@ fn transfer_schema_one(
     graph.losses.extend(material_losses);
     let mut presentation_losses = Vec::new();
     transfer_neutral_presentation(
+        ctx,
         &mut plan,
         &graph,
         neutral_schema_version,
@@ -680,6 +681,7 @@ fn presentation_property_type(name: &str) -> Option<&'static str> {
 /// property set survives: a blank key is one unreadable property of one record,
 /// not a reason to answer no GUI presentation at all.
 fn transfer_neutral_presentation(
+    ctx: &DecodeContext<'_>,
     plan: &mut AppearancePlan,
     graph: &Graph,
     neutral_schema_version: Option<u32>,
@@ -726,19 +728,22 @@ fn transfer_neutral_presentation(
                     .collect::<Result<Vec<_>, CodecError>>()?,
             )
             .map_err(CodecError::malformed)?;
+        reserve_vec_items(ctx, &mut plan.presentation_documents, 1, "FCStd presentation documents")?;
         plan.presentation_documents.push(presentation);
     }
+    reserve_vec_items(ctx, losses, state_losses.len(), "FCStd presentation losses")?;
     losses.append(&mut state_losses);
 
-    let properties = graph.properties.iter().fold(
-        HashMap::<&str, Vec<&GuiPropertyRecord>>::new(),
-        |mut map, property| {
-            map.entry(property.owner.as_str())
-                .or_default()
-                .push(property);
-            map
-        },
-    );
+    let mut properties = HashMap::<&str, Vec<&GuiPropertyRecord>>::new();
+    for property in &graph.properties {
+        if !properties.contains_key(property.owner.as_str()) {
+            insert_hash_map(ctx, &mut properties, property.owner.as_str(), Vec::new(), "FCStd presentation property owners")?;
+        }
+        if let Some(owned) = properties.get_mut(property.owner.as_str()) {
+            reserve_vec_items(ctx, owned, 1, "FCStd presentation owner properties")?;
+            owned.push(property);
+        }
+    }
     for provider in &graph.providers {
         let owned = properties
             .get(provider.id.as_str())
@@ -779,6 +784,7 @@ fn transfer_neutral_presentation(
             }),
         );
         charge_refused_gui_keys(losses, &refused);
+        reserve_vec_items(ctx, &mut plan.view_presentations, 1, "FCStd view presentations")?;
         plan.view_presentations.push(ViewPresentation {
             id: PresentationId::compose(
                 &cadmpeg_ir::identity_namespace!("fcstd", "model", "presentation-view"),
