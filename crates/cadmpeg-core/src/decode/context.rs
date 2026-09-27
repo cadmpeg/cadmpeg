@@ -298,11 +298,19 @@ impl<'a> DecodeContext<'a> {
         additional: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        let count = u64_from_index(additional);
+        self.try_collection(additional, operation, || values.try_reserve(additional))
+    }
+
+    /// Charges collection items before a fallible collection allocation.
+    pub fn try_collection<T>(
+        &self,
+        count: usize,
+        operation: &'static str,
+        allocate: impl FnOnce() -> Result<T, std::collections::TryReserveError>,
+    ) -> Result<T, CodecError> {
+        let count = u64_from_index(count);
         self.charge_collection_items(count, operation)?;
-        values
-            .try_reserve(additional)
-            .map_err(|_| self.budget.collection_allocation_failed(count, operation))
+        allocate().map_err(|_| self.budget.collection_allocation_failed(count, operation))
     }
 
     /// Enters one recursive nesting level until the returned guard is dropped.
