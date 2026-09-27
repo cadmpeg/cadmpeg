@@ -2792,12 +2792,12 @@ fn reserve_group_vec<T>(
 ) -> Result<(), CodecError> {
     values.try_reserve_exact(additional).map_err(|_| match ctx {
         Some(ctx) => {
-            ctx.refuse_codec_limit(operation, 0, u64::try_from(additional).unwrap_or(u64::MAX))
+            ctx.refuse_codec_limit(operation, 0, cadmpeg_core::decode::u64_from_index(additional))
         }
         None => cadmpeg_core::decode::refuse_local_limit(
             operation,
-            u64::try_from(additional).unwrap_or(u64::MAX),
-            u64::try_from(additional).unwrap_or(u64::MAX),
+            cadmpeg_core::decode::u64_from_index(additional),
+            cadmpeg_core::decode::u64_from_index(additional),
         ),
     })
 }
@@ -3849,7 +3849,7 @@ pub(crate) fn offset_store_control_class_ordinals(
         (word[0] == 0).then(|| ControlWord24::new([word[1], word[2], word[3]]).value())
     };
     let count = bytes.len() / 4;
-    let count_u64 = u64::try_from(count).unwrap_or(u64::MAX);
+    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
     ctx.charge_work(count_u64, "nx offset-store control validation")?;
     if (0..count).any(|index| value_at(index).is_none()) {
         return Ok(None);
@@ -3888,7 +3888,7 @@ pub(crate) fn offset_store_control_class_ordinals(
         return Ok(None);
     };
     ctx.charge_collection_items(
-        u64::try_from(boundary).unwrap_or(u64::MAX),
+        cadmpeg_core::decode::u64_from_index(boundary),
         "nx offset-store class ordinals",
     )?;
     let mut ordinals = Vec::new();
@@ -3896,7 +3896,7 @@ pub(crate) fn offset_store_control_class_ordinals(
         ctx.refuse_codec_limit(
             "nx offset-store class ordinals",
             0,
-            u64::try_from(boundary).unwrap_or(u64::MAX),
+            cadmpeg_core::decode::u64_from_index(boundary),
         )
     })?;
     for index in 0..boundary {

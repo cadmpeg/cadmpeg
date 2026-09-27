@@ -22,7 +22,7 @@ pub(super) fn summarize(ctx: &DecodeContext<'_>, scan: &decode::Scan) -> Result<
         .checked_add(scan.streams.len())
         .ok_or_else(|| ctx.refuse_codec_limit("nx summary entries", 0, u64::MAX))?;
     ctx.charge_collection_items(
-        u64::try_from(entry_count).unwrap_or(u64::MAX),
+        cadmpeg_core::decode::u64_from_index(entry_count),
         "nx summary entries",
     )?;
     let mut entries = Vec::new();
@@ -87,7 +87,7 @@ pub(super) fn summarize(ctx: &DecodeContext<'_>, scan: &decode::Scan) -> Result<
             "file_offset",
             "",
             false,
-            SummaryValue::Number(u64::try_from(stream.file_offset).unwrap_or(u64::MAX)),
+            SummaryValue::Number(cadmpeg_core::decode::u64_from_index(stream.file_offset)),
         )?;
         insert_summary_attribute(
             ctx,
@@ -126,7 +126,7 @@ pub(super) fn summarize(ctx: &DecodeContext<'_>, scan: &decode::Scan) -> Result<
                     name,
                     false,
                     SummaryValue::Number(
-                        u64::try_from(graph.of_kind(kind).count()).unwrap_or(u64::MAX),
+                        cadmpeg_core::decode::u64_from_index(graph.of_kind(kind).count()),
                     ),
                 )?;
             }
@@ -149,7 +149,7 @@ pub(super) fn summarize(ctx: &DecodeContext<'_>, scan: &decode::Scan) -> Result<
                         name,
                         false,
                         SummaryValue::Number(
-                            u64::try_from(graph.of_kind(kind).count()).unwrap_or(u64::MAX),
+                            cadmpeg_core::decode::u64_from_index(graph.of_kind(kind).count()),
                         ),
                     )?;
                 }
@@ -159,31 +159,31 @@ pub(super) fn summarize(ctx: &DecodeContext<'_>, scan: &decode::Scan) -> Result<
                     insert_summary_attribute(ctx, &mut attributes, "records.delta.transmit_headers", "", false, SummaryValue::Text("1"))?;
                 }
                 if !census.body_revisions.is_empty() {
-                    insert_summary_attribute(ctx, &mut attributes, "records.delta.body_revisions", "", false, SummaryValue::Number(u64::try_from(census.body_revisions.len()).unwrap_or(u64::MAX)))?;
+                    insert_summary_attribute(ctx, &mut attributes, "records.delta.body_revisions", "", false, SummaryValue::Number(cadmpeg_core::decode::u64_from_index(census.body_revisions.len())))?;
                 }
                 if !census.term_use_numeric_tails.is_empty() {
-                    insert_summary_attribute(ctx, &mut attributes, "records.delta.term_use_numeric_tails", "", false, SummaryValue::Number(u64::try_from(census.term_use_numeric_tails.len()).unwrap_or(u64::MAX)))?;
+                    insert_summary_attribute(ctx, &mut attributes, "records.delta.term_use_numeric_tails", "", false, SummaryValue::Number(cadmpeg_core::decode::u64_from_index(census.term_use_numeric_tails.len())))?;
                 }
                 if !census.tagged_reference_lanes.is_empty() {
-                    insert_summary_attribute(ctx, &mut attributes, "records.delta.tagged_reference_lanes", "", false, SummaryValue::Number(u64::try_from(census.tagged_reference_lanes.len()).unwrap_or(u64::MAX)))?;
+                    insert_summary_attribute(ctx, &mut attributes, "records.delta.tagged_reference_lanes", "", false, SummaryValue::Number(cadmpeg_core::decode::u64_from_index(census.tagged_reference_lanes.len())))?;
                 }
                 if !census.reference_type_maps.is_empty() {
-                    insert_summary_attribute(ctx, &mut attributes, "records.delta.reference_type_maps", "", false, SummaryValue::Number(u64::try_from(census.reference_type_maps.len()).unwrap_or(u64::MAX)))?;
+                    insert_summary_attribute(ctx, &mut attributes, "records.delta.reference_type_maps", "", false, SummaryValue::Number(cadmpeg_core::decode::u64_from_index(census.reference_type_maps.len())))?;
                 }
                 if !census.reference_state_packets.is_empty() {
-                    insert_summary_attribute(ctx, &mut attributes, "records.delta.reference_state_packets", "", false, SummaryValue::Number(u64::try_from(census.reference_state_packets.len()).unwrap_or(u64::MAX)))?;
+                    insert_summary_attribute(ctx, &mut attributes, "records.delta.reference_state_packets", "", false, SummaryValue::Number(cadmpeg_core::decode::u64_from_index(census.reference_state_packets.len())))?;
                 }
                 if !census.reference_marker_packets.is_empty() {
-                    insert_summary_attribute(ctx, &mut attributes, "records.delta.reference_marker_packets", "", false, SummaryValue::Number(u64::try_from(census.reference_marker_packets.len()).unwrap_or(u64::MAX)))?;
+                    insert_summary_attribute(ctx, &mut attributes, "records.delta.reference_marker_packets", "", false, SummaryValue::Number(cadmpeg_core::decode::u64_from_index(census.reference_marker_packets.len())))?;
                 }
                 if !census.inline_schema_declarations.is_empty() {
-                    insert_summary_attribute(ctx, &mut attributes, "records.delta.inline_schema_declarations", "", false, SummaryValue::Number(u64::try_from(census.inline_schema_declarations.len()).unwrap_or(u64::MAX)))?;
+                    insert_summary_attribute(ctx, &mut attributes, "records.delta.inline_schema_declarations", "", false, SummaryValue::Number(cadmpeg_core::decode::u64_from_index(census.inline_schema_declarations.len())))?;
                 }
                 for (family, count) in census.full_counts() {
-                    insert_summary_attribute(ctx, &mut attributes, "records.delta.full.", family, true, SummaryValue::Number(u64::try_from(count).unwrap_or(u64::MAX)))?;
+                    insert_summary_attribute(ctx, &mut attributes, "records.delta.full.", family, true, SummaryValue::Number(cadmpeg_core::decode::u64_from_index(count)))?;
                 }
                 for (family, count) in census.tombstone_counts() {
-                    insert_summary_attribute(ctx, &mut attributes, "records.delta.tombstone.", family, true, SummaryValue::Number(u64::try_from(count).unwrap_or(u64::MAX)))?;
+                    insert_summary_attribute(ctx, &mut attributes, "records.delta.tombstone.", family, true, SummaryValue::Number(cadmpeg_core::decode::u64_from_index(count)))?;
                 }
             }
         }
@@ -200,7 +200,7 @@ pub(super) fn summarize(ctx: &DecodeContext<'_>, scan: &decode::Scan) -> Result<
                     Err(message) => {
                         let note_len = [
                             "parasolid#".len(),
-                            decimal_len(u64::try_from(si).unwrap_or(u64::MAX)),
+                            decimal_len(cadmpeg_core::decode::u64_from_index(si)),
                             ": ".len(),
                             message.len(),
                             ": ".len(),
@@ -233,7 +233,7 @@ pub(super) fn summarize(ctx: &DecodeContext<'_>, scan: &decode::Scan) -> Result<
         };
         let name_len = "parasolid#"
             .len()
-            .checked_add(decimal_len(u64::try_from(si).unwrap_or(u64::MAX)))
+            .checked_add(decimal_len(cadmpeg_core::decode::u64_from_index(si)))
             .ok_or_else(|| ctx.refuse_codec_limit("nx summary stream name", 0, u64::MAX))?;
         entries.push(ContainerEntry {
             name: render_summary_text(
@@ -254,7 +254,7 @@ pub(super) fn summarize(ctx: &DecodeContext<'_>, scan: &decode::Scan) -> Result<
 
     let (classification, mut notes) = crate::scan_notes::summarize(ctx, scan)?;
     ctx.charge_collection_items(
-        u64::try_from(storage_notes.len()).unwrap_or(u64::MAX),
+        cadmpeg_core::decode::u64_from_index(storage_notes.len()),
         "nx combined inspection notes",
     )?;
     notes
@@ -292,7 +292,7 @@ fn render_summary_text(
     len: usize,
     args: std::fmt::Arguments<'_>,
 ) -> Result<String, CodecError> {
-    ctx.charge_retained(u64::try_from(len).unwrap_or(u64::MAX), operation)?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(len), operation)?;
     let mut text = String::new();
     text.try_reserve_exact(len)
         .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
@@ -322,7 +322,7 @@ fn insert_summary_attribute(
         .ok_or_else(|| ctx.refuse_codec_limit("nx summary attribute text", 0, u64::MAX))?;
     ctx.charge_collection_items(1, "nx summary attributes")?;
     ctx.charge_retained(
-        u64::try_from(text_len).unwrap_or(u64::MAX),
+        cadmpeg_core::decode::u64_from_index(text_len),
         "nx summary attribute text",
     )?;
     let mut key = String::new();

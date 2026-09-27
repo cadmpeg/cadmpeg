@@ -671,7 +671,7 @@ pub(crate) fn terminal_feature_body_ids(
         write!(&mut prefix, "nx:s{}:", binding.stream_ordinal)
             .map_err(|_| ctx.refuse_codec_limit("nx terminal body prefix", 0, prefix_len))?;
         ctx.charge_work(
-            u64::try_from(emitted.len()).unwrap_or(u64::MAX),
+            cadmpeg_core::decode::u64_from_index(emitted.len()),
             "nx terminal body scan",
         )?;
         for body in emitted
@@ -681,7 +681,7 @@ pub(crate) fn terminal_feature_body_ids(
             if !mapped.contains(body) {
                 ctx.charge_collection_items(1, "nx mapped terminal body")?;
                 ctx.charge_retained(
-                    u64::try_from(body.as_str().len()).unwrap_or(u64::MAX),
+                    cadmpeg_core::decode::u64_from_index(body.as_str().len()),
                     "nx mapped terminal body identity",
                 )?;
                 mapped.insert(body.clone());
@@ -689,7 +689,7 @@ pub(crate) fn terminal_feature_body_ids(
             if status.terminal && !selected.contains(body) {
                 ctx.charge_collection_items(1, "nx selected terminal body")?;
                 ctx.charge_retained(
-                    u64::try_from(body.as_str().len()).unwrap_or(u64::MAX),
+                    cadmpeg_core::decode::u64_from_index(body.as_str().len()),
                     "nx selected terminal body identity",
                 )?;
                 selected.insert(body.clone());

@@ -142,7 +142,7 @@ fn ordered_fixed_candidates<'a, T>(
         }
     }
     ctx.charge_collection_items(
-        u64::try_from(candidates.len()).unwrap_or(u64::MAX),
+        cadmpeg_core::decode::u64_from_index(candidates.len()),
         "nx ordered analytic candidates",
     )?;
     let mut ordered = Vec::new();
@@ -185,7 +185,7 @@ fn push_unknown_link(
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, "nx unknown entity links")?;
     ctx.charge_retained(
-        u64::try_from(id.len()).unwrap_or(u64::MAX),
+        cadmpeg_core::decode::u64_from_index(id.len()),
         "nx unknown entity link text",
     )?;
     let links = unknown.links_mut();
@@ -260,7 +260,7 @@ pub(super) fn try_decode_geometry(
     for body in body_node_ids.keys() {
         ctx.charge_collection_items(1, "nx emitted terminal body index")?;
         ctx.charge_retained(
-            u64::try_from(body.as_str().len()).unwrap_or(u64::MAX),
+            cadmpeg_core::decode::u64_from_index(body.as_str().len()),
             "nx emitted terminal body identity",
         )?;
         emitted_body_ids.insert(body.clone());
@@ -1726,7 +1726,7 @@ fn select_terminal_feature_bodies(
     for body in &ir.model.bodies {
         ctx.charge_collection_items(1, "nx terminal body selection index")?;
         ctx.charge_retained(
-            u64::try_from(body.id.as_str().len()).unwrap_or(u64::MAX),
+            cadmpeg_core::decode::u64_from_index(body.id.as_str().len()),
             "nx terminal body selection identity",
         )?;
         emitted.insert(body.id.clone());

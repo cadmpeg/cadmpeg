@@ -250,7 +250,7 @@ fn build_metadata_ir(
         .filter(|stream| stream.kind().is_parasolid())
         .count();
     ctx.charge_collection_items(
-        u64::try_from(unknown_count).unwrap_or(u64::MAX),
+        cadmpeg_core::decode::u64_from_index(unknown_count),
         "nx metadata unknown streams",
     )?;
     let mut unknowns = Vec::new();

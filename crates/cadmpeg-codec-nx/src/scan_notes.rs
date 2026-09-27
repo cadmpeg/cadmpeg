@@ -178,13 +178,13 @@ fn push_note(
         .map_err(|_| {
             ctx.refuse_codec_limit(
                 "nx scan note text",
-                u64::try_from(MAX_SCAN_NOTE_BYTES).unwrap_or(u64::MAX),
-                u64::try_from(MAX_SCAN_NOTE_BYTES + 1).unwrap_or(u64::MAX),
+                cadmpeg_core::decode::u64_from_index(MAX_SCAN_NOTE_BYTES),
+                cadmpeg_core::decode::u64_from_index(MAX_SCAN_NOTE_BYTES + 1),
             )
         })?;
     ctx.charge_collection_items(1, "nx scan notes")?;
     ctx.charge_retained(
-        u64::try_from(measured.len).unwrap_or(u64::MAX),
+        cadmpeg_core::decode::u64_from_index(measured.len),
         "nx scan note text",
     )?;
     notes
