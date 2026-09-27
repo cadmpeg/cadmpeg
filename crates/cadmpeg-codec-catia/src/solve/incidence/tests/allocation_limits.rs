@@ -8,7 +8,86 @@ use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use std::collections::HashSet;
+use std::collections::HashMap;
 use std::sync::Arc;
+
+#[test]
+fn face_configuration_mask_refuses_before_word_and_key_growth() {
+    for (cap, operation) in [
+        (0, "catia_face_configuration_mask_words"),
+        (1, "catia face configuration mask keys"),
+    ] {
+        let mut masks = HashMap::<usize, Vec<u64>>::new();
+        assert!(matches!(
+            crate::test_support::with_collection_limit(cap, |ctx| {
+                super::super::set_mask_bit(ctx, &mut masks, 3, 0, 1, 1, "catia_face_configuration_mask_words")
+            }),
+            Err(CodecError::ResourceLimit(limit)) if limit.operation == operation
+        ));
+        assert!(masks.is_empty());
+    }
+    let mut masks = HashMap::<usize, Vec<u64>>::new();
+    crate::test_support::with_service_context(|ctx| {
+        super::super::set_mask_bit(ctx, &mut masks, 3, 0, 1, 1, "catia_face_configuration_mask_words")
+    }).expect("service resource budget");
+    assert_eq!(masks.get(&3), Some(&vec![1]));
+}
+
+#[test]
+fn face_configuration_support_refuses_collection_growth() {
+    let fixture = || vec![
+        vec![vec![(0, [0, 1])], vec![(0, [0, 1])]],
+        vec![vec![(0, [0, 1])]],
+    ];
+    let run = |ctx: &DecodeContext<'_>| {
+        let mut domains = fixture();
+        super::super::prune_face_configuration_support(ctx, &mut domains, &WorkBudget::new(1_000))
+    };
+    assert!(crate::test_support::with_service_context(run).expect("service resource budget"));
+    let mut refused = HashSet::new();
+    for cap in 0..128 {
+        match crate::test_support::with_collection_limit(cap, run) {
+            Err(CodecError::ResourceLimit(limit)) => { refused.insert(limit.operation); }
+            Ok(true) => break,
+            other => panic!("unexpected face support result: {other:?}"),
+        }
+    }
+    for operation in [
+        "catia face configuration edge sets",
+        "catia face configuration edges",
+        "catia face configuration keep marks",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
+fn face_configuration_singleton_refuses_trial_copies() {
+    let fixture = || vec![
+        vec![vec![(0, [0, 1])], vec![(0, [0, 1])]],
+        vec![vec![(0, [0, 1])]],
+    ];
+    let run = |ctx: &DecodeContext<'_>| {
+        let mut domains = fixture();
+        super::super::prune_face_configuration_singleton_support(ctx, &mut domains, &WorkBudget::new(1_000))
+    };
+    assert!(crate::test_support::with_service_context(run).expect("service resource budget"));
+    let mut refused = HashSet::new();
+    for cap in 0..256 {
+        match crate::test_support::with_collection_limit(cap, run) {
+            Err(CodecError::ResourceLimit(limit)) => { refused.insert(limit.operation); }
+            Ok(true) => break,
+            other => panic!("unexpected singleton support result: {other:?}"),
+        }
+    }
+    for operation in [
+        "catia face configuration singleton order",
+        "catia face configuration trial rows",
+        "catia face configuration trial masks",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
 
 #[test]
 fn incidence_component_graph_refuses_each_collection_limit() {

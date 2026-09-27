@@ -76,6 +76,26 @@ pub(crate) fn reserve_admitted_vec<T>(
         .map_err(|_| allocation_failed(values.len(), values.capacity(), additional, operation))
 }
 
+pub(crate) fn reserve_admitted_map<K: Eq + Hash, V>(
+    values: &mut HashMap<K, V>,
+    additional: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    values
+        .try_reserve(additional)
+        .map_err(|_| allocation_failed(values.len(), values.capacity(), additional, operation))
+}
+
+pub(crate) fn reserve_admitted_set<T: Eq + Hash>(
+    values: &mut HashSet<T>,
+    additional: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    values
+        .try_reserve(additional)
+        .map_err(|_| allocation_failed(values.len(), values.capacity(), additional, operation))
+}
+
 pub(crate) fn copy_slice<T: Clone>(
     ctx: &DecodeContext<'_>,
     values: &[T],

@@ -1547,6 +1547,74 @@ fn compact_boundary_advance_refuses_edge_point_collection_limit() {
 }
 
 #[test]
+fn compact_boundary_advance_refuses_nested_ordered_alternative_copies() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: edge,
+        end: (edge + 1) % 2,
+        reversed: Some(false),
+    };
+    let domain = MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![use_(0), use_(1)]],
+    }]);
+    let choices = vec![vec![[0, 1]], vec![[0, 1]]];
+    catia_test_context!(service_ctx);
+    let quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &service_ctx,
+        &choices,
+        2,
+        &[[0, 1], [2, 3]],
+    )
+    .expect("service resource budget")
+    .expect("initial quotient");
+    let run = |ctx: &DecodeContext<'_>| {
+        let budget = WorkBudget::new(10_000);
+        crate::solve::incidence::advance_compact_boundary_domains(
+            ctx,
+            [&domain],
+            &choices,
+            &[Some([0, 1]), Some([0, 1])],
+            None,
+            vec![(quotient.clone(), HashSet::new())],
+            &budget,
+        )
+    };
+    assert!(matches!(
+        run(&service_ctx).expect("service resource budget"),
+        crate::solve::incidence::CompactBoundaryAdvanceOutcome::Complete(_)
+    ));
+
+    let mut refused = HashSet::new();
+    for limit in 0..128 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits input limit");
+        match run(&ctx) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                refused.insert(error.operation);
+            }
+            Ok(crate::solve::incidence::CompactBoundaryAdvanceOutcome::Complete(_)) => break,
+            Ok(_) => panic!("ordered compact boundary must advance"),
+            Err(error) => panic!("unexpected refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia compact boundary alternatives",
+        "catia compact boundary alternative cycles",
+        "catia compact boundary alternative uses",
+        "catia compact boundary domain rows",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
 fn compact_boundary_advance_charges_existing_oriented_edges() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
