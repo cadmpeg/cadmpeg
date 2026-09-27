@@ -1025,15 +1025,13 @@ pub(crate) mod tests {
             .expect("joints");
         assert_eq!(joints.len(), 1);
         assert_eq!(joints[0].kind(), "Revolute");
-        assert_eq!(joints[0].references().len(), 2);
+        assert_eq!(joints[0].references().count(), 2);
         assert_eq!(
-            joints[0].references()[0].object(),
+            joints[0].references().next().and_then(crate::native::LinkTarget::object),
             Some("fcstd:native:object#Assembly")
         );
-        assert_eq!(
-            joints[0].references()[0].subelements(),
-            ["A.Face1", "A.Edge2"]
-        );
+        let first_reference = joints[0].references().next().expect("first joint reference");
+        assert_eq!(first_reference.subelements(), ["A.Face1", "A.Edge2"]);
         assert_eq!(joints[0].placements()[1][0][3], 2.0);
         assert_eq!(joints[0].parameters().raw("Suppressed"), Some("true"));
         assert_eq!(result.ir().model.assembly_joints.len(), 1);

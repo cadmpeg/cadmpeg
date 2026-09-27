@@ -345,7 +345,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     }
     for joint in &joints {
         let missing_link = !object_ids.contains(joint.object.as_str())
-            || joint.references().iter().any(|reference| {
+            || joint.references().any(|reference| {
                 reference.document().is_none()
                     && reference
                         .object()
