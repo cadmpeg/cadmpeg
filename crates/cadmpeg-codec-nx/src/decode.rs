@@ -85,7 +85,7 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
 /// resides in external child parts.
 pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, CodecError> {
     let scan = scan(ctx, root)?;
-    let (classification, notes) = crate::scan_notes::summarize(&scan);
+    let (classification, notes) = crate::scan_notes::summarize(ctx, &scan)?;
     let (dialects, dialect_losses) = classification.into_report_parts();
 
     let mut admitted_entities = 0_u64;

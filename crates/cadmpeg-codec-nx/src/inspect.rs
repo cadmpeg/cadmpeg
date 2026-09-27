@@ -252,7 +252,14 @@ pub(super) fn summarize(ctx: &DecodeContext<'_>, scan: &decode::Scan) -> Result<
         });
     }
 
-    let (classification, mut notes) = crate::scan_notes::summarize(scan);
+    let (classification, mut notes) = crate::scan_notes::summarize(ctx, scan)?;
+    ctx.charge_collection_items(
+        u64::try_from(storage_notes.len()).unwrap_or(u64::MAX),
+        "nx combined inspection notes",
+    )?;
+    notes
+        .try_reserve(storage_notes.len())
+        .map_err(|_| ctx.refuse_codec_limit("nx combined inspection notes", 0, 1))?;
     notes.extend(storage_notes);
     let container_kind = classification.container_kind();
     let (dialects, dialect_losses) = classification.into_report_parts();
