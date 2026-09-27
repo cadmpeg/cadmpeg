@@ -2464,10 +2464,10 @@ pub(super) fn project(
             candidate.model_mut().surfaces.push(Surface {
                 id: derived_surface_id.clone(),
                 geometry: support_geometry.clone(),
-                source_object: Some(match source_object(entry) {
+                source_object: Some(match source_object(entry, Some(ctx)) {
                     Ok(source) => source,
                     Err(error) => {
-                        losses.push(entity_loss(entry, error.to_string()));
+                        losses.push(entity_loss(entry, super::non_resource_error(error)?));
                         continue;
                     }
                 }),

@@ -11,7 +11,7 @@ use std::io::Cursor;
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeMode, DecodePolicy};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve, Curve, CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry,
 };
@@ -31,6 +31,37 @@ use crate::test_support::test_owned::{
     OwnedTestEntity,
 };
 use crate::IgesCodec;
+
+#[test]
+fn composite_source_object_refusal_survives_candidate_projection() {
+    let bytes = composite_curve_file();
+    let mut cap = 0_u64;
+    let mut source_objects = 0;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let result = IgesCodec.decode(
+            &mut Cursor::new(&bytes),
+            &DecodeOptions { policy, ..DecodeOptions::default() },
+        );
+        match result {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                if limit.operation == "iges source object ID" {
+                    source_objects += 1;
+                    if source_objects == 3 {
+                        return;
+                    }
+                }
+                let next = limit.used.checked_add(limit.additional).unwrap();
+                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
+                cap = next;
+            }
+            other => panic!("composite source object refusal was erased at cap {cap}: {other:?}"),
+        }
+    }
+    panic!("composite source object was not reached within 4096 admission boundaries");
+}
 
 use super::{
     bounded_nurbs_for_curve, bounded_nurbs_for_curve_with_tolerance, close, close_with_tolerance,

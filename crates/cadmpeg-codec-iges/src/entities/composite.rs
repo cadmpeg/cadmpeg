@@ -1959,8 +1959,12 @@ fn project_native_composite(
     else {
         return Ok(None);
     };
-    let Some(source) = source_object(entry).ok() else {
-        return Ok(None);
+    let source = match source_object(entry, ctx) {
+        Ok(source) => source,
+        Err(error) => {
+            super::non_resource_error(error)?;
+            return Ok(None);
+        }
     };
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
@@ -2419,7 +2423,7 @@ fn project_with_type_130_policy(
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
-            source_object: Some(source_object(entry)?),
+            source_object: Some(source_object(entry, ctx)?),
         });
         ir.model.edges.push(Edge {
             id: edge.clone(),

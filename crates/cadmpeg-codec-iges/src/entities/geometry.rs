@@ -1320,21 +1320,31 @@ impl SourceSequences {
 
 pub(super) fn source_object(
     entry: &DirectoryEntry,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
+    let render = |args: std::fmt::Arguments<'_>, operation: &'static str| match ctx {
+        Some(ctx) => crate::decode_resource::format_retained(ctx, args, operation),
+        None => Ok(args.to_string()),
+    };
+    let object_id = render(
+        format_args!("D{}", entry.sequence),
+        "iges source object ID",
+    )?;
+    let name = std::str::from_utf8(&entry.label)
+        .ok()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| render(format_args!("{value}"), "iges source object name"))
+        .transpose()?;
+    let layer = render(format_args!("{}", entry.level), "iges source object layer")?;
     Ok(SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Iges,
-        object_id: cadmpeg_core::text::NonBlankString::new(
-            SourceObjectId::new(entry.sequence).text(),
-        )
+        object_id: cadmpeg_core::text::NonBlankString::new(object_id)
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("source object_id must not be empty"))?,
-        name: std::str::from_utf8(&entry.label)
-            .ok()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned),
+        name,
         color: None,
         visible: Some(entry.status.is_visible()),
-        layer: Some(entry.level.to_string()),
+        layer: Some(layer),
         instance_path: Vec::new(),
     })
 }
@@ -1645,7 +1655,7 @@ pub(crate) fn project_geometry(
                     })?,
                 ),
             )),
-            source_object: Some(source_object(entry)?),
+            source_object: Some(source_object(entry, Some(ctx))?),
         });
         ir.model.edges.push(Edge {
             id: edge.clone(),
@@ -1886,7 +1896,7 @@ pub(crate) fn project_geometry(
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::new(start, direction),
             )),
-            source_object: Some(source_object(entry)?),
+            source_object: Some(source_object(entry, Some(ctx))?),
         });
         if entry.form != 0 {
             decoded.insert(entry.sequence);
@@ -2279,7 +2289,7 @@ pub(crate) fn project_geometry(
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
-            source_object: Some(source_object(entry)?),
+            source_object: Some(source_object(entry, Some(ctx))?),
         });
         ir.model.edges.push(Edge {
             id: edge.clone(),

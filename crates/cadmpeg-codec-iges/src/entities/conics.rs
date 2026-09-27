@@ -41,6 +41,7 @@ fn add_bounded_curve(
     geometry: CurveGeometry,
     span: BoundedSpan,
     sequences: &mut super::geometry::SourceSequences,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Result<EdgeId, cadmpeg_core::CodecError> {
     let BoundedSpan {
         start,
@@ -77,7 +78,7 @@ fn add_bounded_curve(
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry,
-        source_object: Some(source_object(entry)?),
+        source_object: Some(source_object(entry, ctx)?),
     });
     ir.model.edges.push(Edge {
         id: edge.clone(),
@@ -596,10 +597,11 @@ pub(super) fn project(
                 tolerance,
             },
             sequences,
+            ctx,
         ) {
             Ok(edge) => edge,
             Err(error) => {
-                losses.push(entity_loss(entry, error.to_string()));
+                losses.push(entity_loss(entry, super::non_resource_error(error)?));
                 continue;
             }
         };

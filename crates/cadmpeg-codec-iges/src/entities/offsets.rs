@@ -968,10 +968,10 @@ pub(super) fn project(
             ir.model.curves.push(Curve {
                 id: offset_source_id.clone(),
                 geometry: CurveGeometry::Solved(offset_source_geometry.clone()),
-                source_object: Some(match source_object(entry) {
+                source_object: Some(match source_object(entry, ctx) {
                     Ok(source) => source,
                     Err(error) => {
-                        losses.push(entity_loss(entry, error.to_string()));
+                        losses.push(entity_loss(entry, super::non_resource_error(error)?));
                         continue;
                     }
                 }),
@@ -997,10 +997,10 @@ pub(super) fn project(
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry,
-            source_object: Some(match source_object(entry) {
+            source_object: Some(match source_object(entry, ctx) {
                 Ok(source) => source,
                 Err(error) => {
-                    losses.push(entity_loss(entry, error.to_string()));
+                    losses.push(entity_loss(entry, super::non_resource_error(error)?));
                     continue;
                 }
             }),

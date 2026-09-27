@@ -14,8 +14,35 @@ use super::{
     base_geometry_line_font_valid, base_geometry_use_flag_valid, declared_affine_progression,
     consumed_support_sequences, enforce_transform_depth, is_finite_nonzero_vector, normal_matches_plane,
     plane_coordinates,
+    source_object,
     validate_declared_transform_frame, DeclaredInterval, DeclaredTransformFrameError,
 };
+
+#[test]
+fn source_object_fields_refuse_retained_limits_before_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut entry = transform_entry(1, 0);
+    entry.label = *b"HELLO   ";
+    entry.level = 7;
+    for (cap, operation) in [
+        (0, "iges source object ID"),
+        (2, "iges source object name"),
+        (7, "iges source object layer"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = source_object(&entry, Some(&ctx)).unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == operation));
+    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let source = source_object(&entry, Some(&ctx)).unwrap();
+    assert_eq!(source.object_id.as_str(), "D1");
+    assert_eq!(source.name.as_deref(), Some("HELLO"));
+    assert_eq!(source.layer.as_deref(), Some("7"));
+}
 
 #[test]
 fn plane_coordinates_refuse_collection_limit_before_projection_array() {
