@@ -63,6 +63,17 @@ pub(crate) fn reserve_vec<T>(
         .map_err(|_| allocation_failed(values.len(), values.capacity(), additional, operation))
 }
 
+pub(crate) fn copy_slice<T: Clone>(
+    ctx: &DecodeContext<'_>,
+    values: &[T],
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    let mut copy = Vec::new();
+    reserve_vec(ctx, &mut copy, values.len(), operation)?;
+    copy.extend_from_slice(values);
+    Ok(copy)
+}
+
 pub(crate) fn reserve_set<T: Eq + Hash>(
     ctx: &DecodeContext<'_>,
     values: &mut HashSet<T>,
