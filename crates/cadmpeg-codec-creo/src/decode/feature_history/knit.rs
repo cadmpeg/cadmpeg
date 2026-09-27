@@ -225,15 +225,16 @@ pub(super) fn knit_surface_feature_definition(
                 &scan.features.entity_tables,
                 &scan.surfaces.rows,
             )?;
-            let generated =
-                knit_operand_surface_ids(scan, feature_id, &quilt_ids).and_then(|surface_ids| {
-                    generated_surface_face_refs(
+            let generated = match knit_operand_surface_ids(scan, feature_id, &quilt_ids) {
+                Some(surface_ids) => generated_surface_face_refs(
+                        ctx,
                         &surface_ids,
                         &scan.surfaces.rows,
                         &result_surface_ids,
                         &available_features,
-                    )
-                });
+                    )?,
+                None => None,
+            };
             match generated {
                 Some(faces) => FaceSelection::generated(faces, native.clone())
                     .unwrap_or(FaceSelection::Native(native)),
@@ -554,23 +555,41 @@ pub(in super::super) fn feature_result_topology(
 }
 
 pub(in super::super) fn generated_surface_face_refs(
+    ctx: &DecodeContext<'_>,
     source_ids: &[u32],
     rows: &[crate::surface::SurfaceRow],
     result_surface_ids: &BTreeMap<u32, Vec<u32>>,
     available_features: &BTreeSet<IrFeatureId>,
-) -> Option<Vec<GeneratedFaceRef>> {
-    source_ids
-        .iter()
-        .map(|surface_id| {
-            let row = crate::surface::unique_surface_row(rows, *surface_id)?;
-            let feature = IrFeatureId::compose(&crate::identity::MODEL_FEATURE, row.feature_id);
-            (available_features.contains(&feature)
-                && result_surface_ids
-                    .get(&row.feature_id)
-                    .is_some_and(|ids| ids.contains(surface_id)))
-            .then_some(GeneratedFaceRef::new(feature, format!("surface#{surface_id}")).ok()?)
-        })
-        .collect()
+) -> Result<Option<Vec<GeneratedFaceRef>>, CodecError> {
+    let mut generated = Vec::new();
+    for surface_id in source_ids {
+        let Some(row) = crate::surface::unique_surface_row(rows, *surface_id) else {
+            return Ok(None);
+        };
+        let feature_text = ctx.format_retained(
+            format_args!("creo:model:feature#{}", row.feature_id),
+            "creo generated surface feature IDs",
+        )?;
+        let feature = IrFeatureId::mint(feature_text)
+            .map_err(|_| CodecError::Malformed("constructed Creo feature ID is invalid".into()))?;
+        if !available_features.contains(&feature)
+            || !result_surface_ids
+                .get(&row.feature_id)
+                .is_some_and(|ids| ids.contains(surface_id))
+        {
+            return Ok(None);
+        }
+        let local_id = ctx.format_retained(
+            format_args!("surface#{surface_id}"),
+            "creo generated surface local IDs",
+        )?;
+        let Some(face) = GeneratedFaceRef::new(feature, local_id).ok() else {
+            return Ok(None);
+        };
+        ctx.try_reserve_items(&mut generated, 1, "creo generated surface face references")?;
+        generated.push(face);
+    }
+    Ok(Some(generated))
 }
 
 pub(in super::super) fn emit_feature_result_topologies(
