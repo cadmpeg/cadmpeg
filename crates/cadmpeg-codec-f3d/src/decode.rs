@@ -4283,7 +4283,7 @@ fn extend_related_design_records(
             &native.design_record_headers,
         )?;
     native.design_component_occurrences =
-        crate::design::decode::components::decode_component_occurrences(scan)?;
+        crate::design::decode::components::decode_component_occurrences(ctx, scan)?;
     native.design_parameter_scopes =
         crate::design::decode::scopes::parameter_scope::decode_parameter_scopes(
             scan,
