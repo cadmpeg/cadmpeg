@@ -1896,18 +1896,16 @@ pub(super) fn project(
             .map_or(cached_interval, |geometry| {
                 source_parameter_interval(geometry, cached_interval)
             });
-        let Ok(_) = u32::try_from(generatrix.control_points().len()) else {
+        let generatrix_count = generatrix.pole_count();
+        let Ok(_) = u32::try_from(generatrix_count) else {
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "generatrix pole count exceeds u32"))?;
             continue;
         };
-        let Ok(v_count) = u32::try_from(angular_controls.len()) else {
+        let Ok(_) = u32::try_from(angular_controls.len()) else {
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "angular pole count exceeds u32"))?;
             continue;
         };
-        let Some(surface_pole_count) = generatrix
-            .control_points()
-            .len()
-            .checked_mul(angular_controls.len())
+        let Some(surface_pole_count) = generatrix_count.checked_mul(angular_controls.len())
         else {
             return Err(refuse_local_limit(
                 "iges_revolution_poles",
@@ -1922,19 +1920,14 @@ pub(super) fn project(
                 surface_pole_count as u64,
             ));
         }
-        let mut control_points = Vec::with_capacity(surface_pole_count);
-        let mut weights = Vec::with_capacity(control_points.capacity());
-        let generatrix_points = generatrix.control_points();
-        let generatrix_weights = generatrix.pole_rows().weights();
-        for (u_index, point) in generatrix_points.iter().enumerate() {
+        let mut control_points = reserve_optional_vec(ctx, surface_pole_count, "iges revolution surface controls")?;
+        let mut weights = reserve_optional_vec(ctx, surface_pole_count, "iges revolution surface weights")?;
+        for u_index in 0..generatrix_count {
+            let point = generatrix.pole_rows().point_at(u_index).ok_or_else(|| CodecError::malformed("generatrix pole is missing"))?;
             let delta = point.vector_from(axis_origin);
             let axis_point = axis_origin.translated(axis_direction, delta.dot(axis_direction));
             let radial = point.vector_from(axis_point);
-            let u_weight = generatrix_weights
-                .as_ref()
-                .and_then(|values| values.get(u_index))
-                .copied()
-                .unwrap_or(1.0);
+            let u_weight = generatrix.pole_rows().weight_at(u_index).unwrap_or(1.0);
             for (angle, angular_weight) in &angular_controls {
                 let rotated = rotate(radial, axis_direction, *angle);
                 let radial_control = rotated.scale(1.0 / angular_weight);
@@ -1948,11 +1941,25 @@ pub(super) fn project(
                 weights.push(u_weight * angular_weight);
             }
         }
+        let mut u_knots = reserve_optional_vec(ctx, generatrix.knots().len(), "iges revolution surface u knots")?;
+        u_knots.extend_from_slice(generatrix.knots());
+        let mut pole_rows = reserve_optional_vec(ctx, generatrix_count, "iges revolution pole rows")?;
+        for points in control_points.chunks(angular_controls.len()) {
+            let mut row = reserve_optional_vec(ctx, points.len(), "iges revolution pole row controls")?;
+            row.extend_from_slice(points);
+            pole_rows.push(row);
+        }
+        let mut weight_rows = reserve_optional_vec(ctx, generatrix_count, "iges revolution weight rows")?;
+        for weights in weights.chunks(angular_controls.len()) {
+            let mut row = reserve_optional_vec(ctx, weights.len(), "iges revolution weight row controls")?;
+            row.extend_from_slice(weights);
+            weight_rows.push(row);
+        }
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
         let surface = match NurbsSurface::from_lanes(
             NurbsSurfaceAxis::new(
                 generatrix.degree(),
-                generatrix.knots().to_vec(),
+                u_knots,
                 generatrix.periodic(),
             ),
             NurbsSurfaceAxis::new(
@@ -1963,14 +1970,7 @@ pub(super) fn project(
                     std::f64::consts::TAU,
                 ),
             ),
-            NurbsSurfaceLanes::new(
-                control_points
-                    .chunks(v_count as usize)
-                    .map(<[_]>::to_vec)
-                    .collect(),
-                Some(weights)
-                    .map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
-            ),
+            NurbsSurfaceLanes::new(pole_rows, Some(weight_rows)),
             false,
         ) {
             Ok(nurbs) => nurbs,
@@ -1982,6 +1982,7 @@ pub(super) fn project(
             }
         };
         sequences.record_surface(&surface_id, entry.sequence, ctx)?;
+        reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges revolution neutral surface slots")?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
