@@ -28,6 +28,103 @@ const EPS_TESSELLATED_CURVE_POINT: f64 = 1.0e-12;
 const EPS_APLL_POINT: f64 = 1.0e-12;
 const EPS_TP03_PARAMETER_SCALE: f64 = 1.0e-12;
 
+#[test]
+fn apll_point_name_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=APLL_POINT('leader',(1.,2.,3.),.NONE.);ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(SOURCE).expect("valid APLL exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
+        .expect("root fits retained policy");
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    assert!(matches!(
+        super::super::decode(&exchange, &mut ir, &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_string_text"
+    ));
+}
+
+#[test]
+fn tessellated_curve_name_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.)));#2=TESSELLATED_CURVE_SET('curve name',#1,((1,2)));ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(SOURCE).expect("valid tessellation exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
+        .expect("root fits retained policy");
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    assert!(matches!(
+        super::super::decode(&exchange, &mut ir, &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_string_text"
+    ));
+}
+
+fn assert_association_name_refuses(
+    source: &[u8],
+    run: impl FnOnce(
+        &crate::parse::Exchange,
+        &mut cadmpeg_ir::document::CadIr,
+        &crate::reader::index::CarrierIndex,
+        &super::super::OwnedCarriers,
+        &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+        &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<(), cadmpeg_core::CodecError>,
+) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (exchange, _) = crate::parse::parse(source).expect("valid association exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("root fits retained policy");
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let index = crate::reader::index::CarrierIndex::from_ir(&ir, &ctx)
+        .expect("empty model has no carrier index entries");
+    let owned = super::super::topology_owned_carriers(&ir, &index);
+    let mut losses = Vec::new();
+    assert!(matches!(
+        run(&exchange, &mut ir, &index, &owned, &mut losses, &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_string_text"
+    ));
+}
+
+#[test]
+fn geometric_set_member_name_refuses_retained_limit() {
+    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('member',(0.,0.,0.));#2=GEOMETRIC_SET('',(#1));ENDSEC;END-ISO-10303-21;";
+    assert_association_name_refuses(SOURCE, super::super::associate_free_geometric_set_members);
+}
+
+#[test]
+fn representation_member_name_refuses_retained_limit() {
+    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('member',(0.,0.,0.));#2=REPRESENTATION('',(#1),$);ENDSEC;END-ISO-10303-21;";
+    assert_association_name_refuses(SOURCE, super::super::associate_free_representation_members);
+}
+
+#[test]
+fn presentation_carrier_name_refuses_retained_limit() {
+    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('member',(0.,0.,0.));ENDSEC;END-ISO-10303-21;";
+    assert_association_name_refuses(SOURCE, |exchange, ir, index, owned, losses, ctx| {
+        super::super::associate_presentation_carrier(
+            exchange, ir, index, owned, 1, 1, losses, ctx,
+        )
+    });
+}
+
 fn assert_tessellated_curve_polyline(curve: &Curve, expected: &[(f64, f64, f64)]) {
     let Some(SolvedCurveGeometry::Polyline(polyline)) = curve.geometry.solved() else {
         panic!("expected tessellated curve to transfer as a polyline");

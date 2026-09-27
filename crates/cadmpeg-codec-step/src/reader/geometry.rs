@@ -5,7 +5,7 @@ use crate::ids::{key_word, kind};
 use std::collections::{hash_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use super::{named_parameter, record_values, step_instance_id, RecordExt, ValueExt};
-use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_parameter_near_point};
@@ -433,16 +433,19 @@ pub(super) fn decode(
                 if let Some(position) = apll_point_coordinates(record, point_type, record_scale) {
                     points.insert(id, position);
                     let source_name = representation_item_name(record)
-                        .and_then(|value| {
-                            super::decode_text(
+                        .map(|value| {
+                            super::decode_text_charged(
                                 exchange,
                                 value,
                                 &mut losses,
                                 id,
                                 "APLL point name",
                                 StepLossCode::MetadataStringInvalid,
+                                Some(ctx),
                             )
                         })
+                        .transpose()?
+                        .flatten()
                         .filter(|name| !name.is_empty());
                     apll_point_names.insert(id, source_name);
                 } else {
@@ -489,7 +492,7 @@ pub(super) fn decode(
             _ => {}
         }
     }
-    decode_tessellated_curve_sets(exchange, &unit_scales, ir, &mut typed, &mut losses);
+    decode_tessellated_curve_sets(exchange, &unit_scales, ir, &mut typed, &mut losses, ctx)?;
     let mut point_carriers = BTreeSet::new();
     for record in exchange.records().values() {
         if record
@@ -2146,7 +2149,8 @@ fn decode_tessellated_curve_sets(
     ir: &mut CadIr,
     typed: &mut HashSet<u64>,
     losses: &mut Vec<LossNote>,
-) {
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
     for (&id, record) in exchange.records() {
         if record.partial("TESSELLATED_CURVE_SET").is_none() {
             continue;
@@ -2181,16 +2185,19 @@ fn decode_tessellated_curve_sets(
             continue;
         };
         let source_name = representation_item_name(record)
-            .and_then(|value| {
-                super::decode_text(
+            .map(|value| {
+                super::decode_text_charged(
                     exchange,
                     value,
                     losses,
                     id,
                     "tessellated curve name",
                     StepLossCode::MetadataStringInvalid,
+                    Some(ctx),
                 )
             })
+            .transpose()?
+            .flatten()
             .filter(|name| !name.is_empty());
         for (strip_index, indices) in strips.into_iter().enumerate() {
             let curve_key = if strip_index == 0 {
@@ -2219,6 +2226,7 @@ fn decode_tessellated_curve_sets(
         }
         typed.extend([id, coordinates_id]);
     }
+    Ok(())
 }
 
 fn tessellated_curve_parameter(record: &RawRecord, index: usize) -> Option<&Value> {
@@ -2272,7 +2280,8 @@ pub(super) fn associate_free_geometric_set_members(
     index: &CarrierIndex,
     owned: &OwnedCarriers,
     losses: &mut Vec<LossNote>,
-) {
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
     for set in exchange.records().values() {
         let Some(set_type) = entity_type(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"]) else {
             continue;
@@ -2285,16 +2294,19 @@ pub(super) fn associate_free_geometric_set_members(
                 .records()
                 .get(&member)
                 .and_then(representation_item_name)
-                .and_then(|value| {
-                    super::decode_text(
+                .map(|value| {
+                    super::decode_text_charged(
                         exchange,
                         value,
                         losses,
                         member,
                         "geometric-set member name",
                         StepLossCode::MetadataStringInvalid,
+                        Some(ctx),
                     )
                 })
+                .transpose()?
+                .flatten()
                 .filter(|name| !name.is_empty());
             let association = || super::step_source_association(member, name.clone());
             if let Some(index) = index.curves.get(&member) {
@@ -2323,6 +2335,7 @@ pub(super) fn associate_free_geometric_set_members(
             }
         }
     }
+    Ok(())
 }
 
 /// Associate carriers that are listed directly by a STEP representation but
@@ -2336,7 +2349,8 @@ pub(super) fn associate_free_representation_members(
     index: &CarrierIndex,
     owned: &OwnedCarriers,
     losses: &mut Vec<LossNote>,
-) {
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
     for representation in exchange.records().values().filter(|record| {
         record
             .partials
@@ -2351,16 +2365,19 @@ pub(super) fn associate_free_representation_members(
                 .records()
                 .get(&member)
                 .and_then(representation_item_name)
-                .and_then(|value| {
-                    super::decode_text(
+                .map(|value| {
+                    super::decode_text_charged(
                         exchange,
                         value,
                         losses,
                         member,
                         "representation member name",
                         StepLossCode::MetadataStringInvalid,
+                        Some(ctx),
                     )
                 })
+                .transpose()?
+                .flatten()
                 .filter(|name| !name.is_empty());
             let association = || super::step_source_association(member, source_name.clone());
             if let Some(index) = index.curves.get(&member) {
@@ -2386,6 +2403,7 @@ pub(super) fn associate_free_representation_members(
             }
         }
     }
+    Ok(())
 }
 
 /// Associate geometry that is owned by presentation records rather than by a
@@ -2398,11 +2416,12 @@ pub(super) fn associate_free_presentation_carriers(
     index: &CarrierIndex,
     owned: &OwnedCarriers,
     losses: &mut Vec<LossNote>,
-) {
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
     for (style_id, target) in exchange.records().iter().filter_map(|(style_id, record)| {
         super::presentation::styled_item_target(record).map(|target| (*style_id, target))
     }) {
-        associate_presentation_carrier(exchange, ir, index, owned, target, style_id, losses);
+        associate_presentation_carrier(exchange, ir, index, owned, target, style_id, losses, ctx)?;
     }
     for (plane_id, plane) in exchange.entities("ANNOTATION_PLANE") {
         let mut targets = Vec::new();
@@ -2416,11 +2435,12 @@ pub(super) fn associate_free_presentation_carriers(
         for target in targets {
             if index.surfaces.contains_key(&target) {
                 associate_presentation_carrier(
-                    exchange, ir, index, owned, target, plane_id, losses,
-                );
+                    exchange, ir, index, owned, target, plane_id, losses, ctx,
+                )?;
             }
         }
     }
+    Ok(())
 }
 
 fn associate_presentation_carrier(
@@ -2431,21 +2451,25 @@ fn associate_presentation_carrier(
     target: u64,
     source_id: u64,
     losses: &mut Vec<LossNote>,
-) {
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
     let name = exchange
         .records()
         .get(&target)
         .and_then(representation_item_name)
-        .and_then(|value| {
-            super::decode_text(
+        .map(|value| {
+            super::decode_text_charged(
                 exchange,
                 value,
                 losses,
                 target,
                 "presentation carrier name",
                 StepLossCode::MetadataStringInvalid,
+                Some(ctx),
             )
         })
+        .transpose()?
+        .flatten()
         .filter(|name| !name.is_empty());
     let association = || super::step_source_association(source_id, name.clone());
     if let Some(index) = index.curves.get(&target) {
@@ -2469,6 +2493,7 @@ fn associate_presentation_carrier(
                 .get_or_insert_with(association);
         }
     }
+    Ok(())
 }
 
 fn collect_references(value: &Value, references: &mut Vec<u64>) {
