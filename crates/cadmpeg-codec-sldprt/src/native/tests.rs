@@ -280,6 +280,49 @@ fn native_load_retained_limit_refuses_before_typed_record_clone() {
 }
 
 #[test]
+fn native_load_materialized_limit_refuses_before_expected_lane_clone() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_compact_relation_pair(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let namespace = decoded.ir().native.namespace("sldprt").unwrap();
+    let native = crate::native::SldprtNative::load(namespace).unwrap();
+    assert!(!native.feature_input_lanes.is_empty());
+    let needed = native
+        .feature_input_lanes
+        .iter()
+        .map(|lane| u64::try_from(serde_json::to_vec(lane).unwrap().len()).unwrap())
+        .sum::<u64>();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = needed - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    crate::records::FEATURE_INPUT_LANE_CLONE_COUNT.with(|count| count.set(0));
+    let error = crate::native::SldprtNative::load_charged(&limited, namespace).unwrap_err();
+    assert_eq!(
+        crate::records::FEATURE_INPUT_LANE_CLONE_COUNT.with(std::cell::Cell::get),
+        0
+    );
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.operation == "validate SLDPRT expected lane copies"
+    ));
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        crate::native::SldprtNative::load_charged(&service, namespace).unwrap(),
+        native
+    );
+}
+
+#[test]
 fn native_store_materialized_limit_refuses_before_feature_validation_clone() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
