@@ -158,6 +158,7 @@ fn inspect_summary_preserves_preview_attributes_under_service_profile() {
     scan.streams[0].file_offset = 123_456_789;
     let summary = crate::test_support::with_decode_context(|ctx| super::summarize(ctx, &scan))
         .expect("preview summary fits the service profile");
+    assert_eq!(summary.entries[0].name, "parasolid#0");
     assert_eq!(
         summary.entries[0].attributes,
         std::collections::BTreeMap::from([
@@ -165,6 +166,114 @@ fn inspect_summary_preserves_preview_attributes_under_service_profile() {
             ("kind".to_string(), "preview".to_string()),
         ])
     );
+}
+
+#[test]
+fn inspect_summary_refuses_stream_name_at_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let scan = one_preview_summary_scan();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 23;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+    let error = super::summarize(&ctx, &scan)
+        .expect_err("the two attributes use the available retained bytes");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "nx summary stream name"
+    ));
+}
+
+#[test]
+fn inspect_summary_refuses_directory_name_at_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut scan = one_preview_summary_scan();
+    scan.streams.clear();
+    scan.container.entries.push(crate::container::DirEntry {
+        name: "/Root/test".to_string(),
+        region: crate::container::Region::Header,
+        body: crate::container::DirEntryBody::Directory,
+    });
+    let preceding = "region".len()
+        + crate::container::Region::Header.label().len()
+        + "kind".len()
+        + "directory".len();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(preceding).expect("small fixture");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+    let error = super::summarize(&ctx, &scan)
+        .expect_err("the directory attributes use the available retained bytes");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "nx summary directory name"
+    ));
+}
+
+fn invalid_legacy_storage_summary_scan() -> crate::decode::Scan<'static> {
+    let mut scan = one_preview_summary_scan();
+    scan.container.layout = crate::container::ContainerLayout::LegacyCfb { version: 6 };
+    scan.streams[0].inflated = vec![1, 2, 3];
+    scan.streams[0].consumed = 2;
+    scan
+}
+
+#[test]
+fn inspect_summary_refuses_storage_note_slot_at_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let scan = invalid_legacy_storage_summary_scan();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 5;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+    let error = super::summarize(&ctx, &scan)
+        .expect_err("the entry, views, and attributes use five slots");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "nx summary storage notes"
+    ));
+}
+
+#[test]
+fn inspect_summary_refuses_storage_note_text_at_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let scan = invalid_legacy_storage_summary_scan();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 23;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+    let error = super::summarize(&ctx, &scan)
+        .expect_err("the two attributes use the available retained bytes");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "nx summary storage note"
+    ));
+}
+
+#[test]
+fn inspect_summary_preserves_invalid_legacy_storage_note() {
+    let scan = invalid_legacy_storage_summary_scan();
+    let summary = crate::test_support::with_decode_context(|ctx| super::summarize(ctx, &scan))
+        .expect("storage fallback fits the service profile");
+    assert!(summary.notes.iter().any(|note| {
+        note == "parasolid#0: verbatim container entry stores fewer bytes than it expands to: 2/3"
+    }));
 }
 
 #[test]
