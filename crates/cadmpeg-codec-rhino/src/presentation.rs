@@ -9,7 +9,7 @@ use std::ops::Range;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteBinary32, FiniteReal};
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
@@ -212,10 +212,10 @@ fn serialize_material_textures<S: serde::Serializer>(
 struct PhysicallyBasedMaterialRecord {
     #[serde(flatten)]
     revision: PhysicallyBasedMaterialRevision,
-    base_color: [f32; 4],
+    base_color: [FiniteBinary32; 4],
     brdf: i32,
     subsurface: FiniteReal,
-    subsurface_scattering_color: [f32; 4],
+    subsurface_scattering_color: [FiniteBinary32; 4],
     subsurface_scattering_radius: FiniteReal,
     metallic: FiniteReal,
     specular: FiniteReal,
@@ -230,7 +230,7 @@ struct PhysicallyBasedMaterialRecord {
     opacity_ior: FiniteReal,
     opacity: FiniteReal,
     opacity_roughness: FiniteReal,
-    emission: [f32; 4],
+    emission: [FiniteBinary32; 4],
 }
 
 #[derive(Debug)]
@@ -1309,16 +1309,19 @@ fn object_attributes_presentation(
     }
 }
 
-fn read_color_f32(reader: &mut BoundedReader<'_>, label: &str) -> Result<[f32; 4], FramingError> {
+fn read_color_f32(
+    reader: &mut BoundedReader<'_>,
+    label: &str,
+) -> Result<[FiniteBinary32; 4], FramingError> {
     let offset = reader.position();
     let color = [reader.f32()?, reader.f32()?, reader.f32()?, reader.f32()?];
-    color
-        .iter()
-        .all(|value| value.is_finite())
-        .then_some(color)
-        .ok_or_else(|| {
-            FramingError::structural(offset, format!("{label} contains a non-finite component"))
-        })
+    let [Some(red), Some(green), Some(blue), Some(alpha)] = color.map(FiniteBinary32::new) else {
+        return Err(FramingError::structural(
+            offset,
+            format!("{label} contains a non-finite component"),
+        ));
+    };
+    Ok([red, green, blue, alpha])
 }
 
 fn finite3(reader: &mut BoundedReader<'_>, label: &str) -> Result<[FiniteReal; 3], FramingError> {

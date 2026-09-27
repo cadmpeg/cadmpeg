@@ -1229,6 +1229,31 @@ fn numerical_followup_profile_speed_bound_retains_common_weights() {
 }
 
 #[test]
+fn implicit_profile_unit_weights_match_explicit_units() {
+    let points = vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)];
+    let implicit = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        points.clone(),
+        None,
+        false,
+    )
+    .expect("polynomial pcurve");
+    let explicit = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        points,
+        Some(vec![1.0, 1.0]),
+        false,
+    )
+    .expect("unit-weight pcurve");
+    assert_eq!(
+        super::nurbs_speed_bound(&implicit),
+        super::nurbs_speed_bound(&explicit)
+    );
+}
+
+#[test]
 fn numerical_followup_boolean_line_arc_matches_point_intersections() {
     let radius = 1e-4;
     let arc = ProfileBoundarySegment::Arc {

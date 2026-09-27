@@ -515,9 +515,18 @@ fn point_vector_plane_and_transform_readers_hold_their_admitted_values() {
     }
     let mut reader = BoundedReader::new(&bytes, 1, bytes.len()).expect("plane reader");
     let plane = settings::plane(&mut reader).expect("finite plane");
-    assert_eq!(plane.origin, [1.0, 2.0, 3.0]);
-    assert_eq!(plane.zaxis, [0.0, 0.0, 1.0]);
-    assert_eq!(plane.equation, [0.0, 0.0, 1.0, -3.0]);
+    assert!(matches!(
+        plane.origin,
+        settings::CoordinateLane::Admitted(_)
+    ));
+    assert_eq!(plane.xaxis.get(), [1.0, 0.0, 0.0]);
+    assert!(matches!(
+        plane.equation,
+        settings::CoordinateLane::Admitted(_)
+    ));
+    assert_eq!(plane.origin.get(), [1.0, 2.0, 3.0]);
+    assert_eq!(plane.zaxis.get(), [0.0, 0.0, 1.0]);
+    assert_eq!(plane.equation.get(), [0.0, 0.0, 1.0, -3.0]);
     let mut reader = BoundedReader::new(&bytes, 1, bytes.len()).expect("transform reader");
     let transform = settings::xform(&mut reader).expect("finite transform");
     assert_eq!(transform.0.get()[15], -3.0);
@@ -1218,8 +1227,8 @@ fn layer_extensions_read_effective_fields_sort_entries_and_apply_root_rule() {
     assert_eq!(values[1].viewport_id, second_viewport);
     assert_eq!(values[1].settings_mask(), 63);
     assert_eq!(
-        values[1].plot_weight_mm,
-        Some(crate::test_support::finite(1.25))
+        values[1].plot_weight_mm.map(settings::LayerPlotWeight::get),
+        Some(1.25)
     );
     assert_eq!(
         values[1].visible.map(settings::LayerVisibility::as_u8),
@@ -1344,6 +1353,24 @@ fn negative_viewport_plot_weight_is_reported() {
 #[test]
 fn nonfinite_viewport_plot_weight_is_reported() {
     assert_malformed_viewport_plot_weight(f64::NAN);
+}
+
+#[test]
+fn viewport_plot_weight_keeps_the_exact_unset_sentinel() {
+    let (payload, descriptor) = single_viewport_extension(
+        super::LAYER_PER_VIEWPORT_ID | super::LAYER_PER_VIEWPORT_PLOT_WEIGHT,
+        &(-1.0_f64).to_le_bytes(),
+    );
+    let values = parse_test_extensions(&payload, &descriptor, ArchiveVersion::V8, None)
+        .expect("unset plot weight");
+    assert_eq!(
+        values[0].plot_weight_mm,
+        Some(settings::LayerPlotWeight::Unset)
+    );
+    assert_eq!(
+        serde_json::to_value(values[0].plot_weight_mm).expect("serialized plot weight"),
+        serde_json::json!(-1.0)
+    );
 }
 
 #[test]

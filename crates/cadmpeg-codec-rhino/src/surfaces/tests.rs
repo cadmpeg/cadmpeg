@@ -35,7 +35,10 @@ fn decode(
     with_test_context(|ctx| super::decode(ctx, data, class, range, scale, archive, depth))
 }
 
-fn read_knots(reader: &mut BoundedReader<'_>, count: usize) -> Result<Vec<f64>, GeometryError> {
+fn read_knots(
+    reader: &mut BoundedReader<'_>,
+    count: usize,
+) -> Result<Vec<cadmpeg_ir::scalar::FiniteReal>, GeometryError> {
     with_test_context(|ctx| super::read_knots(ctx, reader, count))
 }
 
@@ -281,6 +284,60 @@ fn sum_surface_temporary_lanes_refuse_materialized_limit_before_reserve() {
 }
 
 #[test]
+fn sum_surface_first_weights_refuse_collection_limit() {
+    let first = test_curve(
+        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+        None,
+        [0.0, 1.0],
+    );
+    let second = test_curve(
+        vec![Point3::new(0.0, 1.0, 0.0), Point3::new(0.0, 2.0, 0.0)],
+        None,
+        [0.0, 1.0],
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 13;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test input fits service profile");
+    let error = super::sum_nurbs(&ctx, &first, &second, Vector3::new(0.0, 0.0, 0.0), 0)
+        .expect_err("two first-profile weights exceed the remaining item allowance");
+    assert_resource(
+        &error,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "Rhino sum-surface first weights",
+    );
+    assert!(sum_nurbs(&first, &second, Vector3::new(0.0, 0.0, 0.0), 0).is_ok());
+}
+
+#[test]
+fn sum_surface_second_weights_refuse_collection_limit() {
+    let first = test_curve(
+        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+        Some(vec![1.0, 1.0]),
+        [0.0, 1.0],
+    );
+    let second = test_curve(
+        vec![Point3::new(0.0, 1.0, 0.0), Point3::new(0.0, 2.0, 0.0)],
+        None,
+        [0.0, 1.0],
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 17;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test input fits service profile");
+    let error = super::sum_nurbs(&ctx, &first, &second, Vector3::new(0.0, 0.0, 0.0), 0)
+        .expect_err("two second-profile weights exceed the remaining item allowance");
+    assert_resource(
+        &error,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "Rhino sum-surface second weights",
+    );
+    assert!(sum_nurbs(&first, &second, Vector3::new(0.0, 0.0, 0.0), 0).is_ok());
+}
+
+#[test]
 fn sum_surface_grid_refuses_retained_limit_before_copy() {
     let first = test_curve(
         vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
@@ -351,6 +408,48 @@ fn revolution_temporary_lanes_refuse_materialized_limit_before_reserve() {
         [0.0, 1.0],
         false,
         0
+    )
+    .is_ok());
+}
+
+#[test]
+fn revolution_profile_weights_refuse_collection_limit() {
+    let profile = test_curve(
+        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+        None,
+        [0.0, 1.0],
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 26;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test input fits service profile");
+    let error = super::revolution_nurbs(
+        &ctx,
+        &profile,
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        super::RevolutionIntervals {
+            angle: [0.0, std::f64::consts::FRAC_PI_2],
+            parameter: [0.0, 1.0],
+        },
+        false,
+        0,
+    )
+    .expect_err("two profile weights exceed the remaining item allowance");
+    assert_resource(
+        &error,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "Rhino revolution profile weights",
+    );
+    assert!(revolution_nurbs(
+        &profile,
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        [0.0, std::f64::consts::FRAC_PI_2],
+        [0.0, 1.0],
+        false,
+        0,
     )
     .is_ok());
 }
@@ -791,6 +890,30 @@ fn an_invalid_knot_is_refused_at_the_knot_first_byte() {
     }
 }
 
+#[test]
+fn checked_source_knots_reconstruct_without_scalar_readmission() {
+    let stored = [0.0_f64, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+    let bytes = stored
+        .into_iter()
+        .flat_map(f64::to_le_bytes)
+        .collect::<Vec<_>>();
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("knot reader");
+    let checked = read_knots(&mut reader, stored.len()).expect("finite ordered source knots");
+    assert_eq!(
+        checked
+            .iter()
+            .copied()
+            .map(cadmpeg_ir::scalar::FiniteReal::get)
+            .collect::<Vec<_>>()
+            .as_slice(),
+        stored
+    );
+    let reconstructed = super::reconstruct_checked_knots(&checked, 3, 6)
+        .expect("reconstructed checked knot vector");
+    let expected = reconstruct_knots(&stored, 3, 6).expect("raw reference reconstruction");
+    assert_eq!(reconstructed.as_slice(), expected.as_slice());
+}
+
 /// `read_poles` refuses a pole whose scaled coordinate overflows at the pole's
 /// first byte rather than at the byte after it.
 #[test]
@@ -1099,8 +1222,14 @@ fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
         Ok(())
     })
     .expect("valid test curve edit");
-    let plain =
-        super::extrusion_nurbs(&start, &end, [10.0, 20.0], false, 0).expect("required invariant");
+    let plain = super::extrusion_nurbs(
+        &start,
+        &end,
+        cadmpeg_ir::units::FiniteVector::new([10.0, 20.0]).expect("finite path domain"),
+        false,
+        0,
+    )
+    .expect("required invariant");
     assert_eq!((plain.u_degree(), plain.v_degree()), (2, 1));
     assert_eq!(plain.u_knots(), start.knots());
     assert_eq!(plain.v_knots().as_slice(), vec![10.0, 10.0, 20.0, 20.0]);
@@ -1112,8 +1241,14 @@ fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
         plain.poles().into_iter().nth(3).unwrap(),
         end.control_points()[1]
     );
-    let transposed =
-        super::extrusion_nurbs(&start, &end, [10.0, 20.0], true, 0).expect("required invariant");
+    let transposed = super::extrusion_nurbs(
+        &start,
+        &end,
+        cadmpeg_ir::units::FiniteVector::new([10.0, 20.0]).expect("finite path domain"),
+        true,
+        0,
+    )
+    .expect("required invariant");
     assert_eq!((transposed.u_degree(), transposed.v_degree()), (1, 2));
     assert_eq!((transposed.u_count(), transposed.v_count()), (2, 3));
     assert_eq!(

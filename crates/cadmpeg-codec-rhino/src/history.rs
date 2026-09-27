@@ -1071,9 +1071,9 @@ fn extended_geometry_json(
             "kind": "hatch",
             "plane": {
                 "origin": origin,
-                "xaxis": plane.xaxis,
-                "yaxis": plane.yaxis,
-                "zaxis": plane.zaxis,
+                "xaxis": plane.xaxis.get(),
+                "yaxis": plane.yaxis.get(),
+                "zaxis": plane.zaxis.get(),
                 "equation": [
                     plane.equation[0],
                     plane.equation[1],

@@ -18,24 +18,31 @@ pub struct HomogeneousBezierSpan<const DIMENSION: usize = 4> {
 /// Form a positive-weight homogeneous polygon without common-scale overflow.
 /// Refuse a raw pole with a non-finite coordinate, and a relative weight or
 /// coordinate product that would disappear.
+/// The output polygon has one control per admitted input pole; absent weights
+/// are read as 1.0 without allocating a weight array.
 pub fn positive_controls<P: PoleValue<FinitePoint3>>(
     points: &[P],
-    weights: &[f64],
+    weights: Option<&[f64]>,
 ) -> Option<Vec<[f64; 4]>> {
-    if points.len() != weights.len()
+    if weights.is_some_and(|weights| points.len() != weights.len())
         || points.is_empty()
-        || weights
-            .iter()
-            .any(|weight| !weight.is_finite() || *weight <= 0.0)
+        || weights.is_some_and(|weights| {
+            weights
+                .iter()
+                .any(|weight| !weight.is_finite() || *weight <= 0.0)
+        })
     {
         return None;
     }
-    let scale = weights.iter().copied().fold(0.0_f64, f64::max);
+    let weight_at = |index: usize| weights.map_or(1.0, |weights| weights[index]);
+    let scale = weights.map_or(1.0, |weights| {
+        weights.iter().copied().fold(0.0_f64, f64::max)
+    });
     points
         .iter()
-        .zip(weights)
-        .map(|(point, weight)| {
-            let weight = weight / scale;
+        .enumerate()
+        .map(|(index, point)| {
+            let weight = weight_at(index) / scale;
             let point = point.admit()?.get();
             if weight == 0.0 {
                 return None;
