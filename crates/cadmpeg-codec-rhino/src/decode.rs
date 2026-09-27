@@ -3993,8 +3993,8 @@ struct BrepCarrierInput<'a> {
 
 struct BrepCarrierDraft {
     staged: BrepDraft,
-    c3: BTreeMap<usize, cadmpeg_ir::ids::CurveId>,
-    surfaces: BTreeMap<usize, StagedBrepSurface>,
+    c3: HashMap<usize, cadmpeg_ir::ids::CurveId>,
+    surfaces: HashMap<usize, StagedBrepSurface>,
     child_cause: Option<String>,
 }
 
@@ -4101,8 +4101,8 @@ fn stage_brep_carriers(
         mesh_budget,
     } = input;
     let mut staged = BrepDraft::default();
-    let mut c3 = BTreeMap::new();
-    let mut surfaces = BTreeMap::new();
+    let mut c3 = HashMap::new();
+    let mut surfaces = HashMap::new();
     let mut child_cause = None;
     for (kind, slots) in [
         ("render", &raw.render_meshes),
@@ -4186,6 +4186,7 @@ fn stage_brep_carriers(
                         continue;
                     }
                 };
+                reserve_transaction_map(expand.ctx(), &mut c3, 1, "Rhino Brep C3 slots")?;
                 c3.insert(index, id);
             }
             Ok(_) => {
@@ -4243,6 +4244,12 @@ fn stage_brep_carriers(
                         Exactness::ByteExact
                     },
                 );
+                reserve_transaction_map(
+                    expand.ctx(),
+                    &mut surfaces,
+                    1,
+                    "Rhino Brep surface slots",
+                )?;
                 surfaces.insert(
                     index,
                     StagedBrepSurface {
@@ -4270,6 +4277,12 @@ fn stage_brep_carriers(
                 },
             ) {
                 Ok(id) => {
+                    reserve_transaction_map(
+                        expand.ctx(),
+                        &mut surfaces,
+                        1,
+                        "Rhino Brep surface slots",
+                    )?;
                     surfaces.insert(
                         index,
                         StagedBrepSurface {
@@ -5231,7 +5244,7 @@ fn decode_pcurves(
     raw: &crate::brep::RawBrep,
     resolved: &crate::brep::ResolvedBrep,
     key: &str,
-    surfaces: &BTreeMap<usize, StagedBrepSurface>,
+    surfaces: &HashMap<usize, StagedBrepSurface>,
 ) -> Result<DecodedPcurves, crate::curves::GeometryError> {
     let mut ids = HashMap::new();
     let mut values = Vec::new();

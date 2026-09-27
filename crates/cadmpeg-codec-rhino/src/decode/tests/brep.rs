@@ -659,6 +659,8 @@ fn staged_brep_collections_refuse_just_below_each_required_count() {
         .try_into()
         .expect("valid identity");
     let expected = [
+        "Rhino Brep C3 slots",
+        "Rhino Brep surface slots",
         "Rhino Brep pcurve IDs",
         "Rhino Brep decoded C2 slots",
         "Rhino Brep cached C2 curve",
@@ -831,6 +833,74 @@ fn brep_mesh_cache_retention_refusal_reaches_the_caller() {
     ));
 }
 
+fn assert_brep_carrier_slot_refusal(operation: &str) {
+    let (data, raw) = source_shaped_plane_brep();
+    let brep = with_expand_bytes(&data, |expand| {
+        crate::brep::ValidatedRawBrep::try_new(expand.ctx(), raw)
+    })
+    .expect("validate source-shaped Brep");
+    let association = super::test_association();
+    let unknown: UnknownId = "rhino:object:record#plane"
+        .try_into()
+        .expect("valid identity");
+    let service = with_expand_bytes(&data, |expand| {
+        stage_brep(BrepTransferInput {
+            expand,
+            data: &data,
+            archive: ArchiveVersion::V5,
+            writer_version: Some(200_206_180),
+            brep: &brep,
+            key: "plane",
+            association: &association,
+            unknown: &unknown,
+            scale: MillimeterScale::IDENTITY,
+            mesh_budget: &mut crate::mesh::MeshBudget::new(),
+        })
+    });
+    assert!(service.is_ok(), "service Brep staging: {service:?}");
+    let mut witnessed = false;
+    for limit in 0..1024_u64 {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
+                .expect("source bytes fit root limit");
+        let result = stage_brep(BrepTransferInput {
+            expand: crate::mesh::MeshExpand::new(&ctx, root),
+            data: &data,
+            archive: ArchiveVersion::V5,
+            writer_version: Some(200_206_180),
+            brep: &brep,
+            key: "plane",
+            association: &association,
+            unknown: &unknown,
+            scale: MillimeterScale::IDENTITY,
+            mesh_budget: &mut crate::mesh::MeshBudget::new(),
+        });
+        if matches!(
+            result,
+            Err(crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(ref refusal)))
+                if refusal.operation == operation
+                    && limit == refusal.used + refusal.additional - 1
+        ) {
+            witnessed = true;
+            break;
+        }
+    }
+    assert!(witnessed, "missing refusal at {operation}");
+}
+
+#[test]
+fn brep_c3_slot_map_refuses_collection_limit() {
+    assert_brep_carrier_slot_refusal("Rhino Brep C3 slots");
+}
+
+#[test]
+fn brep_surface_slot_map_refuses_collection_limit() {
+    assert_brep_carrier_slot_refusal("Rhino Brep surface slots");
+}
+
 #[test]
 fn reused_brep_c2_curve_refuses_before_the_second_copy() {
     let (data, mut raw) = source_shaped_plane_brep();
@@ -847,7 +917,7 @@ fn reused_brep_c2_curve_refuses_before_the_second_copy() {
             brep.raw(),
             brep.resolved(),
             "plane",
-            &std::collections::BTreeMap::new(),
+            &std::collections::HashMap::new(),
         )
     })
     .expect("shared C2 slot decodes under the service profile");
@@ -866,7 +936,7 @@ fn reused_brep_c2_curve_refuses_before_the_second_copy() {
             brep.raw(),
             brep.resolved(),
             "plane",
-            &std::collections::BTreeMap::new(),
+            &std::collections::HashMap::new(),
         ) {
             Err(crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
                 refusal,
