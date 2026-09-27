@@ -537,6 +537,25 @@ struct Parser<'input, 'ctx, 'arena> {
     budget: Option<&'ctx DecodeContext<'arena>>,
 }
 
+fn push_charged<T>(
+    budget: Option<&DecodeContext<'_>>,
+    values: &mut Vec<T>,
+    value: T,
+    operation: &'static str,
+) -> Result<(), ParseError> {
+    if let Some(ctx) = budget {
+        ctx.charge_collection_items(1, operation)?;
+    }
+    values.try_reserve(1).map_err(|_| {
+        ParseError::Resource(match budget {
+            Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
+            None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
+        })
+    })?;
+    values.push(value);
+    Ok(())
+}
+
 struct HeaderAdmission {
     implementation_level: DeclaredImplementationLevel,
     schema_identifiers: Vec<AdmittedSchemaIdentifier>,
@@ -686,11 +705,16 @@ impl Parser<'_, '_, '_> {
             let parameters = self.parameters()?;
             self.charge_value_vec_storage(&parameters, "step_parse_collection_storage")?;
             self.punct(&TokenKind::Semicolon)?;
-            header.push(HeaderRecord {
-                name,
-                parameters,
-                offset,
-            });
+            push_charged(
+                self.budget,
+                &mut header,
+                HeaderRecord {
+                    name,
+                    parameters,
+                    offset,
+                },
+                "step_parse_header_records",
+            )?;
         }
         self.name("ENDSEC")?;
         self.punct(&TokenKind::Semicolon)?;
