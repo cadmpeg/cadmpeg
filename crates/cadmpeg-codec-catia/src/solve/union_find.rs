@@ -25,6 +25,7 @@ impl UnionFind {
     }
 
     /// Creates `length` singleton sets, one per node `0..length`.
+    #[cfg(test)]
     pub(crate) fn new(length: usize) -> Self {
         Self {
             parents: (0..length).collect(),

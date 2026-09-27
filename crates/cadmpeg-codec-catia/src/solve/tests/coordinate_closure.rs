@@ -219,8 +219,11 @@ fn quotient_merges_roots_forced_to_one_coordinate_identity() {
             .map(|point| Arc::new(HashSet::from([point])))
             .collect(),
     );
+    catia_test_context!(ctx);
 
-    assert!(quotient.merge_singleton_coordinate_roots(&[Vec::new(), Vec::new()]));
+    assert!(quotient
+        .merge_singleton_coordinate_roots(&ctx, &[Vec::new(), Vec::new()])
+        .expect("service resource budget"));
     assert_eq!(quotient.root_count(), 3);
     assert_eq!(quotient.find(0), quotient.find(2));
 }
@@ -230,8 +233,11 @@ fn singleton_coordinate_root_merges_are_batched() {
     const ROOT_COUNT: usize = 10_000;
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), ROOT_COUNT));
     let candidates = vec![Vec::new(); ROOT_COUNT / 2];
+    catia_test_context!(ctx);
 
-    assert!(quotient.merge_singleton_coordinate_roots(&candidates));
+    assert!(quotient
+        .merge_singleton_coordinate_roots(&ctx, &candidates)
+        .expect("service resource budget"));
     assert_eq!(quotient.root_count(), 1);
 }
 
@@ -825,13 +831,18 @@ fn quotient_closure_requires_every_coordinate_row_in_a_domain() {
 
 #[test]
 fn quotient_accepts_diagonal_domain_for_closed_edge() {
+    catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(vec![
         Arc::new(HashSet::from([2])),
         Arc::new(HashSet::from([2])),
     ]);
     quotient.merge(0, 1).expect("closed endpoint merge");
-    assert!(quotient.edge_domains_viable(&[vec![[2, 2]]]));
-    assert!(!quotient.edge_domains_viable(&[vec![[1, 2]]]));
+    assert!(quotient
+        .edge_domains_viable(&ctx, &[vec![[2, 2]]])
+        .expect("service resource budget"));
+    assert!(!quotient
+        .edge_domains_viable(&ctx, &[vec![[1, 2]]])
+        .expect("service resource budget"));
 }
 
 #[test]
@@ -850,18 +861,23 @@ fn quotient_point_assignment_accepts_a_closed_diagonal_edge() {
 
 #[test]
 fn quotient_retains_diagonal_pairs_until_ports_are_merged() {
+    catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(vec![
         Arc::new(HashSet::from([1, 2])),
         Arc::new(HashSet::from([1, 2])),
     ]);
 
-    assert!(quotient.edge_domains_viable(&[vec![[2, 2]]]));
+    assert!(quotient
+        .edge_domains_viable(&ctx, &[vec![[2, 2]]])
+        .expect("service resource budget"));
     assert_eq!(
         quotient.domains(),
         vec![Arc::new(HashSet::from([2])), Arc::new(HashSet::from([2]))]
     );
     quotient.merge(0, 1).expect("closed endpoint merge");
-    assert!(quotient.edge_domains_viable(&[vec![[2, 2]]]));
+    assert!(quotient
+        .edge_domains_viable(&ctx, &[vec![[2, 2]]])
+        .expect("service resource budget"));
 }
 
 #[test]

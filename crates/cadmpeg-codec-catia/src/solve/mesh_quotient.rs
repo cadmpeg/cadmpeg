@@ -1014,7 +1014,7 @@ pub(super) fn initial_mesh_quotient(
         }
     }
     Ok(quotient
-        .edge_domains_viable(edge_candidates)
+        .edge_domains_viable(ctx, edge_candidates)?
         .then_some(quotient))
 }
 
@@ -1202,6 +1202,7 @@ impl MeshQuotient {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn new(domains: Vec<Arc<HashSet<usize>>>) -> Self {
         Self {
             union: UnionFind::new(domains.len()),
@@ -1403,8 +1404,13 @@ impl MeshQuotient {
         Ok(Some(root))
     }
 
-    pub(crate) fn edge_domains_viable(&mut self, edge_candidates: &[Vec<[usize; 2]>]) -> bool {
+    pub(crate) fn edge_domains_viable(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        edge_candidates: &[Vec<[usize; 2]>],
+    ) -> Result<bool, CodecError> {
         self.propagate_edge_domains(
+            ctx,
             edge_candidates
                 .iter()
                 .enumerate()
@@ -1588,25 +1594,54 @@ impl MeshQuotient {
 
     fn propagate_component_edge_domains(
         &mut self,
+        ctx: &DecodeContext<'_>,
         root: usize,
         edge_candidates: &[Vec<[usize; 2]>],
         budget: Option<&WorkBudget<'_>>,
-    ) -> bool {
-        let edges = self
-            .members(root)
-            .iter()
-            .map(|node| node / 2)
-            .filter(|edge| !edge_candidates[*edge].is_empty())
-            .collect::<HashSet<_>>();
-        self.propagate_edge_domains(edges, edge_candidates, budget)
+    ) -> Result<bool, CodecError> {
+        let (mut edges, _reservation) = crate::resource::temporary_set(
+            ctx,
+            self.members(root).len(),
+            "catia_quotient_component_edges",
+        )?;
+        for edge in self.members(root).iter().map(|node| node / 2) {
+            if !edge_candidates[edge].is_empty() {
+                edges.insert(edge);
+            }
+        }
+        self.propagate_edge_domains(ctx, edges, edge_candidates, budget)
+    }
+
+    fn affected_edges_for_nodes(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        nodes: &[usize],
+        edge_candidates: &[Vec<[usize; 2]>],
+    ) -> Result<HashSet<usize>, CodecError> {
+        let mut affected = HashSet::new();
+        for &node in nodes {
+            let root = self.union.find(node);
+            for edge in self.members(root).iter().map(|member| member / 2) {
+                if !edge_candidates[edge].is_empty() {
+                    crate::resource::insert_set(
+                        ctx,
+                        &mut affected,
+                        edge,
+                        "catia_quotient_affected_edges",
+                    )?;
+                }
+            }
+        }
+        Ok(affected)
     }
 
     fn propagate_edge_domains(
         &mut self,
+        ctx: &DecodeContext<'_>,
         edges: impl IntoIterator<Item = usize>,
         edge_candidates: &[Vec<[usize; 2]>],
         budget: Option<&WorkBudget<'_>>,
-    ) -> bool {
+    ) -> Result<bool, CodecError> {
         fn enqueue_component_edges(
             members: &[usize],
             edge_candidates: &[Vec<[usize; 2]>],
@@ -1620,8 +1655,16 @@ impl MeshQuotient {
             }
         }
 
-        let mut queue = VecDeque::new();
-        let mut queued = HashSet::new();
+        let (mut queue, _queue_reservation) = crate::resource::temporary_queue(
+            ctx,
+            edge_candidates.len(),
+            "catia_quotient_edge_queue",
+        )?;
+        let (mut queued, _queued_reservation) = crate::resource::temporary_set(
+            ctx,
+            edge_candidates.len(),
+            "catia_quotient_queued_edges",
+        )?;
         for edge in edges {
             if queued.insert(edge) {
                 queue.push_back(edge);
@@ -1631,7 +1674,7 @@ impl MeshQuotient {
             queued.remove(&edge);
             let candidates = &edge_candidates[edge];
             if budget.is_some_and(|budget| !budget.charge_by(work_units(candidates.len()))) {
-                return false;
+                return Ok(false);
             }
             if candidates.is_empty() {
                 continue;
@@ -1639,16 +1682,25 @@ impl MeshQuotient {
             let start = self.union.find(edge * 2);
             let end = self.union.find(edge * 2 + 1);
             if start == end {
-                let supported = candidates
-                    .iter()
-                    .filter(|pair| pair[0] == pair[1])
-                    .map(|pair| pair[0])
-                    .filter(|point| self.domains[start].contains(point))
-                    .collect::<HashSet<_>>();
+                let (mut supported, _support_reservation) = crate::resource::temporary_set(
+                    ctx,
+                    candidates.len(),
+                    "catia_quotient_self_support",
+                )?;
+                for pair in candidates {
+                    ctx.charge_work(1, "catia quotient edge support")?;
+                    if pair[0] == pair[1] && self.domains[start].contains(&pair[0]) {
+                        supported.insert(pair[0]);
+                    }
+                }
                 if supported.is_empty() {
-                    return false;
+                    return Ok(false);
                 }
                 if supported != *self.domains[start] {
+                    ctx.charge_collection_items(
+                        supported.len() as u64,
+                        "catia_quotient_domain_update",
+                    )?;
                     self.domains[start] = Arc::new(supported);
                     enqueue_component_edges(
                         self.members(start),
@@ -1662,9 +1714,25 @@ impl MeshQuotient {
 
             let starts = self.domains[start].clone();
             let ends = self.domains[end].clone();
-            let mut supported_starts = HashSet::new();
-            let mut supported_ends = HashSet::new();
+            let Some(support_capacity) = candidates.len().checked_mul(2) else {
+                return Err(ctx.refuse_codec_limit(
+                    "catia_quotient_pair_support",
+                    u64::MAX,
+                    u64::MAX,
+                ));
+            };
+            let (mut supported_starts, _start_reservation) = crate::resource::temporary_set(
+                ctx,
+                support_capacity,
+                "catia_quotient_start_support",
+            )?;
+            let (mut supported_ends, _end_reservation) = crate::resource::temporary_set(
+                ctx,
+                support_capacity,
+                "catia_quotient_end_support",
+            )?;
             for &[left, right] in candidates {
+                ctx.charge_work(1, "catia quotient edge support")?;
                 if starts.contains(&left) && ends.contains(&right) {
                     supported_starts.insert(left);
                     supported_ends.insert(right);
@@ -1675,9 +1743,13 @@ impl MeshQuotient {
                 }
             }
             if supported_starts.is_empty() || supported_ends.is_empty() {
-                return false;
+                return Ok(false);
             }
             if supported_starts != *self.domains[start] {
+                ctx.charge_collection_items(
+                    supported_starts.len() as u64,
+                    "catia_quotient_domain_update",
+                )?;
                 self.domains[start] = Arc::new(supported_starts);
                 enqueue_component_edges(
                     self.members(start),
@@ -1687,6 +1759,10 @@ impl MeshQuotient {
                 );
             }
             if supported_ends != *self.domains[end] {
+                ctx.charge_collection_items(
+                    supported_ends.len() as u64,
+                    "catia_quotient_domain_update",
+                )?;
                 self.domains[end] = Arc::new(supported_ends);
                 enqueue_component_edges(
                     self.members(end),
@@ -1696,13 +1772,14 @@ impl MeshQuotient {
                 );
             }
         }
-        true
+        Ok(true)
     }
 
     pub(super) fn merge_singleton_coordinate_roots(
         &mut self,
+        ctx: &DecodeContext<'_>,
         edge_candidates: &[Vec<[usize; 2]>],
-    ) -> bool {
+    ) -> Result<bool, CodecError> {
         loop {
             let mut roots_by_point = HashMap::<usize, Vec<usize>>::new();
             for node in 0..self.union.len() {
@@ -1711,9 +1788,21 @@ impl MeshQuotient {
                     continue;
                 }
                 let Some(&point) = self.domains[root].iter().next() else {
-                    return false;
+                    return Ok(false);
                 };
-                roots_by_point.entry(point).or_default().push(root);
+                if let Some(roots) = roots_by_point.get_mut(&point) {
+                    crate::resource::push(ctx, roots, root, "catia_singleton_point_roots")?;
+                } else {
+                    let mut roots = Vec::new();
+                    crate::resource::push(ctx, &mut roots, root, "catia_singleton_point_roots")?;
+                    crate::resource::insert_map(
+                        ctx,
+                        &mut roots_by_point,
+                        point,
+                        roots,
+                        "catia_singleton_points",
+                    )?;
+                }
             }
             let mut changed = false;
             let mut affected_edges = HashSet::new();
@@ -1722,24 +1811,32 @@ impl MeshQuotient {
                     continue;
                 };
                 for &root in rest {
-                    affected_edges.extend(
-                        self.members(first)
-                            .iter()
-                            .chain(self.members(root))
-                            .map(|node| node / 2)
-                            .filter(|edge| !edge_candidates[*edge].is_empty()),
-                    );
-                    if self.merge(first, root).is_none() {
-                        return false;
+                    for edge in self
+                        .members(first)
+                        .iter()
+                        .chain(self.members(root))
+                        .map(|node| node / 2)
+                    {
+                        if !edge_candidates[edge].is_empty() {
+                            crate::resource::insert_set(
+                                ctx,
+                                &mut affected_edges,
+                                edge,
+                                "catia_singleton_affected_edges",
+                            )?;
+                        }
+                    }
+                    if self.merge_charged(ctx, first, root)?.is_none() {
+                        return Ok(false);
                     }
                     changed = true;
                 }
             }
             if !changed {
-                return true;
+                return Ok(true);
             }
-            if !self.propagate_edge_domains(affected_edges, edge_candidates, None) {
-                return false;
+            if !self.propagate_edge_domains(ctx, affected_edges, edge_candidates, None)? {
+                return Ok(false);
             }
         }
     }
@@ -1868,11 +1965,11 @@ impl MeshQuotient {
 
     fn assignment_has_option(
         &self,
+        ctx: &DecodeContext<'_>,
         assignment: &MeshFaceBoundaryAssignment,
         edge_candidates: &[Vec<[usize; 2]>],
         budget: Option<&WorkBudget<'_>>,
-    ) -> bool {
-        #[derive(Clone)]
+    ) -> Result<bool, CodecError> {
         struct State {
             boundary_index: usize,
             at: usize,
@@ -1881,41 +1978,58 @@ impl MeshQuotient {
         }
 
         fn advance(
+            ctx: &DecodeContext<'_>,
             state: &mut State,
             boundary: &[MeshBoundaryEdgeCandidate],
             reversed: bool,
-        ) -> bool {
+        ) -> Result<bool, CodecError> {
             if state.at > 0 {
                 let Some(previous_end) =
                     edge_end(boundary[state.at - 1], state.directions[state.at - 1])
                 else {
-                    return false;
+                    return Ok(false);
                 };
                 let Some(current_start) = edge_start(boundary[state.at], reversed) else {
-                    return false;
+                    return Ok(false);
                 };
-                if state.quotient.merge(previous_end, current_start).is_none() {
-                    return false;
+                if state
+                    .quotient
+                    .merge_charged(ctx, previous_end, current_start)?
+                    .is_none()
+                {
+                    return Ok(false);
                 }
             }
-            state.directions.push(reversed);
+            crate::resource::push(
+                ctx,
+                &mut state.directions,
+                reversed,
+                "catia_assignment_directions",
+            )?;
             state.at += 1;
-            true
+            Ok(true)
         }
 
-        let mut states = vec![State {
-            boundary_index: 0,
-            at: 0,
-            directions: Vec::new(),
-            quotient: self.clone(),
-        }];
+        let mut states = Vec::new();
+        crate::resource::push(
+            ctx,
+            &mut states,
+            State {
+                boundary_index: 0,
+                at: 0,
+                directions: Vec::new(),
+                quotient: self.clone_charged(ctx)?,
+            },
+            "catia_assignment_states",
+        )?;
         while let Some(mut state) = states.pop() {
             loop {
+                ctx.charge_work(1, "catia assignment option search")?;
                 if budget.is_some_and(|budget| !budget.charge()) {
-                    return false;
+                    return Ok(false);
                 }
                 if state.boundary_index == assignment.boundaries.len() {
-                    return true;
+                    return Ok(true);
                 }
                 let boundary = &assignment.boundaries[state.boundary_index];
                 if boundary.is_empty() {
@@ -1930,10 +2044,14 @@ impl MeshQuotient {
                     let Some(first_start) = edge_start(boundary[0], state.directions[0]) else {
                         break;
                     };
-                    if state.quotient.merge(last_end, first_start).is_none() {
+                    if state
+                        .quotient
+                        .merge_charged(ctx, last_end, first_start)?
+                        .is_none()
+                    {
                         break;
                     }
-                    if !state.quotient.edge_domains_viable(edge_candidates) {
+                    if !state.quotient.edge_domains_viable(ctx, edge_candidates)? {
                         break;
                     }
                     state.boundary_index += 1;
@@ -1942,50 +2060,62 @@ impl MeshQuotient {
                     continue;
                 }
                 if let Some(reversed) = boundary[state.at].reversed {
-                    if !advance(&mut state, boundary, reversed) {
+                    if !advance(ctx, &mut state, boundary, reversed)? {
                         break;
                     }
                     continue;
                 }
                 for reversed in [true, false] {
                     if budget.is_some_and(|budget| !budget.charge()) {
-                        return false;
+                        return Ok(false);
                     }
-                    let mut next = state.clone();
-                    if advance(&mut next, boundary, reversed)
-                        && next.quotient.edge_domains_viable(edge_candidates)
+                    let mut next = State {
+                        boundary_index: state.boundary_index,
+                        at: state.at,
+                        directions: crate::resource::copy_slice(
+                            ctx,
+                            &state.directions,
+                            "catia_assignment_direction_copy",
+                        )?,
+                        quotient: state.quotient.clone_charged(ctx)?,
+                    };
+                    if advance(ctx, &mut next, boundary, reversed)?
+                        && next.quotient.edge_domains_viable(ctx, edge_candidates)?
                     {
-                        states.push(next);
+                        crate::resource::push(ctx, &mut states, next, "catia_assignment_states")?;
                     }
                 }
                 break;
             }
         }
-        false
+        Ok(false)
     }
 
     #[cfg(test)]
     fn assignment_options(
         &self,
+        ctx: &DecodeContext<'_>,
         assignment: &MeshFaceBoundaryAssignment,
         edge_candidates: &[Vec<[usize; 2]>],
     ) -> Vec<(Vec<Vec<bool>>, Self)> {
         const MAX_ORIENTED_OPTIONS: usize = 4_096;
 
         fn boundary_options(
+            ctx: &DecodeContext<'_>,
             quotient: MeshQuotient,
             boundary: &[MeshBoundaryEdgeCandidate],
             edge_candidates: &[Vec<[usize; 2]>],
         ) -> Vec<(Vec<bool>, MeshQuotient)> {
             fn advance(
+                resources: (&DecodeContext<'_>, &[Vec<[usize; 2]>]),
                 boundary: &[MeshBoundaryEdgeCandidate],
                 at: usize,
                 reversed: bool,
                 directions: &mut Vec<bool>,
                 mut quotient: MeshQuotient,
-                edge_candidates: &[Vec<[usize; 2]>],
                 output: &mut Vec<(Vec<bool>, MeshQuotient)>,
             ) {
+                let (ctx, edge_candidates) = resources;
                 if at > 0 {
                     let Some(previous_end) = edge_end(boundary[at - 1], directions[at - 1]) else {
                         return;
@@ -1996,12 +2126,16 @@ impl MeshQuotient {
                     let Some(root) = quotient.merge(previous_end, current_start) else {
                         return;
                     };
-                    if !quotient.propagate_component_edge_domains(root, edge_candidates, None) {
+                    if !quotient
+                        .propagate_component_edge_domains(ctx, root, edge_candidates, None)
+                        .expect("service resource budget")
+                    {
                         return;
                     }
                 }
                 directions.push(reversed);
                 walk(
+                    ctx,
                     boundary,
                     at + 1,
                     directions,
@@ -2013,6 +2147,7 @@ impl MeshQuotient {
             }
 
             fn walk(
+                ctx: &DecodeContext<'_>,
                 boundary: &[MeshBoundaryEdgeCandidate],
                 at: usize,
                 directions: &mut Vec<bool>,
@@ -2033,38 +2168,41 @@ impl MeshQuotient {
                     let Some(root) = quotient.merge(last_end, first_start) else {
                         return;
                     };
-                    if quotient.propagate_component_edge_domains(root, edge_candidates, None) {
+                    if quotient
+                        .propagate_component_edge_domains(ctx, root, edge_candidates, None)
+                        .expect("service resource budget")
+                    {
                         output.push((directions.clone(), quotient));
                     }
                     return;
                 }
                 if let Some(reversed) = boundary[at].reversed {
                     advance(
+                        (ctx, edge_candidates),
                         boundary,
                         at,
                         reversed,
                         directions,
                         quotient,
-                        edge_candidates,
                         output,
                     );
                 } else {
                     advance(
+                        (ctx, edge_candidates),
                         boundary,
                         at,
                         false,
                         directions,
                         quotient.clone(),
-                        edge_candidates,
                         output,
                     );
                     advance(
+                        (ctx, edge_candidates),
                         boundary,
                         at,
                         true,
                         directions,
                         quotient,
-                        edge_candidates,
                         output,
                     );
                 }
@@ -2075,6 +2213,7 @@ impl MeshQuotient {
             }
             let mut output = Vec::new();
             walk(
+                ctx,
                 boundary,
                 0,
                 &mut Vec::new(),
@@ -2090,7 +2229,7 @@ impl MeshQuotient {
             let mut next = Vec::new();
             for (directions, quotient) in options {
                 for (boundary_directions, quotient) in
-                    boundary_options(quotient, boundary, edge_candidates)
+                    boundary_options(ctx, quotient, boundary, edge_candidates)
                 {
                     let mut directions = directions.clone();
                     directions.push(boundary_directions);
@@ -2113,14 +2252,66 @@ impl MeshQuotient {
 
     pub(super) fn assignment_options_limited(
         &self,
+        ctx: &DecodeContext<'_>,
         assignment: &MeshFaceBoundaryAssignment,
         edge_candidates: &[Vec<[usize; 2]>],
         oriented_edges: &HashSet<usize>,
         limit: usize,
         budget: Option<&WorkBudget<'_>>,
-    ) -> Vec<(Vec<Vec<bool>>, Self)> {
+    ) -> Result<Vec<MeshOrientationOption>, CodecError> {
+        fn copy_directions(
+            ctx: &DecodeContext<'_>,
+            directions: &[Vec<bool>],
+        ) -> Result<Vec<Vec<bool>>, CodecError> {
+            let mut copy = Vec::new();
+            crate::resource::reserve_vec(
+                ctx,
+                &mut copy,
+                directions.len(),
+                "catia_orientation_boundary_rows",
+            )?;
+            for row in directions {
+                copy.push(crate::resource::copy_slice(
+                    ctx,
+                    row,
+                    "catia_orientation_boundary_directions",
+                )?);
+            }
+            Ok(copy)
+        }
+
+        fn canonical_directions(
+            ctx: &DecodeContext<'_>,
+            directions: &[Vec<bool>],
+        ) -> Result<Vec<Vec<bool>>, CodecError> {
+            let mut canonical = Vec::new();
+            crate::resource::reserve_vec(
+                ctx,
+                &mut canonical,
+                directions.len(),
+                "catia_canonical_direction_rows",
+            )?;
+            for row in directions {
+                let mut complement =
+                    crate::resource::copy_slice(ctx, row, "catia_canonical_direction_values")?;
+                for value in &mut complement {
+                    *value = !*value;
+                }
+                if complement < *row {
+                    canonical.push(complement);
+                } else {
+                    canonical.push(crate::resource::copy_slice(
+                        ctx,
+                        row,
+                        "catia_canonical_direction_values",
+                    )?);
+                }
+            }
+            Ok(canonical)
+        }
         #[allow(clippy::too_many_arguments)]
         fn walk(
+            ctx: &DecodeContext<'_>,
             boundaries: &[Vec<MeshBoundaryEdgeCandidate>],
             boundary_index: usize,
             at: usize,
@@ -2134,50 +2325,60 @@ impl MeshQuotient {
             gaugeable_edges: &HashSet<usize>,
             limit: usize,
             budget: Option<&WorkBudget<'_>>,
-        ) {
+        ) -> Result<(), CodecError> {
+            let _depth = ctx.enter_nested("catia orientation search")?;
+            ctx.charge_work(1, "catia orientation search")?;
             if output.len() >= limit {
-                return;
+                return Ok(());
             }
             if budget.is_some_and(|budget| !budget.charge()) {
-                return;
+                return Ok(());
             }
             if boundary_index == boundaries.len() {
-                let canonical_directions = directions
-                    .iter()
-                    .map(|boundary| {
-                        let complement = boundary.iter().map(|value| !value).collect::<Vec<_>>();
-                        if complement < *boundary {
-                            complement
-                        } else {
-                            boundary.clone()
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                let signature = (quotient.signature(), canonical_directions);
-                if seen.insert(signature) {
-                    output.push((directions.clone(), quotient));
+                let signature = (
+                    quotient.signature_charged(ctx)?,
+                    canonical_directions(ctx, directions)?,
+                );
+                if crate::resource::insert_set(
+                    ctx,
+                    seen,
+                    signature,
+                    "catia_orientation_signatures",
+                )? {
+                    crate::resource::push(
+                        ctx,
+                        output,
+                        (copy_directions(ctx, directions)?, quotient),
+                        "catia_orientation_options",
+                    )?;
                 }
-                return;
+                return Ok(());
             }
             let boundary = &boundaries[boundary_index];
             if boundary.is_empty() {
-                return;
+                return Ok(());
             }
             if at == boundary.len() {
                 let Some(last_end) = edge_end(boundary[at - 1], boundary_directions[at - 1]) else {
-                    return;
+                    return Ok(());
                 };
                 let Some(first_start) = edge_start(boundary[0], boundary_directions[0]) else {
-                    return;
+                    return Ok(());
                 };
-                let Some(root) = quotient.merge(last_end, first_start) else {
-                    return;
+                let Some(root) = quotient.merge_charged(ctx, last_end, first_start)? else {
+                    return Ok(());
                 };
-                if !quotient.propagate_component_edge_domains(root, edge_candidates, budget) {
-                    return;
+                if !quotient.propagate_component_edge_domains(ctx, root, edge_candidates, budget)? {
+                    return Ok(());
                 }
-                directions.push(std::mem::take(boundary_directions));
+                crate::resource::push(
+                    ctx,
+                    directions,
+                    std::mem::take(boundary_directions),
+                    "catia_orientation_direction_rows",
+                )?;
                 walk(
+                    ctx,
                     boundaries,
                     boundary_index + 1,
                     0,
@@ -2191,31 +2392,46 @@ impl MeshQuotient {
                     gaugeable_edges,
                     limit,
                     budget,
-                );
+                )?;
                 *boundary_directions = directions.pop().unwrap_or_default();
-                return;
+                return Ok(());
             }
             let edge = boundary[at].edge;
-            let first = oriented.insert(edge);
-            let mut advance = |reversed: bool, mut quotient: MeshQuotient| {
+            let first =
+                crate::resource::insert_set(ctx, oriented, edge, "catia_orientation_seen_edges")?;
+            let mut advance = |reversed: bool,
+                               mut quotient: MeshQuotient|
+             -> Result<(), CodecError> {
                 if at > 0 {
                     let Some(previous_end) =
                         edge_end(boundary[at - 1], boundary_directions[at - 1])
                     else {
-                        return;
+                        return Ok(());
                     };
                     let Some(current_start) = edge_start(boundary[at], reversed) else {
-                        return;
+                        return Ok(());
                     };
-                    let Some(root) = quotient.merge(previous_end, current_start) else {
-                        return;
+                    let Some(root) = quotient.merge_charged(ctx, previous_end, current_start)?
+                    else {
+                        return Ok(());
                     };
-                    if !quotient.propagate_component_edge_domains(root, edge_candidates, budget) {
-                        return;
+                    if !quotient.propagate_component_edge_domains(
+                        ctx,
+                        root,
+                        edge_candidates,
+                        budget,
+                    )? {
+                        return Ok(());
                     }
                 }
-                boundary_directions.push(reversed);
+                crate::resource::push(
+                    ctx,
+                    boundary_directions,
+                    reversed,
+                    "catia_orientation_boundary_directions",
+                )?;
                 walk(
+                    ctx,
                     boundaries,
                     boundary_index,
                     at + 1,
@@ -2229,80 +2445,105 @@ impl MeshQuotient {
                     gaugeable_edges,
                     limit,
                     budget,
-                );
+                )?;
                 boundary_directions.pop();
+                Ok(())
             };
             match (boundary[at].reversed, first) {
-                (Some(reversed), _) => advance(reversed, quotient),
-                (None, true) if gaugeable_edges.contains(&edge) => advance(false, quotient),
+                (Some(reversed), _) => advance(reversed, quotient)?,
+                (None, true) if gaugeable_edges.contains(&edge) => advance(false, quotient)?,
                 (None, _) => {
-                    advance(false, quotient.clone());
-                    advance(true, quotient);
+                    advance(false, quotient.clone_charged(ctx)?)?;
+                    advance(true, quotient)?;
                 }
             }
             if first {
                 oriented.remove(&edge);
             }
+            Ok(())
         }
 
         if limit == 0 {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         if assignment.boundaries.iter().any(Vec::is_empty) {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         // Fix a new edge's direction only while its two endpoint labels remain
         // exchangeable. Distinct domains or prior quotient merges make the
         // direction observable and require both orientations.
-        let mut direction_union = self.union.clone();
-        let gaugeable_edges = assignment
-            .boundaries
-            .iter()
-            .flatten()
-            .map(|use_| use_.edge)
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .filter(|edge| {
-                let Some(right_node) = edge.checked_mul(2).and_then(|node| node.checked_add(1))
-                else {
-                    return false;
-                };
-                if right_node >= self.domains.len() {
-                    return false;
-                }
-                let left_node = right_node - 1;
-                let left_root = direction_union.find(left_node);
-                let right_root = direction_union.find(right_node);
-                left_root == right_root
-                    || (self.domains[left_root] == self.domains[right_root]
-                        && self.members(left_root) == [left_node]
-                        && self.members(right_root) == [right_node])
-            })
-            .collect::<HashSet<_>>();
-        let mut oriented = oriented_edges.clone();
+        let mut direction_union = self
+            .union
+            .clone_charged(ctx, "catia_orientation_direction_union")?;
+        let mut gaugeable_edges = HashSet::new();
+        for edge in assignment.boundaries.iter().flatten().map(|use_| use_.edge) {
+            let Some(right_node) = edge.checked_mul(2).and_then(|node| node.checked_add(1)) else {
+                continue;
+            };
+            if right_node >= self.domains.len() {
+                continue;
+            }
+            let left_node = right_node - 1;
+            let left_root = direction_union.find(left_node);
+            let right_root = direction_union.find(right_node);
+            if left_root == right_root
+                || (self.domains[left_root] == self.domains[right_root]
+                    && self.members(left_root) == [left_node]
+                    && self.members(right_root) == [right_node])
+            {
+                crate::resource::insert_set(
+                    ctx,
+                    &mut gaugeable_edges,
+                    edge,
+                    "catia_orientation_gaugeable_edges",
+                )?;
+            }
+        }
+        let mut oriented = HashSet::new();
+        crate::resource::reserve_set(
+            ctx,
+            &mut oriented,
+            oriented_edges.len(),
+            "catia_orientation_seen_edges",
+        )?;
+        oriented.extend(oriented_edges.iter().copied());
         let mut variable_count = 0usize;
-        let orientation_plan = assignment
-            .boundaries
-            .iter()
-            .map(|boundary| {
-                boundary
-                    .iter()
-                    .map(|use_| match use_.reversed {
-                        Some(reversed) => (reversed, None),
-                        None if oriented.insert(use_.edge)
-                            && gaugeable_edges.contains(&use_.edge) =>
-                        {
-                            (false, None)
-                        }
-                        None => {
-                            let variable = variable_count;
-                            variable_count += 1;
-                            (false, Some(variable))
-                        }
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
+        let mut orientation_plan = Vec::new();
+        crate::resource::reserve_vec(
+            ctx,
+            &mut orientation_plan,
+            assignment.boundaries.len(),
+            "catia_orientation_plan_rows",
+        )?;
+        for boundary in &assignment.boundaries {
+            let mut row = Vec::new();
+            crate::resource::reserve_vec(
+                ctx,
+                &mut row,
+                boundary.len(),
+                "catia_orientation_plan_values",
+            )?;
+            for use_ in boundary {
+                row.push(match use_.reversed {
+                    Some(reversed) => (reversed, None),
+                    None if crate::resource::insert_set(
+                        ctx,
+                        &mut oriented,
+                        use_.edge,
+                        "catia_orientation_seen_edges",
+                    )? && gaugeable_edges.contains(&use_.edge) =>
+                    {
+                        (false, None)
+                    }
+                    None => {
+                        let variable = variable_count;
+                        variable_count += 1;
+                        (false, Some(variable))
+                    }
+                });
+            }
+            orientation_plan.push(row);
+        }
         if variable_count <= 8 {
             let mut output = Vec::new();
             let mut seen = HashSet::new();
@@ -2316,106 +2557,129 @@ impl MeshQuotient {
                 if budget.is_some_and(|budget| !budget.charge_by(orientation_work)) {
                     break;
                 }
-                let directions = orientation_plan
-                    .iter()
-                    .map(|boundary| {
-                        boundary
-                            .iter()
-                            .map(|(fixed, variable)| {
-                                variable.map_or(*fixed, |variable| {
-                                    let shift = variable_count - variable - 1;
-                                    mask & (1usize << shift) != 0
-                                })
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                    .collect::<Vec<_>>();
-                let mut oriented = oriented_edges.clone();
-                let uses_gauge =
-                    assignment
-                        .boundaries
-                        .iter()
-                        .zip(&directions)
-                        .all(|(boundary, directions)| {
-                            boundary.iter().zip(directions).all(|(use_, direction)| {
-                                let first = oriented.insert(use_.edge);
-                                !first
-                                    || use_.reversed.is_some()
-                                    || !gaugeable_edges.contains(&use_.edge)
-                                    || !direction
-                            })
-                        });
+                let mut directions = Vec::new();
+                crate::resource::reserve_vec(
+                    ctx,
+                    &mut directions,
+                    orientation_plan.len(),
+                    "catia_orientation_direction_rows",
+                )?;
+                for boundary in &orientation_plan {
+                    let mut row = Vec::new();
+                    crate::resource::reserve_vec(
+                        ctx,
+                        &mut row,
+                        boundary.len(),
+                        "catia_orientation_boundary_directions",
+                    )?;
+                    for (fixed, variable) in boundary {
+                        row.push(variable.map_or(*fixed, |variable| {
+                            let shift = variable_count - variable - 1;
+                            mask & (1usize << shift) != 0
+                        }));
+                    }
+                    directions.push(row);
+                }
+                let mut oriented = HashSet::new();
+                crate::resource::reserve_set(
+                    ctx,
+                    &mut oriented,
+                    oriented_edges.len(),
+                    "catia_orientation_seen_edges",
+                )?;
+                oriented.extend(oriented_edges.iter().copied());
+                let mut uses_gauge = true;
+                for (boundary, row) in assignment.boundaries.iter().zip(&directions) {
+                    for (use_, direction) in boundary.iter().zip(row) {
+                        let first = crate::resource::insert_set(
+                            ctx,
+                            &mut oriented,
+                            use_.edge,
+                            "catia_orientation_seen_edges",
+                        )?;
+                        if first
+                            && use_.reversed.is_none()
+                            && gaugeable_edges.contains(&use_.edge)
+                            && *direction
+                        {
+                            uses_gauge = false;
+                        }
+                    }
+                }
                 if !uses_gauge {
                     continue;
                 }
-                let mut quotient = self.clone();
+                let mut quotient = self.clone_charged(ctx)?;
                 let mut merged_nodes = Vec::new();
-                let merged =
-                    assignment
-                        .boundaries
-                        .iter()
-                        .zip(&directions)
-                        .all(|(boundary, directions)| {
-                            (0..boundary.len()).all(|index| {
-                                let next = (index + 1) % boundary.len();
-                                let Some(left_end) = edge_end(boundary[index], directions[index])
-                                else {
-                                    return false;
-                                };
-                                let Some(right_start) =
-                                    edge_start(boundary[next], directions[next])
-                                else {
-                                    return false;
-                                };
-                                let Some(root) = quotient.merge(left_end, right_start) else {
-                                    return false;
-                                };
-                                merged_nodes.push(root);
-                                true
-                            })
-                        });
+                let mut merged = true;
+                'merge: for (boundary, row) in assignment.boundaries.iter().zip(&directions) {
+                    for index in 0..boundary.len() {
+                        let next = (index + 1) % boundary.len();
+                        let Some(left_end) = edge_end(boundary[index], row[index]) else {
+                            merged = false;
+                            break 'merge;
+                        };
+                        let Some(right_start) = edge_start(boundary[next], row[next]) else {
+                            merged = false;
+                            break 'merge;
+                        };
+                        let Some(root) = quotient.merge_charged(ctx, left_end, right_start)? else {
+                            merged = false;
+                            break 'merge;
+                        };
+                        crate::resource::push(
+                            ctx,
+                            &mut merged_nodes,
+                            root,
+                            "catia_orientation_merged_nodes",
+                        )?;
+                    }
+                }
                 if !merged {
                     continue;
                 }
-                let affected_edges = merged_nodes
-                    .into_iter()
-                    .flat_map(|node| {
-                        let root = quotient.union.find(node);
-                        quotient.members(root).to_vec()
-                    })
-                    .map(|node| node / 2)
-                    .filter(|edge| !edge_candidates[*edge].is_empty())
-                    .collect::<HashSet<_>>();
-                if !quotient.propagate_edge_domains(affected_edges, edge_candidates, budget) {
+                let affected_edges =
+                    quotient.affected_edges_for_nodes(ctx, &merged_nodes, edge_candidates)?;
+                if !quotient.propagate_edge_domains(ctx, affected_edges, edge_candidates, budget)? {
                     continue;
                 }
-                let canonical_directions = directions
-                    .iter()
-                    .map(|boundary| {
-                        let complement = boundary.iter().map(|value| !value).collect::<Vec<_>>();
-                        if complement < *boundary {
-                            complement
-                        } else {
-                            boundary.clone()
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                if seen.insert((quotient.signature(), canonical_directions)) {
-                    output.push((directions, quotient));
+                if crate::resource::insert_set(
+                    ctx,
+                    &mut seen,
+                    (
+                        quotient.signature_charged(ctx)?,
+                        canonical_directions(ctx, &directions)?,
+                    ),
+                    "catia_orientation_signatures",
+                )? {
+                    crate::resource::push(
+                        ctx,
+                        &mut output,
+                        (directions, quotient),
+                        "catia_orientation_options",
+                    )?;
                 }
             }
-            return output;
+            return Ok(output);
         }
         let mut output = Vec::new();
         let mut seen = HashSet::<MeshOrientationSignature>::new();
-        let mut oriented = oriented_edges.clone();
+        let mut oriented = HashSet::new();
+        crate::resource::reserve_set(
+            ctx,
+            &mut oriented,
+            oriented_edges.len(),
+            "catia_orientation_seen_edges",
+        )?;
+        oriented.extend(oriented_edges.iter().copied());
         walk(
+            ctx,
             &assignment.boundaries,
             0,
             0,
             &mut Vec::new(),
             &mut Vec::new(),
-            self.clone(),
+            self.clone_charged(ctx)?,
             edge_candidates,
             &mut output,
             &mut seen,
@@ -2423,8 +2687,8 @@ impl MeshQuotient {
             &gaugeable_edges,
             limit,
             budget,
-        );
-        output
+        )?;
+        Ok(output)
     }
 
     fn assignment_options_for_directions(
@@ -2919,32 +3183,38 @@ struct DeferredFaceQuotientOptions {
 }
 
 fn materialize_deferred_quotient_option(
+    ctx: &DecodeContext<'_>,
     base: &MeshQuotient,
     local: &MeshQuotient,
     base_nodes: &[usize],
     affected_edges: impl IntoIterator<Item = usize>,
     edge_candidates: &[Vec<[usize; 2]>],
     budget: &WorkBudget<'_>,
-) -> Option<MeshQuotient> {
-    let mut materialized = base.clone();
+) -> Result<Option<MeshQuotient>, CodecError> {
+    let mut materialized = base.clone_charged(ctx)?;
     for local_node in 0..base_nodes.len() {
         let local_root = local.union.root(local_node);
-        if local_root != local_node {
-            materialized.merge(base_nodes[local_root], base_nodes[local_node])?;
+        if local_root != local_node
+            && materialized
+                .merge_charged(ctx, base_nodes[local_root], base_nodes[local_node])?
+                .is_none()
+        {
+            return Ok(None);
         }
     }
-    materialized
-        .propagate_edge_domains(affected_edges, edge_candidates, Some(budget))
-        .then_some(materialized)
+    Ok(materialized
+        .propagate_edge_domains(ctx, affected_edges, edge_candidates, Some(budget))?
+        .then_some(materialized))
 }
 
 fn deferred_face_quotient_options_limited(
+    ctx: &DecodeContext<'_>,
     domain: &MeshDeferredFaceBoundary,
     edge_candidates: &[Vec<[usize; 2]>],
     quotient: &MeshQuotient,
     limit: usize,
     budget: &WorkBudget<'_>,
-) -> Option<DeferredFaceQuotientOptions> {
+) -> Result<Option<DeferredFaceQuotientOptions>, CodecError> {
     #[derive(Clone, Copy)]
     struct Gap {
         left_end: usize,
@@ -2954,6 +3224,7 @@ fn deferred_face_quotient_options_limited(
 
     #[allow(clippy::too_many_arguments)]
     fn fill_gap(
+        ctx: &DecodeContext<'_>,
         gaps: &[Gap],
         gap: usize,
         at: usize,
@@ -2969,19 +3240,22 @@ fn deferred_face_quotient_options_limited(
         output: &mut Vec<MeshQuotient>,
         limit: usize,
         budget: &WorkBudget<'_>,
-    ) {
+    ) -> Result<(), CodecError> {
+        let _depth = ctx.enter_nested("catia deferred gap search")?;
+        ctx.charge_work(1, "catia deferred gap search")?;
         if output.len() >= limit || budget.exhausted() {
-            return;
+            return Ok(());
         }
         if at == target {
             let mut quotient = quotient;
             if quotient
-                .merge(previous_end, gaps[gap].right_start)
+                .merge_charged(ctx, previous_end, gaps[gap].right_start)?
                 .is_none()
             {
-                return;
+                return Ok(());
             }
             walk_gaps(
+                ctx,
                 gaps,
                 gap + 1,
                 used,
@@ -2994,12 +3268,12 @@ fn deferred_face_quotient_options_limited(
                 output,
                 limit,
                 budget,
-            );
-            return;
+            )?;
+            return Ok(());
         }
         let options = (missing_edges.len() - used.count_ones() as usize).saturating_mul(2);
         if options > 1 && !budget.charge_by(options) {
-            return;
+            return Ok(());
         }
         let mut seen = HashSet::new();
         for (rank, _) in missing_edges.iter().enumerate() {
@@ -3009,15 +3283,21 @@ fn deferred_face_quotient_options_limited(
             for reversed in [false, true] {
                 let start = missing_nodes[rank][usize::from(reversed)];
                 let end = missing_nodes[rank][usize::from(!reversed)];
-                let mut next = quotient.clone();
-                if next.merge(previous_end, start).is_none() {
+                let mut next = quotient.clone_charged(ctx)?;
+                if next.merge_charged(ctx, previous_end, start)?.is_none() {
                     continue;
                 }
                 let end_root = next.union.find(end);
-                if !seen.insert((rank, end_root, next.signature())) {
+                if !crate::resource::insert_set(
+                    ctx,
+                    &mut seen,
+                    (rank, end_root, next.signature_charged(ctx)?),
+                    "catia_deferred_seen_gap_states",
+                )? {
                     continue;
                 }
                 fill_gap(
+                    ctx,
                     gaps,
                     gap,
                     at + 1,
@@ -3033,16 +3313,18 @@ fn deferred_face_quotient_options_limited(
                     output,
                     limit,
                     budget,
-                );
+                )?;
                 if output.len() >= limit || budget.exhausted() {
-                    return;
+                    return Ok(());
                 }
             }
         }
+        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]
     fn walk_gaps(
+        ctx: &DecodeContext<'_>,
         gaps: &[Gap],
         gap: usize,
         used: u64,
@@ -3055,32 +3337,46 @@ fn deferred_face_quotient_options_limited(
         output: &mut Vec<MeshQuotient>,
         limit: usize,
         budget: &WorkBudget<'_>,
-    ) {
+    ) -> Result<(), CodecError> {
+        let _depth = ctx.enter_nested("catia deferred gap walk")?;
+        ctx.charge_work(1, "catia deferred gap walk")?;
         if output.len() >= limit || budget.exhausted() {
-            return;
+            return Ok(());
         }
         if gap == gaps.len() {
             if used.count_ones() as usize != missing_edges.len() {
-                return;
+                return Ok(());
             }
-            let affected_edges = missing_edges
-                .iter()
-                .copied()
-                .filter(|edge| !edge_candidates[*edge].is_empty())
-                .collect::<HashSet<_>>();
+            let mut affected_edges = HashSet::new();
+            for &edge in missing_edges {
+                if !edge_candidates[edge].is_empty() {
+                    crate::resource::insert_set(
+                        ctx,
+                        &mut affected_edges,
+                        edge,
+                        "catia_deferred_affected_edges",
+                    )?;
+                }
+            }
             if materialize_deferred_quotient_option(
+                ctx,
                 base_quotient,
                 quotient,
                 base_nodes,
                 affected_edges,
                 edge_candidates,
                 budget,
-            )
+            )?
             .is_some()
             {
-                output.push(quotient.clone());
+                crate::resource::push(
+                    ctx,
+                    output,
+                    quotient.clone_charged(ctx)?,
+                    "catia_deferred_alternatives",
+                )?;
             }
-            return;
+            return Ok(());
         }
         let remaining_edges = missing_edges.len() - used.count_ones() as usize;
         let remaining_gaps = gaps.len() - gap - 1;
@@ -3089,13 +3385,14 @@ fn deferred_face_quotient_options_limited(
             .capacity
             .min(remaining_edges.saturating_sub(remaining_gaps));
         if maximum < minimum {
-            return;
+            return Ok(());
         }
         if maximum > minimum && !budget.charge_by(maximum - minimum + 1) {
-            return;
+            return Ok(());
         }
         for target in minimum..=maximum {
             fill_gap(
+                ctx,
                 gaps,
                 gap,
                 0,
@@ -3105,26 +3402,27 @@ fn deferred_face_quotient_options_limited(
                 missing_edges,
                 missing_nodes,
                 edge_candidates,
-                quotient.clone(),
+                quotient.clone_charged(ctx)?,
                 base_quotient,
                 base_nodes,
                 output,
                 limit,
                 budget,
-            );
+            )?;
             if output.len() >= limit || budget.exhausted() {
-                return;
+                return Ok(());
             }
         }
+        Ok(())
     }
 
     if domain.missing_edges.len() > u64::BITS as usize {
-        return None;
+        return Ok(None);
     }
     let mut gaps = Vec::new();
     for cycle in &domain.cycles {
         if cycle.exact_uses.is_empty() {
-            return None;
+            return Ok(None);
         }
         for index in 0..cycle.exact_uses.len() {
             let (left, left_span) = cycle.exact_uses[index];
@@ -3134,96 +3432,145 @@ fn deferred_face_quotient_options_limited(
             if capacity == 0 {
                 continue;
             }
-            let left_reversed = left.reversed?;
-            let right_reversed = right.reversed?;
-            gaps.push(Gap {
-                left_end: left
-                    .edge
-                    .checked_mul(2)?
-                    .checked_add(usize::from(!left_reversed))?,
-                right_start: right
-                    .edge
-                    .checked_mul(2)?
-                    .checked_add(usize::from(right_reversed))?,
-                capacity,
-            });
+            let (Some(left_reversed), Some(right_reversed)) = (left.reversed, right.reversed)
+            else {
+                return Ok(None);
+            };
+            let Some(left_end) = left
+                .edge
+                .checked_mul(2)
+                .and_then(|node| node.checked_add(usize::from(!left_reversed)))
+            else {
+                return Ok(None);
+            };
+            let Some(right_start) = right
+                .edge
+                .checked_mul(2)
+                .and_then(|node| node.checked_add(usize::from(right_reversed)))
+            else {
+                return Ok(None);
+            };
+            crate::resource::push(
+                ctx,
+                &mut gaps,
+                Gap {
+                    left_end,
+                    right_start,
+                    capacity,
+                },
+                "catia_deferred_gaps",
+            )?;
         }
     }
     if gaps.is_empty() {
-        return domain
+        return Ok(domain
             .missing_edges
             .is_empty()
             .then(|| DeferredFaceQuotientOptions {
                 alternatives: Vec::new(),
                 base_nodes: Vec::new(),
-            });
+            }));
     }
     if domain.missing_edges.len() < gaps.len() {
-        return Some(DeferredFaceQuotientOptions {
+        return Ok(Some(DeferredFaceQuotientOptions {
             alternatives: Vec::new(),
             base_nodes: Vec::new(),
-        });
+        }));
     }
-    let mut base_nodes = gaps
-        .iter()
-        .flat_map(|gap| [gap.left_end, gap.right_start])
-        .chain(
-            domain
-                .missing_edges
-                .iter()
-                .flat_map(|edge| [edge * 2, edge * 2 + 1]),
-        )
-        .map(|node| quotient.union.root(node))
-        .collect::<Vec<_>>();
+    let mut base_nodes = Vec::new();
+    for gap in &gaps {
+        for node in [gap.left_end, gap.right_start] {
+            crate::resource::push(
+                ctx,
+                &mut base_nodes,
+                quotient.union.root(node),
+                "catia_deferred_base_nodes",
+            )?;
+        }
+    }
+    for &edge in &domain.missing_edges {
+        for node in [edge * 2, edge * 2 + 1] {
+            crate::resource::push(
+                ctx,
+                &mut base_nodes,
+                quotient.union.root(node),
+                "catia_deferred_base_nodes",
+            )?;
+        }
+    }
     base_nodes.sort_unstable();
     base_nodes.dedup();
-    let local_by_base = base_nodes
-        .iter()
-        .enumerate()
-        .map(|(local, base)| (*base, local))
-        .collect::<HashMap<_, _>>();
+    let mut local_by_base = HashMap::new();
+    for (local, &base) in base_nodes.iter().enumerate() {
+        crate::resource::insert_map(
+            ctx,
+            &mut local_by_base,
+            base,
+            local,
+            "catia_deferred_local_index",
+        )?;
+    }
     for gap in &mut gaps {
         gap.left_end = local_by_base[&quotient.union.root(gap.left_end)];
         gap.right_start = local_by_base[&quotient.union.root(gap.right_start)];
     }
-    let missing_nodes = domain
-        .missing_edges
-        .iter()
-        .map(|edge| {
+    let mut missing_nodes = Vec::new();
+    for &edge in &domain.missing_edges {
+        crate::resource::push(
+            ctx,
+            &mut missing_nodes,
             [
                 local_by_base[&quotient.union.root(edge * 2)],
                 local_by_base[&quotient.union.root(edge * 2 + 1)],
-            ]
-        })
-        .collect::<Vec<_>>();
-    let local_quotient = MeshQuotient::new(
-        base_nodes
-            .iter()
-            .map(|root| quotient.domains[*root].clone())
-            .collect(),
-    );
-    gaps.sort_unstable_by_key(|gap| {
+            ],
+            "catia_deferred_missing_nodes",
+        )?;
+    }
+    let mut local_domains = Vec::new();
+    for &root in &base_nodes {
+        crate::resource::push(
+            ctx,
+            &mut local_domains,
+            quotient.domains[root].clone(),
+            "catia_deferred_local_domains",
+        )?;
+    }
+    let local_quotient = MeshQuotient::new_charged(ctx, local_domains)?;
+    let mut ranked_gaps = Vec::new();
+    for gap in gaps {
         let single_edge_options = if gap.capacity == 1 {
-            domain
-                .missing_edges
-                .iter()
-                .enumerate()
-                .flat_map(|(rank, _)| [false, true].map(move |reversed| (rank, reversed)))
-                .filter(|(rank, reversed)| {
-                    let start = missing_nodes[*rank][usize::from(*reversed)];
-                    let end = missing_nodes[*rank][usize::from(!*reversed)];
-                    let mut trial = local_quotient.clone();
-                    trial.merge(gap.left_end, start).is_some()
-                        && trial.merge(end, gap.right_start).is_some()
-                })
-                .count()
+            let mut count = 0usize;
+            for (rank, _) in domain.missing_edges.iter().enumerate() {
+                for reversed in [false, true] {
+                    let start = missing_nodes[rank][usize::from(reversed)];
+                    let end = missing_nodes[rank][usize::from(!reversed)];
+                    let mut trial = local_quotient.clone_charged(ctx)?;
+                    if trial.merge_charged(ctx, gap.left_end, start)?.is_some()
+                        && trial.merge_charged(ctx, end, gap.right_start)?.is_some()
+                    {
+                        count += 1;
+                    }
+                }
+            }
+            count
         } else {
             usize::MAX
         };
-        (gap.capacity, single_edge_options)
-    });
+        crate::resource::push(
+            ctx,
+            &mut ranked_gaps,
+            (gap, (gap.capacity, single_edge_options)),
+            "catia_deferred_ranked_gaps",
+        )?;
+    }
+    ranked_gaps.sort_unstable_by_key(|(_, key)| *key);
+    let mut gaps = Vec::new();
+    for (gap, _) in ranked_gaps {
+        crate::resource::push(ctx, &mut gaps, gap, "catia_deferred_sorted_gaps")?;
+    }
     let mut output = Vec::new();
     walk_gaps(
+        ctx,
         &gaps,
         0,
         0,
@@ -3236,66 +3583,110 @@ fn deferred_face_quotient_options_limited(
         &mut output,
         limit,
         budget,
-    );
-    (!budget.exhausted()).then_some(DeferredFaceQuotientOptions {
-        alternatives: output,
-        base_nodes,
-    })
+    )?;
+    Ok(
+        (!budget.exhausted()).then_some(DeferredFaceQuotientOptions {
+            alternatives: output,
+            base_nodes,
+        }),
+    )
 }
 
 fn propagate_common_deferred_quotients(
+    ctx: &DecodeContext<'_>,
     mut options: DeferredFaceQuotientOptions,
     edge_candidates: &[Vec<[usize; 2]>],
     quotient: &mut MeshQuotient,
     budget: &WorkBudget<'_>,
-) -> Option<()> {
+) -> Result<Option<()>, CodecError> {
     let node_count = options.base_nodes.len();
     let mut equivalence_classes = HashMap::<Vec<usize>, Vec<usize>>::new();
     for node in 0..node_count {
-        let signature = options
-            .alternatives
-            .iter_mut()
-            .map(|alternative| alternative.union.find(node))
-            .collect::<Vec<_>>();
-        equivalence_classes.entry(signature).or_default().push(node);
+        let mut signature = Vec::new();
+        for alternative in &mut options.alternatives {
+            crate::resource::push(
+                ctx,
+                &mut signature,
+                alternative.union.find(node),
+                "catia_deferred_common_signature",
+            )?;
+        }
+        if let Some(members) = equivalence_classes.get_mut(&signature) {
+            crate::resource::push(ctx, members, node, "catia_deferred_common_members")?;
+        } else {
+            let mut members = Vec::new();
+            crate::resource::push(ctx, &mut members, node, "catia_deferred_common_members")?;
+            crate::resource::insert_map(
+                ctx,
+                &mut equivalence_classes,
+                signature,
+                members,
+                "catia_deferred_common_classes",
+            )?;
+        }
     }
     for nodes in equivalence_classes.into_values() {
         let Some((&representative, rest)) = nodes.split_first() else {
             continue;
         };
         for &node in rest {
-            quotient.merge(options.base_nodes[representative], options.base_nodes[node])?;
+            if quotient
+                .merge_charged(
+                    ctx,
+                    options.base_nodes[representative],
+                    options.base_nodes[node],
+                )?
+                .is_none()
+            {
+                return Ok(None);
+            }
         }
     }
     for local in 0..node_count {
         let mut allowed = HashSet::new();
         for alternative in &mut options.alternatives {
             let root = alternative.union.find(local);
-            allowed.extend(alternative.domains[root].iter().copied());
+            for &point in alternative.domains[root].iter() {
+                crate::resource::insert_set(
+                    ctx,
+                    &mut allowed,
+                    point,
+                    "catia_deferred_common_allowed",
+                )?;
+            }
         }
         let root = quotient.union.find(options.base_nodes[local]);
-        let narrowed = quotient.domains[root]
-            .intersection(&allowed)
-            .copied()
-            .collect::<HashSet<_>>();
+        let mut narrowed = HashSet::new();
+        for &point in quotient.domains[root].intersection(&allowed) {
+            crate::resource::insert_set(
+                ctx,
+                &mut narrowed,
+                point,
+                "catia_deferred_common_narrowed",
+            )?;
+        }
         if narrowed.is_empty() {
-            return None;
+            return Ok(None);
         }
         quotient.domains[root] = Arc::new(narrowed);
     }
-    let affected_edges = options
-        .base_nodes
-        .into_iter()
-        .flat_map(|node| {
-            let root = quotient.union.find(node);
-            quotient.members(root).to_vec()
-        })
-        .map(|node| node / 2)
-        .filter(|edge| !edge_candidates[*edge].is_empty())
-        .collect::<HashSet<_>>();
-    quotient
-        .propagate_edge_domains(affected_edges, edge_candidates, Some(budget))
-        .then_some(())
+    let mut affected_edges = HashSet::new();
+    for node in options.base_nodes {
+        let root = quotient.union.find(node);
+        for edge in quotient.members(root).iter().map(|node| node / 2) {
+            if !edge_candidates[edge].is_empty() {
+                crate::resource::insert_set(
+                    ctx,
+                    &mut affected_edges,
+                    edge,
+                    "catia_deferred_common_edges",
+                )?;
+            }
+        }
+    }
+    Ok(quotient
+        .propagate_edge_domains(ctx, affected_edges, edge_candidates, Some(budget))?
+        .then_some(()))
 }
 
 fn common_supported_corner_equations(
@@ -3631,7 +4022,9 @@ fn propagate_common_full_quotients(
         }
         quotient.domains[root] = Arc::new(narrowed);
     }
-    Ok(quotient.edge_domains_viable(edge_candidates).then_some(()))
+    Ok(quotient
+        .edge_domains_viable(ctx, edge_candidates)?
+        .then_some(()))
 }
 pub(super) fn propagate_common_ordered_face_quotients(
     ctx: &DecodeContext<'_>,
@@ -3686,43 +4079,65 @@ pub(super) fn propagate_common_ordered_face_quotients(
                                 .edge
                                 .checked_mul(2)?
                                 .checked_add(usize::from(right_reversed))?;
-                            merged_nodes.push(quotient.merge(left_node, right_node)?);
+                            let merged = match quotient.merge_charged(ctx, left_node, right_node) {
+                                Ok(Some(root)) => root,
+                                Ok(None) => return None,
+                                Err(error) => return Some(Err(error)),
+                            };
+                            if let Err(error) = crate::resource::push(
+                                ctx,
+                                &mut merged_nodes,
+                                merged,
+                                "catia_ordered_merged_nodes",
+                            ) {
+                                return Some(Err(error));
+                            }
                         }
                     }
-                    let affected_edges = merged_nodes
-                        .into_iter()
-                        .flat_map(|node| {
-                            let root = quotient.union.find(node);
-                            quotient.members(root).to_vec()
-                        })
-                        .map(|node| node / 2)
-                        .filter(|edge| !edge_candidates[*edge].is_empty())
-                        .collect::<HashSet<_>>();
-                    if !quotient.propagate_edge_domains(
+                    let affected_edges = match quotient.affected_edges_for_nodes(
+                        ctx,
+                        &merged_nodes,
+                        edge_candidates,
+                    ) {
+                        Ok(edges) => edges,
+                        Err(error) => return Some(Err(error)),
+                    };
+                    match quotient.propagate_edge_domains(
+                        ctx,
                         affected_edges,
                         edge_candidates,
                         Some(budget),
                     ) {
-                        return None;
+                        Ok(true) => {}
+                        Ok(false) => return None,
+                        Err(error) => return Some(Err(error)),
                     }
-                    let Some(options) = deferred_face_quotient_options_limited(
+                    let options = match deferred_face_quotient_options_limited(
+                        ctx,
                         domain,
                         edge_candidates,
                         quotient,
                         MAX_FACE_OPTIONS + 1,
                         &face_budget,
-                    ) else {
-                        continue;
+                    ) {
+                        Ok(Some(options)) => options,
+                        Ok(None) => continue,
+                        Err(error) => return Some(Err(error)),
                     };
                     if options.alternatives.len() <= MAX_FACE_OPTIONS
                         && !options.alternatives.is_empty()
                     {
-                        propagate_common_deferred_quotients(
+                        match propagate_common_deferred_quotients(
+                            ctx,
                             options,
                             edge_candidates,
                             quotient,
                             budget,
-                        )?;
+                        ) {
+                            Ok(Some(())) => {}
+                            Ok(None) => return None,
+                            Err(error) => return Some(Err(error)),
+                        }
                     }
                     continue;
                 }
@@ -3741,23 +4156,37 @@ pub(super) fn propagate_common_ordered_face_quotients(
                 if let Some(equations) = equations {
                     let mut merged_nodes = Vec::new();
                     for [left, right] in equations {
-                        merged_nodes.push(quotient.merge(left, right)?);
+                        let merged = match quotient.merge_charged(ctx, left, right) {
+                            Ok(Some(root)) => root,
+                            Ok(None) => return None,
+                            Err(error) => return Some(Err(error)),
+                        };
+                        if let Err(error) = crate::resource::push(
+                            ctx,
+                            &mut merged_nodes,
+                            merged,
+                            "catia_ordered_merged_nodes",
+                        ) {
+                            return Some(Err(error));
+                        }
                     }
-                    let affected_edges = merged_nodes
-                        .into_iter()
-                        .flat_map(|node| {
-                            let root = quotient.union.find(node);
-                            quotient.members(root).to_vec()
-                        })
-                        .map(|node| node / 2)
-                        .filter(|edge| !edge_candidates[*edge].is_empty())
-                        .collect::<HashSet<_>>();
-                    if !quotient.propagate_edge_domains(
+                    let affected_edges = match quotient.affected_edges_for_nodes(
+                        ctx,
+                        &merged_nodes,
+                        edge_candidates,
+                    ) {
+                        Ok(edges) => edges,
+                        Err(error) => return Some(Err(error)),
+                    };
+                    match quotient.propagate_edge_domains(
+                        ctx,
                         affected_edges,
                         edge_candidates,
                         Some(budget),
                     ) {
-                        return None;
+                        Ok(true) => {}
+                        Ok(false) => return None,
+                        Err(error) => return Some(Err(error)),
                     }
                 }
                 if face_budget.exhausted() {
@@ -3770,13 +4199,17 @@ pub(super) fn propagate_common_ordered_face_quotients(
                         truncated = true;
                         break;
                     }
-                    let options = quotient.assignment_options_limited(
+                    let options = match quotient.assignment_options_limited(
+                        ctx,
                         assignment,
                         edge_candidates,
                         &HashSet::new(),
                         MAX_FACE_OPTIONS + 1,
                         Some(&face_budget),
-                    );
+                    ) {
+                        Ok(options) => options,
+                        Err(error) => return Some(Err(error)),
+                    };
                     if face_budget.exhausted() {
                         truncated = true;
                         break;
@@ -4028,12 +4461,13 @@ fn advance_boundary_component_states(
                 let mut candidates = Vec::new();
                 for assignment in assignments {
                     for (_, quotient) in state.assignment_options_limited(
+                        ctx,
                         assignment,
                         edge_candidates,
                         oriented_edges,
                         remaining,
                         Some(budget),
-                    ) {
+                    )? {
                         crate::resource::push(
                             ctx,
                             &mut candidates,
@@ -4046,12 +4480,14 @@ fn advance_boundary_component_states(
             }
             MeshFaceBoundaryDomain::DeferredValidation(domain) => {
                 let Some(options) = deferred_face_quotient_options_limited(
+                    ctx,
                     domain,
                     edge_candidates,
                     state,
                     remaining,
                     budget,
-                ) else {
+                )?
+                else {
                     return Ok(None);
                 };
                 if options.alternatives.is_empty() && domain.missing_edges.is_empty() {
@@ -4079,13 +4515,14 @@ fn advance_boundary_component_states(
                     let mut candidates = Vec::new();
                     for local in &options.alternatives {
                         if let Some(candidate) = materialize_deferred_quotient_option(
+                            ctx,
                             state,
                             local,
                             &options.base_nodes,
                             affected_edges.iter().copied(),
                             edge_candidates,
                             budget,
-                        ) {
+                        )? {
                             crate::resource::push(
                                 ctx,
                                 &mut candidates,
@@ -4106,12 +4543,13 @@ fn advance_boundary_component_states(
                 let mut candidates = Vec::new();
                 for assignment in &assignments {
                     for (_, quotient) in state.assignment_options_limited(
+                        ctx,
                         assignment,
                         edge_candidates,
                         oriented_edges,
                         remaining,
                         Some(budget),
-                    ) {
+                    )? {
                         crate::resource::push(
                             ctx,
                             &mut candidates,
@@ -4413,6 +4851,7 @@ type MeshSelectionStateSignature = (
     Vec<Option<bool>>,
 );
 type MeshOrientationSignature = (MeshQuotientSignature, Vec<Vec<bool>>);
+type MeshOrientationOption = (Vec<Vec<bool>>, MeshQuotient);
 type MeshFaceEquationCache = RefCell<HashMap<(usize, MeshQuotientSignature), Vec<[usize; 2]>>>;
 
 /// Search-order information for same-class rows with identical endpoint
@@ -7562,7 +8001,12 @@ impl MeshSelectionSearch<'_, '_> {
                 let Some(root) = quotient.merge(left, right) else {
                     return Ok(false);
                 };
-                if !quotient.propagate_component_edge_domains(root, self.edge_candidates, None) {
+                if !quotient.propagate_component_edge_domains(
+                    self.ctx,
+                    root,
+                    self.edge_candidates,
+                    None,
+                )? {
                     return Ok(false);
                 }
                 changed = true;
@@ -7756,7 +8200,7 @@ impl MeshSelectionSearch<'_, '_> {
         {
             return Ok(None);
         }
-        if !measured.merge_singleton_coordinate_roots(self.edge_candidates) {
+        if !measured.merge_singleton_coordinate_roots(self.ctx, self.edge_candidates)? {
             return Ok(None);
         }
         let root_count = measured.root_count();
@@ -7873,7 +8317,7 @@ impl MeshSelectionSearch<'_, '_> {
             return Ok(());
         }
         let mut measured = quotient.clone();
-        if !measured.merge_singleton_coordinate_roots(self.edge_candidates) {
+        if !measured.merge_singleton_coordinate_roots(self.ctx, self.edge_candidates)? {
             return Ok(());
         }
         if measured.root_count() < self.vertex_points.len() {
@@ -8130,7 +8574,7 @@ impl MeshSelectionSearch<'_, '_> {
             {
                 return Ok(());
             }
-            if !measured.merge_singleton_coordinate_roots(self.edge_candidates) {
+            if !measured.merge_singleton_coordinate_roots(self.ctx, self.edge_candidates)? {
                 return Ok(());
             }
             let root_count = measured.root_count();
@@ -8466,21 +8910,22 @@ impl MeshSelectionSearch<'_, '_> {
                 if assignment_index != 0 {
                     continue;
                 }
-                measured.assignment_options_for_directions(
+                Ok(measured.assignment_options_for_directions(
                     assignment,
                     direction_options,
                     remaining,
                     Some(budget),
-                )
+                ))
             } else {
                 measured.assignment_options_limited(
+                    self.ctx,
                     assignment,
                     self.edge_candidates,
                     &selected_edges,
                     remaining,
                     Some(budget),
                 )
-            };
+            }?;
             if budget.exhausted() {
                 self.outcome.exhaust();
                 return Ok(());
@@ -9342,9 +9787,18 @@ fn resolve_standard_mesh_endpoint_candidates(
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(())));
     };
     for face in &mut assignments {
-        face.retain(|assignment| {
-            quotient.assignment_has_option(assignment, &edge_candidates, Some(budget))
-        });
+        let mut retained = Vec::new();
+        for assignment in std::mem::take(face) {
+            if quotient.assignment_has_option(ctx, &assignment, &edge_candidates, Some(budget))? {
+                crate::resource::push(
+                    ctx,
+                    &mut retained,
+                    assignment,
+                    "catia_assignment_retained_face_options",
+                )?;
+            }
+        }
+        *face = retained;
         if budget.exhausted() {
             return Ok(MeshSolve::Failed(MeshCandidateFailure::Exhausted(())));
         }
@@ -9668,7 +10122,7 @@ where
         )));
     }
     let completed_edge_candidates = edge_candidates.to_vec();
-    if !mesh_quotient.edge_domains_viable(&completed_edge_candidates) {
+    if !mesh_quotient.edge_domains_viable(ctx, &completed_edge_candidates)? {
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(
             MeshCandidateRejection::QuotientPreparation,
         )));
@@ -10522,7 +10976,7 @@ fn general_mesh_search_charges_unselected_and_face_state_arrays() {
     let mut refused = HashSet::new();
     let mut limit = 0;
     let mut completed = false;
-    for _ in 0..256 {
+    for _ in 0..512 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = limit;
@@ -10543,7 +10997,7 @@ fn general_mesh_search_charges_unselected_and_face_state_arrays() {
     }
     assert!(
         completed,
-        "adaptive caps must admit the general search fixture"
+        "adaptive caps must admit the general search fixture: limit {limit}, refusals {refused:?}"
     );
     for operation in [
         "catia_endpoint_unselected_edges",
