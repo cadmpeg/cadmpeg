@@ -1,6 +1,53 @@
 use super::{incidence_cycles, solve_boundary_orientation_constraints, StandardTopology};
 use std::collections::HashMap;
 
+#[test]
+fn standard_topology_copy_refuses_each_nested_collection_limit() {
+    use super::{Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopology, NonEmptyCoedges};
+
+    let topology = StandardTopology {
+        faces: vec![FaceTopology {
+            boundaries: vec![Boundary {
+                coedges: NonEmptyCoedges::one(CoedgeUse {
+                    edge_row: 0,
+                    reversed: false,
+                    start_vertex: 0,
+                    end_vertex: 0,
+                }),
+            }],
+        }],
+        edge_rows: vec![EdgeRow {
+            kind: 1,
+            handles: vec![7],
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        }],
+        vertex_points: vec![[0.0, 0.0, 0.0]],
+        logical_vertex_count: 1,
+    };
+    let copy = crate::test_support::with_service_context(|ctx| topology.clone_charged(ctx))
+        .expect("service resource budget");
+    assert_eq!(copy, topology);
+    for (limit, operation) in [
+        "catia_standard_topology_copy_coedges",
+        "catia_standard_topology_copy_boundaries",
+        "catia_standard_topology_copy_faces",
+        "catia_standard_edge_row_copy_handles",
+        "catia_standard_topology_copy_edge_rows",
+        "catia_standard_topology_copy_vertex_points",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert_eq!(
+            standard_collection_limit_operation(limit as u64, |ctx| {
+                topology.clone_charged(ctx)?;
+                Ok(())
+            }),
+            operation
+        );
+    }
+}
+
 fn standard_collection_limit_operation(
     max_collection_items: u64,
     run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError>,
