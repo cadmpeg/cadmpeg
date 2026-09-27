@@ -24,11 +24,14 @@ pub fn collect_attributes(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut current = entity.ref_at(0);
     let mut chain = HashSet::new();
-    while let Some(index) = current.filter(|index| chain.insert(*index)) {
+    while let Some(index) = current {
+        if !crate::decode_alloc::insert_hash_set(ctx, &mut chain, index, "ASM attribute chain")? {
+            break;
+        }
         let Some(record) = by_index.get(&index) else {
             break;
         };
-        if emitted.insert(index) {
+        if crate::decode_alloc::insert_hash_set(ctx, emitted, index, "ASM emitted attributes")? {
             crate::decode_alloc::reserve_vec_slot(ctx, out, "ASM source attributes")?;
             out.push(source_attribute(ctx, record, target.clone(), format)?);
         }
@@ -358,11 +361,11 @@ fn direct_attribute_color(record: &Record) -> Option<DirectAttributeColor> {
 /// The first well-formed exact direct-color carrier on an attribute chain.
 pub fn attribute_chain_color_carrier<'a>(
     entity: &Record,
+    max_steps: usize,
     mut by_index: impl FnMut(i64) -> Option<&'a Record>,
 ) -> Option<(&'a Record, DirectAttributeColor)> {
     let mut current = entity.ref_at(0)?;
-    let mut seen = HashSet::new();
-    while seen.insert(current) {
+    for _ in 0..max_steps {
         let record = by_index(current)?;
         if let Some(color) = direct_attribute_color(record) {
             return Some((record, color));
@@ -375,17 +378,20 @@ pub fn attribute_chain_color_carrier<'a>(
 /// The first well-formed exact direct color on `entity`'s attribute chain.
 #[allow(clippy::implicit_hasher)]
 pub fn attribute_chain_color(entity: &Record, by_index: &HashMap<i64, &Record>) -> Option<Color> {
-    attribute_chain_color_carrier(entity, |index| by_index.get(&index).copied())
+    attribute_chain_color_carrier(entity, by_index.len(), |index| by_index.get(&index).copied())
         .map(|(_, decoded)| decoded.color)
 }
 
 /// The first non-empty name attribute on `entity`'s attribute chain.
 #[allow(clippy::implicit_hasher)]
-pub fn attribute_chain_name(entity: &Record, by_index: &HashMap<i64, &Record>) -> Option<String> {
-    let mut current = entity.ref_at(0)?;
-    let mut seen = HashSet::new();
-    while seen.insert(current) {
-        let record = by_index.get(&current)?;
+pub fn attribute_chain_name(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    entity: &Record,
+    by_index: &HashMap<i64, &Record>,
+) -> Result<Option<String>, cadmpeg_core::CodecError> {
+    let Some(mut current) = entity.ref_at(0) else { return Ok(None) };
+    for _ in 0..by_index.len() {
+        let Some(record) = by_index.get(&current) else { return Ok(None) };
         if record.name == "string_attrib-name_attrib-gen-attrib" {
             let mut values = record
                 .tokens
@@ -402,13 +408,15 @@ pub fn attribute_chain_name(entity: &Record, by_index: &HashMap<i64, &Record>) -
             }
             if let (Some("name"), Some(value)) = (previous, last) {
                 if !value.is_empty() {
-                    return Some(value.to_owned());
+                    let name = crate::decode_alloc::copy_string(ctx, value, "ASM attribute name")?;
+                    return Ok(Some(name));
                 }
             }
         }
-        current = attribute_next(record)?;
+        let Some(next) = attribute_next(record) else { return Ok(None) };
+        current = next;
     }
-    None
+    Ok(None)
 }
 
 /// The `UnknownId` for a preserved carrier record. Shared by the passthrough

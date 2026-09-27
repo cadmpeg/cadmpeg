@@ -684,7 +684,7 @@ pub fn decode_with_header(
         count_other_records(ctx, &mut out, records, &reach, &emitted_attributes)?;
         emit_annotation_records(ctx, &mut out, records, &by_index, &carriers, stream, format)?;
 
-        classify_body_kinds(&mut out);
+        classify_body_kinds(ctx, &mut out)?;
         clamp_edge_ranges_to_carrier_domains(ctx, &mut out)?;
     }
 
@@ -696,8 +696,7 @@ fn inherited_attribute_target(
     by_index: &HashMap<i64, &Record>,
     targets: &HashMap<i64, AttributeTarget>,
 ) -> Option<AttributeTarget> {
-    let mut visited = HashSet::new();
-    while visited.insert(owner) {
+    for _ in 0..=by_index.len() {
         if let Some(target) = targets.get(&owner) {
             return Some(target.clone());
         }

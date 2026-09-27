@@ -4534,7 +4534,7 @@ pub(super) fn emit_faces(
     } = reach;
     let subshell_shells = subshell_ancestor_shells(ctx, records, by_index)?;
     let attribute_color = |entity: &Record| attribute_chain_color(entity, by_index);
-    let attribute_name = |entity: &Record| attribute_chain_name(entity, by_index);
+    let attribute_name = |entity: &Record| attribute_chain_name(ctx, entity, by_index);
     for r in records {
         let i = r.index as i64;
         if r.head() == "face" && kept_faces.contains(&i) {
@@ -4569,7 +4569,7 @@ pub(super) fn emit_faces(
                 surface: <SurfaceId>::from(id(format, surface)),
                 sense,
                 loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
-                name: attribute_name(r),
+                name: attribute_name(r)?,
                 color: attribute_color(r),
                 tolerance: None,
             });
@@ -4627,7 +4627,7 @@ pub(super) fn emit_containers(
         saved_free_edges,
     } = wire;
     let attribute_color = |entity: &Record| attribute_chain_color(entity, by_index);
-    let attribute_name = |entity: &Record| attribute_chain_name(entity, by_index);
+    let attribute_name = |entity: &Record| attribute_chain_name(ctx, entity, by_index);
     for r in records {
         let i = r.index as i64;
         match r.head() {
@@ -4710,7 +4710,7 @@ pub(super) fn emit_containers(
                     regions,
                     transform: transform_record
                         .and_then(|transform| decode_transform(transform, header_scale)),
-                    name: attribute_name(r),
+                    name: attribute_name(r)?,
                     color: attribute_color(r),
                     visible: None,
                 });
@@ -4812,7 +4812,7 @@ pub(super) fn emit_attributes(
             _ => None,
         };
         if let Some(target) = target {
-            attribute_targets.insert(index, target.clone());
+            crate::decode_alloc::insert_hash_map(ctx, &mut attribute_targets, index, target.clone(), "ASM attribute targets")?;
             collect_attributes(
                 ctx,
                 record,
@@ -4833,7 +4833,7 @@ pub(super) fn emit_attributes(
         if let Some(target) = attribute_owner(record)
             .and_then(|owner| inherited_attribute_target(owner, by_index, &attribute_targets))
         {
-            emitted_attributes.insert(index);
+            crate::decode_alloc::insert_hash_set(ctx, &mut emitted_attributes, index, "ASM emitted attributes")?;
             charged_push!(ctx, out.attributes, source_attribute(ctx, record, target, format)?);
         }
     }
