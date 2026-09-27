@@ -271,9 +271,8 @@ pub(in super::super) fn draft_neutral_plane_selection(
         return FaceSelection::Unresolved;
     };
     if table
-        .surface_ids()
-        .iter()
-        .filter(|surface_id| **surface_id == entry.entity_id)
+        .surface_ids_iter()
+        .filter(|surface_id| *surface_id == entry.entity_id)
         .count()
         != 1
     {
@@ -328,9 +327,8 @@ pub(in super::super) fn feature_surface_transitions(
         let intermediate_id = output.related_entity_id()?;
         if output.related_entity_state() != Some(0)
             || output_table
-                .surface_ids()
-                .iter()
-                .filter(|surface_id| **surface_id == output.entity_id)
+                .surface_ids_iter()
+                .filter(|surface_id| *surface_id == output.entity_id)
                 .count()
                 != 1
             || crate::surface::unique_surface_row(surface_rows, output.entity_id)
@@ -450,7 +448,7 @@ pub(in super::super) fn feature_result_surface_ids(
     let mut surface_ids = Vec::new();
     let mut seen = BTreeSet::new();
     for table in tables.iter().filter(|table| table.feature_id == feature_id) {
-        for &surface_id in &table.surface_ids() {
+        for surface_id in table.surface_ids_iter() {
             let row = crate::surface::unique_surface_row(rows, surface_id)?;
             if row.feature_id != feature_id || !seen.insert(surface_id) {
                 return None;

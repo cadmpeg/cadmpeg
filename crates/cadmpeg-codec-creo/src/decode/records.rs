@@ -4,6 +4,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::hash::sha256_hex;
 use serde::Serialize;
 
@@ -808,35 +810,145 @@ pub(super) fn feature_entity_reference_records(
 }
 
 pub(super) fn feature_entity_table_records(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
-) -> Vec<CreoFeatureEntityTableRecord> {
-    scan.features
-        .entity_tables
-        .iter()
-        .map(|table| CreoFeatureEntityTableRecord {
-            id: format!("creo:allfeatur:entity_table#{}", table.offset),
+) -> Result<Vec<CreoFeatureEntityTableRecord>, CodecError> {
+    let mut records = Vec::new();
+    for table in &scan.features.entity_tables {
+        let mut entry_ids = Vec::new();
+        let mut entries = Vec::new();
+        let mut surface_ids = Vec::new();
+        let mut non_surface_entity_ids = Vec::new();
+        for entry in &table.entries {
+            ctx.try_reserve_items(&mut entry_ids, 1, "creo feature entity table record entry ids")?;
+            entry_ids.push(entry.entity_id);
+            ctx.try_reserve_items(&mut entries, 1, "creo feature entity table record entries")?;
+            entries.push(CreoFeatureEntityTableEntryRecord {
+                entity_id: entry.entity_id,
+                class_id: entry.class_id(),
+                source_entity_id: entry.source_entity_id(),
+                related_entity_id: entry.related_entity_id(),
+                related_entity_state: entry.related_entity_state(),
+                prefixed: entry.prefixed,
+                offset: entry.offset,
+                end_offset: entry.end_offset,
+            });
+            if table.contains_surface_id(entry.entity_id) {
+                ctx.try_reserve_items(&mut surface_ids, 1, "creo feature entity table record surface ids")?;
+                surface_ids.push(entry.entity_id);
+            } else {
+                ctx.try_reserve_items(&mut non_surface_entity_ids, 1, "creo feature entity table record non surface ids")?;
+                non_surface_entity_ids.push(entry.entity_id);
+            }
+        }
+        let id = ctx.format_retained(
+            format_args!("creo:allfeatur:entity_table#{}", table.offset),
+            "creo feature entity table record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo feature entity table records")?;
+        records.push(CreoFeatureEntityTableRecord {
+            id,
             owner_feature_id: table.feature_id,
             table_class_id: table.table_class_id,
-            entry_ids: table.entry_ids(),
-            entries: table
-                .entries
-                .iter()
-                .map(|entry| CreoFeatureEntityTableEntryRecord {
-                    entity_id: entry.entity_id,
-                    class_id: entry.class_id(),
-                    source_entity_id: entry.source_entity_id(),
-                    related_entity_id: entry.related_entity_id(),
-                    related_entity_state: entry.related_entity_state(),
-                    prefixed: entry.prefixed,
-                    offset: entry.offset,
-                    end_offset: entry.end_offset,
-                })
-                .collect(),
-            surface_ids: table.surface_ids(),
-            non_surface_entity_ids: table.non_surface_entity_ids(),
+            entry_ids,
+            entries,
+            surface_ids,
+            non_surface_entity_ids,
             offset: table.offset,
-        })
-        .collect()
+        });
+    }
+    Ok(records)
+}
+
+#[cfg(test)]
+mod feature_entity_table_record_tests {
+    use super::feature_entity_table_records;
+    use crate::feature::entity::{dummy_table_entry, FeatureEntityTable};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use std::collections::BTreeSet;
+
+    fn scan_with_table() -> crate::container::ContainerScan<'static> {
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        scan.features.entity_tables.push(FeatureEntityTable::new(
+            4,
+            29,
+            vec![dummy_table_entry(7), dummy_table_entry(9)],
+            &BTreeSet::from([7]),
+            12,
+        ));
+        scan
+    }
+
+    fn collection_error(limit: u64, operation: &'static str) {
+        let scan = scan_with_table();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty source is admitted");
+        let Err(error) = feature_entity_table_records(&ctx, &scan) else {
+            panic!("record copy exceeds the collection limit");
+        };
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == operation), "{error:?}");
+    }
+
+    #[test]
+    fn entity_table_record_entry_ids_refuse_collection_limit() {
+        collection_error(0, "creo feature entity table record entry ids");
+    }
+
+    #[test]
+    fn entity_table_record_entries_refuse_collection_limit() {
+        collection_error(1, "creo feature entity table record entries");
+    }
+
+    #[test]
+    fn entity_table_record_surface_ids_refuse_collection_limit() {
+        collection_error(2, "creo feature entity table record surface ids");
+    }
+
+    #[test]
+    fn entity_table_record_non_surface_ids_refuse_collection_limit() {
+        collection_error(5, "creo feature entity table record non surface ids");
+    }
+
+    #[test]
+    fn entity_table_record_outer_rows_refuse_collection_limit() {
+        collection_error(6, "creo feature entity table records");
+    }
+
+    #[test]
+    fn entity_table_record_id_refuses_retained_limit() {
+        let scan = scan_with_table();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = "creo:allfeatur:entity_table#12".len() as u64 - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty source is admitted");
+        let Err(error) = feature_entity_table_records(&ctx, &scan) else {
+            panic!("record identity exceeds the retained limit");
+        };
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo feature entity table record id"), "{error:?}");
+    }
+
+    #[test]
+    fn entity_table_record_preserves_source_order_and_partition() {
+        let scan = scan_with_table();
+        crate::decode::with_test_decode_ctx(|ctx| {
+            let records = feature_entity_table_records(ctx, &scan)?;
+            assert_eq!(records.len(), 1);
+            let record = &records[0];
+            assert_eq!(record.id, "creo:allfeatur:entity_table#12");
+            assert_eq!(record.entry_ids, [7, 9]);
+            assert_eq!(record.surface_ids, [7]);
+            assert_eq!(record.non_surface_entity_ids, [9]);
+            Ok::<(), cadmpeg_core::CodecError>(())
+        }).expect("service profile admits the record");
+    }
 }
 
 pub(super) fn feature_geometry_table_records(

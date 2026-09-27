@@ -313,7 +313,7 @@ pub(in super::super) fn new_sheet_output_surface_id(
     let generated = unique_table(29)?;
     (owner.source_entity_id() == Some(feature_id)
         && output.entity_id == owner.entity_id
-        && generated.surface_ids().contains(&output.class_id())
+        && generated.contains_surface_id(output.class_id())
         && generated
             .entries
             .iter()

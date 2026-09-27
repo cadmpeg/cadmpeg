@@ -164,7 +164,7 @@ fn generated_cylinder_section_transform(
         .iter()
         .filter(|table| table.feature_id == feature_id)
         .flat_map(|table| table.entries.iter().map(move |entry| (table, entry)))
-        .filter(|(table, entry)| table.surface_ids().contains(&entry.entity_id))
+        .filter(|(table, entry)| table.contains_surface_id(entry.entity_id))
     {
         let Some(external_id) = entry.source_entity_id() else {
             continue;
@@ -346,7 +346,7 @@ fn generated_planar_section_transform(
     let mut sides = Vec::new();
     for entry in table.entries[2..]
         .iter()
-        .filter(|entry| table.surface_ids().contains(&entry.entity_id))
+        .filter(|entry| table.contains_surface_id(entry.entity_id))
     {
         let Some(model_plane) = generated_plane_equation(entry) else {
             continue;
@@ -508,28 +508,24 @@ fn generated_planar_table_shape(table: &FeatureEntityTable) -> bool {
         .map(|entry| entry.entity_id)
         .collect::<BTreeSet<_>>();
     let roster = table
-        .surface_ids()
-        .iter()
-        .chain(&table.non_surface_entity_ids())
-        .copied()
+        .surface_ids_iter()
+        .chain(table.non_surface_entity_ids_iter())
         .collect::<BTreeSet<_>>();
     table.entry_ids().len() == entry_ids.len()
         && table.entry_ids().iter().copied().collect::<BTreeSet<_>>() == entry_ids
         && roster == entry_ids
-        && table.surface_ids().iter().all(|id| {
-            !table.non_surface_entity_ids().contains(id)
+        && table.surface_ids_iter().all(|id| {
+            !table.non_surface_entity_ids_iter().any(|candidate| candidate == id)
                 && table
-                    .surface_ids()
-                    .iter()
+                    .surface_ids_iter()
                     .filter(|candidate| *candidate == id)
                     .count()
                     == 1
         })
-        && table.non_surface_entity_ids().iter().all(|id| {
-            !table.surface_ids().contains(id)
+        && table.non_surface_entity_ids_iter().all(|id| {
+            !table.contains_surface_id(id)
                 && table
-                    .non_surface_entity_ids()
-                    .iter()
+                    .non_surface_entity_ids_iter()
                     .filter(|candidate| *candidate == id)
                     .count()
                     == 1

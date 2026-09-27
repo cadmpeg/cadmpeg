@@ -1133,7 +1133,7 @@ pub(in super::super) fn class_942_boundary_surface_entity_graph(
         [entry]
             if entry.entity_id == surface.id
                 && entry.source_entity_id() == Some(0)
-                && generated.surface_ids().as_slice() == [surface.id]
+                && generated.surface_ids_iter().eq([surface.id])
     ) && topology
         .entries
         .iter()

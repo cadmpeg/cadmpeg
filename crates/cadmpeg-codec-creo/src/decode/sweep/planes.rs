@@ -177,7 +177,7 @@ pub(in super::super) fn generated_arc_cylinder_extent(
         .iter()
         .filter(|table| table.feature_id == feature_id)
         .flat_map(|table| table.entries.iter().map(move |entry| (table, entry)))
-        .filter(|(table, entry)| table.surface_ids().contains(&entry.entity_id))
+        .filter(|(table, entry)| table.contains_surface_id(entry.entity_id))
     {
         let Some(source_id) = entry.source_entity_id() else {
             continue;
@@ -347,8 +347,8 @@ pub(in super::super) fn generated_cap_plane_extent(
         }
     }
     (side_count > 0
-        && table.surface_ids().contains(&start_id?)
-        && table.surface_ids().contains(&end_id?))
+        && table.contains_surface_id(start_id?)
+        && table.contains_surface_id(end_id?))
     .then_some(())?;
     let local_planes = placed_planes(scan);
     let plane = |surface_id: u32| {

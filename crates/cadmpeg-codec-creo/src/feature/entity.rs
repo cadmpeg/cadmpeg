@@ -54,6 +54,7 @@ impl FeatureEntityTable {
         self.entries.iter().map(|entry| entry.entity_id).collect()
     }
 
+    #[cfg(test)]
     pub(crate) fn surface_ids(&self) -> Vec<u32> {
         self.surface_ids_iter().collect()
     }
@@ -66,12 +67,25 @@ impl FeatureEntityTable {
             .filter(|id| self.surface_ids.contains(id))
     }
 
-    pub(crate) fn non_surface_entity_ids(&self) -> Vec<u32> {
+    /// Return whether this table materializes one surface identity.
+    pub(crate) fn contains_surface_id(&self, entity_id: u32) -> bool {
+        self.surface_ids.contains(&entity_id)
+    }
+
+    /// Borrow the distinct materialized surface identities.
+    pub(crate) fn unique_surface_ids(&self) -> &BTreeSet<u32> {
+        &self.surface_ids
+    }
+
+    pub(crate) fn non_surface_entity_ids_iter(&self) -> impl Iterator<Item = u32> + '_ {
         self.entries
             .iter()
             .map(|entry| entry.entity_id)
             .filter(|id| !self.surface_ids.contains(id))
-            .collect()
+    }
+
+    pub(crate) fn non_surface_entity_ids(&self) -> Vec<u32> {
+        self.non_surface_entity_ids_iter().collect()
     }
 }
 
