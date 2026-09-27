@@ -25,7 +25,9 @@ fn metadata_unknown_stream_slots_refuse_at_collection_limit() {
             },
         }],
     };
-    let (dialects, _) = crate::dialect::classify_layers(&scan).into_report_parts();
+    let (dialects, _) = crate::test_support::with_decode_context(|ctx| crate::dialect::classify_layers(ctx, &scan))
+            .unwrap()
+            .into_report_parts();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;

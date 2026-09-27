@@ -1932,7 +1932,9 @@ mod tests {
     #[test]
     fn source_meta_refuses_first_attribute_node_at_collection_limit() {
         let scan = empty_source_scan();
-        let (dialects, _) = crate::dialect::classify_layers(&scan).into_report_parts();
+        let (dialects, _) = crate::test_support::with_decode_context(|ctx| crate::dialect::classify_layers(ctx, &scan))
+            .unwrap()
+            .into_report_parts();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
@@ -1948,7 +1950,9 @@ mod tests {
     #[test]
     fn source_meta_refuses_first_attribute_text_at_retained_limit() {
         let scan = empty_source_scan();
-        let (dialects, _) = crate::dialect::classify_layers(&scan).into_report_parts();
+        let (dialects, _) = crate::test_support::with_decode_context(|ctx| crate::dialect::classify_layers(ctx, &scan))
+            .unwrap()
+            .into_report_parts();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
@@ -1964,7 +1968,9 @@ mod tests {
     #[test]
     fn source_meta_refuses_second_map_nodes_at_collection_limit() {
         let scan = empty_source_scan();
-        let (dialects, _) = crate::dialect::classify_layers(&scan).into_report_parts();
+        let (dialects, _) = crate::test_support::with_decode_context(|ctx| crate::dialect::classify_layers(ctx, &scan))
+            .unwrap()
+            .into_report_parts();
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (service_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();

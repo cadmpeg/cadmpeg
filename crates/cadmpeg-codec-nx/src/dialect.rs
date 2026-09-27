@@ -49,7 +49,9 @@
 
 use crate::container::Container;
 use crate::loss::NxLossCode;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 
 use std::collections::BTreeMap;
@@ -95,22 +97,78 @@ impl LayerClassification {
 }
 
 /// Classify the host container and every schema-bearing Parasolid stream.
-pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> LayerClassification {
-    let streams = scan
+pub(crate) fn classify_layers(
+    ctx: &DecodeContext<'_>,
+    scan: &crate::decode::Scan<'_>,
+) -> Result<LayerClassification, CodecError> {
+    ctx.charge_work(u64_from_index(scan.streams.len()), "classify NX dialect layers")?;
+    let schema_count = scan
         .streams
         .iter()
-        .filter_map(|stream| stream.schema_token().map(|schema| (stream, schema)))
-        .collect::<Vec<_>>();
+        .filter(|stream| stream.schema_token().is_some())
+        .count();
+    ctx.charge_collection_items(u64_from_index(schema_count), "nx schema streams")?;
+    let index_bytes = schema_count
+        .checked_mul(std::mem::size_of::<(
+            &crate::parasolid::Stream,
+            &cadmpeg_parasolid::OwnedSchemaToken,
+        )>())
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("nx schema streams", 0, u64_from_index(schema_count))
+        })?;
+    ctx.charge_retained(u64_from_index(index_bytes), "retain NX schema stream index")?;
+    let mut streams = Vec::new();
+    streams
+        .try_reserve_exact(schema_count)
+        .map_err(|_| ctx.refuse_codec_limit("nx schema streams", 0, u64_from_index(schema_count)))?;
+    for stream in &scan.streams {
+        if let Some(schema) = stream.schema_token() {
+            streams.push((stream, schema));
+        }
+    }
+    ctx.charge_collection_items(u64_from_index(schema_count), "nx schema carriers")?;
+    let carrier_slots = schema_count
+        .checked_mul(std::mem::size_of::<(
+            cadmpeg_parasolid::OwnedSchemaToken,
+            cadmpeg_parasolid::Carrier,
+        )>())
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("nx schema carriers", 0, u64_from_index(schema_count))
+        })?;
+    ctx.charge_retained(u64_from_index(carrier_slots), "retain NX schema carriers")?;
+    let mut carriers = Vec::new();
+    carriers.try_reserve_exact(schema_count).map_err(|_| {
+        ctx.refuse_codec_limit("nx schema carriers", 0, u64_from_index(schema_count))
+    })?;
+    for (stream, schema) in streams {
+        let mut digits = 1usize;
+        let mut value = stream.file_offset;
+        while value >= 10 {
+            value /= 10;
+            digits += 1;
+        }
+        let label_len = 7usize.checked_add(digits).ok_or_else(|| {
+            ctx.refuse_codec_limit("nx schema carrier labels", 0, u64_from_index(digits))
+        })?;
+        let text_bytes = label_len.checked_add(schema.value().len()).ok_or_else(|| {
+            ctx.refuse_codec_limit("nx schema carrier labels", 0, u64_from_index(label_len))
+        })?;
+        ctx.charge_retained(u64_from_index(text_bytes), "retain NX schema carrier labels")?;
+        let mut label = String::new();
+        label.try_reserve_exact(label_len).map_err(|_| {
+            ctx.refuse_codec_limit("nx schema carrier labels", 0, u64_from_index(label_len))
+        })?;
+        std::fmt::Write::write_fmt(&mut label, format_args!("stream@{}", stream.file_offset))
+            .map_err(|_| {
+                ctx.refuse_codec_limit("nx schema carrier labels", 0, u64_from_index(label_len))
+            })?;
+        carriers.push((
+            schema.clone(),
+            cadmpeg_parasolid::Carrier::new(label),
+        ));
+    }
     let extra = cadmpeg_parasolid::extra_layers(
-        streams
-            .into_iter()
-            .map(|(stream, schema)| {
-                (
-                    schema.clone(),
-                    cadmpeg_parasolid::Carrier::new(format!("stream@{}", stream.file_offset)),
-                )
-            })
-            .collect(),
+        carriers,
         // NX verifies no Parasolid schema itself; every kernel layer is residual.
         &[],
     );
@@ -120,11 +178,11 @@ pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> LayerClassifica
         .into_iter()
         .map(|message| NxLossCode::DialectLayerCollision.note(message))
         .collect();
-    LayerClassification {
+    Ok(LayerClassification {
         host,
         layers,
         losses,
-    }
+    })
 }
 
 /// Losses charged by every unverified layer in a classified document.
