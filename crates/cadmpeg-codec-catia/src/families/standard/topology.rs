@@ -348,9 +348,8 @@ impl StandardTopology {
                 return Ok(None);
             }
             let [start, end] = edge;
-            let candidates = HashSet::from(*pair);
-            domains[start].retain(|point| candidates.contains(point));
-            domains[end].retain(|point| candidates.contains(point));
+            domains[start].retain(|point| pair.contains(point));
+            domains[end].retain(|point| pair.contains(point));
         }
         if domains.iter().any(HashSet::is_empty) {
             return Ok(None);
@@ -383,7 +382,19 @@ impl StandardTopology {
             }
         }
 
-        Ok(edge_vertices.into_iter().collect())
+        let mut complete = Vec::new();
+        for vertices in edge_vertices {
+            let Some(vertices) = vertices else {
+                return Ok(None);
+            };
+            crate::resource::push(
+                ctx,
+                &mut complete,
+                vertices,
+                "catia_standard_edge_vertices_complete",
+            )?;
+        }
+        Ok(Some(complete))
     }
 
     /// Replace provisional trim-handle endpoint components with the quotient
