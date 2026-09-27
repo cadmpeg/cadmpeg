@@ -200,11 +200,18 @@ pub(super) fn exact_move_operation(
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Move) {
         return None;
     }
-    let mut candidates = Vec::new();
+    let mut candidate = None;
     for record_index in scope.reference_members().values() {
         for (start, paired) in records.frames(*record_index) {
-            let (class_tag, after_tag) =
-                lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
+            let class_tag_len = usize::try_from(View::u32_le_at(bytes, start)?).ok()?;
+            if class_tag_len > 2000 {
+                return None;
+            }
+            let after_tag = start.checked_add(4)?.checked_add(class_tag_len)?;
+            let class_tag = std::str::from_utf8(bytes.get(start + 4..after_tag)?).ok()?;
+            if !class_tag.bytes().all(|byte| byte.is_ascii_graphic()) {
+                return None;
+            }
             let frame_length = paired.checked_sub(start)?;
             if View::u32_le_at(bytes, after_tag) != Some(*record_index)
                 || bytes.get(start + 11..start + 43) != Some(&[0; 32])
@@ -212,11 +219,11 @@ pub(super) fn exact_move_operation(
                 continue;
             }
             let Some((form_offset, transform_offset)) =
-                move_transform_layout(&class_tag, frame_length)
+                move_transform_layout(class_tag, frame_length)
             else {
                 continue;
             };
-            let expected_paired_class = match class_tag.as_str() {
+            let expected_paired_class = match class_tag {
                 "447" => Some("263"),
                 "456" => Some("258"),
                 _ => None,
@@ -247,19 +254,19 @@ pub(super) fn exact_move_operation(
             else {
                 continue;
             };
-            candidates.push(DesignMoveOperation {
+            let next = DesignMoveOperation {
                 transform,
                 transform_offset: (start + transform_offset) as u64,
                 transform_record_index: *record_index,
                 form,
                 form_offset: (start + form_offset) as u64,
-            });
+            };
+            if candidate.replace(next).is_some() {
+                return None;
+            }
         }
     }
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    candidate
 }
 
 /// Return the fixed envelope offsets admitted for one Move transform class.
