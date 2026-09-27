@@ -229,12 +229,12 @@ fn dimension_identity_includes_its_feature_definition() {
         "creo:featdefs:parameter#917:3"
     );
     assert_eq!(
-        feature_dimension_parameter_layout(&[
+        crate::decode::with_test_decode_ctx(|ctx| feature_dimension_parameter_layout(ctx, &[
             (sketch_917.clone(), 3),
             (sketch_1104.clone(), 3),
             (sketch_1104.clone(), 4),
             (sketch_1200, 3),
-        ]),
+        ])).expect("layout fits service limits"),
         Some(vec![
             (0, "d3".to_string(), None),
             (0, "d3".to_string(), None),
@@ -243,7 +243,9 @@ fn dimension_identity_includes_its_feature_definition() {
         ])
     );
     assert_eq!(
-        feature_dimension_parameter_layout(&[(sketch_917.clone(), 3), (sketch_917.clone(), 3),]),
+        crate::decode::with_test_decode_ctx(|ctx| feature_dimension_parameter_layout(ctx,
+            &[(sketch_917.clone(), 3), (sketch_917.clone(), 3)]
+        )).expect("layout fits service limits"),
         Some(vec![
             (0, "d917_3_1".to_string(), Some(0)),
             (1, "d917_3_2".to_string(), Some(1)),
