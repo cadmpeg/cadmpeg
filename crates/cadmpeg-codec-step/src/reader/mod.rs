@@ -269,12 +269,31 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         mut self,
         source_fidelity: SourceFidelity,
         opaque_offsets: BTreeSet<usize>,
-    ) -> AnalyzedExchange {
+    ) -> Result<AnalyzedExchange, CodecError> {
+        for (name, value) in self.matched.declared() {
+            self.ctx
+                .charge_collection_items(1, "step_dialect_match_copy_items")?;
+            let bytes = u64_from_index(name.as_str().len())
+                .checked_add(u64_from_index(value.len()))
+                .ok_or_else(|| {
+                    self.ctx.refuse_codec_limit("step_dialect_match_copy_text", 0, u64::MAX)
+                })?;
+            self.ctx.charge_retained(
+                bytes,
+                "step_dialect_match_copy_text",
+            )?;
+        }
+        if let Some(instance) = self.matched.instance() {
+            self.ctx.charge_retained(
+                u64_from_index(instance.len()),
+                "step_dialect_match_copy_text",
+            )?;
+        }
         self.ir.source = Some(SourceMeta::classified(
             cadmpeg_core::dialect::DialectLayers::of(self.matched.clone()),
             self.source_attributes,
         ));
-        AnalyzedExchange {
+        Ok(AnalyzedExchange {
             decoded: Decoded {
                 ir: self.ir,
                 body: self.body,
@@ -282,7 +301,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             },
             matched: self.matched,
             opaque_offsets,
-        }
+        })
     }
 }
 
@@ -362,7 +381,7 @@ fn decode_exchange_mode(
 ) -> Result<AnalyzedExchange, CodecError> {
     let mut session = StepDecodeSession::new(exchange, diagnostics, ctx, mode)?;
     if ctx.container_only() {
-        return Ok(session.into_result(SourceFidelity::default(), BTreeSet::new()));
+        return session.into_result(SourceFidelity::default(), BTreeSet::new());
     }
 
     session.semantic_input_work = semantic_input_work(exchange);
@@ -704,7 +723,7 @@ fn decode_exchange_mode(
         )?;
     }
     session.charge_pending_ir_entities("step_admit_ir_entities")?;
-    Ok(session.into_result(source_fidelity, opaque_offsets))
+    session.into_result(source_fidelity, opaque_offsets)
 }
 
 /// Count the source graph nodes that each semantic pass may inspect.
