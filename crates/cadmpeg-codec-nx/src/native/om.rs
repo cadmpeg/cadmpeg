@@ -87,11 +87,8 @@ pub(super) struct OmRecordArea {
 }
 
 /// One complete row retained from an audit-trail record area.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "state_index_wire::OmAuditTrailRowWire",
-    into = "state_index_wire::OmAuditTrailRowWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "state_index_wire::OmAuditTrailRowWire")]
 pub(super) struct OmAuditTrailRow {
     /// Globally unique audit-row identity.
     pub(super) id: String,
@@ -135,11 +132,8 @@ impl OmAuditTrailRow {
 }
 
 /// One row from the feature-history operation-state counter map.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "state_index_wire::OmOperationStateCounterWire",
-    into = "state_index_wire::OmOperationStateCounterWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "state_index_wire::OmOperationStateCounterWire")]
 pub(super) struct OmOperationStateCounter {
     /// Globally unique counter-row identity.
     pub(super) id: String,

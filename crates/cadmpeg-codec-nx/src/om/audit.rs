@@ -17,17 +17,33 @@ impl AuditRecord {
     }
 
     pub(crate) fn raw(self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(self.byte_len());
-        bytes.push(0x04);
-        bytes.extend_from_slice(self.ordinal.raw());
-        bytes.push(0x13);
+        let (bytes, len) = self.raw_array();
+        bytes[..len].to_vec()
+    }
+
+    /// The complete frame fits in 19 bytes; serializers use this stack value.
+    pub(crate) fn raw_array(self) -> ([u8; 19], usize) {
+        let mut bytes = [0_u8; 19];
+        let mut at = 0;
+        bytes[at] = 0x04;
+        at += 1;
+        let ordinal = self.ordinal.raw();
+        bytes[at..at + ordinal.len()].copy_from_slice(ordinal);
+        at += ordinal.len();
+        bytes[at] = 0x13;
+        at += 1;
         if let Some(selector) = self.frame_selector {
-            bytes.extend_from_slice(&[0x04, 0x05, selector, 0x00]);
+            bytes[at..at + 4].copy_from_slice(&[0x04, 0x05, selector, 0x00]);
+            at += 4;
         }
-        bytes.push(0xe0);
-        bytes.extend_from_slice(&self.timestamp.to_be_bytes());
-        bytes.extend_from_slice(self.value.raw());
-        bytes
+        bytes[at] = 0xe0;
+        at += 1;
+        bytes[at..at + 4].copy_from_slice(&self.timestamp.to_be_bytes());
+        at += 4;
+        let value = self.value.raw();
+        bytes[at..at + value.len()].copy_from_slice(value);
+        at += value.len();
+        (bytes, at)
     }
 }
 
