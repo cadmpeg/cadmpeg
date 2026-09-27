@@ -252,7 +252,7 @@ pub(crate) fn decode_with_scopes(
         return Ok(None);
     };
     let mut table = parse(ctx, bytes)?;
-    bind_occurrences(scan, &mut table, scopes)?;
+    bind_occurrences(ctx, scan, &mut table, scopes)?;
     Ok(Some(table))
 }
 
@@ -477,6 +477,7 @@ pub(crate) fn bind_component_insert_features(
 /// Expand container references through their occurrence records in the active
 /// Design `BulkStream` and retain each occurrence-local placement matrix.
 fn bind_occurrences(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     table: &mut XrefTable,
     scopes: &[DesignParameterScope],
@@ -504,7 +505,7 @@ fn bind_occurrences(
         } else {
             (None, None)
         };
-        let headers = indexed_records(bytes);
+        let headers = indexed_records(ctx, bytes)?;
         let (placements, failures) = occurrence_placements_with_failures(
             bytes,
             &headers,
@@ -685,30 +686,32 @@ fn occurrence_transforms(
         .collect()
 }
 
-fn indexed_records(bytes: &[u8]) -> Vec<IndexedRecord> {
-    let mut headers = Vec::new();
+fn indexed_records(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<IndexedRecord>, CodecError> {
+    ctx.charge_work(bytes.len() as u64, "scan F3D xref record headers")?;
+    let mut records: Vec<IndexedRecord> = Vec::new();
     for at in 0..bytes.len().saturating_sub(11) {
-        let Some((class_tag, after_tag)) = lp_ascii_strict(bytes, at, 0..=usize::MAX) else {
+        if View::u32_le_at(bytes, at) != Some(3) {
+            continue;
+        }
+        let Some(tag) = bytes.get(at + 4..at + 7) else {
             continue;
         };
-        if after_tag == at + 7
-            && class_tag.len() == 3
-            && class_tag.bytes().all(|byte| byte.is_ascii_digit())
-        {
-            if bytes.get(after_tag..after_tag + 8).is_none() {
-                continue;
-            }
-            headers.push(at);
+        if !tag.iter().all(u8::is_ascii_digit) || bytes.get(at + 7..at + 15).is_none() {
+            continue;
         }
+        if let Some(previous) = records.last_mut() {
+            previous.end = at;
+        }
+        ctx.charge_collection_items(1, "index F3D xref record frame")?;
+        records.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("index F3D xref record frame", 0, 1)
+        })?;
+        records.push(IndexedRecord {
+            offset: at,
+            end: bytes.len(),
+        });
     }
-    headers
-        .iter()
-        .enumerate()
-        .map(|(ordinal, offset)| IndexedRecord {
-            offset: *offset,
-            end: headers.get(ordinal + 1).copied().unwrap_or(bytes.len()),
-        })
-        .collect()
+    Ok(records)
 }
 
 /// One occurrence-placement record: the target path it names and the transform
