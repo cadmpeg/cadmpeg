@@ -137,7 +137,7 @@ pub enum EmbeddedSurfaceCurveLayout<F> {
 }
 
 impl<F> EmbeddedSurfaceCurveLayout<F> {
-    fn selected_pcurve(&self, slot: usize) -> Option<PcurveNurbs> {
+    fn selected_pcurve(&self, slot: usize) -> Option<&PcurveNurbs> {
         let (surfaces, pcurves) = match self {
             Self::ContextFirst(context) => (&context.surfaces, &context.pcurves),
             Self::CacheFirst { context, .. } => (&context.surfaces, &context.pcurves),
@@ -172,7 +172,7 @@ pub enum EmbeddedSurfaceCurve {
 }
 
 impl EmbeddedSurfaceCurve {
-    fn selected_pcurve(&self, slot: usize) -> Option<PcurveNurbs> {
+    fn selected_pcurve(&self, slot: usize) -> Option<&PcurveNurbs> {
         match self {
             Self::Blend(layout) | Self::SurfaceConstrained(layout) | Self::Skin(layout) => {
                 layout.selected_pcurve(slot)
@@ -690,6 +690,7 @@ fn pcurve_for_selector_recursive(
             Err(error) => return Some(Err(error)),
         };
         if let Some(pcurve) = selected_pcurve(&decoded, slot) {
+            let pcurve = propagate_resource!(pcurve.try_clone_for_decode(ctx, "ASM selected support pcurve"));
             return Some(Ok((pcurve, false)));
         }
         if !matches!(&decoded.construction, ProceduralCurveConstruction::Unknown(kind) if kind == "intcurve")
@@ -713,6 +714,7 @@ fn pcurve_for_selector_recursive(
                     if let Some(pcurve) =
                         selected_support_pcurve(&context.surfaces, &context.pcurves, slot)
                     {
+                        let pcurve = propagate_resource!(pcurve.try_clone_for_decode(ctx, "ASM selected support pcurve"));
                         return Some(Ok((pcurve, false)));
                     }
                 }
@@ -773,27 +775,27 @@ fn direct_subtype_reference(
     candidate.map(Ok)
 }
 
-fn selected_support_pcurve(
+fn selected_support_pcurve<'a>(
     surfaces: &[SupportSlot; 2],
-    pcurves: &[Option<PcurveNurbs>; 2],
+    pcurves: &'a [Option<PcurveNurbs>; 2],
     slot: usize,
-) -> Option<PcurveNurbs> {
+) -> Option<&'a PcurveNurbs> {
     match surfaces.get(slot)? {
-        SupportSlot::Surface(_) => pcurves.get(slot)?.clone(),
+        SupportSlot::Surface(_) => pcurves.get(slot)?.as_ref(),
         SupportSlot::Absent | SupportSlot::DeclaredOnly => None,
     }
 }
 
-fn selected_optional_pcurve(
+fn selected_optional_pcurve<'a>(
     surfaces: &[Option<SurfaceGeometry>; 2],
-    pcurves: &[Option<PcurveNurbs>; 2],
+    pcurves: &'a [Option<PcurveNurbs>; 2],
     slot: usize,
-) -> Option<PcurveNurbs> {
+) -> Option<&'a PcurveNurbs> {
     surfaces.get(slot)?.as_ref()?;
-    pcurves.get(slot)?.clone()
+    pcurves.get(slot)?.as_ref()
 }
 
-fn selected_pcurve(decoded: &DecodedProceduralCurve, slot: usize) -> Option<PcurveNurbs> {
+fn selected_pcurve(decoded: &DecodedProceduralCurve, slot: usize) -> Option<&PcurveNurbs> {
     match &decoded.construction {
         ProceduralCurveConstruction::TwoSidedOffset(context) => {
             selected_optional_pcurve(&context.surfaces, &context.pcurves, slot)
@@ -803,13 +805,13 @@ fn selected_pcurve(decoded: &DecodedProceduralCurve, slot: usize) -> Option<Pcur
                 SupportSlot::Absent => return None,
                 SupportSlot::DeclaredOnly | SupportSlot::Surface(_) => {}
             }
-            context.pcurves.get(slot)?.clone()
+            context.pcurves.get(slot)?.as_ref()
         }
-        ProceduralCurveConstruction::ThreeSurface(context) => context.pcurves.get(slot).cloned(),
+        ProceduralCurveConstruction::ThreeSurface(context) => context.pcurves.get(slot),
         ProceduralCurveConstruction::SurfaceCurve(surface_curve) => {
             surface_curve.selected_pcurve(slot)
         }
-        ProceduralCurveConstruction::Silhouette(context) => context.pcurves.get(slot).cloned(),
+        ProceduralCurveConstruction::Silhouette(context) => context.pcurves.get(slot),
         ProceduralCurveConstruction::SurfaceOffset(offset) => match &offset.layout {
             EmbeddedSurfaceOffsetLayout::ContextFirst { context, .. } => {
                 selected_support_pcurve(&context.surfaces, &context.pcurves, slot)
@@ -830,10 +832,10 @@ fn selected_pcurve(decoded: &DecodedProceduralCurve, slot: usize) -> Option<Pcur
             } => matches!(supports.get(slot), Some(EmbeddedSpringSupport::Surface(_)))
                 .then(|| match slot {
                     0 => match first_pcurve {
-                        EmbeddedSpringPcurve::Pcurve(pcurve) => Some(pcurve.clone()),
+                        EmbeddedSpringPcurve::Pcurve(pcurve) => Some(pcurve),
                         EmbeddedSpringPcurve::Range(_) => None,
                     },
-                    1 => second_pcurve.clone(),
+                    1 => second_pcurve.as_ref(),
                     _ => None,
                 })
                 .flatten(),
@@ -841,7 +843,7 @@ fn selected_pcurve(decoded: &DecodedProceduralCurve, slot: usize) -> Option<Pcur
         ProceduralCurveConstruction::Deformable(embedded) => {
             selected_support_pcurve(&embedded.context.surfaces, &embedded.context.pcurves, slot)
         }
-        ProceduralCurveConstruction::Projection(context) => context.pcurves.get(slot).cloned(),
+        ProceduralCurveConstruction::Projection(context) => context.pcurves.get(slot),
         ProceduralCurveConstruction::Law(context) => {
             selected_support_pcurve(&context.surfaces, &context.pcurves, slot)
         }
