@@ -1140,8 +1140,9 @@ fn bool_list(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord], name: &str
 }
 
 pub(crate) fn product_cycle_nodes<'a>(
+    ctx: &DecodeContext<'_>,
     nodes: &HashMap<&'a str, &'a ProductNodeRecord>,
-) -> HashSet<&'a str> {
+) -> Result<HashSet<&'a str>, CodecError> {
     let edges = |name: &'a str| {
         nodes.get(name).into_iter().flat_map(|node| {
             node.members()
@@ -1151,26 +1152,48 @@ pub(crate) fn product_cycle_nodes<'a>(
                 .filter(|target| nodes.contains_key(target))
         })
     };
+    let collect_edges = |name: &'a str| -> Result<Vec<&'a str>, CodecError> {
+        let mut targets = Vec::new();
+        for target in edges(name) {
+            ctx.charge_work(1, "fcstd product cycle edge")?;
+            reserve_vec_items(ctx, &mut targets, 1, "fcstd product cycle targets")?;
+            targets.push(target);
+        }
+        Ok(targets)
+    };
     let mut reverse = HashMap::<&str, Vec<&str>>::new();
+    ctx.charge_collection_items(nodes.len() as u64, "fcstd product reverse graph")?;
+    reverse.try_reserve(nodes.len())
+        .map_err(|_| collection_allocation_failed(ctx, nodes.len() as u64, "fcstd product reverse graph"))?;
     for &source in nodes.keys() {
-        reverse.entry(source).or_default();
+        reverse.insert(source, Vec::new());
+    }
+    for &source in nodes.keys() {
         for target in edges(source) {
-            reverse.entry(target).or_default().push(source);
+            ctx.charge_work(1, "fcstd product reverse edge")?;
+            if let Some(sources) = reverse.get_mut(target) {
+                reserve_vec_items(ctx, sources, 1, "fcstd product reverse sources")?;
+                sources.push(source);
+            }
         }
     }
 
     let mut visited = HashSet::new();
-    let mut finish = Vec::with_capacity(nodes.len());
+    let mut finish = collection_vec(ctx, nodes.len(), "fcstd product finish order")?;
     for &root in nodes.keys() {
-        if !visited.insert(root) {
+        if !crate::resource::insert_hash_set(ctx, &mut visited, root, "fcstd product visited nodes")? {
             continue;
         }
-        let mut stack = vec![(root, edges(root).collect::<Vec<_>>(), 0_usize)];
+        let mut stack = Vec::new();
+        reserve_vec_items(ctx, &mut stack, 1, "fcstd product forward stack")?;
+        stack.push((root, collect_edges(root)?, 0_usize));
         while let Some((current, targets, next)) = stack.last_mut() {
+            ctx.charge_work(1, "fcstd product forward traversal")?;
             if let Some(&target) = targets.get(*next) {
                 *next += 1;
-                if visited.insert(target) {
-                    stack.push((target, edges(target).collect(), 0));
+                if crate::resource::insert_hash_set(ctx, &mut visited, target, "fcstd product visited nodes")? {
+                    reserve_vec_items(ctx, &mut stack, 1, "fcstd product forward stack")?;
+                    stack.push((target, collect_edges(target)?, 0));
                 }
             } else {
                 finish.push(*current);
@@ -1182,25 +1205,32 @@ pub(crate) fn product_cycle_nodes<'a>(
     let mut assigned = HashSet::new();
     let mut cyclic = HashSet::new();
     while let Some(root) = finish.pop() {
-        if !assigned.insert(root) {
+        if !crate::resource::insert_hash_set(ctx, &mut assigned, root, "fcstd product assigned nodes")? {
             continue;
         }
         let mut component = Vec::new();
-        let mut stack = vec![root];
+        let mut stack = Vec::new();
+        reserve_vec_items(ctx, &mut stack, 1, "fcstd product reverse stack")?;
+        stack.push(root);
         while let Some(current) = stack.pop() {
+            ctx.charge_work(1, "fcstd product reverse traversal")?;
+            reserve_vec_items(ctx, &mut component, 1, "fcstd product component nodes")?;
             component.push(current);
             for &source in reverse.get(current).into_iter().flatten() {
-                if assigned.insert(source) {
+                if crate::resource::insert_hash_set(ctx, &mut assigned, source, "fcstd product assigned nodes")? {
+                    reserve_vec_items(ctx, &mut stack, 1, "fcstd product reverse stack")?;
                     stack.push(source);
                 }
             }
         }
         let self_cycle = component.len() == 1 && edges(component[0]).any(|target| target == root);
         if component.len() > 1 || self_cycle {
-            cyclic.extend(component);
+            for member in component {
+                crate::resource::insert_hash_set(ctx, &mut cyclic, member, "fcstd product cyclic nodes")?;
+            }
         }
     }
-    cyclic
+    Ok(cyclic)
 }
 
 #[cfg(test)]
