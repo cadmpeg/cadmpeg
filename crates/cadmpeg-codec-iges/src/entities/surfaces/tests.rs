@@ -7,9 +7,9 @@ use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::ResourceDimension;
+use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, SolvedSurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::Point3;
@@ -35,6 +35,7 @@ use crate::test_support::test_surface_fixtures::{
     tabulated_hyperbola_file, tabulated_hyperbola_file_with_global,
     trimmed_surface_of_revolution_file,
 };
+
 use crate::test_support::test_tabulated_surfaces::{
     placed_tabulated_hyperbola_file, placed_tabulated_hyperbola_file_with_global,
     placed_tabulated_line_file, placed_tabulated_line_file_with_global,
@@ -51,6 +52,57 @@ use super::{
     tabulated_directrix_type_allowed,
 };
 
+fn assert_surface_collection_refusal(bytes: &[u8], operation: &str) {
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        match crate::IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                if limit.operation == operation { return; }
+                cap = limit.used.checked_add(limit.additional).unwrap();
+            }
+            other => panic!("expected surface collection refusal at {operation}: {other:?}"),
+        }
+    }
+    panic!("surface collection refusal was not reached: {operation}");
+}
+
+#[test]
+fn type128_projection_refuses_source_lanes_nested_rows_and_surface_slot() {
+    let polynomial = nurbs_surface_file();
+    for operation in [
+        "iges NURBS surface source u knots",
+        "iges NURBS surface source v knots",
+        "iges NURBS surface source weights",
+        "iges NURBS surface positive weights",
+        "iges NURBS surface source poles",
+        "iges NURBS surface source ranges",
+        "iges NURBS surface placed controls",
+        "iges NURBS surface pole rows",
+        "iges NURBS surface pole row controls",
+        "iges NURBS surface neutral slots",
+    ] {
+        assert_surface_collection_refusal(&polynomial, operation);
+    }
+    let rational = owned_test_file_with_global_and_line_fonts(&[OwnedTestEntity {
+        entity_type: 128,
+        form: 0,
+        label: "SURFACE".into(),
+        status: "00000000",
+        parameters: "128,1,1,1,1,0,0,0,0,0,0,0,1,1,0,0,1,1,1,0.99,1,1,0,0,0,1,0,0,1,0,1,1,0,1,0,1,0,1;".into(),
+    }], b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H900101.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;", &[(1, 1)]);
+    let service = crate::IgesCodec.decode(&mut Cursor::new(&rational), &DecodeOptions::default()).unwrap();
+    assert_eq!(service.ir().model.surfaces.len(), 1);
+    for operation in [
+        "iges NURBS surface neutral weights",
+        "iges NURBS surface weight rows",
+        "iges NURBS surface weight row controls",
+    ] {
+        assert_surface_collection_refusal(&rational, operation);
+    }
+}
 fn type128_surface_with_closure(
     global: &[u8],
     closed_u: i64,
