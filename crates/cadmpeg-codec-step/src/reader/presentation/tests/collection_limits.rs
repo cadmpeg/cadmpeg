@@ -665,3 +665,79 @@ fn presentation_scalar_conflict_text_refuses_retained_limit() {
         .expect("local conflict text")
         .contains("#2, #3"));
 }
+
+fn color_search_refuses(operation: &str, collection_limit: u64, retained_limit: u64, depth_limit: u64) {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=COLOUR_RGB('red',1.,0.,0.);ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("colour exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    policy.limits.max_recursion_depth = depth_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("root fits policy");
+    assert!(matches!(
+        super::super::find_color(
+            1,
+            &exchange,
+            super::super::StyleDomain::Any,
+            &mut BTreeSet::new(),
+            &mut std::collections::BTreeMap::new(),
+            &mut Vec::new(),
+            &mut BTreeSet::new(),
+            0,
+            Some(&ctx),
+        ),
+        Err(CodecError::ResourceLimit(refusal)) if refusal.operation == operation
+    ));
+}
+
+#[test]
+fn presentation_color_active_refuses_collection_limit() {
+    color_search_refuses("step_presentation_color_active", 0, 100, 128);
+}
+
+#[test]
+fn presentation_color_walk_refuses_depth_limit() {
+    color_search_refuses("step_presentation_color_walk", 100, 100, 0);
+}
+
+#[test]
+fn presentation_color_cache_entries_refuse_collection_limit() {
+    color_search_refuses("step_presentation_color_cache_entries", 1, 100, 128);
+}
+
+#[test]
+fn presentation_color_cache_value_refuses_retained_limit() {
+    color_search_refuses("step_presentation_color_cache_value", 100, 3, 128);
+}
+
+#[test]
+fn presentation_color_cache_copy_refuses_retained_limit() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("cache exchange");
+    let color = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("color");
+    let mut cache = std::collections::BTreeMap::new();
+    cache.insert((1, super::super::StyleDomain::Any), Some(super::super::ColorResolution::Candidate(
+        super::super::ColorCandidate {
+            rank: super::super::SurfaceSideRank::NoUsage,
+            id: 1,
+            color,
+            name: Some("red".into()),
+        },
+    )));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("root fits policy");
+    assert!(matches!(
+        super::super::find_color(
+            1, &exchange, super::super::StyleDomain::Any,
+            &mut BTreeSet::new(), &mut cache, &mut Vec::new(), &mut BTreeSet::new(), 0, Some(&ctx),
+        ),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_presentation_color_cache_copy"
+    ));
+}
