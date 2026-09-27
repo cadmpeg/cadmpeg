@@ -452,7 +452,8 @@ fn incidence_component_caches_implicit_frontier_support() {
     let edge_faces = [[0, 0], [0, 0]];
     let face_edges = vec![vec![0, 1]];
     let mut quotient =
-        crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [0, 1]])
+        crate::solve::mesh_quotient::initial_mesh_quotient(&ctx, &choices, 2, &[[0, 1], [0, 1]])
+            .expect("service resource budget")
             .expect("initial quotient");
     let coordinate_domains = quotient
         .prepare_coordinate_root_domains(&ctx, 2, &choices, None)
@@ -590,9 +591,14 @@ fn incidence_candidate_checks_ordered_faces_with_implicit_edge_domains() {
     let choices = vec![vec![[0, 0]], Vec::new()];
     let edge_faces = [[0, 0], [0, 0]];
     let face_edges = vec![vec![0, 1]];
-    let mut quotient =
-        crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[10, 10], [11, 12]])
-            .expect("initial quotient");
+    let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &ctx,
+        &choices,
+        2,
+        &[[10, 10], [11, 12]],
+    )
+    .expect("service resource budget")
+    .expect("initial quotient");
     let coordinate_domains = quotient
         .prepare_coordinate_root_domains(&ctx, 2, &choices, None)
         .expect("service resource budget")

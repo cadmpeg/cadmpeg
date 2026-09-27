@@ -953,26 +953,45 @@ impl MeshCoordinateRootDomains {
 }
 
 pub(super) fn initial_mesh_quotient(
+    ctx: &DecodeContext<'_>,
     edge_candidates: &[Vec<[usize; 2]>],
     point_count: usize,
     port_identities: &[[u32; 2]],
-) -> Option<MeshQuotient> {
+) -> Result<Option<MeshQuotient>, CodecError> {
     if port_identities.len() != edge_candidates.len() {
-        return None;
+        return Ok(None);
     }
-    let all_points = Arc::new((0..point_count).collect::<HashSet<_>>());
-    let mut domains = Vec::with_capacity(edge_candidates.len() * 2);
+    let mut all_points = HashSet::new();
+    for point in 0..point_count {
+        crate::resource::insert_set(ctx, &mut all_points, point, "catia_initial_quotient_points")?;
+    }
+    let all_points = Arc::new(all_points);
+    let mut domains = Vec::new();
     for candidates in edge_candidates {
         let domain = if candidates.is_empty() {
-            all_points.clone()
+            Arc::clone(&all_points)
         } else {
-            Arc::new(candidates.iter().flatten().copied().collect::<HashSet<_>>())
+            let mut points = HashSet::new();
+            for &point in candidates.iter().flatten() {
+                crate::resource::insert_set(
+                    ctx,
+                    &mut points,
+                    point,
+                    "catia_initial_quotient_candidate_points",
+                )?;
+            }
+            Arc::new(points)
         };
         if domain.is_empty() || domain.iter().any(|point| *point >= point_count) {
-            return None;
+            return Ok(None);
         }
-        domains.push(domain.clone());
-        domains.push(domain);
+        crate::resource::push(
+            ctx,
+            &mut domains,
+            Arc::clone(&domain),
+            "catia_initial_quotient_domains",
+        )?;
+        crate::resource::push(ctx, &mut domains, domain, "catia_initial_quotient_domains")?;
     }
     let mut quotient = MeshQuotient::new(domains);
     let mut node_by_identity = HashMap::new();
@@ -980,15 +999,55 @@ pub(super) fn initial_mesh_quotient(
         for (port, identity) in ports.iter().copied().enumerate() {
             let node = edge * 2 + port;
             if let Some(&previous) = node_by_identity.get(&identity) {
-                quotient.merge(previous, node)?;
+                if quotient.merge(previous, node).is_none() {
+                    return Ok(None);
+                }
             } else {
-                node_by_identity.insert(identity, node);
+                crate::resource::insert_map(
+                    ctx,
+                    &mut node_by_identity,
+                    identity,
+                    node,
+                    "catia_initial_quotient_identities",
+                )?;
             }
         }
     }
-    quotient
+    Ok(quotient
         .edge_domains_viable(edge_candidates)
-        .then_some(quotient)
+        .then_some(quotient))
+}
+
+#[cfg(test)]
+#[test]
+fn initial_quotient_points_refuse_before_invalid_candidate_result() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let candidates = [vec![[0, 1]]];
+    let identities = [[10, 11]];
+    catia_test_context!(service_ctx);
+    assert!(
+        initial_mesh_quotient(&service_ctx, &candidates, 1, &identities)
+            .expect("service resource budget")
+            .is_none()
+    );
+    assert!(
+        initial_mesh_quotient(&service_ctx, &candidates, 2, &identities)
+            .expect("service resource budget")
+            .is_some()
+    );
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    assert!(
+        matches!(initial_mesh_quotient(&ctx, &candidates, 1, &identities),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "catia_initial_quotient_points")
+    );
 }
 
 #[cfg(test)]
@@ -1207,50 +1266,71 @@ impl MeshQuotient {
         if self.union.len() != edge_candidates.len().saturating_mul(2) {
             return Ok(None);
         }
-        let roots = (0..self.union.len())
-            .filter(|node| self.union.find(*node) == *node)
-            .collect::<Vec<_>>();
+        let mut roots = Vec::new();
+        for node in 0..self.union.len() {
+            if self.union.find(node) == node {
+                crate::resource::push(ctx, &mut roots, node, "catia_quotient_roots")?;
+            }
+        }
         if roots.len() < point_count {
             return Ok(None);
         }
-        let root_indices = roots
-            .iter()
-            .enumerate()
-            .map(|(index, root)| (*root, index))
-            .collect::<HashMap<_, _>>();
-        let edges = (0..edge_candidates.len())
-            .map(|edge| {
-                Some([
-                    *root_indices.get(&self.union.find(edge * 2))?,
-                    *root_indices.get(&self.union.find(edge * 2 + 1))?,
-                ])
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(edges) = edges else {
-            return Ok(None);
-        };
-        let mut domains = roots
-            .iter()
-            .map(|root| {
-                let mut domain = self.domains[*root]
-                    .iter()
-                    .copied()
-                    .filter(|point| *point < point_count)
-                    .collect::<Vec<_>>();
-                domain.sort_unstable();
-                domain
-            })
-            .collect::<Vec<_>>();
+        let mut root_indices = HashMap::new();
+        for (index, root) in roots.iter().copied().enumerate() {
+            crate::resource::insert_map(
+                ctx,
+                &mut root_indices,
+                root,
+                index,
+                "catia_quotient_root_indices",
+            )?;
+        }
+        let mut edges = Vec::new();
+        for edge in 0..edge_candidates.len() {
+            let Some(&left) = root_indices.get(&self.union.find(edge * 2)) else {
+                return Ok(None);
+            };
+            let Some(&right) = root_indices.get(&self.union.find(edge * 2 + 1)) else {
+                return Ok(None);
+            };
+            crate::resource::push(ctx, &mut edges, [left, right], "catia_quotient_edges")?;
+        }
+        let mut domains = Vec::new();
+        for root in roots.iter().copied() {
+            let mut domain = Vec::new();
+            for point in self.domains[root]
+                .iter()
+                .copied()
+                .filter(|point| *point < point_count)
+            {
+                crate::resource::push(ctx, &mut domain, point, "catia_quotient_domain_points")?;
+            }
+            domain.sort_unstable();
+            crate::resource::push(ctx, &mut domains, domain, "catia_quotient_domains")?;
+        }
         if domains.iter().any(Vec::is_empty) {
             return Ok(None);
         }
-        let edge_ids = (0..edges.len()).collect::<Vec<_>>();
+        let mut edge_ids = Vec::new();
+        for edge in 0..edges.len() {
+            crate::resource::push(ctx, &mut edge_ids, edge, "catia_quotient_edge_ids")?;
+        }
         let mut root_edges =
             ctx.alloc_filled(roots.len(), Vec::new(), "catia_quotient_root_edges")?;
         for (edge, [left, right]) in edges.iter().copied().enumerate() {
-            root_edges[left].push(edge);
+            crate::resource::push(
+                ctx,
+                &mut root_edges[left],
+                edge,
+                "catia_quotient_root_edge_entries",
+            )?;
             if right != left {
-                root_edges[right].push(edge);
+                crate::resource::push(
+                    ctx,
+                    &mut root_edges[right],
+                    edge,
+                    "catia_quotient_root_edge_entries",
+                )?;
             }
         }
         if !enforce_sparse_endpoint_membership(
@@ -6358,7 +6438,7 @@ fn resolve_fixed_mesh_endpoint_pairs(
         }
     }
     let Some(quotient) =
-        initial_mesh_quotient(edge_candidates, vertex_points.len(), port_identities)
+        initial_mesh_quotient(ctx, edge_candidates, vertex_points.len(), port_identities)?
     else {
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(())));
     };
@@ -8496,7 +8576,7 @@ fn resolve_singleton_mesh_selection(
         return Ok(None);
     };
     let Some(mut quotient) =
-        initial_mesh_quotient(edge_candidates, vertex_points.len(), port_identities)
+        initial_mesh_quotient(ctx, edge_candidates, vertex_points.len(), port_identities)?
     else {
         return Ok(None);
     };
@@ -8810,10 +8890,12 @@ fn resolve_standard_mesh_endpoint_candidates(
     if !prune_mesh_endpoint_pair_support(&mut assignments, &mut edge_candidates) {
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(())));
     }
-    let Some(quotient) = prepared_quotient
-        .cloned()
-        .or_else(|| initial_mesh_quotient(&edge_candidates, vertex_points.len(), port_identities))
-    else {
+    let quotient = if let Some(prepared) = prepared_quotient {
+        Some(prepared.clone())
+    } else {
+        initial_mesh_quotient(ctx, &edge_candidates, vertex_points.len(), port_identities)?
+    };
+    let Some(quotient) = quotient else {
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(())));
     };
     for face in &mut assignments {
@@ -9107,7 +9189,7 @@ where
         )));
     }
     let Some(mut mesh_quotient) =
-        initial_mesh_quotient(edge_candidates, vertex_points.len(), &port_identities)
+        initial_mesh_quotient(ctx, edge_candidates, vertex_points.len(), &port_identities)?
     else {
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(
             MeshCandidateRejection::QuotientPreparation,
@@ -10880,6 +10962,13 @@ fn coordinate_root_preparation_charges_root_edge_and_matching_arrays() {
         }
     }
     assert!(refused.contains("catia_quotient_root_edges"));
+    assert!(refused.contains("catia_quotient_roots"));
+    assert!(refused.contains("catia_quotient_root_indices"));
+    assert!(refused.contains("catia_quotient_edges"));
+    assert!(refused.contains("catia_quotient_domain_points"));
+    assert!(refused.contains("catia_quotient_domains"));
+    assert!(refused.contains("catia_quotient_edge_ids"));
+    assert!(refused.contains("catia_quotient_root_edge_entries"));
     assert!(refused.contains("catia_quotient_roots_by_point"));
     assert!(refused.contains("catia_quotient_refine_roots"));
 }
@@ -11293,7 +11382,8 @@ mod direct_matching_tests {
             vec![[0, 1], [0, 2], [1, 2]],
         ];
         let port_identities = vec![[0, 1], [1, 2], [2, 0]];
-        let quotient = initial_mesh_quotient(&edge_candidates, 3, &port_identities)
+        let quotient = initial_mesh_quotient(&ctx, &edge_candidates, 3, &port_identities)
+            .expect("service resource budget")
             .expect("triangle quotient");
         let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
 
@@ -11311,7 +11401,8 @@ mod direct_matching_tests {
 
         let singleton_candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
         let run = |ctx: &DecodeContext<'_>| {
-            let quotient = initial_mesh_quotient(&singleton_candidates, 3, &port_identities)
+            let quotient = initial_mesh_quotient(ctx, &singleton_candidates, 3, &port_identities)
+                .expect("service resource budget")
                 .expect("three singleton edge pairs form a triangle quotient");
             let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
             resolve_mesh_selection_from_quotient(

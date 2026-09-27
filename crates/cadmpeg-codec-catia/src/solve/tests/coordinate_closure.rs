@@ -1127,10 +1127,12 @@ fn ordered_face_cycle_support_materializes_only_supported_implicit_pairs() {
     catia_test_context!(ctx);
     let mut choices = vec![vec![[0, 1], [0, 2]], Vec::new(), vec![[0, 3]]];
     let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &ctx,
         &choices,
         4,
         &[[10, 11], [12, 13], [14, 15]],
     )
+    .expect("service resource budget")
     .expect("initial quotient");
     let coordinate_domains = quotient
         .prepare_coordinate_root_domains(&ctx, 4, &choices, None)
@@ -1171,10 +1173,12 @@ fn implicit_ordered_face_pruning_propagates_suffix_collection_refusal() {
     catia_test_context!(service_ctx);
     let choices = vec![vec![[0, 1], [0, 2]], Vec::new(), vec![[0, 3]]];
     let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &service_ctx,
         &choices,
         4,
         &[[10, 11], [12, 13], [14, 15]],
     )
+    .expect("service resource budget")
     .expect("initial quotient");
     let coordinate_domains = quotient
         .prepare_coordinate_root_domains(&service_ctx, 4, &choices, None)

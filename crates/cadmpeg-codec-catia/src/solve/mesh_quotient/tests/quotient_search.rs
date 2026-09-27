@@ -325,12 +325,15 @@ fn quotient_clones_share_unconstrained_point_domains() {
 
 #[test]
 fn port_quotient_completes_only_supported_unknown_edge_pairs() {
+    catia_test_context!(ctx);
     let candidates = [vec![[0, 1]], Vec::new(), vec![[2, 3]]];
     let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &ctx,
         &candidates,
         5,
         &[[10, 11], [10, 12], [12, 13]],
     )
+    .expect("service resource budget")
     .expect("initial quotient");
     let completed = crate::solve::mesh_quotient::complete_mesh_endpoint_candidates_from_quotient(
         &candidates,
@@ -355,10 +358,12 @@ fn coordinate_root_fixpoint_removes_unsupported_edge_pairs() {
         vec![[2, 2]],
     ];
     let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &ctx,
         &candidates,
         3,
         &[[10, 11], [10, 12], [13, 11], [14, 14]],
     )
+    .expect("service resource budget")
     .expect("initial quotient");
     let domains = quotient
         .prepare_coordinate_root_domains(&ctx, 3, &candidates, None)
@@ -376,10 +381,12 @@ fn selected_edge_pair_propagates_through_shared_coordinate_roots() {
     catia_test_context!(ctx);
     let candidates = [vec![[0, 1], [0, 2]], vec![[1, 3], [2, 3]], vec![[2, 3]]];
     let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &ctx,
         &candidates,
         4,
         &[[10, 11], [11, 12], [13, 14]],
     )
+    .expect("service resource budget")
     .expect("initial quotient");
     let domains = quotient
         .prepare_coordinate_root_domains(&ctx, 4, &candidates, None)
@@ -395,9 +402,11 @@ fn selected_edge_pair_propagates_through_shared_coordinate_roots() {
 
 #[test]
 fn port_quotient_declines_unbounded_unknown_edge_pairs() {
+    catia_test_context!(ctx);
     let candidates = [Vec::new()];
     let mut quotient =
-        crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 100, &[[10, 11]])
+        crate::solve::mesh_quotient::initial_mesh_quotient(&ctx, &candidates, 100, &[[10, 11]])
+            .expect("service resource budget")
             .expect("initial quotient");
     assert!(
         crate::solve::mesh_quotient::complete_mesh_endpoint_candidates_from_quotient(
@@ -415,7 +424,8 @@ fn coordinate_root_domains_keep_unknown_edge_pairs_implicit() {
     catia_test_context!(ctx);
     let candidates = [Vec::new()];
     let mut quotient =
-        crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 2, &[[10, 11]])
+        crate::solve::mesh_quotient::initial_mesh_quotient(&ctx, &candidates, 2, &[[10, 11]])
+            .expect("service resource budget")
             .expect("initial quotient");
     let domains = quotient
         .prepare_coordinate_root_domains(&ctx, 2, &candidates, None)
@@ -445,9 +455,14 @@ fn coordinate_root_domains_keep_unknown_edge_pairs_implicit() {
 fn required_implicit_coordinate_pairs_scale_with_root_domains_not_their_product() {
     catia_test_context!(ctx);
     let candidates = [Vec::new(), Vec::new()];
-    let mut quotient =
-        crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 4, &[[10, 11], [12, 13]])
-            .expect("initial quotient");
+    let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &ctx,
+        &candidates,
+        4,
+        &[[10, 11], [12, 13]],
+    )
+    .expect("service resource budget")
+    .expect("initial quotient");
     let domains = quotient
         .prepare_coordinate_root_domains(&ctx, 4, &candidates, None)
         .expect("service resource budget")
@@ -477,12 +492,15 @@ fn required_implicit_coordinate_pairs_scale_with_root_domains_not_their_product(
 
 #[test]
 fn coordinate_domain_preparation_scales_with_constraint_graph_work() {
+    catia_test_context!(ctx);
     let candidates = vec![Vec::new(); 100];
     let ports = (0..100)
         .map(|edge| [(edge * 2) as u32, (edge * 2 + 1) as u32])
         .collect::<Vec<_>>();
-    let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 200, &ports)
-        .expect("initial quotient");
+    let mut quotient =
+        crate::solve::mesh_quotient::initial_mesh_quotient(&ctx, &candidates, 200, &ports)
+            .expect("service resource budget")
+            .expect("initial quotient");
 
     assert!(
         quotient
@@ -499,10 +517,12 @@ fn incidence_search_consumes_implicit_coordinate_root_pairs() {
     catia_test_context!(ctx);
     let candidates = vec![Vec::new(); 3];
     let quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &ctx,
         &candidates,
         3,
         &[[10, 11], [11, 12], [12, 10]],
     )
+    .expect("service resource budget")
     .expect("cycle quotient");
     let outcome = component_incidence_pair_solution_outcome(
         &ctx,
@@ -528,10 +548,12 @@ fn ordered_face_equations_narrow_unknown_edge_roots_before_pair_completion() {
     catia_test_context!(ctx);
     let edge_candidates = vec![vec![[0, 1]], Vec::new(), vec![[0, 2]]];
     let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &ctx,
         &edge_candidates,
         3,
         &[[10, 11], [12, 13], [14, 15]],
     )
+    .expect("service resource budget")
     .expect("initial quotient");
     let domains = [MeshFaceBoundaryDomain::Ordered(vec![
         MeshFaceBoundaryAssignment {
@@ -586,7 +608,8 @@ fn ordered_corner_equations_propagate_direction_collection_refusals() {
     let domains = [MeshFaceBoundaryDomain::Ordered(vec![assignment.clone()])];
     let run = |ctx: &DecodeContext<'_>| {
         let mut quotient =
-            initial_mesh_quotient(&edge_candidates, 3, &[[10, 11], [12, 13], [14, 15]])
+            initial_mesh_quotient(&ctx, &edge_candidates, 3, &[[10, 11], [12, 13], [14, 15]])
+                .expect("service resource budget")
                 .expect("initial quotient");
         let budget = WorkBudget::new(1_000);
         let equations = crate::solve::mesh_quotient::common_supported_corner_equations(
@@ -634,8 +657,10 @@ fn ordered_corner_equations_propagate_direction_collection_refusals() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
     let budget = WorkBudget::new(1_000);
-    let mut quotient = initial_mesh_quotient(&edge_candidates, 3, &[[10, 11], [12, 13], [14, 15]])
-        .expect("initial quotient");
+    let mut quotient =
+        initial_mesh_quotient(&ctx, &edge_candidates, 3, &[[10, 11], [12, 13], [14, 15]])
+            .expect("service resource budget")
+            .expect("initial quotient");
     let error = crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
         &ctx,
         &domains,
@@ -1188,8 +1213,9 @@ fn partial_mesh_selection_survives_optional_deduction_exhaustion() {
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
-    let mut quotient =
-        initial_mesh_quotient(&edge_candidates, 2, &[[0, 1], [2, 3]]).expect("initial quotient");
+    let mut quotient = initial_mesh_quotient(&ctx, &edge_candidates, 2, &[[0, 1], [2, 3]])
+        .expect("service resource budget")
+        .expect("initial quotient");
     quotient.merge(1, 2).expect("selected face corner");
     let propagation_budget = WorkBudget::new(0);
     let changed_edges = HashSet::from([0]);
