@@ -993,11 +993,21 @@ fn parse_mesh_texture_filename_record(
 }
 
 fn unique_record_map<T>(
+    ctx: &DecodeContext<'_>,
     records: Vec<T>,
     record_index: impl Fn(&T) -> u32,
     record_kind: &str,
 ) -> Result<HashMap<u32, T>, CodecError> {
-    let mut out = HashMap::with_capacity(records.len());
+    let mut out = HashMap::new();
+    ctx.charge_collection_items(
+        u64::try_from(records.len()).map_err(|_| {
+            ctx.refuse_codec_limit("f3d mesh record-map length", u64::MAX - 1, u64::MAX)
+        })?,
+        "f3d mesh record-map entries",
+    )?;
+    out.try_reserve(records.len()).map_err(|_| {
+        ctx.refuse_codec_limit("f3d mesh record-map allocation", 0, 1)
+    })?;
     for record in records {
         let index = record_index(&record);
         if out.insert(index, record).is_some() {
@@ -1010,10 +1020,20 @@ fn unique_record_map<T>(
 }
 
 fn typed_frame_map<'a>(
+    ctx: &DecodeContext<'_>,
     frames: Vec<TypedPrimaryFrame<'a>>,
     record_kind: &str,
 ) -> Result<HashMap<u32, TypedPrimaryFrame<'a>>, CodecError> {
-    let mut out = HashMap::with_capacity(frames.len());
+    let mut out = HashMap::new();
+    ctx.charge_collection_items(
+        u64::try_from(frames.len()).map_err(|_| {
+            ctx.refuse_codec_limit("f3d mesh frame-map length", u64::MAX - 1, u64::MAX)
+        })?,
+        "f3d mesh frame-map entries",
+    )?;
+    out.try_reserve(frames.len()).map_err(|_| {
+        ctx.refuse_codec_limit("f3d mesh frame-map allocation", 0, 1)
+    })?;
     for frame in frames {
         let index = u32::try_from(frame.entity_id).map_err(|_| {
             CodecError::malformed(format_args!(
@@ -1064,6 +1084,7 @@ where
         return Ok(Vec::new());
     }
     let mut entry_names = unique_record_map(
+        ctx,
         typed_primary_frames(bytes, meta, MESH_ENTRY_NAME_TYPE_GUID, "mesh-entry-name")?
             .into_iter()
             .map(|frame| parse_mesh_entry_name_record(bytes, frame))
@@ -1072,6 +1093,7 @@ where
         "mesh-entry-name",
     )?;
     let mut guids = unique_record_map(
+        ctx,
         typed_primary_frames(bytes, meta, MESH_GUID_TYPE_GUID, "mesh-GUID")?
             .into_iter()
             .map(|frame| parse_mesh_guid_record(bytes, frame))
@@ -1080,6 +1102,7 @@ where
         "mesh-GUID",
     )?;
     let mut bodies = unique_record_map(
+        ctx,
         typed_primary_frames(bytes, meta, MESH_BODY_TYPE_GUID, "mesh-body")?
             .into_iter()
             .map(|frame| parse_mesh_body_record(bytes, frame))
@@ -1092,6 +1115,7 @@ where
         .map(|collection| collection.collection.record().record_index())
         .collect::<HashSet<_>>();
     let mut texture_tables = unique_record_map(
+        ctx,
         typed_primary_frames(
             bytes,
             meta,
@@ -1105,6 +1129,7 @@ where
         "mesh-texture-table",
     )?;
     let mut wrappers = unique_record_map(
+        ctx,
         typed_primary_frames(bytes, meta, MESH_WRAPPER_TYPE_GUID, "mesh-wrapper")?
             .into_iter()
             .map(|frame| parse_mesh_wrapper_record(bytes, frame))
@@ -1113,6 +1138,7 @@ where
         "mesh-wrapper",
     )?;
     let mut scopes = unique_record_map(
+        ctx,
         typed_primary_frames(
             bytes,
             meta,
@@ -1126,6 +1152,7 @@ where
         "mesh-feature-scope",
     )?;
     let mut states = unique_record_map(
+        ctx,
         typed_primary_frames(bytes, meta, MESH_SCENE_STATE_TYPE_GUID, "mesh-scene-state")?
             .into_iter()
             .map(|frame| parse_mesh_scene_state_record(bytes, frame))
@@ -1134,6 +1161,7 @@ where
         "mesh-scene-state",
     )?;
     let mut scene_nodes = unique_record_map(
+        ctx,
         typed_primary_frames(bytes, meta, SCENE_NODE_TYPE_GUID, "mesh-scene-node")?
             .into_iter()
             .map(|frame| parse_scene_node_record(bytes, frame))
@@ -1142,6 +1170,7 @@ where
         "mesh-scene-node",
     )?;
     let scene_auxiliary_frames = typed_frame_map(
+        ctx,
         typed_primary_frames(
             bytes,
             meta,
@@ -1151,6 +1180,7 @@ where
         "mesh-scene-auxiliary",
     )?;
     let filename_frames = typed_frame_map(
+        ctx,
         typed_primary_frames(
             bytes,
             meta,
@@ -1160,6 +1190,7 @@ where
         "mesh-texture-filename",
     )?;
     let collection_owners = unique_record_map(
+        ctx,
         typed_primary_frames(
             bytes,
             meta,
@@ -1177,6 +1208,7 @@ where
         "mesh-collection-owner",
     )?;
     let body_owner_frames = typed_frame_map(
+        ctx,
         typed_primary_frames(bytes, meta, MESH_BODY_OWNER_TYPE_GUID, "mesh-body-owner")?,
         "mesh-body-owner",
     )?;
@@ -1574,6 +1606,44 @@ mod tests {
         crate::design::test_support::with_test_decode_context(|ctx| {
             super::parse_mesh_design_records(ctx, bytes, meta, source_entry_name, asset_for_filename)
         })
+    }
+
+    #[test]
+    fn mesh_record_map_refuses_collection_limit() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &policy,
+        ).unwrap();
+        assert!(matches!(
+            super::unique_record_map(&ctx, vec![7_u32], |record| *record, "test"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+        ));
+    }
+
+    #[test]
+    fn mesh_typed_frame_map_refuses_collection_limit() {
+        let graph = synthetic_mesh_graph(false);
+        let frames = crate::design::decode::meta::typed_primary_frames(
+            &graph.bytes,
+            &graph.meta,
+            super::MESH_COLLECTION_TYPE_GUID,
+            "mesh-collection",
+        ).unwrap();
+        assert!(!frames.is_empty());
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &policy,
+        ).unwrap();
+        assert!(matches!(
+            super::typed_frame_map(&ctx, frames, "mesh-collection"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+        ));
     }
 
     #[test]
