@@ -175,14 +175,17 @@ impl JointRecord {
     }
 
     /// Ordered connector references.
-    pub(crate) fn references(&self) -> Vec<&LinkTarget> {
-        match &self.body {
-            JointBody::Grounded { reference, .. } => reference.iter().collect(),
-            JointBody::Pair { connectors, .. } => connectors
-                .iter()
-                .filter_map(|connector| connector.reference.as_ref())
-                .collect(),
-        }
+    pub(crate) fn references(&self) -> impl Iterator<Item = &LinkTarget> {
+        let grounded = match &self.body {
+            JointBody::Grounded { reference, .. } => reference.as_ref(),
+            JointBody::Pair { .. } => None,
+        };
+        let paired = match &self.body {
+            JointBody::Grounded { .. } => None,
+            JointBody::Pair { connectors, .. } => Some(connectors),
+        };
+        grounded.into_iter().chain(paired.into_iter().flat_map(|connectors|
+            connectors.iter().filter_map(|connector| connector.reference.as_ref())))
     }
 
     /// Connector-local coordinate frames in connector order.
