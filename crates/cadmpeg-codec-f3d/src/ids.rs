@@ -783,6 +783,80 @@ pub(crate) fn native_scoped_id(scope: &str, kind: &str, key: impl std::fmt::Disp
     format!("{}:{kind}#{key}", native_scope(scope))
 }
 
+/// Build a native record ID after admitting its exact retained byte length.
+pub(crate) fn native_scoped_id_charged(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scope: &str,
+    kind: &str,
+    key: impl std::fmt::Display,
+) -> Result<String, cadmpeg_core::CodecError> {
+    struct Count(usize);
+    impl std::fmt::Write for Count {
+        fn write_str(&mut self, value: &str) -> std::fmt::Result {
+            self.0 = self.0.checked_add(value.len()).ok_or(std::fmt::Error)?;
+            Ok(())
+        }
+    }
+
+    let operation = "retain F3D native record ID";
+    let scope_len = u64::try_from(scope.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    ctx.charge_work(
+        scope_len
+            .checked_mul(2)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?,
+        "escape F3D native scope",
+    )?;
+    let mut escaped_len = 0usize;
+    for character in scope.chars() {
+        let width = if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+            character.len_utf8().checked_mul(3)
+        } else {
+            Some(character.len_utf8())
+        }
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+        escaped_len = escaped_len
+            .checked_add(width)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    }
+    let mut key_len = Count(0);
+    std::fmt::Write::write_fmt(&mut key_len, format_args!("{key}"))
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    let length = "f3d:".len()
+        .checked_add(escaped_len)
+        .and_then(|length| length.checked_add(1))
+        .and_then(|length| length.checked_add(kind.len()))
+        .and_then(|length| length.checked_add(1))
+        .and_then(|length| length.checked_add(key_len.0))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    let length_u64 = u64::try_from(length)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    ctx.charge_retained(length_u64, operation)?;
+    let mut id = String::new();
+    id.try_reserve(length)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, length_u64))?;
+    id.push_str("f3d:");
+    for character in scope.chars() {
+        if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+            let mut bytes = [0; 4];
+            for byte in character.encode_utf8(&mut bytes).as_bytes() {
+                const HEX: &[u8; 16] = b"0123456789ABCDEF";
+                id.push('%');
+                id.push(char::from(HEX[usize::from(byte >> 4)]));
+                id.push(char::from(HEX[usize::from(byte & 0x0f)]));
+            }
+        } else {
+            id.push(character);
+        }
+    }
+    id.push(':');
+    id.push_str(kind);
+    id.push('#');
+    std::fmt::Write::write_fmt(&mut id, format_args!("{key}"))
+        .map_err(|_| cadmpeg_core::CodecError::malformed("F3D native record ID key formatting failed"))?;
+    Ok(id)
+}
+
 /// Macro defining one `f3d:{scope}:{kind}#{offset}` native-record builder.
 macro_rules! native_record_id {
     ($(#[$meta:meta])* $name:ident, $kind:literal) => {
@@ -1030,6 +1104,31 @@ mod tests {
     use crate::records::{
         feature::assembly::DesignAssemblyLegacySelection, recipes::ConstructionRecipeKind,
     };
+
+    #[test]
+    fn charged_native_id_matches_escaped_identity_bytes() {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let scope = "A B:#%\u{2003}é";
+        let actual = super::native_scoped_id_charged(&ctx, scope, "act-guid", 42).unwrap();
+        assert_eq!(actual, super::native_scoped_id(scope, "act-guid", 42));
+    }
+
+    #[test]
+    fn charged_native_id_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::native_scoped_id_charged(&ctx, "ACT/BulkStream.dat", "act-guid", 1)
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "retain F3D native record ID"
+        ));
+    }
 
     #[test]
     fn history_keys_preserve_admitted_colons_percent_escapes_and_signed_states() {
