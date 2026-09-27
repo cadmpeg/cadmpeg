@@ -1240,6 +1240,12 @@ impl From<String> for ProjectionError {
     }
 }
 
+impl From<CodecError> for ProjectionError {
+    fn from(error: CodecError) -> Self {
+        Self::Codec(error)
+    }
+}
+
 fn optional_geometry<T>(
     result: Result<T, crate::curves::GeometryError>,
     refusal: &mut Option<cadmpeg_core::CodecError>,
@@ -1477,8 +1483,10 @@ pub(crate) fn project(
         redundant_repairs: 0,
         refusal: None,
     };
-    let mut ids = Vec::with_capacity(records.len());
-    let mut native_ids = Vec::with_capacity(records.len());
+    let mut ids = admitted_vec(ctx, records.len(), "Rhino history feature ids")
+        .map_err(history_resource_error)?;
+    let mut native_ids = admitted_vec(ctx, records.len(), "Rhino history native ids")
+        .map_err(history_resource_error)?;
     let mut seen_record_ids = HashSet::new();
     for record in records {
         let unique = !record.id.is_nil() && seen_record_ids.insert(record.id);
@@ -1628,40 +1636,31 @@ pub(crate) fn project(
             native_ref: Some(native_ids[index].clone()),
         });
     }
+    for record in records {
+        u64::try_from(record.source_range.start)
+            .map_err(|_| "history source offset exceeds u64".to_string())?;
+    }
     let native = records
         .iter()
         .enumerate()
-        .map(|(index, record)| {
-            let source_offset = u64::try_from(record.source_range.start)
-                .map_err(|_| "history source offset exceeds u64".to_string())?;
-            Ok(NativeHistoryRecord {
-                id: native_ids[index].clone(),
-                source_offset,
-                source_uuid: (!record.id.is_nil()).then(|| record.id.to_string()),
-                command_uuid: record.command_id.to_string(),
-                record_version: record.version,
-                record_type: match record.record_type {
-                    RecordType::HistoryParameters => "history_parameters",
-                    RecordType::FeatureParameters => "feature_parameters",
-                },
-                copy_on_replace: record.copy_on_replace,
-                antecedent_object_uuids: record
-                    .antecedents
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect(),
-                descendant_object_uuids: record
-                    .descendants
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect(),
-                value_count: record.values.len(),
-            })
-        })
-        .collect::<Result<Vec<_>, String>>()?;
+        .map(|(index, record)| NativeHistoryRecord {
+            id: native_ids[index].clone(),
+            source_offset: cadmpeg_core::decode::u64_from_index(record.source_range.start),
+            source_uuid: (!record.id.is_nil()).then(|| record.id.to_string()),
+            command_uuid: record.command_id.to_string(),
+            record_version: record.version,
+            record_type: match record.record_type {
+                RecordType::HistoryParameters => "history_parameters",
+                RecordType::FeatureParameters => "feature_parameters",
+            },
+            copy_on_replace: record.copy_on_replace,
+            antecedent_object_uuids: record.antecedents.iter().map(ToString::to_string).collect(),
+            descendant_object_uuids: record.descendants.iter().map(ToString::to_string).collect(),
+            value_count: record.values.len(),
+        });
     ir.native
         .namespace_mut("rhino")
-        .set_arena(ctx, "history_records", &native)
+        .set_arena_from(ctx, "history_records", native)
         .map_err(|error| {
             let detail = error.to_string();
             match cadmpeg_core::CodecError::from(error) {

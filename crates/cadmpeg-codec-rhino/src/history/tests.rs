@@ -333,6 +333,35 @@ fn projection_links_unique_prior_producers_and_preserves_native_parameters() {
     );
 }
 
+fn history_projection_id_refusal(limit: u64, operation: &str) {
+    let records = [record(1, 11, &[], &[])];
+    let refusal = with_collection_limit(&[], limit, |ctx| {
+        project(
+            ctx,
+            &records,
+            None,
+            &mut cadmpeg_ir::document::CadIr::empty(),
+            &mut Diagnostics::new(),
+        )
+    })
+    .expect_err("one history record exceeds the configured collection limit");
+    assert!(matches!(
+        refusal,
+        super::ProjectionError::Codec(cadmpeg_core::CodecError::ResourceLimit(ref limit))
+            if limit.operation == operation
+    ));
+}
+
+#[test]
+fn history_feature_ids_refuse_collection_limit() {
+    history_projection_id_refusal(0, "Rhino history feature ids");
+}
+
+#[test]
+fn history_native_ids_refuse_collection_limit() {
+    history_projection_id_refusal(1, "Rhino history native ids");
+}
+
 #[test]
 fn projection_counts_dependency_on_later_producer() {
     let records = [record(1, 11, &[40], &[41]), record(2, 12, &[], &[40])];
