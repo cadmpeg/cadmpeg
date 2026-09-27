@@ -13,6 +13,7 @@ use crate::presentation::TextStyleParseInput;
 use crate::settings;
 use crate::wire::Uuid;
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 #[test]
 fn legacy_component_name_refuses_retained_limit() {
@@ -945,6 +946,281 @@ fn dimension_child_digest_refuses_retained_limit() {
     .expect("digest fits service profile");
     assert_eq!(admitted["sha256"], cadmpeg_ir::hash::sha256_hex(&bytes));
 }
+
+fn presentation_install_scan() -> &'static crate::container::Scan<'static> {
+    static SCAN: OnceLock<crate::container::Scan<'static>> = OnceLock::new();
+    SCAN.get_or_init(|| {
+        use crate::test_support::test_dump::{
+            class_wrapper, crc_chunk, minimal_document, object_record_with_attribute_userdata,
+            table, tagged_attributes,
+        };
+        let archive = ArchiveVersion::V5;
+        let mut groups = vec![0x1f];
+        groups.extend(7_i32.to_le_bytes());
+        groups.extend(utf16_bytes("fixtures"));
+        groups.extend([0x44; 16]);
+        let group = crc_chunk(
+            archive,
+            0x2000_8073,
+            &class_wrapper(archive, crate::presentation::GROUP.to_wire(), &groups),
+        );
+        let mut group_item = 1_i32.to_le_bytes().to_vec();
+        group_item.extend(7_i32.to_le_bytes());
+        let attributes = tagged_attributes(&[(18, group_item)], 0);
+        let object = object_record_with_attribute_userdata(
+            archive,
+            1,
+            crate::test_support::test_dump::POINT_CLASS,
+            &attributes,
+            &[],
+        );
+        let bytes = minimal_document(
+            "50",
+            &[
+                table(archive, 0x1000_0014, &[]),
+                table(archive, 0x1000_0015, &[]),
+                table(archive, 0x1000_0018, &[group]),
+                table(archive, 0x1000_0013, &[object]),
+            ],
+        );
+        let mut scan = crate::container::scan_owned(bytes).expect("presentation fixture scan");
+        let group_table = scan
+            .tables
+            .iter()
+            .find(|table| table.typecode == 0x1000_0018)
+            .expect("group table retained");
+        let group_record = group_table.records.first().expect("group record retained");
+        let group_range = crate::presentation::class_data(
+            scan.data,
+            group_record,
+            archive,
+            crate::presentation::GROUP,
+        )
+        .expect("group class admitted");
+        crate::presentation::parse_group(
+            &cadmpeg_test_support::service_decode_context(),
+            scan.data,
+            group_range,
+            group_record.range.start,
+        )
+        .expect("group payload admitted");
+        crate::test_support::test_dump::set_test_units(&mut scan, 1.0);
+        scan.metadata.layers.push(settings::LayerRecord {
+            source: settings::SourceRange { range: 0..1 },
+            index: 3,
+            iges_level: None,
+            render_material_index: -1,
+            color: [1, 2, 3, 255],
+            name: "Layer".to_owned(),
+            description: Some("Description".to_owned()),
+            visible: true,
+            locked: false,
+            id: Some(Uuid::from_wire([1; 16])),
+            hierarchy: None,
+            linetype_index: None,
+            plot: None,
+            display_material_id: Some(Uuid::from_wire([2; 16])),
+            no_clipping_planes: None,
+            visible_in_new_details: None,
+            rendering_range: None,
+            extension_items: Vec::new(),
+            embedded_linetype: None,
+            embedded_section_style: None,
+            per_viewport_settings: vec![settings::LayerPerViewportSettings {
+                viewport_id: Uuid::from_wire([3; 16]),
+                color: None,
+                plot_color: None,
+                plot_weight_mm: None,
+                visible: None,
+                persistent_visibility: None,
+            }],
+        });
+        scan
+    })
+}
+
+fn presentation_install_limit_operations(
+    dimension: cadmpeg_core::decode::ResourceDimension,
+) -> Vec<&'static str> {
+    let scan = presentation_install_scan();
+    let mut limit = 0_u64;
+    let mut operations = Vec::new();
+    for _ in 0..256 {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        match dimension {
+            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                policy.limits.max_collection_items = limit;
+            }
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                policy.limits.max_retained_bytes = limit;
+            }
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                policy.limits.max_materialized_bytes = limit;
+            }
+            other => panic!("unsupported install test limit: {other:?}"),
+        }
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
+                .expect("presentation root admitted");
+        match crate::presentation::install(&ctx, scan, &mut cadmpeg_ir::document::CadIr::empty()) {
+            Ok(_) => return operations,
+            Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.dimension == dimension =>
+            {
+                operations.push(refusal.operation);
+                let next = refusal.used + refusal.additional;
+                assert!(next > limit, "limit ladder must advance at {limit}");
+                limit = next;
+            }
+            Err(error) => panic!("unexpected presentation install failure: {error}"),
+        }
+    }
+    panic!("presentation install limit ladder did not terminate");
+}
+
+fn presentation_install_collection_operations() -> &'static [&'static str] {
+    static OPERATIONS: OnceLock<Vec<&'static str>> = OnceLock::new();
+    OPERATIONS.get_or_init(|| {
+        presentation_install_limit_operations(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        )
+    })
+}
+
+fn presentation_install_retained_operations() -> &'static [&'static str] {
+    static OPERATIONS: OnceLock<Vec<&'static str>> = OnceLock::new();
+    OPERATIONS.get_or_init(|| {
+        presentation_install_limit_operations(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        )
+    })
+}
+
+fn presentation_install_materialized_operations() -> &'static [&'static str] {
+    static OPERATIONS: OnceLock<Vec<&'static str>> = OnceLock::new();
+    OPERATIONS.get_or_init(|| {
+        presentation_install_limit_operations(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        )
+    })
+}
+
+macro_rules! presentation_install_limit_test {
+    ($name:ident, $operations:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            let operations = $operations();
+            assert!(operations.contains(&$operation), "reached {operations:?}");
+        }
+    };
+}
+
+presentation_install_limit_test!(
+    object_identity_counts_refuse_collection_limit,
+    presentation_install_collection_operations,
+    "Rhino object identity counts"
+);
+presentation_install_limit_test!(
+    group_member_keys_refuse_collection_limit,
+    presentation_install_collection_operations,
+    "Rhino group member keys"
+);
+presentation_install_limit_test!(
+    group_member_links_refuse_collection_limit,
+    presentation_install_collection_operations,
+    "Rhino group member links"
+);
+presentation_install_limit_test!(
+    object_presentation_links_refuse_collection_limit,
+    presentation_install_collection_operations,
+    "Rhino object presentation links"
+);
+presentation_install_limit_test!(
+    object_presentation_records_refuse_collection_limit,
+    presentation_install_collection_operations,
+    "Rhino object presentation records"
+);
+presentation_install_limit_test!(
+    layer_identity_counts_refuse_collection_limit,
+    presentation_install_collection_operations,
+    "Rhino layer identity counts"
+);
+presentation_install_limit_test!(
+    layer_viewport_settings_refuse_collection_limit,
+    presentation_install_collection_operations,
+    "Rhino layer presentation viewport settings"
+);
+presentation_install_limit_test!(
+    layer_presentation_records_refuse_collection_limit,
+    presentation_install_collection_operations,
+    "Rhino layer presentation records"
+);
+presentation_install_limit_test!(
+    group_index_counts_refuse_collection_limit,
+    presentation_install_collection_operations,
+    "Rhino group index counts"
+);
+presentation_install_limit_test!(
+    group_member_link_refuses_retained_limit,
+    presentation_install_retained_operations,
+    "Rhino group member link"
+);
+presentation_install_limit_test!(
+    object_presentation_link_refuses_retained_limit,
+    presentation_install_retained_operations,
+    "Rhino object presentation link"
+);
+presentation_install_limit_test!(
+    object_presentation_id_refuses_retained_limit,
+    presentation_install_retained_operations,
+    "Rhino object presentation ID"
+);
+presentation_install_limit_test!(
+    layer_presentation_id_refuses_retained_limit,
+    presentation_install_retained_operations,
+    "Rhino layer presentation ID"
+);
+presentation_install_limit_test!(
+    layer_presentation_source_uuid_refuses_retained_limit,
+    presentation_install_retained_operations,
+    "Rhino layer presentation source UUID"
+);
+presentation_install_limit_test!(
+    layer_presentation_name_refuses_retained_limit,
+    presentation_install_retained_operations,
+    "Rhino layer presentation name"
+);
+presentation_install_limit_test!(
+    layer_presentation_description_refuses_retained_limit,
+    presentation_install_retained_operations,
+    "Rhino layer presentation description"
+);
+presentation_install_limit_test!(
+    layer_presentation_display_material_uuid_refuses_retained_limit,
+    presentation_install_retained_operations,
+    "Rhino layer presentation display material UUID"
+);
+presentation_install_limit_test!(
+    object_identity_workspace_refuses_materialized_limit,
+    presentation_install_materialized_operations,
+    "Rhino object identity workspace"
+);
+presentation_install_limit_test!(
+    group_member_workspace_refuses_materialized_limit,
+    presentation_install_materialized_operations,
+    "Rhino group member workspace"
+);
+presentation_install_limit_test!(
+    layer_identity_workspace_refuses_materialized_limit,
+    presentation_install_materialized_operations,
+    "Rhino layer identity workspace"
+);
+presentation_install_limit_test!(
+    group_index_workspace_refuses_materialized_limit,
+    presentation_install_materialized_operations,
+    "Rhino group index workspace"
+);
 
 fn font_refusal(limit: u64) -> FramingError {
     let bytes = modern_font_chunk(7, &[]);
