@@ -63,6 +63,109 @@ fn product_native_identity_refuses_at_retained_limit() {
             if limit.operation == "FreeCAD native identity"));
 }
 
+fn resource_product_container() -> native::ProductNodeRecord {
+    native::ProductNodeRecord {
+        id: "fcstd:native:product#Part".into(),
+        object: "fcstd:native:object#Part".into(),
+        node: native::ProductNode::Part(native::ContainerNode {
+            members: Vec::new(),
+            local_transform: None,
+            placement_property: None,
+        }),
+    }
+}
+
+#[test]
+fn product_definition_identity_refuses_at_retained_limit() {
+    let record = resource_product_container();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = native::model_id(
+        "product_definition", &record.object, "definition").len() as u64 - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::transfer_neutral(&ctx, &[record], &[], &[], &[], &[], &[]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD model identity"));
+}
+
+#[test]
+fn product_container_identity_refuses_at_retained_limit() {
+    let record = resource_product_container();
+    let definition_len = native::model_id("product_definition", &record.object, "definition").len();
+    let container_len = native::model_id("occurrence", &record.object, "container").len();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = (definition_len + record.object.len() + container_len) as u64 - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::transfer_neutral(&ctx, &[record], &[], &[], &[], &[], &[]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD model identity"));
+}
+
+#[test]
+fn product_element_identity_refuses_at_retained_limit() {
+    let array = native::LinkArray::try_new(None, Vec::new(), Vec::new(), Vec::new(), Vec::new())
+        .expect("scalar link array");
+    let record = native::ProductNodeRecord {
+        id: "fcstd:native:product#Link".into(),
+        object: "fcstd:native:object#Link".into(),
+        node: native::ProductNode::Occurrence(native::LinkOccurrence {
+            members: Vec::new(),
+            prototype: None,
+            external_document: None,
+            local_transform: None,
+            placement_property: None,
+            array,
+            link_transform: None,
+            linked_subelements: Vec::new(),
+            claim_child: None,
+            copy_on_change: None,
+            scale: None,
+        }),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = native::model_id(
+        "occurrence", &record.object, "instance").len() as u64 - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::transfer_neutral(&ctx, &[record], &[], &[], &[], &[], &[]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD model identity"));
+}
+
+#[test]
+fn product_body_prefix_refuses_at_retained_limit() {
+    let property = native::PropertyRecord {
+        id: "fcstd:native:property#Part:Shape".into(),
+        owner: "fcstd:native:object#Part".into(),
+        name: "Shape".into(),
+        type_name: "Part::PropertyPartShape".into(),
+        family: native::PropertyFamily::Unknown,
+        status: None,
+        body: native::PropertyBody::Transient,
+        order: 0,
+        xml: native::RetainedXml::from_text("<Property/>".into(), 0)
+            .expect("valid XML span"),
+    };
+    let payload = crate::brep::ShapePayloadRecord {
+        id: "fcstd:native:shape-payload#Part:Shape".into(),
+        property: property.id.clone(),
+        entry: "shape.brp".into(),
+        payload: crate::brep::ShapePayload::Empty,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = native::model_id("body", &payload.id, "").len() as u64 - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::transfer_neutral(&ctx, &[], &[], &[], &[property], &[payload], &[]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD model identity"));
+}
+
 #[test]
 pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
