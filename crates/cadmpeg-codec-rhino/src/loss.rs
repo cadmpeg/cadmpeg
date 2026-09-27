@@ -41,6 +41,31 @@ impl Diagnostics {
         Self(Vec::new())
     }
 
+    /// Admits one decoded diagnostic and its retained message before insertion.
+    pub(crate) fn push_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        message: std::fmt::Arguments<'_>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        self.push_coded_admitted(ctx, None, message)
+    }
+
+    /// Admits one classified diagnostic and its retained message before insertion.
+    pub(crate) fn push_coded_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        code: impl Into<Option<RhinoLossCode>>,
+        message: std::fmt::Arguments<'_>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        crate::wire::reserve_collection(ctx, &mut self.0, 1, "Rhino diagnostics")?;
+        let message = crate::wire::admitted_format(ctx, message, "Rhino diagnostic message")?;
+        self.0.push(RhinoDiagnostic {
+            code: code.into(),
+            message,
+        });
+        Ok(())
+    }
+
     /// Records a diagnostic whose category the consuming channel decides.
     pub(crate) fn push(&mut self, message: impl Into<String>) {
         self.0.push(RhinoDiagnostic {
@@ -460,6 +485,37 @@ impl RhinoLossCode {
 mod tests {
     use super::RhinoLossCode;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn diagnostics_refuse_collection_and_retained_limits() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let refusal = super::Diagnostics::new()
+            .push_admitted(&ctx, format_args!("fixture warning"))
+            .expect_err("one diagnostic exceeds zero collection items");
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "Rhino diagnostics"
+        ));
+        let mut retained_policy = cadmpeg_core::decode::DecodePolicy::service();
+        retained_policy.limits.max_retained_bytes = 0;
+        let (retained_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &retained_policy,
+        )
+        .expect("empty root admitted");
+        let refusal = super::Diagnostics::new()
+            .push_coded_admitted(&retained_ctx, RhinoLossCode::IntegrityFailure, format_args!("fixture warning"))
+            .expect_err("diagnostic text exceeds zero retained bytes");
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "Rhino diagnostic message"
+        ));
+    }
 
     #[test]
     fn code_strings_are_pinned() {
