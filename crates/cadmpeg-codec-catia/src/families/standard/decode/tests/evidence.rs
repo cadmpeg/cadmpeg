@@ -26,6 +26,7 @@ use crate::families::standard::decode::standard_plane_normals_from_face_frames;
 use crate::families::standard::decode::standard_shared_boundary_group_domains as charged_shared_boundary_group_domains;
 use crate::families::standard::decode::standard_shared_nurbs_boundary_pair_options as charged_shared_nurbs_boundary_pair_options;
 use crate::families::standard::decode::standard_surface_evidence;
+use crate::families::standard::decode::standard_extrusion_support_id;
 use crate::families::standard::decode::StandardEdgeSupport;
 use crate::families::standard::decode::StandardSurfaceProcedure;
 use crate::families::standard::records::AnalyticSurfaceKind;
@@ -1675,6 +1676,41 @@ fn standard_free_vertex_members_refuse_collection_limit() {
     })
     .expect("service context admits the free vertex");
     assert_eq!(ir.model.shells[0].free_vertices().len(), 1);
+}
+
+#[test]
+fn standard_extrusion_support_refuses_before_surface_storage() {
+    let mut surfaces = Vec::new();
+    let mut supports = HashMap::new();
+    let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        standard_extrusion_support_id(
+            ctx,
+            &mut AnnotationBuilder::new(),
+            &mut surfaces,
+            &mut supports,
+            7,
+            geometry.clone(),
+            &mut admission,
+        )
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+    crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        standard_extrusion_support_id(
+            ctx,
+            &mut AnnotationBuilder::new(),
+            &mut surfaces,
+            &mut supports,
+            7,
+            geometry,
+            &mut admission,
+        )
+    })
+    .expect("service context admits support");
+    assert_eq!(surfaces.len(), 1);
+    assert_eq!(supports.len(), 1);
 }
 
 #[test]
