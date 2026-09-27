@@ -873,6 +873,64 @@ fn expanded_section_record_succeeds_under_service_policy() {
 }
 
 #[test]
+fn cmnm_model_name_refuses_before_retained_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let data = b"#UGC:2 PART test \
+#- CMNM 00bwidget.prt                                      \
+#-END_OF_UGC_HEADER\n";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(data, &arena, &policy).expect("CMNM input is admitted");
+    let error = super::cmnm_model_name(&ctx, data)
+        .transpose()
+        .expect_err("model name needs retained bytes");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo CMNM model name"));
+}
+
+#[test]
+fn native_model_name_refuses_before_retained_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let data = b"#BasicData\nmodel_name\0widget\0";
+    let section = super::Section::scan("BasicData".to_string(), 0, data.len(), None, data)
+        .expect("bounded native name section");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &policy)
+        .expect("native name input is admitted");
+    let error = super::native_model_name(&ctx, std::slice::from_ref(&section))
+        .transpose()
+        .expect_err("native name needs retained bytes");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo native model name"));
+}
+
+#[test]
+fn native_model_name_succeeds_under_service_policy() {
+    let data = b"#BasicData\nmodel_name\0widget\0";
+    let section = super::Section::scan("BasicData".to_string(), 0, data.len(), None, data)
+        .expect("bounded native name section");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+        .expect("native name input is admitted");
+    let name = super::native_model_name(&ctx, std::slice::from_ref(&section))
+        .transpose()
+        .expect("native name is admitted")
+        .expect("one native name");
+    assert_eq!(name.0, "widget");
+}
+
+#[test]
 fn two_chart_pcurve_count_node_refuses_before_insertion() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
