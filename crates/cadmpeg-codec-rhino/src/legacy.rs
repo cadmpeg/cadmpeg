@@ -2866,11 +2866,13 @@ fn legacy_mesh(
             )
             .map_err(malformed)?;
     }
-    let triangle_count = face_count.checked_mul(2).ok_or_else(|| {
-        CodecError::NotImplemented("Rhino V1 mesh triangle count exceeds address space".to_string())
-    })?;
-    admit_v1_values::<[u32; 3]>(ctx, triangle_count, "Rhino V1 mesh triangles")?;
-    let triangles = crate::mesh::triangulate_faces(&faces, &vertices, |point| point);
+    let triangles =
+        crate::mesh::triangulate_faces(ctx, &faces, &vertices, |point| point).map_err(|error| {
+            match error {
+                crate::curves::GeometryError::Codec(error) => error,
+                other => CodecError::Malformed(other.to_string()),
+            }
+        })?;
     Tessellation::new(
         id,
         cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(vertices, triangles, normals)?,
