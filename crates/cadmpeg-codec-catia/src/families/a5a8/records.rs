@@ -447,8 +447,14 @@ pub(in crate::families) struct A8PcurveSite {
 impl A8Pcurve {
     pub(in crate::families) const DEGREE: u32 = 5;
 
-    pub(in crate::families) fn knots(&self) -> Vec<FiniteReal> {
-        self.sites.iter().map(|site| site.knot).collect()
+    pub(in crate::families) fn knots(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Vec<FiniteReal>, cadmpeg_core::CodecError> {
+        let mut knots = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut knots, self.sites.len(), "catia A8 pcurve distinct knots")?;
+        knots.extend(self.sites.iter().map(|site| site.knot));
+        Ok(knots)
     }
 
     #[cfg(test)]
@@ -456,29 +462,31 @@ impl A8Pcurve {
         self.sites.iter().map(|site| site.point.get()).collect()
     }
 
-    pub(in crate::families) fn bspline(&self) -> Option<(Vec<f64>, Vec<FiniteVector<2>>)> {
+    pub(in crate::families) fn bspline(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<(Vec<f64>, Vec<FiniteVector<2>>)>, cadmpeg_core::CodecError> {
+        let mut knots = Vec::new();
+        let mut points = Vec::new();
+        let mut first = Vec::new();
+        let mut second = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut knots, self.sites.len(), "catia A8 pcurve jet knots")?;
+        crate::resource::reserve_vec(ctx, &mut points, self.sites.len(), "catia A8 pcurve jet points")?;
+        crate::resource::reserve_vec(ctx, &mut first, self.sites.len(), "catia A8 pcurve first jets")?;
+        crate::resource::reserve_vec(ctx, &mut second, self.sites.len(), "catia A8 pcurve second jets")?;
+        for site in &self.sites {
+            knots.push(site.knot.get());
+            points.push(site.point.get());
+            first.push(site.first_derivative.get());
+            second.push(site.second_derivative.get());
+        }
         crate::nurbs::quintic_jet_bspline(
+            ctx,
             Self::DEGREE,
-            &self
-                .sites
-                .iter()
-                .map(|site| site.knot.get())
-                .collect::<Vec<_>>(),
-            &self
-                .sites
-                .iter()
-                .map(|site| site.point.get())
-                .collect::<Vec<_>>(),
-            &self
-                .sites
-                .iter()
-                .map(|site| site.first_derivative.get())
-                .collect::<Vec<_>>(),
-            &self
-                .sites
-                .iter()
-                .map(|site| site.second_derivative.get())
-                .collect::<Vec<_>>(),
+            &knots,
+            &points,
+            &first,
+            &second,
         )
     }
 }
@@ -539,55 +547,50 @@ pub(in crate::families) struct A5FreeformCurve {
 impl A5FreeformCurve {
     pub(in crate::families) const DEGREE: u32 = 5;
 
-    fn knots(&self) -> Vec<f64> {
-        self.sites.iter().map(|site| site.knot.get()).collect()
+    fn knots(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
+        let mut knots = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut knots, self.sites.len(), "catia A5 rolling ball knots")?;
+        knots.extend(self.sites.iter().map(|site| site.knot.get()));
+        Ok(knots)
     }
 }
 
 /// Lower either limiting locus of a complete rolling-ball jet to its exact
 /// degree-5 NURBS representation.
 pub(in crate::families) fn rolling_ball_limit_curve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     jet: &A5FreeformCurve,
     second_limit: bool,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<NurbsCurve> {
+) -> Result<Option<NurbsCurve>, cadmpeg_core::CodecError> {
     let offset = usize::from(second_limit) * 3;
-    let positions = jet
-        .sites
-        .iter()
-        .map(|sample| {
+    let mut positions = Vec::new();
+    let mut first = Vec::new();
+    let mut second = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut positions, jet.sites.len(), "catia A5 rolling ball positions")?;
+    crate::resource::reserve_vec(ctx, &mut first, jet.sites.len(), "catia A5 rolling ball first jets")?;
+    crate::resource::reserve_vec(ctx, &mut second, jet.sites.len(), "catia A5 rolling ball second jets")?;
+    for sample in &jet.sites {
             let limit = if second_limit {
                 sample.site.limit2
             } else {
                 sample.site.limit1
             };
-            limit.get().into()
-        })
-        .collect::<Vec<_>>();
-    let first = jet
-        .sites
-        .iter()
-        .map(|sample| {
+            positions.push(limit.get().into());
             let values = FiniteReal::raw_array(sample.first_derivatives);
-            [values[offset], values[offset + 1], values[offset + 2]]
-        })
-        .collect::<Vec<_>>();
-    let second = jet
-        .sites
-        .iter()
-        .map(|sample| {
+            first.push([values[offset], values[offset + 1], values[offset + 2]]);
             let values = FiniteReal::raw_array(sample.second_derivatives);
-            [values[offset], values[offset + 1], values[offset + 2]]
-        })
-        .collect::<Vec<_>>();
-    let knots = jet.knots();
+            second.push([values[offset], values[offset + 1], values[offset + 2]]);
+    }
+    let knots = jet.knots(ctx)?;
     let Some((knots, control_points)) = crate::nurbs::quintic_jet_bspline(
+        ctx,
         A5FreeformCurve::DEGREE,
         &knots,
         &positions,
         &first,
         &second,
-    ) else {
+    )? else {
         refusal.push_solver(
             format_args!(
                 "consolidated_a5_03_32 rolling-ball limit curve at byte {}",
@@ -595,16 +598,16 @@ pub(in crate::families) fn rolling_ball_limit_curve(
             ),
             "states knot-aligned jet samples the degree-5 B-spline lowering does not close",
         );
-        return None;
+        return Ok(None);
     };
-    crate::nurbs::note_refusal(
+    let mut poles = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut poles, control_points.len(), "catia A5 rolling ball poles")?;
+    poles.extend(control_points.into_iter().map(|point| Point3::new(point[0], point[1], point[2])));
+    Ok(crate::nurbs::note_refusal(
         NurbsCurve::from_lanes(
             A5FreeformCurve::DEGREE,
             knots,
-            control_points
-                .into_iter()
-                .map(|point| Point3::new(point[0], point[1], point[2]))
-                .collect(),
+            poles,
             None,
             false,
         ),
@@ -613,7 +616,7 @@ pub(in crate::families) fn rolling_ball_limit_curve(
             "consolidated_a5_03_32 rolling-ball limit curve at byte {}",
             jet.pos
         ),
-    )
+    ))
 }
 
 /// One position in an `a5/a6/a7 03 39` jet.
@@ -643,8 +646,11 @@ pub(in crate::families) struct A5GuideCurve {
 }
 
 impl A5GuideCurve {
-    pub(in crate::families) fn knots(&self) -> Vec<f64> {
-        self.sites.iter().map(|site| site.knot.get()).collect()
+    pub(in crate::families) fn knots(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
+        let mut knots = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut knots, self.sites.len(), "catia A5 guide knots")?;
+        knots.extend(self.sites.iter().map(|site| site.knot.get()));
+        Ok(knots)
     }
 }
 

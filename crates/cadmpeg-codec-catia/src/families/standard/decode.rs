@@ -3160,34 +3160,38 @@ fn standard_object_evidence(
         refusal,
     )?;
     merge_standard_limit_curves_from_records(
+        ctx,
         &mut evidence.limit_curves,
         &scan.data,
         consolidated_records,
         refusal,
-    );
+    )?;
     Ok(evidence)
 }
 
 fn merge_standard_limit_curves_from_records(
+    ctx: &DecodeContext<'_>,
     curves: &mut Vec<NurbsCurve>,
     data: &[u8],
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for jet in crate::families::a5a8::records::a5_freeform_curves_from_records(data, records) {
         for second_limit in [false, true] {
             let Some(geometry) = crate::families::a5a8::records::rolling_ball_limit_curve(
+                ctx,
                 &jet,
                 second_limit,
                 refusal,
-            ) else {
+            )? else {
                 continue;
             };
             if !curves.contains(&geometry) {
-                curves.push(geometry);
+                crate::resource::push(ctx, curves, geometry, "catia standard limit curves")?;
             }
         }
     }
+    Ok(())
 }
 
 pub(super) fn standard_object_evidence_from_streams(
@@ -3206,7 +3210,7 @@ pub(super) fn standard_object_evidence_from_streams(
     let streams = streams.into_iter().collect::<Vec<_>>();
     for stream in &streams {
         let records = crate::wire::records::consolidated_records(stream);
-        merge_standard_limit_curves_from_records(&mut limit_curves, stream, &records, refusal);
+        merge_standard_limit_curves_from_records(ctx, &mut limit_curves, stream, &records, refusal)?;
     }
     let populations = streams
         .iter()

@@ -229,7 +229,12 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
 
 #[test]
 fn quintic_jet_reproduces_endpoint_second_order_data() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits input limit");
     let curve = quintic_jet_pcurve(
+        &ctx,
         5,
         &[0.0, 2.0],
         &[[0.0, 0.0], [2.0, 0.0]],
@@ -238,6 +243,7 @@ fn quintic_jet_reproduces_endpoint_second_order_data() {
         &mut crate::nurbs::LaneRefusals::new(),
         "test record",
     )
+    .expect("service resource budget")
     .expect("linear quintic segment");
     for parameter in [0.0, 0.5, 1.0, 2.0] {
         let point = pcurve_uv(&curve, parameter).expect("jet evaluation");

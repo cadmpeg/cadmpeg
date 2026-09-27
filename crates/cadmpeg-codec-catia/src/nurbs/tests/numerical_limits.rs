@@ -265,14 +265,20 @@ fn isocurve_keeps_finite_maximum_coordinates() {
 
 #[test]
 fn quintic_jet_handles_spans_whose_square_overflows_or_underflows() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits input limit");
     let h = 1e160;
     let (_, controls) = quintic_jet_bspline(
+        &ctx,
         5,
         &[0.0, h],
         &[[0.0; 3], [1.0, 0.0, 0.0]],
         &[[1.0 / h, 0.0, 0.0]; 2],
         &[[0.0; 3]; 2],
     )
+    .expect("service resource budget")
     .expect("finite linear controls");
     for (control, expected_x) in controls.iter().zip([0.0, 0.2, 0.4, 0.6, 0.8, 1.0]) {
         assert!((control[0] - expected_x).abs() < RELATIVE_ROUNDOFF);
@@ -292,17 +298,46 @@ fn quintic_jet_handles_spans_whose_square_overflows_or_underflows() {
         (2.0, f64::MAX, f64::MAX / 5.0),
     ] {
         let (_, controls) = quintic_jet_bspline(
+            &ctx,
             5,
             &[0.0, h],
             &[[0.0; 2]; 2],
             &[[0.0; 2]; 2],
             &[[acceleration, 0.0]; 2],
         )
+        .expect("service resource budget")
         .expect("finite curvature offsets");
         for control in &controls[2..4] {
             assert!((control[0] / expected - 1.0).abs() < RELATIVE_ROUNDOFF);
             assert_eq!(control[1], 0.0);
         }
+    }
+}
+
+#[test]
+fn quintic_jet_refuses_before_each_control_and_knot_allocation() {
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        quintic_jet_bspline(
+            ctx,
+            5,
+            &[0.0, 1.0],
+            &[[0.0, 0.0], [1.0, 0.0]],
+            &[[1.0, 0.0]; 2],
+            &[[0.0, 0.0]; 2],
+        )
+    };
+    assert!(crate::test_support::with_service_context(run)
+        .expect("service resource budget")
+        .is_some());
+    for (cap, operation) in [
+        (0, "catia quintic jet controls"),
+        (6, "catia quintic jet knots"),
+        (18, "catia quintic jet finite controls"),
+    ] {
+        assert!(matches!(
+            crate::test_support::with_collection_limit(cap, run),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation
+        ));
     }
 }
 

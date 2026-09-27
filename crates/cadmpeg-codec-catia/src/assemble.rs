@@ -787,6 +787,7 @@ pub(crate) fn rational_pcurve_arc(
 }
 
 pub(crate) fn quintic_jet_pcurve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     degree: u32,
     knots: &[f64],
     points: &[[f64; 2]],
@@ -794,21 +795,23 @@ pub(crate) fn quintic_jet_pcurve(
     second: &[[f64; 2]],
     refusal: &mut crate::nurbs::LaneRefusals,
     record: &str,
-) -> Option<PcurveGeometry> {
-    let (full_knots, controls) =
-        crate::nurbs::quintic_jet_bspline(degree, knots, points, first, second)?;
+) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
+    let Some((full_knots, controls)) =
+        crate::nurbs::quintic_jet_bspline(ctx, degree, knots, points, first, second)? else {
+            return Ok(None);
+        };
+    let mut control_points = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut control_points, controls.len(), "catia quintic pcurve points")?;
+    control_points.extend(controls.into_iter().map(|point| Point2::new(point[0], point[1])));
     match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
         degree,
         full_knots,
-        controls
-            .into_iter()
-            .map(|point| Point2::new(point[0], point[1]))
-            .collect(),
+        control_points,
         None,
         false,
     ) {
-        Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
-        Err(error) => crate::nurbs::note_refusal(Err(error), refusal, record),
+        Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
+        Err(error) => Ok(crate::nurbs::note_refusal(Err(error), refusal, record)),
     }
 }
 
