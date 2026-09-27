@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::tests::{assert_codec_collection_refusal, assert_codec_retained_refusal, triangulated_face_archive};
-use super::{connected_components, copy_shape_for_transfer, pcurve_geometry, pcurve_loss, transform_curve, transform_surface, Builder, PcurveGeometryError};
+use super::{connected_components, copy_shape_for_transfer, pcurve_geometry, pcurve_loss, source_topology_indices, transform_curve, transform_surface, Builder, PcurveGeometryError};
 use crate::brep::{NurbsCurve2d, ShapePayload, ShapePayloadRecord, Tables, TextCurve2d, TextEdgeRepresentation, TextPolygon3d, TextTShape, TextTShapeGeometry, TextTShapes};
 use crate::test_support::assert_retained_refusal_at;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -24,6 +24,36 @@ fn connected_component_comparison_refuses_at_work_limit() {
     assert!(matches!(connected_components(&ctx, &[connected.clone(), connected]),
         Err(CodecError::ResourceLimit(limit))
             if limit.operation == "FreeCAD connected-component comparison"));
+}
+
+#[test]
+fn source_topology_scan_refuses_at_work_limit() {
+    let shapes = TextTShapes::from(vec![TextTShape {
+        geometry: TextTShapeGeometry::Vertex {
+            tolerance: FiniteReal::ONE,
+            point: FinitePoint3::ZERO,
+            representations: Vec::new(),
+        },
+        flags: [false; 7],
+        children: Vec::new(),
+    }]);
+    let roots = [crate::brep::TextShapeUse {
+        shape: 1,
+        orientation: crate::brep::TextOrientation::Forward,
+        location: 0.into(),
+    }];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let tables = Tables {
+        locations: &[], curve2ds: &[], curves: &[], surfaces: &[],
+        polygons3d: &[], polygons_on_triangulations: &[],
+        tshapes: &shapes, triangulations: &[], roots: &roots,
+    };
+    assert!(matches!(source_topology_indices(&ctx, tables),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD source topology scan"));
 }
 
 #[test]
