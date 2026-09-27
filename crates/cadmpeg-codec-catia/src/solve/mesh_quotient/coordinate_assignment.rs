@@ -1118,7 +1118,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
     let mut roots = Vec::new();
     for node in 0..quotient.union.len() {
         if quotient.union.find(node) == node {
-            roots.push(node);
+            crate::resource::push(ctx, &mut roots, node, "catia_coordinate_closure_roots")?;
         }
     }
     if roots.len() < point_count {
@@ -1145,76 +1145,130 @@ pub(super) fn close_coordinate_roots_with_incidence(
             },
         );
     }
-    let root_indices = roots
-        .iter()
-        .enumerate()
-        .map(|(index, root)| (*root, index))
-        .collect::<HashMap<_, _>>();
-    let Some(edges) = edge_candidates
-        .iter()
-        .enumerate()
-        .map(|(edge, _)| {
-            Some([
-                *root_indices.get(&quotient.union.find(edge * 2))?,
-                *root_indices.get(&quotient.union.find(edge * 2 + 1))?,
-            ])
-        })
-        .collect::<Option<Vec<_>>>()
-    else {
-        return Ok(None);
-    };
-    let domains = roots
-        .iter()
-        .map(|root| {
-            let mut domain = quotient.domains[*root]
-                .iter()
-                .copied()
-                .filter(|point| *point < point_count)
-                .collect::<Vec<_>>();
-            domain.sort_unstable();
-            domain
-        })
-        .collect::<Vec<_>>();
+    let mut root_indices = HashMap::new();
+    for (index, root) in roots.iter().copied().enumerate() {
+        crate::resource::insert_map(
+            ctx,
+            &mut root_indices,
+            root,
+            index,
+            "catia_coordinate_closure_root_indices",
+        )?;
+    }
+    let mut edges = Vec::new();
+    for edge in 0..edge_candidates.len() {
+        let Some(&left) = root_indices.get(&quotient.union.find(edge * 2)) else {
+            return Ok(None);
+        };
+        let Some(&right) = root_indices.get(&quotient.union.find(edge * 2 + 1)) else {
+            return Ok(None);
+        };
+        crate::resource::push(
+            ctx,
+            &mut edges,
+            [left, right],
+            "catia_coordinate_closure_edges",
+        )?;
+    }
+    let mut domains = Vec::new();
+    for root in roots.iter().copied() {
+        let mut domain = Vec::new();
+        for point in quotient.domains[root]
+            .iter()
+            .copied()
+            .filter(|point| *point < point_count)
+        {
+            crate::resource::push(
+                ctx,
+                &mut domain,
+                point,
+                "catia_coordinate_closure_domain_points",
+            )?;
+        }
+        domain.sort_unstable();
+        crate::resource::push(
+            ctx,
+            &mut domains,
+            domain,
+            "catia_coordinate_closure_domains",
+        )?;
+    }
     if domains.iter().any(Vec::is_empty) {
         return Ok(None);
     }
-    if domains
-        .iter()
-        .flatten()
-        .copied()
-        .collect::<HashSet<_>>()
-        .len()
-        != point_count
-    {
+    let mut covered_points = HashSet::new();
+    for point in domains.iter().flatten().copied() {
+        crate::resource::insert_set(
+            ctx,
+            &mut covered_points,
+            point,
+            "catia_coordinate_closure_covered_points",
+        )?;
+    }
+    if covered_points.len() != point_count {
         return Ok(None);
     }
-    let mut dependency = UnionFind::new(roots.len());
+    let mut dependency =
+        UnionFind::charged(ctx, roots.len(), "catia_coordinate_closure_dependency")?;
     for [left, right] in &edges {
         dependency.union(*left, *right);
     }
     let mut root_by_point = HashMap::new();
     for (root, domain) in domains.iter().enumerate() {
         for point in domain {
-            if let Some(previous) = root_by_point.insert(*point, root) {
+            if let Some(previous) = crate::resource::insert_map(
+                ctx,
+                &mut root_by_point,
+                *point,
+                root,
+                "catia_coordinate_closure_point_roots",
+            )? {
                 dependency.union(previous, root);
             }
         }
     }
     let mut components = HashMap::<usize, Vec<usize>>::new();
     for root in 0..roots.len() {
-        components
-            .entry(dependency.find(root))
-            .or_default()
-            .push(root);
+        let component = dependency.find(root);
+        if !components.contains_key(&component) {
+            crate::resource::insert_map(
+                ctx,
+                &mut components,
+                component,
+                Vec::new(),
+                "catia_coordinate_closure_component_keys",
+            )?;
+        }
+        if let Some(members) = components.get_mut(&component) {
+            crate::resource::push(
+                ctx,
+                members,
+                root,
+                "catia_coordinate_closure_component_members",
+            )?;
+        }
     }
-    let mut components = components.into_values().collect::<Vec<_>>();
+    let mut ordered_components = Vec::new();
+    for component in components.into_values() {
+        crate::resource::push(
+            ctx,
+            &mut ordered_components,
+            component,
+            "catia_coordinate_closure_components",
+        )?;
+    }
+    let mut components = ordered_components;
     components.sort_by_key(|component| component[0]);
     let incidence = if let Some((edge_faces, boundary_domains)) = incidence {
         if budget.is_some_and(|budget| !budget.charge_by(edge_faces.len())) {
             exhausted.set(true);
             return Ok(None);
         }
-        let mut counts = vec![0usize; boundary_domains.len()];
+        let mut counts = ctx.alloc_filled(
+            boundary_domains.len(),
+            0usize,
+            "catia_coordinate_closure_face_counts",
+        )?;
         for faces in edge_faces {
             for (rank, face) in faces.iter().copied().enumerate() {
                 if rank == 0 || face != faces[0] {

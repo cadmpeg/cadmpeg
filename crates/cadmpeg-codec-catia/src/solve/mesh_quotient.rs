@@ -10911,6 +10911,54 @@ fn coordinate_root_closure_refuses_selected_edge_collection_limit() {
     assert!(refused.contains("catia coordinate closure selected edges"));
     assert!(refused.contains("catia coordinate component assignment"));
     assert!(refused.contains("catia coordinate point degrees"));
+    for operation in [
+        "catia_coordinate_closure_roots",
+        "catia_coordinate_closure_root_indices",
+        "catia_coordinate_closure_edges",
+        "catia_coordinate_closure_domain_points",
+        "catia_coordinate_closure_domains",
+        "catia_coordinate_closure_covered_points",
+        "catia_coordinate_closure_dependency",
+        "catia_coordinate_closure_point_roots",
+        "catia_coordinate_closure_component_keys",
+        "catia_coordinate_closure_component_members",
+        "catia_coordinate_closure_components",
+        "catia_coordinate_closure_face_counts",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
+fn coordinate_closure_refuses_before_empty_domain_rejection() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let make_quotient = || {
+        MeshQuotient::new(vec![
+            Arc::new(HashSet::from([9])),
+            Arc::new(HashSet::from([0])),
+        ])
+    };
+    let candidates = [vec![[0, 1]]];
+    catia_test_context!(service_ctx);
+    assert!(matches!(
+        make_quotient()
+            .coordinate_root_closure_outcome(&service_ctx, 2, &candidates, None, None)
+            .expect("service resource budget"),
+        MeshSolve::Failed(MeshCandidateFailure::Rejected(()))
+    ));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    assert!(matches!(
+        make_quotient().coordinate_root_closure_outcome(&ctx, 2, &candidates, None, None),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "catia_coordinate_closure_roots"
+    ));
 }
 
 #[test]
