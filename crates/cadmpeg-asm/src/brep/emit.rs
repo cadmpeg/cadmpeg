@@ -52,22 +52,25 @@ use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Sense,
 use cadmpeg_ir::unknown::UnknownRecord;
 
 fn map_law_formula(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     formula: EmbeddedLawFormula,
-    mut map: impl FnMut(usize, EmbeddedLawExpression) -> cadmpeg_ir::geometry::LawExpression,
-) -> cadmpeg_ir::geometry::LawFormula {
+    mut map: impl FnMut(usize, EmbeddedLawExpression) -> Result<cadmpeg_ir::geometry::LawExpression, cadmpeg_core::CodecError>,
+) -> Result<cadmpeg_ir::geometry::LawFormula, cadmpeg_core::CodecError> {
     match formula {
-        EmbeddedLawFormula::Null => cadmpeg_ir::geometry::LawFormula::Null {},
-        EmbeddedLawFormula::Named { name, variables } => cadmpeg_ir::geometry::LawFormula::Named {
-            name,
-            variables: variables
-                .into_iter()
-                .enumerate()
-                .map(|(index, expression)| map(index, expression))
-                .collect(),
-        },
+        EmbeddedLawFormula::Null => Ok(cadmpeg_ir::geometry::LawFormula::Null {}),
+        EmbeddedLawFormula::Named { name, variables } => {
+            let mut mapped = crate::decode_alloc::counted_vec(
+                ctx, variables.len(), "ASM law formula variables",
+            )?;
+            for (index, expression) in variables.into_iter().enumerate() {
+                mapped.push(map(index, expression)?);
+            }
+            Ok(cadmpeg_ir::geometry::LawFormula::Named { name, variables: mapped })
+        }
     }
 }
 use std::collections::{HashMap, HashSet};
+use crate::decode_alloc::CountedIteratorExt;
 
 use super::attributes::{
     attribute_chain_color, attribute_chain_name, attribute_owner, collect_attributes,
@@ -199,7 +202,7 @@ fn emit_carrier_surface(
                             component: id,
                         }
                     })
-                    .collect();
+                    .collect_counted_vec(ctx, "ASM compound surface components")?;
                 ProceduralSurfaceDefinition::Compound(
                     cadmpeg_ir::geometry::surface_payloads::CompoundSurfacePayload::try_new(
                         component_ids,
@@ -275,25 +278,25 @@ fn emit_carrier_surface(
                 )
             }
             DecodedProceduralSurfaceDefinition::Loft(embedded) => {
-                emit_loft_surface(out, i, embedded, format)?
+                emit_loft_surface(ctx, out, i, embedded, format)?
             }
             DecodedProceduralSurfaceDefinition::CompoundLoft(embedded) => {
-                emit_compound_loft_surface(out, i, *embedded, format)?
+                emit_compound_loft_surface(ctx, out, i, *embedded, format)?
             }
             DecodedProceduralSurfaceDefinition::ScaledCompoundLoft(embedded) => {
-                emit_scaled_compound_loft_surface(out, i, embedded, format)?
+                emit_scaled_compound_loft_surface(ctx, out, i, embedded, format)?
             }
             DecodedProceduralSurfaceDefinition::Law(embedded) => {
-                emit_law_surface(out, i, embedded, format)?
+                emit_law_surface(ctx, out, i, embedded, format)?
             }
             DecodedProceduralSurfaceDefinition::Skin(embedded) => {
-                emit_skin_surface(out, i, embedded, format)?
+                emit_skin_surface(ctx, out, i, embedded, format)?
             }
             DecodedProceduralSurfaceDefinition::Net(embedded) => {
-                emit_net_surface(out, i, embedded, format)?
+                emit_net_surface(ctx, out, i, embedded, format)?
             }
             DecodedProceduralSurfaceDefinition::Sweep(embedded) => {
-                emit_sweep_surface(out, i, embedded, format)?
+                emit_sweep_surface(ctx, out, i, embedded, format)?
             }
             DecodedProceduralSurfaceDefinition::G2Blend(embedded) => {
                 emit_g2_blend_surface(out, i, embedded, format)?
@@ -478,7 +481,7 @@ fn emit_carrier_surface(
                 emit_variable_blend_surface(out, i, construction, format)?
             }
             DecodedProceduralSurfaceDefinition::RevisionCompoundLoft(construction) => {
-                emit_revision_compound_loft_surface(out, i, construction, format)?
+                emit_revision_compound_loft_surface(ctx, out, i, construction, format)?
             }
             DecodedProceduralSurfaceDefinition::RevisionG2Blend(construction) => {
                 emit_revision_g2_blend_surface(out, i, construction, format)?
@@ -813,6 +816,7 @@ fn emit_loft_path_curve(
 }
 
 fn emit_loft_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     i: i64,
     embedded: EmbeddedLoft,
@@ -820,7 +824,7 @@ fn emit_loft_surface(
 ) -> Result<ProceduralSurfaceDefinition, cadmpeg_core::CodecError> {
     let mut map_section = |section_index: usize,
                            entries: Vec<EmbeddedLoftSectionEntry>|
-     -> cadmpeg_ir::geometry::LoftSection {
+     -> Result<cadmpeg_ir::geometry::LoftSection, cadmpeg_core::CodecError> {
         let entries = entries
             .into_iter()
             .enumerate()
@@ -878,7 +882,7 @@ fn emit_loft_surface(
                             form,
                         }
                     })
-                    .collect();
+                    .collect_counted_vec(ctx, "ASM loft profile members")?;
                 let path_curve = emit_loft_path_curve(
                     out,
                     entry.path.layout,
@@ -916,8 +920,8 @@ fn emit_loft_surface(
                         });
                         id
                     })
-                    .collect();
-                cadmpeg_ir::geometry::LoftSectionEntry {
+                    .collect_counted_vec(ctx, "ASM loft auxiliary curves")?;
+                Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::geometry::LoftSectionEntry {
                     parameter: entry.parameter,
                     profile,
                     path: cadmpeg_ir::geometry::LoftPath {
@@ -925,13 +929,13 @@ fn emit_loft_surface(
                         auxiliaries,
                         flag: entry.path.flag,
                     },
-                }
+                })
             })
-            .collect::<Vec<_>>();
-        cadmpeg_ir::geometry::LoftSection { entries }
+            .try_collect_counted_vec(ctx, "ASM loft section entries")?;
+        Ok(cadmpeg_ir::geometry::LoftSection { entries })
     };
     let [first, second] = embedded.sections;
-    let sections = [map_section(0, first), map_section(1, second)];
+    let sections = [map_section(0, first)?, map_section(1, second)?];
     Ok(match embedded.layout {
         EmbeddedLoftLayout::Legacy {
             ranges,
@@ -967,6 +971,7 @@ fn emit_loft_surface(
 }
 
 fn emit_compound_loft_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     i: i64,
     embedded: EmbeddedCompoundLoft,
@@ -975,7 +980,7 @@ fn emit_compound_loft_surface(
     let map_scale = |out: &mut AsmBrep,
                      name: cadmpeg_ir::ids::IdentityKey,
                      scale: EmbeddedCompoundLoftScale|
-     -> cadmpeg_ir::geometry::CompoundLoftScale {
+     -> Result<cadmpeg_ir::geometry::CompoundLoftScale, cadmpeg_core::CodecError> {
         let members = scale
             .members
             .into_iter()
@@ -1022,7 +1027,7 @@ fn emit_compound_loft_surface(
                     data,
                 }
             })
-            .collect();
+            .collect_counted_vec(ctx, "ASM compound loft scale members")?;
         let path = brep_id!(
             format,
             CurveId,
@@ -1052,27 +1057,29 @@ fn emit_compound_loft_surface(
                 });
                 id
             })
-            .collect();
-        cadmpeg_ir::geometry::CompoundLoftScale {
+            .collect_counted_vec(ctx, "ASM compound loft scale auxiliaries")?;
+        Ok(cadmpeg_ir::geometry::CompoundLoftScale {
             members,
             path,
             auxiliaries,
             tail: scale.tail,
-        }
+        })
     };
     let mut scale_index = 0;
     let scales = (*embedded.scales).map(|scale| {
         let name = brep_key!("scale", scale_index);
         scale_index += 1;
-        scale.map(|scale| map_scale(&mut *out, name, scale))
+        scale.map(|scale| map_scale(&mut *out, name, scale)).transpose()
     });
+    let [first, second, third, fourth] = scales;
+    let scales = [first?, second?, third?, fourth?];
     let fifth_scale = embedded.fifth_scale.map(|scale| {
-        Box::new(map_scale(
+        map_scale(
             &mut *out,
             cadmpeg_ir::identity_key!("fifth"),
             *scale,
-        ))
-    });
+        ).map(Box::new)
+    }).transpose()?;
     let tail = match embedded.tail {
         EmbeddedCompoundLoftTail::Six {
             flags,
@@ -1099,7 +1106,7 @@ fn emit_compound_loft_surface(
                     &mut *out,
                     cadmpeg_ir::identity_key!("tail6"),
                     *scale,
-                )),
+                )?),
                 selector,
                 direction,
                 parameter_range,
@@ -1117,18 +1124,18 @@ fn emit_compound_loft_surface(
         } => cadmpeg_ir::geometry::CompoundLoftTail::Seven {
             first_flag,
             first_scale: first_scale.map(|scale| {
-                Box::new(map_scale(
+                map_scale(
                     &mut *out,
                     cadmpeg_ir::identity_key!("tail7:first"),
                     *scale,
-                ))
-            }),
+                ).map(Box::new)
+            }).transpose()?,
             second_flag,
             second_scale: Box::new(map_scale(
                 &mut *out,
                 cadmpeg_ir::identity_key!("tail7:second"),
                 *second_scale,
-            )),
+            )?),
             selector,
             direction,
             trailing_flags,
@@ -1184,6 +1191,7 @@ fn emit_compound_loft_surface(
 }
 
 fn emit_scaled_compound_loft_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     i: i64,
     embedded: Box<EmbeddedScaledCompoundLoft>,
@@ -1193,7 +1201,7 @@ fn emit_scaled_compound_loft_surface(
     let map_scale = |out: &mut AsmBrep,
                      name: cadmpeg_ir::ids::IdentityKey,
                      scale: EmbeddedCompoundLoftScale|
-     -> cadmpeg_ir::geometry::CompoundLoftScale {
+     -> Result<cadmpeg_ir::geometry::CompoundLoftScale, cadmpeg_core::CodecError> {
         let members = scale
             .members
             .into_iter()
@@ -1240,7 +1248,7 @@ fn emit_scaled_compound_loft_surface(
                     data,
                 }
             })
-            .collect();
+            .collect_counted_vec(ctx, "ASM scaled compound loft scale members")?;
         let path = brep_id!(
             format,
             CurveId,
@@ -1270,20 +1278,22 @@ fn emit_scaled_compound_loft_surface(
                 });
                 id
             })
-            .collect();
-        cadmpeg_ir::geometry::CompoundLoftScale {
+            .collect_counted_vec(ctx, "ASM scaled compound loft scale auxiliaries")?;
+        Ok(cadmpeg_ir::geometry::CompoundLoftScale {
             members,
             path,
             auxiliaries,
             tail: scale.tail,
-        }
+        })
     };
     let mut scale_index = 0;
     let scales = (*embedded.scales).map(|scale| {
         let name = brep_key!("scale", scale_index);
         scale_index += 1;
-        scale.map(|scale| map_scale(&mut *out, name, scale))
+        scale.map(|scale| map_scale(&mut *out, name, scale)).transpose()
     });
+    let [first, second, third] = scales;
+    let scales = [first?, second?, third?];
     let map_direction = |out: &mut AsmBrep,
                          name: cadmpeg_ir::ids::IdentityKey,
                          direction|
@@ -1319,17 +1329,17 @@ fn emit_scaled_compound_loft_surface(
             direction,
         } => cadmpeg_ir::geometry::ScaledCompoundLoftBranch::ExtendedVector {
             first_scale: first_scale.map(|scale| {
-                Box::new(map_scale(
+                map_scale(
                     &mut *out,
                     cadmpeg_ir::identity_key!("branch:first"),
                     *scale,
-                ))
-            }),
+                ).map(Box::new)
+            }).transpose()?,
             second_scale: Box::new(map_scale(
                 &mut *out,
                 cadmpeg_ir::identity_key!("branch:second"),
                 *second_scale,
-            )),
+            )?),
             selector,
             direction,
         },
@@ -1352,12 +1362,12 @@ fn emit_scaled_compound_loft_surface(
             });
             cadmpeg_ir::geometry::ScaledCompoundLoftBranch::ExtendedCurve {
                 scale: scale.map(|scale| {
-                    Box::new(map_scale(
+                    map_scale(
                         &mut *out,
                         cadmpeg_ir::identity_key!("branch"),
                         *scale,
-                    ))
-                }),
+                    ).map(Box::new)
+                }).transpose()?,
                 flag,
                 singularity,
                 curve: id,
@@ -1428,13 +1438,14 @@ enum LawExpressionScope {
 }
 
 fn map_law_expression(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     format: IdFormat,
     scope: LawExpressionScope,
     path: cadmpeg_ir::ids::IdentityKey,
     expression: EmbeddedLawExpression,
-) -> cadmpeg_ir::geometry::LawExpression {
-    match expression {
+) -> Result<cadmpeg_ir::geometry::LawExpression, cadmpeg_core::CodecError> {
+    Ok(match expression {
         EmbeddedLawExpression::Null => cadmpeg_ir::geometry::LawExpression::Null {},
         EmbeddedLawExpression::Text(value) => cadmpeg_ir::geometry::LawExpression::Text { value },
         EmbeddedLawExpression::Integer(value) => {
@@ -1501,27 +1512,23 @@ fn map_law_expression(
             point,
         },
         EmbeddedLawExpression::Algebraic { operator, operands } => {
+            let mut mapped = crate::decode_alloc::counted_vec(
+                ctx, operands.len(), "ASM law expression operands",
+            )?;
+            for (index, operand) in operands.into_iter().enumerate() {
+                mapped.push(map_law_expression(ctx, out, format, scope.clone(), brep_key!(path.clone(), ":", index), operand,
+                )?);
+            }
             cadmpeg_ir::geometry::LawExpression::Algebraic {
                 operator,
-                operands: operands
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, operand)| {
-                        map_law_expression(
-                            out,
-                            format,
-                            scope.clone(),
-                            brep_key!(path.clone(), ":", index),
-                            operand,
-                        )
-                    })
-                    .collect(),
+                operands: mapped,
             }
         }
-    }
+    })
 }
 
 fn emit_law_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     i: i64,
     embedded: Box<EmbeddedLawSurface>,
@@ -1531,9 +1538,8 @@ fn emit_law_surface(
     let scope = LawExpressionScope::Surface(prefix);
     let map_formula =
         |out: &mut AsmBrep, path: cadmpeg_ir::ids::IdentityKey, formula: EmbeddedLawFormula| {
-            map_law_formula(formula, |index, expression| {
-                map_law_expression(
-                    out,
+            map_law_formula(ctx, formula, |index, expression| {
+                map_law_expression(ctx, out,
                     format,
                     scope.clone(),
                     brep_key!(path.clone(), ":", index),
@@ -1546,13 +1552,13 @@ fn emit_law_surface(
         &mut *out,
         cadmpeg_ir::identity_key!("primary"),
         embedded.primary,
-    );
+    )?;
     let additional = embedded
         .additional
         .into_iter()
         .enumerate()
         .map(|(index, formula)| map_formula(&mut *out, brep_key!("additional:", index), formula))
-        .collect();
+        .try_collect_counted_vec(ctx, "ASM law surface additional formulas")?;
     Ok(ProceduralSurfaceDefinition::Law(
         cadmpeg_ir::geometry::surface_payloads::LawSurfacePayload::try_new(Box::new(
             cadmpeg_ir::geometry::LawSurfaceConstruction {
@@ -1568,6 +1574,7 @@ fn emit_law_surface(
 }
 
 fn emit_skin_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     i: i64,
     embedded: Box<EmbeddedSkinSurface>,
@@ -1652,7 +1659,7 @@ fn emit_skin_surface(
                         data,
                     }
                 })
-                .collect();
+                .collect_counted_vec(ctx, "ASM skin surface profiles")?;
             let path_id = brep_id!(
                 format,
                 CurveId,
@@ -1682,15 +1689,14 @@ fn emit_skin_surface(
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(embedded.parameter_curve)),
         source_object: None,
     });
-    let formula = map_law_formula(embedded.formula, |variable_index, variable| {
-        map_law_expression(
-            &mut *out,
+    let formula = map_law_formula(ctx, embedded.formula, |variable_index, variable| {
+        map_law_expression(ctx, &mut *out,
             format,
             scope.clone(),
             variable_index.into(),
             variable,
         )
-    });
+    })?;
     Ok(ProceduralSurfaceDefinition::Skin(
         cadmpeg_ir::geometry::surface_payloads::SkinSurfacePayload::try_new(
             Box::new(cadmpeg_ir::geometry::SkinSurfaceConstruction {
@@ -1714,6 +1720,7 @@ fn emit_skin_surface(
 }
 
 fn emit_net_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     i: i64,
     embedded: Box<EmbeddedNetSurface>,
@@ -1724,7 +1731,7 @@ fn emit_net_surface(
     let embedded = *embedded;
     let mut map_section = |section_index: usize,
                            entries: Vec<EmbeddedLoftSectionEntry>|
-     -> cadmpeg_ir::geometry::LoftSection {
+     -> Result<cadmpeg_ir::geometry::LoftSection, cadmpeg_core::CodecError> {
         let entries = entries
             .into_iter()
             .enumerate()
@@ -1784,7 +1791,7 @@ fn emit_net_surface(
                             form,
                         }
                     })
-                    .collect();
+                    .collect_counted_vec(ctx, "ASM net surface profile members")?;
                 let path = emit_loft_path_curve(
                     out,
                     entry.path.layout,
@@ -1822,8 +1829,8 @@ fn emit_net_surface(
                         });
                         id
                     })
-                    .collect();
-                cadmpeg_ir::geometry::LoftSectionEntry {
+                    .collect_counted_vec(ctx, "ASM net surface auxiliary curves")?;
+                Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::geometry::LoftSectionEntry {
                     parameter: entry.parameter,
                     profile,
                     path: cadmpeg_ir::geometry::LoftPath {
@@ -1831,18 +1838,17 @@ fn emit_net_surface(
                         auxiliaries,
                         flag: entry.path.flag,
                     },
-                }
+                })
             })
-            .collect();
-        cadmpeg_ir::geometry::LoftSection { entries }
+            .try_collect_counted_vec(ctx, "ASM net surface section entries")?;
+        Ok(cadmpeg_ir::geometry::LoftSection { entries })
     };
     let [first, second] = *embedded.sections;
-    let sections = Box::new([map_section(0, first), map_section(1, second)]);
+    let sections = Box::new([map_section(0, first)?, map_section(1, second)?]);
     let [first_formula, second_formula, third_formula, fourth_formula] = *embedded.formulas;
     let mut map_formula = |formula_index, formula| {
-        map_law_formula(formula, |index, variable| {
-            map_law_expression(
-                &mut *out,
+        map_law_formula(ctx, formula, |index, variable| {
+            map_law_expression(ctx, &mut *out,
                 format,
                 scope.clone(),
                 brep_key!(formula_index, ":", index),
@@ -1851,10 +1857,10 @@ fn emit_net_surface(
         })
     };
     let formulas = [
-        map_formula(0, first_formula),
-        map_formula(1, second_formula),
-        map_formula(2, third_formula),
-        map_formula(3, fourth_formula),
+        map_formula(0, first_formula)?,
+        map_formula(1, second_formula)?,
+        map_formula(2, third_formula)?,
+        map_formula(3, fourth_formula)?,
     ];
     Ok(ProceduralSurfaceDefinition::Net(
         cadmpeg_ir::geometry::surface_payloads::NetSurfacePayload::try_new(
@@ -1874,6 +1880,7 @@ fn emit_net_surface(
 }
 
 fn emit_sweep_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     i: i64,
     embedded: Box<EmbeddedSweepSurface>,
@@ -1912,9 +1919,8 @@ fn emit_sweep_surface(
         } => {
             let [first_formula, second_formula, third_formula] = *formulas;
             let mut map_formula = |formula_index, formula| {
-                map_law_formula(formula, |index, variable| {
-                    map_law_expression(
-                        &mut *out,
+                map_law_formula(ctx, formula, |index, variable| {
+                    map_law_expression(ctx, &mut *out,
                         format,
                         scope.clone(),
                         brep_key!(formula_index, ":", index),
@@ -1923,9 +1929,9 @@ fn emit_sweep_surface(
                 })
             };
             let formulas = [
-                map_formula(0, first_formula),
-                map_formula(1, second_formula),
-                map_formula(2, third_formula),
+                map_formula(0, first_formula)?,
+                map_formula(1, second_formula)?,
+                map_formula(2, third_formula)?,
             ];
             (
                 profile,
@@ -1963,15 +1969,14 @@ fn emit_sweep_surface(
                         trailing_flag,
                     },
                 ) => {
-                    let formula = map_law_formula(formula, |index, variable| {
-                        map_law_expression(
-                            &mut *out,
+                    let formula = map_law_formula(ctx, formula, |index, variable| {
+                        map_law_expression(ctx, &mut *out,
                             format,
                             scope.clone(),
                             brep_key!("explicit:", index),
                             variable,
                         )
-                    });
+                    })?;
                     cadmpeg_ir::geometry::SweepSurfaceLayout::ExplicitFormula {
                         mode,
                         profile_range,
@@ -2085,29 +2090,26 @@ fn emit_sweep_surface(
                     formula,
                     trailing_flag,
                 }) => {
-                    let first_law = map_law_expression(
-                        &mut *out,
+                    let first_law = map_law_expression(ctx, &mut *out,
                         format,
                         scope.clone(),
                         cadmpeg_ir::identity_key!("law:first"),
                         *first_law,
-                    );
-                    let second_law = map_law_expression(
-                        &mut *out,
+                    )?;
+                    let second_law = map_law_expression(ctx, &mut *out,
                         format,
                         scope.clone(),
                         cadmpeg_ir::identity_key!("law:second"),
                         *second_law,
-                    );
-                    let formula = map_law_formula(formula, |index, variable| {
-                        map_law_expression(
-                            &mut *out,
+                    )?;
+                    let formula = map_law_formula(ctx, formula, |index, variable| {
+                        map_law_expression(ctx, &mut *out,
                             format,
                             scope.clone(),
                             brep_key!("law:formula:", index),
                             variable,
                         )
-                    });
+                    })?;
                     cadmpeg_ir::geometry::SweepSurfaceLayout::LawDriven {
                         mode,
                         profile_range,
@@ -2432,6 +2434,7 @@ fn emit_variable_blend_surface(
 }
 
 fn emit_revision_compound_loft_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     i: i64,
     construction: Box<EmbeddedRevisionCompoundLoft>,
@@ -2440,7 +2443,7 @@ fn emit_revision_compound_loft_surface(
     let convert_profile = |scope: cadmpeg_ir::ids::IdentityKey,
                            profile: Vec<EmbeddedLoftProfileMember>,
                            out: &mut AsmBrep|
-     -> Vec<cadmpeg_ir::geometry::LoftProfileMember> {
+     -> Result<Vec<cadmpeg_ir::geometry::LoftProfileMember>, cadmpeg_core::CodecError> {
         profile
             .into_iter()
             .enumerate()
@@ -2473,12 +2476,12 @@ fn emit_revision_compound_loft_surface(
                     ),
                 }
             })
-            .collect()
+            .collect_counted_vec(ctx, "ASM revision compound loft profile members")
     };
     let convert_path = |scope: cadmpeg_ir::ids::IdentityKey,
                         path: EmbeddedLoftPath,
                         out: &mut AsmBrep|
-     -> cadmpeg_ir::geometry::LoftPath {
+     -> Result<cadmpeg_ir::geometry::LoftPath, cadmpeg_core::CodecError> {
         let curve = emit_loft_path_curve(
             out,
             path.layout,
@@ -2507,29 +2510,29 @@ fn emit_revision_compound_loft_surface(
                 });
                 id
             })
-            .collect();
-        cadmpeg_ir::geometry::LoftPath {
+            .collect_counted_vec(ctx, "ASM revision compound loft auxiliary curves")?;
+        Ok(cadmpeg_ir::geometry::LoftPath {
             path: curve,
             auxiliaries,
             flag: path.flag,
-        }
+        })
     };
     let base = brep_key!(i, ":cloft:base");
-    let base_profile = convert_profile(base.clone(), construction.base_profile, &mut *out);
-    let base_path = convert_path(base, construction.base_path, &mut *out);
+    let base_profile = convert_profile(base.clone(), construction.base_profile, &mut *out)?;
+    let base_path = convert_path(base, construction.base_path, &mut *out)?;
     let entries: Vec<_> = construction
         .entries
         .into_iter()
         .enumerate()
         .map(|(entry_index, entry)| {
             let scope = brep_key!(i, ":cloft:", entry_index);
-            cadmpeg_ir::geometry::LoftSectionEntry {
+            Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::geometry::LoftSectionEntry {
                 parameter: entry.parameter,
-                profile: convert_profile(scope.clone(), entry.profile, &mut *out),
-                path: convert_path(scope, entry.path, &mut *out),
-            }
+                profile: convert_profile(scope.clone(), entry.profile, &mut *out)?,
+                path: convert_path(scope, entry.path, &mut *out)?,
+            })
         })
-        .collect();
+        .try_collect_counted_vec(ctx, "ASM revision compound loft sections")?;
     let direction = match construction.direction {
         EmbeddedCompoundLoftDirection::Vector(value) => {
             cadmpeg_ir::geometry::CompoundLoftDirection::Vector { value }
@@ -2949,14 +2952,32 @@ fn blend_radius_law(
     }
 }
 
+enum CarrierCurveError {
+    Invalid(&'static str),
+    Resource(cadmpeg_core::CodecError),
+}
+
+impl From<&'static str> for CarrierCurveError {
+    fn from(cause: &'static str) -> Self {
+        Self::Invalid(cause)
+    }
+}
+
+impl From<cadmpeg_core::CodecError> for CarrierCurveError {
+    fn from(error: cadmpeg_core::CodecError) -> Self {
+        Self::Resource(error)
+    }
+}
+
 fn emit_carrier_curve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     i: i64,
     carriers: &mut Carriers,
     reversed_curve_refs: &HashSet<i64>,
     forward_curve_refs: &HashSet<i64>,
     format: IdFormat,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::geometry::curve_payloads::{
         DeformableCurveConstruction, TwoSidedOffsetCurveConstruction, VectorOffsetCurveConstruction,
     };
@@ -2967,7 +2988,7 @@ fn emit_carrier_curve(
         ..
     } = &mut *carriers;
     let Some(mut geometry) = curve_geo.remove(&i) else {
-        return;
+        return Ok(());
     };
     if reversed_curve_refs.contains(&i) {
         if forward_curve_refs.contains(&i) {
@@ -2995,7 +3016,7 @@ fn emit_carrier_curve(
             cache_fit_tolerance,
             parsed_domain: solved_domain,
         }) => {
-            let definition = (|| -> Result<_, &'static str> {
+            let definition = (|| -> Result<_, CarrierCurveError> {
                 Ok(match *construction {
                     ProceduralCurveConstruction::VectorOffset((
                         source,
@@ -3294,7 +3315,7 @@ fn emit_carrier_curve(
                         emit_projection_curve(out, i, embedded, format)?
                     }
                     ProceduralCurveConstruction::Law(embedded) => {
-                        emit_law_curve(out, i, embedded, format, solved_domain)?
+                        emit_law_curve(ctx, out, i, embedded, format, solved_domain)?
                     }
                     ProceduralCurveConstruction::Compound(
                         crate::nurbs::proc_curve::CompoundDefinition {
@@ -3324,7 +3345,7 @@ fn emit_carrier_curve(
                                     component: id,
                                 }
                             })
-                            .collect();
+                            .collect_counted_vec(ctx, "ASM compound curve components")?;
                         cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(
                             cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
                                 parameters, components, None,
@@ -3367,18 +3388,20 @@ fn emit_carrier_curve(
             brep_id!(format, ProceduralCurveId, "procedural_curve", i),
             *definition,
         )),
-        None => return,
+        None => return Ok(()),
     };
     match procedural {
         Ok(procedural) => out
             .procedural_curves
             .push((<CurveId>::from(id(format, i)), procedural)),
-        Err(cause) => {
+        Err(CarrierCurveError::Resource(error)) => return Err(error),
+        Err(CarrierCurveError::Invalid(cause)) => {
             out.surfaces.truncate(surface_start);
             out.curves.truncate(curve_start);
             count_kind(&mut out.stats.procedural_curve_kinds, cause);
         }
     }
+    Ok(())
 }
 
 fn emit_surface_curve_layout<F>(
@@ -3764,12 +3787,13 @@ fn emit_projection_curve(
 }
 
 fn emit_law_curve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     i: i64,
     embedded: EmbeddedLawCurve,
     format: IdFormat,
     solved_domain: Option<[f64; 2]>,
-) -> Result<cadmpeg_ir::geometry::ProceduralCurveDefinition, &'static str> {
+) -> Result<cadmpeg_ir::geometry::ProceduralCurveDefinition, CarrierCurveError> {
     let prefix = brep_key!(i, ":law");
     let scope = LawExpressionScope::Curve(prefix);
     let (parameter_range, version) = match embedded.layout {
@@ -3811,19 +3835,20 @@ fn emit_law_curve(
         pcurve
             .map(|nurbs| cadmpeg_ir::geometry::SupportPcurve::from(PcurveGeometry::Nurbs { nurbs }))
     });
-    let mut map_formula = |path: cadmpeg_ir::ids::IdentityKey, formula: EmbeddedLawFormula| {
-        cadmpeg_ir::geometry::FiniteLawFormula::try_new(map_law_formula(
-            formula,
+    let mut map_formula = |path: cadmpeg_ir::ids::IdentityKey, formula: EmbeddedLawFormula|
+        -> Result<cadmpeg_ir::geometry::FiniteLawFormula, CarrierCurveError> {
+        let mapped = map_law_formula(ctx, formula,
             |index, expression| {
-                map_law_expression(
-                    &mut *out,
+                map_law_expression(ctx, &mut *out,
                     format,
                     scope.clone(),
                     brep_key!(path.clone(), ":", index),
                     expression,
                 )
             },
-        ))
+        )?;
+        cadmpeg_ir::geometry::FiniteLawFormula::try_new(mapped)
+            .map_err(CarrierCurveError::from)
     };
     Ok(cadmpeg_ir::geometry::ProceduralCurveDefinition::Law {
         context: cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
@@ -3842,7 +3867,7 @@ fn emit_law_curve(
             .into_iter()
             .enumerate()
             .map(|(index, formula)| map_formula(brep_key!("additional:", index), formula))
-            .collect::<Result<Vec<_>, _>>()?,
+            .try_collect_counted_vec(ctx, "ASM law curve additional formulas")?,
         cache: None,
     })
 }
@@ -3878,13 +3903,14 @@ pub(super) fn emit_carrier_records(
             }
             _ if reach.curves.contains(&i) => {
                 emit_carrier_curve(
+                    ctx,
                     out,
                     i,
                     carriers,
                     reversed_curve_refs,
                     forward_curve_refs,
                     format,
-                );
+                )?;
             }
             _ => {}
         }
@@ -4385,7 +4411,7 @@ pub(super) fn emit_coedges(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
                     })
                     .transpose()?
                     .into_iter()
-                    .collect(),
+                    .collect_counted_vec(ctx, "ASM coedge pcurve use")?,
                 use_curve: use_curve
                     .map(|(curve, parameter_range)| {
                         Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::topology::CoedgeUseCurve {
@@ -4535,6 +4561,7 @@ pub(super) fn emit_faces(
 /// resolve, filtering child lists to reachable entities.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn emit_containers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
@@ -4570,13 +4597,13 @@ pub(super) fn emit_containers(
                             .into_iter()
                             .flatten()
                             .map(|edge| EdgeId::from(id(format, *edge)))
-                            .collect(),
+                            .collect_counted_vec(ctx, "ASM shell wire edges")?,
                         free_vertices_by_shell
                             .get(&i)
                             .into_iter()
                             .flatten()
                             .map(|vertex| VertexId::from(id(format, *vertex)))
-                            .collect(),
+                            .collect_counted_vec(ctx, "ASM shell free vertices")?,
                     )
                     .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
                 );
@@ -4608,24 +4635,25 @@ pub(super) fn emit_containers(
                 }
                 let transform_record = r.ref_at(5).and_then(|reference| by_index.get(&reference));
                 if let Some(transform) = transform_record {
-                    let flags = transform
+                    let mut flags = transform
                         .tokens
                         .iter()
                         .filter_map(|token| match token {
                             Token::True => Some(true),
                             Token::False => Some(false),
                             _ => None,
-                        })
-                        .collect::<Vec<_>>();
-                    if let [rotation, reflection, shear] = flags.as_slice() {
+                        });
+                    if let (Some(rotation), Some(reflection), Some(shear), None) =
+                        (flags.next(), flags.next(), flags.next(), flags.next())
+                    {
                         out.transform_hints.push(TransformHints {
                             source_namespace:
                                 crate::brep::records::identity::NativeRecordNamespace::new(format),
                             body: body_id.clone(),
                             record_index: transform.index as u32,
-                            rotation: *rotation,
-                            reflection: *reflection,
-                            shear: *shear,
+                            rotation,
+                            reflection,
+                            shear,
                         });
                     }
                 }
@@ -4674,6 +4702,7 @@ pub(super) fn emit_containers(
 /// timestamp projections. Returns the set of emitted attribute record indices.
 /// An attribute holding a NaN or infinite number refuses the stream.
 pub(super) fn emit_attributes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
@@ -4738,6 +4767,7 @@ pub(super) fn emit_attributes(
         if let Some(target) = target {
             attribute_targets.insert(index, target.clone());
             collect_attributes(
+                ctx,
                 record,
                 &target,
                 by_index,
@@ -4758,7 +4788,7 @@ pub(super) fn emit_attributes(
         {
             emitted_attributes.insert(index);
             out.attributes
-                .push(source_attribute(record, target, format)?);
+                .push(source_attribute(ctx, record, target, format)?);
         }
     }
     Ok(emitted_attributes)
@@ -4811,11 +4841,12 @@ pub(super) fn emit_passthrough_unknowns(
 
 /// Count record kinds that were neither emitted nor preserved.
 pub(super) fn count_other_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     records: &[Record],
     reach: &Reachable,
     emitted_attributes: &HashSet<i64>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let Reachable {
         surfaces: kept_surfaces,
         curves: kept_curves,
@@ -4828,12 +4859,12 @@ pub(super) fn count_other_records(
         .iter()
         .filter(|record| record.head() == "body")
         .filter_map(|record| record.ref_at(5))
-        .collect();
+        .collect_counted_set(ctx, "ASM retained transform references")?;
     let pcurve_intcurves: HashSet<i64> = records
         .iter()
         .filter(|record| kept_pcurves.contains(&(record.index as i64)))
         .filter_map(|record| record.ref_at(4))
-        .collect();
+        .collect_counted_set(ctx, "ASM pcurve intcurve references")?;
     for r in records {
         let i = r.index as i64;
         // Spline/intcurve records that decoded into a NURBS carrier are counted
@@ -4855,6 +4886,7 @@ pub(super) fn count_other_records(
                 .or_default() += 1;
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]

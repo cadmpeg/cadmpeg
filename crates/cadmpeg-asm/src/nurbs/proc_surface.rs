@@ -4256,9 +4256,14 @@ fn defm_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>, toks: &[Token]) -
         1 => {
             let frame = Box::new(deformable_surface_frame(&mut cur)?);
             let count = usize::try_from(cur.take_long()?).ok()?;
-            let parameter_triples = (0..count)
-                .map(|_| Some([cur.take_f64()?, cur.take_f64()?, cur.take_f64()?]))
-                .collect::<Option<Vec<_>>>()?;
+            let mut parameter_triples = propagate_resource!(crate::decode_alloc::counted_vec(
+                ctx,
+                count,
+                "ASM deformable surface parameter triples",
+            ));
+            for _ in 0..count {
+                parameter_triples.push([cur.take_f64()?, cur.take_f64()?, cur.take_f64()?]);
+            }
             EmbeddedDeformableSurfaceData::Resolved(DeformableSurfaceData::Plain {
                 frame,
                 parameter_triples,
@@ -4289,9 +4294,14 @@ fn defm_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>, toks: &[Token]) -
             let frame_parameter = cur.take_f64()?;
             let flags = [cur.take_bool()?, cur.take_bool()?, cur.take_bool()?];
             let count = usize::try_from(cur.take_long()?).ok()?;
-            let parameter_triples = (0..count)
-                .map(|_| Some([cur.take_f64()?, cur.take_f64()?, cur.take_f64()?]))
-                .collect::<Option<Vec<_>>>()?;
+            let mut parameter_triples = propagate_resource!(crate::decode_alloc::counted_vec(
+                ctx,
+                count,
+                "ASM deformable surface curve parameter triples",
+            ));
+            for _ in 0..count {
+                parameter_triples.push([cur.take_f64()?, cur.take_f64()?, cur.take_f64()?]);
+            }
             EmbeddedDeformableSurfaceData::SurfaceCurve {
                 surface,
                 native_id,

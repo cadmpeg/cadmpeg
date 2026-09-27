@@ -7,6 +7,7 @@ use crate::nurbs::proc_surface::{
     DecodedProceduralSurfaceDefinition, EmbeddedRollingBall, EmbeddedScaledCompoundLoftShape,
 };
 use crate::nurbs::reader::LEN_TO_MM;
+use crate::decode_alloc::CountedIteratorExt;
 use crate::sab::{Record, Token};
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::analytic::{
@@ -268,15 +269,17 @@ pub(super) fn tolerant_coedge_extension(record: &Record) -> Option<TolerantCoedg
             // Suffix in chunk space: a record can end with payload
             // identifiers (`null_curve` placeholders for absent curve slots),
             // which are not fields of the extension.
-            let suffix: Vec<&Token> = record
+            let mut suffix = record
                 .tokens
                 .get(close + 1..)?
                 .iter()
-                .filter(|token| !token.is_payload_ident())
-                .collect();
-            let parameter_range = match suffix.as_slice() {
-                [Token::False, Token::False, Token::Long(0)] => None,
-                [Token::True, Token::Double(start), Token::True, Token::Double(end), Token::Long(0)] => {
+                .filter(|token| !token.is_payload_ident());
+            let parameter_range = match (
+                suffix.next(), suffix.next(), suffix.next(),
+                suffix.next(), suffix.next(), suffix.next(),
+            ) {
+                (Some(Token::False), Some(Token::False), Some(Token::Long(0)), None, None, None) => None,
+                (Some(Token::True), Some(Token::Double(start)), Some(Token::True), Some(Token::Double(end)), Some(Token::Long(0)), None) => {
                     Some(cadmpeg_ir::units::FiniteVector::new([*start, *end])?)
                 }
                 _ => return None,
@@ -354,11 +357,9 @@ pub(super) fn pcurve_ranges_on_domain(
         .get(usize::try_from(candidate.degree()).ok()?)?;
     let last = *candidate.knots().get(candidate.control_points().len())?;
     (first < last).then_some(())?;
-    let mut ranges = edge
-        .and_then(edge_pcurve_parameter_ranges)
-        .into_iter()
-        .flatten()
-        .filter_map(|range| {
+    let mut ranges = Vec::with_capacity(3);
+    for range in edge.and_then(edge_pcurve_parameter_ranges).into_iter().flatten() {
+        if let Some(range) = (|| {
             range
                 .iter()
                 .all(|value| {
@@ -371,8 +372,10 @@ pub(super) fn pcurve_ranges_on_domain(
                 .then_some(())?;
             let range = range.map(|value| value.clamp(first, last));
             (range[0] != range[1]).then_some(range)
-        })
-        .collect::<Vec<_>>();
+        })() {
+            ranges.push(range);
+        }
+    }
     if !ranges.contains(&[first, last]) {
         ranges.push([first, last]);
     }
@@ -436,17 +439,18 @@ pub(super) fn record_reversed(rec: &Record) -> bool {
     // Adjacency in chunk space: a freestanding payload identifier (e.g. the
     // embedded curve's type name) can sit between value tokens without
     // separating the sense bit from the scope it precedes.
-    let chunks: Vec<&Token> = rec.chunks().collect();
-    chunks
-        .windows(2)
-        .find_map(|tokens| {
-            matches!(tokens[1], Token::SubtypeOpen)
-                .then(|| match tokens[0] {
-                    Token::True => Some(true),
-                    Token::False => Some(false),
+    let mut previous: Option<&Token> = None;
+    rec.chunks()
+        .find_map(|token| {
+            let result = matches!(token, Token::SubtypeOpen)
+                .then(|| match previous {
+                    Some(Token::True) => Some(true),
+                    Some(Token::False) => Some(false),
                     _ => None,
                 })
-                .flatten()
+                .flatten();
+            previous = Some(token);
+            result
         })
         .or_else(|| {
             // A plain `intcurve` companion has no subtype scope after its
@@ -510,19 +514,16 @@ pub(super) fn pcurve_inline_tail_flags(rec: &Record) -> Option<[bool; 4]> {
     }
     // End-relative in chunk space: the four booleans precede the final two
     // value tokens, and trailing payload identifiers are not fields.
-    let chunks: Vec<&Token> = rec.chunks().collect();
-    let end = chunks.len().checked_sub(2)?;
-    let flags = chunks.get(end.checked_sub(4)?..end)?;
-    flags
-        .iter()
-        .map(|token| match token {
-            Token::True => Some(true),
-            Token::False => Some(false),
-            _ => None,
-        })
-        .collect::<Option<Vec<_>>>()?
-        .try_into()
-        .ok()
+    let start = rec.chunks().count().checked_sub(6)?;
+    let mut flags = [false; 4];
+    for (slot, token) in flags.iter_mut().zip(rec.chunks().skip(start)) {
+        *slot = match token {
+            Token::True => true,
+            Token::False => false,
+            _ => return None,
+        };
+    }
+    Some(flags)
 }
 
 pub(super) fn procedural_surface_definition_is_exact_carrier(
@@ -990,6 +991,7 @@ fn point_sum_difference(first: Point3, second: Point3, subtract: Point3) -> Poin
 /// ranges and cache knot vectors are stored independently and can disagree in
 /// their last few bits; a genuine domain violation is left for validation.
 pub(super) fn clamp_edge_ranges_to_carrier_domains(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let domains: HashMap<&str, [f64; 2]> = out
@@ -1003,7 +1005,7 @@ pub(super) fn clamp_edge_ranges_to_carrier_domains(
             }
             _ => None,
         })
-        .collect();
+        .collect_counted_map(ctx, "ASM edge carrier domains")?;
     for edge in &mut out.edges {
         let Some([mut start, mut end]) = edge.param_range().map(FiniteVector::get) else {
             continue;
@@ -1286,6 +1288,10 @@ mod tests {
 
     #[test]
     fn audit_regression_edge_clamping_preserves_real_domain_violation() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
         use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
         use cadmpeg_ir::ids::{CurveId, EdgeId, VertexId};
@@ -1315,7 +1321,7 @@ mod tests {
             edges: vec![edge],
             ..Default::default()
         };
-        super::clamp_edge_ranges_to_carrier_domains(&mut out).unwrap();
+        super::clamp_edge_ranges_to_carrier_domains(&resource_ctx, &mut out).unwrap();
         assert_eq!(
             out.edges[0]
                 .param_range()
@@ -1325,7 +1331,7 @@ mod tests {
         out.edges[0].set_param_range(Some(
             cadmpeg_ir::topology::ParameterInterval::new([-1e-23, 5e-13]).unwrap(),
         ));
-        super::clamp_edge_ranges_to_carrier_domains(&mut out).unwrap();
+        super::clamp_edge_ranges_to_carrier_domains(&resource_ctx, &mut out).unwrap();
         assert_eq!(
             out.edges[0]
                 .param_range()

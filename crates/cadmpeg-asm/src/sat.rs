@@ -538,15 +538,18 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
             })
             .ok_or_else(|| ctx.refuse_codec_limit("SAT token strings", u64::MAX, u64::MAX))?;
         ctx.charge_retained(string_bytes as u64, "retain SAT typed strings")?;
-        let tokens = type_record(head, &prims, scale).map_err(|failure| {
-            let error = StreamError {
-                format: StreamFormat::Text,
-                offset: rec_start,
-                reason: failure.reason().to_string(),
-            };
-            match failure {
-                TypeFailure::UnrepresentableLength => StreamFailure::NotImplemented(error),
-                TypeFailure::InvalidSplineCount => StreamFailure::Malformed(error),
+        let tokens = type_record(ctx, head, &prims, scale).map_err(|failure| match failure {
+            TypedRecordFailure::Resource(error) => StreamFailure::Resource(error),
+            TypedRecordFailure::Type(failure) => {
+                let error = StreamError {
+                    format: StreamFormat::Text,
+                    offset: rec_start,
+                    reason: failure.reason().to_string(),
+                };
+                match failure {
+                    TypeFailure::UnrepresentableLength => StreamFailure::NotImplemented(error),
+                    TypeFailure::InvalidSplineCount => StreamFailure::Malformed(error),
+                }
             }
         })?;
         ctx.charge_retained(
@@ -729,6 +732,17 @@ struct Cur<'a> {
 enum TypeFailure {
     UnrepresentableLength,
     InvalidSplineCount,
+}
+
+enum TypedRecordFailure {
+    Type(TypeFailure),
+    Resource(cadmpeg_core::CodecError),
+}
+
+impl From<TypeFailure> for TypedRecordFailure {
+    fn from(failure: TypeFailure) -> Self {
+        Self::Type(failure)
+    }
 }
 
 impl TypeFailure {
@@ -1661,13 +1675,28 @@ fn head_shapes(head: &str) -> &'static [&'static [Slot]] {
 /// Type one record's payload. Every tabled candidate must consume the
 /// complete field list; otherwise the record is typed lexically, one token
 /// per field.
-fn type_record(head: &str, prims: &[Prim], scale: f64) -> Result<Vec<Token>, TypeFailure> {
+fn type_record(
+    ctx: &DecodeContext<'_>,
+    head: &str,
+    prims: &[Prim],
+    scale: f64,
+) -> Result<Vec<Token>, TypedRecordFailure> {
     for slots in head_shapes(head) {
         if let Some(tokens) = try_shape(prims, scale, slots)? {
             return Ok(tokens);
         }
     }
-    Ok(prims.iter().map(lexical_token).collect())
+    let mut tokens = Vec::new();
+    let requested = u64::try_from(prims.len()).map_err(|_| {
+        TypedRecordFailure::Resource(ctx.refuse_codec_limit("type SAT tokens", u64::MAX, u64::MAX))
+    })?;
+    tokens.try_reserve(prims.len()).map_err(|_| {
+        TypedRecordFailure::Resource(ctx.refuse_codec_limit("type SAT tokens", 0, requested))
+    })?;
+    for prim in prims {
+        tokens.push(lexical_token(prim));
+    }
+    Ok(tokens)
 }
 
 #[cfg(test)]

@@ -5,6 +5,7 @@
 use super::records::{MeshSurfaceSentinel, WireMembers, WireSide, WireTopology};
 use crate::ids::{brep_id, IdFormat};
 use crate::nurbs;
+use crate::decode_alloc::CountedIteratorExt;
 use crate::sab::{Record, Token};
 use cadmpeg_ir::geometry::{
     pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
@@ -251,7 +252,11 @@ pub(super) fn walk_reachable_topology(
         ..
     } = &mut *reach;
     // Walk each kept face's loops and coedge rings, collecting supporting graph.
-    for &face_idx in &kept_faces.iter().copied().collect::<Vec<_>>() {
+    let face_indices = kept_faces
+        .iter()
+        .copied()
+        .collect_counted_vec(ctx, "ASM reachable face walk")?;
+    for face_idx in face_indices {
         let Some(face) = by_index.get(&face_idx) else {
             continue;
         };
@@ -630,7 +635,7 @@ pub(super) fn collect_wire_topology(
                                 wire_edges
                                     .into_iter()
                                     .map(|edge| EdgeId::from(id(format, edge)))
-                                    .collect(),
+                                    .collect_counted_vec(ctx, "ASM wire member edges")?,
                             ),
                         },
                         side,

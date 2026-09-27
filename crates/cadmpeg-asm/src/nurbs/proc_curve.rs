@@ -259,18 +259,16 @@ pub(crate) fn normalize_pcurve_for_surface_record(
     let chart = match surface_head {
         "plane" => NativeSupportChart::PlaneLengths,
         "cone" => {
-            let values = surface_tokens
+            let mut values = surface_tokens
                 .iter()
                 .filter_map(|token| match token {
                     Token::Double(value) => Some(*value),
                     _ => None,
-                })
-                .collect::<Vec<_>>();
-            let (&sine, &cosine, &u_scale) = values
-                .get(1)
-                .zip(values.get(2))
-                .zip(values.get(3))
-                .map(|((sine, cosine), u_scale)| (sine, cosine, u_scale))?;
+                });
+            values.next()?;
+            let sine = values.next()?;
+            let cosine = values.next()?;
+            let u_scale = values.next()?;
             NativeSupportChart::Cone {
                 axial_scale: cone_axial_scale(sine, cosine, u_scale),
             }

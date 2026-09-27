@@ -672,6 +672,10 @@ fn nested_attributes_inherit_their_topology_owner() {
 
 #[test]
 fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     use super::attributes::{
         attribute_chain_color_carrier, collect_attributes, DirectColorCarrier,
     };
@@ -766,7 +770,7 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
 
     let mut emitted = HashSet::new();
     let mut source = Vec::new();
-    collect_attributes(
+    collect_attributes(&resource_ctx,
         &entity,
         &AttributeTarget::Face(FaceId::mint("test:model:face#0").expect("identity grammar")),
         &by_index,
@@ -793,6 +797,10 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
 
 #[test]
 fn legacy_attribute_chain_uses_second_field_forward_link() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     use super::attributes::{
         attribute_chain_color_carrier, attribute_chain_name, collect_attributes,
     };
@@ -855,7 +863,7 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
 
     let mut emitted = HashSet::new();
     let mut source = Vec::new();
-    collect_attributes(
+    collect_attributes(&resource_ctx,
         &entity,
         &AttributeTarget::Face(FaceId::mint("test:model:face#0").expect("identity grammar")),
         &by_index,
@@ -878,6 +886,10 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
 
 #[test]
 fn shell_and_loop_attribute_chains_retain_their_native_owners() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     use cadmpeg_ir::attributes::AttributeTarget;
 
     let record = |index, name: &str, tokens: Vec<Token>| Record {
@@ -929,7 +941,7 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
     };
 
     assert_eq!(
-        emit_attributes(&mut brep, &records, &by_index, &reach, FORMAT)
+        emit_attributes(&resource_ctx, &mut brep, &records, &by_index, &reach, FORMAT)
             .expect("finite attribute values"),
         HashSet::from([1, 2])
     );
@@ -945,6 +957,10 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
 
 #[test]
 fn lump_named_attributes_bind_to_their_owning_body() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::topology::{Body, BodyKind, Region};
@@ -1011,7 +1027,7 @@ fn lump_named_attributes_bind_to_their_owning_body() {
         ..AsmBrep::default()
     };
 
-    let emitted = emit_attributes(
+    let emitted = emit_attributes(&resource_ctx,
         &mut brep,
         &records,
         &by_index,
@@ -1392,6 +1408,10 @@ fn circle_recognition_is_invariant_under_common_weight_scale() {
 
 #[test]
 fn a_non_finite_attribute_double_is_refused() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     use super::attributes::source_attribute;
     use cadmpeg_ir::attributes::AttributeTarget;
 
@@ -1410,10 +1430,36 @@ fn a_non_finite_attribute_double_is_refused() {
         offset: 0,
         len: 0,
     };
-    let error = source_attribute(&record, AttributeTarget::Document, FORMAT)
+    let error = source_attribute(&resource_ctx, &record, AttributeTarget::Document, FORMAT)
         .expect_err("a NaN attribute double is refused");
     assert_eq!(
         error.to_string(),
         "malformed container: attribute record 1 (real-st-attrib) holds a non-finite number"
     );
+}
+
+#[test]
+fn attribute_values_refuse_collection_limit() {
+    use super::attributes::source_attribute;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::attributes::AttributeTarget;
+
+    let record = Record {
+        index: 1,
+        name: "real-st-attrib".into(),
+        tokens: vec![Token::Double(1.0)].into(),
+        offset: 0,
+        len: 0,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = source_attribute(&ctx, &record, AttributeTarget::Document, FORMAT)
+        .expect_err("one attribute value exceeds zero items");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
 }

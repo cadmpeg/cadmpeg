@@ -14,6 +14,7 @@ use std::collections::{HashMap, HashSet};
 /// `emitted` as a [`SourceAttribute`] bound to `target`.
 #[allow(clippy::implicit_hasher)]
 pub fn collect_attributes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entity: &Record,
     target: &AttributeTarget,
     by_index: &HashMap<i64, &Record>,
@@ -28,7 +29,7 @@ pub fn collect_attributes(
             break;
         };
         if emitted.insert(index) {
-            out.push(source_attribute(record, target.clone(), format)?);
+            out.push(source_attribute(ctx, record, target.clone(), format)?);
         }
         current = attribute_next(record);
     }
@@ -143,6 +144,7 @@ pub fn attribute_key(attribute: &SourceAttribute) -> &str {
 /// Serialize one attribute record's value chunks as a [`SourceAttribute`]
 /// bound to `target`. A NaN or infinite number refuses the record.
 pub fn source_attribute(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &Record,
     target: AttributeTarget,
     format: IdFormat,
@@ -150,17 +152,16 @@ pub fn source_attribute(
     // Chunks, not raw tokens: the serialized value list is defined over the
     // value tokens, and a payload identifier names an embedded construction
     // rather than carrying an attribute value.
-    let values = record
-        .chunks()
-        .map(|token| {
-            attribute_value(token, format).ok_or_else(|| {
+    let mut values = Vec::new();
+    for token in record.chunks() {
+        let value = attribute_value(token, format).ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed(format_args!(
                     "attribute record {} ({}) holds a non-finite number",
                     record.index, record.name
                 ))
-            })
-        })
-        .collect::<Result<_, _>>()?;
+            })?;
+        crate::decode_alloc::push_vec(ctx, &mut values, value, "ASM attribute values")?;
+    }
     Ok(SourceAttribute {
         id: brep_id!(format, AttributeId, "attribute", record.index),
         target,
@@ -200,14 +201,13 @@ pub fn decode_transform(
     record: &Record,
     header_scale: f64,
 ) -> Option<cadmpeg_ir::transform::Transform> {
-    let vectors: Vec<[f64; 3]> = record
+    let mut vectors = record
         .tokens
         .iter()
         .filter_map(|token| match token {
             Token::Position(value) | Token::Vector3(value) => Some(*value),
             _ => None,
-        })
-        .collect();
+        });
     let scale = record
         .tokens
         .iter()
@@ -216,7 +216,9 @@ pub fn decode_transform(
             _ => None,
         })
         .next_back()?;
-    let [x, y, z, translation] = vectors.as_slice() else {
+    let (Some(x), Some(y), Some(z), Some(translation), None) = (
+        vectors.next(), vectors.next(), vectors.next(), vectors.next(), vectors.next(),
+    ) else {
         return None;
     };
     // The attribute stores a homogeneous scale in the `w` slot. Only the
@@ -278,18 +280,18 @@ fn direct_attribute_color(record: &Record) -> Option<DirectAttributeColor> {
     let payload = attribute_base(record)?.payload();
     match record.name.as_str() {
         "rgb_color-st-attrib" => {
-            let channels = record
+            let mut channels = record
                 .chunks()
                 .enumerate()
                 .skip(payload)
                 .filter_map(|(field, token)| match token {
                     Token::Double(value) => Some((field, *value)),
                     _ => None,
-                })
-                .collect::<Vec<_>>();
-            let [(r_field, r), (g_field, g), (b_field, b)] = match channels.as_slice() {
-                [red, green, blue] => [*red, *green, *blue],
-                [red, green, blue, (_, 1.0)] => [*red, *green, *blue],
+                });
+            let channels = [channels.next(), channels.next(), channels.next(), channels.next(), channels.next()];
+            let [(r_field, r), (g_field, g), (b_field, b)] = match channels {
+                [Some(red), Some(green), Some(blue), None, None] => [red, green, blue],
+                [Some(red), Some(green), Some(blue), Some((_, 1.0)), None] => [red, green, blue],
                 _ => return None,
             };
             if ![r, g, b]
@@ -384,17 +386,22 @@ pub fn attribute_chain_name(entity: &Record, by_index: &HashMap<i64, &Record>) -
     while seen.insert(current) {
         let record = by_index.get(&current)?;
         if record.name == "string_attrib-name_attrib-gen-attrib" {
-            let values = record
+            let mut values = record
                 .tokens
                 .iter()
                 .filter_map(|token| match token {
                     Token::Str(value) => Some(value.as_str()),
                     _ => None,
-                })
-                .collect::<Vec<_>>();
-            if let [.., "name", value] = values.as_slice() {
+                });
+            let mut previous = None;
+            let mut last = None;
+            for value in &mut values {
+                previous = last;
+                last = Some(value);
+            }
+            if let (Some("name"), Some(value)) = (previous, last) {
                 if !value.is_empty() {
-                    return Some((*value).to_owned());
+                    return Some(value.to_owned());
                 }
             }
         }

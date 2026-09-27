@@ -6,6 +6,40 @@ use crate::sab::Record;
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 
 #[test]
+fn annotation_curve_index_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
+
+    let mut out = AsmBrep {
+        curves: vec![Curve {
+            id: CurveId::mint("f3d:brep:entity#1").unwrap(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            source_object: None,
+        }],
+        ..AsmBrep::default()
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = emit_annotation_records(
+        &ctx,
+        &mut out,
+        &[],
+        &std::collections::HashMap::new(),
+        &Carriers::default(),
+        "source",
+        crate::asm_format!("f3d"),
+    )
+    .expect_err("one curve index entry exceeds zero items");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+}
+
+#[test]
 fn synthetic_annotations_use_record_keys_independent_of_id_text() {
     let records = [Record {
         index: 37,
@@ -24,7 +58,12 @@ fn synthetic_annotations_use_record_keys_independent_of_id_text() {
         procedural_curve_child_sources: vec![(37, CurveId::mint("f3d:child:curve#named").unwrap())],
         ..Carriers::default()
     };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     emit_annotation_records(
+        &ctx,
         &mut out,
         &records,
         &by_index,
