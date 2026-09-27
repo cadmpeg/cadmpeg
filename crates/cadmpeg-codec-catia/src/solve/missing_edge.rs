@@ -3065,24 +3065,24 @@ fn standard_mesh_missing_edge_assignments(
     let Some(context) = StandardMeshBoundaryContext::parse(ctx, bytes, edge_faces)? else {
         return Ok(None);
     };
-    Ok(standard_mesh_missing_edge_assignment_domains(
+    let Some((domains, _)) = standard_mesh_missing_edge_assignment_domains(
         ctx,
         &context,
         edge_candidates,
         canonicalize_spans,
         false,
-    )?
-    .map(|(domains, _)| domains)
-    .and_then(|domains| {
-        domains
-            .into_iter()
-            .map(|domain| match domain {
-                MeshFaceAssignmentDomain::Ordered(assignments) => Some(assignments),
-                MeshFaceAssignmentDomain::UnorderedFullCycle(_)
-                | MeshFaceAssignmentDomain::DeferredValidation(_) => None,
-            })
-            .collect()
-    }))
+    )? else {
+        return Ok(None);
+    };
+    let mut assignments = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut assignments, domains.len(), "catia_missing_assignment_faces")?;
+    for domain in domains {
+        let MeshFaceAssignmentDomain::Ordered(face) = domain else {
+            return Ok(None);
+        };
+        assignments.push(face);
+    }
+    Ok(Some(assignments))
 }
 
 /// Project complete unmatched-edge assignments to the placement domain for
@@ -3136,14 +3136,15 @@ fn standard_mesh_boundary_assignments_from_context(
     else {
         return Ok(None);
     };
-    Ok(domains
-        .into_iter()
-        .map(|domain| match domain {
-            MeshFaceBoundaryDomain::Ordered(assignments) => Some(assignments),
-            MeshFaceBoundaryDomain::UnorderedFullCycle(_)
-            | MeshFaceBoundaryDomain::DeferredValidation(_) => None,
-        })
-        .collect())
+    let mut assignments = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut assignments, domains.len(), "catia_boundary_assignment_faces")?;
+    for domain in domains {
+        let MeshFaceBoundaryDomain::Ordered(face) = domain else {
+            return Ok(None);
+        };
+        assignments.push(face);
+    }
+    Ok(Some(assignments))
 }
 
 pub(super) fn standard_mesh_boundary_domains_from_context(
@@ -3163,6 +3164,7 @@ pub(super) fn standard_mesh_boundary_domains_from_context(
     };
     let cycle_lengths = &context.cycle_lengths;
     let mut resolved = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut resolved, domains.len(), "catia_mesh_boundary_domain_faces")?;
     for (face, domain) in domains.into_iter().enumerate() {
         let Some(domain) = (|| -> Result<Option<MeshFaceBoundaryDomain>, CodecError> {
             match domain {
@@ -3170,20 +3172,18 @@ pub(super) fn standard_mesh_boundary_domains_from_context(
                     Ok(Some(MeshFaceBoundaryDomain::UnorderedFullCycle(edges)))
                 }
                 MeshFaceAssignmentDomain::DeferredValidation(coverage) => {
-                    let mut cycles = cycle_lengths[face]
-                        .iter()
-                        .copied()
-                        .map(|length| MeshDeferredBoundaryCycle {
-                            length,
-                            exact_uses: Vec::new(),
-                        })
-                        .collect::<Vec<_>>();
+                    let mut cycles = Vec::new();
+                    crate::resource::reserve_vec(ctx, &mut cycles, cycle_lengths[face].len(), "catia_deferred_boundary_cycles")?;
+                    cycles.extend(cycle_lengths[face].iter().copied().map(|length| MeshDeferredBoundaryCycle {
+                        length,
+                        exact_uses: Vec::new(),
+                    }));
                     for run in runs.iter().filter(|run| run.face == face) {
                         let length = cycles[run.cycle].length;
                         let fixed_direction = edge_candidates.is_none()
                             || context.analysis.edge_rows[run.edge].boundary_layout
                                 == EdgeBoundaryLayout::CompleteBoundaryRun;
-                        cycles[run.cycle].exact_uses.push((
+                        crate::resource::push(ctx, &mut cycles[run.cycle].exact_uses, (
                             MeshBoundaryEdgeCandidate {
                                 edge: run.edge,
                                 start: run.start,
@@ -3191,7 +3191,7 @@ pub(super) fn standard_mesh_boundary_domains_from_context(
                                 reversed: fixed_direction.then_some(run.reversed),
                             },
                             run.segment_count,
-                        ));
+                        ), "catia_deferred_boundary_exact_uses")?;
                     }
                     for cycle in &mut cycles {
                         cycle
