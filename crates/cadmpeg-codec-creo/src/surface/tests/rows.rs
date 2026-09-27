@@ -16,7 +16,6 @@ use crate::surface::cross_section_rows;
 use crate::surface::cylinder_frame_readers::decode_compound_local_system_cylinder_frame;
 use crate::surface::decode_positional_spline_replay;
 use crate::surface::decode_tabulated_cylinder_frame;
-use crate::surface::named_spline_scalar_slots;
 use crate::surface::outline_planes;
 use crate::surface::plane_envelopes_for_rows;
 use crate::surface::positional_body_start;
@@ -35,6 +34,76 @@ use crate::surface::SurfaceNamedValue;
 use crate::surface::SurfacePrototypeFamily;
 use crate::surface::SurfaceRow;
 use crate::surface::TabulatedCylinderFrame;
+
+fn named_spline_scalar_slots(
+    family: &SurfacePrototypeFamily,
+    name: &str,
+    body: &[u8],
+    count: usize,
+    cache: &scalar::ScalarCache,
+    refusal: &mut ScalarBodyRefusal,
+) -> Option<Vec<(Option<f64>, Vec<u8>)>> {
+    super::with_decode_ctx(body, |ctx| {
+        crate::surface::named_spline_scalar_slots(ctx, family, name, body, count, cache, refusal)
+    })
+}
+
+fn named_spline_limit_error(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let body = [0xe4];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy)
+        .expect("one scalar token fits the input limit");
+    crate::surface::named_spline_scalar_slots(
+        &ctx,
+        &SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline),
+        "tangts",
+        &body,
+        1,
+        &scalar::ScalarCache::default(),
+        &mut ScalarBodyRefusal::default(),
+    )
+    .expect_err("the selected spline allocation exceeds its limit")
+}
+
+#[test]
+fn named_spline_slots_refuse_before_declared_count_reserve() {
+    assert_eq!(
+        named_spline_scalar_slots(
+            &SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline),
+            "tangts",
+            &[0xe4],
+            1,
+            &scalar::ScalarCache::default(),
+            &mut ScalarBodyRefusal::default(),
+        ),
+        Some(vec![(Some(1.0), vec![0xe4])])
+    );
+    let error = named_spline_limit_error(0, u64::MAX);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo named spline scalar slots"
+    ));
+}
+
+#[test]
+fn named_spline_token_refuses_before_retained_copy() {
+    let error = named_spline_limit_error(u64::MAX, 0);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo named spline scalar token"
+    ));
+}
+
 #[test]
 fn finds_one_byte_and_two_byte_surface_rows() {
     let payload = [
