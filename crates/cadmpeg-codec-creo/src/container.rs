@@ -1854,8 +1854,11 @@ fn datum_planes(
             .iter()
             .filter(|section| section.section.name() == "ActDatums"),
         |bytes| {
-            let mut planes = datum::planes(bytes);
-            planes.extend(datum::named_plane(bytes));
+            let mut planes = datum::planes(ctx, bytes)?;
+            if let Some(plane) = datum::named_plane(ctx, bytes)? {
+                ctx.try_reserve_items(&mut planes, 1, "creo named datum plane aggregation")?;
+                planes.push(plane);
+            }
             Ok(planes)
         },
         |plane, base| plane.offset_in_payload += base,

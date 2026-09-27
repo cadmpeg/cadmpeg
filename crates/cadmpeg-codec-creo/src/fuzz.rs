@@ -8,9 +8,13 @@
 use crate::scalar::{decode, decode_in_lane, ScalarCache};
 
 /// Exercise Creo datum plane decoders.
-pub fn datum(data: &[u8]) {
-    let _probe = crate::datum::planes(data);
-    let _probe = crate::datum::named_plane(data);
+pub fn datum(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+) -> Result<(), cadmpeg_core::CodecError> {
+    let _probe = crate::datum::planes(ctx, data)?;
+    let _probe = crate::datum::named_plane(ctx, data)?;
+    Ok(())
 }
 
 /// Exercise Creo curve prototype extraction.
@@ -83,7 +87,8 @@ pub fn container_scan(data: &[u8]) {
 mod tests {
     #[test]
     fn wrappers_accept_empty() {
-        super::datum(&[]);
+        crate::decode::with_test_decode_ctx(|ctx| super::datum(ctx, &[]))
+            .expect("datum fuzz wrapper");
         crate::decode::with_test_decode_ctx(|ctx| super::curve_prototypes(ctx, &[]))
             .expect("curve fuzz wrapper");
         super::surface_rows(&[]);
@@ -97,7 +102,8 @@ mod tests {
     #[test]
     fn wrappers_accept_fixture() {
         let data = crate::test_support::build_prt("1.0", &[]);
-        super::datum(&data);
+        crate::decode::with_test_decode_ctx(|ctx| super::datum(ctx, &data))
+            .expect("datum fuzz wrapper");
         crate::decode::with_test_decode_ctx(|ctx| super::curve_prototypes(ctx, &data))
             .expect("curve fuzz wrapper");
         super::surface_rows(&data);
