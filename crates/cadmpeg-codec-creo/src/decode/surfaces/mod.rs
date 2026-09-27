@@ -96,9 +96,92 @@ pub(super) fn unique_native_surface_row<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::native_surface_id;
+    use super::{native_surface_id, transfer_part_product};
     use crate::container::scan_bytes_ok;
     use crate::surface::{SurfaceKind, SurfaceRow};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    fn named_scan() -> crate::container::ContainerScan<'static> {
+        let mut scan = scan_bytes_ok(Vec::new());
+        scan.framing.model_name = Some(crate::container::ModelName {
+            name: "wheel".into(),
+            offset: 0,
+        });
+        scan
+    }
+
+    fn limited_product(
+        scan: &crate::container::ContainerScan<'_>,
+        collection_limit: u64,
+        retained_limit: u64,
+        with_body: bool,
+    ) -> cadmpeg_core::CodecError {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = collection_limit;
+        policy.limits.max_retained_bytes = retained_limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        if with_body {
+            ir.model.bodies.push(cadmpeg_ir::topology::Body {
+                id: cadmpeg_ir::ids::BodyId::mint("creo:test:body#1")
+                    .expect("identity grammar"),
+                kind: cadmpeg_ir::topology::BodyKind::Solid,
+                regions: Vec::new(),
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            });
+        }
+        transfer_part_product(
+            &ctx,
+            scan,
+            &mut ir,
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        ).expect_err("product exceeds the configured resource limit")
+    }
+
+    #[test]
+    fn part_product_refuses_before_model_vector_growth() {
+        let error = limited_product(&named_scan(), 0, u64::MAX, false);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo model product definitions"));
+    }
+
+    #[test]
+    fn part_product_name_copies_refuse_before_each_retained_growth() {
+        let product_id_len = cadmpeg_ir::ids::ProductDefinitionId::compose(
+            &crate::identity::MODEL_PRODUCT_DEFINITION,
+            cadmpeg_ir::identity_key!("root"),
+        ).as_str().len() as u64;
+        for (limit, operation) in [
+            (0, "creo product definition reference"),
+            (product_id_len, "creo product source name"),
+            (product_id_len + 5, "creo product label"),
+            (product_id_len + 10, "creo product part number"),
+            (product_id_len + 15, "creo occurrence name"),
+        ] {
+            let error = limited_product(&named_scan(), u64::MAX, limit, false);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+                if resource.dimension == ResourceDimension::RetainedBytes
+                    && resource.operation == operation), "{operation}: {error}");
+        }
+    }
+
+    #[test]
+    fn part_product_refuses_before_body_reference_rows_and_ids() {
+        let error = limited_product(&named_scan(), 0, u64::MAX, true);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo product body references"));
+        let error = limited_product(&named_scan(), u64::MAX, 0, true);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo product body IDs"));
+    }
 
     #[test]
     fn native_surface_id_preserves_nonvisible_namespace() {
@@ -157,18 +240,33 @@ pub(super) fn transfer_part_product(
         Exactness::Derived,
     );
     ctx.charge_entities(1, "admit Creo model product_definitions")?;
+    let mut bodies = Vec::new();
+    ctx.try_reserve_items(&mut bodies, ir.model.bodies.len(), "creo product body references")?;
+    for body in &ir.model.bodies {
+        let body_id = ctx.copy_retained_text(body.id.as_str(), "creo product body IDs")?;
+        bodies.push(cadmpeg_ir::ids::BodyId::mint(body_id)
+            .map_err(cadmpeg_core::CodecError::malformed)?);
+    }
+    let product_ref = ProductDefinitionId::mint(
+        ctx.copy_retained_text(product_id.as_str(), "creo product definition reference")?,
+    ).map_err(cadmpeg_core::CodecError::malformed)?;
+    let source_name = ctx.copy_retained_text(model_name, "creo product source name")?;
+    let label = ctx.copy_retained_text(model_name, "creo product label")?;
+    let part_number = ctx.copy_retained_text(model_name, "creo product part number")?;
+    ctx.try_reserve_items(&mut ir.model.product_definitions, 1, "creo model product definitions")?;
     ir.model.product_definitions.push(ProductDefinition {
-        id: product_id.clone(),
+        id: product_ref,
         kind: ProductDefinitionKind::Part,
-        source_name: Some(model_name.clone()),
-        label: Some(model_name.clone()),
+        source_name: Some(source_name),
+        label: Some(label),
         description: None,
-        part_number: Some(model_name.clone()),
+        part_number: Some(part_number),
         bom_properties: BTreeMap::default(),
-        bodies: ir.model.bodies.iter().map(|body| body.id.clone()).collect(),
+        bodies,
         native_ref: None,
     });
     ctx.charge_entities(1, "admit Creo model occurrences")?;
+    let occurrence_name = ctx.copy_retained_text(model_name, "creo occurrence name")?;
     source_carriers.admit_occurrence(
         ctx,
         ir,
@@ -182,7 +280,7 @@ pub(super) fn transfer_part_product(
             transform: Transform::identity(),
             linked_prototype: None,
             scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-            name: Some(model_name.clone()),
+            name: Some(occurrence_name),
             visible: None,
             link: None,
             native_ref: None,
