@@ -253,8 +253,8 @@ pub(crate) fn decode(
     let mut boundaries = Vec::with_capacity(source_boundaries.len());
     let mut orientations = Vec::with_capacity(source_boundaries.len());
     for source in source_boundaries {
-        orientations.push(exact_orientation(&source, version_offset)?);
-        let source_nurbs = exact_nurbs(&source, version_offset)?;
+        orientations.push(exact_orientation(expand.ctx(), &source, version_offset)?);
+        let source_nurbs = exact_nurbs(expand.ctx(), &source, version_offset)?;
         require_profile_plane(&source_nurbs, version_offset)?;
         let start_nurbs = transform_nurbs(
             &source_nurbs,
@@ -358,8 +358,12 @@ fn split_profiles(
     Ok(children.into_iter().map(|(_, child)| child).collect())
 }
 
-fn exact_orientation(curve: &DecodedCurve, offset: usize) -> Result<i8, GeometryError> {
-    let curve = exact_nurbs(curve, offset)?;
+fn exact_orientation(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    curve: &DecodedCurve,
+    offset: usize,
+) -> Result<i8, GeometryError> {
+    let curve = exact_nurbs(ctx, curve, offset)?;
     if curve.control_points().len() < 2 || curve.degree() == 0 {
         return Err(error(offset, "extrusion profile closure is degenerate"));
     }
@@ -1378,24 +1382,30 @@ pub(crate) mod tests {
 
     #[test]
     fn orientation_supports_polygon_rational_and_open_profiles() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test context input fits the default profile");
         assert_eq!(
-            exact_orientation(&decoded_polygon(false, true), 0).expect("required invariant"),
+            exact_orientation(&ctx, &decoded_polygon(false, true), 0).expect("required invariant"),
             1
         );
         assert_eq!(
-            exact_orientation(&decoded_polygon(true, true), 0).expect("required invariant"),
+            exact_orientation(&ctx, &decoded_polygon(true, true), 0).expect("required invariant"),
             -1
         );
         assert_eq!(
-            exact_orientation(&decoded_polygon(false, false), 0).expect("required invariant"),
+            exact_orientation(&ctx, &decoded_polygon(false, false), 0).expect("required invariant"),
             0
         );
         assert_eq!(
-            exact_orientation(&decoded_quadratic_circle(false), 0).expect("required invariant"),
+            exact_orientation(&ctx, &decoded_quadratic_circle(false), 0)
+                .expect("required invariant"),
             1
         );
         assert_eq!(
-            exact_orientation(&decoded_quadratic_circle(true), 0).expect("required invariant"),
+            exact_orientation(&ctx, &decoded_quadratic_circle(true), 0)
+                .expect("required invariant"),
             -1
         );
         let mut off_plane = decoded_polygon(false, true);
@@ -1416,11 +1426,15 @@ pub(crate) mod tests {
                 Ok(())
             })
             .expect("valid test curve edit");
-        assert!(exact_orientation(&off_plane, 0).is_err());
+        assert!(exact_orientation(&ctx, &off_plane, 0).is_err());
     }
 
     #[test]
     fn orientation_keeps_finite_samples_across_a_wide_profile_domain() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test context input fits the default profile");
         let mut profile = decoded_polygon(false, true);
         let DecodedCurve::Leaf {
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
@@ -1443,7 +1457,7 @@ pub(crate) mod tests {
             })
             .expect("wide polygon knot interval");
         assert_eq!(
-            exact_orientation(&profile, 0).expect("finite orientation"),
+            exact_orientation(&ctx, &profile, 0).expect("finite orientation"),
             1
         );
     }

@@ -5,7 +5,7 @@ use crate::loss::Diagnostics;
 use std::f64::consts::{FRAC_PI_2, TAU};
 use std::ops::Range;
 
-use cadmpeg_core::decode::{alloc_filled, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
@@ -734,6 +734,7 @@ fn scale_decoded_curve(
 
 /// Converts a decoded curve tree to one exact NURBS curve when possible.
 pub(crate) fn exact_nurbs(
+    ctx: &DecodeContext<'_>,
     curve: &DecodedCurve,
     offset: usize,
 ) -> Result<NurbsCurve, GeometryError> {
@@ -772,12 +773,12 @@ pub(crate) fn exact_nurbs(
                     return Err(error(offset, "polycurve segment domain is invalid"));
                 }
                 segments.push(remap_nurbs_domain(
-                    exact_nurbs(child, offset)?,
+                    exact_nurbs(ctx, child, offset)?,
                     target,
                     offset,
                 )?);
             }
-            Ok(join_nurbs_segments(segments, offset)?.curve)
+            Ok(join_nurbs_segments(ctx, segments, offset)?.curve)
         }
     }
 }
@@ -868,14 +869,20 @@ fn elevate_bezier(mut values: Vec<Homogeneous>, target: usize) -> Vec<Homogeneou
 }
 
 fn insert_knot_once(
+    ctx: &DecodeContext<'_>,
     knots: &mut Vec<f64>,
     points: &mut Vec<Homogeneous>,
     degree: usize,
     value: f64,
-) -> Result<(), ()> {
+    offset: usize,
+    failure: &'static str,
+) -> Result<(), GeometryError> {
     let n = points.len() - 1;
     // Endpoint clamping can select a span beyond the last control point.
-    let k = knots.iter().rposition(|knot| *knot <= value).ok_or(())?;
+    let k = knots
+        .iter()
+        .rposition(|knot| *knot <= value)
+        .ok_or_else(|| error(offset, failure))?;
     let k = if degree == 0 { k.min(n) } else { k };
     let multiplicity = knots.iter().filter(|knot| **knot == value).count();
     if multiplicity > degree
@@ -883,20 +890,22 @@ fn insert_knot_once(
         || k - degree > n
         || k.checked_sub(multiplicity).is_none_or(|tail| tail > n)
     {
-        return Err(());
+        return Err(error(offset, failure));
     }
-    let mut output = alloc_filled(
-        points.len().checked_add(1).ok_or(())?,
+    let mut output = ctx.alloc_filled(
+        points
+            .len()
+            .checked_add(1)
+            .ok_or_else(|| error(offset, failure))?,
         points[0],
         "Rhino polycurve knot insertion points",
-    )
-    .map_err(|_| ())?;
+    )?;
     output[..=k - degree].copy_from_slice(&points[..=k - degree]);
     output[k - multiplicity + 1..=n + 1].copy_from_slice(&points[k - multiplicity..=n]);
     for index in k - degree + 1..=k - multiplicity {
         let denominator = knots[index + degree] - knots[index];
         if denominator <= 0.0 || !denominator.is_finite() {
-            return Err(());
+            return Err(error(offset, failure));
         }
         let alpha = (value - knots[index]) / denominator;
         output[index] = points[index - 1].blend(points[index], alpha);
@@ -907,6 +916,7 @@ fn insert_knot_once(
 }
 
 fn elevate_to_degree(
+    ctx: &DecodeContext<'_>,
     curve: &NurbsCurve,
     target: usize,
     offset: usize,
@@ -918,17 +928,11 @@ fn elevate_to_degree(
     }
     let mut weights = match curve.pole_rows().weights() {
         Some(weights) => weights,
-        None => alloc_filled(
+        None => ctx.alloc_filled(
             curve.control_points().len(),
             1.0,
             "Rhino polycurve segment weights",
-        )
-        .map_err(|error| {
-            GeometryError::malformed(
-                offset,
-                format!("polycurve weight allocation refused: {error}"),
-            )
-        })?,
+        )?,
     };
     let rational = weights.iter().any(|weight| *weight != 1.0);
     let control_points = curve.control_points();
@@ -962,8 +966,15 @@ fn elevate_to_degree(
     let domain = [knots[degree], knots[knots.len() - degree - 1]];
     for endpoint in domain {
         while knots.iter().filter(|value| **value == endpoint).count() < degree + 1 {
-            insert_knot_once(&mut knots, &mut points, degree, endpoint)
-                .map_err(|()| error(offset, "polycurve endpoint clamping failed"))?;
+            insert_knot_once(
+                ctx,
+                &mut knots,
+                &mut points,
+                degree,
+                endpoint,
+                offset,
+                "polycurve endpoint clamping failed",
+            )?;
         }
     }
     let mut internal = knots
@@ -974,8 +985,15 @@ fn elevate_to_degree(
     internal.dedup();
     for knot in internal {
         while knots.iter().filter(|value| **value == knot).count() < degree {
-            insert_knot_once(&mut knots, &mut points, degree, knot)
-                .map_err(|()| error(offset, "polycurve knot insertion failed"))?;
+            insert_knot_once(
+                ctx,
+                &mut knots,
+                &mut points,
+                degree,
+                knot,
+                offset,
+                "polycurve knot insertion failed",
+            )?;
         }
     }
     let spans = (degree..points.len())
@@ -989,14 +1007,13 @@ fn elevate_to_degree(
         return Err(error(offset, "polycurve segment has no nonempty span"));
     }
     let mut elevated = Vec::new();
-    let mut elevated_knots = alloc_filled(
+    let mut elevated_knots = ctx.alloc_filled(
         target
             .checked_add(1)
             .ok_or_else(|| error(offset, "polycurve elevated knot count overflow"))?,
         domain[0],
         "Rhino polycurve elevated knots",
-    )
-    .map_err(|cause| GeometryError::malformed(offset, cause.to_string()))?;
+    )?;
     for (index, span) in spans.into_iter().enumerate() {
         let bezier = elevate_bezier(points[span - degree..=span].to_vec(), target);
         let disconnected = knots.iter().filter(|knot| **knot == knots[span]).count() > degree;
@@ -1035,6 +1052,7 @@ fn elevate_to_degree(
 }
 
 pub(crate) fn join_nurbs_segments(
+    ctx: &DecodeContext<'_>,
     mut segments: Vec<NurbsCurve>,
     offset: usize,
 ) -> Result<NurbsJoin, GeometryError> {
@@ -1052,7 +1070,7 @@ pub(crate) fn join_nurbs_segments(
     }
     segments = segments
         .iter()
-        .map(|segment| elevate_to_degree(segment, target, offset))
+        .map(|segment| elevate_to_degree(ctx, segment, target, offset))
         .collect::<Result<_, _>>()?;
     if segments.len() == 1 {
         return Ok(NurbsJoin {
@@ -1932,7 +1950,9 @@ mod tests {
         ];
         for curve in cases {
             for degree in [2, 3] {
-                let elevated = super::elevate_to_degree(&curve, degree, 0).unwrap();
+                let elevated =
+                    with_test_context(|ctx| super::elevate_to_degree(ctx, &curve, degree, 0))
+                        .unwrap();
                 let start = curve.knots()[curve.degree() as usize];
                 let end = curve.knots()[curve.control_points().len()];
                 assert_eq!(elevated.knots()[degree], start);
@@ -1978,7 +1998,9 @@ mod tests {
             false,
         )
         .unwrap();
-        let joined = super::join_nurbs_segments(vec![first, second], 0).unwrap();
+        let joined =
+            with_test_context(|ctx| super::join_nurbs_segments(ctx, vec![first, second], 0))
+                .unwrap();
         let actual = curve_point_solved(&SolvedCurveGeometry::Nurbs(joined.curve), 1.5).unwrap();
         assert_eq!(actual, Point3::new(0.25, 0.75, 0.0));
     }
@@ -2000,7 +2022,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(remapped.knots().as_slice(), &[0.0, 0.0, 1.0e200, 1.0e200]);
-        let joined = super::join_nurbs_segments(vec![remapped.clone(), remapped], 0).unwrap();
+        let joined = with_test_context(|ctx| {
+            super::join_nurbs_segments(ctx, vec![remapped.clone(), remapped], 0)
+        })
+        .unwrap();
         assert!(joined
             .curve
             .control_points()
@@ -2031,6 +2056,96 @@ mod tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
             .expect("test context input fits service profile");
         f(&ctx)
+    }
+
+    fn with_collection_limit<R>(
+        limit: u64,
+        f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
+    ) -> R {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("test context input fits service profile");
+        f(&ctx)
+    }
+
+    #[test]
+    fn polycurve_knot_insertion_refuses_collection_limit() {
+        let mut knots = vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+        let mut points = vec![super::Homogeneous([1.0; 4]); 3];
+        let error = with_collection_limit(3, |ctx| {
+            super::insert_knot_once(
+                ctx,
+                &mut knots,
+                &mut points,
+                2,
+                0.5,
+                0,
+                "polycurve knot insertion failed",
+            )
+        })
+        .expect_err("four output points exceed three collection items");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino polycurve knot insertion points"
+        ));
+        with_test_context(|ctx| {
+            super::insert_knot_once(
+                ctx,
+                &mut knots,
+                &mut points,
+                2,
+                0.5,
+                0,
+                "polycurve knot insertion failed",
+            )
+            .expect("service profile admits knot insertion");
+        });
+        assert_eq!(points.len(), 4);
+    }
+
+    #[test]
+    fn polycurve_segment_weights_refuse_collection_limit() {
+        let curve = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("valid line");
+        let error = with_collection_limit(1, |ctx| super::elevate_to_degree(ctx, &curve, 1, 0))
+            .expect_err("two weights exceed one collection item");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino polycurve segment weights"
+        ));
+        with_test_context(|ctx| super::elevate_to_degree(ctx, &curve, 1, 0))
+            .expect("service profile admits segment weights");
+    }
+
+    #[test]
+    fn polycurve_elevated_knots_refuse_collection_limit() {
+        let curve = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            Some(vec![1.0, 1.0]),
+            false,
+        )
+        .expect("valid rational line");
+        let error = with_collection_limit(1, |ctx| super::elevate_to_degree(ctx, &curve, 1, 0))
+            .expect_err("two initial knots exceed one collection item");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino polycurve elevated knots"
+        ));
+        with_test_context(|ctx| super::elevate_to_degree(ctx, &curve, 1, 0))
+            .expect("service profile admits elevated knots");
     }
 
     fn read_cloud(
@@ -2507,7 +2622,8 @@ mod tests {
             )),
             Diagnostics::new(),
         );
-        let nurbs = exact_nurbs(&decoded, 0).expect("required invariant");
+        let nurbs =
+            with_test_context(|ctx| exact_nurbs(ctx, &decoded, 0)).expect("required invariant");
         assert_eq!(nurbs.degree(), 2);
         assert_eq!(nurbs.control_points().len(), 9);
         assert_eq!(nurbs.knots().len(), 12);
@@ -2542,7 +2658,8 @@ mod tests {
             end_parameter: finite(5.0),
             warnings: Diagnostics::new(),
         };
-        let converted = exact_nurbs(&nested, 0).expect("required invariant");
+        let converted =
+            with_test_context(|ctx| exact_nurbs(ctx, &nested, 0)).expect("required invariant");
         assert_eq!(converted.knots().as_slice(), vec![2.0, 2.0, 3.0, 5.0, 5.0]);
         assert_eq!(converted.control_points().len(), 3);
     }
@@ -2569,7 +2686,8 @@ mod tests {
             false,
         )
         .expect("valid test quadratic");
-        let joined = join_nurbs_segments(vec![line, quadratic], 0).expect("join");
+        let joined = with_test_context(|ctx| join_nurbs_segments(ctx, vec![line, quadratic], 0))
+            .expect("join");
         assert_eq!(joined.curve.degree(), 2);
         assert_eq!(
             joined.curve.knots().as_slice(),
@@ -2593,8 +2711,12 @@ mod tests {
             .unwrap()
         };
         for degree in [1, 2] {
-            let normalized = super::elevate_to_degree(&line(1.), degree, 0).unwrap();
-            let rescaled = super::elevate_to_degree(&line(1e200), degree, 0).unwrap();
+            let normalized =
+                with_test_context(|ctx| super::elevate_to_degree(ctx, &line(1.), degree, 0))
+                    .unwrap();
+            let rescaled =
+                with_test_context(|ctx| super::elevate_to_degree(ctx, &line(1e200), degree, 0))
+                    .unwrap();
             for (a, b) in normalized
                 .control_points()
                 .iter()
