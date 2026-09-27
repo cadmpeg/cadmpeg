@@ -426,7 +426,7 @@ fn decode_exchange_mode(
         Some(session.ctx),
     );
     session.charge_stage("step_validation_decode")?;
-    let mut validation = validation::decode(exchange, &geometry.value, &mut session.ir);
+    let mut validation = validation::decode(exchange, &geometry.value, &mut session.ir, session.ctx)?;
     if !session.ir.model.points.is_empty()
         || !session.ir.model.curves.is_empty()
         || !session.ir.model.surfaces.is_empty()

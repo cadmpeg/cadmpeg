@@ -3,6 +3,8 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::loss::LossNote;
@@ -10,7 +12,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::decode_text;
+use super::decode_text_charged;
 use super::geometry::GeometryData;
 use super::StageOutcome;
 use super::{RecordExt, ValueExt};
@@ -26,16 +28,17 @@ pub(super) fn decode(
     exchange: &Exchange,
     geometry: &GeometryData,
     ir: &mut CadIr,
-) -> StageOutcome<()> {
+    ctx: &DecodeContext<'_>,
+) -> Result<StageOutcome<()>, CodecError> {
     if !exchange.has_entity("PROPERTY_DEFINITION")
         || !exchange.has_entity("PROPERTY_DEFINITION_REPRESENTATION")
     {
-        return StageOutcome {
+        return Ok(StageOutcome {
             value: (),
             claims: HashSet::new(),
             notes: Vec::new(),
             losses: Vec::new(),
-        };
+        });
     }
     let mut losses = Vec::new();
     let representations = exchange
@@ -48,43 +51,48 @@ pub(super) fn decode(
             (!items.is_empty()).then_some((id, items))
         })
         .collect::<BTreeMap<_, _>>();
-    let properties = exchange
-        .entities("PROPERTY_DEFINITION")
-        .filter_map(|(id, record)| {
-            let property = record.partial("PROPERTY_DEFINITION")?;
-            let name = property.parameters.first().and_then(|value| {
-                decode_text(
+    let mut properties = BTreeMap::new();
+    for (id, record) in exchange.entities("PROPERTY_DEFINITION") {
+        let Some(property) = record.partial("PROPERTY_DEFINITION") else {
+            continue;
+        };
+        let name = property.parameters.first()
+            .map(|value| {
+                decode_text_charged(
                     exchange,
                     value,
                     &mut losses,
                     id,
                     "validation property name",
                     StepLossCode::MetadataStringInvalid,
+                    Some(ctx),
                 )
-            })?;
-            if name.eq_ignore_ascii_case("geometric validation property") {
-                Some((
-                    id,
-                    property
-                        .parameters
-                        .get(1)
-                        .and_then(|value| {
-                            decode_text(
-                                exchange,
-                                value,
-                                &mut losses,
-                                id,
-                                "validation property description",
-                                StepLossCode::MetadataStringInvalid,
-                            )
-                        })
-                        .unwrap_or_default(),
-                ))
-            } else {
-                None
-            }
-        })
-        .collect::<BTreeMap<_, _>>();
+            })
+            .transpose()?
+            .flatten();
+        let Some(name) = name else {
+            continue;
+        };
+        if name.eq_ignore_ascii_case("geometric validation property") {
+            let description = property.parameters.get(1)
+                .map(|value| {
+                    decode_text_charged(
+                        exchange,
+                        value,
+                        &mut losses,
+                        id,
+                        "validation property description",
+                        StepLossCode::MetadataStringInvalid,
+                        Some(ctx),
+                    )
+                })
+                .transpose()?
+                .flatten()
+                .unwrap_or_default();
+            ctx.charge_collection_items(1, "step_validation_properties")?;
+            properties.insert(id, description);
+        }
+    }
     let computed = mesh_properties(ir);
     let mut typed = HashSet::new();
     let mut validation_points = BTreeSet::new();
@@ -182,12 +190,12 @@ pub(super) fn decode(
         };
         !validation_points.contains(&id) || referenced_validation_points.contains(&id)
     });
-    StageOutcome {
+    Ok(StageOutcome {
         value: (),
         claims: typed,
         notes,
         losses,
-    }
+    })
 }
 
 fn expected_value(
