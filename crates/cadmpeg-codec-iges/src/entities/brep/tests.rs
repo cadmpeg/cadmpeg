@@ -6,10 +6,11 @@ use std::io::Cursor;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::draft::ModelDraft;
 use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CurveId, EdgeId, VertexId};
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::Edge;
 use cadmpeg_ir::CadIr;
 
@@ -122,6 +123,44 @@ fn brep_definition_nodes_and_nested_shells_refuse_before_allocation() {
         }
         assert!(found, "B-rep definition refusal was not reached: {operation}");
     }
+}
+
+#[test]
+fn brep_projected_pcurve_uses_refuse_before_both_vector_allocations() {
+    let uses = [(false, 7_u32)];
+    let resolved = || vec![(
+        cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)
+            ).unwrap(),
+        ),
+        [0.0, 1.0],
+    )];
+    let stem = crate::ids::Stem::directory(9_u32);
+    for (cap, operation) in [
+        (0, "iges B-rep projected pcurve uses"),
+        (1, "iges B-rep pcurve slots"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut candidate = ModelDraft::new();
+        let result = super::project_pcurve_uses(&mut candidate, &uses, resolved(), None, &stem, &ctx);
+        assert!(matches!(result,
+            Err(super::PcurveProjectionError::Resource(CodecError::ResourceLimit(limit)))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == operation
+                    && limit.additional == 1
+        ));
+        assert!(candidate.model().pcurves.is_empty());
+    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut candidate = ModelDraft::new();
+    let projected = super::project_pcurve_uses(&mut candidate, &uses, resolved(), None, &stem, &ctx).unwrap();
+    assert_eq!(projected.len(), 1);
+    assert_eq!(candidate.model().pcurves.len(), 1);
 }
 
 #[test]
