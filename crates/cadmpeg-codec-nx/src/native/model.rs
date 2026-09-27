@@ -832,7 +832,7 @@ impl NativeModel {
         let budget = Some((ctx, root));
         let display_jt_segments = display_jt_segments(budget, container, &display_jt_documents)?;
         let display_jt_shape_lod_elements =
-            display_jt_shape_lod_elements(container, &display_jt_segments);
+            display_jt_shape_lod_elements(budget, container, &display_jt_segments)?;
         let display_jt_tri_strip_lod_headers =
             display_jt_tri_strip_lod_headers(container, &display_jt_shape_lod_elements);
         let display_jt_initial_face_degree_symbols =
