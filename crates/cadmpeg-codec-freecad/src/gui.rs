@@ -449,20 +449,9 @@ fn transfer_schema_one(
             .and_then(|value| value.parse::<u32>().ok())
             .map(|value| convert_packed_alpha(value, requires_alpha_conversion));
         let material = values.get("ShapeMaterial");
-        let body_ids = payloads_by_owner
-            .iter()
+        let body_ids = select_shape_bodies(ctx, ir, payloads_by_owner.iter()
             .filter(|(owner, property, _)| *owner == object_id && *property == "Shape")
-            .flat_map(|(_, _, payload)| {
-                ir.model
-                    .bodies
-                    .iter()
-                    .filter(move |body| {
-                        crate::native::id_key(body.id.as_str())
-                            .starts_with(&format!("{}:", crate::native::id_key(payload)))
-                    })
-                    .map(|body| body.id.clone())
-            })
-            .collect::<Vec<_>>();
+            .map(|(_, _, payload)| *payload))?;
         for body_id in &body_ids {
             plan.body_updates.push(BodyUpdate {
                 id: body_id.clone(),
@@ -3949,18 +3938,28 @@ fn displayed_shape_bodies(
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
 ) -> Result<Vec<cadmpeg_ir::ids::BodyId>, CodecError> {
-    let mut body_ids = Vec::new();
     let Some(payload) = displayed_shape_payload(ctx, object_id, properties, payloads)? else {
-        return Ok(body_ids);
+        return Ok(Vec::new());
     };
-    let payload_key = crate::native::id_key(&payload.id);
-    for body in &ir.model.bodies {
-        let body_key = crate::native::id_key(body.id.as_str());
-        if body_key.strip_prefix(payload_key)
-            .is_some_and(|suffix| suffix.starts_with(':')) {
-            reserve_vec_items(ctx, &mut body_ids, 1, "FCStd GUI displayed shape bodies")?;
-            body_ids.push(crate::resource::copied_identity(ctx, body.id.as_str(),
-                "FCStd GUI displayed body identity")?);
+    select_shape_bodies(ctx, ir, std::iter::once(payload.id.as_str()))
+}
+
+fn select_shape_bodies<'a>(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    payload_ids: impl IntoIterator<Item = &'a str>,
+) -> Result<Vec<cadmpeg_ir::ids::BodyId>, CodecError> {
+    let mut body_ids = Vec::new();
+    for payload_id in payload_ids {
+        let payload_key = crate::native::id_key(payload_id);
+        for body in &ir.model.bodies {
+            let body_key = crate::native::id_key(body.id.as_str());
+            if body_key.strip_prefix(payload_key)
+                .is_some_and(|suffix| suffix.starts_with(':')) {
+                reserve_vec_items(ctx, &mut body_ids, 1, "FCStd GUI displayed shape bodies")?;
+                body_ids.push(crate::resource::copied_identity(ctx, body.id.as_str(),
+                    "FCStd GUI displayed body identity")?);
+            }
         }
     }
     Ok(body_ids)
@@ -4397,7 +4396,7 @@ mod color_tests {
 
 #[cfg(test)]
 mod shape_association_tests {
-    use super::{displayed_shape_bodies, displayed_shape_group};
+    use super::{displayed_shape_bodies, displayed_shape_group, select_shape_bodies};
     use crate::brep::{ShapePayload, ShapePayloadRecord};
     use crate::native::element_map::{ElementMapGroup, ElementMapNode, ElementMapRecord};
     use crate::native::{PropertyFamily, PropertyRecord};
@@ -4500,6 +4499,27 @@ mod shape_association_tests {
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
             if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
                 && failure.operation == "FCStd GUI displayed body identity"), "{error:?}");
+    }
+
+    #[test]
+    fn repeated_payload_body_selection_refuses_at_second_slot() {
+        let ir = shape_ir();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        let error = select_shape_bodies(&ctx, &ir, ["payload", "payload"])
+            .expect_err("second selected body slot must be charged");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+            if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && failure.operation == "FCStd GUI displayed shape bodies"), "{error:?}");
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        let body_ids = select_shape_bodies(&ctx, &ir, ["payload", "payload"])
+            .expect("service policy admits both source occurrences");
+        assert_eq!(body_ids, [ir.model.bodies[0].id.clone(), ir.model.bodies[0].id.clone()]);
     }
 
     #[test]
