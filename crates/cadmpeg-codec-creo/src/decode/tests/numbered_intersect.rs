@@ -66,6 +66,18 @@ fn feature_edge_selection_with_service(
         .expect("service profile admits feature edge selection")
 }
 
+fn generated_curve_edge_refs_with_service(
+    curve_ids: &[u32],
+    rows: &[crate::curve::CurveTopologyRow],
+    available_features: &BTreeSet<IrFeatureId>,
+    result_edge_ids: &BTreeMap<u32, Vec<u32>>,
+) -> Option<Vec<GeneratedEdgeRef>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        generated_curve_edge_refs(ctx, curve_ids, rows, available_features, result_edge_ids)
+    })
+    .expect("service profile admits generated curve references")
+}
+
 const EPS_REVOLUTION_CONE_ANGLE: f64 = 1.0e-12;
 
 fn placed_tabulated_cylinder_directrix(
@@ -895,7 +907,7 @@ fn generated_curve_edges_require_unique_rows_and_materialized_producers() {
     let result_edge_ids = BTreeMap::from([(12, vec![45]), (18, vec![46])]);
 
     assert_eq!(
-        generated_curve_edge_refs(&[45, 46], &rows, &producers, &result_edge_ids),
+        generated_curve_edge_refs_with_service(&[45, 46], &rows, &producers, &result_edge_ids),
         Some(vec![
             GeneratedEdgeRef::new(
                 IrFeatureId::mint("creo:model:feature#12".to_string()).expect("identity grammar"),
@@ -910,7 +922,7 @@ fn generated_curve_edges_require_unique_rows_and_materialized_producers() {
         ])
     );
     assert_eq!(
-        generated_curve_edge_refs(
+        generated_curve_edge_refs_with_service(
             &[45],
             &[row(45, 12, 100), row(45, 12, 300)],
             &producers,
@@ -919,11 +931,11 @@ fn generated_curve_edges_require_unique_rows_and_materialized_producers() {
         None
     );
     assert_eq!(
-        generated_curve_edge_refs(&[45], &rows, &BTreeSet::new(), &result_edge_ids),
+        generated_curve_edge_refs_with_service(&[45], &rows, &BTreeSet::new(), &result_edge_ids),
         None
     );
     assert_eq!(
-        generated_curve_edge_refs(&[45], &rows, &producers, &BTreeMap::new()),
+        generated_curve_edge_refs_with_service(&[45], &rows, &producers, &BTreeMap::new()),
         None
     );
 }
@@ -1155,7 +1167,7 @@ fn model_feature_ids_include_row_backed_generated_producers() {
         .expect("valid test fixture")])
     );
     assert_eq!(
-        generated_curve_edge_refs(
+        generated_curve_edge_refs_with_service(
             &[59],
             &scan.curves.topology_rows,
             &available_features,
