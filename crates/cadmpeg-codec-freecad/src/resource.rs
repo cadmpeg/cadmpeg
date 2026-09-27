@@ -5,6 +5,31 @@ use cadmpeg_core::decode::{DecodeContext, ResourceDimension, ResourceFailure, Re
 use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::Hash;
+use std::fmt::{self, Write};
+
+pub(crate) fn retained_format(
+    ctx: &DecodeContext<'_>,
+    arguments: fmt::Arguments<'_>,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    struct Count(usize);
+    impl Write for Count {
+        fn write_str(&mut self, text: &str) -> fmt::Result {
+            self.0 = self.0.checked_add(text.len()).ok_or(fmt::Error)?;
+            Ok(())
+        }
+    }
+    let mut count = Count(0);
+    fmt::write(&mut count, arguments)
+        .map_err(|_| retained_allocation_failed(ctx, u64::MAX, operation))?;
+    ctx.charge_retained(count.0 as u64, operation)?;
+    let mut output = String::new();
+    output.try_reserve_exact(count.0)
+        .map_err(|_| retained_allocation_failed(ctx, count.0 as u64, operation))?;
+    output.write_fmt(arguments)
+        .map_err(|_| CodecError::Malformed("FreeCAD diagnostic formatting failed".into()))?;
+    Ok(output)
+}
 
 pub(crate) fn named_entries_charged<V>(
     ctx: &DecodeContext<'_>,
@@ -280,6 +305,25 @@ pub(crate) fn collection_allocation_failed(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn retained_format_preserves_text_and_refuses_before_allocation() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let text = "Shape & Surface";
+        let expected = format!("invalid {text}: {}", 12);
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        assert_eq!(super::retained_format(&ctx, format_args!("invalid {text}: {}", 12),
+            "test formatted diagnostic").expect("format fits"), expected);
+        let mut policy = policy;
+        policy.limits.max_retained_bytes = expected.len() as u64 - 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        assert!(matches!(super::retained_format(&ctx, format_args!("invalid {text}: {}", 12),
+            "test formatted diagnostic"), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "test formatted diagnostic"));
+    }
+
     #[test]
     fn charged_named_entries_refuse_at_collection_limit() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
