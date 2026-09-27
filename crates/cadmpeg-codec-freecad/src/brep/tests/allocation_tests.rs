@@ -2,14 +2,21 @@
 //! Input-sized BREP parser allocation tests.
 
 use super::super::{
-    parse_binary_prefix, parse_reference_suffix, parse_shape_kind, parse_shape_use, parse_text,
-    TokenCursor,
+    append_text_curve, append_text_surface, parse_binary_prefix, parse_reference_suffix,
+    parse_shape_kind, parse_shape_use, parse_text, transfer_text_curves, transfer_text_surfaces,
+    CurveTransfer, NestedCurve, NestedSurface, ShapePayload, ShapePayloadRecord, ShapeSet,
+    SurfaceTransfer, TextCurve, TextSurface, TextTShapes, TextTopologyVersion, TokenCursor,
 };
 use crate::native::{EntryRecord, PropertyBody, PropertyFamily, PropertyRecord, RetainedXml};
 use crate::test_support::assert_retained_refusal_at;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
+
+use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::ids::{CurveId, SurfaceId};
+use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::SourceObjectAssociation;
 
 #[test]
 fn text_brep_token_index_refuses_at_materialized_limit() {
@@ -256,3 +263,182 @@ fn reference_suffix_copy_refuses_at_retained_limit() {
         parse_reference_suffix(&mut cursor, "test suffix", 1)
     });
 }
+
+fn line_curve() -> TextCurve {
+    TextCurve::Line {
+        origin: FinitePoint3::ZERO,
+        direction: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
+            .expect("finite direction"),
+    }
+}
+
+fn plane_surface() -> TextSurface {
+    TextSurface::Plane {
+        origin: FinitePoint3::ZERO,
+        axis: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))
+            .expect("finite axis"),
+        u_axis: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
+            .expect("finite u axis"),
+        v_reversed: false,
+    }
+}
+
+fn source_association() -> SourceObjectAssociation {
+    SourceObjectAssociation {
+        format: cadmpeg_ir::CodecFormat::Fcstd,
+        object_id: cadmpeg_core::text::NonBlankString::new("Owner").expect("nonblank object"),
+        name: None,
+        color: None,
+        visible: None,
+        layer: None,
+        instance_path: Vec::new(),
+    }
+}
+
+fn shape_payload() -> ShapePayloadRecord {
+    ShapePayloadRecord {
+        id: "fcstd:native:shape-payload#Payload".into(),
+        property: "fcstd:native:property#Owner:Shape".into(),
+        entry: "fcstd:native:entry#Shape.brp".into(),
+        payload: ShapePayload::Text {
+            facts: ShapeSet {
+                locations: Vec::new(),
+                curve2ds: Vec::new(),
+                curves: vec![line_curve()],
+                polygons3d: Vec::new(),
+                polygons_on_triangulations: Vec::new(),
+                surfaces: vec![plane_surface()],
+                triangulations: Vec::new(),
+                tshapes: TextTShapes::from(Vec::new()),
+                roots: Vec::new(),
+            },
+            version: TextTopologyVersion::V1,
+        },
+    }
+}
+
+fn trimmed_curve() -> TextCurve {
+    TextCurve::Trimmed {
+        parameter_range: [FiniteReal::ZERO, FiniteReal::ONE],
+        basis: NestedCurve::try_new(line_curve()).expect("nested line"),
+    }
+}
+
+fn offset_curve() -> TextCurve {
+    TextCurve::Offset {
+        distance: FiniteReal::ONE,
+        direction: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0))
+            .expect("finite offset direction"),
+        basis: NestedCurve::try_new(line_curve()).expect("nested line"),
+    }
+}
+
+fn extrusion_surface() -> TextSurface {
+    TextSurface::Extrusion {
+        direction: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))
+            .expect("finite extrusion direction"),
+        directrix: NestedCurve::try_new(line_curve()).expect("nested directrix"),
+    }
+}
+
+fn revolution_surface() -> TextSurface {
+    TextSurface::Revolution {
+        axis_origin: FinitePoint3::ZERO,
+        axis_direction: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))
+            .expect("finite revolution axis"),
+        directrix: NestedCurve::try_new(line_curve()).expect("nested directrix"),
+    }
+}
+
+fn trimmed_surface() -> TextSurface {
+    TextSurface::Trimmed {
+        parameter_ranges: [[FiniteReal::ZERO, FiniteReal::ONE]; 2],
+        basis: NestedSurface::try_new(plane_surface()).expect("nested plane"),
+    }
+}
+
+fn offset_surface() -> TextSurface {
+    TextSurface::Offset {
+        distance: FiniteReal::ONE,
+        basis: NestedSurface::try_new(plane_surface()).expect("nested plane"),
+    }
+}
+
+fn assert_curve_identity_refusal(curve: &TextCurve, operation: &str) {
+    let id = CurveId::mint("fcstd:model:curve#Payload:1").expect("curve identity");
+    let association = source_association();
+    assert_retained_refusal_at(&[], operation, |ctx| {
+        append_text_curve(ctx, curve, id.clone(), &association, &mut CurveTransfer::default())
+    });
+}
+
+fn assert_surface_identity_refusal(surface: &TextSurface, operation: &str) {
+    let id = SurfaceId::mint("fcstd:model:surface#Payload:1").expect("surface identity");
+    let association = source_association();
+    assert_retained_refusal_at(&[], operation, |ctx| {
+        append_text_surface(
+            ctx, surface, id.clone(), &association,
+            &mut CurveTransfer::default(), &mut SurfaceTransfer::default(),
+        )
+    });
+}
+
+#[test]
+fn transferred_curve_identity_refuses_at_retained_limit() {
+    let payload = shape_payload();
+    assert_retained_refusal_at(&[], "FreeCAD transferred curve identity", |ctx| {
+        transfer_text_curves(ctx, &[payload.clone()], &[])
+    });
+}
+
+#[test]
+fn transferred_surface_identity_refuses_at_retained_limit() {
+    let payload = shape_payload();
+    assert_retained_refusal_at(&[], "FreeCAD transferred surface identity", |ctx| {
+        transfer_text_surfaces(ctx, &[payload.clone()], &[], &mut CurveTransfer::default())
+    });
+}
+
+macro_rules! curve_identity_test {
+    ($name:ident, $curve:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            assert_curve_identity_refusal(&$curve, $operation);
+        }
+    };
+}
+
+curve_identity_test!(trimmed_curve_basis_identity_refuses_at_retained_limit, trimmed_curve(), "FreeCAD curve basis identity");
+curve_identity_test!(trimmed_curve_basis_copy_refuses_at_retained_limit, trimmed_curve(), "FreeCAD curve basis identity copy");
+curve_identity_test!(trimmed_curve_procedural_copy_refuses_at_retained_limit, trimmed_curve(), "FreeCAD procedural curve identity copy");
+curve_identity_test!(trimmed_curve_construction_identity_refuses_at_retained_limit, trimmed_curve(), "FreeCAD curve construction identity");
+curve_identity_test!(offset_curve_basis_identity_refuses_at_retained_limit, offset_curve(), "FreeCAD curve basis identity");
+curve_identity_test!(offset_curve_basis_copy_refuses_at_retained_limit, offset_curve(), "FreeCAD curve basis identity copy");
+curve_identity_test!(offset_curve_procedural_copy_refuses_at_retained_limit, offset_curve(), "FreeCAD procedural curve identity copy");
+curve_identity_test!(offset_curve_construction_identity_refuses_at_retained_limit, offset_curve(), "FreeCAD curve construction identity");
+
+macro_rules! surface_identity_test {
+    ($name:ident, $surface:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            assert_surface_identity_refusal(&$surface, $operation);
+        }
+    };
+}
+
+surface_identity_test!(extrusion_directrix_identity_refuses_at_retained_limit, extrusion_surface(), "FreeCAD surface directrix identity");
+surface_identity_test!(extrusion_directrix_copy_refuses_at_retained_limit, extrusion_surface(), "FreeCAD surface directrix identity copy");
+surface_identity_test!(extrusion_procedural_copy_refuses_at_retained_limit, extrusion_surface(), "FreeCAD procedural surface identity copy");
+surface_identity_test!(extrusion_construction_identity_refuses_at_retained_limit, extrusion_surface(), "FreeCAD surface construction identity");
+surface_identity_test!(revolution_directrix_identity_refuses_at_retained_limit, revolution_surface(), "FreeCAD surface directrix identity");
+surface_identity_test!(revolution_directrix_copy_refuses_at_retained_limit, revolution_surface(), "FreeCAD surface directrix identity copy");
+surface_identity_test!(revolution_procedural_copy_refuses_at_retained_limit, revolution_surface(), "FreeCAD procedural surface identity copy");
+surface_identity_test!(revolution_construction_identity_refuses_at_retained_limit, revolution_surface(), "FreeCAD surface construction identity");
+surface_identity_test!(trimmed_surface_basis_identity_refuses_at_retained_limit, trimmed_surface(), "FreeCAD surface basis identity");
+surface_identity_test!(trimmed_surface_basis_copy_refuses_at_retained_limit, trimmed_surface(), "FreeCAD surface basis identity copy");
+surface_identity_test!(trimmed_surface_procedural_copy_refuses_at_retained_limit, trimmed_surface(), "FreeCAD procedural surface identity copy");
+surface_identity_test!(trimmed_surface_construction_identity_refuses_at_retained_limit, trimmed_surface(), "FreeCAD surface construction identity");
+surface_identity_test!(offset_surface_basis_identity_refuses_at_retained_limit, offset_surface(), "FreeCAD surface basis identity");
+surface_identity_test!(offset_surface_basis_copy_refuses_at_retained_limit, offset_surface(), "FreeCAD surface basis identity copy");
+surface_identity_test!(offset_surface_procedural_copy_refuses_at_retained_limit, offset_surface(), "FreeCAD procedural surface identity copy");
+surface_identity_test!(offset_surface_construction_identity_refuses_at_retained_limit, offset_surface(), "FreeCAD surface construction identity");
