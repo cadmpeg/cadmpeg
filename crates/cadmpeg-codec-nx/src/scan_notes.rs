@@ -140,7 +140,7 @@ pub(super) fn summarize(
             ),
         )?;
     }
-    Ok((crate::dialect::classify_layers(scan), notes))
+    Ok((crate::dialect::classify_layers(ctx, scan)?, notes))
 }
 
 struct NoteBuffer {
