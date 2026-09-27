@@ -753,13 +753,11 @@ pub(crate) fn install(
                     1,
                     "Rhino document setting losses",
                 )?;
-                losses.push(crate::loss::RhinoLossCode::PresentationRecordDropped.note(
-                    crate::wire::copy_retained_string(
-                        ctx,
-                        &message,
-                        "Rhino unit-binding loss message",
-                    )?,
-                ));
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(message.len()),
+                    "Rhino unit-binding loss message",
+                )?;
+                losses.push(crate::loss::RhinoLossCode::PresentationRecordDropped.note(&message));
                 crate::wire::reserve_collection(
                     ctx,
                     &mut opaque_records,

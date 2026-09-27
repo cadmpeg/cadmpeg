@@ -385,8 +385,9 @@ pub(crate) fn install(
             Ok(reference) => reference,
             Err(error) => {
                 reserve_collection(ctx, &mut losses, 1, "Rhino product occurrence losses")?;
-                let message = admitted_format(
+                let loss = crate::wire::admitted_loss(
                     ctx,
+                    RhinoLossCode::ProductOccurrenceDropped,
                     format_args!(
                         "product occurrence {} at offset {} (class {}) could not be transferred: {error}",
                         identity.source_id, object.range.start, object.class_uuid
@@ -401,14 +402,9 @@ pub(crate) fn install(
                     ),
                     "Rhino product occurrence loss tag",
                 )?;
-                losses.push(
-                    RhinoLossCode::ProductOccurrenceDropped
-                        .note(message)
-                        .with_provenance(
-                            SourceProvenance::root("rhino", object.range.start as u64)
-                                .with_tag(tag),
-                        ),
-                );
+                losses.push(loss.with_provenance(
+                    SourceProvenance::root("rhino", object.range.start as u64).with_tag(tag),
+                ));
                 continue;
             }
         };
@@ -759,6 +755,39 @@ mod tests {
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == "Rhino product occurrence losses"
         ));
+    }
+
+    #[test]
+    fn malformed_occurrence_loss_copy_refuses_retained_limit() {
+        let scan = scan_with_objects(&[object_record_with_payload(
+            crate::chunks::ArchiveVersion::V5,
+            0x1000,
+            INSTANCE_REFERENCE_CLASS,
+            &[],
+        )]);
+        let mut limit = 0_u64;
+        let mut loss_text_refusals = 0;
+        for _ in 0..128 {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
+                    .expect("root bytes admitted");
+            let refusal = install(&ctx, &scan, &mut CadIr::empty())
+                .expect_err("loss text exceeds the retained limit");
+            let cadmpeg_core::CodecError::ResourceLimit(item) = refusal else {
+                panic!("expected a retained-byte refusal, got {refusal:?}");
+            };
+            if item.operation == "Rhino product occurrence loss text" {
+                loss_text_refusals += 1;
+                if loss_text_refusals == 2 {
+                    return;
+                }
+            }
+            limit = (item.used + item.additional).max(limit + 1);
+        }
+        panic!("product loss note copy was not reached");
     }
 
     #[test]

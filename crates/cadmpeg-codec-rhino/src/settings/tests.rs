@@ -1553,6 +1553,36 @@ fn unstamped_layer_charges_the_parent_link_stamp_loss() {
 }
 
 #[test]
+fn unstamped_layer_loss_refuses_collection_limit() {
+    let (data, tables) = layer_fixture(&[0], None, 1, [0; 16], &[]);
+    let mut limit = 0_u64;
+    for _ in 0..32 {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let ctx = retained_limit_context(&data, &arena, &policy);
+        match settings::parse_metadata(
+            &ctx,
+            &data,
+            ArchiveVersion::V8,
+            &tables,
+            &mut Diagnostics::new(),
+        ) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.operation == "Rhino layer losses" =>
+            {
+                return
+            }
+            Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) => {
+                limit = (refusal.used + refusal.additional).max(limit + 1);
+            }
+            other => panic!("expected a layer loss refusal, got {other:?}"),
+        }
+    }
+    panic!("layer loss boundary was not reached");
+}
+
+#[test]
 fn duplicate_layer_indexes_are_preserved_and_reported() {
     let (metadata, warnings) = layer_metadata_with_record_count(&[0], None, 2);
 
@@ -1637,12 +1667,9 @@ fn missing_layer_parent_diagnostic_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
-    let refusal = super::report_layer_parent_references(
-        &ctx,
-        &metadata.layers,
-        &mut Diagnostics::new(),
-    )
-    .expect_err("one missing-parent warning exceeds zero collection items");
+    let refusal =
+        super::report_layer_parent_references(&ctx, &metadata.layers, &mut Diagnostics::new())
+            .expect_err("one missing-parent warning exceeds zero collection items");
     assert!(matches!(
         refusal,
         cadmpeg_core::CodecError::ResourceLimit(limit)
