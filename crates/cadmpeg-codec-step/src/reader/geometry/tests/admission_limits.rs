@@ -46,6 +46,7 @@ map_refusal_test!(geometry_curve_parameter_offsets_refuse_collection_limit, "ste
 map_refusal_test!(surface_parameter_scales_refuse_collection_limit, "step_surface_parameter_scales");
 map_refusal_test!(pcurve_geometries_refuse_collection_limit, "step_pcurve_geometries");
 
+
 macro_rules! hash_refusal_test {
     ($name:ident, $operation:literal) => {
         #[test]
@@ -218,6 +219,23 @@ deferred_ids_refusal_test!(geometry_ir_surfaces_refuse_collection_limit, "step_g
 deferred_ids_refusal_test!(geometry_ir_pcurves_refuse_collection_limit, "step_geometry_ir_pcurves");
 deferred_ids_refusal_test!(composite_curve_segments_refuse_collection_limit, "step_composite_curve_segments");
 deferred_ids_refusal_test!(composite_curve_model_segments_refuse_collection_limit, "step_composite_curve_model_segments");
+deferred_ids_refusal_test!(curve_bounded_boundaries_refuse_collection_limit, "step_curve_bounded_boundaries");
+deferred_ids_refusal_test!(curve_bounded_pcurves_refuse_collection_limit, "step_curve_bounded_pcurves");
+
+#[test]
+fn curve_bounded_pcurve_set_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    assert!(matches!(
+        super::super::insert_geometry_set(&mut BTreeSet::new(), 1u64, &ctx, "step_curve_bounded_pcurve_set"),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_curve_bounded_pcurve_set"
+    ));
+}
 
 fn deferred_dependency_refusal(limit: u64, group: &'static str, member: &'static str) -> CodecError {
     let arena = DecodeArena::new();
