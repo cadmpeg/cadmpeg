@@ -88,7 +88,7 @@ fn drawing_decode_propagates_string_refusal() {
             &mut cadmpeg_ir::document::CadIr::empty(),
             &HashSet::new(),
             &BTreeMap::new(),
-            Some(&ctx),
+            &ctx,
         ),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
@@ -111,7 +111,7 @@ fn drawing_sheet_usage_sequence_propagates_string_refusal() {
                 &mut cadmpeg_ir::document::CadIr::empty(),
                 &HashSet::new(),
                 &BTreeMap::new(),
-                Some(&ctx),
+                &ctx,
             ),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::RetainedBytes

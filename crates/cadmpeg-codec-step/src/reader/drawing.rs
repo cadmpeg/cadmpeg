@@ -34,6 +34,7 @@ struct TargetContext<'a> {
     known_typed: &'a HashSet<u64>,
     exchange: &'a Exchange,
     external_documents: &'a BTreeMap<u64, &'a str>,
+    ctx: &'a DecodeContext<'a>,
 }
 
 struct DrawingCandidate<'a> {
@@ -51,13 +52,14 @@ enum TargetResolution {
 }
 
 impl TargetContext<'_> {
-    fn resolve(&self, id: u64) -> TargetResolution {
+    fn resolve(&self, id: u64) -> Result<TargetResolution, CodecError> {
         target_resolution(
             id,
             self.target_identities,
             self.known_typed,
             self.exchange,
             self.external_documents,
+            self.ctx,
         )
     }
 }
@@ -68,7 +70,7 @@ pub(super) fn decode(
     ir: &mut CadIr,
     known_typed: &HashSet<u64>,
     product_definition_ids_by_shape: &BTreeMap<u64, ProductDefinitionId>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<StageOutcome<()>, CodecError> {
     let mut losses = Vec::new();
     let mut candidates = exchange
@@ -125,7 +127,7 @@ pub(super) fn decode(
         .filter(|id| drawing_ids.contains(id))
         .collect::<BTreeSet<_>>();
 
-    let mut target_identities = record_targets(ir, |record_id| known_typed.contains(&record_id));
+    let mut target_identities = record_targets(ir, |record_id| known_typed.contains(&record_id), ctx)?;
     for candidate in &candidates {
         target_identities
             .entry(candidate.id)
@@ -148,7 +150,8 @@ pub(super) fn decode(
         known_typed,
         &drawing_target_ids,
         &mut target_identities,
-    );
+        ctx,
+    )?;
     let external_documents = exchange
         .references()
         .iter()
@@ -162,6 +165,7 @@ pub(super) fn decode(
         known_typed,
         exchange,
         external_documents: &external_documents,
+        ctx,
     };
 
     let mut drawings = BTreeMap::<u64, Drawing>::new();
@@ -186,7 +190,7 @@ pub(super) fn decode(
                 &mut losses,
                 id,
                 &format!("drawing parameter {index}"),
-                ctx,
+                Some(ctx),
             )? {
                 stored_parameters.insert(parameter_key(name, index), value);
             }
@@ -207,7 +211,7 @@ pub(super) fn decode(
             id,
             &target_context,
             &mut losses,
-        );
+        )?;
         drawings.insert(
             id,
             Drawing {
@@ -230,7 +234,7 @@ pub(super) fn decode(
         );
     }
 
-    add_sheet_revision_usages(exchange, &mut drawings, &target_context, &mut losses, ctx)?;
+    add_sheet_revision_usages(exchange, &mut drawings, &target_context, &mut losses, Some(ctx))?;
     let mut association_ids = HashSet::new();
     add_draughting_model_associations(
         exchange,
@@ -238,7 +242,7 @@ pub(super) fn decode(
         &target_context,
         &mut losses,
         &mut association_ids,
-    );
+    )?;
 
     let mut typed_records = drawings.keys().copied().collect::<HashSet<_>>();
     typed_records.extend(association_ids);
@@ -316,7 +320,8 @@ fn add_source_typed_targets(
     known_typed: &HashSet<u64>,
     referenced_ids: &BTreeSet<u64>,
     target_identities: &mut BTreeMap<u64, BTreeSet<String>>,
-) {
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
     let mut native_targets = Vec::new();
     for &id in referenced_ids {
         if !known_typed.contains(&id) || target_identities.contains_key(&id) {
@@ -328,7 +333,7 @@ fn add_source_typed_targets(
         if wrapper_target_resolution(id, target_identities, exchange).is_some() {
             continue;
         }
-        let identity = opaque_record_id(id, record);
+        let identity = opaque_record_id(id, record, ctx)?;
         let source_type = record
             .partials
             .iter()
@@ -345,7 +350,7 @@ fn add_source_typed_targets(
         target_identities.insert(id, BTreeSet::from([identity.into_string()]));
     }
     if native_targets.is_empty() {
-        return;
+        return Ok(());
     }
     let namespace = ir.native.namespace_mut("step");
     namespace
@@ -353,6 +358,7 @@ fn add_source_typed_targets(
         .entry("drawing_targets".into())
         .or_default()
         .extend(native_targets);
+    Ok(())
 }
 
 /// Each drawing entity name and the identity kind that name spells.
@@ -478,7 +484,7 @@ fn add_reference_fields(
     source_id: u64,
     target_context: &TargetContext<'_>,
     losses: &mut Vec<LossNote>,
-) {
+) -> Result<(), CodecError> {
     for &index in relationship_indices(name) {
         let Some(value) = parameters.get(index) else {
             continue;
@@ -487,7 +493,7 @@ fn add_reference_fields(
         let mut references = Vec::new();
         collect_references(value, &mut references);
         for target_id in references {
-            match target_context.resolve(target_id) {
+            match target_context.resolve(target_id)? {
                 TargetResolution::Resolved(target) => {
                     relationships.entry(role.clone()).or_default().push(target);
                 }
@@ -506,6 +512,7 @@ fn add_reference_fields(
             }
         }
     }
+    Ok(())
 }
 
 fn note_ambiguous_target(
@@ -536,8 +543,8 @@ fn add_sheet_revision_usages(
         let Some(revision_id) = parameters.get(1).and_then(ValueExt::reference) else {
             continue;
         };
-        let sheet_target = target_context.resolve(revision_id);
-        let revision_target = target_context.resolve(sheet_id);
+        let sheet_target = target_context.resolve(revision_id)?;
+        let revision_target = target_context.resolve(sheet_id)?;
         if let Some(sheet) = drawings.get_mut(&sheet_id) {
             match sheet_target {
                 TargetResolution::Resolved(target) => sheet
@@ -605,7 +612,7 @@ fn add_draughting_model_associations(
     target_context: &TargetContext<'_>,
     losses: &mut Vec<LossNote>,
     typed: &mut HashSet<u64>,
-) {
+) -> Result<(), CodecError> {
     for association_id in
         exchange.matching_entity_ids(|name| DRAWING_ASSOCIATION_TYPES.contains(&name))
     {
@@ -624,8 +631,8 @@ fn add_draughting_model_associations(
 
         let mut complete = true;
         let definition_id = parameters.get(2).and_then(ValueExt::reference);
-        let definition_target = definition_id.and_then(|definition_id| {
-            match target_context.resolve(definition_id) {
+        let definition_target = if let Some(definition_id) = definition_id {
+            match target_context.resolve(definition_id)? {
                 TargetResolution::Resolved(definition) => Some(definition),
                 TargetResolution::Ambiguous(identities) => {
                     note_ambiguous_target(
@@ -648,7 +655,9 @@ fn add_draughting_model_associations(
                     None
                 }
             }
-        });
+        } else {
+            None
+        };
         if definition_id.is_none() {
             complete = false;
         }
@@ -665,10 +674,10 @@ fn add_draughting_model_associations(
         if item_ids.is_empty() {
             complete = false;
         }
-        let item_targets = item_ids
-            .into_iter()
-            .filter_map(|item_id| match target_context.resolve(item_id) {
-                TargetResolution::Resolved(item) => Some(item),
+        let mut item_targets = Vec::new();
+        for item_id in item_ids {
+            match target_context.resolve(item_id)? {
+                TargetResolution::Resolved(item) => item_targets.push(item),
                 TargetResolution::Ambiguous(identities) => {
                     note_ambiguous_target(
                         losses,
@@ -678,7 +687,6 @@ fn add_draughting_model_associations(
                         &identities,
                     );
                     complete = false;
-                    None
                 }
                 TargetResolution::Unresolved => {
                     losses.push(StepLossCode::DraughtingAssociatedItemUntyped.note(
@@ -687,10 +695,9 @@ fn add_draughting_model_associations(
                         ),
                     ));
                     complete = false;
-                    None
                 }
-            })
-            .collect::<Vec<_>>();
+            }
+        }
 
         let placeholder_target = if record
             .partials
@@ -698,7 +705,7 @@ fn add_draughting_model_associations(
             .any(|partial| partial.name == "DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER")
         {
             match association_placeholder_reference(record, parameters) {
-                Some(placeholder_id) => match target_context.resolve(placeholder_id) {
+                Some(placeholder_id) => match target_context.resolve(placeholder_id)? {
                     TargetResolution::Resolved(placeholder) => Some(placeholder),
                     TargetResolution::Ambiguous(identities) => {
                         note_ambiguous_target(
@@ -751,6 +758,7 @@ fn add_draughting_model_associations(
             typed.insert(association_id);
         }
     }
+    Ok(())
 }
 
 fn association_parameters(record: &RawRecord) -> Option<&[Value]> {
@@ -786,50 +794,51 @@ fn target_resolution(
     known_typed: &HashSet<u64>,
     exchange: &Exchange,
     external_documents: &BTreeMap<u64, &str>,
-) -> TargetResolution {
+    ctx: &DecodeContext<'_>,
+) -> Result<TargetResolution, CodecError> {
     if let Some(identity) = target_identities
         .get(&id)
         .filter(|identities| identities.len() == 1)
         .and_then(|identities| identities.first())
     {
-        return TargetResolution::Resolved(ReferenceSelection::new(
+        return Ok(TargetResolution::Resolved(ReferenceSelection::new(
             ReferenceTarget::Local(identity.clone()),
             Vec::new(),
-        ));
+        )));
     }
     if let Some(uri) = external_documents.get(&id) {
-        return TargetResolution::Resolved(ReferenceSelection::new(
+        return Ok(TargetResolution::Resolved(ReferenceSelection::new(
             ReferenceTarget::External {
                 document: (*uri).into(),
                 object: format!("#{id}"),
             },
             Vec::new(),
-        ));
+        )));
     }
     let wrapper_ambiguity = match wrapper_target_resolution(id, target_identities, exchange) {
         Some(WrapperTargetResolution::Singleton(identity)) => {
-            return TargetResolution::Resolved(ReferenceSelection::new(
+            return Ok(TargetResolution::Resolved(ReferenceSelection::new(
                 ReferenceTarget::Local(identity),
                 Vec::new(),
-            ));
+            )));
         }
         Some(WrapperTargetResolution::Ambiguous(identities)) => Some(identities),
         None => None,
     };
     if !known_typed.contains(&id) {
         if let Some(record) = exchange.records().get(&id) {
-            return TargetResolution::Resolved(ReferenceSelection::new(
-                ReferenceTarget::Local(opaque_record_id(id, record).into_string()),
+            return Ok(TargetResolution::Resolved(ReferenceSelection::new(
+                ReferenceTarget::Local(opaque_record_id(id, record, ctx)?.into_string()),
                 Vec::new(),
-            ));
+            )));
         }
     }
-    target_identities
+    Ok(target_identities
         .get(&id)
         .filter(|identities| identities.len() > 1)
         .cloned()
         .or(wrapper_ambiguity)
-        .map_or(TargetResolution::Unresolved, TargetResolution::Ambiguous)
+        .map_or(TargetResolution::Unresolved, TargetResolution::Ambiguous))
 }
 
 enum WrapperTargetResolution {

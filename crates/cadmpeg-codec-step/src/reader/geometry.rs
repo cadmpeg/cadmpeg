@@ -1236,7 +1236,8 @@ pub(super) fn decode(
                     record: exchange
                         .records()
                         .get(&id)
-                        .map(|record| opaque_record_id(id, record)),
+                        .map(|record| opaque_record_id(id, record, ctx))
+                        .transpose()?,
                 }),
                 source_object: None,
             });
@@ -1289,7 +1290,8 @@ pub(super) fn decode(
                     record: exchange
                         .records()
                         .get(&id)
-                        .map(|record| opaque_record_id(id, record)),
+                        .map(|record| opaque_record_id(id, record, ctx))
+                        .transpose()?,
                 }),
                 source_object: None,
             });
@@ -1876,7 +1878,8 @@ pub(super) fn decode(
                     record: exchange
                         .records()
                         .get(&id)
-                        .map(|record| opaque_record_id(id, record)),
+                        .map(|record| opaque_record_id(id, record, ctx))
+                        .transpose()?,
                 }),
                 source_object: None,
             });
@@ -1919,7 +1922,8 @@ pub(super) fn decode(
                     record: exchange
                         .records()
                         .get(&curve_step)
-                        .map(|record| opaque_record_id(curve_step, record)),
+                        .map(|record| opaque_record_id(curve_step, record, ctx))
+                        .transpose()?,
                 }),
                 source_object: None,
             });
@@ -1943,7 +1947,8 @@ pub(super) fn decode(
                     record: exchange
                         .records()
                         .get(&id)
-                        .map(|record| opaque_record_id(id, record)),
+                        .map(|record| opaque_record_id(id, record, ctx))
+                        .transpose()?,
                 }),
                 source_object: None,
             });
@@ -1972,7 +1977,8 @@ pub(super) fn decode(
                     record: exchange
                         .records()
                         .get(&surface_step)
-                        .map(|record| opaque_record_id(surface_step, record)),
+                        .map(|record| opaque_record_id(surface_step, record, ctx))
+                        .transpose()?,
                 }),
                 source_object: None,
             });

@@ -1133,3 +1133,153 @@ fn record_closure_ids_refuse_collection_limit() {
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "step_record_closure_ids"));
 }
+
+#[test]
+fn opaque_kind_name_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("root fits retained policy");
+    let error = super::opaque_record_id(1, &exchange.records()[&1], &ctx)
+        .expect_err("four-byte kind needs more retained bytes");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "step_opaque_kind_name"));
+}
+
+#[test]
+fn opaque_identity_text_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("root fits retained policy");
+    let error = super::opaque_record_id(1, &exchange.records()[&1], &ctx)
+        .expect_err("the identity text needs more than the kind name");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "step_opaque_identity_text"));
+}
+
+#[test]
+fn opaque_target_map_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let decoded = crate::test_support::exchange::decode_inline(
+        "#1=EXAMPLE_RECORD('',#2);#2=LINE('target',#3,#5);#3=CARTESIAN_POINT('',(0.,0.,0.));#4=DIRECTION('',(1.,0.,0.));#5=VECTOR('',#4,1.);",
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"target", &arena, &policy)
+        .expect("root fits collection policy");
+    let error = super::record_targets(decoded.ir(), |id| id == 2, &ctx)
+        .expect_err("curve identity needs a target map entry");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "step_opaque_target_records"));
+}
+
+#[test]
+fn opaque_kind_count_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeMap;
+
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("root fits collection policy");
+    let error = super::count_unknown_kind(&mut BTreeMap::new(), &exchange.records()[&1], &ctx)
+        .expect_err("new kind needs one map item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "step_opaque_kind_counts"));
+}
+
+#[test]
+fn opaque_link_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"link", &arena, &policy)
+        .expect("root fits collection policy");
+    let error = super::push_opaque_link(&mut Vec::new(), "step:data:point#1", &ctx)
+        .expect_err("link needs one vector item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "step_opaque_links"));
+}
+
+#[test]
+fn opaque_link_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"link", &arena, &policy)
+        .expect("root fits retained policy");
+    let error = super::push_opaque_link(&mut Vec::new(), "step:data:point#1", &ctx)
+        .expect_err("link identity exceeds four retained bytes");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "step_opaque_link_text"));
+}
+
+#[test]
+fn opaque_record_collections_refuse_caller_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=EXAMPLE_RECORD(#2);#2=EXAMPLE_RECORD();ENDSEC;END-ISO-10303-21;";
+    let (exchange, diagnostics) = crate::parse::parse(source).expect("valid opaque exchange");
+    let arena = DecodeArena::new();
+    let mut observed = BTreeSet::new();
+    for limit in 0..1024 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+            .expect("root fits collection policy");
+        if let Err(CodecError::ResourceLimit(refusal)) = super::decode_exchange_mode(
+            source,
+            &mut exchange.clone(),
+            &diagnostics,
+            super::DecodeMode::Decode(Packaging::Bare),
+            &ctx,
+        ) {
+            if refusal.dimension == ResourceDimension::CollectionItems {
+                observed.insert(refusal.operation);
+            }
+        }
+        if ["step_opaque_ids", "step_opaque_sources", "step_opaque_records", "step_opaque_links"]
+            .iter()
+            .all(|operation| observed.contains(operation))
+        {
+            break;
+        }
+    }
+    for operation in ["step_opaque_ids", "step_opaque_sources", "step_opaque_records", "step_opaque_links"] {
+        assert!(observed.contains(operation), "missing refusal at {operation}; observed {observed:?}");
+    }
+}
