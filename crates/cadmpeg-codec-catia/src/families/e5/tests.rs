@@ -31,8 +31,9 @@ macro_rules! e5_test_context {
 
 #[test]
 fn e5_circle_parser_reads_framed_carrier() {
+    e5_test_context!(ctx);
     let stream = e5_circle_stream();
-    let circles = crate::families::e5::records::e5_circles(&stream);
+    let circles = crate::families::e5::records::e5_circles(&ctx, &stream).expect("service resource budget");
     assert_eq!(circles.len(), 1);
     match &circles[0].geometry {
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
@@ -53,7 +54,7 @@ fn e5_circle_parser_reads_framed_carrier() {
 
     let mut small = e5_circle_stream();
     small[86..94].copy_from_slice(&f64::from_bits(1).to_le_bytes());
-    assert_eq!(crate::families::e5::records::e5_circles(&small).len(), 1);
+    assert_eq!(crate::families::e5::records::e5_circles(&ctx, &small).expect("service resource budget").len(), 1);
     assert!(crate::families::e5::records::e5_surfaces(
         &small,
         &mut crate::nurbs::LaneRefusals::new()
@@ -62,7 +63,7 @@ fn e5_circle_parser_reads_framed_carrier() {
 
     let mut zero = e5_circle_stream();
     zero[86..94].copy_from_slice(&0.0_f64.to_le_bytes());
-    assert!(crate::families::e5::records::e5_circles(&zero).is_empty());
+    assert!(crate::families::e5::records::e5_circles(&ctx, &zero).expect("service resource budget").is_empty());
     assert!(crate::families::e5::records::e5_surfaces(
         &zero,
         &mut crate::nurbs::LaneRefusals::new()
@@ -72,6 +73,7 @@ fn e5_circle_parser_reads_framed_carrier() {
 
 #[test]
 fn e5_edge_parser_reads_u24_reference_tokens() {
+    e5_test_context!(ctx);
     let mut record = vec![0u8; 13];
     record[..3].copy_from_slice(&[0xe5, 0x0d, 0x03]);
     record[3] = 0xff;
@@ -81,10 +83,34 @@ fn e5_edge_parser_reads_u24_reference_tokens() {
     record[5..7].copy_from_slice(&(payload.len() as u16).to_le_bytes());
     record.extend_from_slice(&payload);
 
-    let edges = crate::families::e5::records::e5_edges(&record);
+    let edges = crate::families::e5::records::e5_edges(&ctx, &record).expect("service resource budget");
     assert_eq!(edges.len(), 1);
     assert_eq!(edges[0].start_vertex_id, 0x06_0504);
     assert_eq!(edges[0].end_vertex_id, 0x09_0807);
+}
+
+#[test]
+fn e5_circle_plane_and_edge_results_refuse_before_growth() {
+    let circle = e5_circle_stream();
+    let plane = e5_plane_stream();
+    let mut edge = vec![0u8; 13];
+    edge[..3].copy_from_slice(&[0xe5, 0x0d, 0x03]);
+    edge[3] = 0xff;
+    let payload = [0x85, 0x38, 1, 2, 3, 0x38, 4, 5, 6, 0x38, 7, 8, 9, 0x80, 0x80, 0x80];
+    edge[5..7].copy_from_slice(&(payload.len() as u16).to_le_bytes());
+    edge.extend_from_slice(&payload);
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| crate::families::e5::records::e5_circles(ctx, &circle)),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "catia_e5_circles"
+    ));
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| crate::families::e5::records::e5_planes(ctx, &plane)),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "catia_e5_planes"
+    ));
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| crate::families::e5::records::e5_edges(ctx, &edge)),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "catia_e5_edges"
+    ));
 }
 
 #[test]
@@ -363,7 +389,8 @@ fn e5_surface_parser_reads_framed_torus() {
 
 #[test]
 fn e5_plane_parser_preserves_origin_and_natural_bounds_without_fabricating_axes() {
-    let planes = crate::families::e5::records::e5_planes(&e5_plane_stream());
+    e5_test_context!(ctx);
+    let planes = crate::families::e5::records::e5_planes(&ctx, &e5_plane_stream()).expect("service resource budget");
     assert_eq!(planes.len(), 1);
     assert_eq!(planes[0].record_id, 42);
     assert_eq!(coordinates(planes[0].origin), [1.0, 2.0, 3.0]);
@@ -373,8 +400,9 @@ fn e5_plane_parser_preserves_origin_and_natural_bounds_without_fabricating_axes(
 
 #[test]
 fn e5_plane_parser_reads_terminal_bounds_after_extended_transform_lane() {
+    e5_test_context!(ctx);
     let planes =
-        crate::families::e5::records::e5_planes(&e5_plane_stream_with_transform_scalars(5));
+        crate::families::e5::records::e5_planes(&ctx, &e5_plane_stream_with_transform_scalars(5)).expect("service resource budget");
     assert_eq!(planes.len(), 1);
     assert_eq!(coordinates(planes[0].origin), [1.0, 2.0, 3.0]);
     assert_eq!(planes[0].u_range, [-4.0, 7.0]);

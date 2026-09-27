@@ -1275,38 +1275,40 @@ fn emit_standard_extrusion_definition(
     Ok(definition)
 }
 
-fn standard_freeform_e5_carrier_ids(data: &[u8]) -> HashMap<u32, u32> {
+fn standard_freeform_e5_carrier_ids(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+) -> Result<HashMap<u32, u32>, CodecError> {
     let mut face_surfaces = HashMap::<u32, Option<u32>>::new();
     for (face, surface) in crate::families::e5::graph::face_surface_references(data) {
-        match face_surfaces.entry(face).or_insert(Some(surface)) {
-            stored @ Some(_) if *stored != Some(surface) => *stored = None,
-            _ => {}
+        if let Some(stored) = face_surfaces.get_mut(&face) {
+            if *stored != Some(surface) {
+                *stored = None;
+            }
+        } else {
+            crate::resource::insert_map(ctx, &mut face_surfaces, face, Some(surface), "catia_e5_face_surfaces")?;
         }
     }
-    let face_surfaces = face_surfaces
-        .into_iter()
-        .filter_map(|(face, surface)| surface.map(|surface| (face, surface)))
-        .collect::<HashMap<_, _>>();
 
     let mut wrappers = HashMap::<u32, Option<u32>>::new();
-    for wrapper in crate::families::e5::records::e5_surface_wrappers(data) {
-        match wrappers
-            .entry(wrapper.record_id)
-            .or_insert(Some(wrapper.underlying_surface()))
-        {
-            stored @ Some(_) if *stored != Some(wrapper.underlying_surface()) => *stored = None,
-            _ => {}
+    for wrapper in crate::families::e5::records::e5_surface_wrappers(ctx, data)? {
+        let surface = wrapper.underlying_surface();
+        if let Some(stored) = wrappers.get_mut(&wrapper.record_id) {
+            if *stored != Some(surface) {
+                *stored = None;
+            }
+        } else {
+            crate::resource::insert_map(ctx, &mut wrappers, wrapper.record_id, Some(surface), "catia_e5_wrapper_surfaces")?;
         }
     }
-    let wrappers = wrappers
-        .into_iter()
-        .filter_map(|(wrapper, surface)| surface.map(|surface| (wrapper, surface)))
-        .collect::<HashMap<_, _>>();
-
-    face_surfaces
-        .into_iter()
-        .filter_map(|(face, wrapper)| Some((face, *wrappers.get(&wrapper)?)))
-        .collect()
+    let mut carriers = HashMap::new();
+    for (face, wrapper) in face_surfaces {
+        let Some(surface) = wrapper.and_then(|wrapper| wrappers.get(&wrapper).copied().flatten()) else {
+            continue;
+        };
+        crate::resource::insert_map(ctx, &mut carriers, face, surface, "catia_e5_face_carriers")?;
+    }
+    Ok(carriers)
 }
 
 /// Join a standard freeform face to a directly decoded E5 analytic carrier
@@ -1316,39 +1318,49 @@ fn standard_freeform_e5_carrier_ids(data: &[u8]) -> HashMap<u32, u32> {
 /// standard tag names one E5 face, that face names one valid `0xf1` wrapper,
 /// and the wrapper's first reference names one supported E5 surface carrier.
 fn associate_standard_freeform_e5_surfaces(
+    ctx: &DecodeContext<'_>,
     records: &[crate::families::standard::records::StandardSurfaceRecord],
     data: &[u8],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> HashMap<u32, SurfaceGeometry> {
-    let carrier_ids = standard_freeform_e5_carrier_ids(data);
+) -> Result<HashMap<u32, SurfaceGeometry>, CodecError> {
+    let carrier_ids = standard_freeform_e5_carrier_ids(ctx, data)?;
 
     let mut surfaces = HashMap::<u32, Option<SurfaceGeometry>>::new();
     for surface in crate::families::e5::records::e5_surfaces(data, refusal) {
-        match surfaces
-            .entry(surface.record_id)
-            .or_insert(Some(surface.geometry.clone()))
-        {
-            stored @ Some(_) if *stored != Some(surface.geometry.clone()) => *stored = None,
-            _ => {}
+        if let Some(stored) = surfaces.get_mut(&surface.record_id) {
+            if stored.as_ref().is_some_and(|geometry| geometry != &surface.geometry) {
+                *stored = None;
+            }
+        } else {
+            crate::resource::insert_map(ctx, &mut surfaces, surface.record_id, Some(surface.geometry), "catia_e5_surface_carriers")?;
         }
     }
-    let surfaces = surfaces
-        .into_iter()
-        .filter_map(|(surface, geometry)| geometry.map(|geometry| (surface, geometry)))
-        .collect::<HashMap<_, _>>();
+    let mut associated = HashMap::new();
+    for record in records {
+        let crate::families::standard::records::StandardSurfaceRecord::Freeform { tag, .. } = record else {
+            continue;
+        };
+        let Some(geometry) = carrier_ids.get(tag).and_then(|carrier| surfaces.get(carrier)).and_then(Option::as_ref) else {
+            continue;
+        };
+        let copied = copy_e5_surface_geometry(ctx, geometry)?;
+        crate::resource::insert_map(ctx, &mut associated, *tag, copied, "catia_e5_associated_surfaces")?;
+    }
+    Ok(associated)
+}
 
-    records
-        .iter()
-        .filter_map(|record| {
-            let crate::families::standard::records::StandardSurfaceRecord::Freeform { tag, .. } =
-                record
-            else {
-                return None;
-            };
-            let underlying_surface = *carrier_ids.get(tag)?;
-            Some((*tag, surfaces.get(&underlying_surface)?.clone()))
-        })
-        .collect()
+fn copy_e5_surface_geometry(
+    ctx: &DecodeContext<'_>,
+    geometry: &SurfaceGeometry,
+) -> Result<SurfaceGeometry, CodecError> {
+    match geometry {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => Ok(
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                crate::resource::copy_nurbs_surface(ctx, surface, "catia_e5_surface_geometry_copy")?,
+            )),
+        ),
+        _ => Ok(geometry.clone()),
+    }
 }
 
 /// Join standard freeform faces to exact E5 class-`0xd8` rolling-ball jets.
@@ -1356,49 +1368,48 @@ fn associate_standard_freeform_e5_surfaces(
 /// E5 carriers; only the underlying carrier decoder differs. The carrier's
 /// signed sense must agree with the owning face orientation before admission.
 fn associate_standard_freeform_e5_rolling_ball_jets(
+    ctx: &DecodeContext<'_>,
     records: &[crate::families::standard::records::StandardSurfaceRecord],
     data: &[u8],
     decoded_jets: &[crate::families::e5::records::E5RollingBallJet],
-) -> HashMap<u32, StandardSurfaceProcedure> {
-    let carrier_ids = standard_freeform_e5_carrier_ids(data);
-    let mut jets = HashMap::<u32, Option<crate::families::e5::records::E5RollingBallJet>>::new();
-    for jet in decoded_jets.iter().cloned() {
-        match jets
-            .entry(jet.record_id)
-            .or_insert_with(|| Some(jet.clone()))
-        {
-            stored @ Some(_) if *stored != Some(jet) => *stored = None,
-            _ => {}
+) -> Result<HashMap<u32, StandardSurfaceProcedure>, CodecError> {
+    let carrier_ids = standard_freeform_e5_carrier_ids(ctx, data)?;
+    let mut jets = HashMap::<u32, Option<&crate::families::e5::records::E5RollingBallJet>>::new();
+    for jet in decoded_jets {
+        if let Some(stored) = jets.get_mut(&jet.record_id) {
+            if stored.is_some_and(|existing| existing != jet) {
+                *stored = None;
+            }
+        } else {
+            crate::resource::insert_map(ctx, &mut jets, jet.record_id, Some(jet), "catia_e5_rolling_ball_carriers")?;
         }
     }
-    let jets = jets
-        .into_iter()
-        .filter_map(|(carrier, jet)| jet.map(|jet| (carrier, jet)))
-        .collect::<HashMap<_, _>>();
-
-    records
-        .iter()
-        .filter_map(|record| {
+    let mut associated = HashMap::new();
+    for record in records {
             let crate::families::standard::records::StandardSurfaceRecord::Freeform {
                 tag,
                 forward,
                 ..
             } = record
             else {
-                return None;
+                continue;
             };
-            let carrier = *carrier_ids.get(tag)?;
-            let jet = jets.get(&carrier)?;
-            (*forward == (jet.sense == crate::families::e5::graph::Sign::Negative)).then_some((
-                *tag,
-                StandardSurfaceProcedure::RollingBall {
-                    carrier_object_id: jet.record_id,
-                    definition: jet.definition()?,
-                    source: StandardRollingBallSource::E5D8,
-                },
-            ))
-        })
-        .collect()
+            let Some(jet) = carrier_ids.get(tag).and_then(|carrier| jets.get(carrier)).copied().flatten() else {
+                continue;
+            };
+            if *forward != (jet.sense == crate::families::e5::graph::Sign::Negative) {
+                continue;
+            }
+            let Some(definition) = jet.definition(ctx)? else {
+                continue;
+            };
+            crate::resource::insert_map(ctx, &mut associated, *tag, StandardSurfaceProcedure::RollingBall {
+                carrier_object_id: jet.record_id,
+                definition,
+                source: StandardRollingBallSource::E5D8,
+            }, "catia_e5_rolling_ball_associations")?;
+    }
+    Ok(associated)
 }
 
 #[derive(Debug, Clone)]
@@ -1922,7 +1933,7 @@ fn try_decode_standard_population(
             return Some(Err(error));
         }
     }
-    let object_evidence = match standard_object_evidence(
+    let mut object_evidence = match standard_object_evidence(
         ctx,
         scan,
         &freeform_tags,
@@ -1984,17 +1995,25 @@ fn try_decode_standard_population(
             return Some(Err(error));
         }
     }
-    let mut freeform_geometries = object_evidence.surface_geometries.clone();
-    let e5_freeform_geometries =
-        associate_standard_freeform_e5_surfaces(&records, &scan.data, refusal);
+    let mut freeform_geometries = std::mem::take(&mut object_evidence.surface_geometries);
+    let e5_freeform_geometries = match associate_standard_freeform_e5_surfaces(ctx, &records, &scan.data, refusal) {
+        Ok(geometries) => geometries,
+        Err(error) => return Some(Err(error)),
+    };
     let mut e5_freeform_tags = HashSet::new();
     for (tag, geometry) in e5_freeform_geometries {
-        freeform_geometries.insert(tag, geometry);
-        e5_freeform_tags.insert(tag);
+        if let Err(error) = crate::resource::insert_map(ctx, &mut freeform_geometries, tag, geometry, "catia_standard_e5_freeform_geometries") {
+            return Some(Err(error));
+        }
+        if let Err(error) = crate::resource::insert_set(ctx, &mut e5_freeform_tags, tag, "catia_standard_e5_freeform_tags") {
+            return Some(Err(error));
+        }
     }
-    let mut freeform_procedural_surfaces = object_evidence.procedural_surfaces.clone();
-    let e5_freeform_procedural_surfaces =
-        associate_standard_freeform_e5_rolling_ball_jets(&records, &scan.data, e5_jets);
+    let mut freeform_procedural_surfaces = std::mem::take(&mut object_evidence.procedural_surfaces);
+    let e5_freeform_procedural_surfaces = match associate_standard_freeform_e5_rolling_ball_jets(ctx, &records, &scan.data, e5_jets) {
+        Ok(procedures) => procedures,
+        Err(error) => return Some(Err(error)),
+    };
     for (tag, procedure) in e5_freeform_procedural_surfaces {
         match freeform_procedural_surfaces.get(&tag) {
             Some(existing) if existing != &procedure => {
@@ -2002,7 +2021,9 @@ fn try_decode_standard_population(
             }
             Some(_) => {}
             None => {
-                freeform_procedural_surfaces.insert(tag, procedure);
+                if let Err(error) = crate::resource::insert_map(ctx, &mut freeform_procedural_surfaces, tag, procedure, "catia_standard_e5_freeform_procedures") {
+                    return Some(Err(error));
+                }
             }
         }
     }

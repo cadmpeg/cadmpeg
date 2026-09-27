@@ -84,7 +84,7 @@ pub(in crate::families) fn try_decode_e5(
         return Ok(None);
     };
     let stream = &scan.data[stream_range];
-    let circles = crate::families::e5::records::e5_circles(stream);
+    let circles = crate::families::e5::records::e5_circles(ctx, stream)?;
     let mut surfaces = crate::families::e5::records::e5_surfaces(stream, refusal);
     let rolling_ball_jets = crate::families::e5::records::e5_rolling_ball_jets(ctx, stream)?;
     (|| -> Option<Result<FamilyOutput, cadmpeg_core::CodecError>> {
@@ -92,16 +92,23 @@ pub(in crate::families) fn try_decode_e5(
             Ok(topology) => topology,
             Err(error) => return Some(Err(error)),
         };
-        let vertex_count = topology.as_ref().map_or_else(
-            || {
-                crate::families::e5::records::e5_edges(stream)
-                    .into_iter()
-                    .flat_map(|edge| [edge.start_vertex_id, edge.end_vertex_id])
-                    .collect::<HashSet<_>>()
-                    .len()
-            },
-            |topology| topology.vertex_refs.len(),
-        );
+        let vertex_count = if let Some(topology) = topology.as_ref() {
+            topology.vertex_refs.len()
+        } else {
+            let edges = match crate::families::e5::records::e5_edges(ctx, stream) {
+                Ok(edges) => edges,
+                Err(error) => return Some(Err(error)),
+            };
+            let mut vertices = HashSet::new();
+            for edge in edges {
+                for vertex in [edge.start_vertex_id, edge.end_vertex_id] {
+                    if let Err(error) = crate::resource::insert_set(ctx, &mut vertices, vertex, "catia_e5_edge_vertex_ids") {
+                        return Some(Err(error));
+                    }
+                }
+            }
+            vertices.len()
+        };
         let points = {
             let roster = crate::families::e5::records::e5_vertices(&scan.data, vertex_count);
             if roster.len() == vertex_count {
@@ -122,7 +129,9 @@ pub(in crate::families) fn try_decode_e5(
             }
         };
         if let Some(topology) = &topology {
-            append_e5_planes(stream, topology, &points, &mut surfaces);
+            if let Err(error) = append_e5_planes(ctx, stream, topology, &points, &mut surfaces) {
+                return Some(Err(error));
+            }
         }
         if circles.is_empty()
             && surfaces.is_empty()
@@ -282,9 +291,14 @@ pub(in crate::families) fn try_decode_e5(
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }
+            let definition = match jet.definition(ctx) {
+                Ok(Some(definition)) => definition,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
             ir.model.procedural_surfaces.push(ProceduralSurface::new(
                 procedural_id,
-                jet.definition()?,
+                definition,
                 None,
             ));
         }
@@ -410,14 +424,14 @@ fn derive_e5_vertices(
 }
 
 fn append_e5_planes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     stream: &[u8],
     topology: &crate::families::e5::graph::E5Topology,
     points: &[FinitePoint3],
     surfaces: &mut Vec<crate::families::e5::records::E5Surface>,
-) {
-    let carrier_axes: HashMap<u32, Vector3> = surfaces
-        .iter()
-        .filter_map(|surface| {
+) -> Result<(), cadmpeg_core::CodecError> {
+    let mut carrier_axes = HashMap::new();
+    for surface in surfaces.iter() {
             let (axis,) = match surface.geometry {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                     let axis = *cylinder_surface.frame().axis().as_raw();
@@ -432,13 +446,12 @@ fn append_e5_planes(
                     (axis,)
                 }
                 _ => {
-                    return None;
+                    continue;
                 }
             };
-            Some((surface.record_id, axis))
-        })
-        .collect();
-    for plane in crate::families::e5::records::e5_planes(stream) {
+            crate::resource::insert_map(ctx, &mut carrier_axes, surface.record_id, axis, "catia_e5_carrier_axes")?;
+    }
+    for plane in crate::families::e5::records::e5_planes(ctx, stream)? {
         let mut normal: Option<Vector3> = None;
         let mut consistent = true;
         for face in topology
@@ -500,13 +513,14 @@ fn append_e5_planes(
             continue;
         };
         let payload = cadmpeg_ir::geometry::analytic::PlaneSurface::new(plane.origin, frame);
-        surfaces.push(crate::families::e5::records::E5Surface {
+        crate::resource::push(ctx, surfaces, crate::families::e5::records::E5Surface {
             pos: plane.pos,
             record_id: plane.record_id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(payload)),
             uv_scale,
-        });
+        }, "catia_e5_plane_surfaces")?;
     }
+    Ok(())
 }
 
 /// Classify two UV vectors by a scale-normalized determinant.

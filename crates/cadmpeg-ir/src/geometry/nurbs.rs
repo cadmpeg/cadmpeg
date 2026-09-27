@@ -998,6 +998,39 @@ impl<P, W> NurbsSurfaceLanes<P, W> {
 }
 
 impl NurbsSurface {
+    /// Copy the admitted surface with fallible reservations for each owned lane.
+    pub fn try_clone(&self) -> Result<Self, std::collections::TryReserveError> {
+        fn copy_rows<T: Clone>(rows: &[Vec<T>]) -> Result<Vec<Vec<T>>, std::collections::TryReserveError> {
+            let mut copied = Vec::new();
+            copied.try_reserve_exact(rows.len())?;
+            for row in rows {
+                let mut copied_row = Vec::new();
+                copied_row.try_reserve_exact(row.len())?;
+                copied_row.extend_from_slice(row);
+                copied.push(copied_row);
+            }
+            Ok(copied)
+        }
+        let poles = match &self.poles {
+            NurbsPoleGrid::Polynomial { rows } => NurbsPoleGrid::Polynomial {
+                rows: copy_rows(rows)?,
+            },
+            NurbsPoleGrid::Rational { rows } => NurbsPoleGrid::Rational {
+                rows: copy_rows(rows)?,
+            },
+        };
+        Ok(Self {
+            u_degree: self.u_degree,
+            v_degree: self.v_degree,
+            u_knots: self.u_knots.try_clone()?,
+            v_knots: self.v_knots.try_clone()?,
+            poles,
+            normal_reversed: self.normal_reversed,
+            u_periodic: self.u_periodic,
+            v_periodic: self.v_periodic,
+        })
+    }
+
     /// Build a tensor-product NURBS surface with consistent cardinalities.
     ///
     /// Raw pole positions are admitted; admitted positions are kept, so a
