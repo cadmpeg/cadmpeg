@@ -1051,42 +1051,68 @@ fn is_name_byte(b: u8) -> bool {
 
 const DEPDB_ROOT_RECORD: &[u8] = b"\xe0\x00p_dep_db\0\xe3";
 
-fn legacy_product_release(banner: &[u8]) -> Option<String> {
+fn legacy_product_release(
+    ctx: &DecodeContext<'_>,
+    banner: &[u8],
+) -> Result<Option<String>, CodecError> {
     let mut words = banner
         .split(u8::is_ascii_whitespace)
         .filter(|word| !word.is_empty());
     while let Some(word) = words.next() {
         if word == b"Version" || word == b"Release" {
-            let release = words.next()?;
+            let Some(release) = words.next() else {
+                return Ok(None);
+            };
             if release.iter().all(u8::is_ascii_graphic) {
-                return String::from_utf8(release.to_vec()).ok();
+                let release = std::str::from_utf8(release)
+                    .map_err(|_| CodecError::malformed("non-ASCII Creo release"))?;
+                return ctx
+                    .copy_retained_text(release, "creo legacy product release")
+                    .map(Some);
             }
-            return None;
+            return Ok(None);
         }
         if let Some(release) = word.strip_prefix(b"Release") {
             if !release.is_empty() && release.iter().all(u8::is_ascii_graphic) {
-                return String::from_utf8(release.to_vec()).ok();
+                let release = std::str::from_utf8(release)
+                    .map_err(|_| CodecError::malformed("non-ASCII Creo release"))?;
+                return ctx
+                    .copy_retained_text(release, "creo legacy product release")
+                    .map(Some);
             }
         }
     }
-    None
+    Ok(None)
 }
 
-fn legacy_ascii_framing(data: &[u8]) -> Option<LegacyAsciiFraming> {
-    let header_end = find(data, UGC_HEADER_END, 0)
-        .and_then(|offset| offset.checked_add(UGC_HEADER_END.len()))?;
-    let body = data
+fn legacy_ascii_framing(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+) -> Result<Option<LegacyAsciiFraming>, CodecError> {
+    let Some(header_end) =
+        find(data, UGC_HEADER_END, 0).and_then(|offset| offset.checked_add(UGC_HEADER_END.len()))
+    else {
+        return Ok(None);
+    };
+    let Some(body) = data
         .get(header_end..)
-        .and_then(|tail| tail.strip_prefix(b"\n"))?;
+        .and_then(|tail| tail.strip_prefix(b"\n"))
+    else {
+        return Ok(None);
+    };
     if !body.starts_with(LEGACY_OBJECT_START) {
-        return None;
+        return Ok(None);
     }
-    let object_header_end = find(body, b"\n", LEGACY_OBJECT_START.len())?;
+    let Some(object_header_end) = find(body, b"\n", LEGACY_OBJECT_START.len()) else {
+        return Ok(None);
+    };
     let schema = &body[LEGACY_OBJECT_START.len()..object_header_end];
     if schema.is_empty() || !schema.iter().all(u8::is_ascii_digit) {
-        return None;
+        return Ok(None);
     }
-    let schema = String::from_utf8(schema.to_vec()).ok()?;
+    let schema =
+        std::str::from_utf8(schema).map_err(|_| CodecError::malformed("non-ASCII Creo schema"))?;
+    let schema = ctx.copy_retained_text(schema, "creo legacy schema")?;
     let mut from = object_header_end + 1;
     while let Some(object_end) = find(body, LEGACY_OBJECT_END, from) {
         if let Some(banner) = object_end
@@ -1097,17 +1123,17 @@ fn legacy_ascii_framing(data: &[u8]) -> Option<LegacyAsciiFraming> {
         {
             let banner_end = find(banner, b"\n", 0).unwrap_or(banner.len());
             let banner_offset = data.len() - banner.len();
-            return Some(LegacyAsciiFraming {
+            return Ok(Some(LegacyAsciiFraming {
                 schema,
-                product_release: legacy_product_release(&banner[..banner_end]),
+                product_release: legacy_product_release(ctx, &banner[..banner_end])?,
                 banner_offset,
                 object_offset: header_end + 1,
                 persistence: legacy::Persistence::default(),
-            });
+            }));
         }
         from = object_end + 1;
     }
-    None
+    Ok(None)
 }
 
 /// Identify the layout family structurally ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)). The
@@ -2527,7 +2553,7 @@ pub(crate) fn scan_bytes<'a>(
         .map(|nl| nl + 1);
     let body_start = toc_end.or(header_end).unwrap_or(0);
 
-    let mut legacy_ascii = legacy_ascii_framing(&data);
+    let mut legacy_ascii = legacy_ascii_framing(ctx, &data)?;
     let sections = if let Some(legacy) = legacy_ascii.as_ref() {
         legacy_toc_sections(ctx, &data, legacy.banner_offset)?
     } else {

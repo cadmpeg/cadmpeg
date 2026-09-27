@@ -754,6 +754,60 @@ fn legacy_toc_section_succeeds_under_service_policy() {
 }
 
 #[test]
+fn legacy_schema_refuses_before_retained_copy_even_without_banner() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(data, &arena, &policy).expect("legacy header is admitted");
+    let error = super::legacy_ascii_framing(&ctx, data)
+        .err()
+        .expect("schema copy needs retained bytes");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo legacy schema"));
+}
+
+#[test]
+fn legacy_release_refuses_before_retained_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
+        #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Version H-01-21\n";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(data, &arena, &policy).expect("legacy header is admitted");
+    let error = super::legacy_ascii_framing(&ctx, data)
+        .err()
+        .expect("release copy needs retained bytes after schema");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo legacy product release"));
+}
+
+#[test]
+fn legacy_schema_and_release_succeed_under_service_policy() {
+    let data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
+        #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Version H-01-21\n";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+        .expect("legacy header is admitted");
+    let framing = super::legacy_ascii_framing(&ctx, data)
+        .expect("legacy framing is admitted")
+        .expect("complete legacy framing");
+    assert_eq!(framing.schema, "6");
+    assert_eq!(framing.product_release.as_deref(), Some("H-01-21"));
+}
+
+#[test]
 fn two_chart_pcurve_count_node_refuses_before_insertion() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
