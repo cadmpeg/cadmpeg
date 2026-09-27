@@ -403,13 +403,48 @@ fn reconciliation_ir_with_generated_dependency() -> CadIr {
     ir
 }
 
+fn emitted_feature_identity_error(retained: bool) {
+    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut ir = reconciliation_ir_with_generated_dependency();
+    ir.model.features[0].id = IrFeatureId::mint("creo:model:sketch_feature#10")
+        .expect("fixture feature ID");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    if retained {
+        policy.limits.max_retained_bytes = 0;
+    } else {
+        policy.limits.max_collection_items = 0;
+    }
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = super::reconcile_feature_links(&ctx, &scan, &mut ir, &BTreeMap::new())
+        .expect_err("one emitted feature identity exceeds the limit");
+    let operation = if retained {
+        "creo emitted feature identity text"
+    } else {
+        "creo emitted feature identity nodes"
+    };
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.operation == operation), "{error:?}");
+}
+
+#[test]
+fn emitted_feature_identity_text_refuses_retained_limit() {
+    emitted_feature_identity_error(true);
+}
+
+#[test]
+fn emitted_feature_identity_nodes_refuse_collection_limit() {
+    emitted_feature_identity_error(false);
+}
+
 #[test]
 fn reconciled_generated_dependency_refuses_before_retained_id() {
     let scan = crate::container::scan_bytes_ok(Vec::new());
     let mut ir = reconciliation_ir_with_generated_dependency();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = "creo:model:feature#10".len() as u64;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root");
     let error = crate::decode::feature_history::dependencies::reconcile_feature_links(
@@ -430,7 +465,7 @@ fn reconciled_generated_dependency_refuses_before_owned_row() {
     let mut ir = reconciliation_ir_with_generated_dependency();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 5;
+    policy.limits.max_collection_items = 6;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root");
     let error = crate::decode::feature_history::dependencies::reconcile_feature_links(
@@ -439,7 +474,7 @@ fn reconciled_generated_dependency_refuses_before_owned_row() {
         &mut ir,
         &BTreeMap::new(),
     )
-    .expect_err("the sixth collection item owns the generated dependency");
+    .expect_err("the seventh collection item owns the generated dependency");
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
             && resource.operation == "creo reconciled generated dependencies"));
