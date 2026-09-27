@@ -62,15 +62,14 @@ pub(in crate::decode) fn simple_hole_geometry<'a>(
     let [table] = tables.as_slice() else {
         return None;
     };
-    let entry_ids = table.entry_ids();
-    let [entry_plane, termination_plane, first_cylinder, second_cylinder] = entry_ids.as_slice()
+    let [entry_plane, termination_plane, first_cylinder, second_cylinder] = table.entries.as_slice()
     else {
         return None;
     };
-    if *entry_plane != first.surface_id || *termination_plane != second.surface_id {
+    if entry_plane.entity_id != first.surface_id || termination_plane.entity_id != second.surface_id {
         return None;
     }
-    let cylinder_rows = [*first_cylinder, *second_cylinder]
+    let cylinder_rows = [first_cylinder.entity_id, second_cylinder.entity_id]
         .into_iter()
         .map(|id| {
             crate::surface::unique_surface_row(&scan.surfaces.rows, id).filter(|row| {
@@ -81,7 +80,7 @@ pub(in crate::decode) fn simple_hole_geometry<'a>(
     let (_, _, extent) =
         hole_placement([*first, *second].map(|cap| (cap.surface_id, cap.origin, cap.normal)))?;
     Some(SimpleHoleGeometry {
-        entry_surface_id: Some(*entry_plane),
+        entry_surface_id: Some(entry_plane.entity_id),
         cylinder_rows,
         extent,
         geometry: hole_cylinder_from_cap_outlines([*first, *second])?,
@@ -108,13 +107,6 @@ pub(in crate::decode) fn compact_simple_hole_cylinder_id(
         .iter()
         .filter(|table| table.feature_id == feature_id && table.table_class_id == 29)
         .filter_map(|table| {
-            let entry_ids = table
-                .entries
-                .iter()
-                .map(|entry| entry.entity_id)
-                .collect::<Vec<_>>();
-            (table.entry_ids() == entry_ids).then_some(())?;
-
             let topology_candidates = table
                 .entries
                 .windows(2)
@@ -317,12 +309,8 @@ pub(in crate::decode) fn single_cap_circular_sweep_geometry<'a>(
         || profile_id.source_entity_id().is_none()
         || cylinder_id.source_entity_id().is_some()
         || !has_exact_materialized_surface_roster(table, [cap_id.entity_id, cylinder_id.entity_id])
-        || !table
-            .non_surface_entity_ids()
-            .contains(&rowless_cap.entity_id)
-        || !table
-            .non_surface_entity_ids()
-            .contains(&profile_id.entity_id)
+        || !table.contains_non_surface_entity_id(rowless_cap.entity_id)
+        || !table.contains_non_surface_entity_id(profile_id.entity_id)
     {
         return None;
     }
@@ -427,14 +415,7 @@ pub(in crate::decode) fn two_cap_circular_sweep_geometry<'a>(
     else {
         return None;
     };
-    if table.entry_ids()
-        != [
-            first_plane_entry.entity_id,
-            second_plane_entry.entity_id,
-            profile_entry.entity_id,
-            cylinder_entry.entity_id,
-        ]
-        || [
+    if [
             first_plane_entry.class_id(),
             second_plane_entry.class_id(),
             profile_entry.class_id(),
@@ -453,9 +434,7 @@ pub(in crate::decode) fn two_cap_circular_sweep_geometry<'a>(
             ],
         )
         || table.contains_surface_id(profile_entry.entity_id)
-        || !table
-            .non_surface_entity_ids()
-            .contains(&profile_entry.entity_id)
+        || !table.contains_non_surface_entity_id(profile_entry.entity_id)
     {
         return None;
     }

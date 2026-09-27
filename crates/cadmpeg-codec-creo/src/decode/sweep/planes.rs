@@ -329,12 +329,6 @@ pub(in super::super) fn generated_cap_plane_extent(
     let [table] = tables.as_slice() else {
         return None;
     };
-    table
-        .entries
-        .iter()
-        .map(|entry| entry.entity_id)
-        .eq(table.entry_ids().iter().copied())
-        .then_some(())?;
     let mut start_id = None;
     let mut end_id = None;
     let mut side_count = 0_usize;

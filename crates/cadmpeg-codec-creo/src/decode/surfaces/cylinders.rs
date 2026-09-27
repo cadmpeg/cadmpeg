@@ -79,24 +79,23 @@ pub(in super::super) fn rowless_round_cylinder_pairs(
         .filter_map(|table| {
             let feature_id = table.feature_id;
             round_feature_ids.contains(&feature_id).then_some(())?;
-            let entry_ids = table.entry_ids();
-            let [first, second, rowless, cylinder] = entry_ids.as_slice() else {
+            let [first, second, rowless, cylinder] = table.entries.as_slice() else {
                 return None;
             };
-            crate::surface::unique_surface_row(rows, *first)
+            crate::surface::unique_surface_row(rows, first.entity_id)
                 .is_some()
                 .then_some(())?;
-            crate::surface::unique_surface_row(rows, *second)
+            crate::surface::unique_surface_row(rows, second.entity_id)
                 .is_some()
                 .then_some(())?;
-            (!rows.iter().any(|row| row.id == *rowless)).then_some(())?;
-            crate::surface::unique_surface_row(rows, *cylinder)
+            (!rows.iter().any(|row| row.id == rowless.entity_id)).then_some(())?;
+            crate::surface::unique_surface_row(rows, cylinder.entity_id)
                 .is_some_and(|row| {
                     row.feature_id == feature_id
                         && row.kind == crate::surface::SurfaceKind::Cylinder
                 })
                 .then_some(())?;
-            Some((*rowless, *cylinder, table.offset))
+            Some((rowless.entity_id, cylinder.entity_id, table.offset))
         })
         .collect()
 }

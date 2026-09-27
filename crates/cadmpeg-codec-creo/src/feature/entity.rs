@@ -50,6 +50,7 @@ impl FeatureEntityTable {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn entry_ids(&self) -> Vec<u32> {
         self.entries.iter().map(|entry| entry.entity_id).collect()
     }
@@ -84,6 +85,12 @@ impl FeatureEntityTable {
             .filter(|id| !self.surface_ids.contains(id))
     }
 
+    pub(crate) fn contains_non_surface_entity_id(&self, entity_id: u32) -> bool {
+        !self.surface_ids.contains(&entity_id)
+            && self.entries.iter().any(|entry| entry.entity_id == entity_id)
+    }
+
+    #[cfg(test)]
     pub(crate) fn non_surface_entity_ids(&self) -> Vec<u32> {
         self.non_surface_entity_ids_iter().collect()
     }
@@ -586,11 +593,29 @@ pub(crate) fn entity_tables(
 
 #[cfg(test)]
 mod tests {
-    use super::{entity_graph, entity_tables, read_entries};
+    use super::{dummy_table_entry, entity_graph, entity_tables, read_entries, FeatureEntityTable};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
     const GRAPH: &[u8] = b"\xe0\0Sld_Features\0\xe0\0N\xff\0\xf7\0";
+
+    #[test]
+    fn entity_table_borrowed_readers_preserve_duplicate_source_order() {
+        let table = FeatureEntityTable::new(
+            4,
+            29,
+            vec![dummy_table_entry(7), dummy_table_entry(9), dummy_table_entry(9)],
+            &std::collections::BTreeSet::from([7]),
+            12,
+        );
+        assert_eq!(table.entry_ids(), [7, 9, 9]);
+        assert_eq!(table.surface_ids_iter().collect::<Vec<_>>(), table.surface_ids());
+        assert_eq!(table.non_surface_entity_ids_iter().collect::<Vec<_>>(), [9, 9]);
+        assert!(table.contains_surface_id(7));
+        assert!(table.contains_non_surface_entity_id(9));
+        assert!(!table.contains_non_surface_entity_id(7));
+        assert!(!table.contains_non_surface_entity_id(11));
+    }
 
     fn run(items: u64, bytes: u64) -> Result<(usize, usize, String), CodecError> {
         let arena = DecodeArena::new();

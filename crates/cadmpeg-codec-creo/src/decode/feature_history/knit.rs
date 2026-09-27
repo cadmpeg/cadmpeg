@@ -342,9 +342,7 @@ pub(in super::super) fn feature_surface_transitions(
             predecessor.class_id() == 214
                 && predecessor.entity_id == intermediate_id
                 && predecessor.related_entity_state() == Some(0)
-                && output_table
-                    .non_surface_entity_ids()
-                    .contains(&predecessor.entity_id)
+                && output_table.contains_non_surface_entity_id(predecessor.entity_id)
                 && crate::surface::unique_surface_row(surface_rows, predecessor.entity_id).is_none()
         });
         let predecessor = matches.next()?;
