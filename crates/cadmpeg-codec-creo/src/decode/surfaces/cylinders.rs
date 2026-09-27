@@ -206,7 +206,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
             continue;
         };
         let cap_planes = [planes[0], planes[1]];
-        let Some(cylinder) = slot_fillet_cylinder(cap_planes, &planes[cap_ids.len()..]) else {
+        let Some(cylinder) = slot_fillet_cylinder(ctx, cap_planes, &planes[cap_ids.len()..])? else {
             continue;
         };
         let unresolved_rows = scan

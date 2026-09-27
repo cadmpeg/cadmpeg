@@ -550,7 +550,8 @@ fn unique_parallel_round_supports_define_constant_radius() {
         ]),
         Some(0.5)
     );
-    let cylinder = slot_fillet_cylinder(
+    let cylinder = crate::decode::with_test_decode_ctx(|ctx| slot_fillet_cylinder(
+        ctx,
         [
             PlaneEquation {
                 origin: [0.0, -2.0, 0.0],
@@ -579,12 +580,14 @@ fn unique_parallel_round_supports_define_constant_radius() {
                 normal: [0.0, 0.0, 1.0],
             },
         ],
-    )
+    ))
+    .expect("service profile admits slot midplanes")
     .expect("fully constrained slot fillet");
     assert_eq!(cylinder.origin, [-8.5, -2.0, -6.5]);
     assert_eq!(cylinder.axis, [0.0, 1.0, 0.0]);
     assert_eq!(cylinder.radius, 0.5);
-    assert!(slot_fillet_cylinder(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| slot_fillet_cylinder(
+        ctx,
         [
             PlaneEquation {
                 origin: [0.0, -2.0, 0.0],
@@ -605,7 +608,8 @@ fn unique_parallel_round_supports_define_constant_radius() {
                 normal: [1.0, 0.0, 0.0],
             },
         ],
-    )
+    ))
+    .expect("service profile admits slot midplanes")
     .is_none());
 }
 

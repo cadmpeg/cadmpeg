@@ -232,7 +232,8 @@ fn chamfer_uses_transferred_model_plane_carrier() {
 
 #[test]
 fn slot_fillet_cylinder_skips_parallel_midplane_candidates() {
-    let cylinder = super::slot_fillet_cylinder(
+    let cylinder = crate::decode::with_test_decode_ctx(|ctx| super::slot_fillet_cylinder(
+        ctx,
         [
             crate::decode::analytic::equations::PlaneEquation {
                 origin: [0.0, -2.0, 0.0],
@@ -269,11 +270,38 @@ fn slot_fillet_cylinder_skips_parallel_midplane_candidates() {
                 normal: [0.0, 0.0, 1.0],
             },
         ],
-    )
+    ))
+    .expect("service profile admits slot midplanes")
     .expect("later independent support pair");
 
     assert_eq!(cylinder.origin, [-8.5, -2.0, -6.5]);
     assert_eq!(cylinder.radius, 0.5);
+}
+
+#[test]
+fn slot_fillet_midplanes_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let plane = |origin, normal| crate::decode::analytic::equations::PlaneEquation { origin, normal };
+    let caps = [
+        plane([0.0, -2.0, 0.0], [0.0, 1.0, 0.0]),
+        plane([0.0, 3.0, 0.0], [0.0, 1.0, 0.0]),
+    ];
+    let supports = [
+        plane([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+        plane([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+        plane([0.0, 0.0, -7.0], [0.0, 0.0, 1.0]),
+        plane([0.0, 0.0, -6.0], [0.0, 0.0, 1.0]),
+    ];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let Err(error) = super::slot_fillet_cylinder(&ctx, caps, &supports) else {
+        panic!("one slot midplane exceeds the collection limit");
+    };
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo slot fillet midplanes"), "{error:?}");
 }
 
 #[test]
@@ -1115,7 +1143,10 @@ fn numerical_followup_slot_requires_one_tangent_radius() {
                 plane([0., -ratio * radius, 0.], [0., 1., 0.]),
                 plane([0., ratio * radius, 0.], [0., 1., 0.]),
             ];
-            let result = super::slot_fillet_cylinder(caps, &supports);
+            let result = crate::decode::with_test_decode_ctx(|ctx| {
+                super::slot_fillet_cylinder(ctx, caps, &supports)
+            })
+            .expect("service profile admits slot midplanes");
             assert_eq!(result.is_some(), ratio == 1.);
         }
     }
