@@ -261,28 +261,36 @@ impl AsmBrep {
 
 /// Collect every `id` field value in a serialized value tree.
 #[allow(clippy::implicit_hasher)]
-pub fn collect_owned_ids(value: &Value, out: &mut HashSet<String>) {
+pub fn collect_owned_ids(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: &Value,
+    out: &mut HashSet<String>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let _depth = ctx.enter_nested("collect ASM owned ids")?;
     match value {
         Value::Map(fields) => {
             if let Some(id) = fields
-                .get(&Value::String("id".into()))
+                .iter()
+                .find(|(key, _)| matches!(key, Value::String(name) if name == "id"))
+                .map(|(_, value)| value)
                 .and_then(value_string)
             {
-                out.insert(id.to_owned());
+                crate::decode_alloc::insert_string_set(ctx, out, id, "ASM owned ids")?;
             }
             for (key, value) in fields {
-                collect_owned_ids(key, out);
-                collect_owned_ids(value, out);
+                collect_owned_ids(ctx, key, out)?;
+                collect_owned_ids(ctx, value, out)?;
             }
         }
         Value::Seq(items) => {
             for item in items {
-                collect_owned_ids(item, out);
+                collect_owned_ids(ctx, item, out)?;
             }
         }
-        Value::Option(Some(value)) | Value::Newtype(value) => collect_owned_ids(value, out),
+        Value::Option(Some(value)) | Value::Newtype(value) => collect_owned_ids(ctx, value, out)?,
         _ => {}
     }
+    Ok(())
 }
 
 /// The string payload of a serialized value, unwrapping newtype layers.
@@ -298,12 +306,13 @@ pub fn value_string(value: &Value) -> Option<&str> {
 /// sequences of a serialized value tree.
 #[allow(clippy::implicit_hasher)]
 pub fn collect_entity_adjacency(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     value: &Value,
     owned: &HashSet<String>,
     out: &mut HashMap<String, HashSet<String>>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let Value::Map(fields) = value else {
-        return;
+        return Ok(());
     };
     for value in fields.values() {
         let Value::Seq(items) = value else {
@@ -314,16 +323,34 @@ pub fn collect_entity_adjacency(
                 continue;
             };
             let mut references = HashSet::new();
-            collect_references(item, owned, &mut references);
+            collect_references(ctx, item, owned, &mut references)?;
             references.remove(id);
             for reference in references {
-                out.entry(id.to_owned())
-                    .or_default()
-                    .insert(reference.clone());
-                out.entry(reference).or_default().insert(id.to_owned());
+                insert_adjacency(ctx, out, id, &reference)?;
+                insert_adjacency(ctx, out, &reference, id)?;
             }
         }
     }
+    Ok(())
+}
+
+fn insert_adjacency(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    out: &mut HashMap<String, HashSet<String>>,
+    owner: &str,
+    reference: &str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    if !out.contains_key(owner) {
+        ctx.charge_collection_items(1, "ASM adjacency owners")?;
+        let key = crate::decode_alloc::copy_string(ctx, owner, "ASM adjacency owner")?;
+        out.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("ASM adjacency owners", 0, 1))?;
+        out.insert(key, HashSet::new());
+    }
+    if let Some(references) = out.get_mut(owner) {
+        crate::decode_alloc::insert_string_set(ctx, references, reference, "ASM adjacency references")?;
+    }
+    Ok(())
 }
 
 /// The `id` field of a serialized entity map.
@@ -332,33 +359,42 @@ pub fn entity_id(value: &Value) -> Option<&str> {
         return None;
     };
     fields
-        .get(&Value::String("id".into()))
+        .iter()
+        .find(|(key, _)| matches!(key, Value::String(name) if name == "id"))
+        .map(|(_, value)| value)
         .and_then(value_string)
 }
 
 /// Collect every string in a serialized value tree that names an owned id.
 #[allow(clippy::implicit_hasher)]
-pub fn collect_references(value: &Value, owned: &HashSet<String>, out: &mut HashSet<String>) {
+pub fn collect_references(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: &Value,
+    owned: &HashSet<String>,
+    out: &mut HashSet<String>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let _depth = ctx.enter_nested("collect ASM references")?;
     match value {
         Value::String(id) if owned.contains(id) => {
-            out.insert(id.clone());
+            crate::decode_alloc::insert_string_set(ctx, out, id, "ASM references")?;
         }
         Value::Seq(items) => {
             for item in items {
-                collect_references(item, owned, out);
+                collect_references(ctx, item, owned, out)?;
             }
         }
         Value::Map(fields) => {
             for (key, value) in fields {
-                collect_references(key, owned, out);
-                collect_references(value, owned, out);
+                collect_references(ctx, key, owned, out)?;
+                collect_references(ctx, value, owned, out)?;
             }
         }
         Value::Option(Some(value)) | Value::Newtype(value) => {
-            collect_references(value, owned, out);
+            collect_references(ctx, value, owned, out)?;
         }
         _ => {}
     }
+    Ok(())
 }
 
 /// Retain only entities with a reachable `id` in the top-level sequences of a
@@ -377,31 +413,40 @@ pub fn retain_root_entities(value: &mut Value, reachable: &HashSet<String>) {
 
 /// Rewrite every string in a serialized value tree through `replacements`.
 #[allow(clippy::implicit_hasher)]
-pub fn remap_owned_ids(value: &mut Value, replacements: &HashMap<String, String>) {
+pub fn remap_owned_ids(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: &mut Value,
+    replacements: &HashMap<String, String>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let _depth = ctx.enter_nested("remap ASM owned ids")?;
     match value {
         Value::String(id) => {
             if let Some(replacement) = replacements.get(id) {
-                id.clone_from(replacement);
+                *id = crate::decode_alloc::copy_string(ctx, replacement, "ASM remapped id")?;
             }
         }
         Value::Seq(items) => {
             for item in items {
-                remap_owned_ids(item, replacements);
+                remap_owned_ids(ctx, item, replacements)?;
             }
         }
         Value::Map(fields) => {
             let entries = std::mem::take(fields);
             for (mut key, mut item) in entries {
-                remap_owned_ids(&mut key, replacements);
-                remap_owned_ids(&mut item, replacements);
+                remap_owned_ids(ctx, &mut key, replacements)?;
+                remap_owned_ids(ctx, &mut item, replacements)?;
+                if !fields.contains_key(&key) {
+                    ctx.charge_collection_items(1, "ASM remapped fields")?;
+                }
                 fields.insert(key, item);
             }
         }
         Value::Option(Some(value)) | Value::Newtype(value) => {
-            remap_owned_ids(value, replacements);
+            remap_owned_ids(ctx, value, replacements)?;
         }
         _ => {}
     }
+    Ok(())
 }
 
 fn count_kind(

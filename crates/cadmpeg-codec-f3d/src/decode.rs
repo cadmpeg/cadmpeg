@@ -2065,7 +2065,7 @@ fn try_decode_text_model(
     for (facts, mut part) in parts {
         if qualify {
             let namespace = facts.name.rsplit('/').next().unwrap_or(&facts.name);
-            part.qualify_ids(crate::ids::ID_FORMAT, namespace)?;
+            part.qualify_ids(ctx, crate::ids::ID_FORMAT, namespace)?;
         }
         match &mut merged {
             None => merged = Some((facts, part)),
@@ -3089,7 +3089,7 @@ fn decode_scanned_document<'a>(
             };
             let blob_name = candidate.name.rsplit('/').next().unwrap_or(&candidate.name);
             if let Some(keys) = selected_body_keys.get(blob_name) {
-                part.retain_body_keys(keys)?;
+                part.retain_body_keys(ctx, keys)?;
             }
             let mut body_selectors = match selected_body_keys.get(blob_name) {
                 Some(keys) => part.body_selectors_for(keys)?,
@@ -3109,7 +3109,7 @@ fn decode_scanned_document<'a>(
                         candidate.name
                     ))
                 })?;
-                part.qualify_ids(crate::ids::ID_FORMAT, namespace)?;
+                part.qualify_ids(ctx, crate::ids::ID_FORMAT, namespace)?;
                 body_selectors = match selected_body_keys.get(blob_name) {
                     Some(keys) => part.body_selectors_for(keys)?,
                     None => part.body_selectors(),
