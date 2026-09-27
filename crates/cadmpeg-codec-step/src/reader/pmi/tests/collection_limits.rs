@@ -799,6 +799,16 @@ fn pmi_measure_eval_walk_refuses_depth_limit() {
 }
 
 #[test]
+fn pmi_measure_quantity_walk_refuses_depth_limit() {
+    assert!(matches!(
+        measure_eval_refusal(8, Some(1), "#1=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(1.),$);"),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::RecursionDepth
+                && refusal.operation == "step_pmi_measure_quantity_walk"
+    ));
+}
+
+#[test]
 fn pmi_measure_loss_slot_refuses_collection_limit() {
     assert!(matches!(
         measure_eval_refusal(1, None, "#1=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(1.),$);"),
