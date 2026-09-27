@@ -4370,10 +4370,12 @@ fn parse_texture_mapping(
 }
 
 fn parse_rendering_mapping_channel(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     start: usize,
     end: usize,
     archive: ArchiveVersion,
+    retain_uuid: bool,
 ) -> Result<(RenderingMappingChannel, usize), FramingError> {
     let chunk = chunk_at(data, start, end, archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short() {
@@ -4397,7 +4399,7 @@ fn parse_rendering_mapping_channel(
         ));
     }
     let mapping_channel_id = value.i32()?;
-    let mapping_uuid = uuid(&mut value)?.to_string();
+    let mapping_uuid = uuid(&mut value)?;
     let object_transform = if minor >= 1 {
         Some(xform(&mut value)?)
     } else {
@@ -4407,7 +4409,15 @@ fn parse_rendering_mapping_channel(
     Ok((
         RenderingMappingChannel {
             mapping_channel_id,
-            mapping_uuid,
+            mapping_uuid: if retain_uuid {
+                crate::wire::admitted_format(
+                    ctx,
+                    format_args!("{mapping_uuid}"),
+                    "Rhino rendering channel UUID",
+                )?
+            } else {
+                String::new()
+            },
             object_transform,
         },
         chunk.next_offset(),
@@ -4467,8 +4477,18 @@ fn rendering_attributes(
                         "rendering material minor version is negative",
                     ));
                 }
-                let plugin_uuid = uuid(&mut value)?.to_string();
-                let front_material_uuid = uuid(&mut value)?.to_string();
+                let plugin = uuid(&mut value)?;
+                let plugin_uuid = crate::wire::admitted_format(
+                    ctx,
+                    format_args!("{plugin}"),
+                    "Rhino rendering material plugin UUID",
+                )?;
+                let front = uuid(&mut value)?;
+                let front_material_uuid = crate::wire::admitted_format(
+                    ctx,
+                    format_args!("{front}"),
+                    "Rhino rendering front material UUID",
+                )?;
                 let obsolete_mapping_count = checked_count_bytes(
                     value.i32()?,
                     1,
@@ -4478,10 +4498,12 @@ fn rendering_attributes(
                 )?;
                 for _ in 0..obsolete_mapping_count {
                     let (_, next_offset) = parse_rendering_mapping_channel(
+                        ctx,
                         data,
                         value.position(),
                         value.end(),
                         archive,
+                        false,
                     )?;
                     value.skip(next_offset - value.position())?;
                 }
@@ -4490,7 +4512,15 @@ fn rendering_attributes(
                     let source = value.u8()?;
                     value.skip(3)?;
                     Some(RenderingMaterialBackFace {
-                        back_material_uuid: (!id.is_nil()).then(|| id.to_string()),
+                        back_material_uuid: (!id.is_nil())
+                            .then(|| {
+                                crate::wire::admitted_format(
+                                    ctx,
+                                    format_args!("{id}"),
+                                    "Rhino rendering back material UUID",
+                                )
+                            })
+                            .transpose()?,
                         material_source: source,
                     })
                 } else {
@@ -4535,7 +4565,12 @@ fn rendering_attributes(
                         "rendering mapping minor version is negative",
                     ));
                 }
-                let plugin_uuid = uuid(&mut value)?.to_string();
+                let plugin = uuid(&mut value)?;
+                let plugin_uuid = crate::wire::admitted_format(
+                    ctx,
+                    format_args!("{plugin}"),
+                    "Rhino rendering mapping plugin UUID",
+                )?;
                 let channel_count = checked_count_bytes(
                     value.i32()?,
                     1,
@@ -4550,10 +4585,12 @@ fn rendering_attributes(
                 )?;
                 for _ in 0..channel_count {
                     let (channel, next_offset) = parse_rendering_mapping_channel(
+                        ctx,
                         data,
                         value.position(),
                         value.end(),
                         archive,
+                        true,
                     )?;
                     channels.push(channel);
                     value.skip(next_offset - value.position())?;
