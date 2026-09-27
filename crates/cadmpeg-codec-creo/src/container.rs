@@ -1138,6 +1138,39 @@ fn legacy_ascii_framing(
     Ok(None)
 }
 
+fn legacy_scope_ranges(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    framing: &LegacyAsciiFraming,
+    sections: &[ScannedSection<'_>],
+) -> Result<Vec<std::ops::Range<usize>>, CodecError> {
+    let count = sections
+        .len()
+        .checked_add(1)
+        .ok_or_else(|| CodecError::malformed("legacy persistence scope count exceeds usize"))?;
+    let mut scopes = Vec::new();
+    ctx.try_reserve_items(&mut scopes, count, "creo legacy persistence scopes")?;
+    let initial_end = sections
+        .first()
+        .map_or(data.len(), |section| section.section.offset());
+    scopes.push(framing.object_offset..initial_end);
+    for section in sections {
+        let region = section.region;
+        let Some(payload_start) = section
+            .section
+            .offset()
+            .checked_add(section.section.raw_name.len())
+            .and_then(|start| start.checked_add(2))
+        else {
+            continue;
+        };
+        if legacy::starts_with_declaration(data, payload_start) {
+            scopes.push(section.section.offset()..section.section.offset() + region.len());
+        }
+    }
+    Ok(scopes)
+}
+
 /// Identify the layout family structurally ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)). The
 /// `DEPDB_DATA` root record is authoritative because a persistence payload can
 /// contain embedded names with the `ND:` decoration. An undecorated file with
@@ -2579,25 +2612,7 @@ pub(crate) fn scan_bytes<'a>(
         sections
     };
     if let Some(framing) = &mut legacy_ascii {
-        let initial_end = sections
-            .first()
-            .map_or(data.len(), |section| section.section.offset());
-        let mut scopes = Vec::with_capacity(sections.len() + 1);
-        scopes.push(framing.object_offset..initial_end);
-        for section in &sections {
-            let region = section.region;
-            let Some(payload_start) = section
-                .section
-                .offset()
-                .checked_add(section.section.raw_name.len())
-                .and_then(|start| start.checked_add(2))
-            else {
-                continue;
-            };
-            if legacy::starts_with_declaration(&data, payload_start) {
-                scopes.push(section.section.offset()..section.section.offset() + region.len());
-            }
-        }
+        let scopes = legacy_scope_ranges(ctx, &data, framing, &sections)?;
         framing.persistence = legacy::scan(&data, scopes)?;
     }
     if model_name.is_none() {
