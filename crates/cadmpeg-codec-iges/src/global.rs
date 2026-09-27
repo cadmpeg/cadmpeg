@@ -2,6 +2,7 @@
 //! Global delimiters, count-driven Hollerith values, units, and metadata.
 
 use crate::card::{CardScan, Section};
+use crate::decode_resource::{format_retained, lossy_retained};
 use crate::loss::IgesLossCode;
 use crate::version::{DialectRecovery, UnverifiedDialectRecovery, VersionFlag};
 use cadmpeg_core::decode::{
@@ -963,32 +964,44 @@ impl Resolution<'_, '_> {
             .push(global_loss_note(code, index, defect, consequence));
     }
 
-    fn declaration_text(&self, index: usize) -> String {
+    fn declaration_text(&self, index: usize) -> Result<String, CodecError> {
         match self.value(index) {
-            Value::Omitted => String::new(),
+            Value::Omitted => Ok(String::new()),
             Value::String(bytes) | Value::Malformed(bytes) | Value::Atom(bytes) => {
-                String::from_utf8_lossy(bytes).into_owned()
+                lossy_retained(self.ctx, bytes, "iges global declaration text")
             }
             Value::ForbiddenString => {
-                "a string payload contains a byte forbidden by the effective specification family"
-                    .into()
+                format_retained(
+                    self.ctx,
+                    format_args!("a string payload contains a byte forbidden by the effective specification family"),
+                    "iges global declaration text",
+                )
             }
         }
     }
 
-    fn supplied_string(&self, index: usize) -> Supplied<String> {
+    fn supplied_string(&self, index: usize) -> Result<Supplied<String>, CodecError> {
         match self.value(index) {
-            Value::Omitted => Supplied::Absent,
-            Value::String(bytes) if bytes.is_empty() => Supplied::Absent,
+            Value::Omitted => Ok(Supplied::Absent),
+            Value::String(bytes) if bytes.is_empty() => Ok(Supplied::Absent),
             Value::String(bytes) => {
-                String::from_utf8(bytes.clone()).map_or(Supplied::Malformed, Supplied::Value)
+                let copy = self
+                    .ctx
+                    .copy_retained(bytes, "iges global supplied string")?;
+                Ok(String::from_utf8(copy).map_or(Supplied::Malformed, Supplied::Value))
             }
-            Value::Malformed(_) | Value::ForbiddenString | Value::Atom(_) => Supplied::Malformed,
+            Value::Malformed(_) | Value::ForbiddenString | Value::Atom(_) => {
+                Ok(Supplied::Malformed)
+            }
         }
     }
 
-    fn supplied_date(&self, index: usize, global_table: GlobalTable) -> Supplied<String> {
-        match self.supplied_string(index) {
+    fn supplied_date(
+        &self,
+        index: usize,
+        global_table: GlobalTable,
+    ) -> Result<Supplied<String>, CodecError> {
+        Ok(match self.supplied_string(index)? {
             Supplied::Value(text)
                 if date_value_is_valid(text.as_bytes(), global_table.accepts_four_digit_date()) =>
             {
@@ -997,7 +1010,7 @@ impl Resolution<'_, '_> {
             Supplied::Value(_) => Supplied::Malformed,
             Supplied::Absent => Supplied::Absent,
             Supplied::Malformed => Supplied::Malformed,
-        }
+        })
     }
 
     fn supplied_integer(&self, index: usize) -> Supplied<i64> {
@@ -1031,10 +1044,11 @@ impl Resolution<'_, '_> {
         }
     }
 
-    fn charge_recovered_real(&mut self, index: usize, value: f64) {
-        let source = self.declaration_text(index);
+    fn charge_recovered_real(&mut self, index: usize, value: f64) -> Result<(), CodecError> {
+        let source = self.declaration_text(index)?;
         self.losses
             .push(recovered_real_loss_note(index, &source, value));
+        Ok(())
     }
 
     /// Charges the field when the declaration states no value the model can use.
@@ -1071,25 +1085,34 @@ impl Resolution<'_, '_> {
         }
     }
 
-    #[must_use]
-    fn metadata_string(&mut self, index: usize, global_table: GlobalTable) -> Option<String> {
-        let supplied = self.supplied_string(index);
+    fn metadata_string(
+        &mut self,
+        index: usize,
+        global_table: GlobalTable,
+    ) -> Result<Option<String>, CodecError> {
+        let supplied = self.supplied_string(index)?;
         self.charge_metadata(index, &supplied, global_table);
-        match supplied {
+        Ok(match supplied {
             Supplied::Value(text) => Some(text),
             Supplied::Absent | Supplied::Malformed => None,
-        }
+        })
     }
 
     /// Charges a metadata string field whose value the model does not carry.
-    fn charge_metadata_string(&mut self, index: usize, global_table: GlobalTable) {
-        let supplied = self.supplied_string(index);
+    fn charge_metadata_string(
+        &mut self,
+        index: usize,
+        global_table: GlobalTable,
+    ) -> Result<(), CodecError> {
+        let supplied = self.supplied_string(index)?;
         self.charge_metadata(index, &supplied, global_table);
+        Ok(())
     }
 
-    fn metadata_date(&mut self, index: usize, global_table: GlobalTable) {
-        let supplied = self.supplied_date(index, global_table);
+    fn metadata_date(&mut self, index: usize, global_table: GlobalTable) -> Result<(), CodecError> {
+        let supplied = self.supplied_date(index, global_table)?;
         self.charge_metadata(index, &supplied, global_table);
+        Ok(())
     }
 
     #[must_use]
@@ -1145,7 +1168,7 @@ impl Resolution<'_, '_> {
             SuppliedReal::Absent => {}
             SuppliedReal::Value(value) if value.get() >= 0.0 => {}
             SuppliedReal::Recovered(value) if value.get() >= 0.0 => {
-                self.charge_recovered_real(FIELD_MAXIMUM_COORDINATE, value.get());
+                self.charge_recovered_real(FIELD_MAXIMUM_COORDINATE, value.get())?;
             }
             SuppliedReal::Value(_) | SuppliedReal::Recovered(_) | SuppliedReal::Malformed => {
                 self.charge(
@@ -1209,7 +1232,7 @@ impl Resolution<'_, '_> {
             },
             SuppliedReal::Recovered(value) => match NonNegativeReal::try_from(value) {
                 Ok(admitted) => {
-                    self.charge_recovered_real(FIELD_MINIMUM_RESOLUTION, value.get());
+                    self.charge_recovered_real(FIELD_MINIMUM_RESOLUTION, value.get())?;
                     admitted
                 }
                 Err(_) => {
@@ -1267,7 +1290,7 @@ impl Resolution<'_, '_> {
             SuppliedReal::Recovered(value)
                 if value.get() == 0.0 && global_table == GlobalTable::V5_0 =>
             {
-                self.charge_recovered_real(FIELD_MAXIMUM_LINE_WIDTH, 0.0);
+                self.charge_recovered_real(FIELD_MAXIMUM_LINE_WIDTH, 0.0)?;
                 (Some(LineWeightMode::Relative), None)
             }
             SuppliedReal::Value(value) => match PositiveReal::try_from(value) {
@@ -1276,7 +1299,7 @@ impl Resolution<'_, '_> {
             },
             SuppliedReal::Recovered(value) => match PositiveReal::try_from(value) {
                 Ok(maximum_width) => {
-                    self.charge_recovered_real(FIELD_MAXIMUM_LINE_WIDTH, value.get());
+                    self.charge_recovered_real(FIELD_MAXIMUM_LINE_WIDTH, value.get())?;
                     (Some(LineWeightMode::Absolute { maximum_width }), None)
                 }
                 Err(_) => (None, Some(Defect::Malformed)),
@@ -1316,7 +1339,7 @@ impl Resolution<'_, '_> {
             },
             SuppliedReal::Recovered(value) => match PositiveReal::try_from(value) {
                 Ok(scale) => {
-                    self.charge_recovered_real(FIELD_MODEL_SCALE, value.get());
+                    self.charge_recovered_real(FIELD_MODEL_SCALE, value.get())?;
                     (Some(scale), None)
                 }
                 Err(_) => (None, Some(Defect::Malformed)),
@@ -1329,7 +1352,7 @@ impl Resolution<'_, '_> {
             Supplied::Value(_) | Supplied::Malformed => (None, Some(Defect::Malformed)),
         };
         let (units_name, unit_mm, name_defect) = if units_flag == Some(3) {
-            match self.supplied_string(FIELD_UNITS_NAME) {
+            match self.supplied_string(FIELD_UNITS_NAME)? {
                 Supplied::Absent => (None, None, Some(Defect::Absent)),
                 Supplied::Value(name) => match delegated_unit_factor_mm(&name) {
                     Some(factor) => (Some(name), Some(factor), None),
@@ -1338,9 +1361,16 @@ impl Resolution<'_, '_> {
                 Supplied::Malformed => (None, None, Some(Defect::Malformed)),
             }
         } else {
-            let name = match self.supplied_string(FIELD_UNITS_NAME) {
+            let name = match self.supplied_string(FIELD_UNITS_NAME)? {
                 Supplied::Absent if global_table.defaults_units_name() => {
-                    units_flag.and_then(enumerated_unit_name).map(str::to_owned)
+                    match units_flag.and_then(enumerated_unit_name) {
+                        Some(name) => Some(format_retained(
+                            self.ctx,
+                            format_args!("{name}"),
+                            "iges global default units name",
+                        )?),
+                        None => None,
+                    }
                 }
                 Supplied::Absent if global_table.field_requires_value(FIELD_UNITS_NAME) => {
                     self.charge(
@@ -1422,7 +1452,7 @@ fn resolve(
             None => VersionDeclaration::Clamped(value),
         },
         Supplied::Malformed => {
-            VersionDeclaration::Unreadable(resolution.declaration_text(FIELD_VERSION_FLAG))
+            VersionDeclaration::Unreadable(resolution.declaration_text(FIELD_VERSION_FLAG)?)
         }
     };
     let effective_version = declaration.effective_version();
@@ -1439,10 +1469,10 @@ fn resolve(
             )));
     }
 
-    let sender_product = resolution.metadata_string(FIELD_SENDER_PRODUCT, global_table);
-    let native_file_name = resolution.metadata_string(FIELD_FILE_NAME, global_table);
-    resolution.charge_metadata_string(FIELD_NATIVE_SYSTEM, global_table);
-    resolution.charge_metadata_string(FIELD_PREPROCESSOR_VERSION, global_table);
+    let sender_product = resolution.metadata_string(FIELD_SENDER_PRODUCT, global_table)?;
+    let native_file_name = resolution.metadata_string(FIELD_FILE_NAME, global_table)?;
+    resolution.charge_metadata_string(FIELD_NATIVE_SYSTEM, global_table)?;
+    resolution.charge_metadata_string(FIELD_PREPROCESSOR_VERSION, global_table)?;
     let integer_bits = resolution
         .metadata_integer_value(FIELD_INTEGER_BITS, global_table, |_| true)
         .and_then(|value| u32::try_from(value).ok().filter(|value| *value > 0));
@@ -1460,10 +1490,17 @@ fn resolve(
     } else {
         resolution.significance(FIELD_DOUBLE_SIGNIFICANCE)
     };
-    let receiver_product = match resolution.supplied_string(FIELD_RECEIVER_PRODUCT) {
-        Supplied::Absent if global_table.defaults_receiver_product_to_sender() => {
-            sender_product.clone()
-        }
+    let receiver_product = match resolution.supplied_string(FIELD_RECEIVER_PRODUCT)? {
+        Supplied::Absent if global_table.defaults_receiver_product_to_sender() => sender_product
+            .as_deref()
+            .map(|value| {
+                format_retained(
+                    ctx,
+                    format_args!("{value}"),
+                    "iges global default receiver product",
+                )
+            })
+            .transpose()?,
         Supplied::Absent if global_table.field_requires_value(FIELD_RECEIVER_PRODUCT) => {
             resolution.charge(
                 IgesLossCode::GlobalMetadataFieldUnusable,
@@ -1487,19 +1524,19 @@ fn resolve(
     };
     let (units_name, length_factor_mm) = resolution.length_unit(global_table)?;
     let line_weight_scale = resolution.line_weight_scale(global_table)?;
-    resolution.metadata_date(FIELD_GENERATION_DATE, global_table);
+    resolution.metadata_date(FIELD_GENERATION_DATE, global_table)?;
     let minimum_resolution = resolution.minimum_resolution(global_table)?;
     resolution.charge_maximum_coordinate(global_table)?;
-    resolution.charge_metadata_string(FIELD_AUTHOR, global_table);
-    resolution.charge_metadata_string(FIELD_ORGANIZATION, global_table);
+    resolution.charge_metadata_string(FIELD_AUTHOR, global_table)?;
+    resolution.charge_metadata_string(FIELD_ORGANIZATION, global_table)?;
     resolution.charge_metadata_integer(FIELD_DRAFTING_STANDARD, global_table, |value| {
         (0..=7).contains(&value)
     });
     if global_table.has_model_date() {
-        resolution.metadata_date(FIELD_MODEL_DATE, global_table);
+        resolution.metadata_date(FIELD_MODEL_DATE, global_table)?;
     }
     if global_table.has_application_protocol() {
-        resolution.charge_metadata_string(FIELD_APPLICATION_PROTOCOL, global_table);
+        resolution.charge_metadata_string(FIELD_APPLICATION_PROTOCOL, global_table)?;
     }
 
     let resolved = ResolvedGlobal {

@@ -32,6 +32,53 @@ pub(crate) fn format_retained(
     Ok(text)
 }
 
+pub(crate) fn lossy_retained(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let mut remaining = bytes;
+    let mut output_len = 0_usize;
+    while let Err(error) = std::str::from_utf8(remaining) {
+        output_len = output_len
+            .checked_add(error.valid_up_to())
+            .and_then(|length| length.checked_add('�'.len_utf8()))
+            .ok_or_else(|| refuse_local_limit(operation, u64::MAX, 1))?;
+        let invalid_len = error
+            .error_len()
+            .unwrap_or(remaining.len() - error.valid_up_to());
+        remaining = &remaining[error.valid_up_to() + invalid_len..];
+    }
+    output_len = output_len
+        .checked_add(remaining.len())
+        .ok_or_else(|| refuse_local_limit(operation, u64::MAX, 1))?;
+    let count = u64_from_index(output_len);
+    ctx.charge_retained(count, operation)?;
+    let mut text = String::new();
+    text.try_reserve_exact(output_len)
+        .map_err(|_| refuse_local_limit(operation, count, count))?;
+    let mut remaining = bytes;
+    loop {
+        match std::str::from_utf8(remaining) {
+            Ok(valid) => {
+                text.push_str(valid);
+                break;
+            }
+            Err(error) => {
+                let valid = std::str::from_utf8(&remaining[..error.valid_up_to()])
+                    .map_err(|_| CodecError::Malformed("IGES UTF-8 prefix is invalid".into()))?;
+                text.push_str(valid);
+                text.push('�');
+                let invalid_len = error
+                    .error_len()
+                    .unwrap_or(remaining.len() - error.valid_up_to());
+                remaining = &remaining[error.valid_up_to() + invalid_len..];
+            }
+        }
+    }
+    Ok(text)
+}
+
 pub(crate) fn reserve_vec<T>(
     ctx: &DecodeContext<'_>,
     count: usize,
@@ -167,9 +214,36 @@ pub(crate) fn collect_optional_vec<T>(
 
 #[cfg(test)]
 mod tests {
-    use super::{collect_optional_vec, format_retained};
+    use super::{collect_optional_vec, format_retained, lossy_retained};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn lossy_retained_text_refuses_expanded_utf8_bytes_before_allocation() {
+        let bytes = b"a\xffb";
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 4;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("valid test fixture");
+        let result = lossy_retained(&ctx, bytes, "iges lossy text test");
+        assert!(matches!(
+            result,
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.used == 0
+                    && limit.additional == 5
+                    && limit.operation == "iges lossy text test"
+        ));
+
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
+            .expect("valid test fixture");
+        assert_eq!(
+            lossy_retained(&ctx, bytes, "iges lossy text test").expect("valid test fixture"),
+            "a�b"
+        );
+    }
 
     #[test]
     fn formatted_retained_text_refuses_before_reservation() {
