@@ -111,6 +111,11 @@ fn pmi_hidden_annotation_ids_refuse_collection_limit() {
     );
 }
 
+#[test]
+fn pmi_loss_slots_refuse_collection_limit() {
+    pmi_refuses("#1=PLUS_MINUS_TOLERANCE($);", "step_pmi_losses");
+}
+
 fn target_refusal(limit: u64) -> CodecError {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -776,5 +781,13 @@ fn pmi_defined_area_unit_text_refuses_retained_limit() {
     pmi_retained_refuses(
         "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=(LENGTH_MEASURE_WITH_UNIT() MEASURE_WITH_UNIT(LENGTH_MEASURE(0.05),#1));#3=ITEM();#4=(FLATNESS_TOLERANCE('tol','',#2,#3) GEOMETRIC_TOLERANCE_WITH_DEFINED_AREA_UNIT(.PROJECTED.,#2));",
         "step_pmi_defined_area_unit_text",
+    );
+}
+
+#[test]
+fn pmi_invalid_tolerance_text_refuses_retained_limit() {
+    pmi_retained_refuses(
+        "#1=(CUSTOM_TOLERANCE_NAME_WITH_LONG_SOURCE_TEXT() FLATNESS_TOLERANCE('tol','',$,$));",
+        "step_pmi_invalid_tolerance_text",
     );
 }
