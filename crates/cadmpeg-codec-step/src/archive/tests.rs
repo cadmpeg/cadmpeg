@@ -5,50 +5,146 @@ use cadmpeg_test_support::EditableDecodeResult;
 
 use super::{has_root_marker, resolve_uri, root_reference_notes, ReferenceTarget, ROOT_NAME};
 
+fn resolve_uri_for_test<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    base_member: &'a str,
+    uri: &'a str,
+) -> Result<ReferenceTarget<'a>, cadmpeg_core::CodecError> {
+    let mut member_bytes = ctx.reserve_scoped(0, "step_zip_uri_member_temp")?;
+    resolve_uri(ctx, &mut member_bytes, base_member, uri)
+}
+
 #[test]
 fn resolves_archive_relative_uris_and_fragments() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("test context");
     assert_eq!(
-        resolve_uri(ROOT_NAME, "parts/child.p21#target").unwrap(),
+        resolve_uri_for_test(&ctx, ROOT_NAME, "parts/child.p21#target").unwrap(),
         ReferenceTarget::Internal {
             member: "parts/child.p21".into(),
             query: None,
-            fragment: Some("target".into()),
+            fragment: Some("target"),
         }
     );
     assert_eq!(
-        resolve_uri("parts/child.p21", "../shared.p21#value").unwrap(),
+        resolve_uri_for_test(&ctx, "parts/child.p21", "../shared.p21#value").unwrap(),
         ReferenceTarget::Internal {
             member: "shared.p21".into(),
             query: None,
-            fragment: Some("value".into()),
+            fragment: Some("value"),
         }
     );
     assert_eq!(
-        resolve_uri(ROOT_NAME, "https://example.invalid/part.p21#root").unwrap(),
+        resolve_uri_for_test(&ctx, ROOT_NAME, "https://example.invalid/part.p21#root").unwrap(),
         ReferenceTarget::External
     );
     assert_eq!(
-        resolve_uri("parts/sub/child.p21", "./../shared.p21#value").unwrap(),
+        resolve_uri_for_test(&ctx, "parts/sub/child.p21", "./../shared.p21#value").unwrap(),
         ReferenceTarget::Internal {
             member: "parts/shared.p21".into(),
             query: None,
-            fragment: Some("value".into()),
+            fragment: Some("value"),
         }
     );
     assert_eq!(
-        resolve_uri(ROOT_NAME, "parts/child.p21?query=../outside#target").unwrap(),
+        resolve_uri_for_test(&ctx, ROOT_NAME, "parts/child.p21?query=../outside#target").unwrap(),
         ReferenceTarget::Internal {
             member: "parts/child.p21".into(),
-            query: Some("query=../outside".into()),
-            fragment: Some("target".into()),
+            query: Some("query=../outside"),
+            fragment: Some("target"),
         }
     );
 }
 
 #[test]
 fn rejects_archive_relative_traversal() {
-    assert!(resolve_uri(ROOT_NAME, "../outside.p21").is_err());
-    assert!(resolve_uri(ROOT_NAME, "parts//child.p21").is_err());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("test context");
+    assert!(resolve_uri_for_test(&ctx, ROOT_NAME, "../outside.p21").is_err());
+    assert!(resolve_uri_for_test(&ctx, ROOT_NAME, "parts//child.p21").is_err());
+}
+
+#[test]
+fn uri_components_refuse_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("test context");
+    let error = resolve_uri_for_test(&ctx, ROOT_NAME, "parts/child.p21")
+        .expect_err("two URI components exceed one item");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "step_zip_uri_components"
+    ));
+}
+
+#[test]
+fn uri_member_refuses_temporary_byte_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes =
+        u64::try_from(std::mem::size_of::<&str>()).expect("pointer size fits u64");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("test context");
+    let error = resolve_uri_for_test(&ctx, ROOT_NAME, "a")
+        .expect_err("one URI component leaves no temporary byte for its member");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && limit.operation == "step_zip_uri_member_temp"
+    ));
+}
+
+#[test]
+fn uri_base_member_refuses_temporary_byte_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes =
+        u64::try_from(ROOT_NAME.len() - 1).expect("member length fits u64");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("test context");
+    let error = resolve_uri_for_test(&ctx, ROOT_NAME, "#target")
+        .expect_err("base member needs one more temporary byte");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && limit.operation == "step_zip_uri_member_temp"
+    ));
+}
+
+#[test]
+fn root_reference_note_refuses_retained_byte_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 4;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("test context");
+    let mut notes = Vec::new();
+    let error = super::push_reference_note(
+        &ctx,
+        &mut notes,
+        "internal resource ",
+        crate::parse::ReferenceName::Entity(1),
+        "part.p21",
+        None,
+        None,
+    )
+    .expect_err("the note requires more than four retained bytes");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "step_zip_reference_note"
+    ));
 }
 
 use std::io::{Cursor, Read as _};
@@ -354,9 +450,38 @@ fn root_reference_notes_use_the_contextually_parsed_exchange() {
     let (exchange, _) = crate::parse::parse_with_context(opened.view.window(), &ctx)
         .expect("parse root under the active context");
     assert_eq!(
-        root_reference_notes(&opened.archive, &exchange).expect("resolve parsed references"),
+        root_reference_notes(&ctx, &opened.archive, &exchange).expect("resolve parsed references"),
         vec!["internal resource #10 -> parts/child.p21#target"]
     );
+}
+
+#[test]
+fn root_reference_note_refuses_collection_limit() {
+    let root = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('zip references'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;#10=<parts/child.p21#target>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let bytes = step_zip(&[
+        (ROOT_NAME, root, CompressionMethod::Stored),
+        ("parts/child.p21", b"child", CompressionMethod::Stored),
+    ]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let service = cadmpeg_core::decode::DecodePolicy::service();
+    let (service_ctx, view) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &service)
+            .expect("ZIP fits the service profile");
+    let opened = super::open_root(&service_ctx, view).expect("open ZIP root");
+    let (exchange, _) = crate::parse::parse_with_context(opened.view.window(), &service_ctx)
+        .expect("parse root under the service context");
+    let mut limited = service;
+    limited.limits.max_collection_items = 2;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &limited)
+        .expect("ZIP fits the limited profile");
+    let error = root_reference_notes(&ctx, &opened.archive, &exchange)
+        .expect_err("two URI components leave no item for the note");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "step_zip_reference_notes"
+    ));
 }
 
 #[test]
@@ -391,17 +516,21 @@ fn caller_composition_resolves_forwarded_zip_target_without_root_import() {
     let crate::parse::Value::Resource(resource_uri) = &root_exchange.anchors()[0].value else {
         panic!("root forwarding anchor");
     };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(root, &arena, &policy)
+        .expect("test context");
     let ReferenceTarget::Internal {
         member,
         query,
         fragment,
-    } = resolve_uri(ROOT_NAME, resource_uri).expect("resolve forwarded ZIP resource")
+    } = resolve_uri_for_test(&ctx, ROOT_NAME, resource_uri).expect("resolve forwarded ZIP resource")
     else {
         panic!("forwarded ZIP resource became external");
     };
     assert_eq!(member, "parts/ce02_composition_subsidiary.p21");
     assert_eq!(query, None);
-    assert_eq!(fragment.as_deref(), Some("remote_point"));
+    assert_eq!(fragment, Some("remote_point"));
     let anchor = subsidiary_exchange
         .anchors()
         .iter()

@@ -313,7 +313,7 @@ fn inspect_zip(
         return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
     }
     let (mut exchange, diagnostics) = parse::parse_with_context(root_bytes, ctx)?;
-    let resource_notes = archive::root_reference_notes(&archive, &exchange);
+    let resource_notes = archive::root_reference_notes(ctx, &archive, &exchange);
     let mut inspected = inspect_parsed_exchange(root_bytes, ctx, &mut exchange, &diagnostics)?;
     let resource_notes = resource_notes?;
     let entry_count = archive.entries().len();
@@ -361,7 +361,7 @@ fn decode_zip(
         data_start: root_data_offset,
     } = archive::open_root(ctx, root)?;
     let (exchange, diagnostics) = parse::parse_with_context(root_view.window(), ctx)?;
-    let resource_notes = archive::root_reference_notes(&archive, &exchange)?;
+    let resource_notes = archive::root_reference_notes(ctx, &archive, &exchange)?;
     let entry_count = archive.entries().len();
     let mut decoded = reader::decode_exchange(
         root_view.window(),
