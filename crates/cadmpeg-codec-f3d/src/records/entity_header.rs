@@ -798,7 +798,7 @@ struct HeaderMemberOffsets<'a>(Option<&'a ReferenceRun<u32>>);
 
 impl HeaderMemberOffsets<'_> {
     fn is_empty(&self) -> bool {
-        self.0.is_none_or(ReferenceRun::is_empty)
+        self.0.is_none_or(|members| members.offsets().len() == 0)
     }
 }
 
