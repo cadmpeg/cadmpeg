@@ -2678,36 +2678,7 @@ pub(crate) fn scan_bytes<'a>(
         }
     }
     let expanded_sections = expanded_sections(ctx, &data, &sections)?;
-    let double_xar_tables = expanded_sections
-        .iter()
-        .flat_map(|section| {
-            crate::scalar::double_xar_tables(&section.data)
-                .into_iter()
-                .map(|table| ModelDoubleXarTable {
-                    section_name: section.name.clone(),
-                    section_source_offset: section.source_offset,
-                    expanded_offset: table.offset,
-                    entries: table.entries,
-                })
-        })
-        .collect();
-    let primitive_scalar_arrays = expanded_sections
-        .iter()
-        .filter(|section| section.name == "SolidPrimdata")
-        .flat_map(|section| primdata::scalar_arrays(&section.data))
-        .collect();
-    let (primitive_triangle_strips, conflicting_triangle_strip_representation_count) =
-        expanded_sections
-            .iter()
-            .filter(|section| section.name == "SolidPrimdata")
-            .map(|section| primdata::triangle_strips(&section.data))
-            .fold((Vec::new(), 0usize), |(mut strips, conflicts), scan| {
-                strips.extend(scan.strips);
-                (
-                    strips,
-                    conflicts.saturating_add(scan.conflicting_representation_count),
-                )
-            });
+    let primitives = scan_primitives(ctx, &expanded_sections)?;
     let references = reference_scan(ctx, &sections)?;
     let layout = identify_layout(&data, &sections, legacy_ascii);
     if model_name.is_none() && !matches!(layout, Layout::LegacyAscii(_)) {
@@ -3001,12 +2972,7 @@ pub(crate) fn scan_bytes<'a>(
             declared_body_count,
             first_quilt_ptr,
         },
-        primitives: PrimitiveScan {
-            double_xar_tables,
-            scalar_arrays: primitive_scalar_arrays,
-            triangle_strips: primitive_triangle_strips,
-            conflicting_triangle_strip_representation_count,
-        },
+        primitives,
         references,
         surfaces: SurfaceScan {
             rows: surface_rows,
@@ -3089,6 +3055,57 @@ pub(crate) fn scan_bytes<'a>(
             entity_tables: feature_entity_tables,
             legacy_rounds: legacy_rounds.rounds,
         },
+    })
+}
+
+fn scan_primitives(
+    ctx: &DecodeContext<'_>,
+    expanded_sections: &[ExpandedSection],
+) -> Result<PrimitiveScan, CodecError> {
+    let mut double_xar_tables = Vec::new();
+    let mut primitive_scalar_arrays = Vec::new();
+    let mut primitive_triangle_strips = Vec::new();
+    let mut conflicting_triangle_strip_representation_count = 0usize;
+    for section in expanded_sections {
+        let tables = crate::scalar::double_xar_tables(ctx, &section.data)?;
+        ctx.try_reserve_items(
+            &mut double_xar_tables,
+            tables.len(),
+            "creo model double_xar tables",
+        )?;
+        for table in tables {
+            double_xar_tables.push(ModelDoubleXarTable {
+                section_name: ctx
+                    .copy_retained_text(&section.name, "creo model double_xar section names")?,
+                section_source_offset: section.source_offset,
+                expanded_offset: table.offset,
+                entries: table.entries,
+            });
+        }
+        if section.name == "SolidPrimdata" {
+            let arrays = primdata::scalar_arrays(ctx, &section.data)?;
+            ctx.try_reserve_items(
+                &mut primitive_scalar_arrays,
+                arrays.len(),
+                "creo model primitive scalar arrays",
+            )?;
+            primitive_scalar_arrays.extend(arrays);
+            let scan = primdata::triangle_strips(ctx, &section.data)?;
+            ctx.try_reserve_items(
+                &mut primitive_triangle_strips,
+                scan.strips.len(),
+                "creo model triangle strips",
+            )?;
+            primitive_triangle_strips.extend(scan.strips);
+            conflicting_triangle_strip_representation_count +=
+                scan.conflicting_representation_count;
+        }
+    }
+    Ok(PrimitiveScan {
+        double_xar_tables,
+        scalar_arrays: primitive_scalar_arrays,
+        triangle_strips: primitive_triangle_strips,
+        conflicting_triangle_strip_representation_count,
     })
 }
 
