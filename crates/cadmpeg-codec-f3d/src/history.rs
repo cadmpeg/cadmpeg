@@ -723,7 +723,7 @@ fn bind_complete_record_tables(
         state.topology_cache = crate::history_records::AsmTopologyCache::Complete(topology);
     }
     if complete {
-        bind_historical_transitions(states);
+        bind_historical_transitions(ctx, states)?;
         // Keep only record revisions that can be named by a late persistent
         // selection. Non-topological ASM attributes do not participate in
         // feature selection and need not survive projection finalization.
@@ -881,30 +881,47 @@ fn historical_record_archive(
     Ok(Some(records))
 }
 
-fn bind_historical_transitions(states: &mut [AsmDeltaState]) {
-    let by_node = states
-        .iter()
-        .enumerate()
-        .map(|(ordinal, state)| (state.node_index, ordinal))
-        .collect::<HashMap<_, _>>();
+fn bind_historical_transitions(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    states: &mut [AsmDeltaState],
+) -> Result<(), cadmpeg_core::CodecError> {
+    let count = u64::try_from(states.len())
+        .map_err(|_| ctx.refuse_codec_limit("index F3D transition nodes", 0, u64::MAX))?;
+    ctx.charge_collection_items(count, "index F3D transition nodes")?;
+    let mut by_node = HashMap::new();
+    by_node.try_reserve(states.len()).map_err(|_| {
+        ctx.refuse_codec_limit("index F3D transition nodes", 0, count)
+    })?;
+    for (ordinal, state) in states.iter().enumerate() {
+        by_node.insert(state.node_index, ordinal);
+    }
     if by_node.len() != states.len() {
-        return;
+        return Ok(());
     }
-    let transitions = states
-        .iter()
-        .map(|state| {
-            let previous = match state.next_ref {
-                Some(node) => Some(states.get(*by_node.get(&node)?)?),
-                None => None,
-            };
-            historical_transition(state, previous)
-        })
-        .collect::<Option<Vec<_>>>();
-    if let Some(transitions) = transitions {
-        for (state, transition) in states.iter_mut().zip(transitions) {
-            state.transition = Some(transition);
-        }
+    ctx.charge_collection_items(count, "collect F3D historical transitions")?;
+    let mut transitions = Vec::new();
+    transitions.try_reserve(states.len()).map_err(|_| {
+        ctx.refuse_codec_limit("collect F3D historical transitions", 0, count)
+    })?;
+    for state in states.iter() {
+        let previous = match state.next_ref {
+            Some(node) => {
+                let Some(&ordinal) = by_node.get(&node) else {
+                    return Ok(());
+                };
+                states.get(ordinal)
+            }
+            None => None,
+        };
+        let Some(transition) = historical_transition(ctx, state, previous)? else {
+            return Ok(());
+        };
+        transitions.push(transition);
     }
+    for (state, transition) in states.iter_mut().zip(transitions) {
+        state.transition = Some(transition);
+    }
+    Ok(())
 }
 
 fn retain_mirror_plane_topology(
@@ -984,72 +1001,124 @@ pub(crate) fn projection_was_finalized(histories: &[AsmHistory]) -> bool {
 }
 
 fn historical_transition(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     current: &AsmDeltaState,
     previous: Option<&AsmDeltaState>,
-) -> Option<AsmHistoricalTransition> {
-    let current_topology = current.topology()?;
+) -> Result<Option<AsmHistoricalTransition>, cadmpeg_core::CodecError> {
+    let Some(current_topology) = current.topology() else {
+        return Ok(None);
+    };
     let previous_topology = previous.and_then(|state| state.topology());
-    let current_versions = current
-        .entity_versions
-        .iter()
-        .map(|version| (version.entity_ref, version.record_ref))
-        .collect::<BTreeMap<_, _>>();
-    let previous_versions = previous
-        .map(|state| {
-            state
-                .entity_versions
-                .iter()
-                .map(|version| (version.entity_ref, version.record_ref))
-                .collect::<BTreeMap<_, _>>()
-        })
-        .unwrap_or_default();
+    let current_versions = historical_version_map(ctx, &current.entity_versions)?;
+    let previous_versions = match previous {
+        Some(state) => historical_version_map(ctx, &state.entity_versions)?,
+        None => BTreeMap::new(),
+    };
     let delta = |current: &[i64], previous: &[i64]| {
-        entity_delta(current, previous, &current_versions, &previous_versions)
+        entity_delta(ctx, current, previous, &current_versions, &previous_versions)
     };
     let empty = AsmHistoricalTopology::default();
     let previous_topology = previous_topology.unwrap_or(&empty);
-    Some(AsmHistoricalTransition {
+    let current_record_keys = historical_version_keys(ctx, &current_versions)?;
+    let previous_record_keys = historical_version_keys(ctx, &previous_versions)?;
+    Ok(Some(AsmHistoricalTransition {
         previous_state_id: previous.map(|state| state.state_id),
         records: entity_delta(
-            &current_versions.keys().copied().collect::<Vec<_>>(),
-            &previous_versions.keys().copied().collect::<Vec<_>>(),
+            ctx,
+            &current_record_keys,
+            &previous_record_keys,
             &current_versions,
             &previous_versions,
-        ),
+        )?,
         topology: AsmHistoricalTopologyDelta {
-            bodies: delta(&current_topology.bodies, &previous_topology.bodies),
-            regions: delta(&current_topology.regions, &previous_topology.regions),
-            shells: delta(&current_topology.shells, &previous_topology.shells),
-            faces: delta(&current_topology.faces, &previous_topology.faces),
-            loops: delta(&current_topology.loops, &previous_topology.loops),
-            coedges: delta(&current_topology.coedges, &previous_topology.coedges),
-            edges: delta(&current_topology.edges, &previous_topology.edges),
-            vertices: delta(&current_topology.vertices, &previous_topology.vertices),
-            points: delta(&current_topology.points, &previous_topology.points),
-            surfaces: delta(&current_topology.surfaces, &previous_topology.surfaces),
-            curves: delta(&current_topology.curves, &previous_topology.curves),
-            pcurves: delta(&current_topology.pcurves, &previous_topology.pcurves),
+            bodies: delta(&current_topology.bodies, &previous_topology.bodies)?,
+            regions: delta(&current_topology.regions, &previous_topology.regions)?,
+            shells: delta(&current_topology.shells, &previous_topology.shells)?,
+            faces: delta(&current_topology.faces, &previous_topology.faces)?,
+            loops: delta(&current_topology.loops, &previous_topology.loops)?,
+            coedges: delta(&current_topology.coedges, &previous_topology.coedges)?,
+            edges: delta(&current_topology.edges, &previous_topology.edges)?,
+            vertices: delta(&current_topology.vertices, &previous_topology.vertices)?,
+            points: delta(&current_topology.points, &previous_topology.points)?,
+            surfaces: delta(&current_topology.surfaces, &previous_topology.surfaces)?,
+            curves: delta(&current_topology.curves, &previous_topology.curves)?,
+            pcurves: delta(&current_topology.pcurves, &previous_topology.pcurves)?,
         },
-    })
+    }))
+}
+
+fn historical_version_map(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    versions: &[AsmEntityVersion],
+) -> Result<BTreeMap<i64, i64>, cadmpeg_core::CodecError> {
+    let count = u64::try_from(versions.len())
+        .map_err(|_| ctx.refuse_codec_limit("index F3D transition versions", 0, u64::MAX))?;
+    ctx.charge_collection_items(count, "index F3D transition versions")?;
+    let mut indexed = BTreeMap::new();
+    for version in versions {
+        indexed.insert(version.entity_ref, version.record_ref);
+    }
+    Ok(indexed)
+}
+
+fn historical_version_keys(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    versions: &BTreeMap<i64, i64>,
+) -> Result<Vec<i64>, cadmpeg_core::CodecError> {
+    let count = u64::try_from(versions.len())
+        .map_err(|_| ctx.refuse_codec_limit("collect F3D transition version keys", 0, u64::MAX))?;
+    ctx.charge_collection_items(count, "collect F3D transition version keys")?;
+    let mut keys = Vec::new();
+    keys.try_reserve(versions.len()).map_err(|_| {
+        ctx.refuse_codec_limit("collect F3D transition version keys", 0, count)
+    })?;
+    keys.extend(versions.keys().copied());
+    Ok(keys)
 }
 
 fn entity_delta(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     current: &[i64],
     previous: &[i64],
     current_versions: &BTreeMap<i64, i64>,
     previous_versions: &BTreeMap<i64, i64>,
-) -> AsmHistoricalEntityDelta {
+) -> Result<AsmHistoricalEntityDelta, cadmpeg_core::CodecError> {
+    let current_count = u64::try_from(current.len())
+        .map_err(|_| ctx.refuse_codec_limit("index F3D current transition entities", 0, u64::MAX))?;
+    let previous_count = u64::try_from(previous.len())
+        .map_err(|_| ctx.refuse_codec_limit("index F3D previous transition entities", 0, u64::MAX))?;
+    ctx.charge_collection_items(current_count, "index F3D current transition entities")?;
     let current = current.iter().copied().collect::<BTreeSet<_>>();
+    ctx.charge_collection_items(previous_count, "index F3D previous transition entities")?;
     let previous = previous.iter().copied().collect::<BTreeSet<_>>();
-    AsmHistoricalEntityDelta {
-        inserted: current.difference(&previous).copied().collect(),
-        deleted: previous.difference(&current).copied().collect(),
-        updated: current
-            .intersection(&previous)
-            .copied()
-            .filter(|entity| current_versions.get(entity) != previous_versions.get(entity))
-            .collect(),
+    let work = current_count.checked_add(previous_count)
+        .ok_or_else(|| ctx.refuse_codec_limit("compare F3D transition entities", 0, u64::MAX))?;
+    ctx.charge_work(work, "compare F3D transition entities")?;
+    Ok(AsmHistoricalEntityDelta {
+        inserted: transition_delta_members(ctx, current.difference(&previous).copied())?,
+        deleted: transition_delta_members(ctx, previous.difference(&current).copied())?,
+        updated: transition_delta_members(
+            ctx,
+            current.intersection(&previous).copied().filter(|entity| {
+                current_versions.get(entity) != previous_versions.get(entity)
+            }),
+        )?,
+    })
+}
+
+fn transition_delta_members(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    members: impl Iterator<Item = i64>,
+) -> Result<Vec<i64>, cadmpeg_core::CodecError> {
+    let mut values = Vec::new();
+    for member in members {
+        ctx.charge_collection_items(1, "collect F3D transition delta")?;
+        values.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("collect F3D transition delta", 0, 1)
+        })?;
+        values.push(member);
     }
+    Ok(values)
 }
 
 pub(crate) fn bind_feature_outputs(
