@@ -111,7 +111,13 @@ fn text_frame_curve_records(
                     .copied()
                     .eq([*text_reference])
                 || relation.members().len() < 2
-                || relation.return_member_indices() != relation.member_indices()[1..]
+                || !relation
+                    .return_members()
+                    .iter()
+                    .map(|member| member.reference.record_index())
+                    .eq(relation.members()[1..]
+                        .iter()
+                        .map(|member| member.reference.record_index()))
                 || text_owners.get(&(scope.clone(), *text_reference))
                     != Some(&relation.owner_reference)
             {
@@ -125,8 +131,9 @@ fn text_frame_curve_records(
             }
             Some(
                 relation
-                    .return_member_indices()
-                    .into_iter()
+                    .return_members()
+                    .iter()
+                    .map(|member| member.reference.record_index())
                     .map(move |record_index| (scope.clone(), record_index)),
             )
         })
@@ -442,11 +449,16 @@ pub(crate) fn project_spatial_sketch_design(
         // Only the second reference run of a relation record is in semantic
         // order: the control polygon ends with the spline there, and the
         // interleaved first run orders its members by nothing a reader can use.
-        let members = relation.return_member_indices();
+        let members = relation.return_members();
         if relation.unknown_constraint_bits() != 0
             || relation.constraint_kinds() != [SketchConstraintKind::SplineGroup]
             || members.len() < 2
-            || members.iter().collect::<HashSet<_>>().len() != members.len()
+            || members
+                .iter()
+                .map(|member| member.reference.record_index())
+                .collect::<HashSet<_>>()
+                .len()
+                != members.len()
         {
             continue;
         }
@@ -455,7 +467,7 @@ pub(crate) fn project_spatial_sketch_design(
         };
         let Some(curve) = members
             .last()
-            .and_then(|record| curves_by_record.get(&(scope, *record)))
+            .and_then(|member| curves_by_record.get(&(scope, member.reference.record_index())))
         else {
             continue;
         };
@@ -472,16 +484,17 @@ pub(crate) fn project_spatial_sketch_design(
             .iter()
             .zip(poles.points().zip(poles.points().skip(1)))
             .map(|(record, (first, second))| {
-                let member = curves_by_record.get(&(scope, *record))?;
+                let record_index = record.reference.record_index();
+                let member = curves_by_record.get(&(scope, record_index))?;
                 if member.owner_reference != Some(relation.owner_reference) {
                     return None;
                 }
                 match member.geometry.as_ref() {
-                    None => Some((*record, [*first, *second])),
+                    None => Some((record_index, [*first, *second])),
                     Some(SketchCurveGeometry::Line { start, end, .. })
                         if start.as_raw() == first && end.as_raw() == second =>
                     {
-                        Some((*record, [*first, *second]))
+                        Some((record_index, [*first, *second]))
                     }
                     _ => None,
                 }

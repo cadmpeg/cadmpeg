@@ -120,7 +120,7 @@ impl SketchRelationReference {
 
     /// Identity after resolution, including a record with no sketch identity.
     #[must_use]
-    pub(super) fn resolved(&self) -> Option<&SketchRelationOperand> {
+    pub(crate) fn resolved(&self) -> Option<&SketchRelationOperand> {
         match self {
             Self::Index(_) => None,
             Self::Resolved(operand) => Some(operand),
@@ -802,6 +802,7 @@ impl SketchRelation {
 
     /// Record indices of the first reference run.
     #[must_use]
+    #[cfg(test)]
     pub(crate) fn member_indices(&self) -> Vec<u32> {
         self.members
             .iter()
@@ -811,6 +812,7 @@ impl SketchRelation {
 
     /// Record indices of the return reference run.
     #[must_use]
+    #[cfg(test)]
     pub(crate) fn return_member_indices(&self) -> Vec<u32> {
         self.return_members
             .iter()
@@ -832,6 +834,7 @@ impl SketchRelation {
 
     /// Resolved first-run members, empty for an unresolved run.
     #[must_use]
+    #[cfg(test)]
     pub(crate) fn resolved_members(&self) -> Vec<SketchRelationOperand> {
         self.members
             .iter()
@@ -841,6 +844,7 @@ impl SketchRelation {
 
     /// Resolved return-run members, empty for an unresolved run.
     #[must_use]
+    #[cfg(test)]
     pub(crate) fn resolved_return_members(&self) -> Vec<SketchRelationOperand> {
         self.return_members
             .iter()
