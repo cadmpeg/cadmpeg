@@ -1189,7 +1189,7 @@ fn standard_plane_line_inverts_to_exact_parameter_line() {
 }
 
 #[test]
-fn standard_emission_reverses_only_face_pcurve_use_range() {
+fn standard_emission_reverses_face_pcurve_range_and_refuses_edge_flag_limit() {
     for reversed in [false, true] {
         let mut ir = CadIr::empty();
         ir.model.points.extend([
@@ -1262,9 +1262,32 @@ fn standard_emission_reverses_only_face_pcurve_use_range() {
             logical_vertex_count: 2,
         };
         let mut annotations = AnnotationBuilder::new();
+        let mut limited_ir = ir.clone();
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+            emit_standard_topology(
+                ctx,
+                &mut limited_ir,
+                &mut AnnotationBuilder::new(),
+                &bindings,
+                &[],
+                &surface_indices,
+                &supports,
+                &[[0, 1]],
+                &[0, 1],
+                &topology,
+                &[None],
+                &[None],
+                &[],
+                &mut crate::nurbs::LaneRefusals::new(),
+                &mut admission,
+            )
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
         crate::test_support::with_service_context(|ctx| {
             let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
             emit_standard_topology(
+                ctx,
                 &mut ir,
                 &mut annotations,
                 &bindings,

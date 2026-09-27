@@ -5705,22 +5705,22 @@ fn attach_standard_topology(
     else {
         return Err(StandardTopologyFailure::InvalidTopologySolution.into());
     };
-    let resolved_limit_curve_bindings = edge_vertices
-        .iter()
-        .enumerate()
-        .map(|(edge, logical_vertices)| {
-            let points = [
-                point_assignment[logical_vertices[0]],
-                point_assignment[logical_vertices[1]],
-            ];
-            resolve_standard_limit_curve_binding(&limit_curve_bindings[edge], points)
-        })
-        .collect::<Vec<_>>();
+    let mut resolved_limit_curve_bindings = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut resolved_limit_curve_bindings, edge_vertices.len(), "catia_resolved_limit_curve_bindings")
+        .map_err(StandardTopologyError::Resource)?;
+    for (edge, logical_vertices) in edge_vertices.iter().enumerate() {
+        let points = [
+            point_assignment[logical_vertices[0]],
+            point_assignment[logical_vertices[1]],
+        ];
+        resolved_limit_curve_bindings.push(resolve_standard_limit_curve_binding(&limit_curve_bindings[edge], points));
+    }
     *bound_limit_curve_count = resolved_limit_curve_bindings
         .iter()
         .filter(|binding| binding.is_some())
         .count();
     emit_standard_topology(
+        ctx,
         ir,
         annotations,
         bindings,
@@ -5895,6 +5895,7 @@ fn standard_face_loops(
 /// Emits the edge, loop, coedge, and pcurve IR layers for the solved topology.
 #[allow(clippy::too_many_arguments)]
 fn emit_standard_topology(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
@@ -5910,7 +5911,8 @@ fn emit_standard_topology(
     refusal: &mut crate::nurbs::LaneRefusals,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mut edge_reversed = Vec::with_capacity(supports.len());
+    let mut edge_reversed = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut edge_reversed, supports.len(), "catia_standard_edge_reverse_flags")?;
     for (edge_index, (support, logical_vertices)) in supports.iter().zip(edge_vertices).enumerate()
     {
         let start_point = point_assignment[logical_vertices[0]];
@@ -5977,7 +5979,7 @@ fn emit_standard_topology(
                 .derived(&id, "param_range")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.edges, "catia_standard_model_edges")?;
         ir.model.edges.push(Edge {
             id,
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(curve, param_range)
@@ -5994,14 +5996,12 @@ fn emit_standard_topology(
         });
     }
 
-    let curve_indices = ir
-        .model
-        .curves
-        .iter()
-        .enumerate()
-        .map(|(index, curve)| (curve.id.clone(), index))
-        .collect::<HashMap<_, _>>();
-    let mut edge_coedges = vec![Vec::new(); ir.model.edges.len()];
+    let mut curve_indices = HashMap::new();
+    for (index, curve) in ir.model.curves.iter().enumerate() {
+        let id = crate::resource::copy_id(ctx, curve.id.as_str(), CurveId::mint, "catia_standard_curve_index_id_copy")?;
+        crate::resource::insert_map(ctx, &mut curve_indices, id, index, "catia_standard_curve_indices")?;
+    }
+    let mut edge_coedges = ctx.alloc_filled(ir.model.edges.len(), Vec::new(), "catia_standard_edge_coedge_rows")?;
     let coedge_namespace = cadmpeg_ir::identity_namespace!("catia", "standard", "coedge");
     let vertex_namespace = cadmpeg_ir::identity_namespace!("catia", "standard", "v");
     for (face_index, face_topology) in topology.faces().iter().enumerate() {
@@ -6071,9 +6071,9 @@ fn emit_standard_topology(
                     annotations
                         .derived(&id, "geometry")
                         .map_err(cadmpeg_core::CodecError::malformed)?;
-                    admission.charge()?;
+                    admission.reserve_entity(&mut ir.model.pcurves, "catia_standard_model_pcurves")?;
                     ir.model.pcurves.push(Pcurve {
-                        id: id.clone(),
+                        id: crate::resource::copy_id(ctx, id.as_str(), PcurveId::mint, "catia_standard_pcurve_id_copy")?,
                         geometry,
                         metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                             None,
@@ -6089,8 +6089,8 @@ fn emit_standard_topology(
                 })
                 .transpose()?;
                 let arena_index = ir.model.coedges.len();
-                edge_coedges[edge_use.edge_row].push(arena_index);
-                let id = coedge_ids[coedge_index].clone();
+                crate::resource::push(ctx, &mut edge_coedges[edge_use.edge_row], arena_index, "catia_standard_edge_coedge_entries")?;
+                let id = crate::resource::copy_id(ctx, coedge_ids[coedge_index].as_str(), cadmpeg_ir::ids::CoedgeId::mint, "catia_standard_coedge_id_copy")?;
                 annotate(
                     annotations,
                     &id,
@@ -6109,37 +6109,40 @@ fn emit_standard_topology(
                         .derived(&id, "pcurves")
                         .map_err(cadmpeg_core::CodecError::malformed)?;
                 }
-                admission.charge()?;
+                let pcurve_use = pcurve_id
+                    .map(|(pcurve, range)| {
+                        edge_use
+                            .reversed
+                            .then_some([range[1], range[0]])
+                            .map(cadmpeg_ir::geometry::DirectedParameterRange::new)
+                            .transpose()
+                            .map(|parameter_range| cadmpeg_ir::topology::PcurveUse {
+                                pcurve,
+                                isoparametric: None,
+                                parameter_range,
+                            })
+                    })
+                    .transpose()
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                let pcurves = match pcurve_use {
+                    Some(pcurve) => ctx.alloc_filled(1, pcurve, "catia_standard_coedge_pcurve_use")?,
+                    None => Vec::new(),
+                };
+                admission.reserve_entity(&mut ir.model.coedges, "catia_standard_model_coedges")?;
                 ir.model.coedges.push(Coedge {
                     id,
-                    owner_loop: loop_id.clone(),
+                    owner_loop: crate::resource::copy_id(ctx, loop_id.as_str(), LoopId::mint, "catia_standard_coedge_owner_loop_copy")?,
                     edge: EdgeId::compose(
                         &cadmpeg_ir::identity_namespace!("catia", "standard", "edge"),
                         edge_use.edge_row,
                     ),
-                    radial_next: coedge_ids[coedge_index].clone(),
+                    radial_next: crate::resource::copy_id(ctx, coedge_ids[coedge_index].as_str(), cadmpeg_ir::ids::CoedgeId::mint, "catia_standard_radial_id_copy")?,
                     sense: if edge_use.reversed ^ edge_reversed[edge_use.edge_row] {
                         Sense::Reversed
                     } else {
                         Sense::Forward
                     },
-                    pcurves: pcurve_id
-                        .map(|(pcurve, range)| {
-                            edge_use
-                                .reversed
-                                .then_some([range[1], range[0]])
-                                .map(cadmpeg_ir::geometry::DirectedParameterRange::new)
-                                .transpose()
-                                .map(|parameter_range| cadmpeg_ir::topology::PcurveUse {
-                                    pcurve,
-                                    isoparametric: None,
-                                    parameter_range,
-                                })
-                        })
-                        .transpose()
-                        .map_err(cadmpeg_core::CodecError::malformed)?
-                        .into_iter()
-                        .collect(),
+                    pcurves,
                     use_curve: None,
                 });
             }
@@ -6163,7 +6166,7 @@ fn emit_standard_topology(
                     .derived(&loop_id, "boundary_role")
                     .map_err(cadmpeg_core::CodecError::malformed)?;
             }
-            admission.charge()?;
+            admission.reserve_entity(&mut ir.model.loops, "catia_standard_model_loops")?;
             ir.model.loops.push(Loop {
                 id: loop_id,
                 face: FaceId::compose(
@@ -6178,7 +6181,8 @@ fn emit_standard_topology(
     for uses in edge_coedges {
         for (position, current) in uses.iter().enumerate() {
             let next = uses[(position + 1) % uses.len()];
-            ir.model.coedges[*current].radial_next = ir.model.coedges[next].id.clone();
+            let next_id = crate::resource::copy_id(ctx, ir.model.coedges[next].id.as_str(), cadmpeg_ir::ids::CoedgeId::mint, "catia_standard_radial_next_id_copy")?;
+            ir.model.coedges[*current].radial_next = next_id;
         }
     }
     Ok(())
