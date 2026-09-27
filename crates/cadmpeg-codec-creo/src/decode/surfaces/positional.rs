@@ -162,17 +162,20 @@ pub(in super::super) fn transfer_positional_tori(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
-    let round_feature_ids = scan
-        .surfaces
-        .rows
-        .iter()
-        .filter(|row| row.kind == crate::surface::SurfaceKind::TorusOrSphere)
-        .map(|row| row.feature_id)
-        .filter(|feature_id| feature_schema_class(scan, *feature_id) == Some(SchemaClass::Round))
-        .collect::<BTreeSet<_>>();
+    let mut round_feature_ids = BTreeSet::new();
+    for row in &scan.surfaces.rows {
+        if row.kind == crate::surface::SurfaceKind::TorusOrSphere
+            && feature_schema_class(scan, row.feature_id) == Some(SchemaClass::Round)
+            && !round_feature_ids.contains(&row.feature_id)
+        {
+            ctx.charge_collection_items(1, "creo positional torus round feature ids")?;
+            round_feature_ids.insert(row.feature_id);
+        }
+    }
     let mut constant_round_feature_ids = BTreeSet::new();
     for feature_id in round_feature_ids {
         if round_constant_radius(ctx, scan, ir, source_carriers, feature_id)?.is_some() {
+            ctx.charge_collection_items(1, "creo positional torus constant round ids")?;
             constant_round_feature_ids.insert(feature_id);
         }
     }

@@ -11,6 +11,72 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::test_support::build_prt;
 use crate::CreoCodec;
 
+fn positional_round_result(limit: u64) -> Result<usize, CodecError> {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
+        feature_id: 913,
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
+        stream_offset: 0,
+        body: vec![0; 2].try_into().expect("row body"),
+        body_offset: 0,
+        offset: 0,
+    });
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 7,
+        kind: crate::surface::SurfaceKind::TorusOrSphere,
+        feature_id: 913,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 7,
+    });
+    scan.features
+        .legacy_rounds
+        .push(crate::legacy_feature::LegacyRoundFeature {
+            feature_id: 913,
+            radius: crate::legacy_feature::LegacyRoundRadius::Constant(
+                cadmpeg_ir::scalar::PositiveReal::new(2.0).expect("positive radius"),
+            ),
+            edge_ids: None,
+            offset: 0,
+        });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("root input is admitted");
+    super::transfer_positional_tori(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::document::CadIr::empty(),
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+}
+
+#[test]
+fn positional_torus_round_feature_node_refuses_before_insertion() {
+    assert_eq!(positional_round_result(2).expect("service admits round"), 0);
+    let error = positional_round_result(0).expect_err("round feature needs a set node");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo positional torus round feature ids"
+    ));
+}
+
+#[test]
+fn positional_torus_constant_round_node_refuses_before_insertion() {
+    let error = positional_round_result(1).expect_err("constant round follows feature node");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo positional torus constant round ids"
+    ));
+}
+
 #[test]
 fn paired_sphere_association_copy_refuses_before_vec_growth() {
     let mut payload = b"srf_array\0\xf8\x01".to_vec();
