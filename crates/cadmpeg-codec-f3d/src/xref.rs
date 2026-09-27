@@ -477,17 +477,16 @@ fn bind_occurrences(
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let meta_name = entry
-            .name
-            .strip_suffix("BulkStream.dat")
-            .map(|prefix| format!("{prefix}MetaStream.dat"));
-        let (serializer_magic, placement_offsets) = if let Some(name) =
-            meta_name.filter(|name| scan.entries.iter().any(|candidate| candidate.name == *name))
-        {
-            let meta = scan.parsed_metastream(&name)?;
-            let meta_bytes = scan.entry_bytes(&name)?;
+        let meta_entry = entry.name.strip_suffix("BulkStream.dat").and_then(|prefix| {
+            scan.entries.iter().find(|candidate| {
+                candidate.name.strip_prefix(prefix) == Some("MetaStream.dat")
+            })
+        });
+        let (serializer_magic, placement_offsets) = if let Some(meta_entry) = meta_entry {
+            let meta = scan.parsed_metastream(&meta_entry.name)?;
+            let meta_bytes = scan.entry_bytes(&meta_entry.name)?;
             (
-                Some(crate::metastream::serializer_magic(meta_bytes, &name)?),
+                Some(crate::metastream::serializer_magic(meta_bytes, &meta_entry.name)?),
                 Some(typed_occurrence_placement_offsets(ctx, &meta)?),
             )
         } else {
