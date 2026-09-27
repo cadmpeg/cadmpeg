@@ -16,7 +16,7 @@ use super::scalars::feature_object_name;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use crate::records::ObjectId;
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind};
-use cadmpeg_core::decode::{alloc_filled, bounded_len, refuse_local_limit, DecodeContext, View};
+use cadmpeg_core::decode::{bounded_len, refuse_local_limit, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -2024,7 +2024,7 @@ pub(super) fn unique_dimensioned_rectangle_markers<'a>(
 }
 
 fn ordered_compact_line_profile(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     lines: &[(
         SketchEntityId,
         &SketchInputEntity,
@@ -2036,13 +2036,8 @@ fn ordered_compact_line_profile(
     if lines.len() < 3 {
         return Ok(None);
     }
-    let mut used = match ctx {
-        Some(ctx) => ctx.alloc_filled(lines.len(), false, "SLDPRT compact line profile usage")?,
-        None => alloc_filled(lines.len(), false, "SLDPRT compact line profile usage")?,
-    };
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(lines.len() as u64, "SLDPRT compact line profile")?;
-    }
+    let mut used = ctx.alloc_filled(lines.len(), false, "SLDPRT compact line profile usage")?;
+    ctx.charge_collection_items(lines.len() as u64, "SLDPRT compact line profile")?;
     let mut profile = Vec::new();
     profile.try_reserve_exact(lines.len()).map_err(|_| {
         refuse_local_limit(
@@ -2089,7 +2084,7 @@ fn ordered_compact_line_profile(
 }
 
 pub(super) fn complete_ordered_compact_line_profile(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     lines: &[(
         SketchEntityId,
         &SketchInputEntity,

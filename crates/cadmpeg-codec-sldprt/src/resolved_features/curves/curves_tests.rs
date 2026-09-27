@@ -798,7 +798,9 @@ fn compact_line_endpoint_pairs_form_one_oriented_cycle() {
         ),
     ];
 
-    let profile = ordered_compact_line_profile(None, &lines)
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let profile = ordered_compact_line_profile(&ctx, &lines)
         .expect("profile allocation")
         .expect("closed line cycle");
     assert_eq!(
@@ -814,7 +816,7 @@ fn compact_line_endpoint_pairs_form_one_oriented_cycle() {
         ]
     );
     assert_eq!(
-        complete_ordered_compact_line_profile(None, &lines, 5).unwrap(),
+        complete_ordered_compact_line_profile(&ctx, &lines, 5).unwrap(),
         None
     );
 }
@@ -850,7 +852,7 @@ fn compact_line_profile_reports_collection_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-    let error = complete_ordered_compact_line_profile(Some(&ctx), &lines, lines.len())
+    let error = complete_ordered_compact_line_profile(&ctx, &lines, lines.len())
         .expect_err("three usage slots exceed the collection limit");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
