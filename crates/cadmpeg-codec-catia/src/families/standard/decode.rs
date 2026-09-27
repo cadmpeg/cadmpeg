@@ -1657,6 +1657,7 @@ fn try_decode_standard_populations(
         return Ok(None);
     };
     let mut outputs = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut outputs, rest.len(), "catia_standard_population_outputs")?;
     for selection in rest {
         let Some(output) = try_decode_standard_population(
             ctx,
@@ -1691,7 +1692,6 @@ fn try_decode_standard_populations(
         crate::coverage::STANDARD_TOPOLOGY_MULTIPLE_ENDPOINT_DOMAIN_COUNT,
         crate::coverage::STANDARD_TOPOLOGY_ENDPOINT_DOMAIN_CHOICE_COUNT,
     ]
-    .into_iter()
     .map(|key| {
         (
             key,
@@ -1707,8 +1707,7 @@ fn try_decode_standard_populations(
                 })
                 .sum::<usize>(),
         )
-    })
-    .collect::<Vec<_>>();
+    });
     let population_count = 1 + rest.len();
     let admitted_face_rows = std::iter::once(first)
         .chain(rest.iter())
