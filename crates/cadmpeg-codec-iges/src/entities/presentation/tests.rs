@@ -72,6 +72,55 @@ fn assert_presentation_collection_refusal(bytes: &[u8], operation: &str) {
     panic!("did not reach {operation} within 4096 admission boundaries");
 }
 
+fn assert_presentation_retained_refusal(bytes: &[u8], operation: &str) {
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let result = IgesCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions { policy, ..DecodeOptions::default() },
+        );
+        match result {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                if limit.operation == operation {
+                    return;
+                }
+                let next = limit.used.checked_add(limit.additional).unwrap();
+                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
+                cap = next;
+            }
+            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
+        }
+    }
+    panic!("did not reach {operation} within 4096 admission boundaries");
+}
+
+#[test]
+fn presentation_appearance_slots_and_copies_refuse_limits() {
+    let color = owned_test_file(&[OwnedTestEntity {
+        entity_type: 314,
+        form: 0,
+        label: "COLOR".into(),
+        status: "00000200",
+        parameters: "314,20,40,60,6Hcustom;".into(),
+    }]);
+    assert_presentation_collection_refusal(&color, "iges neutral appearance slots");
+    assert_presentation_retained_refusal(&color, "iges appearance schema");
+
+    let bound = colored_explicit_vertex_loop_file();
+    assert_presentation_collection_refusal(&bound, "iges appearance binding slots");
+    for operation in [
+        "iges appearance body ID copy",
+        "iges appearance face ID copy",
+        "iges appearance ID copy",
+        "iges appearance object type",
+    ] {
+        assert_presentation_retained_refusal(&bound, operation);
+    }
+}
+
 #[test]
 fn presentation_indexes_and_definition_levels_refuse_collection_limits() {
     let fonts = text_font_definition_file();

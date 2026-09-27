@@ -3,7 +3,9 @@
 
 use super::geometry::ProjectionOutcome;
 use super::{mirror_flag_valid, presentation_loss, vertical_text_flag_valid};
-use crate::decode_resource::{format_retained, insert_optional_btree_map, insert_optional_btree_set};
+use crate::decode_resource::{
+    format_retained, insert_optional_btree_map, insert_optional_btree_set, reserve_vec_growth,
+};
 use crate::directory::{DirectoryEntry, Hierarchy, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
@@ -135,8 +137,15 @@ fn directory_line_weight_is_semantic(entry: &DirectoryEntry, global_table: Globa
     !(matches!(global_table, GlobalTable::V4_0) && matches!(entry.entity_type, 124 | 314 | 406))
 }
 
-fn appearance(ir: &mut CadIr, id: AppearanceId, name: Option<String>, color: Color) {
+fn appearance(
+    ir: &mut CadIr,
+    id: AppearanceId,
+    name: Option<String>,
+    color: Color,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
     if ir.model.appearances.iter().all(|item| item.id != id) {
+        reserve_vec_growth(ctx, &mut ir.model.appearances, 1, "iges neutral appearance slots")?;
         ir.model.appearances.push(Appearance {
             id,
             name,
@@ -144,13 +153,14 @@ fn appearance(ir: &mut CadIr, id: AppearanceId, name: Option<String>, color: Col
             library_id: None,
             visual_guid: None,
             physical_token: None,
-            schema: Some("IGES color".into()),
+            schema: Some(format_retained(ctx, format_args!("IGES color"), "iges appearance schema")?),
             category: None,
             base_color: Some(color),
             properties: BTreeMap::new(),
             textures: Vec::new(),
         });
     }
+    Ok(())
 }
 
 fn text_font_definition(
@@ -486,35 +496,40 @@ pub(super) fn project(
             crate::ids::appearance_color(&crate::ids::Stem::directory(entry.sequence)),
             name,
             color,
-        );
+            ctx,
+        )?;
         insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges presentation decoded sequences")?;
     }
 
-    let resolve = |value: i64| -> Option<(AppearanceId, Color)> {
+    let resolve_color = |value: i64| -> Option<Color> {
         match value.cmp(&0) {
-            std::cmp::Ordering::Greater => Some((
-                crate::ids::appearance_standard(&crate::ids::Stem::number(value)),
-                standard_color(value)?,
-            )),
+            std::cmp::Ordering::Greater => standard_color(value),
             std::cmp::Ordering::Less => {
                 let sequence = u32::try_from(value.checked_neg()?).ok()?;
                 let entry = entries.get(&sequence)?;
                 if entry.entity_type != 314 || entry.form != 0 {
                     return None;
                 }
-                Some((
-                    crate::ids::appearance_color(&crate::ids::Stem::directory(sequence)),
-                    *defined.get(&sequence)?,
-                ))
+                defined.get(&sequence).copied()
             }
             std::cmp::Ordering::Equal => None,
         }
+    };
+    let resolve = |value: i64| -> Option<(AppearanceId, Color)> {
+        let color = resolve_color(value)?;
+        let id = if value > 0 {
+            crate::ids::appearance_standard(&crate::ids::Stem::number(value))
+        } else {
+            let sequence = u32::try_from(value.checked_neg()?).ok()?;
+            crate::ids::appearance_color(&crate::ids::Stem::directory(sequence))
+        };
+        Some((id, color))
     };
 
     for entry in directory.iter().filter(|entry| {
         entry.color != 0 && directory_color_is_semantic(entry, global.global_table())
     }) {
-        if resolve(entry.color).is_none() {
+        if resolve_color(entry.color).is_none() {
             losses.push(presentation_loss(
                 entry,
                 "Directory color number or definition pointer is invalid",
@@ -551,8 +566,7 @@ pub(super) fn project(
             source.color = sequences
                 .curve(&curve.id)
                 .and_then(|sequence| entries.get(&sequence))
-                .and_then(|entry| resolve(entry.color))
-                .map(|(_, color)| color);
+                .and_then(|entry| resolve_color(entry.color));
         }
     }
     for surface in &mut ir.model.surfaces {
@@ -560,35 +574,28 @@ pub(super) fn project(
             source.color = sequences
                 .surface(&surface.id)
                 .and_then(|sequence| entries.get(&sequence))
-                .and_then(|entry| resolve(entry.color))
-                .map(|(_, color)| color);
+                .and_then(|entry| resolve_color(entry.color));
         }
     }
 
-    let body_assignments = ir
-        .model
-        .bodies
-        .iter()
-        .filter_map(|body| {
+    for index in 0..ir.model.bodies.len() {
+        let Some((sequence, appearance_id, color, visible)) = (|| {
+            let body = &ir.model.bodies[index];
             let sequence = sequences.body(&body.id)?;
             let entry = entries.get(&sequence)?;
-            resolve(entry.color).map(|appearance| {
-                (
-                    body.id.clone(),
-                    sequence,
-                    appearance,
-                    entry.status.is_visible(),
-                )
-            })
-        })
-        .collect::<Vec<_>>();
-    for (body_id, sequence, (appearance_id, color), visible) in body_assignments {
-        appearance(ir, appearance_id.clone(), None, color);
-        let Some(body) = ir.model.bodies.iter_mut().find(|body| body.id == body_id) else {
+            let (appearance_id, color) = resolve(entry.color)?;
+            Some((sequence, appearance_id, color, entry.status.is_visible()))
+        })() else {
             continue;
         };
+        let body = &mut ir.model.bodies[index];
+        ctx.charge_retained(body.id.as_str().len() as u64, "iges appearance body ID copy")?;
+        let body_id = body.id.clone();
         body.color = Some(color);
         body.visible = Some(visible);
+        ctx.charge_retained(appearance_id.as_str().len() as u64, "iges appearance ID copy")?;
+        appearance(ir, appearance_id.clone(), None, color, ctx)?;
+        reserve_vec_growth(ctx, &mut ir.model.appearance_bindings, 1, "iges appearance binding slots")?;
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: crate::ids::appearance_binding(&crate::ids::Stem::word_directory(
                 crate::ids::Word::Body,
@@ -597,7 +604,7 @@ pub(super) fn project(
             target: AppearanceTarget::Body(body_id),
             appearance: appearance_id,
             source_entity_id: None,
-            object_type: Some("Body".into()),
+            object_type: Some(format_retained(ctx, format_args!("Body"), "iges appearance object type")?),
             visible: None,
             channels: BTreeMap::new(),
         });
@@ -655,22 +662,23 @@ pub(super) fn project(
         }
     }
 
-    let face_assignments = ir
-        .model
-        .faces
-        .iter()
-        .filter_map(|face| {
+    for index in 0..ir.model.faces.len() {
+        let Some((sequence, appearance_id, color)) = (|| {
+            let face = &ir.model.faces[index];
             let sequence = sequences.face(&face.id)?;
             let entry = entries.get(&sequence)?;
-            resolve(entry.color).map(|appearance| (face.id.clone(), sequence, appearance))
-        })
-        .collect::<Vec<_>>();
-    for (face_id, sequence, (appearance_id, color)) in face_assignments {
-        appearance(ir, appearance_id.clone(), None, color);
-        let Some(face) = ir.model.faces.iter_mut().find(|face| face.id == face_id) else {
+            let (appearance_id, color) = resolve(entry.color)?;
+            Some((sequence, appearance_id, color))
+        })() else {
             continue;
         };
+        let face = &mut ir.model.faces[index];
+        ctx.charge_retained(face.id.as_str().len() as u64, "iges appearance face ID copy")?;
+        let face_id = face.id.clone();
         face.color = Some(color);
+        ctx.charge_retained(appearance_id.as_str().len() as u64, "iges appearance ID copy")?;
+        appearance(ir, appearance_id.clone(), None, color, ctx)?;
+        reserve_vec_growth(ctx, &mut ir.model.appearance_bindings, 1, "iges appearance binding slots")?;
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: crate::ids::appearance_binding(&crate::ids::Stem::word_directory(
                 crate::ids::Word::Face,
@@ -679,7 +687,7 @@ pub(super) fn project(
             target: AppearanceTarget::Face(face_id),
             appearance: appearance_id,
             source_entity_id: None,
-            object_type: Some("Face".into()),
+            object_type: Some(format_retained(ctx, format_args!("Face"), "iges appearance object type")?),
             visible: None,
             channels: BTreeMap::new(),
         });
