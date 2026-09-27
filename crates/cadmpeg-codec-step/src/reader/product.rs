@@ -57,30 +57,50 @@ pub(super) fn decode(
 ) -> Result<StageOutcome<ProductData>, CodecError> {
     let mut typed = HashSet::new();
     let mut losses = Vec::new();
-    let formations = exchange
-        .entities_any(PRODUCT_DEFINITION_FORMATION_TYPES)
-        .filter_map(|(id, record)| {
-            let parameters = product_definition_formation_parameters(record)?;
-            Some((id, parameters.get(2)?.reference()?))
-        })
-        .collect::<BTreeMap<_, _>>();
-    let definitions = exchange
-        .entities_any(PRODUCT_DEFINITION_TYPES)
-        .filter_map(|(id, record)| {
-            let parameters = product_definition_parameters(record)?;
-            Some((id, *formations.get(&parameters.get(2)?.reference()?)?))
-        })
-        .collect::<BTreeMap<_, _>>();
-    let mut definitions_by_product_in_source_order = definitions.iter().fold(
-        BTreeMap::<u64, Vec<u64>>::new(),
-        |mut definitions_by_product, (&definition, &product)| {
-            definitions_by_product
-                .entry(product)
-                .or_default()
-                .push(definition);
-            definitions_by_product
-        },
-    );
+    let mut formations = BTreeMap::new();
+    for (id, record) in exchange.entities_any(PRODUCT_DEFINITION_FORMATION_TYPES) {
+        let Some(product) = product_definition_formation_parameters(record)
+            .and_then(|parameters| parameters.get(2))
+            .and_then(ValueExt::reference)
+        else {
+            continue;
+        };
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "step_product_formations")?;
+        }
+        formations.insert(id, product);
+    }
+    let mut definitions = BTreeMap::new();
+    for (id, record) in exchange.entities_any(PRODUCT_DEFINITION_TYPES) {
+        let Some(product) = product_definition_parameters(record)
+            .and_then(|parameters| parameters.get(2))
+            .and_then(ValueExt::reference)
+            .and_then(|formation| formations.get(&formation).copied())
+        else {
+            continue;
+        };
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "step_product_definitions")?;
+        }
+        definitions.insert(id, product);
+    }
+    let mut definitions_by_product_in_source_order = BTreeMap::<u64, Vec<u64>>::new();
+    for (&definition, &product) in &definitions {
+        if !definitions_by_product_in_source_order.contains_key(&product) {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "step_product_definition_groups")?;
+            }
+        }
+        let grouped = definitions_by_product_in_source_order.entry(product).or_default();
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "step_product_definition_group_members")?;
+        }
+        grouped.try_reserve(1).map_err(|_| match ctx {
+            Some(ctx) => ctx.refuse_codec_limit("step_product_definition_group_members", 0, 1),
+            None => cadmpeg_core::decode::refuse_local_limit("step_product_definition_group_members", 0, 1),
+        })?;
+        grouped.push(definition);
+    }
     for definitions in definitions_by_product_in_source_order.values_mut() {
         definitions.sort_by_key(|definition| {
             exchange
