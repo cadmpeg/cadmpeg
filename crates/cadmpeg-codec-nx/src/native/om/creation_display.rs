@@ -6,6 +6,7 @@ use crate::container::Container;
 use crate::om::column_row::{IndexRow, LinkedRow, TargetRow};
 use serde::{Deserialize, Serialize};
 
+mod borrowed_wires;
 mod wire;
 const CLASS_NAME: &str = "UGS::RM_creation_display_data";
 
@@ -32,11 +33,8 @@ impl RmCreationDisplayDataEncoding {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "wire::RmCreationDisplayDataRelationWire",
-    into = "wire::RmCreationDisplayDataRelationWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "wire::RmCreationDisplayDataRelationWire")]
 pub(in crate::native) struct RmCreationDisplayDataRelation {
     id: String,
     ordinal: u32,

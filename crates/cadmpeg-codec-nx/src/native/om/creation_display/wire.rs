@@ -73,6 +73,7 @@ pub(super) struct RmCreationDisplayDataRelationWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<RmCreationDisplayDataRelation> for RmCreationDisplayDataRelationWire {
     fn from(value: RmCreationDisplayDataRelation) -> Self {
         let source_offset = value.encoding.offset();

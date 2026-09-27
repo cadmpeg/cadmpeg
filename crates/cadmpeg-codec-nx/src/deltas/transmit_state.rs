@@ -3,12 +3,30 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "TransmitWire", into = "TransmitWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "TransmitWire")]
 pub(crate) struct TransmitState {
     description: String,
     schema: String,
     first_reference: u32,
+}
+
+#[derive(Serialize)]
+struct TransmitRef<'a> {
+    description: &'a str,
+    schema: &'a str,
+    references: [u32; 2],
+}
+
+impl Serialize for TransmitState {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        TransmitRef {
+            description: &self.description,
+            schema: &self.schema,
+            references: self.references(),
+        }
+        .serialize(serializer)
+    }
 }
 
 impl TransmitState {
@@ -62,6 +80,7 @@ struct TransmitWire {
     references: [u32; 2],
 }
 
+#[cfg(test)]
 impl From<TransmitState> for TransmitWire {
     fn from(state: TransmitState) -> Self {
         Self {
@@ -90,6 +109,10 @@ mod tests {
             r#"{"description":"Transmit (deltas)","schema":"SCH_1","references":[1063,1064]}"#;
         let state: TransmitState = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&state).unwrap(), json);
+        assert_eq!(
+            serde_json::to_vec(&state).unwrap(),
+            serde_json::to_vec(&super::TransmitWire::from(state.clone())).unwrap()
+        );
         let valid = serde_json::to_value(&state).unwrap();
         for (field, value) in [
             ("description", serde_json::json!("Transmit")),
@@ -107,5 +130,27 @@ mod tests {
                 .to_string()
                 .contains(field));
         }
+    }
+
+    #[test]
+    fn transmit_state_native_limit_refuses_before_text_copy() {
+        #[derive(serde::Serialize)]
+        struct Record<'a> {
+            id: &'static str,
+            #[serde(flatten)]
+            state: &'a TransmitState,
+        }
+        let state: TransmitState = serde_json::from_str(
+            r#"{"description":"Transmit (deltas)","schema":"SCH_1","references":[2,3]}"#,
+        )
+        .unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &Record {
+                id: "nx:parasolid:transmit-state#0",
+                state: &state,
+            },
+            serde_json::json!({"id": "nx:parasolid:transmit-state#0",
+                "description": "Transmit (deltas)", "schema": "SCH_1", "references": [2,3]}),
+        );
     }
 }

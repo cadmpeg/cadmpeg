@@ -23,13 +23,11 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::num::NonZeroU8;
+mod borrowed_wires;
 
 /// Exact text frame retained from a `SYMBOLIC_THREAD` operation payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureSymbolicThreadTextFrameWire",
-    into = "FeatureSymbolicThreadTextFrameWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureSymbolicThreadTextFrameWire")]
 struct FeatureSymbolicThreadTextFrame {
     /// Globally unique text-frame identity.
     id: String,
@@ -53,6 +51,7 @@ struct FeatureSymbolicThreadTextFrameWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureSymbolicThreadTextFrame> for FeatureSymbolicThreadTextFrameWire {
     fn from(frame: FeatureSymbolicThreadTextFrame) -> Self {
         Self {
@@ -137,11 +136,8 @@ pub(in crate::native) struct FeatureThreadedHoleTemplate {
 }
 
 /// Exact nonempty redundantly witnessed scalar lane in a simple-hole payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureSimpleHoleRepeatedScalarLaneWire",
-    into = "FeatureSimpleHoleRepeatedScalarLaneWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "FeatureSimpleHoleRepeatedScalarLaneWire")]
 pub(in crate::native) struct FeatureSimpleHoleRepeatedScalarLane {
     /// Globally unique repeated-lane identity.
     pub(in crate::native) id: String,
@@ -161,6 +157,7 @@ struct FeatureSimpleHoleRepeatedScalarLaneWire {
     second_witness_offsets: Vec<u64>,
 }
 
+#[cfg(test)]
 impl From<FeatureSimpleHoleRepeatedScalarLane> for FeatureSimpleHoleRepeatedScalarLaneWire {
     fn from(lane: FeatureSimpleHoleRepeatedScalarLane) -> Self {
         Self {
@@ -219,11 +216,8 @@ impl TryFrom<FeatureSimpleHoleRepeatedScalarLaneWire> for FeatureSimpleHoleRepea
 }
 
 /// Offset-store blocks linked after both repeated scalar-lane witnesses.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureSimpleHoleRepeatedScalarLaneBlockReferencesWire",
-    into = "FeatureSimpleHoleRepeatedScalarLaneBlockReferencesWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureSimpleHoleRepeatedScalarLaneBlockReferencesWire")]
 pub(in crate::native) struct FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
     pub(in crate::native) id: String,
     pub(in crate::native) operation_label: String,
@@ -274,6 +268,7 @@ struct FeatureSimpleHoleRepeatedScalarLaneBlockReferencesWire {
     second_reference_offsets: [u64; 2],
 }
 
+#[cfg(test)]
 impl From<FeatureSimpleHoleRepeatedScalarLaneBlockReferences>
     for FeatureSimpleHoleRepeatedScalarLaneBlockReferencesWire
 {
@@ -367,11 +362,8 @@ impl TryFrom<FeatureSimpleHoleRepeatedScalarLaneBlockReferencesWire>
 }
 
 /// Distinct simple-hole operations sharing one four-block construction identity.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureSimpleHoleConstructionGroupWire",
-    into = "FeatureSimpleHoleConstructionGroupWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureSimpleHoleConstructionGroupWire")]
 pub(in crate::native) struct FeatureSimpleHoleConstructionGroup {
     /// Globally unique group identity.
     pub(in crate::native) id: String,
@@ -432,6 +424,7 @@ struct FeatureSimpleHoleConstructionGroupWire {
     block_references: Vec<String>,
 }
 
+#[cfg(test)]
 impl From<FeatureSimpleHoleConstructionGroup> for FeatureSimpleHoleConstructionGroupWire {
     fn from(group: FeatureSimpleHoleConstructionGroup) -> Self {
         Self {
@@ -489,11 +482,8 @@ impl TryFrom<FeatureSimpleHoleConstructionGroupWire> for FeatureSimpleHoleConstr
 }
 
 /// Exact four-block construction-group lane carried by a `HOLE PACKAGE` operation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureHolePackageConstructionGroupLaneWire",
-    into = "FeatureHolePackageConstructionGroupLaneWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureHolePackageConstructionGroupLaneWire")]
 pub(in crate::native) struct FeatureHolePackageConstructionGroupLane {
     /// Globally unique lane identity.
     pub(in crate::native) id: String,
@@ -535,6 +525,7 @@ struct FeatureHolePackageConstructionGroupLaneWire {
     reference_source_offsets: [u64; 4],
 }
 
+#[cfg(test)]
 impl From<FeatureHolePackageConstructionGroupLane> for FeatureHolePackageConstructionGroupLaneWire {
     fn from(value: FeatureHolePackageConstructionGroupLane) -> Self {
         Self {

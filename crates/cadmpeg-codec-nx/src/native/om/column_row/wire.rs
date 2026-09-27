@@ -91,6 +91,7 @@ impl TryFrom<DataBlockIndexRowWire> for DataBlockIndexRow {
         })
     }
 }
+#[cfg(test)]
 impl From<DataBlockIndexRow> for DataBlockIndexRowWire {
     fn from(value: DataBlockIndexRow) -> Self {
         Self {
@@ -219,6 +220,7 @@ impl TryFrom<DataBlockLinkedIndexRowWire> for DataBlockLinkedIndexRow {
         })
     }
 }
+#[cfg(test)]
 impl From<DataBlockLinkedIndexRow> for DataBlockLinkedIndexRowWire {
     fn from(value: DataBlockLinkedIndexRow) -> Self {
         Self {
@@ -331,6 +333,7 @@ impl TryFrom<DataBlockTargetIndexRowWire> for DataBlockTargetIndexRow {
         })
     }
 }
+#[cfg(test)]
 impl From<DataBlockTargetIndexRow> for DataBlockTargetIndexRowWire {
     fn from(value: DataBlockTargetIndexRow) -> Self {
         Self {

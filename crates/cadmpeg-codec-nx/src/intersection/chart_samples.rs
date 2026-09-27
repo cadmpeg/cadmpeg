@@ -62,7 +62,6 @@ impl ChartSamples {
     pub(crate) fn points(&self) -> Vec<Point3> {
         self.samples.iter().map(|sample| sample.0.get()).collect()
     }
-
     pub(crate) fn parameters(&self) -> Vec<f64> {
         self.samples.iter().map(|sample| sample.1.get()).collect()
     }
@@ -224,10 +223,35 @@ impl SourceChartData {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn points(&self) -> Vec<Point3> {
         match &self.encoding {
             SourceEncoding::Xyz3 { points } => points.iter().map(|point| point.get()).collect(),
             SourceEncoding::Ext11 { samples, .. } => samples.points(),
+        }
+    }
+    pub(crate) fn point_at(&self, index: usize) -> Option<Point3> {
+        match &self.encoding {
+            SourceEncoding::Xyz3 { points } => points.get(index).map(|point| point.get()),
+            SourceEncoding::Ext11 { samples, .. } => {
+                samples.samples.get(index).map(|sample| sample.0.get())
+            }
+        }
+    }
+
+    pub(crate) fn native_parameter_at(&self, index: usize) -> Option<f64> {
+        match &self.encoding {
+            SourceEncoding::Xyz3 { .. } => None,
+            SourceEncoding::Ext11 { samples, .. } => {
+                samples.samples.get(index).map(|sample| sample.1.get())
+            }
+        }
+    }
+
+    pub(crate) fn support_uv_ref(&self) -> [Option<&super::SupportUvLane>; 2] {
+        match &self.encoding {
+            SourceEncoding::Xyz3 { .. } => [None, None],
+            SourceEncoding::Ext11 { support_uv, .. } => support_uv.each_ref().map(Option::as_ref),
         }
     }
     pub(crate) fn count(&self) -> u32 {
@@ -242,12 +266,14 @@ impl SourceChartData {
             SourceEncoding::Ext11 { .. } => super::ChartPointLayout::Ext11,
         }
     }
+    #[cfg(test)]
     pub(crate) fn native_parameters(&self) -> Option<Vec<f64>> {
         match &self.encoding {
             SourceEncoding::Xyz3 { .. } => None,
             SourceEncoding::Ext11 { samples, .. } => Some(samples.parameters()),
         }
     }
+    #[cfg(test)]
     pub(crate) fn support_uv(&self) -> super::SupportUv {
         match &self.encoding {
             SourceEncoding::Xyz3 { .. } => [None, None],

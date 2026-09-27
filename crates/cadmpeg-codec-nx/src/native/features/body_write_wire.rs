@@ -50,6 +50,53 @@ pub(super) struct BodyWriteWire {
     source_offset: u64,
 }
 
+#[derive(Serialize)]
+struct BodyWriteRef<'a> {
+    id: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    operation_label: Option<&'a str>,
+    operation_record: &'a str,
+    ordinal: u32,
+    body_identity: u8,
+    group_node: u32,
+    raw_group_node: &'a [u8],
+    group_node_source_offset: u64,
+    endpoint_tag: u8,
+    body_image_object_index: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    body_image_data_block: Option<&'a str>,
+    raw_body_image_object_index: &'a [u8],
+    body_image_object_index_source_offset: u64,
+    byte_len: u64,
+    source_offset: u64,
+}
+
+impl Serialize for FeatureOperationBodyWrite {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let group = self.frame.group_node();
+        let image = self.frame.body_image();
+        BodyWriteRef {
+            id: &self.id,
+            operation_label: self.operation_label.as_deref(),
+            operation_record: &self.operation_record,
+            ordinal: self.ordinal,
+            body_identity: self.frame.body_identity(),
+            group_node: group.value(),
+            raw_group_node: group.raw(),
+            group_node_source_offset: self.frame.group_node_offset(),
+            endpoint_tag: self.frame.endpoint_tag().code(),
+            body_image_object_index: image.value(),
+            body_image_data_block: self.body_image_data_block.as_deref(),
+            raw_body_image_object_index: image.raw(),
+            body_image_object_index_source_offset: self.frame.body_image_offset(),
+            byte_len: u64::from(self.frame.byte_len()),
+            source_offset: self.frame.offset(),
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 impl From<FeatureOperationBodyWrite> for BodyWriteWire {
     fn from(value: FeatureOperationBodyWrite) -> Self {
         Self {
@@ -115,8 +162,30 @@ impl TryFrom<BodyWriteWire> for FeatureOperationBodyWrite {
 #[cfg(test)]
 mod tests {
     use super::super::FeatureOperationBodyWrite;
+    use super::BodyWriteWire;
 
     const WIRE: &str = r#"{"id":"write","operation_record":"record","ordinal":0,"body_identity":255,"group_node":0,"raw_group_node":[160,0,0],"group_node_source_offset":103,"endpoint_tag":21,"body_image_object_index":0,"body_image_data_block":"block","raw_body_image_object_index":[241,0,0],"body_image_object_index_source_offset":111,"byte_len":15,"source_offset":100}"#;
+
+    #[test]
+    fn body_write_borrowed_wire_matches_owned_bytes() {
+        let json = WIRE.replace("\"id\":\"write\"", "\"id\":\"nx:feature:body-write#0\"");
+        let record: FeatureOperationBodyWrite = serde_json::from_str(&json).unwrap();
+        assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&BodyWriteWire::from(record.clone())).unwrap()
+        );
+    }
+
+    #[test]
+    fn body_write_retained_limit_refuses_before_token_clone() {
+        let json = WIRE.replace("\"id\":\"write\"", "\"id\":\"nx:feature:body-write#0\"");
+        let record: FeatureOperationBodyWrite = serde_json::from_str(&json).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(&json).unwrap(),
+        );
+    }
 
     #[test]
     fn body_write_wire_preserves_alias_tokens_and_checks_derived_fields() {

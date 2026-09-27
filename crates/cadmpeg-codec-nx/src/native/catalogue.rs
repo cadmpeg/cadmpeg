@@ -106,7 +106,7 @@ impl ContainerNoted for SavedToggleStream {
 
 impl ContainerNoted for SavedToggleEntry {
     fn container_note(&self) -> (Cow<'_, str>, u64) {
-        (Cow::Owned(self.id()), self.source_offset())
+        (Cow::Borrowed(self.id()), self.source_offset())
     }
 }
 
