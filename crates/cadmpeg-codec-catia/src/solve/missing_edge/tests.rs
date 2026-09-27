@@ -296,18 +296,20 @@ fn raw_visualization_table(mode: u8, triples: &[[f32; 3]]) -> Vec<u8> {
 
 #[test]
 fn raw_visualization_points_bind_terminal_handles_by_direct_index() {
+    catia_test_context!(ctx);
     let points = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]];
     let bytes = raw_visualization_table(1, &[points[0], points[1], points[0]]);
     let rows = [row(&[0, 40, 1]), row(&[1, 41, 2])];
 
     assert_eq!(
-        visualization_endpoint_pairs(&bytes, &rows, &points),
+        visualization_endpoint_pairs(&ctx, &bytes, &rows, &points).expect("service budget"),
         Some(vec![[0, 1], [1, 0]])
     );
 }
 
 #[test]
 fn compressed_visualization_points_reuse_coordinate_prefixes() {
+    catia_test_context!(ctx);
     let points = [[1.0, 2.0, 3.0], [1.0, 2.0, 4.0], [1.0, 5.0, 6.0]];
     let mut bytes = INDEXED_VISUALIZATION_POINT_MARKER.to_vec();
     bytes.extend_from_slice(&4u32.to_le_bytes());
@@ -322,13 +324,14 @@ fn compressed_visualization_points_reuse_coordinate_prefixes() {
     let rows = [row(&[0, 20, 2]), row(&[2, 21, 3])];
 
     assert_eq!(
-        visualization_endpoint_pairs(&bytes, &rows, &points),
+        visualization_endpoint_pairs(&ctx, &bytes, &rows, &points).expect("service budget"),
         Some(vec![[0, 1], [1, 2]])
     );
 }
 
 #[test]
 fn compressed_visualization_points_require_initial_xyz_and_exact_scalar_count() {
+    catia_test_context!(ctx);
     let points = [[1.0, 2.0, 3.0], [1.0, 2.0, 4.0]];
     let rows = [row(&[0, 1])];
     let mut bytes = INDEXED_VISUALIZATION_POINT_MARKER.to_vec();
@@ -346,45 +349,91 @@ fn compressed_visualization_points_require_initial_xyz_and_exact_scalar_count() 
     let mut missing_scalar = bytes.clone();
     missing_scalar[scalar_count_at..scalar_count_at + 4].copy_from_slice(&5u32.to_le_bytes());
     assert_eq!(
-        visualization_endpoint_pairs(&missing_scalar, &rows, &points),
+        visualization_endpoint_pairs(&ctx, &missing_scalar, &rows, &points).expect("service budget"),
         None
     );
 
     bytes[19] |= 1;
-    assert_eq!(visualization_endpoint_pairs(&bytes, &rows, &points), None);
+    assert_eq!(visualization_endpoint_pairs(&ctx, &bytes, &rows, &points).expect("service budget"), None);
 
     let mut missing_delimiter = bytes;
     missing_delimiter[20] = 0;
     assert_eq!(
-        visualization_endpoint_pairs(&missing_delimiter, &rows, &points),
+        visualization_endpoint_pairs(&ctx, &missing_delimiter, &rows, &points).expect("service budget"),
         None
     );
 }
 
 #[test]
 fn visualization_points_abstain_for_other_modes_or_incomplete_coverage() {
+    catia_test_context!(ctx);
     let points = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]];
     let rows = [row(&[0, 1])];
 
     assert_eq!(
-        visualization_endpoint_pairs(&raw_visualization_table(2, &points), &rows, &points,),
+        visualization_endpoint_pairs(&ctx, &raw_visualization_table(2, &points), &rows, &points,).expect("service budget"),
         None
     );
     assert_eq!(
-        visualization_endpoint_pairs(
+        visualization_endpoint_pairs(&ctx,
             &raw_visualization_table(1, &[points[0], points[0]]),
             &rows,
             &points,
-        ),
+        ).expect("service budget"),
         None
     );
 
     let mut missing_secondary_lead = raw_visualization_table(1, &points);
     missing_secondary_lead[10] = 0;
     assert_eq!(
-        visualization_endpoint_pairs(&missing_secondary_lead, &rows, &points),
+        visualization_endpoint_pairs(&ctx, &missing_secondary_lead, &rows, &points).expect("service budget"),
         None
     );
+}
+
+#[test]
+fn visualization_endpoint_bindings_refuse_before_each_collection() {
+    use cadmpeg_core::CodecError;
+
+    let points = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]];
+    let rows = [row(&[0, 1])];
+    let raw = raw_visualization_table(1, &points);
+    let mut compressed = INDEXED_VISUALIZATION_POINT_MARKER.to_vec();
+    compressed.extend_from_slice(&2u32.to_le_bytes());
+    compressed.push(0xff);
+    compressed.extend_from_slice(&2u32.to_le_bytes());
+    compressed.extend_from_slice(&[0, 0, 0, 0]);
+    compressed.extend_from_slice(&[0x00, 0xff]);
+    compressed.extend_from_slice(&6u32.to_le_bytes());
+    for scalar in [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0] {
+        compressed.extend_from_slice(&scalar.to_le_bytes());
+    }
+    for (bytes, binding_operation) in [
+        (&raw, "catia_raw_visualization_bindings"),
+        (&compressed, "catia_compressed_visualization_bindings"),
+    ] {
+        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            visualization_endpoint_pairs(ctx, bytes, &rows, &points)
+        };
+        assert_eq!(crate::test_support::with_service_context(run).expect("service budget"), Some(vec![[0, 1]]));
+        let mut operations = HashSet::new();
+        for limit in 0..=32 {
+            match crate::test_support::with_collection_limit(limit, run) {
+                Err(CodecError::ResourceLimit(error)) => { operations.insert(error.operation); }
+                Ok(Some(pairs)) if pairs == [[0, 1]] => break,
+                outcome => panic!("unexpected visualization result: {outcome:?}"),
+            }
+        }
+        for operation in [
+            "catia_visualization_point_bits",
+            "catia_visualization_terminal_handles",
+            binding_operation,
+            "catia_visualization_matched_points",
+            "catia_visualization_endpoint_pairs",
+        ] {
+            assert!(operations.contains(operation), "no refusal at {operation}");
+        }
+    }
 }
 
 #[test]

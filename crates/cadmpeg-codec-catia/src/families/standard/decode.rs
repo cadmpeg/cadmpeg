@@ -4353,23 +4353,23 @@ fn attach_standard_topology(
     let mut ordered_endpoint_pairs = ctx
         .alloc_filled(supports.len(), None, "catia_ordered_endpoint_pairs")
         .map_err(StandardTopologyError::Resource)?;
-    let point_coordinates = ir
-        .model
-        .points
-        .iter()
-        .map(|point| {
-            [
-                point.position().get().x as f32,
-                point.position().get().y as f32,
-                point.position().get().z as f32,
-            ]
-        })
-        .collect::<Vec<_>>();
+    let mut point_coordinates = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut point_coordinates, ir.model.points.len(), "catia_visualization_point_coordinates")
+        .map_err(StandardTopologyError::Resource)?;
+    for point in &ir.model.points {
+        point_coordinates.push([
+            point.position().get().x as f32,
+            point.position().get().y as f32,
+            point.position().get().z as f32,
+        ]);
+    }
     let visualization_endpoint_pairs = missing_edge::standard_edge_rows(ctx, spine)
-        .map_err(StandardTopologyError::Resource)?
-        .and_then(|rows| {
-            missing_edge::visualization_endpoint_pairs(source, &rows, &point_coordinates)
-        });
+        .map_err(StandardTopologyError::Resource)?;
+    let visualization_endpoint_pairs = match visualization_endpoint_pairs {
+        Some(rows) => missing_edge::visualization_endpoint_pairs(ctx, source, &rows, &point_coordinates)
+            .map_err(StandardTopologyError::Resource)?,
+        None => None,
+    };
     if let Some(pairs) = &visualization_endpoint_pairs {
         if pairs.len() != ordered_endpoint_pairs.len() {
             return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
