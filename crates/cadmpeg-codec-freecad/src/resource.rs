@@ -42,6 +42,17 @@ pub(crate) fn malformed_charged(
     }
 }
 
+pub(crate) fn malformed_optional(
+    ctx: Option<&DecodeContext<'_>>,
+    arguments: fmt::Arguments<'_>,
+    operation: &'static str,
+) -> CodecError {
+    match ctx {
+        Some(ctx) => malformed_charged(ctx, arguments, operation),
+        None => CodecError::malformed(arguments),
+    }
+}
+
 pub(crate) fn named_entries_charged<V>(
     ctx: &DecodeContext<'_>,
     record: &str,
