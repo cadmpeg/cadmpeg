@@ -98,7 +98,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             form_padding,
             &mut admitted_entities,
         )?;
-        let mut report = build_container_report(&scan, &classification);
+        let mut report = build_container_report(
+            &scan,
+            &classification,
+            container::notes_charged(ctx, &scan)?,
+        );
         report.losses.append(&mut pmi_losses);
         return decode_result(ir, report, annotations, unknowns);
     }
@@ -130,7 +134,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         form_padding,
         &mut admitted_entities,
     )?;
-    let mut report = build_container_report(&scan, &classification);
+    let mut report = build_container_report(
+        &scan,
+        &classification,
+        container::notes_charged(ctx, &scan)?,
+    );
     report.losses.append(&mut pmi_losses);
     append_design_losses(ctx, &ir, &mut report)?;
     decode_result(ir, report, annotations, unknowns)
@@ -2135,7 +2143,12 @@ fn try_decode_brep(
         // active SWIFT CadIdentifier lane.
         merge_brep(ctx, &mut decoded, alternate)?;
     }
-    let report = build_geometry_report(scan, &decoded, classification);
+    let report = build_geometry_report(
+        scan,
+        &decoded,
+        classification,
+        container::notes_charged(ctx, scan)?,
+    );
     Ok(Some((
         DecodedBrep {
             metadata_header,
@@ -3357,6 +3370,7 @@ fn build_geometry_report(
     scan: &ContainerScan,
     decoded: &Brep,
     classification: &crate::dialect::LayerClassification,
+    notes: Vec<String>,
 ) -> DecodeBody {
     let s = &decoded.stats;
     let mut losses = Vec::new();
@@ -3435,7 +3449,7 @@ fn build_geometry_report(
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses,
-        notes: container::notes(scan),
+        notes,
         transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     }
 }
@@ -4825,6 +4839,7 @@ fn preserve_source_image(
 fn build_container_report(
     scan: &ContainerScan,
     classification: &crate::dialect::LayerClassification,
+    notes: Vec<String>,
 ) -> DecodeBody {
     let parasolid_sources = scan
         .blocks
@@ -4870,7 +4885,7 @@ fn build_container_report(
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses,
-        notes: container::notes(scan),
+        notes,
         transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     }
 }
