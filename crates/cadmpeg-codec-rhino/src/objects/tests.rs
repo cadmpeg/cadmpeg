@@ -1011,6 +1011,83 @@ fn object_trailer_accepts_bounded_unknown_child_without_history() {
     );
 }
 
+fn object_record_collection_refusal(bytes: &[u8], limit: u64) -> crate::chunks::FramingError {
+    let archive = ArchiveVersion::V5;
+    let chunk = crate::chunks::chunk_at(bytes, 0, bytes.len(), archive, false)
+        .expect("object record framing");
+    let record = crate::container::Record::long(chunk.typecode, chunk.range(), chunk.body());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+        .expect("root bytes admitted");
+    crate::objects::parse_object_record(
+        &ctx,
+        bytes,
+        &record,
+        archive,
+        None,
+        &mut Diagnostics::new(),
+    )
+    .expect_err("object collection exceeds configured limit")
+}
+
+#[test]
+fn object_unknown_trailer_refuses_collection_limit() {
+    let bytes = object_record_with_unknown_trailer(ArchiveVersion::V5, POINT_CLASS);
+    assert!(matches!(
+        object_record_collection_refusal(&bytes, 0),
+        crate::chunks::FramingError::Resource(refusal)
+            if refusal.operation == "Rhino object unknown trailer"
+    ));
+}
+
+#[test]
+fn object_class_userdata_refuses_collection_limit() {
+    let archive = ArchiveVersion::V5;
+    let object_type = short_chunk(archive, 0x8200_0071, 1);
+    let uuid = crc_chunk(archive, 0x0002_fffb, &POINT_CLASS);
+    let class_data = crc_chunk(archive, 0x0002_fffc, &[]);
+    let userdata = class_userdata_v1_with_direct_payload(archive, [1; 16], &[]);
+    let class_end = short_chunk(archive, 0x8002_7fff, 0);
+    let class = long_chunk(
+        archive,
+        0x0002_7ffa,
+        &[uuid, class_data, userdata, class_end].concat(),
+    );
+    let object_end = short_chunk(archive, 0x8200_007f, 0);
+    let bytes = crate::test_support::test_dump::nested_crc_chunk(
+        archive,
+        0x2000_8070,
+        &[object_type, class, object_end].concat(),
+    );
+    assert!(matches!(
+        object_record_collection_refusal(&bytes, 0),
+        crate::chunks::FramingError::Resource(refusal)
+            if refusal.operation == "Rhino object userdata"
+    ));
+    let chunk = crate::chunks::chunk_at(&bytes, 0, bytes.len(), archive, false)
+        .expect("object record framing");
+    let record = crate::container::Record::long(chunk.typecode, chunk.range(), chunk.body());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("root bytes admitted");
+    let parsed = crate::objects::parse_object_record(
+        &ctx,
+        &bytes,
+        &record,
+        archive,
+        None,
+        &mut Diagnostics::new(),
+    )
+    .expect("service profile admits class userdata");
+    assert_eq!(parsed.framed().expect("framed object").userdata.len(), 1);
+}
+
 #[test]
 pub(crate) fn malformed_bounded_object_is_retained_and_later_point_decodes() {
     let archive = ArchiveVersion::V5;
