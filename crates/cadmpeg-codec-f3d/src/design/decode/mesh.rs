@@ -471,16 +471,38 @@ fn exact_local_record_index(record: &[u8], at: usize) -> Option<u32> {
         .filter(|target| *target != 0)
 }
 
-fn counted_local_record_indices(record: &[u8], count_at: usize) -> Option<(Vec<u32>, usize)> {
-    let count = usize::try_from(View::u32_le_at(record, count_at)?).ok()?;
-    let mut at = count_at.checked_add(4)?;
-    (count <= record.len().saturating_sub(at) / SAME_SEGMENT_REFERENCE_BYTES).then_some(())?;
-    let mut references = Vec::with_capacity(count);
+fn counted_local_record_indices(
+    ctx: &DecodeContext<'_>,
+    record: &[u8],
+    count_at: usize,
+) -> Result<Option<(Vec<u32>, usize)>, CodecError> {
+    let Some(raw_count) = View::u32_le_at(record, count_at) else {
+        return Ok(None);
+    };
+    let Some(mut at) = count_at.checked_add(4) else {
+        return Ok(None);
+    };
+    let Some(count) = record.len().checked_sub(at).and_then(|remaining| {
+        bounded_len(u64::from(raw_count), SAME_SEGMENT_REFERENCE_BYTES, remaining)
+    }) else {
+        return Ok(None);
+    };
+    ctx.charge_collection_items(u64::from(raw_count), "f3d mesh local record references")?;
+    let mut references = Vec::new();
+    references.try_reserve(count).map_err(|_| {
+        ctx.refuse_codec_limit("f3d mesh local record references allocation", 0, 1)
+    })?;
     for _ in 0..count {
-        references.push(exact_local_record_index(record, at)?);
-        at = at.checked_add(SAME_SEGMENT_REFERENCE_BYTES)?;
+        let Some(index) = exact_local_record_index(record, at) else {
+            return Ok(None);
+        };
+        references.push(index);
+        let Some(next_at) = at.checked_add(SAME_SEGMENT_REFERENCE_BYTES) else {
+            return Ok(None);
+        };
+        at = next_at;
     }
-    Some((references, at))
+    Ok(Some((references, at)))
 }
 
 fn parse_mesh_entry_name_record(
@@ -582,6 +604,7 @@ fn parse_mesh_body_record(
 }
 
 fn parse_mesh_collection_record(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     frame: TypedPrimaryFrame<'_>,
@@ -595,6 +618,11 @@ fn parse_mesh_collection_record(
     )?;
     let record = &bytes[frame.start..frame.end];
     let identity = record_identity(record, frame, "mesh-collection")?;
+    let counted_bodies = counted_local_record_indices(
+        ctx,
+        record,
+        mesh_collection::LEN + mesh_collection_base::BODY_COUNT,
+    )?;
     let parsed = (|| {
         (record.get(mesh_collection::ZERO_RUN_10..mesh_collection::BODY_COUNT) == Some(&[0; 10]))
             .then_some(())?;
@@ -622,10 +650,7 @@ fn parse_mesh_collection_record(
                 ..mesh_collection::LEN + mesh_collection_base::BODY_COUNT,
         ) == Some(&[0; 9]))
         .then_some(())?;
-        let (body_records, owner_at) = counted_local_record_indices(
-            record,
-            mesh_collection::LEN + mesh_collection_base::BODY_COUNT,
-        )?;
+        let (body_records, owner_at) = counted_bodies?;
         (first_count == body_records.len()).then_some(())?;
         let owner_record_index = exact_local_record_index(record, owner_at)?;
         (owner_at.checked_add(SAME_SEGMENT_REFERENCE_BYTES)? == record.len()).then_some(())?;
@@ -928,6 +953,7 @@ fn parse_typed_identity(
 }
 
 fn parse_mesh_scope_record(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     records: &IndexedRecordOffsets,
@@ -942,11 +968,11 @@ fn parse_mesh_scope_record(
     )?;
     let record = &bytes[frame.start..frame.end];
     let identity = record_identity(record, frame, "mesh-feature-scope")?;
+    let counted_bodies = counted_local_record_indices(ctx, record, feature_scope::BODY_COUNT)?;
     let parsed = (|| {
         (record.get(feature_scope::ZERO_RUN_10..feature_scope::BODY_COUNT) == Some(&[0; 10]))
             .then_some(())?;
-        let (body_records, body_list_end) =
-            counted_local_record_indices(record, feature_scope::BODY_COUNT)?;
+        let (body_records, body_list_end) = counted_bodies?;
         let scope = parse_parameter_scope(
             bytes,
             records,
@@ -1139,7 +1165,7 @@ where
     }
     let collections = collection_frames
         .into_iter()
-        .map(|frame| parse_mesh_collection_record(bytes, meta, frame))
+        .map(|frame| parse_mesh_collection_record(ctx, bytes, meta, frame))
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .filter(|collection| !collection.body_records.is_empty())
@@ -1210,7 +1236,7 @@ where
             "mesh-feature-scope",
         )?
         .into_iter()
-        .map(|frame| parse_mesh_scope_record(bytes, meta, &records, frame))
+        .map(|frame| parse_mesh_scope_record(ctx, bytes, meta, &records, frame))
         .collect::<Result<Vec<_>, _>>()?,
         |record| record.scope.record().record_index(),
         "mesh-feature-scope",
@@ -1708,6 +1734,63 @@ mod tests {
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
         ));
+    }
+
+    #[test]
+    fn mesh_collection_body_references_refuse_collection_limit() {
+        let graph = synthetic_mesh_graph(false);
+        let frames = crate::design::decode::meta::typed_primary_frames(
+            &graph.bytes,
+            &graph.meta,
+            super::MESH_COLLECTION_TYPE_GUID,
+            "mesh-collection",
+        )
+        .unwrap();
+        let [frame] = frames.as_slice() else {
+            panic!("one mesh collection frame");
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &policy,
+        )
+        .unwrap();
+        assert!(matches!(
+            super::parse_mesh_collection_record(&ctx, &graph.bytes, &graph.meta, *frame),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+        ));
+    }
+
+    #[test]
+    fn mesh_scope_body_references_refuse_collection_limit() {
+        let graph = synthetic_mesh_graph(false);
+        let frames = crate::design::decode::meta::typed_primary_frames(
+            &graph.bytes,
+            &graph.meta,
+            super::MESH_FEATURE_SCOPE_TYPE_GUID,
+            "mesh-feature-scope",
+        )
+        .unwrap();
+        let [frame] = frames.as_slice() else {
+            panic!("one mesh feature scope frame");
+        };
+        crate::design::test_support::with_test_decode_context(|default_ctx| {
+            let records = super::IndexedRecordOffsets::build(default_ctx, &graph.bytes).unwrap();
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+            policy.limits.max_collection_items = 0;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[], &arena, &policy,
+            )
+            .unwrap();
+            assert!(matches!(
+                super::parse_mesh_scope_record(&ctx, &graph.bytes, &graph.meta, &records, *frame),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            ));
+        });
     }
 
     #[test]
