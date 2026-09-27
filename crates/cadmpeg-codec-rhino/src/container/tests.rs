@@ -719,6 +719,36 @@ fn plugin_list_crc_excludes_plugin_reference_chunks() {
 }
 
 #[test]
+fn plugin_list_child_ranges_refuse_collection_limit_without_warning() {
+    let archive = ArchiveVersion::V5;
+    let child = anonymous_chunk(archive, 2, &[0xde, 0xad]);
+    let mut body = vec![0x10];
+    body.extend(1_i32.to_le_bytes());
+    let child_start = body.len();
+    body.extend(child);
+    let child_range = child_start..body.len();
+    body.extend([0xbe, 0xef]);
+    let record = crc_chunk_excluding(
+        archive,
+        0x2000_8135,
+        &body,
+        std::slice::from_ref(&child_range),
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&record, &arena, &policy)
+        .expect("root bytes admitted");
+    let error = super::checksum_warning(&ctx, &record, 0x2000_8135, 0, record.len(), archive)
+        .expect_err("one plugin child exceeds zero collection items");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino plugin-list child ranges"
+    ));
+}
+
+#[test]
 fn render_userdata_crc_excludes_userdata_and_class_end_chunks() {
     let archive = ArchiveVersion::V8;
     let class_uuid = [1_u8; 16];
