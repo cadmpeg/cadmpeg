@@ -169,7 +169,7 @@ pub(super) fn emit_model_features(
     }
     let row_feature_ids = ordered_row_feature_ids(ctx, &scan.features.rows)?;
     let mut geometry_generator_feature_count = 0;
-    for generator in geometry_generator_features(scan) {
+    for generator in geometry_generator_features(ctx, scan)? {
         let feature_id = generator.feature_id;
         let id = IrFeatureId::compose(&crate::identity::MODEL_FEATURE, feature_id);
         if ir.model.features.iter().any(|feature| feature.id == id) {
