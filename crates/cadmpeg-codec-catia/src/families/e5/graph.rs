@@ -1378,13 +1378,8 @@ fn solve_absolute_orientation(
         .flat_map(|face| &face.loops)
         .filter(|loop_| !loop_.members.is_empty())
         .count();
-    ctx.charge_collection_items(
-        u64::try_from(location_count).map_err(|_| {
-            ctx.refuse_codec_limit("catia e5 orientation locations", u64::MAX, u64::MAX)
-        })?,
-        "catia e5 orientation locations",
-    )?;
-    let mut locations = Vec::with_capacity(location_count);
+    let mut locations = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut locations, location_count, "catia e5 orientation locations")?;
     for (face_index, face) in faces.iter().enumerate() {
         for (loop_index, loop_) in face.loops.iter().enumerate() {
             if !loop_.members.is_empty() {
@@ -1396,15 +1391,15 @@ fn solve_absolute_orientation(
     for (node, &(face_index, loop_index)) in locations.iter().enumerate() {
         let loop_ = &faces[face_index].loops[loop_index];
         for member in &loop_.members {
-            ctx.charge_collection_items(1, "catia e5 orientation edge occurrences")?;
-            occurrences.entry(member.edge_use).or_default().push((
+            crate::resource::admit_map_entry(ctx, &mut occurrences, &member.edge_use, "catia e5 orientation edge occurrence keys")?;
+            crate::resource::push(ctx, occurrences.entry(member.edge_use).or_default(), (
                 node,
                 if member.reversed {
                     Sign::Negative
                 } else {
                     Sign::Positive
                 },
-            ));
+            ), "catia e5 orientation edge occurrences")?;
         }
     }
     let mut adjacency = ctx.alloc_filled(
@@ -1417,9 +1412,8 @@ fn solve_absolute_orientation(
         .filter_map(|uses| <&[_; 2]>::try_from(uses.as_slice()).ok())
     {
         let relation = left_r.flipped().combine(*right_r);
-        ctx.charge_collection_items(2, "catia e5 orientation adjacent edges")?;
-        adjacency[*left].push((*right, relation));
-        adjacency[*right].push((*left, relation));
+        crate::resource::push(ctx, &mut adjacency[*left], (*right, relation), "catia e5 orientation adjacent edges")?;
+        crate::resource::push(ctx, &mut adjacency[*right], (*left, relation), "catia e5 orientation adjacent edges")?;
     }
     let mut solved = ctx.alloc_filled(locations.len(), None, "catia e5 orientation assignments")?;
     for root in 0..locations.len() {
@@ -1427,8 +1421,8 @@ fn solve_absolute_orientation(
             continue;
         }
         solved[root] = Some(Sign::Positive);
-        ctx.charge_collection_items(1, "catia e5 orientation component")?;
-        let mut component = vec![(root, Sign::Positive)];
+        let mut component = Vec::new();
+        crate::resource::push(ctx, &mut component, (root, Sign::Positive), "catia e5 orientation component")?;
         let mut cursor = 0;
         let mut consistent = true;
         while cursor < component.len() {
@@ -1441,8 +1435,7 @@ fn solve_absolute_orientation(
                     Some(_) => {}
                     None => {
                         solved[neighbor] = Some(expected);
-                        ctx.charge_collection_items(1, "catia e5 orientation component")?;
-                        component.push((neighbor, expected));
+                        crate::resource::push(ctx, &mut component, (neighbor, expected), "catia e5 orientation component")?;
                     }
                 }
             }
@@ -1501,31 +1494,21 @@ fn solve_absolute_orientation(
         };
         let loop_ = &mut faces[face_index].loops[loop_index];
         let flip = g == Sign::Negative;
-        ctx.charge_collection_items(
-            u64::try_from(loop_.members.len()).map_err(|_| {
-                ctx.refuse_codec_limit("catia e5 orientation member indices", u64::MAX, u64::MAX)
-            })?,
-            "catia e5 orientation member indices",
-        )?;
-        let mut indices: Vec<usize> = (0..loop_.members.len()).collect();
+        let mut indices = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut indices, loop_.members.len(), "catia e5 orientation member indices")?;
+        indices.extend(0..loop_.members.len());
         if flip {
             indices.reverse();
         }
-        ctx.charge_collection_items(
-            u64::try_from(loop_.members.len()).map_err(|_| {
-                ctx.refuse_codec_limit("catia e5 oriented members", u64::MAX, u64::MAX)
-            })?,
-            "catia e5 oriented members",
-        )?;
-        loop_.oriented_members = Some(
-            indices
-                .into_iter()
-                .map(|serialized_index| E5OrientedMember {
-                    serialized_index,
-                    reversed: loop_.members[serialized_index].reversed ^ flip,
-                })
-                .collect(),
-        );
+        let mut oriented_members = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut oriented_members, loop_.members.len(), "catia e5 oriented members")?;
+        for serialized_index in indices {
+            oriented_members.push(E5OrientedMember {
+                serialized_index,
+                reversed: loop_.members[serialized_index].reversed ^ flip,
+            });
+        }
+        loop_.oriented_members = Some(oriented_members);
     }
     Ok(solved.into_iter().all(|value| value.is_some()))
 }
@@ -2650,5 +2633,10 @@ mod tests {
         );
         assert!(operations.contains("catia e5 orientation adjacency"));
         assert!(operations.contains("catia e5 orientation assignments"));
+        assert!(operations.contains("catia e5 orientation edge occurrence keys"));
+        assert!(operations.contains("catia e5 orientation edge occurrences"));
+        assert!(operations.contains("catia e5 orientation component"));
+        assert!(operations.contains("catia e5 orientation member indices"));
+        assert!(operations.contains("catia e5 oriented members"));
     }
 }
