@@ -2079,6 +2079,7 @@ fn append_file_reference_diagnostics(
 }
 
 fn parse_texture(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
@@ -2126,14 +2127,19 @@ fn parse_texture(
     let blend_order = reader.i32()?;
     let file_reference = if version.1 >= 1 {
         let mut diagnostics = Diagnostics::new();
-        let value =
-            match crate::instances::file_reference(data, &mut reader, archive, &mut diagnostics) {
-                Ok(value) => value,
-                Err(error) => {
-                    append_file_reference_diagnostics(losses, diagnostics, source_offset);
-                    return Err(error);
-                }
-            };
+        let value = match crate::instances::file_reference(
+            ctx,
+            data,
+            &mut reader,
+            archive,
+            &mut diagnostics,
+        ) {
+            Ok(value) => value,
+            Err(error) => {
+                append_file_reference_diagnostics(losses, diagnostics, source_offset);
+                return Err(error);
+            }
+        };
         append_file_reference_diagnostics(losses, diagnostics, value.source_range.start);
         Some(TextureFileReference {
             full_path: value.full_path,
@@ -2229,6 +2235,7 @@ fn texture_array(
             ));
         }
         textures.push(parse_texture(
+            ctx,
             data,
             class.class_data_range,
             archive,

@@ -549,6 +549,7 @@ fn model_component(
 }
 
 pub(crate) fn file_reference<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
@@ -562,8 +563,8 @@ pub(crate) fn file_reference<'a>(
             "unsupported file-reference version",
         ));
     }
-    let full_path = utf16(&mut payload)?;
-    let relative_path = utf16(&mut payload)?;
+    let full_path = utf16_retained(ctx, &mut payload, "Rhino file reference full path")?;
+    let relative_path = utf16_retained(ctx, &mut payload, "Rhino file reference relative path")?;
     let hash = chunk_at(data, payload.position(), payload.end(), archive, false)?;
     if hash.typecode != ANONYMOUS || hash.short() {
         return Err(FramingError::structural(
@@ -833,7 +834,7 @@ fn parse_v5(
         linked_appearance = if archive.value() < 50 { 1 } else { 2 };
     }
     let file_reference = if version.1 >= 7 && reader.bool()? {
-        Some(file_reference(data, &mut reader, archive, warnings)?)
+        Some(file_reference(ctx, data, &mut reader, archive, warnings)?)
     } else {
         None
     };
@@ -924,7 +925,7 @@ fn parse_v6(
                 "unsupported linked-type version",
             ));
         }
-        let reference = file_reference(data, &mut linked, archive, warnings)?;
+        let reference = file_reference(ctx, data, &mut linked, archive, warnings)?;
         let mut linked_children =
             crate::chunks::admitted_vec(ctx, 1, "Rhino linked definition checksum children")?;
         linked_children.push(reference.source_range.clone());

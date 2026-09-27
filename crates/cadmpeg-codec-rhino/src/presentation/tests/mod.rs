@@ -1560,8 +1560,15 @@ fn rendering_material_reference_consumes_obsolete_mapping_channels() {
 fn texture_reads_minor_gates_before_future_suffix() {
     let bytes = texture_payload(2, &[0xaa, 0xbb]);
     let mut losses = Vec::new();
-    let value = parse_texture(&bytes, 0..bytes.len(), ArchiveVersion::V8, 42, &mut losses)
-        .expect("texture minor gates and suffix");
+    let value = parse_texture(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        0..bytes.len(),
+        ArchiveVersion::V8,
+        42,
+        &mut losses,
+    )
+    .expect("texture minor gates and suffix");
     assert_eq!(value.mapping_channel_id, 7);
     assert_eq!(value.legacy_file_path, "texture.png");
     assert_eq!(
@@ -1591,8 +1598,15 @@ fn texture_file_reference_checksum_warning_is_located() {
     bytes[reference_start + reference.len() - 1] ^= 1;
 
     let mut losses = Vec::new();
-    let value = parse_texture(&bytes, 0..bytes.len(), ArchiveVersion::V8, 42, &mut losses)
-        .expect("a nested checksum mismatch does not prevent texture admission");
+    let value = parse_texture(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        0..bytes.len(),
+        ArchiveVersion::V8,
+        42,
+        &mut losses,
+    )
+    .expect("a nested checksum mismatch does not prevent texture admission");
     assert!(value.file_reference.is_some());
     assert_eq!(losses.len(), 1, "{losses:?}");
     assert_eq!(

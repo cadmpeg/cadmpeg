@@ -55,6 +55,12 @@ enum ViewListKind {
     Active,
 }
 
+#[derive(Clone, Copy)]
+struct ViewListSlot {
+    kind: ViewListKind,
+    index: usize,
+}
+
 impl ViewListKind {
     fn as_str(self) -> &'static str {
         match self {
@@ -303,12 +309,13 @@ fn scaled_plane(
 }
 
 fn image_reference<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
 ) -> Result<(ImageReference, std::ops::Range<usize>), FramingError> {
-    let value = crate::instances::file_reference(data, reader, archive, warnings)?;
+    let value = crate::instances::file_reference(ctx, data, reader, archive, warnings)?;
     let source_range = value.source_range.clone();
     Ok((
         ImageReference {
@@ -322,6 +329,7 @@ fn image_reference<'a>(
 }
 
 fn parse_trace_image(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
@@ -350,7 +358,7 @@ fn parse_trace_image(
     let (file_reference, file_reference_range) = if minor >= 4 {
         let source_offset = reader.position();
         let mut warnings = Diagnostics::new();
-        let parsed = image_reference(data, &mut reader, archive, &mut warnings);
+        let parsed = image_reference(ctx, data, &mut reader, archive, &mut warnings);
         append_file_reference_diagnostics(
             losses,
             warnings,
@@ -381,6 +389,7 @@ fn parse_trace_image(
 }
 
 fn parse_wallpaper(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
@@ -401,7 +410,7 @@ fn parse_wallpaper(
     let (file_reference, file_reference_range) = if minor >= 2 {
         let source_offset = reader.position();
         let mut warnings = Diagnostics::new();
-        let parsed = image_reference(data, &mut reader, archive, &mut warnings);
+        let parsed = image_reference(ctx, data, &mut reader, archive, &mut warnings);
         append_file_reference_diagnostics(
             losses,
             warnings,
@@ -1031,14 +1040,18 @@ fn scan_viewport_userdata(
 }
 
 fn parse_view(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     record: &crate::chunks::Chunk,
     archive: ArchiveVersion,
     scale: MillimeterScale,
-    list_kind: ViewListKind,
-    list_index: usize,
+    slot: ViewListSlot,
     losses: &mut Vec<LossNote>,
 ) -> Result<ViewRecord, FramingError> {
+    let ViewListSlot {
+        kind: list_kind,
+        index: list_index,
+    } = slot;
     let mut offset = record.body().start;
     let mut name = String::new();
     let mut target = None;
@@ -1098,7 +1111,7 @@ fn parse_view(
             }
             VIEW_TRACE_IMAGE if !child.short() => {
                 let (value, file_reference_range) =
-                    parse_trace_image(data, child.body().clone(), archive, scale, losses)?;
+                    parse_trace_image(ctx, data, child.body().clone(), archive, scale, losses)?;
                 let nested_children = file_reference_range.as_slice();
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(data, &child, nested_children)?
@@ -1124,7 +1137,7 @@ fn parse_view(
             }
             VIEW_WALLPAPER_V3 if !child.short() => {
                 let (value, file_reference_range) =
-                    parse_wallpaper(data, child.body().clone(), archive, losses)?;
+                    parse_wallpaper(ctx, data, child.body().clone(), archive, losses)?;
                 let nested_children = file_reference_range.as_slice();
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(data, &child, nested_children)?
@@ -1292,12 +1305,13 @@ fn parse_view(
 }
 
 fn parse_list(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     record: &Record,
     archive: ArchiveVersion,
     scale: MillimeterScale,
     list_kind: ViewListKind,
-) -> (Vec<ViewRecord>, Vec<LossNote>) {
+) -> Result<(Vec<ViewRecord>, Vec<LossNote>), CodecError> {
     let kind = list_kind.as_str();
     let list_tag = match list_kind {
         ViewListKind::Named => "VIEW/NAMED_VIEWS",
@@ -1315,7 +1329,7 @@ fn parse_list(
                     record.body().start
                 ),
             ));
-            return (Vec::new(), losses);
+            return Ok((Vec::new(), losses));
         }
     };
     let signed_count = match reader.i32() {
@@ -1329,7 +1343,7 @@ fn parse_list(
                     record.body().start
                 ),
             ));
-            return (Vec::new(), losses);
+            return Ok((Vec::new(), losses));
         }
     };
     let Ok(count) = usize::try_from(signed_count) else {
@@ -1341,7 +1355,7 @@ fn parse_list(
                 record.body().start
             ),
         ));
-        return (Vec::new(), losses);
+        return Ok((Vec::new(), losses));
     };
     if count > 1 << 16 {
         losses.push(located_presentation_loss(
@@ -1352,7 +1366,7 @@ fn parse_list(
                 record.body().start
             ),
         ));
-        return (Vec::new(), losses);
+        return Ok((Vec::new(), losses));
     }
     let mut views = Vec::new();
     for index in 0..count {
@@ -1384,15 +1398,19 @@ fn parse_list(
         }
         let next = view.next_offset();
         match parse_view(
+            ctx,
             data,
             &view,
             archive,
             scale,
-            list_kind,
-            index,
+            ViewListSlot {
+                kind: list_kind,
+                index,
+            },
             &mut losses,
         ) {
             Ok(value) => views.push(value),
+            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => losses.push(located_presentation_loss(
                 view.header_start,
                 "VIEW/RECORD",
@@ -1414,7 +1432,7 @@ fn parse_list(
             break;
         }
     }
-    (views, losses)
+    Ok((views, losses))
 }
 
 fn parse_named_cplanes(
@@ -1534,8 +1552,14 @@ pub(crate) fn install(
                     );
                     continue;
                 };
-                let (parsed, mut parse_losses) =
-                    parse_list(scan.data, record, scan.archive, scale, ViewListKind::Named);
+                let (parsed, mut parse_losses) = parse_list(
+                    ctx,
+                    scan.data,
+                    record,
+                    scan.archive,
+                    scale,
+                    ViewListKind::Named,
+                )?;
                 if !parse_losses.is_empty() {
                     opaque_records.push(OpaqueRecord {
                         table_typecode: table.typecode,
@@ -1557,8 +1581,14 @@ pub(crate) fn install(
                     );
                     continue;
                 };
-                let (parsed, mut parse_losses) =
-                    parse_list(scan.data, record, scan.archive, scale, ViewListKind::Active);
+                let (parsed, mut parse_losses) = parse_list(
+                    ctx,
+                    scan.data,
+                    record,
+                    scan.archive,
+                    scale,
+                    ViewListKind::Active,
+                )?;
                 if !parse_losses.is_empty() {
                     opaque_records.push(OpaqueRecord {
                         table_typecode: table.typecode,
@@ -1809,6 +1839,7 @@ mod tests {
         trace.extend([0xde, 0xad, 0xbe, 0xef]);
         let mut losses = Vec::new();
         let (trace, _) = parse_trace_image(
+            &cadmpeg_test_support::service_decode_context(),
             &trace,
             0..trace.len(),
             archive,
@@ -1830,8 +1861,14 @@ mod tests {
         wallpaper.extend([0, 1]);
         wallpaper.extend([0xca, 0xfe]);
         let mut losses = Vec::new();
-        let (wallpaper, _) = parse_wallpaper(&wallpaper, 0..wallpaper.len(), archive, &mut losses)
-            .expect("wallpaper");
+        let (wallpaper, _) = parse_wallpaper(
+            &cadmpeg_test_support::service_decode_context(),
+            &wallpaper,
+            0..wallpaper.len(),
+            archive,
+            &mut losses,
+        )
+        .expect("wallpaper");
         assert_eq!(wallpaper.legacy_file_path, "wallpaper-witness.png");
         assert!(!wallpaper.grayscale && wallpaper.hidden);
         assert!(wallpaper.file_reference.is_none());
@@ -1846,12 +1883,14 @@ mod tests {
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
         let (views, losses) = parse_list(
+            &cadmpeg_test_support::service_decode_context(),
             &body,
             &record,
             archive,
             crate::settings::MillimeterScale::IDENTITY,
             ViewListKind::Named,
-        );
+        )
+        .expect("view list");
         assert!(views.is_empty());
         assert_eq!(losses.len(), 1);
         assert_eq!(
@@ -1869,12 +1908,14 @@ mod tests {
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
         let (views, losses) = parse_list(
+            &cadmpeg_test_support::service_decode_context(),
             &body,
             &record,
             archive,
             crate::settings::MillimeterScale::IDENTITY,
             ViewListKind::Named,
-        );
+        )
+        .expect("view list");
         assert!(views.is_empty());
         assert_eq!(losses.len(), 1);
         assert!(losses[0].message.contains("unexpected typecode"));
@@ -1898,12 +1939,14 @@ mod tests {
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
         let (views, losses) = parse_list(
+            &cadmpeg_test_support::service_decode_context(),
             &body,
             &record,
             archive,
             crate::settings::MillimeterScale::IDENTITY,
             ViewListKind::Named,
-        );
+        )
+        .expect("view list");
         assert_eq!(views.len(), 1);
         assert_eq!(losses.len(), 1);
         assert_eq!(
@@ -1941,12 +1984,14 @@ mod tests {
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
         let (views, losses) = parse_list(
+            &cadmpeg_test_support::service_decode_context(),
             &body,
             &record,
             archive,
             crate::settings::MillimeterScale::IDENTITY,
             ViewListKind::Named,
-        );
+        )
+        .expect("view list");
         assert_eq!(views.len(), 1);
         assert_eq!(losses.len(), 1);
         assert_eq!(
@@ -1981,12 +2026,14 @@ mod tests {
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
         let (views, losses) = parse_list(
+            &cadmpeg_test_support::service_decode_context(),
             &body,
             &record,
             archive,
             crate::settings::MillimeterScale::IDENTITY,
             ViewListKind::Named,
-        );
+        )
+        .expect("view list");
         assert_eq!(views.len(), 1);
         assert!(losses.is_empty());
         assert_eq!(views[0].children.len(), 1);
@@ -2177,12 +2224,14 @@ mod tests {
         body.extend(make_view(&attributes));
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
         let (views, losses) = parse_list(
+            &cadmpeg_test_support::service_decode_context(),
             &body,
             &record,
             archive,
             crate::settings::MillimeterScale::IDENTITY,
             ViewListKind::Named,
-        );
+        )
+        .expect("view list");
         assert_eq!(views.len(), 1);
         assert!(losses.is_empty());
 
@@ -2197,12 +2246,14 @@ mod tests {
             0..corrupted_body.len(),
         );
         let (views, losses) = parse_list(
+            &cadmpeg_test_support::service_decode_context(),
             &corrupted_body,
             &record,
             archive,
             crate::settings::MillimeterScale::IDENTITY,
             ViewListKind::Named,
-        );
+        )
+        .expect("view list");
         assert_eq!(views.len(), 1);
         assert_eq!(losses.len(), 1);
         assert!(losses[0].message.contains("0x20008c3b"));
@@ -2271,12 +2322,14 @@ mod tests {
             body.extend(view);
             let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
             parse_list(
+                &cadmpeg_test_support::service_decode_context(),
                 &body,
                 &record,
                 archive,
                 crate::settings::MillimeterScale::IDENTITY,
                 ViewListKind::Named,
             )
+            .expect("view list")
         };
 
         let (views, losses) = parse(make_view(&trace, &wallpaper));
@@ -2349,6 +2402,44 @@ mod tests {
     }
 
     #[test]
+    fn view_file_reference_refuses_retained_limit_instead_of_omitting_view() {
+        let archive = ArchiveVersion::V6;
+        let mut trace_body = vec![0x14];
+        trace_body.extend(utf16_bytes("trace-witness.png"));
+        trace_body.extend(42.0_f64.to_le_bytes());
+        trace_body.extend(24.0_f64.to_le_bytes());
+        serialized_plane(&mut trace_body);
+        trace_body.extend([0, 1, 1]);
+        trace_body.extend(file_reference(archive, "/trace/source.png", "source.png"));
+        let trace = crc_chunk(archive, super::VIEW_TRACE_IMAGE, &trace_body);
+        let mut view_body = trace;
+        view_body.extend(short_chunk(archive, super::TCODE_ENDOFTABLE, 0));
+        let view = crc_chunk(archive, super::VIEW_RECORD, &view_body);
+        let mut data = 1_i32.to_le_bytes().to_vec();
+        data.extend(view);
+        let record = Record::long(super::NAMED_VIEWS, 0..data.len(), 0..data.len());
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
+            .expect("root bytes admitted");
+        let error = parse_list(
+            &ctx,
+            &data,
+            &record,
+            archive,
+            crate::settings::MillimeterScale::IDENTITY,
+            ViewListKind::Named,
+        )
+        .expect_err("file-reference path exceeds retained limit");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.operation == "Rhino file reference full path"
+        ));
+    }
+
+    #[test]
     fn viewport_userdata_crc_excludes_class_children_and_reports_mismatch() {
         let archive = ArchiveVersion::V5;
         let userdata = class_userdata_v2_with_direct_payload(
@@ -2395,12 +2486,14 @@ mod tests {
         body.extend(make_view(&viewport_userdata));
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
         let (views, losses) = parse_list(
+            &cadmpeg_test_support::service_decode_context(),
             &body,
             &record,
             archive,
             crate::settings::MillimeterScale::IDENTITY,
             ViewListKind::Named,
-        );
+        )
+        .expect("view list");
         assert_eq!(views.len(), 1);
         assert_eq!(losses.len(), 1);
         assert_eq!(
@@ -2419,12 +2512,14 @@ mod tests {
             0..corrupted_body.len(),
         );
         let (views, losses) = parse_list(
+            &cadmpeg_test_support::service_decode_context(),
             &corrupted_body,
             &record,
             archive,
             crate::settings::MillimeterScale::IDENTITY,
             ViewListKind::Named,
-        );
+        )
+        .expect("view list");
         assert_eq!(views.len(), 1);
         assert!(losses.iter().any(|loss| {
             loss.code == crate::loss::RhinoLossCode::ViewportUserdataDropped.kind()
