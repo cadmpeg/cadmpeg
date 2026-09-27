@@ -58,10 +58,12 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn ordered_point_candidates<'a>(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     graph: &'a Graph,
-) -> Vec<(FinitePoint3, &'a Node)> {
+) -> Result<Vec<(FinitePoint3, &'a Node)>, CodecError> {
     ordered_fixed_candidates(
+        ctx,
         geometry::points(stream)
             .into_iter()
             .map(|point| (point.pos, point.position)),
@@ -72,10 +74,12 @@ pub(super) fn ordered_point_candidates<'a>(
 }
 
 pub(super) fn ordered_surface_candidates<'a>(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     graph: &'a Graph,
-) -> Vec<(SurfaceGeometry, &'a Node)> {
+) -> Result<Vec<(SurfaceGeometry, &'a Node)>, CodecError> {
     ordered_fixed_candidates(
+        ctx,
         geometry::surfaces(stream)
             .into_iter()
             .map(|surface| (surface.pos, surface.geometry)),
@@ -92,10 +96,12 @@ pub(super) fn ordered_surface_candidates<'a>(
 }
 
 pub(super) fn ordered_curve_candidates<'a>(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     graph: &'a Graph,
-) -> Vec<(CurveGeometry, &'a Node)> {
+) -> Result<Vec<(CurveGeometry, &'a Node)>, CodecError> {
     ordered_fixed_candidates(
+        ctx,
         geometry::curves(stream)
             .into_iter()
             .map(|curve| (curve.pos, curve.geometry)),
@@ -105,28 +111,46 @@ pub(super) fn ordered_curve_candidates<'a>(
     )
 }
 
-fn ordered_fixed_candidates<T>(
+fn ordered_fixed_candidates<'a, T>(
+    ctx: &DecodeContext<'_>,
     fallback: impl IntoIterator<Item = (usize, T)>,
-    graph: &Graph,
+    graph: &'a Graph,
     kinds: impl IntoIterator<Item = NodeKind>,
     graph_value: impl Fn(&Node) -> Option<T>,
-) -> Vec<(T, &Node)> {
+) -> Result<Vec<(T, &'a Node)>, CodecError> {
     let mut candidates = BTreeMap::new();
     for (offset, value) in fallback {
+        ctx.charge_work(1, "scan NX analytic candidates")?;
         let Some(node) = graph
             .at_pos(offset)
             .filter(|node| graph_value(node).is_some())
         else {
             continue;
         };
+        if !candidates.contains_key(&offset) {
+            ctx.charge_collection_items(1, "nx analytic candidate index")?;
+        }
         candidates.insert(offset, (value, node));
     }
     for node in kinds.into_iter().flat_map(|kind| graph.of_kind(kind)) {
+        ctx.charge_work(1, "scan NX analytic candidates")?;
         if let Some(value) = graph_value(node) {
+            if !candidates.contains_key(&node.pos) {
+                ctx.charge_collection_items(1, "nx analytic candidate index")?;
+            }
             candidates.insert(node.pos, (value, node));
         }
     }
-    candidates.into_values().collect()
+    ctx.charge_collection_items(
+        u64::try_from(candidates.len()).unwrap_or(u64::MAX),
+        "nx ordered analytic candidates",
+    )?;
+    let mut ordered = Vec::new();
+    ordered
+        .try_reserve_exact(candidates.len())
+        .map_err(|_| ctx.refuse_codec_limit("nx ordered analytic candidates", 0, 1))?;
+    ordered.extend(candidates.into_values());
+    Ok(ordered)
 }
 
 /// Decode analytic carriers from every Parasolid stream. Returns `None` when no
@@ -360,7 +384,7 @@ pub(super) fn try_decode_geometry(
         // The model is accumulated across streams. Completion must not retry
         // unresolved curves that an earlier stream already admitted.
         let procedural_start = ir.model.procedural_curves.len();
-        for (pi, (position, node)) in ordered_point_candidates(semantic, graph)
+        for (pi, (position, node)) in ordered_point_candidates(ctx, semantic, graph)?
             .into_iter()
             .enumerate()
         {
@@ -381,7 +405,7 @@ pub(super) fn try_decode_geometry(
             points_by_xmt.insert(node.xmt, pid);
             counts.points += 1;
         }
-        for (fi, (geometry, node)) in ordered_surface_candidates(semantic, graph)
+        for (fi, (geometry, node)) in ordered_surface_candidates(ctx, semantic, graph)?
             .into_iter()
             .enumerate()
         {
@@ -621,7 +645,7 @@ pub(super) fn try_decode_geometry(
             });
         }
 
-        for (ci, (geometry, node)) in ordered_curve_candidates(semantic, graph)
+        for (ci, (geometry, node)) in ordered_curve_candidates(ctx, semantic, graph)?
             .into_iter()
             .enumerate()
         {
