@@ -8217,40 +8217,37 @@ fn restore_unique_endpoint_pair_orientations(
     Ok(Some(oriented))
 }
 
-fn charge_materialized_items(
-    ctx: &DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    let count =
-        u64::try_from(count).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-    ctx.charge_collection_items(count, operation)
-}
-
 fn materialize_boundary_domains(
     ctx: &DecodeContext<'_>,
     domains: &[MeshFaceBoundaryDomain],
     edge_pairs: &[[usize; 2]],
 ) -> Result<Option<Vec<Vec<MeshFaceBoundaryAssignment>>>, CodecError> {
-    charge_materialized_items(ctx, domains.len(), "catia materialized boundary domains")?;
-    let mut materialized = Vec::with_capacity(domains.len());
+    let mut materialized = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut materialized, domains.len(), "catia materialized boundary domains")?;
     for domain in domains {
         let assignments = match domain {
             MeshFaceBoundaryDomain::Ordered(assignments) => {
-                charge_materialized_items(
-                    ctx,
-                    assignments.len(),
-                    "catia materialized ordered assignments",
-                )?;
-                assignments.clone()
+                let mut copies = Vec::new();
+                crate::resource::reserve_vec(ctx, &mut copies, assignments.len(), "catia materialized ordered assignments")?;
+                for assignment in assignments {
+                    let boundaries = crate::resource::copy_retained_rows(
+                        ctx,
+                        &assignment.boundaries,
+                        "catia materialized ordered boundary rows",
+                        "catia materialized ordered boundary members",
+                    )?;
+                    copies.push(MeshFaceBoundaryAssignment { boundaries });
+                }
+                copies
             }
             MeshFaceBoundaryDomain::DeferredValidation(domain) => {
                 let Some(assignment) = deferred_boundary_assignment(ctx, domain, edge_pairs)?
                 else {
                     return Ok(None);
                 };
-                charge_materialized_items(ctx, 1, "catia materialized deferred boundary")?;
-                vec![assignment]
+                let mut copies = Vec::new();
+                crate::resource::push(ctx, &mut copies, assignment, "catia materialized deferred boundary")?;
+                copies
             }
             MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
                 let Some(cycles) = incidence_cycles(ctx, edges, edge_pairs)? else {
@@ -8260,20 +8257,21 @@ fn materialize_boundary_domains(
                     return Ok(None);
                 };
                 let length = cycle.len();
-                charge_materialized_items(ctx, length, "catia materialized unordered boundary")?;
-                let boundary = cycle
-                    .iter()
-                    .enumerate()
-                    .map(|(index, &(edge, reversed))| MeshBoundaryEdgeCandidate {
+                let mut boundary = Vec::new();
+                crate::resource::reserve_vec(ctx, &mut boundary, length, "catia materialized unordered boundary")?;
+                for (index, &(edge, reversed)) in cycle.iter().enumerate() {
+                    boundary.push(MeshBoundaryEdgeCandidate {
                         edge,
                         start: index,
                         end: (index + 1) % length,
                         reversed: Some(reversed),
-                    })
-                    .collect();
-                vec![MeshFaceBoundaryAssignment {
-                    boundaries: vec![boundary],
-                }]
+                    });
+                }
+                let mut boundaries = Vec::new();
+                crate::resource::push(ctx, &mut boundaries, boundary, "catia materialized unordered boundary rows")?;
+                let mut copies = Vec::new();
+                crate::resource::push(ctx, &mut copies, MeshFaceBoundaryAssignment { boundaries }, "catia materialized unordered assignments")?;
+                copies
             }
         };
         materialized.push(assignments);
@@ -8319,6 +8317,7 @@ fn mesh_domains_have_incident_edge_support(
 
 #[cfg(test)]
 mod face_domain_support_tests {
+    use cadmpeg_core::CodecError;
     use super::{
         endpoint_pairs_respect_candidate_domains, materialize_boundary_domains,
         mesh_domains_have_incident_edge_support, restore_unique_endpoint_pair_orientations,
@@ -8534,6 +8533,59 @@ mod face_domain_support_tests {
         }
         assert!(refused.contains("catia materialized boundary domains"));
         assert!(refused.contains("catia materialized deferred boundary"));
+    }
+
+    #[test]
+    fn ordered_boundary_copy_refuses_before_nested_rows() {
+        let domains = [MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 1,
+                reversed: Some(false),
+            }]],
+        }])];
+        let mut refused = HashSet::new();
+        for cap in 0..8 {
+            match crate::test_support::with_collection_limit(cap, |ctx| materialize_boundary_domains(ctx, &domains, &[])) {
+                Err(CodecError::ResourceLimit(limit)) => { refused.insert(limit.operation); }
+                Ok(Some(_)) => break,
+                other => panic!("unexpected ordered boundary result: {other:?}"),
+            }
+        }
+        for operation in [
+            "catia materialized boundary domains",
+            "catia materialized ordered assignments",
+            "catia materialized ordered boundary rows",
+            "catia materialized ordered boundary members",
+        ] {
+            assert!(refused.contains(operation), "no refusal at {operation}");
+        }
+        assert!(crate::test_support::with_service_context(|ctx| materialize_boundary_domains(ctx, &domains, &[]))
+            .expect("service resource budget").is_some());
+    }
+
+    #[test]
+    fn unordered_boundary_copy_refuses_before_nested_rows() {
+        let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2])];
+        let pairs = [[0, 1], [1, 2], [2, 0]];
+        let mut refused = HashSet::new();
+        for cap in 0..32 {
+            match crate::test_support::with_collection_limit(cap, |ctx| materialize_boundary_domains(ctx, &domains, &pairs)) {
+                Err(CodecError::ResourceLimit(limit)) => { refused.insert(limit.operation); }
+                Ok(Some(_)) => break,
+                other => panic!("unexpected unordered boundary result: {other:?}"),
+            }
+        }
+        for operation in [
+            "catia materialized unordered boundary",
+            "catia materialized unordered boundary rows",
+            "catia materialized unordered assignments",
+        ] {
+            assert!(refused.contains(operation), "no refusal at {operation}");
+        }
+        assert!(crate::test_support::with_service_context(|ctx| materialize_boundary_domains(ctx, &domains, &pairs))
+            .expect("service resource budget").is_some());
     }
 
     #[test]
