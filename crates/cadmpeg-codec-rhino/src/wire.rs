@@ -152,6 +152,18 @@ pub(crate) fn admitted_format(
     Ok(text)
 }
 
+/// Admits both the formatted source text and the loss note's retained copy.
+pub(crate) fn admitted_loss(
+    ctx: &DecodeContext<'_>,
+    code: crate::loss::RhinoLossCode,
+    arguments: fmt::Arguments<'_>,
+    operation: &'static str,
+) -> Result<cadmpeg_ir::report::loss::LossNote, CodecError> {
+    let message = admitted_format(ctx, arguments, operation)?;
+    ctx.charge_retained(u64_from_index(message.len()), operation)?;
+    Ok(code.note(&message))
+}
+
 impl<T> ExactVec<T> {
     /// Charges and allocates storage for a count bounded by the input window.
     pub(crate) fn new(

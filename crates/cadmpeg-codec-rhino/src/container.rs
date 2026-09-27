@@ -1427,7 +1427,7 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummar
     }
     let matched = dialect_match(scan);
     let mut losses = Vec::new();
-    if let Some(loss) = crate::dialect::admission_loss(&matched) {
+    if let Some(loss) = crate::dialect::admission_loss(ctx, &matched)? {
         crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino container summary losses")?;
         losses.push(loss);
     }
@@ -1555,7 +1555,10 @@ pub(crate) fn container_only_result(
         losses.push(diagnostic.to_loss(ctx)?);
     }
     let primary = dialect_match(scan);
-    losses.extend(crate::dialect::admission_loss(&primary));
+    if let Some(loss) = crate::dialect::admission_loss(ctx, &primary)? {
+        crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino container-only losses")?;
+        losses.push(loss);
+    }
     let ir = CadIr::decoded(source_meta(ctx, primary, SourceMetaDetail::ContainerOnly(scan))?);
     Ok(Decoded {
         ir,
@@ -1581,18 +1584,19 @@ pub(crate) fn inspect(
         // The properties table is not read on this path, so no openNURBS
         // writer-version stamp is declared.
         let matched = header.archive_version.classify(None);
-        let losses = crate::dialect::admission_loss(&matched)
-            .into_iter()
-            .collect();
+        let mut losses = Vec::new();
+        if let Some(loss) = crate::dialect::admission_loss(ctx, &matched)? {
+            crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino container summary losses")?;
+            losses.push(loss);
+        }
+        let mut notes = Vec::new();
+        push_container_note(ctx, &mut notes, format_args!("archive version {}", header.archive_version.value()))?;
         return Ok(ContainerSummary::classified(
             cadmpeg_core::dialect::DialectLayers::of(matched),
             cadmpeg_ir::ContainerKind::ThreeDmChunks,
             Vec::new(),
             losses,
-            vec![format!(
-                "archive version {}",
-                header.archive_version.value()
-            )],
+            notes,
         ));
     }
     summarize(ctx, &scan(ctx, data)?)

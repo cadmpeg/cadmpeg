@@ -2626,7 +2626,10 @@ impl<'a> DecodeContext<'a> {
         let primary = crate::container::dialect_match(self.scan);
         // Charged from the admission the source records, so the document-level
         // residual admission and its loss cannot be reported apart.
-        losses.extend(crate::dialect::admission_loss(&primary));
+        if let Some(loss) = crate::dialect::admission_loss(ctx, &primary)? {
+            crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino final decode losses")?;
+            losses.push(loss);
+        }
         let attributes = full_source_attributes(self.expand.ctx(), self.scan)?;
         self.ir.source = Some(crate::container::source_meta(
             self.expand.ctx(),
