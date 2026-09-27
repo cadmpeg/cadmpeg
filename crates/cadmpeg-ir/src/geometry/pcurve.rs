@@ -1877,6 +1877,26 @@ impl PcurveNurbs {
         })
     }
 
+    /// Build from already-admitted poles without copying their storage.
+    pub fn from_admitted_parts<K: super::nurbs::KnotValue>(
+        degree: u32,
+        knots: K,
+        poles: PcurveNurbsPoles<FinitePoint2>,
+        periodic: bool,
+    ) -> Result<Self, NurbsError> {
+        require_curve_cardinality(degree, knots.knot_count(), poles.count(), "control_points")?;
+        if degree == 0 {
+            return Err(NurbsError::Structure("pcurve NURBS degree must be positive".into()));
+        }
+        let knots = knots.admit()?;
+        Ok(Self {
+            degree,
+            knots,
+            poles,
+            periodic,
+        })
+    }
+
     /// Lift each two-dimensional pole into model space, keeping its weight.
     ///
     /// # Errors

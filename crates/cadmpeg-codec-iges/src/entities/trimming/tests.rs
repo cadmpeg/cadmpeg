@@ -31,6 +31,7 @@ use crate::test_support::test_drawing_and_trimming::{
     explicit_multi_pcurve_loop_file_with_first_pcurve, independent_boundary_entities_file,
     multi_pcurve_boundary_file, multi_pcurve_boundary_file_with_first_pcurve,
     parameter_domain_trimmed_surface_file, subrange_nurbs_surface_boundary_file,
+    subrange_nurbs_surface_boundary_file_with_pcurve,
     subrange_nurbs_surface_boundary_file_with_source_precision, trimmed_plane_with_boundaries,
     trimmed_plane_with_boundaries_and_inner, trimmed_plane_with_inner_loop_and_outer_pcurve,
     trimmed_plane_with_inner_loop_file,
@@ -806,6 +807,19 @@ fn trimmed_pcurve_mapping_refuses_before_an_absent_surface_candidate() {
                 && limit.additional == 1
                 && limit.operation == "iges trimmed mapped pcurves"
     ));
+}
+
+#[test]
+fn pcurve_geometry_refuses_mapped_polynomial_and_rational_pole_storage() {
+    let polynomial = trimmed_procedural_line_surface_of_revolution_file();
+    assert_trimming_collection_refusal(&polynomial, "iges pcurve mapped polynomial poles");
+    let rational = subrange_nurbs_surface_boundary_file_with_pcurve(
+        3,
+        "126,2,2,1,1,0,0,0,0,0,1,1,1,1,0.5,1,0.2,0.2,0,0.1,0.5,0,0.2,0.2,0,0,1,0,0,1;",
+    );
+    assert_trimming_collection_refusal(&rational, "iges pcurve mapped rational poles");
+    IgesCodec.decode(&mut Cursor::new(polynomial), &DecodeOptions::default()).unwrap();
+    IgesCodec.decode(&mut Cursor::new(rational), &DecodeOptions::default()).unwrap();
 }
 
 #[test]
