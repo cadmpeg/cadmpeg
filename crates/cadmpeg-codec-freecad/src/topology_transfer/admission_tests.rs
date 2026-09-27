@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::tests::{assert_codec_collection_refusal, assert_codec_retained_refusal, triangulated_face_archive};
-use super::{copy_shape_for_transfer, Builder};
-use crate::brep::{ShapePayload, ShapePayloadRecord, Tables, TextEdgeRepresentation, TextPolygon3d, TextTShape, TextTShapeGeometry, TextTShapes};
+use super::{copy_shape_for_transfer, pcurve_geometry, Builder, PcurveGeometryError};
+use crate::brep::{NurbsCurve2d, ShapePayload, ShapePayloadRecord, Tables, TextCurve2d, TextEdgeRepresentation, TextPolygon3d, TextTShape, TextTShapeGeometry, TextTShapes};
 use crate::test_support::assert_retained_refusal_at;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
@@ -13,6 +13,64 @@ use cadmpeg_ir::ids::EdgeId;
 use cadmpeg_ir::ids::{CurveId, RegionId, ShellId, SurfaceId, VertexId};
 use cadmpeg_ir::scalar::NonNegativeReal;
 use cadmpeg_ir::transform::Transform;
+
+fn pcurve_nurbs(rational: bool) -> TextCurve2d {
+    TextCurve2d::Nurbs(NurbsCurve2d {
+        degree: 1,
+        knots: [FiniteReal::ZERO, FiniteReal::ZERO, FiniteReal::ONE, FiniteReal::ONE].to_vec(),
+        control_points: [
+            cadmpeg_ir::units::FinitePoint2::ZERO,
+            cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(1.0, 0.0))
+                .expect("finite point"),
+        ].to_vec(),
+        weights: rational.then(|| vec![FiniteReal::ONE; 2]),
+        periodic: false,
+    })
+}
+
+fn assert_pcurve_collection_refusal(curve: &TextCurve2d, limit: u64, operation: &str) {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert!(matches!(pcurve_geometry(&ctx, curve),
+        Err(PcurveGeometryError::Resource(CodecError::ResourceLimit(refusal)))
+            if refusal.operation == operation));
+}
+
+#[test]
+fn pcurve_polynomial_poles_refuse_at_collection_limit() {
+    assert_pcurve_collection_refusal(&pcurve_nurbs(false), 1, "FreeCAD pcurve polynomial poles");
+}
+
+#[test]
+fn pcurve_rational_poles_refuse_at_collection_limit() {
+    assert_pcurve_collection_refusal(&pcurve_nurbs(true), 1, "FreeCAD pcurve rational poles");
+}
+
+#[test]
+fn pcurve_knots_refuse_at_collection_limit() {
+    assert_pcurve_collection_refusal(&pcurve_nurbs(false), 5, "FreeCAD pcurve knots");
+}
+
+#[test]
+fn pcurve_nested_basis_refuses_at_depth_limit() {
+    let curve = TextCurve2d::Offset {
+        distance: FiniteReal::ONE,
+        basis: crate::brep::NestedCurve2d::try_new(TextCurve2d::Line {
+            origin: cadmpeg_ir::units::FinitePoint2::ZERO,
+            direction: cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(1.0, 0.0))
+                .expect("finite direction"),
+        }).expect("one nested basis"),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_recursion_depth = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert!(matches!(pcurve_geometry(&ctx, &curve),
+        Err(PcurveGeometryError::Resource(CodecError::ResourceLimit(refusal)))
+            if refusal.operation == "FreeCAD pcurve geometry nesting"));
+}
 
 #[test]
 fn topology_body_roots_refuse_at_collection_limit() {

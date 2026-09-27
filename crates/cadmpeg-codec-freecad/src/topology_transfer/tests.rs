@@ -1822,7 +1822,11 @@ fn refuses_a_pcurve_weight_lane_shorter_than_its_pole_lane() {
         weights: Some(vec![cadmpeg_ir::scalar::FiniteReal::ONE]),
         periodic: false,
     });
-    let error = pcurve_geometry(&record).expect_err("a short weight lane is refused");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test decode context");
+    let error = pcurve_geometry(&ctx, &record).expect_err("a short weight lane is refused");
     let reported = cadmpeg_core::CodecError::from(error);
     let cadmpeg_core::CodecError::Malformed(message) = &reported else {
         panic!("expected a malformed refusal, got {reported:?}");

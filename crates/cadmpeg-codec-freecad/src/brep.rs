@@ -7756,8 +7756,12 @@ pub(crate) mod tests {
             })
             .expect("two inline bases are admitted"),
         };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test decode context");
         let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Offset(offset_pcurve) =
-            crate::topology_transfer::pcurve_geometry(&source)
+            crate::topology_transfer::pcurve_geometry(&ctx, &source)
                 .expect("recursive pcurve lanes pair")
                 .expect("valid recursive pcurve")
         else {
@@ -7953,10 +7957,14 @@ pub(crate) mod tests {
             serde_json::json!({"kind": "parabola", "vertex": center, "x_axis": x_axis, "y_axis": y_axis, "focal_distance": 2.0}),
             serde_json::json!({"kind": "hyperbola", "center": center, "x_axis": x_axis, "y_axis": y_axis, "major_radius": 3.0, "minor_radius": 2.0}),
         ];
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test decode context");
         for wire in wires {
             let curve: TextCurve2d = serde_json::from_value(wire.clone()).unwrap();
             assert_eq!(serde_json::to_value(&curve).unwrap(), wire);
-            assert!(crate::topology_transfer::pcurve_geometry(&curve)
+            assert!(crate::topology_transfer::pcurve_geometry(&ctx, &curve)
                 .unwrap()
                 .is_some());
         }
