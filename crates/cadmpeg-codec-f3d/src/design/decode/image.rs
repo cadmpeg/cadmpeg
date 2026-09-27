@@ -10,6 +10,19 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent};
 use std::fmt::Write;
 
+pub(super) fn copy_asset_id_charged(
+    ctx: &DecodeContext<'_>,
+    id: &cadmpeg_ir::assets::AssetId,
+) -> Result<cadmpeg_ir::assets::AssetId, CodecError> {
+    let copied = String::from_utf8(ctx.copy_retained(
+        id.as_str().as_bytes(),
+        "f3d image feature asset identifier",
+    )?)
+    .map_err(|_| CodecError::malformed("F3D asset identifier must be UTF-8"))?;
+    cadmpeg_ir::assets::AssetId::mint(copied)
+        .map_err(|error| CodecError::malformed(format_args!("{error}")))
+}
+
 pub(super) fn neutral_asset_id_charged(
     ctx: &DecodeContext<'_>,
     entry_name: &str,
