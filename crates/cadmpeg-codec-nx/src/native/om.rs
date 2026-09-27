@@ -407,23 +407,26 @@ pub(super) fn operation_state_messages(
             };
             let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
-            Ok(messages
+            let rows = messages
                 .into_iter()
                 .enumerate()
-                .filter_map(move |(ordinal, message)| {
-                    let ordinal = u32::try_from(ordinal).ok()?;
-                    Some(OmOperationStateMessage {
+                .map(|(ordinal, message)| -> Result<Option<OmOperationStateMessage>, CodecError> {
+                    let Ok(ordinal) = u32::try_from(ordinal) else {
+                        return Ok(None);
+                    };
+                    Ok(Some(OmOperationStateMessage {
                         id: format!(
                             "nx:feature-history:operation-state-message#{section_key}-{ordinal:010}"
                         ),
                         section_link: link.id.clone(),
                         ordinal,
-                        body: message.body().into_owned(),
+                        body: message.body().into_owned(ctx)?,
                         source_entry: entry.name.clone(),
                         source_offset: entry_offset + message.offset() as u64,
-                    })
+                    }))
                 })
-                .collect())
+                .collect::<Result<Vec<_>, CodecError>>()?;
+            Ok(rows.into_iter().flatten().collect())
         })
         .collect::<Result<Vec<Vec<_>>, CodecError>>()
         .map(|rows| rows.into_iter().flatten().collect())
@@ -454,27 +457,33 @@ pub(super) fn operation_state_statuses(
             };
             let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
-            Ok(table
+            let rows = table
                 .into_entries()
                 .filter_map(|(offset, entry)| match entry {
                     StateTableEntry::Status(row) => Some((offset, row)),
                     StateTableEntry::Slots(_) => None,
                 })
                 .enumerate()
-                .filter_map(move |(ordinal, (offset, row))| {
-                    let ordinal = u32::try_from(ordinal).ok()?;
-                    OmOperationStateStatus::new(
+                .map(|(ordinal, (offset, row))| -> Result<Option<OmOperationStateStatus>, CodecError> {
+                    let Ok(ordinal) = u32::try_from(ordinal) else {
+                        return Ok(None);
+                    };
+                    Ok(OmOperationStateStatus::new(
                         format!(
                             "nx:feature-history:operation-state-status#{section_key}-{ordinal:010}"
                         ),
                         link.id.clone(),
                         ordinal,
-                        row.into_owned(),
+                        row.into_owned(ctx)?,
                         entry.name.clone(),
-                        entry_offset.checked_add(offset as u64)?,
-                    )
+                        match entry_offset.checked_add(offset as u64) {
+                            Some(value) => value,
+                            None => return Ok(None),
+                        },
+                    ))
                 })
-                .collect())
+                .collect::<Result<Vec<_>, CodecError>>()?;
+            Ok(rows.into_iter().flatten().collect())
         })
         .collect::<Result<Vec<Vec<_>>, CodecError>>()
         .map(|rows| rows.into_iter().flatten().collect())

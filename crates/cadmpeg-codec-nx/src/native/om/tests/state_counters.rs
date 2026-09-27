@@ -334,6 +334,31 @@ fn native_catalog_emits_bounded_operation_state_messages() {
 }
 
 #[test]
+fn native_operation_state_message_route_refuses_retained_bytes() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let file = prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        segment_om_record_area_with_state_groups_and_counter_map(),
+    )]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        container::scan_bytes(ctx, file.clone())
+    })
+    .expect("feature-history container");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &policy).unwrap();
+    let error = operation_state_messages(&ctx, &container)
+        .expect_err("message route exceeds zero retained bytes");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+    ));
+}
+
+#[test]
 fn native_catalog_emits_bounded_operation_state_statuses_and_slot_lanes() {
     let payload = composed_feature_history_payload_with_operation_state_statuses();
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload.clone())]);
