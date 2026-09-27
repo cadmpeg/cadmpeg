@@ -97,8 +97,8 @@ struct CameraSettings {
 /// The admitted native provider identity is the source of every neutral
 /// appearance key. The persisted display name remains separate so names such
 /// as `A B`, `#`, and the empty string remain legal source values.
-fn provider_identity_key(name: &str) -> IdentityKey {
-    IdentityKey::encode_segment(name)
+fn provider_identity_key(ctx: &DecodeContext<'_>, name: &str) -> Result<IdentityKey, CodecError> {
+    crate::native::encoded_segment_charged(ctx, name, "FCStd GUI provider key")
 }
 
 fn object_appearance_id(provider: &IdentityKey) -> AppearanceId {
@@ -370,7 +370,7 @@ fn transfer_schema_one(
                 "GuiDocument.xml has duplicate ViewProvider names".into(),
             ));
         }
-        let provider_key = provider_identity_key(name);
+        let provider_key = provider_identity_key(ctx, name)?;
         let Some(object_id) = objects_by_name.get(name).copied() else {
             append_native_provider(
                 ctx,
@@ -506,6 +506,7 @@ fn transfer_schema_one(
                 .get("LineWidth")
                 .and_then(|value| value.attribute("value"));
             transfer_primitive_appearance(
+                ctx,
                 ir,
                 &mut plan,
                 &mut losses,
@@ -517,7 +518,7 @@ fn transfer_schema_one(
                     payload_prefixes: &payload_prefixes,
                     provenance: property_provenance("LineWidth", "App::PropertyFloatConstraint"),
                 },
-            );
+            )?;
         }
         if let Some(file) = values
             .get("LineColorArray")
@@ -551,6 +552,7 @@ fn transfer_schema_one(
                 .get("PointSize")
                 .and_then(|value| value.attribute("value"));
             transfer_primitive_appearance(
+                ctx,
                 ir,
                 &mut plan,
                 &mut losses,
@@ -562,7 +564,7 @@ fn transfer_schema_one(
                     payload_prefixes: &payload_prefixes,
                     provenance: property_provenance("PointSize", "App::PropertyFloatConstraint"),
                 },
-            );
+            )?;
         }
         if let Some(file) = values
             .get("PointColorArray")
@@ -643,6 +645,7 @@ fn transfer_schema_one(
         validate_gui_list_payloads(ctx, &graph.properties, entries, requires_alpha_conversion)?;
     let mut material_losses = Vec::new();
     transfer_shape_appearances(
+        ctx,
         ir,
         &mut plan,
         &graph,
@@ -1032,11 +1035,12 @@ struct PrimitiveAppearanceSource<'a> {
 }
 
 fn transfer_primitive_appearance(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     plan: &mut AppearancePlan,
     losses: &mut Vec<LossNote>,
     source: PrimitiveAppearanceSource<'_>,
-) {
+) -> Result<(), CodecError> {
     let PrimitiveAppearanceSource {
         provider_name,
         object_id,
@@ -1070,9 +1074,9 @@ fn transfer_primitive_appearance(
             .collect::<Vec<_>>(),
     };
     if targets.is_empty() {
-        return;
+        return Ok(());
     }
-    let provider_key = provider_identity_key(provider_name);
+    let provider_key = provider_identity_key(ctx, provider_name)?;
     let (appearance_id, label, property, size, binding_key, object_type, precedence) = match style {
         PrimitiveStyle::Line(width) => (
             edge_appearance_id(&provider_key),
@@ -1143,6 +1147,7 @@ fn transfer_primitive_appearance(
             .into(),
         });
     }
+    Ok(())
 }
 
 fn gui_state(
@@ -3812,6 +3817,7 @@ fn read_material_string(ctx: &DecodeContext<'_>, view: &mut View<'_>, property_i
 
 #[allow(clippy::too_many_arguments)]
 fn transfer_shape_appearances(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     plan: &mut AppearancePlan,
     graph: &Graph,
@@ -3822,7 +3828,7 @@ fn transfer_shape_appearances(
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     for provider in &graph.providers {
-        let provider_key = provider_identity_key(&provider.name);
+        let provider_key = provider_identity_key(ctx, &provider.name)?;
         let Some(object_id) = provider
             .object
             .as_ref()

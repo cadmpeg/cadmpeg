@@ -248,6 +248,25 @@ fn gui_provider_object_identity_refuses_at_retained_limit() {
 }
 
 #[test]
+fn gui_provider_key_refuses_before_encoding() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = "A%20B%23".len() as u64 - 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    let error = super::super::provider_identity_key(&ctx, "A B#")
+        .expect_err("encoded provider key must be charged");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+        if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && failure.operation == "FCStd GUI provider key"), "{error:?}");
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert_eq!(super::super::provider_identity_key(&ctx, "A B#")
+        .expect("service policy admits encoded key").as_str(), "A%20B%23");
+}
+
+#[test]
 fn y4_2_decode_refuses_unadmitted_gui_text_copy() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
     let gui = br#"<Document SchemaVersion="1"><Camera settings=""/></Document>"#;
