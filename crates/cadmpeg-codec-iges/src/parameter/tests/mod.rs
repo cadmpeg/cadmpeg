@@ -29,6 +29,126 @@ mod solid_entity_boundaries;
 mod type_fem;
 
 #[test]
+fn trailing_pointer_prefix_refuses_collection_limit_before_allocation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use std::collections::BTreeMap;
+
+    let record = integer_parameter_record(1, &[999, 0, 0]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::analyze_trailing_pointer_groups_for_global_table_with_context(
+        &record,
+        &BTreeMap::new(),
+        crate::global::GlobalTable::V5Later,
+        Some(&ctx),
+    );
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 0
+                && limit.additional == 4
+                && limit.operation == "iges noninteger token prefix"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert!(
+        super::analyze_trailing_pointer_groups_for_global_table_with_context(
+            &record,
+            &BTreeMap::new(),
+            crate::global::GlobalTable::V5Later,
+            Some(&ctx),
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn trailing_pointer_entries_refuse_collection_limit_before_allocation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use std::collections::BTreeMap;
+
+    let record = integer_parameter_record(1, &[999, 3, 5, 0]);
+    let candidate = super::PointerGroupCandidate {
+        token_start: 0,
+        association_start: 1,
+        property_count_index: 3,
+        property_count: 0,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result =
+        super::groups_for_candidate_with_context(&record, &BTreeMap::new(), candidate, Some(&ctx));
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 0
+                && limit.additional == 2
+                && limit.operation == "iges trailing pointer entries"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert!(super::groups_for_candidate_with_context(
+        &record,
+        &BTreeMap::new(),
+        candidate,
+        Some(&ctx),
+    )
+    .unwrap()
+    .is_some());
+}
+
+#[test]
+fn resolved_pointer_groups_refuse_collection_limit_before_allocation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let groups = super::TrailingPointerGroups {
+        token_start: 1,
+        association_pointers: [3_u32, 5]
+            .into_iter()
+            .enumerate()
+            .map(|(token_index, sequence)| super::TrailingPointer {
+                token_index,
+                raw_pointer: i64::from(sequence),
+                resolved: Some(sequence),
+            })
+            .collect(),
+        property_pointers: Vec::new(),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = groups.fully_valid_with_context(Some(&ctx));
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 0
+                && limit.additional == 2
+                && limit.operation == "iges resolved association pointers"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        groups
+            .fully_valid_with_context(Some(&ctx))
+            .unwrap()
+            .unwrap()
+            .associations(),
+        &[3, 5]
+    );
+}
+
+#[test]
 fn owned_parameter_bytes_refuse_retained_limit_before_copy() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use std::collections::BTreeMap;
@@ -51,7 +171,8 @@ fn owned_parameter_bytes_refuse_retained_limit_before_copy() {
     ));
 
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     assert!(super::owned_bytes(&cards, &lines, Some(&ctx)).is_ok());
 }
 
@@ -88,7 +209,8 @@ fn quarantined_parameter_bytes_refuse_retained_limit_before_copy() {
     ));
 
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     assert!(super::quarantine(
         entry,
         &cards,
@@ -135,7 +257,8 @@ fn parameter_ownership_refuses_nested_owner_map_before_insertion() {
     ));
 
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     assert!(super::resolve_ownership(
         &directory,
         &lines,

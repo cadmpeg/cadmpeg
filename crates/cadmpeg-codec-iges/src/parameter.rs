@@ -83,6 +83,46 @@ pub(crate) struct TrailingPointerGroups {
 }
 
 impl TrailingPointerGroups {
+    fn fully_valid_with_context(
+        &self,
+        ctx: Option<&DecodeContext<'_>>,
+    ) -> Result<Option<ResolvedGroups>, CodecError> {
+        if self
+            .association_pointers
+            .iter()
+            .chain(&self.property_pointers)
+            .any(|pointer| pointer.resolved.is_none())
+        {
+            return Ok(None);
+        }
+        let mut associations = reserve_optional_vec(
+            ctx,
+            self.association_pointers.len(),
+            "iges resolved association pointers",
+        )?;
+        for pointer in &self.association_pointers {
+            if let Some(sequence) = pointer.resolved {
+                associations.push(sequence);
+            }
+        }
+        let mut properties = reserve_optional_vec(
+            ctx,
+            self.property_pointers.len(),
+            "iges resolved property pointers",
+        )?;
+        for pointer in &self.property_pointers {
+            if let Some(sequence) = pointer.resolved {
+                properties.push(sequence);
+            }
+        }
+        Ok(Some(ResolvedGroups {
+            token_start: self.token_start,
+            associations,
+            properties,
+        }))
+    }
+
+    #[cfg(test)]
     fn fully_valid(self) -> Option<ResolvedGroups> {
         Some(ResolvedGroups {
             token_start: self.token_start,
@@ -507,22 +547,39 @@ pub(crate) fn uses_double_precision(records: &[ParameterRecord]) -> bool {
     })
 }
 
-fn analyze_trailing_pointer_groups_for_global_table(
+fn analyze_trailing_pointer_groups_for_global_table_with_context(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
     global_table: GlobalTable,
-) -> TrailingPointerAnalysis {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<TrailingPointerAnalysis, CodecError> {
     if directory
         .get(&record.directory_sequence)
         .is_some_and(|entry| entry.entity_type == 306)
     {
-        return TrailingPointerAnalysis::Macro;
+        return Ok(TrailingPointerAnalysis::Macro);
     }
     analyze_trailing_pointer_groups_from_end(
         record,
         directory,
         entity_primary_end_for_global_table(record, directory, global_table),
+        ctx,
     )
+}
+
+#[cfg(test)]
+fn analyze_trailing_pointer_groups_for_global_table(
+    record: &ParameterRecord,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+    global_table: GlobalTable,
+) -> TrailingPointerAnalysis {
+    analyze_trailing_pointer_groups_for_global_table_with_context(
+        record,
+        directory,
+        global_table,
+        None,
+    )
+    .expect("test-only trailing pointer analysis")
 }
 
 #[cfg(test)]
@@ -540,22 +597,28 @@ fn analyze_trailing_pointer_groups_with_records_for_global_table(
     directory: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     global_table: GlobalTable,
-) -> TrailingPointerAnalysis {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<TrailingPointerAnalysis, CodecError> {
     if directory
         .get(&record.directory_sequence)
         .is_some_and(|entry| entry.entity_type == 306)
     {
-        return TrailingPointerAnalysis::Macro;
+        return Ok(TrailingPointerAnalysis::Macro);
     }
     let is_attribute_table_instance = directory
         .get(&record.directory_sequence)
         .is_some_and(|entry| entry.entity_type == 422 && matches!(entry.form, 0 | 1));
     if !is_attribute_table_instance {
-        return analyze_trailing_pointer_groups_for_global_table(record, directory, global_table);
+        return analyze_trailing_pointer_groups_for_global_table_with_context(
+            record,
+            directory,
+            global_table,
+            ctx,
+        );
     }
     let primary_end =
         entity_primary_end_with_records_for_global_table(record, directory, records, global_table);
-    analyze_trailing_pointer_groups_from_end(record, directory, primary_end)
+    analyze_trailing_pointer_groups_from_end(record, directory, primary_end, ctx)
 }
 
 #[cfg(test)]
@@ -569,48 +632,66 @@ fn analyze_trailing_pointer_groups_with_records(
         directory,
         records,
         GlobalTable::V5Later,
+        None,
     )
+    .expect("test-only trailing pointer analysis")
 }
 
 fn analyze_trailing_pointer_groups_from_end(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
     primary_end: Option<usize>,
-) -> TrailingPointerAnalysis {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<TrailingPointerAnalysis, CodecError> {
     // IGES defines the group order and pointer classes, but the entity table
     // supplies NV when it defines the primary layout. Use that table boundary
     // before applying the generic CADIR recovery for an entity without a
     // registered layout.
     let candidates = match primary_end {
         Some(start) => {
-            let prefix = non_integer_prefix(record);
-            pointer_group_candidate_with_prefix(record, start, &prefix, true)
-                .into_iter()
-                .collect()
+            let prefix = non_integer_prefix(record, ctx)?;
+            let candidate = pointer_group_candidate_with_prefix(record, start, &prefix, true);
+            let mut candidates = reserve_optional_vec(
+                ctx,
+                usize::from(candidate.is_some()),
+                "iges pointer candidates",
+            )?;
+            candidates.extend(candidate);
+            candidates
         }
-        None => structural_pointer_group_candidates(record),
+        None => structural_pointer_group_candidates_with_context(record, ctx)?,
     };
-    let valid_groups = candidates
-        .iter()
-        .filter_map(|candidate| groups_for_candidate(record, directory, *candidate))
-        .filter_map(TrailingPointerGroups::fully_valid);
-    let valid_groups = valid_groups.collect::<Vec<_>>();
-    let valid = valid_groups.len();
-    match valid_groups.into_iter().next() {
-        Some(groups) if valid == 1 => TrailingPointerAnalysis::Unambiguous(groups),
-        None if candidates.len() == 1 => {
-            match groups_for_candidate(record, directory, candidates[0]) {
-                Some(groups) => TrailingPointerAnalysis::SingleInvalid(groups),
-                None => TrailingPointerAnalysis::Ambiguous {
-                    candidates: 1,
-                    valid: 0,
-                },
+    let mut valid_groups = Vec::new();
+    for candidate in &candidates {
+        if let Some(groups) = groups_for_candidate_with_context(record, directory, *candidate, ctx)?
+        {
+            if let Some(resolved) = groups.fully_valid_with_context(ctx)? {
+                reserve_optional_vec_growth(
+                    ctx,
+                    &mut valid_groups,
+                    1,
+                    "iges valid pointer groups",
+                )?;
+                valid_groups.push(resolved);
             }
         }
-        Some(_) | None => TrailingPointerAnalysis::Ambiguous {
+    }
+    let valid = valid_groups.len();
+    match valid_groups.into_iter().next() {
+        Some(groups) if valid == 1 => Ok(TrailingPointerAnalysis::Unambiguous(groups)),
+        None if candidates.len() == 1 => {
+            match groups_for_candidate_with_context(record, directory, candidates[0], ctx)? {
+                Some(groups) => Ok(TrailingPointerAnalysis::SingleInvalid(groups)),
+                None => Ok(TrailingPointerAnalysis::Ambiguous {
+                    candidates: 1,
+                    valid: 0,
+                }),
+            }
+        }
+        Some(_) | None => Ok(TrailingPointerAnalysis::Ambiguous {
             candidates: candidates.len(),
             valid,
-        },
+        }),
     }
 }
 
@@ -1933,13 +2014,13 @@ fn attribute_table_definition_primary_end(record: &ParameterRecord, form: i64) -
     cursor
 }
 
-fn attribute_table_definition_value_counts(record: &ParameterRecord) -> Option<Vec<usize>> {
+fn attribute_table_definition_values_per_row(record: &ParameterRecord) -> Option<usize> {
     let attribute_count = record
         .integer(3)
         .and_then(|value| usize::try_from(value).ok())
         .filter(|count| *count > 0)?;
     let mut cursor = 4_usize;
-    let mut value_counts = Vec::with_capacity(attribute_count.min(record.tokens.len()));
+    let mut values_per_row = 0_usize;
     for attribute_index in 0..attribute_count {
         let count_index = cursor.checked_add(2)?;
         record.tokens.get(cursor)?;
@@ -1950,10 +2031,10 @@ fn attribute_table_definition_value_counts(record: &ParameterRecord) -> Option<V
             None => None,
         }
         .and_then(|value| usize::try_from(value).ok())?;
-        value_counts.push(value_count);
+        values_per_row = values_per_row.checked_add(value_count)?;
         cursor = count_index.checked_add(1)?;
     }
-    Some(value_counts)
+    Some(values_per_row)
 }
 
 fn attribute_table_instance_primary_end(
@@ -1979,13 +2060,7 @@ fn attribute_table_instance_primary_end(
     let Some(definition_record) = records.get(&definition_entry.sequence) else {
         return record.tokens.len();
     };
-    let Some(value_counts) = attribute_table_definition_value_counts(definition_record) else {
-        return record.tokens.len();
-    };
-    let Some(values_per_row) = value_counts
-        .into_iter()
-        .try_fold(0_usize, usize::checked_add)
-    else {
+    let Some(values_per_row) = attribute_table_definition_values_per_row(definition_record) else {
         return record.tokens.len();
     };
     let (value_start, row_count) = if entry.form == 0 {
@@ -2416,68 +2491,119 @@ fn pointer_group_candidate_with_prefix(
     })
 }
 
-fn structural_pointer_group_candidates(record: &ParameterRecord) -> Vec<PointerGroupCandidate> {
-    let non_integer_prefix = non_integer_prefix(record);
-    (1..record.tokens.len())
-        .filter_map(|association_count_index| {
-            pointer_group_candidate_with_prefix(
-                record,
-                association_count_index,
-                &non_integer_prefix,
-                false,
-            )
-        })
-        .collect()
+fn structural_pointer_group_candidates_with_context(
+    record: &ParameterRecord,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Vec<PointerGroupCandidate>, CodecError> {
+    let non_integer_prefix = non_integer_prefix(record, ctx)?;
+    let mut candidates = Vec::new();
+    for association_count_index in 1..record.tokens.len() {
+        if let Some(candidate) = pointer_group_candidate_with_prefix(
+            record,
+            association_count_index,
+            &non_integer_prefix,
+            false,
+        ) {
+            reserve_optional_vec_growth(ctx, &mut candidates, 1, "iges pointer candidates")?;
+            candidates.push(candidate);
+        }
+    }
+    Ok(candidates)
 }
 
-fn non_integer_prefix(record: &ParameterRecord) -> Vec<usize> {
-    let mut prefix = Vec::with_capacity(record.tokens.len() + 1);
+#[cfg(test)]
+fn structural_pointer_group_candidates(record: &ParameterRecord) -> Vec<PointerGroupCandidate> {
+    structural_pointer_group_candidates_with_context(record, None)
+        .expect("test-only pointer candidate allocation")
+}
+
+fn non_integer_prefix(
+    record: &ParameterRecord,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Vec<usize>, CodecError> {
+    let count = record
+        .tokens
+        .len()
+        .checked_add(1)
+        .ok_or_else(|| refuse_local_limit("iges noninteger token prefix", u64::MAX, 1))?;
+    let mut prefix = reserve_optional_vec(ctx, count, "iges noninteger token prefix")?;
     prefix.push(0);
     for index in 0..record.tokens.len() {
         prefix.push(prefix[index] + usize::from(record.raw_integer(index).is_none()));
     }
-    prefix
+    Ok(prefix)
 }
 
+fn groups_for_candidate_with_context(
+    record: &ParameterRecord,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+    candidate: PointerGroupCandidate,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<TrailingPointerGroups>, CodecError> {
+    let pointers = |range: Range<usize>,
+                    admitted: fn(i64) -> bool|
+     -> Result<Option<Vec<_>>, CodecError> {
+        if !range
+            .clone()
+            .all(|token_index| record.raw_integer(token_index).is_some())
+        {
+            return Ok(None);
+        }
+        let mut pointers = reserve_optional_vec(ctx, range.len(), "iges trailing pointer entries")?;
+        for token_index in range {
+            let Some(raw_pointer) = record.raw_integer(token_index) else {
+                return Ok(None);
+            };
+            let resolved = u32::try_from(raw_pointer)
+                .ok()
+                .filter(|sequence| sequence % 2 == 1)
+                .filter(|sequence| {
+                    directory
+                        .get(sequence)
+                        .is_some_and(|entry| admitted(entry.entity_type))
+                });
+            pointers.push(TrailingPointer {
+                token_index,
+                raw_pointer,
+                resolved,
+            });
+        }
+        Ok(Some(pointers))
+    };
+    let Some(association_pointers) = pointers(
+        candidate.association_start..candidate.property_count_index,
+        |kind| matches!(kind, 212 | 312 | 402),
+    )?
+    else {
+        return Ok(None);
+    };
+    let Some(property_start) = candidate.property_count_index.checked_add(1) else {
+        return Ok(None);
+    };
+    let Some(property_end) = property_start.checked_add(candidate.property_count) else {
+        return Ok(None);
+    };
+    let Some(property_pointers) = pointers(property_start..property_end, |kind| {
+        matches!(kind, 316 | 322 | 406 | 422)
+    })?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(TrailingPointerGroups {
+        token_start: candidate.token_start,
+        association_pointers,
+        property_pointers,
+    }))
+}
+
+#[cfg(test)]
 fn groups_for_candidate(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
     candidate: PointerGroupCandidate,
 ) -> Option<TrailingPointerGroups> {
-    let pointers = |range: Range<usize>, admitted: fn(i64) -> bool| {
-        range
-            .map(|token_index| {
-                let raw_pointer = record.raw_integer(token_index)?;
-                let resolved = u32::try_from(raw_pointer)
-                    .ok()
-                    .filter(|sequence| sequence % 2 == 1)
-                    .filter(|sequence| {
-                        directory
-                            .get(sequence)
-                            .is_some_and(|entry| admitted(entry.entity_type))
-                    });
-                Some(TrailingPointer {
-                    token_index,
-                    raw_pointer,
-                    resolved,
-                })
-            })
-            .collect::<Option<Vec<_>>>()
-    };
-    let association_pointers = pointers(
-        candidate.association_start..candidate.property_count_index,
-        |kind| matches!(kind, 212 | 312 | 402),
-    )?;
-    let property_start = candidate.property_count_index.checked_add(1)?;
-    let property_end = property_start.checked_add(candidate.property_count)?;
-    let property_pointers = pointers(property_start..property_end, |kind| {
-        matches!(kind, 316 | 322 | 406 | 422)
-    })?;
-    Some(TrailingPointerGroups {
-        token_start: candidate.token_start,
-        association_pointers,
-        property_pointers,
-    })
+    groups_for_candidate_with_context(record, directory, candidate, None)
+        .expect("test-only trailing pointer allocation")
 }
 
 /// Why one entity's Parameter Data has no typed tokens.
@@ -3255,11 +3381,13 @@ fn numeric_with_limits(
                 u64_from_index(text.len()),
             ))
         })?;
-        normalized.extend(text.bytes().map(|byte| char::from(if matches!(byte, b'D' | b'd') {
-            b'E'
-        } else {
-            byte
-        })));
+        normalized.extend(text.bytes().map(|byte| {
+            char::from(if matches!(byte, b'D' | b'd') {
+                b'E'
+            } else {
+                byte
+            })
+        }));
         TokenValue::Real(
             normalized
                 .parse::<f64>()
@@ -3419,10 +3547,7 @@ fn declared_range(entry: &DirectoryEntry, census: &Range<u32>) -> DeclaredRange 
 }
 
 /// The contiguous head of the run of cards whose back-pointer names one entry.
-fn contiguous_run(
-    cards: &[u32],
-    ctx: Option<&DecodeContext<'_>>,
-) -> Result<Vec<u32>, CodecError> {
+fn contiguous_run(cards: &[u32], ctx: Option<&DecodeContext<'_>>) -> Result<Vec<u32>, CodecError> {
     let mut run = Vec::<u32>::new();
     for sequence in cards {
         if run
@@ -3457,9 +3582,19 @@ fn overlapping_ranges(
     let mut highest_owner = None;
     for (start, end, sequence) in ordered {
         if start < highest_end {
-            insert_optional_btree_set(ctx, &mut overlapping, sequence, "iges overlapping parameter ranges")?;
+            insert_optional_btree_set(
+                ctx,
+                &mut overlapping,
+                sequence,
+                "iges overlapping parameter ranges",
+            )?;
             if let Some(owner) = highest_owner {
-                insert_optional_btree_set(ctx, &mut overlapping, owner, "iges overlapping parameter ranges")?;
+                insert_optional_btree_set(
+                    ctx,
+                    &mut overlapping,
+                    owner,
+                    "iges overlapping parameter ranges",
+                )?;
             }
         }
         if end >= highest_end {
@@ -3485,7 +3620,7 @@ fn owned_bytes(
         .filter_map(|sequence| lines.get(sequence))
         .try_fold((0_usize, 0_usize), |(bytes, count), line| {
             Some((
-                bytes.checked_add(line.payload.len().min(64))?,
+                bytes.checked_add(line.payload.get(..64).unwrap_or_default().len())?,
                 count.checked_add(1)?,
             ))
         })
@@ -3547,7 +3682,10 @@ fn quarantine(
             let first_offset = line.offset;
             let mut range = first..first.saturating_add(1);
             if let Some(ctx) = ctx {
-                ctx.charge_retained(u64_from_index(byte_count), "iges quarantined parameter bytes")?;
+                ctx.charge_retained(
+                    u64_from_index(byte_count),
+                    "iges quarantined parameter bytes",
+                )?;
             }
             let mut bytes = Vec::new();
             bytes.try_reserve_exact(byte_count).map_err(|_| {
@@ -3601,9 +3739,19 @@ fn resolve_ownership<'a>(
     let mut typed = BTreeSet::new();
     let mut candidates = Vec::new();
     for entry in directory {
-        insert_optional_btree_set(ctx, &mut typed, entry.sequence, "iges typed parameter owners")?;
+        insert_optional_btree_set(
+            ctx,
+            &mut typed,
+            entry.sequence,
+            "iges typed parameter owners",
+        )?;
         if !(entry.entity_type == 0 && entry.parameter_line_count == 0) {
-            reserve_optional_vec_growth(ctx, &mut candidates, 1, "iges parameter owner candidates")?;
+            reserve_optional_vec_growth(
+                ctx,
+                &mut candidates,
+                1,
+                "iges parameter owner candidates",
+            )?;
             candidates.push(entry);
         }
     }
@@ -3636,10 +3784,21 @@ fn resolve_ownership<'a>(
     for entry in &candidates {
         match declared_range(entry, &census) {
             DeclaredRange::Usable(range) => {
-                insert_optional_btree_map(ctx, &mut declared, entry.sequence, range, "iges declared parameter owners")?;
+                insert_optional_btree_map(
+                    ctx,
+                    &mut declared,
+                    entry.sequence,
+                    range,
+                    "iges declared parameter owners",
+                )?;
             }
             DeclaredRange::CardMissing => {
-                insert_optional_btree_set(ctx, &mut card_missing, entry.sequence, "iges missing parameter cards")?;
+                insert_optional_btree_set(
+                    ctx,
+                    &mut card_missing,
+                    entry.sequence,
+                    "iges missing parameter cards",
+                )?;
             }
             DeclaredRange::Unusable => {}
         }
@@ -3664,8 +3823,18 @@ fn resolve_ownership<'a>(
         match back_pointers.get(card).copied().flatten() {
             Some(pointer) if pointer == *owner => {}
             Some(pointer) if pointer % 2 == 1 && typed.contains(&pointer) => {
-                insert_optional_btree_set(ctx, &mut conflicted, *owner, "iges conflicting parameter owners")?;
-                insert_optional_btree_set(ctx, &mut conflicted, pointer, "iges conflicting parameter owners")?;
+                insert_optional_btree_set(
+                    ctx,
+                    &mut conflicted,
+                    *owner,
+                    "iges conflicting parameter owners",
+                )?;
+                insert_optional_btree_set(
+                    ctx,
+                    &mut conflicted,
+                    pointer,
+                    "iges conflicting parameter owners",
+                )?;
             }
             _ => {}
         }
@@ -3703,7 +3872,12 @@ fn resolve_ownership<'a>(
                 Some(range) => range_to_cards(range, ctx)?,
                 None => run()?,
             };
-            reserve_optional_vec_growth(ctx, &mut resolved, 1, "iges resolved parameter ownership")?;
+            reserve_optional_vec_growth(
+                ctx,
+                &mut resolved,
+                1,
+                "iges resolved parameter ownership",
+            )?;
             resolved.push(Ownership {
                 entry,
                 cards,
@@ -3713,7 +3887,12 @@ fn resolve_ownership<'a>(
         }
         if let Some(range) = range {
             let cards = range_to_cards(range, ctx)?;
-            reserve_optional_vec_growth(ctx, &mut resolved, 1, "iges resolved parameter ownership")?;
+            reserve_optional_vec_growth(
+                ctx,
+                &mut resolved,
+                1,
+                "iges resolved parameter ownership",
+            )?;
             resolved.push(Ownership {
                 entry,
                 cards,
@@ -3734,7 +3913,12 @@ fn resolve_ownership<'a>(
                 ),
                 format!("the back-pointer census run of {} card(s)", run.len()),
             );
-            reserve_optional_vec_growth(ctx, &mut resolved, 1, "iges resolved parameter ownership")?;
+            reserve_optional_vec_growth(
+                ctx,
+                &mut resolved,
+                1,
+                "iges resolved parameter ownership",
+            )?;
             resolved.push(Ownership {
                 entry,
                 cards: run,
@@ -3810,7 +3994,12 @@ pub(crate) fn assemble_with_context(
     for owned in &ownership {
         let entry = owned.entry;
         if let Some(defect) = owned.quarantine {
-            reserve_optional_vec_growth(ctx, &mut quarantined, 1, "iges quarantined parameter records")?;
+            reserve_optional_vec_growth(
+                ctx,
+                &mut quarantined,
+                1,
+                "iges quarantined parameter records",
+            )?;
             quarantined.push(quarantine(entry, &owned.cards, &lines, defect, None, ctx)?);
             continue;
         }
@@ -3837,7 +4026,12 @@ pub(crate) fn assemble_with_context(
             Ok(value) => value,
             Err(TokenizeFailure::Refusal(error)) => return Err(error),
             Err(TokenizeFailure::Defect(defect, offset)) => {
-                reserve_optional_vec_growth(ctx, &mut quarantined, 1, "iges quarantined parameter records")?;
+                reserve_optional_vec_growth(
+                    ctx,
+                    &mut quarantined,
+                    1,
+                    "iges quarantined parameter records",
+                )?;
                 quarantined.push(quarantine(
                     entry,
                     &owned.cards,
@@ -3851,7 +4045,12 @@ pub(crate) fn assemble_with_context(
         };
         if !matches!(tokens.first().map(|token| &token.value), Some(TokenValue::Integer(value)) if *value == entry.entity_type)
         {
-            reserve_optional_vec_growth(ctx, &mut quarantined, 1, "iges quarantined parameter records")?;
+            reserve_optional_vec_growth(
+                ctx,
+                &mut quarantined,
+                1,
+                "iges quarantined parameter records",
+            )?;
             quarantined.push(quarantine(
                 entry,
                 &owned.cards,
@@ -3900,7 +4099,8 @@ pub(crate) fn assemble_with_context(
                 &entries,
                 &record_by_directory,
                 global.global_table(),
-            );
+                ctx,
+            )?;
             insert_optional_btree_map(
                 ctx,
                 &mut trailing_pointer_analysis,
@@ -3924,7 +4124,12 @@ pub(crate) fn assemble_with_context(
         .iter()
         .flat_map(|owned| owned.cards.iter().copied())
     {
-        insert_optional_btree_set(ctx, &mut accounted, sequence, "iges accounted parameter cards")?;
+        insert_optional_btree_set(
+            ctx,
+            &mut accounted,
+            sequence,
+            "iges accounted parameter cards",
+        )?;
     }
     let mut quarantined_sequences = BTreeSet::new();
     for record in quarantined_directory {
@@ -3962,7 +4167,10 @@ pub(crate) fn assemble_with_context(
     })
 }
 
-fn charge_token(ctx: Option<&DecodeContext<'_>>, tokens: &mut Vec<Token>) -> Result<(), CodecError> {
+fn charge_token(
+    ctx: Option<&DecodeContext<'_>>,
+    tokens: &mut Vec<Token>,
+) -> Result<(), CodecError> {
     reserve_optional_vec_growth(ctx, tokens, 1, "iges_parameter_tokens")
 }
 
