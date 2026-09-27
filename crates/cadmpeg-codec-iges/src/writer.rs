@@ -7040,7 +7040,7 @@ fn encode_file(
         finite(minimum_resolution, "Global minimum resolution")?,
         finite(maximum_coordinate, "Global maximum coordinate")?,
     );
-    let global_cards = crate::global::layout_global_cards(&global)?;
+    let global_cards = crate::global::layout_global_cards(&global, None)?;
     let global_count = global_cards.len();
     let mut expanded = Vec::with_capacity(entities.len() * 2);
     let mut expanded_index_by_entity = Vec::with_capacity(entities.len());

@@ -409,7 +409,10 @@ fn layout_hollerith(bytes: &[u8], start: usize) -> Result<Option<(usize, usize)>
 /// generated output keep a Hollerith count and `H` on one card and keep every
 /// non-string field together with its delimiter. Hollerith payload bytes may
 /// cross cards.
-pub(crate) fn layout_global_cards(bytes: &[u8]) -> Result<Vec<Vec<u8>>, CodecError> {
+pub(crate) fn layout_global_cards(
+    bytes: &[u8],
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Vec<Vec<u8>>, CodecError> {
     let (parameter_delimiter, mut cursor) = if bytes.first() == Some(&b',') {
         (b',', 1)
     } else {
@@ -454,7 +457,7 @@ pub(crate) fn layout_global_cards(bytes: &[u8]) -> Result<Vec<Vec<u8>>, CodecErr
         delimiter
     };
 
-    let mut fields = Vec::with_capacity(1);
+    let mut fields = crate::decode_resource::reserve_optional_vec(ctx, 1, "iges global layout fields")?;
     fields.push(0..cursor);
     while cursor < bytes.len() {
         let start = cursor;
@@ -473,6 +476,7 @@ pub(crate) fn layout_global_cards(bytes: &[u8]) -> Result<Vec<Vec<u8>>, CodecErr
             .ok_or_else(|| malformed("Global record delimiter is missing"))?
             == &record_delimiter;
         end += 1;
+        crate::decode_resource::reserve_optional_vec_growth(ctx, &mut fields, 1, "iges global layout fields")?;
         fields.push(start..end);
         cursor = end;
         if is_record {
@@ -481,7 +485,7 @@ pub(crate) fn layout_global_cards(bytes: &[u8]) -> Result<Vec<Vec<u8>>, CodecErr
     }
 
     let mut cards = Vec::new();
-    let mut card = Vec::with_capacity(72);
+    let mut card = layout_global_card(ctx)?;
     for field in fields.iter().map(|range| &bytes[range.clone()]) {
         let leading = field
             .iter()
@@ -498,21 +502,35 @@ pub(crate) fn layout_global_cards(bytes: &[u8]) -> Result<Vec<Vec<u8>>, CodecErr
         }
         if card.len() + minimum > 72 {
             card.resize(72, b' ');
+            crate::decode_resource::reserve_optional_vec_growth(ctx, &mut cards, 1, "iges global layout cards")?;
             cards.push(std::mem::take(&mut card));
-            card = Vec::with_capacity(72);
+            card = layout_global_card(ctx)?;
         }
         for byte in field.iter().copied() {
             if card.len() == 72 {
+                crate::decode_resource::reserve_optional_vec_growth(ctx, &mut cards, 1, "iges global layout cards")?;
                 cards.push(std::mem::take(&mut card));
-                card = Vec::with_capacity(72);
+                card = layout_global_card(ctx)?;
             }
             card.push(byte);
         }
     }
     if !card.is_empty() {
+        crate::decode_resource::reserve_optional_vec_growth(ctx, &mut cards, 1, "iges global layout cards")?;
         cards.push(card);
     }
     Ok(cards)
+}
+
+fn layout_global_card(ctx: Option<&DecodeContext<'_>>) -> Result<Vec<u8>, CodecError> {
+    if let Some(ctx) = ctx {
+        ctx.charge_retained(72, "iges global layout card bytes")?;
+    }
+    let mut card = Vec::new();
+    card.try_reserve_exact(72).map_err(|_| {
+        cadmpeg_core::decode::refuse_local_limit("iges global layout card bytes", 72, 72)
+    })?;
+    Ok(card)
 }
 
 fn field_name(index: usize) -> &'static str {
