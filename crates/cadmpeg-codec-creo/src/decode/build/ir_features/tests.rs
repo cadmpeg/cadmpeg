@@ -1,10 +1,49 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-use super::{admit_new_feature_id, ordered_row_feature_ids};
+use super::{admit_new_feature_id, merge_feature_source_properties, ordered_row_feature_ids};
+
+fn property_key(value: &str) -> cadmpeg_core::text::NonBlankString {
+    cadmpeg_core::text::NonBlankString::new(value).expect("fixture property key is nonblank")
+}
+
+#[test]
+fn existing_feature_property_refuses_before_new_btree_node() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let mut target = BTreeMap::new();
+    let incoming = BTreeMap::from([(property_key("recipe"), "Extrude".to_string())]);
+    let error = merge_feature_source_properties(&ctx, &mut target, incoming)
+        .expect_err("existing Feature needs one destination node");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo IR Feature source property nodes"));
+    assert!(target.is_empty());
+}
+
+#[test]
+fn existing_feature_property_merge_keeps_order_and_replacement() {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let mut target = BTreeMap::from([(property_key("recipe"), "Native".to_string())]);
+    let incoming = BTreeMap::from([
+        (property_key("featdefs_schema_state"), "absent".to_string()),
+        (property_key("recipe"), "Extrude".to_string()),
+    ]);
+    merge_feature_source_properties(&ctx, &mut target, incoming)
+        .expect("one new property and one replacement fit");
+    assert_eq!(target["recipe"], "Extrude");
+    assert_eq!(target["featdefs_schema_state"], "absent");
+    assert_eq!(target.keys().next().map(cadmpeg_core::text::NonBlankString::as_str), Some("featdefs_schema_state"));
+}
 
 #[test]
 fn row_feature_ids_preserve_first_source_order() {

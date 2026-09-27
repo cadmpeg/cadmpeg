@@ -104,6 +104,20 @@ fn ordered_row_feature_ids(
     Ok(ids)
 }
 
+fn merge_feature_source_properties(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    target: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    incoming: BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    for (key, value) in incoming {
+        if !target.contains_key(&key) {
+            ctx.charge_collection_items(1, "creo IR Feature source property nodes")?;
+        }
+        target.insert(key, value);
+    }
+    Ok(())
+}
+
 pub(super) fn emit_model_features(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
@@ -362,12 +376,14 @@ pub(super) fn emit_model_features(
                     existing.dependencies.insert(dependency);
                 }
             }
-            existing
-                .source_properties
-                .extend(cadmpeg_core::text::named_entries_checked(ctx,
+            merge_feature_source_properties(
+                ctx,
+                &mut existing.source_properties,
+                cadmpeg_core::text::named_entries_checked(ctx,
                     format_args!("creo:model:feature#{}", operation.feature_id),
                     source_properties,
-                )?);
+                )?,
+            )?;
             if source_tag.is_some() {
                 existing.source_tag = source_tag;
             }
