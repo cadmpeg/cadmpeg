@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Index allocation admission for a complete one-row DisplayJT stream.
+//! Index allocation admission for a complete one-row `DisplayJT` stream.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;

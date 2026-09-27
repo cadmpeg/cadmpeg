@@ -416,6 +416,7 @@ fn parse_saved_toggle_stream(
     bytes: &[u8],
     source_offset: u64,
 ) -> Result<Option<ParsedToggleStream>, CodecError> {
+    const PREFIX: &str = "nx:saved-toggle:entry#";
     let Some(entry_count) = validate_saved_toggle_stream(bytes) else {
         return Ok(None);
     };
@@ -496,7 +497,6 @@ fn parse_saved_toggle_stream(
         else {
             return Ok(None);
         };
-        const PREFIX: &str = "nx:saved-toggle:entry#";
         let digits = if ordinal == 0 {
             1
         } else {

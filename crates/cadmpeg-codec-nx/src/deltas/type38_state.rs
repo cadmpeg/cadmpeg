@@ -388,13 +388,13 @@ mod tests {
 
     #[test]
     fn type38_retained_limit_refuses_before_reference_collection() {
-        let json = r#"{"xmt":80,"node_id":17,"leading_references":[1,7,8,9,1],"marker":45,"linked_references":[87,12],"state_references":[83,82,81],"numeric_values":null}"#;
-        let state: Type38State = serde_json::from_str(json).unwrap();
         #[derive(serde::Serialize)]
         struct Record<'a> {
             id: &'a str,
             state: &'a Type38State,
         }
+        let json = r#"{"xmt":80,"node_id":17,"leading_references":[1,7,8,9,1],"marker":45,"linked_references":[87,12],"state_references":[83,82,81],"numeric_values":null}"#;
+        let state: Type38State = serde_json::from_str(json).unwrap();
         let record = Record {
             id: "nx:deltas:type38#0",
             state: &state,

@@ -66,9 +66,10 @@ fn display_jt_partition_name_refuses_before_utf16_allocation() {
             && limit.operation == "decode DisplayJT partition name"));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert!(super::admit_jt_partition_name(Some(&service), &family)
-        .unwrap()
-        .is_some());
+    assert!(matches!(
+        super::admit_jt_partition_name(Some(&service), &family).unwrap(),
+        super::JtOptionalReservation::Admitted(_)
+    ));
 }
 
 #[test]
@@ -91,9 +92,10 @@ fn display_jt_range_vectors_refuse_before_conversion_allocation() {
             && limit.operation == "decode DisplayJT range values"));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert!(super::admit_jt_range_vectors(Some(&service), &family)
-        .unwrap()
-        .is_some());
+    assert!(matches!(
+        super::admit_jt_range_vectors(Some(&service), &family).unwrap(),
+        super::JtOptionalReservation::Admitted(_)
+    ));
 }
 
 #[test]

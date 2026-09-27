@@ -278,13 +278,13 @@ mod tests {
 
     #[test]
     fn preamble_retained_limit_refuses_before_entry_collection() {
-        let json = r#"{"identity":300,"references":[40000,40001],"state_words":[2,0,1,55],"count":7,"entries":[[81,4],[82,40000],[81,5]],"terminal_value":9}"#;
-        let state: PreambleState = serde_json::from_str(json).unwrap();
         #[derive(serde::Serialize)]
         struct Record<'a> {
             id: &'a str,
             state: &'a PreambleState,
         }
+        let json = r#"{"identity":300,"references":[40000,40001],"state_words":[2,0,1,55],"count":7,"entries":[[81,4],[82,40000],[81,5]],"terminal_value":9}"#;
+        let state: PreambleState = serde_json::from_str(json).unwrap();
         let record = Record {
             id: "nx:deltas:preamble#0",
             state: &state,

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Borrowed THRU_CURVE branch group serialization.
+//! Borrowed `THRU_CURVE` branch group serialization.
 
 use super::FeatureThruCurveConstructionBranchGroup;
 use crate::om::thru_curve_branches::ThruCurveBranch;
@@ -31,11 +31,13 @@ impl Serialize for StateLaneView<'_> {
                 [0_u8; 258][..members.len() + 4].serialize(serializer)
             }
             ThruCurveBranchItems::Extended {
-                values: [[a, b, c, d], [e, f, g, h]],
+                values: [first, second],
                 ..
-            } => {
-                [0, 0, 0, 0, 1, 5, *a, *b, *c, *d, 1, 5, *e, *f, *g, *h, 0, 0].serialize(serializer)
-            }
+            } => [
+                0, 0, 0, 0, 1, 5, first[0], first[1], first[2], first[3], 1, 5, second[0],
+                second[1], second[2], second[3], 0, 0,
+            ]
+            .serialize(serializer),
         }
     }
 }

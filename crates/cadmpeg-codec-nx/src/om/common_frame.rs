@@ -48,7 +48,7 @@ impl CommonFramePrefix {
         self.0.map(|token| token.raw().to_vec())
     }
     pub(crate) fn raw_indices_ref(&self) -> [&[u8]; 3] {
-        self.0.each_ref().map(|token| token.raw())
+        self.0.each_ref().map(super::compact::CompactIndexAtom::raw)
     }
     pub(crate) fn marker(self) -> [u8; 3] {
         if self.0[1].raw().len() == 1 {
