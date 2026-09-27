@@ -4,6 +4,18 @@ use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::scalar::PositiveLength;
 // SPDX-License-Identifier: Apache-2.0
 
+fn chamfer_distance_with_service_ctx(
+    scan: &crate::container::ContainerScan<'_>,
+    ir: &cadmpeg_ir::document::CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
+    feature_id: u32,
+) -> Option<f64> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::chamfer_constant_distance(ctx, scan, ir, source_carriers, feature_id)
+    })
+    .expect("service profile admits chamfer witnesses")
+}
+
 fn round_sample_scan() -> crate::container::ContainerScan<'static> {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
@@ -366,7 +378,7 @@ fn chamfer_does_not_use_a_cone_prototype_as_model_space_placement() {
         });
 
     assert_eq!(
-        super::chamfer_constant_distance(
+        chamfer_distance_with_service_ctx(
             &scan,
             &cadmpeg_ir::document::CadIr::empty(),
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -448,7 +460,7 @@ fn chamfer_uses_transferred_model_plane_carrier() {
     });
 
     assert_eq!(
-        super::chamfer_constant_distance(
+        chamfer_distance_with_service_ctx(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -459,7 +471,7 @@ fn chamfer_uses_transferred_model_plane_carrier() {
 
     let transferred_plane_row = scan.surfaces.rows.pop().expect("support plane row");
     assert_eq!(
-        super::chamfer_constant_distance(
+        chamfer_distance_with_service_ctx(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -477,7 +489,7 @@ fn chamfer_uses_transferred_model_plane_carrier() {
         offset: 31,
     });
     assert_eq!(
-        super::chamfer_constant_distance(
+        chamfer_distance_with_service_ctx(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -503,7 +515,7 @@ fn chamfer_uses_transferred_model_plane_carrier() {
         _ => panic!("transferred plane geometry"),
     }
     assert_eq!(
-        super::chamfer_constant_distance(
+        chamfer_distance_with_service_ctx(
             &scan,
             &conflicting_ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -668,7 +680,7 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
     ]);
 
     assert_eq!(
-        super::chamfer_constant_distance(
+        chamfer_distance_with_service_ctx(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -680,7 +692,7 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
     let duplicate = scan.surfaces.parameters[0].clone();
     scan.surfaces.parameters.push(duplicate);
     assert_eq!(
-        super::chamfer_constant_distance(
+        chamfer_distance_with_service_ctx(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
