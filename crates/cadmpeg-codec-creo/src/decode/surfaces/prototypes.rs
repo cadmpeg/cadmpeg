@@ -234,6 +234,7 @@ impl<'a> SupportedPrototype<'a> {
 /// A section whose declared extent runs past the scanned buffer is a refusal,
 /// because the prototype frame it states cannot be read.
 pub(in super::super) fn unique_surface_prototype_associations<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &'a ContainerScan<'_>,
 ) -> Result<
     Vec<(
@@ -295,16 +296,22 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
         {
             continue;
         }
+        ctx.try_reserve_items(&mut associations, 1, "creo surface prototype associations")?;
         associations.push((prototype, row, section));
     }
     let mut association_counts = BTreeMap::<usize, usize>::new();
     for (_, row, _) in &associations {
-        *association_counts.entry(row.offset).or_default() += 1;
+        let count = match association_counts.entry(row.offset) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo surface prototype row counts")?;
+                entry.insert(0)
+            }
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+        };
+        *count += 1;
     }
-    Ok(associations
-        .into_iter()
-        .filter(|(_, row, _)| association_counts.get(&row.offset) == Some(&1))
-        .collect())
+    associations.retain(|(_, row, _)| association_counts.get(&row.offset) == Some(&1));
+    Ok(associations)
 }
 
 /// Transfer one exact surface carrier per first-instance prototype record.
@@ -324,7 +331,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
         return Ok(0);
     }
     let mut transferred = 0;
-    for (prototype, row, section) in unique_surface_prototype_associations(scan)? {
+    for (prototype, row, section) in unique_surface_prototype_associations(ctx, scan)? {
         let record = prototype.record();
         let geometry = match prototype {
             SupportedPrototype::Plane(_) => {

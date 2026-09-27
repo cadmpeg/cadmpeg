@@ -326,6 +326,7 @@ pub(in super::super) fn replayed_torus_minor_radius(
 }
 
 fn prototype_round_radius(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     rows: &[&crate::surface::SurfaceRow],
 ) -> Result<Option<f64>, cadmpeg_core::CodecError> {
@@ -334,7 +335,7 @@ fn prototype_round_radius(
     };
     let feature_id = first.feature_id;
     let Some((radius1, radius2)) = exactly_one(
-        unique_surface_prototype_associations(scan)?
+        unique_surface_prototype_associations(ctx, scan)?
             .into_iter()
             .filter(|(record, row, _)| {
                 matches!(
@@ -447,7 +448,7 @@ pub(in super::super) fn round_constant_radius(
         {
             return Ok(None);
         }
-        return prototype_round_radius(scan, &generated_rows);
+        return prototype_round_radius(ctx, scan, &generated_rows);
     }
     if cylinder_rows.len() != generated_rows.len()
         && generated_rows.iter().all(|row| {
@@ -650,7 +651,7 @@ fn mixed_torus_radius_samples(
     {
         return Ok(None);
     }
-    match prototype_round_radius(scan, rows)? {
+    match prototype_round_radius(ctx, scan, rows)? {
         Some(radius) => Ok(Some(ctx.alloc_filled(
             rows.len(),
             radius,

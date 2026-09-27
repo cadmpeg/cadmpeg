@@ -323,7 +323,7 @@ pub(in super::super) fn surface_prototype_feature_dependencies(
     scan: &ContainerScan,
 ) -> Result<BTreeMap<u32, Vec<u32>>, cadmpeg_core::CodecError> {
     let mut dependencies = BTreeMap::new();
-    for (prototype, row, _) in unique_surface_prototype_associations(scan)? {
+    for (prototype, row, _) in unique_surface_prototype_associations(ctx, scan)? {
         let prototype = prototype.record();
         let mut fields = prototype
             .parameters

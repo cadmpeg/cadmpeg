@@ -32,9 +32,11 @@ fn chamfer_does_not_use_a_cone_prototype_as_model_space_placement() {
         panic!("complete cone prototype");
     };
     assert_eq!(
-        crate::decode::surfaces::prototypes::unique_surface_prototype_associations(&scan)
-            .expect("prototype associations")
-            .len(),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            crate::decode::surfaces::prototypes::unique_surface_prototype_associations(ctx, &scan)
+        })
+        .expect("prototype associations")
+        .len(),
         1
     );
     let frame = crate::surface::prototype_cone_frame(prototype).expect("prototype frame");
@@ -920,13 +922,19 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
     scan.surfaces.parameters.push(parameter(1, 6));
     let first_row = &scan.surfaces.rows[0];
     assert_eq!(
-        super::prototype_round_radius(&scan, &[first_row]).expect("prototype round radius"),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            super::prototype_round_radius(ctx, &scan, &[first_row])
+        })
+        .expect("prototype round radius"),
         Some(0.5)
     );
 
     scan.framing.layout = crate::container::Layout::Depdb;
     assert_eq!(
-        super::prototype_round_radius(&scan, &[first_row]).expect("prototype round radius"),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            super::prototype_round_radius(ctx, &scan, &[first_row])
+        })
+        .expect("prototype round radius"),
         Some(0.5)
     );
 
@@ -941,7 +949,10 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
     let rows = scan.surfaces.rows.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        super::prototype_round_radius(&scan, &rows).expect("prototype round radius"),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            super::prototype_round_radius(ctx, &scan, &rows)
+        })
+        .expect("prototype round radius"),
         None
     );
 }
