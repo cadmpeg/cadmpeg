@@ -12,6 +12,7 @@ use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::nurbs::bezier::{
     boundaries_within_resolution, homogeneous_spans, positive_controls, HomogeneousBezierSpan,
@@ -320,8 +321,10 @@ fn bounded_evaluable_curve(
     curve_id: &CurveId,
     tolerance: f64,
     index: &CompositeIndex,
-) -> Option<(CurveGeometry, [f64; 2])> {
-    let curve = index.curve_by_id(ir, curve_id)?;
+) -> Result<Option<(CurveGeometry, [f64; 2])>, CodecError> {
+    let Some(curve) = index.curve_by_id(ir, curve_id) else {
+        return Ok(None);
+    };
     let geometry = &curve.geometry;
     if matches!(
         geometry,
@@ -329,24 +332,28 @@ fn bounded_evaluable_curve(
             SolvedCurveGeometry::Composite { .. } | SolvedCurveGeometry::Unknown { .. }
         ) | CurveGeometry::Procedural { .. }
     ) {
-        return None;
+        return Ok(None);
     }
-    let parameter_interval =
-        super::composite::bounded_parameter_range_for_curve(ir, curve_id, tolerance, Some(index))?;
+    let Some(parameter_interval) =
+        super::composite::bounded_parameter_range_for_curve(ir, curve_id, tolerance, Some(index))
+    else {
+        return Ok(None);
+    };
     if !parameter_interval[0].is_finite()
         || !parameter_interval[1].is_finite()
         || parameter_interval[0] >= parameter_interval[1]
     {
-        return None;
+        return Ok(None);
     }
     let geometry = geometry.clone();
-    parameter_interval
-        .into_iter()
-        .all(|parameter| cadmpeg_ir::eval::curve_point(&geometry, parameter).is_ok())
-        .then_some((
-            CurveGeometry::Solved(geometry.solved()?.clone()),
-            parameter_interval,
-        ))
+    for parameter in parameter_interval {
+        if finite_or_refusal(cadmpeg_ir::eval::curve_point(&geometry, parameter))?.is_none() {
+            return Ok(None);
+        }
+    }
+    Ok(geometry
+        .solved()
+        .map(|solved| (CurveGeometry::Solved(solved.clone()), parameter_interval)))
 }
 
 /// `cadmpeg_ir::geometry::PlacedCurve::try_new` bounds the chain, so the walk
@@ -1040,7 +1047,7 @@ fn offset_indicator_parameters(bounds: Option<cadmpeg_ir::geometry::RecordBounds
         .unwrap_or([0.0, 0.0])
 }
 
-fn indicator_normal(ir: &CadIr, surface: &SurfaceId) -> Option<Vector3> {
+fn indicator_normal(ir: &CadIr, surface: &SurfaceId) -> Result<Option<Vector3>, CodecError> {
     let procedural = ir
         .model
         .procedural_surfaces
@@ -1052,13 +1059,12 @@ fn indicator_normal(ir: &CadIr, surface: &SurfaceId) -> Option<Vector3> {
     let partials = match procedural {
         Some(_) => {
             let index = cadmpeg_ir::index::ModelIndex::new(ir);
-            cadmpeg_ir::eval::model_surface_partials_by_id(
+            finite_or_refusal(cadmpeg_ir::eval::model_surface_partials_by_id(
                 &index,
                 surface,
                 parameters[0],
                 parameters[1],
-            )
-            .ok()?
+            ))?
         }
         None => {
             // A support with no procedural entry takes `model_surface_mapping`'s
@@ -1069,17 +1075,23 @@ fn indicator_normal(ir: &CadIr, surface: &SurfaceId) -> Option<Vector3> {
             // the index maps an arena through a `HashMap` where a repeated
             // identity is won by the last entry, and directory sequence numbers
             // come straight from the card, so duplicate ids are not excluded.
-            let carrier = ir
+            let Some(carrier) = ir
                 .model
                 .surfaces
                 .iter()
                 .rev()
-                .find(|carrier| carrier.id == *surface)?;
-            cadmpeg_ir::eval::surface_partials(&carrier.geometry, parameters[0], parameters[1])
-                .ok()?
+                .find(|carrier| carrier.id == *surface)
+            else {
+                return Ok(None);
+            };
+            finite_or_refusal(cadmpeg_ir::eval::surface_partials(
+                &carrier.geometry,
+                parameters[0],
+                parameters[1],
+            ))?
         }
     };
-    unit_vector(partials.du.cross(partials.dv.get()))
+    Ok(partials.and_then(|partials| unit_vector(partials.du.cross(partials.dv.get()))))
 }
 
 fn indicator_orientation(
@@ -1477,7 +1489,8 @@ pub(super) fn project(
                 &directrix_id,
                 global.minimum_resolution_mm(),
                 &composite_index,
-            ) else {
+            )?
+            else {
                 losses.push(entity_loss(
                     entry,
                     "directrix has no bounded polynomial, NURBS, or exact evaluable carrier",
@@ -1488,7 +1501,10 @@ pub(super) fn project(
                 continue;
             };
             let source_interval = source_parameter_interval(&directrix_geometry, carrier_interval);
-            let Ok(start) = cadmpeg_ir::eval::curve_point(&directrix_geometry, carrier_interval[0])
+            let Some(start) = finite_or_refusal(cadmpeg_ir::eval::curve_point(
+                &directrix_geometry,
+                carrier_interval[0],
+            ))?
             else {
                 losses.push(entity_loss(entry, "directrix start cannot be evaluated"));
                 continue;
@@ -1613,8 +1629,10 @@ pub(super) fn project(
             );
             continue;
         }
-        let Ok(start) =
-            cadmpeg_ir::eval::nurbs_curve_point_at(&placed_directrix, cached_interval[0])
+        let Some(start) = finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(
+            &placed_directrix,
+            cached_interval[0],
+        ))?
         else {
             losses.push(entity_loss(entry, "directrix start cannot be evaluated"));
             continue;
@@ -1831,7 +1849,8 @@ pub(super) fn project(
                 &generatrix_id,
                 global.minimum_resolution_mm(),
                 &composite_index,
-            ) else {
+            )?
+            else {
                 losses.push(entity_loss(
                     entry,
                     "generatrix has no bounded polynomial, NURBS, or exact evaluable carrier",
@@ -2591,7 +2610,7 @@ pub(super) fn project(
             continue;
         };
         let distance = distance * factor;
-        let Some(normal) = indicator_normal(ir, &support_id) else {
+        let Some(normal) = indicator_normal(ir, &support_id)? else {
             losses.push(entity_loss(
                 entry,
                 "support normal cannot be evaluated at the offset-indicator parameters",

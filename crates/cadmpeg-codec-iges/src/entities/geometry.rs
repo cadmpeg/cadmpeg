@@ -8,6 +8,7 @@ use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
 use cadmpeg_core::decode::{index_from_u32, refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{KnotVector, NurbsCurve, NurbsPoles3},
@@ -2120,12 +2121,18 @@ pub(crate) fn project_geometry(
                     continue;
                 }
             };
-        let Ok(start) = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, parameter_range[0].get())
+        let Some(start) = finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(
+            &nurbs,
+            parameter_range[0].get(),
+        ))?
         else {
             losses.push(entity_loss(entry, "spline start point cannot be evaluated"));
             continue;
         };
-        let Ok(end) = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, parameter_range[1].get())
+        let Some(end) = finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(
+            &nurbs,
+            parameter_range[1].get(),
+        ))?
         else {
             losses.push(entity_loss(entry, "spline end point cannot be evaluated"));
             continue;
@@ -2188,7 +2195,7 @@ pub(crate) fn project_geometry(
     // decode report and the free-geometry shell; every `project` call appends
     // to `ir`; and every `admit_projected_entities` call can early-return on
     // the entity budget.
-    super::conics::project(ir, directory, parameters, global, Some(ctx), &mut sequences)
+    super::conics::project(ir, directory, parameters, global, Some(ctx), &mut sequences)?
         .merge_into(&mut decoded, &mut losses, &mut wire_edges);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_conics")?;
     super::copious::project(ir, directory, parameters, global, Some(ctx), &mut sequences)?
@@ -2208,7 +2215,7 @@ pub(crate) fn project_geometry(
     super::composite::project(ir, directory, parameters, global, Some(ctx), &mut sequences)?
         .merge_into(&mut decoded, &mut losses, &mut wire_edges);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_composites")?;
-    super::offsets::project(ir, directory, parameters, global, Some(ctx), &mut sequences)
+    super::offsets::project(ir, directory, parameters, global, Some(ctx), &mut sequences)?
         .merge_into(&mut decoded, &mut losses, &mut wire_edges);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_offsets")?;
     // A valid V5 Type 130 constituent is deferred until its exact offset

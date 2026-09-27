@@ -9,6 +9,8 @@ use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::EdgeId;
@@ -104,7 +106,7 @@ pub(super) fn project(
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
     sequences: &mut super::geometry::SourceSequences,
-) -> WireProjectionOutcome {
+) -> Result<WireProjectionOutcome, CodecError> {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -541,12 +543,15 @@ pub(super) fn project(
             ));
             continue;
         };
-        let Ok(evaluated_start) = cadmpeg_ir::eval::curve_point(&geometry, parameter_range[0])
+        let Some(evaluated_start) =
+            finite_or_refusal(cadmpeg_ir::eval::curve_point(&geometry, parameter_range[0]))?
         else {
             losses.push(entity_loss(entry, "conic start point cannot be evaluated"));
             continue;
         };
-        let Ok(evaluated_end) = cadmpeg_ir::eval::curve_point(&geometry, parameter_range[1]) else {
+        let Some(evaluated_end) =
+            finite_or_refusal(cadmpeg_ir::eval::curve_point(&geometry, parameter_range[1]))?
+        else {
             losses.push(entity_loss(
                 entry,
                 "conic terminate point cannot be evaluated",
@@ -601,11 +606,11 @@ pub(super) fn project(
         decoded.insert(entry.sequence);
     }
 
-    WireProjectionOutcome {
+    Ok(WireProjectionOutcome {
         decoded,
         losses,
         wire_edges,
-    }
+    })
 }
 
 #[cfg(test)]

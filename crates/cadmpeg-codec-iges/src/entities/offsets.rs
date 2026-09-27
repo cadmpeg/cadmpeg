@@ -10,6 +10,8 @@ use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve, Curve, CurveGeometry, CurveOffsetDistanceLaw, CurveOffsetLawBasis,
@@ -204,7 +206,7 @@ fn source_parameter_range(
     source_id: &CurveId,
     geometry: &SolvedCurveGeometry,
     tolerance: f64,
-) -> Option<FiniteVector<2>> {
+) -> Result<Option<FiniteVector<2>>, CodecError> {
     let point_position = |vertex: &VertexId| {
         let point_id = ir
             .model
@@ -219,27 +221,41 @@ fn source_parameter_range(
             .find(|item| item.id == point_id)
             .map(|point| point.position().get())
     };
-    let candidates = ir
+    let mut chosen = None;
+    let mut disagreement = false;
+    for edge in ir
         .model
         .edges
         .iter()
         .filter(|edge| edge.curve() == Some(source_id))
-        .filter_map(|edge| {
-            let range = edge.param_range()?;
-            let start = point_position(&edge.start)?;
-            let end = point_position(&edge.end)?;
-            let evaluated_start = cadmpeg_ir::eval::curve_point_solved(geometry, range[0]).ok()?;
-            let evaluated_end = cadmpeg_ir::eval::curve_point_solved(geometry, range[1]).ok()?;
-            (evaluated_start.distance(start) <= tolerance
-                && evaluated_end.distance(end) <= tolerance)
-                .then_some(range)
-        })
-        .collect::<Vec<_>>();
-    let range = *candidates.first()?;
-    candidates
-        .iter()
-        .all(|candidate| *candidate == range)
-        .then_some(range)
+    {
+        let (Some(range), Some(start), Some(end)) = (
+            edge.param_range(),
+            point_position(&edge.start),
+            point_position(&edge.end),
+        ) else {
+            continue;
+        };
+        let Some(evaluated_start) =
+            finite_or_refusal(cadmpeg_ir::eval::curve_point_solved(geometry, range[0]))?
+        else {
+            continue;
+        };
+        let Some(evaluated_end) =
+            finite_or_refusal(cadmpeg_ir::eval::curve_point_solved(geometry, range[1]))?
+        else {
+            continue;
+        };
+        if evaluated_start.distance(start) > tolerance || evaluated_end.distance(end) > tolerance {
+            continue;
+        }
+        match chosen {
+            Some(previous) if previous != range => disagreement = true,
+            None => chosen = Some(range),
+            _ => {}
+        }
+    }
+    Ok(if disagreement { None } else { chosen })
 }
 
 #[allow(clippy::many_single_char_names)]
@@ -250,7 +266,7 @@ pub(super) fn project(
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
     sequences: &mut super::geometry::SourceSequences,
-) -> WireProjectionOutcome {
+) -> Result<WireProjectionOutcome, CodecError> {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -338,7 +354,7 @@ pub(super) fn project(
             &source_id,
             &source_geometry,
             global.minimum_resolution_mm(),
-        );
+        )?;
         let Some(source_range) = source_range else {
             losses.push(entity_loss(
                 entry,
@@ -631,20 +647,22 @@ pub(super) fn project(
                     }
                 };
                 let offset_direction = normal_direction.cross(direction);
-                let Ok(source_start) = cadmpeg_ir::eval::curve_point(
+                let Some(source_start) = finite_or_refusal(cadmpeg_ir::eval::curve_point(
                     &CurveGeometry::Solved(offset_source_geometry.clone()),
                     start,
-                ) else {
+                ))?
+                else {
                     losses.push(entity_loss(
                         entry,
                         "linear offset source start cannot be evaluated",
                     ));
                     continue;
                 };
-                let Ok(source_end) = cadmpeg_ir::eval::curve_point(
+                let Some(source_end) = finite_or_refusal(cadmpeg_ir::eval::curve_point(
                     &CurveGeometry::Solved(offset_source_geometry.clone()),
                     end,
-                ) else {
+                ))?
+                else {
                     losses.push(entity_loss(
                         entry,
                         "linear offset source end cannot be evaluated",
@@ -806,10 +824,11 @@ pub(super) fn project(
                         break;
                     };
                     let independent = inverse_parameter(function_parameter);
-                    let Ok(base) = cadmpeg_ir::eval::curve_point(
+                    let Some(base) = finite_or_refusal(cadmpeg_ir::eval::curve_point(
                         &CurveGeometry::Solved(offset_source_geometry.clone()),
                         source_parameter(independent),
-                    ) else {
+                    ))?
+                    else {
                         controls.clear();
                         break;
                     };
@@ -832,8 +851,10 @@ pub(super) fn project(
                     .iter()
                     .map(|value| source_parameter(inverse_parameter(*value)))
                     .collect();
-                let Ok(function_start) =
-                    cadmpeg_ir::eval::curve_point(&function.geometry, function_range[0])
+                let Some(function_start) = finite_or_refusal(cadmpeg_ir::eval::curve_point(
+                    &function.geometry,
+                    function_range[0],
+                ))?
                 else {
                     losses.push(entity_loss(
                         entry,
@@ -880,14 +901,17 @@ pub(super) fn project(
                 continue;
             }
         };
-        let Ok(start_position) = cadmpeg_ir::eval::curve_point(&geometry, start) else {
+        let Some(start_position) =
+            finite_or_refusal(cadmpeg_ir::eval::curve_point(&geometry, start))?
+        else {
             losses.push(entity_loss(
                 entry,
                 "offset start parameter cannot be evaluated",
             ));
             continue;
         };
-        let Ok(end_position) = cadmpeg_ir::eval::curve_point(&geometry, end) else {
+        let Some(end_position) = finite_or_refusal(cadmpeg_ir::eval::curve_point(&geometry, end))?
+        else {
             losses.push(entity_loss(
                 entry,
                 "offset end parameter cannot be evaluated",
@@ -1002,11 +1026,11 @@ pub(super) fn project(
         decoded.insert(entry.sequence);
     }
 
-    WireProjectionOutcome {
+    Ok(WireProjectionOutcome {
         decoded,
         losses,
         wire_edges,
-    }
+    })
 }
 
 #[cfg(test)]
