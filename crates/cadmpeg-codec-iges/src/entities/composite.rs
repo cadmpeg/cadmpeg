@@ -2227,18 +2227,15 @@ fn project_with_type_130_policy(
             ctx,
             tolerance: join_tolerance,
         };
-        let curve_carriers = child_sequences
-            .iter()
-            .copied()
-            .filter(|sequence| {
-                entries
-                    .get(sequence)
-                    .is_none_or(|entry| !composite_point_member(entry))
-            })
-            .filter_map(|sequence| {
-                curve_carrier_id(sequence, &entries, &records).map(|curve_id| (sequence, curve_id))
-            })
-            .collect::<BTreeMap<_, _>>();
+        let is_curve_sequence = |sequence: &u32| {
+            entries.get(sequence).is_none_or(|entry| !composite_point_member(entry))
+        };
+        let mut curve_carriers = BTreeMap::new();
+        for sequence in child_sequences.iter().copied().filter(is_curve_sequence) {
+            if let Some(curve_id) = curve_carrier_id(sequence, &entries, &records) {
+                crate::decode_resource::insert_optional_btree_map(ctx, &mut curve_carriers, sequence, curve_id, "iges composite child carrier nodes")?;
+            }
+        }
         if !composite_point_adjacency_valid(
             ir,
             &index,
@@ -2249,27 +2246,32 @@ fn project_with_type_130_policy(
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "point or connect-point adjacency is invalid"))?;
             continue;
         }
-        let curve_sequences = child_sequences
-            .iter()
-            .copied()
-            .filter(|sequence| {
-                entries
-                    .get(sequence)
-                    .is_none_or(|entry| !composite_point_member(entry))
-            })
-            .collect::<Vec<_>>();
+        let curve_count = child_sequences.iter().filter(|sequence| is_curve_sequence(sequence)).count();
+        let mut curve_sequences = match ctx {
+            Some(ctx) => reserve_vec(ctx, curve_count, "iges composite curve child sequences")?,
+            None => reserve_admitted_vec(curve_count, "iges composite curve child sequences")?,
+        };
+        curve_sequences.extend(child_sequences.iter().copied().filter(is_curve_sequence));
         if curve_sequences.is_empty() {
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "composite has no parameterized curve constituent"))?;
             continue;
         }
-        let Some(curve_ids) = curve_sequences
-            .iter()
-            .map(|sequence| curve_carriers.get(sequence).cloned())
-            .collect::<Option<Vec<_>>>()
-        else {
+        let mut curve_ids = match ctx {
+            Some(ctx) => reserve_vec(ctx, curve_sequences.len(), "iges composite child curve ids")?,
+            None => reserve_admitted_vec(curve_sequences.len(), "iges composite child curve ids")?,
+        };
+        let mut missing_curve = false;
+        for sequence in &curve_sequences {
+            let Some(curve) = curve_carriers.get(sequence) else {
+                missing_curve = true;
+                break;
+            };
+            curve_ids.push(copy_optional_identity(ctx, curve.as_str(), "iges composite child curve ID copies")?);
+        }
+        if missing_curve {
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "a Type 142 constituent has no valid model-space curve pointer"))?;
             continue;
-        };
+        }
         let carrier = CompositeCarrier {
             entry,
             child_curves: &curve_ids,
@@ -2286,7 +2288,7 @@ fn project_with_type_130_policy(
         let mut child_refusal = None;
         for curve_id in &curve_ids {
             match bounded_nurbs(ir, &index, curve_id, join_tolerance, ctx) {
-                Ok(Some((curve, range))) => children.push((curve, range, curve_id.clone())),
+                Ok(Some((curve, range))) => children.push((curve, range, copy_optional_identity(ctx, curve_id.as_str(), "iges composite projected child curve IDs")?)),
                 Ok(None) => {
                     child_refusal = Some("a child has no bounded line or NURBS carrier".to_owned());
                     break;
