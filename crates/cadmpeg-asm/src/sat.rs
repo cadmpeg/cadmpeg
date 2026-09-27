@@ -24,6 +24,7 @@ use crate::kernel_header::KernelHeader;
 use crate::sab::{Record, Token};
 use crate::stream_error::{StreamError, StreamFailure, StreamFormat};
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::{NonNegativeReal, PositiveReal};
 
 /// The stream branch, from the terminator line ([`asm.md` §7]).
@@ -81,18 +82,25 @@ impl TextHeader {
     /// `scale` is reported as `10.0`: [`parse`] converts length-bearing values
     /// into the centimetre convention, including `resabs`, so the decoders see
     /// the same unit a binary stream carries.
-    pub fn as_kernel_header(&self) -> KernelHeader {
-        KernelHeader {
+    pub fn as_kernel_header(&self, ctx: &DecodeContext<'_>) -> Result<KernelHeader, CodecError> {
+        let copy = |value: &str| -> Result<String, CodecError> {
+            let requested = u64::try_from(value.len()).map_err(|_| {
+                ctx.refuse_codec_limit("retain SAT kernel header string", u64::MAX, u64::MAX)
+            })?;
+            ctx.charge_retained(requested, "retain SAT kernel header string")?;
+            copy_sat_string(ctx, value, "SAT kernel header string")
+        };
+        Ok(KernelHeader {
             save_format_version: Some(self.save_format_version),
             entity_count: Some(self.entity_count),
             flags: Some(self.flags),
-            product_family: Some(self.product_family.clone()),
-            product_version: Some(self.product_version.clone()),
-            save_date: Some(self.save_date.clone()),
+            product_family: Some(copy(&self.product_family)?),
+            product_version: Some(copy(&self.product_version)?),
+            save_date: Some(copy(&self.save_date)?),
             scale: Some(10.0),
             linear: Some(self.normalized_resabs_cm.get()),
             angular: Some(self.resnor.get()),
-        }
+        })
     }
 }
 
@@ -153,6 +161,20 @@ fn is_ws(b: u8) -> bool {
     matches!(b, b' ' | b'\t' | b'\n' | b'\r')
 }
 
+fn copy_sat_string(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let amount = u64::try_from(value.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    let mut copy = String::new();
+    copy.try_reserve(value.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, amount))?;
+    copy.push_str(value);
+    Ok(copy)
+}
+
 struct FieldReader<'a> {
     bytes: &'a [u8],
     pos: usize,
@@ -193,7 +215,7 @@ impl FieldReader<'_> {
         } else {
             scratch.grow(word.len() as u64)?;
         }
-        let word = word.to_owned();
+        let word = copy_sat_string(ctx, word, "SAT field")?;
         Ok(Some((start, word)))
     }
 
@@ -201,6 +223,7 @@ impl FieldReader<'_> {
     /// then `N` raw bytes.
     fn read_str_payload(
         &mut self,
+        ctx: &DecodeContext<'_>,
         len: usize,
         at: usize,
         scratch: &mut ScopedReservation<'_>,
@@ -225,7 +248,7 @@ impl FieldReader<'_> {
                 reason: format!("@{len} string is not valid UTF-8"),
             })?;
         scratch.grow(payload.len() as u64)?;
-        let payload = payload.to_owned();
+        let payload = copy_sat_string(ctx, payload, "SAT string payload")?;
         self.pos = end;
         Ok(payload)
     }
@@ -313,7 +336,7 @@ fn counted_string(
         reason: format!("header {what} string is not valid UTF-8"),
     })?;
     ctx.charge_retained(value.len() as u64, "retain SAT header string")?;
-    let value = value.to_owned();
+    let value = copy_sat_string(ctx, value, "SAT header string")?;
     *pos = end;
     Ok(value)
 }
@@ -439,6 +462,31 @@ fn parse_header(
 // Record framing
 // ---------------------------------------------------------------------------
 
+fn record_error_reason(
+    ctx: &DecodeContext<'_>,
+    name: &str,
+    description: &'static str,
+) -> Result<String, StreamFailure> {
+    let length = "record `"
+        .len()
+        .checked_add(name.len())
+        .and_then(|length| length.checked_add("` ".len()))
+        .and_then(|length| length.checked_add(description.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("SAT record error text", u64::MAX, u64::MAX))?;
+    let requested = u64::try_from(length)
+        .map_err(|_| ctx.refuse_codec_limit("SAT record error text", u64::MAX, u64::MAX))?;
+    ctx.charge_retained(requested, "SAT record error text")?;
+    let mut reason = String::new();
+    reason
+        .try_reserve(length)
+        .map_err(|_| ctx.refuse_codec_limit("SAT record error text", 0, requested))?;
+    reason.push_str("record `");
+    reason.push_str(name);
+    reason.push_str("` ");
+    reason.push_str(description);
+    Ok(reason)
+}
+
 /// Parse a complete text stream into its header and typed record table.
 pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, StreamFailure> {
     let mut pos = 0usize;
@@ -481,7 +529,7 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
                 return Err(StreamError {
                     format: StreamFormat::Text,
                     offset: rec_start,
-                    reason: format!("record `{name}` has no `#` terminator"),
+                    reason: record_error_reason(ctx, &name, "has no `#` terminator")?,
                 }
                 .into());
             };
@@ -490,20 +538,28 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
                     return Err(StreamError {
                         format: StreamFormat::Text,
                         offset: at,
-                        reason: format!("record `{name}` terminates inside a subtype scope"),
+                        reason: record_error_reason(
+                            ctx,
+                            &name,
+                            "terminates inside a subtype scope",
+                        )?,
                     }
                     .into());
                 }
                 break;
             }
-            let prim = lex_prim(&mut reader, at, field, &mut scratch)?;
+            let prim = lex_prim(ctx, &mut reader, at, field, &mut scratch)?;
             match prim {
                 Prim::Open => subtype_depth += 1,
                 Prim::Close if subtype_depth == 0 => {
                     return Err(StreamError {
                         format: StreamFormat::Text,
                         offset: at,
-                        reason: format!("record `{name}` closes an unopened subtype scope"),
+                        reason: record_error_reason(
+                            ctx,
+                            &name,
+                            "closes an unopened subtype scope",
+                        )?,
                     }
                     .into());
                 }
@@ -513,6 +569,9 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
             ctx.charge_collection_items(1, "frame SAT primitive")?;
             scratch.grow(std::mem::size_of::<Prim>() as u64)?;
             ctx.charge_work(1, "lex SAT primitive")?;
+            prims
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("frame SAT primitive", 0, 1))?;
             prims.push(prim);
         }
         let head = name.split_once('-').map_or(name.as_str(), |(head, _)| head);
@@ -521,7 +580,6 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
             .len()
             .checked_mul(candidates)
             .ok_or_else(|| ctx.refuse_codec_limit("SAT typed token count", u64::MAX, u64::MAX))?;
-        ctx.charge_collection_items(possible_tokens as u64, "type SAT tokens")?;
         ctx.charge_work(possible_tokens as u64, "type SAT tokens")?;
         let token_bytes = possible_tokens
             .checked_mul(std::mem::size_of::<Token>())
@@ -538,15 +596,18 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
             })
             .ok_or_else(|| ctx.refuse_codec_limit("SAT token strings", u64::MAX, u64::MAX))?;
         ctx.charge_retained(string_bytes as u64, "retain SAT typed strings")?;
-        let tokens = type_record(head, &prims, scale).map_err(|failure| {
-            let error = StreamError {
-                format: StreamFormat::Text,
-                offset: rec_start,
-                reason: failure.reason().to_string(),
-            };
-            match failure {
-                TypeFailure::UnrepresentableLength => StreamFailure::NotImplemented(error),
-                TypeFailure::InvalidSplineCount => StreamFailure::Malformed(error),
+        let tokens = type_record(ctx, head, &prims, scale).map_err(|failure| match failure {
+            TypedRecordFailure::Resource(error) => StreamFailure::Resource(error),
+            TypedRecordFailure::Type(failure) => {
+                let error = StreamError {
+                    format: StreamFormat::Text,
+                    offset: rec_start,
+                    reason: failure.reason().to_string(),
+                };
+                match failure {
+                    TypeFailure::UnrepresentableLength => StreamFailure::NotImplemented(error),
+                    TypeFailure::InvalidSplineCount => StreamFailure::Malformed(error),
+                }
             }
         })?;
         ctx.charge_retained(
@@ -559,6 +620,9 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
             &mut admitted_entities,
             "admit SAT native records",
         )?;
+        records
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("frame SAT record", 0, 1))?;
         records.push(Record {
             index: records.len(),
             name,
@@ -593,6 +657,7 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
 }
 
 fn lex_prim(
+    ctx: &DecodeContext<'_>,
     reader: &mut FieldReader<'_>,
     at: usize,
     field: String,
@@ -612,7 +677,7 @@ fn lex_prim(
             offset: at,
             reason: "string field has no valid decimal byte count".to_string(),
         })?;
-        return Ok(Prim::Str(reader.read_str_payload(len, at, scratch)?));
+        return Ok(Prim::Str(reader.read_str_payload(ctx, len, at, scratch)?));
     }
     if field == "{" {
         return Ok(Prim::Open);
@@ -715,20 +780,39 @@ const EXTENSION: &[(&str, i64)] = &[("UNEXTENDED", 0), ("EXTEND_G1", 1), ("EXTEN
 /// Spring curve-direction words.
 const CURV_DIR: &[(&str, i64)] = &[("left", 0), ("right", 2)];
 
+macro_rules! push_token {
+    ($cur:ident, $out:expr, $token:expr) => {{
+        let token = $token;
+        $cur.push_token($out, token);
+    }};
+}
+
 /// A backtracking cursor over one record's primitive fields.
-#[derive(Clone)]
-struct Cur<'a> {
+struct Cur<'a, 'c, 'p> {
     prims: &'a [Prim],
     pos: usize,
     /// Millimetres per stream length unit.
     scale: f64,
     failure: Option<TypeFailure>,
+    resource: Option<cadmpeg_core::CodecError>,
+    ctx: Option<&'c DecodeContext<'p>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TypeFailure {
     UnrepresentableLength,
     InvalidSplineCount,
+}
+
+enum TypedRecordFailure {
+    Type(TypeFailure),
+    Resource(cadmpeg_core::CodecError),
+}
+
+impl From<TypeFailure> for TypedRecordFailure {
+    fn from(failure: TypeFailure) -> Self {
+        Self::Type(failure)
+    }
 }
 
 impl TypeFailure {
@@ -753,7 +837,79 @@ fn length_cm(value: f64, scale: f64) -> Option<f64> {
     (converted.is_finite() && (value == 0.0 || converted != 0.0)).then_some(converted)
 }
 
-impl<'a> Cur<'a> {
+impl<'a> Cur<'a, '_, '_> {
+    fn push_token(&mut self, out: &mut Vec<Token>, token: Token) {
+        if self.resource.is_some() {
+            return;
+        }
+        if let Some(ctx) = self.ctx {
+            if let Err(error) = ctx.charge_collection_items(1, "type SAT tokens") {
+                self.resource = Some(error);
+                return;
+            }
+            if out.try_reserve(1).is_err() {
+                self.resource = Some(ctx.refuse_codec_limit("type SAT tokens", 0, 1));
+                return;
+            }
+        }
+        out.push(token);
+    }
+
+    fn push_text_token(&mut self, out: &mut Vec<Token>, value: &str, string: bool) {
+        if self.resource.is_some() {
+            return;
+        }
+        let copy = if let Some(ctx) = self.ctx {
+            let Ok(requested) = u64::try_from(value.len()) else {
+                self.resource =
+                    Some(ctx.refuse_codec_limit("retain SAT typed string", u64::MAX, u64::MAX));
+                return;
+            };
+            if let Err(error) = ctx.charge_retained(requested, "retain SAT typed string") {
+                self.resource = Some(error);
+                return;
+            }
+            match copy_sat_string(ctx, value, "SAT typed string") {
+                Ok(copy) => copy,
+                Err(error) => {
+                    self.resource = Some(error);
+                    return;
+                }
+            }
+        } else {
+            value.to_owned()
+        };
+        self.push_token(
+            out,
+            if string {
+                Token::Str(copy)
+            } else {
+                Token::Ident(copy)
+            },
+        );
+    }
+
+    /// Type a field by its written shape when no record grammar matches.
+    fn push_lexical_token(&mut self, out: &mut Vec<Token>, prim: &Prim) {
+        match prim {
+            Prim::Integer(value) => self.push_token(out, Token::Long(*value)),
+            Prim::Real(value) => self.push_token(out, Token::Double(*value)),
+            Prim::Ref(index) => self.push_token(out, Token::Ref(*index)),
+            Prim::Str(value) => self.push_text_token(out, value, true),
+            Prim::Open => self.push_token(out, Token::SubtypeOpen),
+            Prim::Close => self.push_token(out, Token::SubtypeClose),
+            Prim::Word(word) => match word.as_str() {
+                "forward" | "single" | "forward_v" | "I" | "F" | "out" => {
+                    self.push_token(out, Token::False);
+                }
+                "reversed" | "double" | "reverse_v" | "T" | "in" => {
+                    self.push_token(out, Token::True);
+                }
+                _ => self.push_text_token(out, word, false),
+            },
+        }
+    }
+
     fn length(&mut self, value: f64) -> Option<f64> {
         match length_cm(value, self.scale) {
             Some(converted) => Some(converted),
@@ -829,7 +985,7 @@ impl<'a> Cur<'a> {
     fn enum_word(&mut self, vocab: &[(&str, i64)], out: &mut Vec<Token>) -> Option<()> {
         let word = self.word()?;
         let (_, value) = vocab.iter().find(|(name, _)| *name == word)?;
-        out.push(Token::Enum(*value));
+        push_token!(self, out, Token::Enum(*value));
         Some(())
     }
 
@@ -838,13 +994,13 @@ impl<'a> Cur<'a> {
     fn opt_bound(&mut self, out: &mut Vec<Token>) -> Option<()> {
         match self.word()? {
             "I" => {
-                out.push(Token::False);
+                push_token!(self, out, Token::False);
                 Some(())
             }
             "F" => {
                 let value = self.num()?;
-                out.push(Token::True);
-                out.push(Token::Double(value));
+                push_token!(self, out, Token::True);
+                push_token!(self, out, Token::Double(value));
                 Some(())
             }
             _ => None,
@@ -869,13 +1025,22 @@ impl<'a> Cur<'a> {
         let mark = self.pos;
         let count = self.long()?;
         let count = usize::try_from(count).ok()?;
-        if count > self.prims.len().saturating_sub(self.pos) {
+        if count > self.prims.len().checked_sub(self.pos)? {
             self.pos = mark;
             return None;
         }
+        if let Some(ctx) = self.ctx {
+            if let Err(error) = ctx.charge_collection_items(count as u64, "SAT float array values")
+            {
+                self.resource = Some(error);
+                return None;
+            }
+        }
         let mut values = Vec::new();
         if values.try_reserve_exact(count).is_err() {
-            self.pos = mark;
+            self.resource = self
+                .ctx
+                .map(|ctx| ctx.refuse_codec_limit("SAT float array values", 0, count as u64));
             return None;
         }
         for _ in 0..count {
@@ -885,39 +1050,55 @@ impl<'a> Cur<'a> {
             };
             values.push(value);
         }
-        if out.try_reserve(count + 1).is_err() {
-            self.pos = mark;
+        let Some(output_count) = count.checked_add(1) else {
+            self.resource = self
+                .ctx
+                .map(|ctx| ctx.refuse_codec_limit("SAT float array tokens", u64::MAX, u64::MAX));
+            return None;
+        };
+        if let Some(ctx) = self.ctx {
+            if let Err(error) =
+                ctx.charge_collection_items(count as u64, "type SAT float array tokens")
+            {
+                self.resource = Some(error);
+                return None;
+            }
+        }
+        if out.try_reserve(output_count).is_err() {
+            self.resource = self.ctx.map(|ctx| {
+                ctx.refuse_codec_limit("SAT float array tokens", 0, output_count as u64)
+            });
             return None;
         }
-        out.push(Token::Long(count as i64));
+        push_token!(self, out, Token::Long(count as i64));
         out.extend(values.into_iter().map(Token::Double));
         Some(())
     }
 }
 
 /// Run one fixed slot against the cursor.
-fn take_slot(cur: &mut Cur<'_>, slot: Slot, out: &mut Vec<Token>) -> Option<()> {
+fn take_slot(cur: &mut Cur<'_, '_, '_>, slot: Slot, out: &mut Vec<Token>) -> Option<()> {
     match slot {
         Slot::R => match cur.bump()? {
             Prim::Ref(index) => {
-                out.push(Token::Ref(*index));
+                push_token!(cur, out, Token::Ref(*index));
                 Some(())
             }
             _ => None,
         },
         Slot::L => {
             let value = cur.long()?;
-            out.push(Token::Long(value));
+            push_token!(cur, out, Token::Long(value));
             Some(())
         }
         Slot::D => {
             let value = cur.num()?;
-            out.push(Token::Double(value));
+            push_token!(cur, out, Token::Double(value));
             Some(())
         }
         Slot::DLen => {
             let value = cur.num()?;
-            out.push(Token::Double(cur.length(value)?));
+            push_token!(cur, out, Token::Double(cur.length(value)?));
             Some(())
         }
         Slot::DLenSentinel => {
@@ -927,67 +1108,67 @@ fn take_slot(cur: &mut Cur<'_>, slot: Slot, out: &mut Vec<Token>) -> Option<()> 
             } else {
                 cur.length(value)?
             };
-            out.push(Token::Double(converted));
+            push_token!(cur, out, Token::Double(converted));
             Some(())
         }
         Slot::S => match cur.bump()? {
             Prim::Str(value) => {
-                out.push(Token::Str(value.clone()));
+                cur.push_text_token(out, value, true);
                 Some(())
             }
             _ => None,
         },
         Slot::P => {
             let triple = cur.triple(true)?;
-            out.push(Token::Position(triple));
+            push_token!(cur, out, Token::Position(triple));
             Some(())
         }
         Slot::VLen => {
             let triple = cur.triple(true)?;
-            out.push(Token::Vector3(triple));
+            push_token!(cur, out, Token::Vector3(triple));
             Some(())
         }
         Slot::VUnit => {
             let triple = cur.triple(false)?;
-            out.push(Token::Vector3(triple));
+            push_token!(cur, out, Token::Vector3(triple));
             Some(())
         }
         Slot::Sense => match cur.word()? {
             "forward" => {
-                out.push(Token::False);
+                push_token!(cur, out, Token::False);
                 Some(())
             }
             "reversed" => {
-                out.push(Token::True);
+                push_token!(cur, out, Token::True);
                 Some(())
             }
             _ => None,
         },
         Slot::Sides => match cur.word()? {
             "single" => {
-                out.push(Token::False);
+                push_token!(cur, out, Token::False);
                 Some(())
             }
             "double" => {
-                out.push(Token::True);
+                push_token!(cur, out, Token::True);
                 Some(())
             }
             _ => None,
         },
         Slot::UvSense => match cur.word()? {
             "forward_v" => {
-                out.push(Token::False);
+                push_token!(cur, out, Token::False);
                 Some(())
             }
             "reverse_v" => {
-                out.push(Token::True);
+                push_token!(cur, out, Token::True);
                 Some(())
             }
             _ => None,
         },
         Slot::B => {
             let token = logical_word(cur.word()?)?;
-            out.push(token);
+            push_token!(cur, out, token);
             Some(())
         }
         Slot::OptB => cur.opt_bound(out),
@@ -995,7 +1176,7 @@ fn take_slot(cur: &mut Cur<'_>, slot: Slot, out: &mut Vec<Token>) -> Option<()> 
     }
 }
 
-fn run_shape(cur: &mut Cur<'_>, slots: &[Slot], out: &mut Vec<Token>) -> Option<()> {
+fn run_shape(cur: &mut Cur<'_, '_, '_>, slots: &[Slot], out: &mut Vec<Token>) -> Option<()> {
     for slot in slots {
         take_slot(cur, *slot, out)?;
     }
@@ -1004,21 +1185,25 @@ fn run_shape(cur: &mut Cur<'_>, slots: &[Slot], out: &mut Vec<Token>) -> Option<
 
 /// Try one candidate shape against the complete field list.
 fn try_shape(
+    ctx: &DecodeContext<'_>,
     prims: &[Prim],
     scale: f64,
     slots: &[Slot],
-) -> Result<Option<Vec<Token>>, TypeFailure> {
+) -> Result<Option<Vec<Token>>, TypedRecordFailure> {
     let mut cur = Cur {
         prims,
         pos: 0,
         scale,
         failure: None,
+        resource: None,
+        ctx: Some(ctx),
     };
     let mut out = Vec::new();
     let matched = run_shape(&mut cur, slots, &mut out).is_some() && cur.done();
-    match cur.failure {
-        Some(failure) => Err(failure),
-        None => Ok(matched.then_some(out)),
+    match (cur.resource, cur.failure) {
+        (Some(error), _) => Err(TypedRecordFailure::Resource(error)),
+        (None, Some(failure)) => Err(TypedRecordFailure::Type(failure)),
+        (None, None) => Ok(matched.then_some(out)),
     }
 }
 
@@ -1037,7 +1222,12 @@ enum BsKind {
 
 /// Read one spline knot vector and derive its pole count without signed
 /// overflow or an unchecked loop count.
-fn spline_poles(cur: &mut Cur<'_>, knots: i64, degree: i64, out: &mut Vec<Token>) -> Option<usize> {
+fn spline_poles(
+    cur: &mut Cur<'_, '_, '_>,
+    knots: i64,
+    degree: i64,
+    out: &mut Vec<Token>,
+) -> Option<usize> {
     let Some(knot_count) = usize::try_from(knots).ok() else {
         return cur.invalid_spline_count();
     };
@@ -1055,8 +1245,8 @@ fn spline_poles(cur: &mut Cur<'_>, knots: i64, degree: i64, out: &mut Vec<Token>
             Some(value) => value,
             None => return cur.invalid_spline_count(),
         };
-        out.push(Token::Double(knot));
-        out.push(Token::Long(mult));
+        push_token!(cur, out, Token::Double(knot));
+        push_token!(cur, out, Token::Long(mult));
     }
     let Some(poles) = degree
         .checked_sub(1)
@@ -1074,19 +1264,19 @@ fn spline_poles(cur: &mut Cur<'_>, knots: i64, degree: i64, out: &mut Vec<Token>
 /// A `nubs`/`nurbs` curve block ([`asm.md` §6.5]): marker, degree, closure,
 /// unique-knot count, `(knot, multiplicity)` pairs, poles, and for `nurbs`
 /// one weight per pole.
-fn bs_curve_block(cur: &mut Cur<'_>, kind: BsKind, out: &mut Vec<Token>) -> Option<()> {
+fn bs_curve_block(cur: &mut Cur<'_, '_, '_>, kind: BsKind, out: &mut Vec<Token>) -> Option<()> {
     let marker = cur.word()?;
     let rational = match marker {
         "nubs" => false,
         "nurbs" => true,
         _ => return None,
     };
-    out.push(Token::Ident(marker.to_string()));
+    push_token!(cur, out, Token::Ident(marker.to_string()));
     let degree = cur.long()?;
-    out.push(Token::Long(degree));
+    push_token!(cur, out, Token::Long(degree));
     cur.enum_word(CLOSURE, out)?;
     let knots = cur.long()?;
-    out.push(Token::Long(knots));
+    push_token!(cur, out, Token::Long(knots));
     let poles = spline_poles(cur, knots, degree, out)?;
     let coords = match kind {
         BsKind::Parameter => 2,
@@ -1100,11 +1290,11 @@ fn bs_curve_block(cur: &mut Cur<'_>, kind: BsKind, out: &mut Vec<Token>) -> Opti
         for coordinate in 0..per_pole {
             let value = cur.num()?;
             let scaled = matches!(kind, BsKind::Model) && coordinate < coords;
-            out.push(Token::Double(if scaled {
-                cur.length(value)?
-            } else {
-                value
-            }));
+            push_token!(
+                cur,
+                out,
+                Token::Double(if scaled { cur.length(value)? } else { value })
+            );
         }
     }
     Some(())
@@ -1113,26 +1303,26 @@ fn bs_curve_block(cur: &mut Cur<'_>, kind: BsKind, out: &mut Vec<Token>) -> Opti
 /// A `nubs`/`nurbs` surface block ([`asm.md` §6.5]): marker, U/V degrees,
 /// closures, singularities, unique-knot counts, both knot vectors, and the
 /// row-major control grid.
-fn bs_surface_block(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+fn bs_surface_block(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
     let marker = cur.word()?;
     let rational = match marker {
         "nubs" => false,
         "nurbs" => true,
         _ => return None,
     };
-    out.push(Token::Ident(marker.to_string()));
+    push_token!(cur, out, Token::Ident(marker.to_string()));
     let degree_u = cur.long()?;
     let degree_v = cur.long()?;
-    out.push(Token::Long(degree_u));
-    out.push(Token::Long(degree_v));
+    push_token!(cur, out, Token::Long(degree_u));
+    push_token!(cur, out, Token::Long(degree_v));
     cur.enum_word(CLOSURE, out)?;
     cur.enum_word(CLOSURE, out)?;
     cur.enum_word(SINGULARITY, out)?;
     cur.enum_word(SINGULARITY, out)?;
     let knots_u = cur.long()?;
     let knots_v = cur.long()?;
-    out.push(Token::Long(knots_u));
-    out.push(Token::Long(knots_v));
+    push_token!(cur, out, Token::Long(knots_u));
+    push_token!(cur, out, Token::Long(knots_v));
     let mut poles = [0usize; 2];
     for (direction, (knots, degree)) in [(knots_u, degree_u), (knots_v, degree_v)]
         .into_iter()
@@ -1150,11 +1340,15 @@ fn bs_surface_block(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
     for _ in 0..total_poles {
         for coordinate in 0..per_pole {
             let value = cur.num()?;
-            out.push(Token::Double(if coordinate < 3 {
-                cur.length(value)?
-            } else {
-                value
-            }));
+            push_token!(
+                cur,
+                out,
+                Token::Double(if coordinate < 3 {
+                    cur.length(value)?
+                } else {
+                    value
+                })
+            );
         }
     }
     Some(())
@@ -1165,26 +1359,29 @@ fn bs_surface_block(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
 /// curve cache and fit tolerance, two null supports, two null pcurves, two
 /// optional interval endpoints, three discontinuity arrays, the extension
 /// integer, the unextended-range pair, and two extension enums.
-fn exact_int_cur_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
-    if let Some(stamp) = cur.clone().long() {
+fn exact_int_cur_tail(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
+    if let Some(stamp) = match cur.peek() {
+        Some(Prim::Integer(value)) => Some(*value),
+        _ => None,
+    } {
         // A serializer stamp is a release x100 word; smaller integers open
         // the legacy layout without a stamp.
         if stamp >= 100 {
             cur.long();
-            out.push(Token::Long(stamp));
+            push_token!(cur, out, Token::Long(stamp));
         }
     }
     cur.enum_word(CACHE_FORM, out)?;
     bs_curve_block(cur, BsKind::Model, out)?;
     let tolerance = cur.num()?;
-    out.push(Token::Double(cur.length(tolerance)?));
+    push_token!(cur, out, Token::Double(cur.length(tolerance)?));
     for _ in 0..2 {
         cur.word_is("null_surface")?;
-        out.push(Token::Ident("null_surface".to_string()));
+        push_token!(cur, out, Token::Ident("null_surface".to_string()));
     }
     for _ in 0..2 {
         cur.word_is("nullbs")?;
-        out.push(Token::Ident("nullbs".to_string()));
+        push_token!(cur, out, Token::Ident("nullbs".to_string()));
     }
     cur.opt_bound(out)?;
     cur.opt_bound(out)?;
@@ -1192,7 +1389,7 @@ fn exact_int_cur_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
         cur.float_array(out)?;
     }
     let extension = cur.long()?;
-    out.push(Token::Long(extension));
+    push_token!(cur, out, Token::Long(extension));
     cur.opt_bound(out)?;
     cur.opt_bound(out)?;
     // Two extension enums close the modern tail; the legacy tail omits them.
@@ -1206,18 +1403,22 @@ fn exact_int_cur_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
 /// `exp_par_cur` / `exppc` payload after the subtype name ([`asm.md` §6.4]):
 /// the inline BS2 block, its parameter-space fit tolerance, the support
 /// surface scope, and four trailing booleans.
-fn exp_par_cur_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+fn exp_par_cur_tail(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
     bs_curve_block(cur, BsKind::Parameter, out)?;
     let tolerance = cur.num()?;
-    out.push(Token::Double(tolerance));
+    push_token!(cur, out, Token::Double(tolerance));
     cur.word_is("spline")?;
-    out.push(Token::Ident("spline".to_string()));
+    push_token!(cur, out, Token::Ident("spline".to_string()));
     let sense = cur.word()?;
-    out.push(match sense {
-        "forward" => Token::False,
-        "reversed" => Token::True,
-        _ => return None,
-    });
+    push_token!(
+        cur,
+        out,
+        match sense {
+            "forward" => Token::False,
+            "reversed" => Token::True,
+            _ => return None,
+        }
+    );
     type_subtype(cur, out)?;
     for _ in 0..4 {
         cur.opt_bound(out)?;
@@ -1228,31 +1429,34 @@ fn exp_par_cur_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
 /// `exact_spl_sur` / `exactsur` payload after the subtype name
 /// ([`asm.md` §6.3]): optional stamp, cache-form enum, the solved surface,
 /// fit tolerance, the U and V intervals, and the extension integer.
-fn exact_spl_sur_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
-    if let Some(stamp) = cur.clone().long() {
+fn exact_spl_sur_tail(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
+    if let Some(stamp) = match cur.peek() {
+        Some(Prim::Integer(value)) => Some(*value),
+        _ => None,
+    } {
         if stamp >= 100 {
             cur.long();
-            out.push(Token::Long(stamp));
+            push_token!(cur, out, Token::Long(stamp));
         }
     }
     cur.enum_word(CACHE_FORM, out)?;
     bs_surface_block(cur, out)?;
     let tolerance = cur.num()?;
-    out.push(Token::Double(cur.length(tolerance)?));
+    push_token!(cur, out, Token::Double(cur.length(tolerance)?));
     for _ in 0..4 {
         let value = cur.num()?;
-        out.push(Token::Double(value));
+        push_token!(cur, out, Token::Double(value));
     }
     let extension = cur.long()?;
-    out.push(Token::Long(extension));
+    push_token!(cur, out, Token::Long(extension));
     Some(())
 }
 
 /// A sense word: `forward` is `FALSE`, `reversed` is `TRUE`.
-fn sense_word(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+fn sense_word(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
     match cur.word()? {
-        "forward" => out.push(Token::False),
-        "reversed" => out.push(Token::True),
+        "forward" => push_token!(cur, out, Token::False),
+        "reversed" => push_token!(cur, out, Token::True),
         _ => return None,
     }
     Some(())
@@ -1261,7 +1465,7 @@ fn sense_word(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
 /// One nullable support-surface slot: the `null_surface` sentinel, a `spline`
 /// reference or inline construction with its boolean and four optional
 /// bounds, or an embedded analytic surface ([`asm.md` §6.3]).
-fn nullable_surface(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+fn nullable_surface(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
     let word = match cur.peek()? {
         Prim::Word(word) => word.as_str(),
         _ => return None,
@@ -1269,12 +1473,12 @@ fn nullable_surface(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
     match word {
         "null_surface" => {
             cur.bump();
-            out.push(Token::Ident("null_surface".to_string()));
+            push_token!(cur, out, Token::Ident("null_surface".to_string()));
             Some(())
         }
         "spline" => {
             cur.bump();
-            out.push(Token::Ident("spline".to_string()));
+            push_token!(cur, out, Token::Ident("spline".to_string()));
             sense_word(cur, out)?;
             type_subtype_tabled(cur, out)?;
             for _ in 0..4 {
@@ -1284,7 +1488,7 @@ fn nullable_surface(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
         }
         "plane" => {
             cur.bump();
-            out.push(Token::Ident("plane".to_string()));
+            push_token!(cur, out, Token::Ident("plane".to_string()));
             for slot in [Slot::P, Slot::VUnit, Slot::VLen, Slot::UvSense] {
                 take_slot(cur, slot, out)?;
             }
@@ -1295,7 +1499,7 @@ fn nullable_surface(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
         }
         "cone" => {
             cur.bump();
-            out.push(Token::Ident("cone".to_string()));
+            push_token!(cur, out, Token::Ident("cone".to_string()));
             for slot in [Slot::P, Slot::VUnit, Slot::VLen, Slot::D] {
                 take_slot(cur, slot, out)?;
             }
@@ -1311,7 +1515,7 @@ fn nullable_surface(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
         }
         "sphere" => {
             cur.bump();
-            out.push(Token::Ident("sphere".to_string()));
+            push_token!(cur, out, Token::Ident("sphere".to_string()));
             for slot in [Slot::P, Slot::DLen, Slot::VUnit, Slot::VUnit, Slot::UvSense] {
                 take_slot(cur, slot, out)?;
             }
@@ -1322,7 +1526,7 @@ fn nullable_surface(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
         }
         "torus" => {
             cur.bump();
-            out.push(Token::Ident("torus".to_string()));
+            push_token!(cur, out, Token::Ident("torus".to_string()));
             for slot in [
                 Slot::P,
                 Slot::VUnit,
@@ -1344,10 +1548,10 @@ fn nullable_surface(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
 
 /// One nullable BS2 parameter-curve slot: the `nullbs` sentinel or an inline
 /// 2D block without a fit-tolerance field.
-fn nullable_bs2(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+fn nullable_bs2(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
     if matches!(cur.peek(), Some(Prim::Word(word)) if word == "nullbs") {
         cur.bump();
-        out.push(Token::Ident("nullbs".to_string()));
+        push_token!(cur, out, Token::Ident("nullbs".to_string()));
         return Some(());
     }
     bs_curve_block(cur, BsKind::Parameter, out)
@@ -1358,14 +1562,14 @@ fn nullable_bs2(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
 /// tolerance, two supports, two parameter curves, two optional interval
 /// endpoints, three discontinuity arrays, and the extension integer. The
 /// cacheless form selects a different payload and is not typed here.
-fn cache_first_curve_context(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+fn cache_first_curve_context(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
     let stamp = cur.long()?;
-    out.push(Token::Long(stamp));
+    push_token!(cur, out, Token::Long(stamp));
     cur.word_is("full")?;
-    out.push(Token::Enum(0));
+    push_token!(cur, out, Token::Enum(0));
     bs_curve_block(cur, BsKind::Model, out)?;
     let tolerance = cur.num()?;
-    out.push(Token::Double(cur.length(tolerance)?));
+    push_token!(cur, out, Token::Double(cur.length(tolerance)?));
     nullable_surface(cur, out)?;
     nullable_surface(cur, out)?;
     nullable_bs2(cur, out)?;
@@ -1376,7 +1580,7 @@ fn cache_first_curve_context(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<
         cur.float_array(out)?;
     }
     let extension = cur.long()?;
-    out.push(Token::Long(extension));
+    push_token!(cur, out, Token::Long(extension));
     Some(())
 }
 
@@ -1384,16 +1588,16 @@ fn cache_first_curve_context(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<
 /// approximation form, its payload, six discontinuity arrays, and one
 /// boolean. Form `full` stores the solved surface and fit tolerance; form
 /// `none` stores the U and V intervals and four closure/singularity enums.
-fn revision_surface_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+fn revision_surface_tail(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
     match cur.word()? {
         "full" => {
-            out.push(Token::Enum(0));
+            push_token!(cur, out, Token::Enum(0));
             bs_surface_block(cur, out)?;
             let tolerance = cur.num()?;
-            out.push(Token::Double(cur.length(tolerance)?));
+            push_token!(cur, out, Token::Double(cur.length(tolerance)?));
         }
         "none" => {
-            out.push(Token::Enum(2));
+            push_token!(cur, out, Token::Enum(2));
             for _ in 0..4 {
                 cur.opt_bound(out)?;
             }
@@ -1408,7 +1612,7 @@ fn revision_surface_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> 
         cur.float_array(out)?;
     }
     let flag = logical_word(cur.word()?)?;
-    out.push(flag);
+    push_token!(cur, out, flag);
     Some(())
 }
 
@@ -1416,11 +1620,11 @@ fn revision_surface_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> 
 /// stamp, the embedded directrix intcurve with two optional parameter
 /// endpoints, the extrusion direction, the native position, and the shared
 /// revision-gated surface tail.
-fn cyl_spl_sur_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+fn cyl_spl_sur_tail(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
     let stamp = cur.long()?;
-    out.push(Token::Long(stamp));
+    push_token!(cur, out, Token::Long(stamp));
     cur.word_is("intcurve")?;
-    out.push(Token::Ident("intcurve".to_string()));
+    push_token!(cur, out, Token::Ident("intcurve".to_string()));
     sense_word(cur, out)?;
     type_subtype_tabled(cur, out)?;
     cur.opt_bound(out)?;
@@ -1433,9 +1637,9 @@ fn cyl_spl_sur_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
 /// `exact_spl_sur` revision-gated payload: serializer stamp, the shared
 /// surface tail, the U and V unextended intervals as optional bounds, and
 /// the extension enum.
-fn exact_spl_sur_revision_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+fn exact_spl_sur_revision_tail(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
     let stamp = cur.long()?;
-    out.push(Token::Long(stamp));
+    push_token!(cur, out, Token::Long(stamp));
     revision_surface_tail(cur, out)?;
     for _ in 0..4 {
         cur.opt_bound(out)?;
@@ -1446,7 +1650,7 @@ fn exact_spl_sur_revision_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Optio
 /// Type one balanced subtype scope. The scope opens with `{` and a
 /// construction name; tabled constructions get their grammar, and any other
 /// construction falls back to lexical typing of the balanced scope.
-fn type_subtype(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+fn type_subtype(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
     let scope_start = cur.pos;
     let out_mark = out.len();
     if type_subtype_tabled(cur, out).is_some() {
@@ -1462,22 +1666,24 @@ fn type_subtype(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
 /// or directrix the shared decoders resolve — requires this form, so a
 /// record with an untypable interior falls back as a whole instead of
 /// decoding around a degraded nested construction.
-fn type_subtype_tabled(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+fn type_subtype_tabled(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
     if !matches!(cur.peek(), Some(Prim::Open)) {
         return None;
     }
     let scope_start = cur.pos;
     let out_mark = out.len();
     cur.bump();
-    out.push(Token::SubtypeOpen);
+    push_token!(cur, out, Token::SubtypeOpen);
     let Some(name) = cur.word() else {
         cur.pos = scope_start;
         out.truncate(out_mark);
         return None;
     };
-    out.push(Token::Ident(name.to_string()));
+    cur.push_text_token(out, name, false);
     let matched = match name {
-        "ref" => cur.long().map(|index| out.push(Token::Long(index))),
+        "ref" => cur
+            .long()
+            .map(|index| push_token!(cur, out, Token::Long(index))),
         "exp_par_cur" | "exppc" => exp_par_cur_tail(cur, out),
         "exact_int_cur" | "exactcur" => exact_int_cur_tail(cur, out),
         "exact_spl_sur" | "exactsur" => {
@@ -1492,13 +1698,13 @@ fn type_subtype_tabled(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
         "par_int_cur" => cache_first_curve_context(cur, out).and_then(|()| {
             for _ in 0..2 {
                 let flag = logical_word(cur.word()?)?;
-                out.push(flag);
+                push_token!(cur, out, flag);
             }
             Some(())
         }),
         "blend_int_cur" => cache_first_curve_context(cur, out).and_then(|()| {
             let flag = logical_word(cur.word()?)?;
-            out.push(flag);
+            push_token!(cur, out, flag);
             Some(())
         }),
         "spring_int_cur" => {
@@ -1510,7 +1716,7 @@ fn type_subtype_tabled(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
     let closed = matched.and_then(|()| match cur.peek() {
         Some(Prim::Close) => {
             cur.bump();
-            out.push(Token::SubtypeClose);
+            push_token!(cur, out, Token::SubtypeClose);
             Some(())
         }
         _ => None,
@@ -1524,14 +1730,14 @@ fn type_subtype_tabled(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
 }
 
 /// Lexically type one balanced subtype scope, `{` through its matching `}`.
-fn fallback_scope(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+fn fallback_scope(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
     if !matches!(cur.peek(), Some(Prim::Open)) {
         return None;
     }
     let mut depth = 0usize;
     loop {
         let prim = cur.bump()?;
-        out.push(lexical_token(prim));
+        cur.push_lexical_token(out, prim);
         match prim {
             Prim::Open => depth += 1,
             Prim::Close => {
@@ -1542,27 +1748,6 @@ fn fallback_scope(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
             }
             _ => {}
         }
-    }
-}
-
-/// Type one field by lexical form alone. Numbers follow their written shape
-/// (`.`/`e`/`E` selects `DOUBLE`); the unambiguous boolean words map onto
-/// `TRUE`/`FALSE`; every other word is a payload identifier. The bound word
-/// `F` is `TRUE` in a range slot and `FALSE` in a logical slot; without a
-/// grammar the logical reading is used.
-fn lexical_token(prim: &Prim) -> Token {
-    match prim {
-        Prim::Integer(value) => Token::Long(*value),
-        Prim::Real(value) => Token::Double(*value),
-        Prim::Ref(index) => Token::Ref(*index),
-        Prim::Str(value) => Token::Str(value.clone()),
-        Prim::Open => Token::SubtypeOpen,
-        Prim::Close => Token::SubtypeClose,
-        Prim::Word(word) => match word.as_str() {
-            "forward" | "single" | "forward_v" | "I" | "F" | "out" => Token::False,
-            "reversed" | "double" | "reverse_v" | "T" | "in" => Token::True,
-            _ => Token::Ident(word.clone()),
-        },
     }
 }
 
@@ -1661,17 +1846,104 @@ fn head_shapes(head: &str) -> &'static [&'static [Slot]] {
 /// Type one record's payload. Every tabled candidate must consume the
 /// complete field list; otherwise the record is typed lexically, one token
 /// per field.
-fn type_record(head: &str, prims: &[Prim], scale: f64) -> Result<Vec<Token>, TypeFailure> {
+fn type_record(
+    ctx: &DecodeContext<'_>,
+    head: &str,
+    prims: &[Prim],
+    scale: f64,
+) -> Result<Vec<Token>, TypedRecordFailure> {
     for slots in head_shapes(head) {
-        if let Some(tokens) = try_shape(prims, scale, slots)? {
+        if let Some(tokens) = try_shape(ctx, prims, scale, slots)? {
             return Ok(tokens);
         }
     }
-    Ok(prims.iter().map(lexical_token).collect())
+    let mut cur = Cur {
+        prims,
+        pos: 0,
+        scale,
+        failure: None,
+        resource: None,
+        ctx: Some(ctx),
+    };
+    let mut tokens = Vec::new();
+    for prim in prims {
+        cur.push_lexical_token(&mut tokens, prim);
+    }
+    if let Some(error) = cur.resource {
+        return Err(TypedRecordFailure::Resource(error));
+    }
+    Ok(tokens)
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn sat_float_array_values_refuse_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let prims = [Prim::Integer(1), Prim::Real(2.0)];
+        let mut cur = Cur {
+            prims: &prims,
+            pos: 0,
+            scale: 10.0,
+            failure: None,
+            resource: None,
+            ctx: Some(&ctx),
+        };
+        let mut output = Vec::new();
+        assert_eq!(cur.float_array(&mut output), None);
+        let error = cur.resource.expect("resource refusal");
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected resource refusal: {error:?}")
+        };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(limit.operation, "SAT float array values");
+    }
+
+    #[test]
+    fn sat_fallback_typed_tokens_refuse_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let prims = [Prim::Integer(4)];
+        let error =
+            super::type_record(&ctx, "unknown", &prims, 10.0).expect_err("resource refusal");
+        let super::TypedRecordFailure::Resource(CodecError::ResourceLimit(limit)) = error else {
+            panic!("expected resource refusal")
+        };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(limit.operation, "type SAT tokens");
+    }
+
+    fn assert_sat_frame_collection_limit(max_items: u64, operation: &str) {
+        let source = asm_stream("audit 1 #\n");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = max_items;
+        let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+        let error = super::parse(&ctx, &source).expect_err("collection refusal");
+        let StreamFailure::Resource(CodecError::ResourceLimit(limit)) = error else {
+            panic!("expected resource refusal: {error:?}")
+        };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(limit.operation, operation);
+    }
+
+    #[test]
+    fn sat_primitives_refuse_collection_limit() {
+        assert_sat_frame_collection_limit(0, "frame SAT primitive");
+    }
+
+    #[test]
+    fn sat_records_refuse_collection_limit() {
+        assert_sat_frame_collection_limit(2, "frame SAT record");
+    }
+
     #[test]
     fn counted_float_array_refuses_an_unavailable_huge_count_without_allocating() {
         let prims = [Prim::Integer(i64::MAX)];
@@ -1680,6 +1952,8 @@ mod tests {
             pos: 0,
             scale: 10.0,
             failure: None,
+            resource: None,
+            ctx: None,
         };
         let mut output = Vec::new();
         assert_eq!(cur.float_array(&mut output), None);
@@ -1710,6 +1984,16 @@ mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::scalar::{NonNegativeReal, PositiveReal};
+
+    fn kernel_header(header: &super::TextHeader) -> crate::kernel_header::KernelHeader {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test input fits input limit");
+        header
+            .as_kernel_header(&ctx)
+            .expect("service profile admits header copy")
+    }
 
     #[test]
     fn sat_framing_refuses_each_resource_before_record_materialization() {
@@ -1751,6 +2035,107 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn sat_string_copies_refuse_at_header_field_and_payload_limits() {
+        let source = asm_stream("mystery @3 abc #\n");
+        let cases = [
+            (
+                ResourceDimension::RetainedBytes,
+                15,
+                "retain SAT header string",
+            ),
+            (
+                ResourceDimension::RetainedBytes,
+                67,
+                "retain SAT record name",
+            ),
+            (ResourceDimension::MaterializedBytes, 4, "frame SAT record"),
+        ];
+        for (dimension, limit, operation) in cases {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+                ResourceDimension::MaterializedBytes => {
+                    policy.limits.max_materialized_bytes = limit;
+                }
+                _ => panic!("unexpected test dimension"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
+                .expect("source fits input limit");
+            let error = super::parse(&ctx, &source).expect_err("string limit must refuse");
+            let StreamFailure::Resource(CodecError::ResourceLimit(refusal)) = error else {
+                panic!("expected resource refusal, got {error:?}");
+            };
+            assert_eq!(refusal.dimension, dimension);
+            assert_eq!(refusal.operation, operation);
+        }
+    }
+
+    #[test]
+    fn sat_typed_string_copies_refuse_retained_limit() {
+        for (body, limit) in [
+            ("mystery @3 abc #\n", 73),
+            ("asmheader $-1 -1 @3 abc #\n", 75),
+        ] {
+            let source = asm_stream(body);
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
+                .expect("source fits input limit");
+            let error = super::parse(&ctx, &source).expect_err("typed string limit must refuse");
+            let StreamFailure::Resource(CodecError::ResourceLimit(refusal)) = error else {
+                panic!("expected resource refusal, got {error:?}");
+            };
+            assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+            assert_eq!(refusal.operation, "retain SAT typed string");
+        }
+    }
+
+    #[test]
+    fn sat_kernel_header_copy_refuses_retained_limit() {
+        let source = asm_stream("");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 91;
+        let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
+            .expect("source fits input limit");
+        let stream = super::parse(&ctx, &source).expect("header and terminator fit retained limit");
+        let error = stream
+            .header
+            .as_kernel_header(&ctx)
+            .expect_err("kernel header copy exceeds retained limit");
+        let CodecError::ResourceLimit(refusal) = error else {
+            panic!("expected resource refusal, got {error:?}");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(refusal.operation, "retain SAT kernel header string");
+    }
+
+    #[test]
+    fn sat_record_error_text_refuses_each_input_name_limit() {
+        for (body, description) in [
+            ("mystery 1\n", "has no `#` terminator"),
+            ("mystery { #\n", "terminates inside a subtype scope"),
+            ("mystery } #\n", "closes an unopened subtype scope"),
+        ] {
+            let source = asm_stream(body);
+            let reason = format!("record `mystery` {description}");
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 16 + 21 + 24 + 7 + reason.len() as u64 - 1;
+            let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
+                .expect("source fits input limit");
+            let error = super::parse(&ctx, &source).expect_err("error text exceeds retained limit");
+            let StreamFailure::Resource(CodecError::ResourceLimit(refusal)) = error else {
+                panic!("expected resource refusal, got {error:?}");
+            };
+            assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+            assert_eq!(refusal.operation, "SAT record error text");
+        }
     }
 
     fn parse(bytes: &[u8]) -> Result<TextStream, StreamError> {
@@ -1828,7 +2213,7 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(stream.records[0].ref_at(0), Some(4_294_967_296));
-        let header = stream.header.as_kernel_header();
+        let header = kernel_header(&stream.header);
         for family in [
             crate::dialect::KernelHeaderRef::TextAsm(&header),
             crate::dialect::KernelHeaderRef::TextAcis(&header),
@@ -1843,7 +2228,7 @@ mod tests {
     #[test]
     fn header_conversion_reports_the_centimetre_convention() {
         let stream = parse(&asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n")).expect("stream");
-        let header = stream.header.as_kernel_header();
+        let header = kernel_header(&stream.header);
         assert_eq!(header.save_format_version, Some(23200));
         assert_eq!(header.entity_count, Some(2));
         assert_eq!(header.flags, Some(2));
@@ -1859,7 +2244,7 @@ mod tests {
             .expect("ASCII stream");
         let source = source.replacen("1 1e-06 1.0e-10", "25.4 1e-06 1.0e-10", 1);
         let stream = parse(source.as_bytes()).expect("inch-scale stream");
-        let actual = stream.header.as_kernel_header().linear.expect("resabs");
+        let actual = kernel_header(&stream.header).linear.expect("resabs");
         let expected_resabs_cm = stream.header.resabs().get() * 2.54;
         assert!((actual / expected_resabs_cm - 1.0).abs() < f64::EPSILON);
     }
@@ -1877,7 +2262,7 @@ mod tests {
         assert_eq!(resabs.get(), 1.0e-6);
         assert_eq!(resnor.get(), 1.0e-10);
         let expected = resabs.get() * (scale.get() / 10.0);
-        assert_eq!(stream.header.as_kernel_header().linear, Some(expected));
+        assert_eq!(kernel_header(&stream.header).linear, Some(expected));
     }
 
     #[test]
@@ -2253,6 +2638,8 @@ mod tests {
             pos: 0,
             scale: 10.0,
             failure: None,
+            resource: None,
+            ctx: None,
         };
         assert_eq!(
             bs_curve_block(&mut cur, BsKind::Model, &mut Vec::new()),
@@ -2295,6 +2682,8 @@ mod tests {
             pos: 0,
             scale: 10.0,
             failure: None,
+            resource: None,
+            ctx: None,
         };
         assert_eq!(bs_surface_block(&mut cur, &mut Vec::new()), None);
         assert_eq!(cur.failure, Some(TypeFailure::InvalidSplineCount));

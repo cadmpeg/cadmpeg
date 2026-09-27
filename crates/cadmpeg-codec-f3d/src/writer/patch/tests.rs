@@ -13,6 +13,26 @@ use crate::writer::primitives::normalized_face_sense_to_native;
 use cadmpeg_asm::edit::AsmEditSet;
 use cadmpeg_asm::test_support::sab;
 
+fn decode_surface(record: &cadmpeg_asm::sab::Record) -> Option<(SolvedSurfaceGeometry, bool)> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    cadmpeg_asm::brep::geometry::decode_surface(&ctx, record)
+        .transpose()
+        .unwrap()
+}
+
+fn decode_curve(record: &cadmpeg_asm::sab::Record) -> Option<CurveGeometry> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    cadmpeg_asm::brep::geometry::decode_curve(&ctx, record)
+        .transpose()
+        .unwrap()
+}
+
 #[test]
 fn sketch_relation_state_encoding_requires_the_stored_width_discriminator() {
     let record = |discriminator| {
@@ -124,7 +144,7 @@ fn generated_straight_record_patches_by_token_boundaries() {
     )
     .expect("patched generated straight record");
     assert!(
-        matches!(cadmpeg_asm::brep::geometry::decode_curve(&decoded[0]), Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)))
+        matches!(decode_curve(&decoded[0]), Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)))
         if {
             let origin = line_curve.origin().get();
             let direction = *line_curve.direction().as_raw();
@@ -208,7 +228,7 @@ fn generated_signed_sphere_patches_exact_frame_and_radius() {
     )
     .expect("patched sphere record");
     assert!(
-        matches!(cadmpeg_asm::brep::geometry::decode_surface(&decoded[0]), Some((SolvedSurfaceGeometry::Sphere(sphere_surface), false))
+        matches!(decode_surface(&decoded[0]), Some((SolvedSurfaceGeometry::Sphere(sphere_surface), false))
                 if {
                     let center = sphere_surface.center();
         let axis = sphere_surface.frame().axis().as_raw();
@@ -301,7 +321,7 @@ fn generated_torus_preserves_signed_self_intersecting_radii() {
     )
     .expect("patched torus record");
     assert!(
-        matches!(cadmpeg_asm::brep::geometry::decode_surface(&decoded[0]), Some((SolvedSurfaceGeometry::Torus(torus_surface), false))
+        matches!(decode_surface(&decoded[0]), Some((SolvedSurfaceGeometry::Torus(torus_surface), false))
                 if {
                     let center = torus_surface.center();
         let axis = torus_surface.frame().axis().as_raw();
@@ -397,7 +417,7 @@ fn generated_cylinder_preserves_native_angle_branch() {
     // The patch preserves the record's native negative-cosine angle
     // branch, so decode reports the inward-normal flag.
     assert!(
-        matches!(cadmpeg_asm::brep::geometry::decode_surface(&decoded[0]), Some((SolvedSurfaceGeometry::Cylinder(cylinder_surface), true))
+        matches!(decode_surface(&decoded[0]), Some((SolvedSurfaceGeometry::Cylinder(cylinder_surface), true))
                 if {
                     let origin = cylinder_surface.origin();
         let axis = cylinder_surface.frame().axis().as_raw();
@@ -501,7 +521,7 @@ fn generated_ellipse_preserves_negative_ratio_phase() {
     )
     .expect("patched ellipse record");
     assert!(
-        matches!(cadmpeg_asm::brep::geometry::decode_curve(&decoded[0]), Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)))
+        matches!(decode_curve(&decoded[0]), Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)))
                 if {
                     let center = ellipse_curve.center().get();
         let axis = ellipse_curve.frame().axis().as_raw();

@@ -59,7 +59,7 @@ fn decode_asm_binary(
         None => sab::frame_history(ctx, bytes, start, bytes.len(), width),
     };
     let records = framed.map_err(|failure| {
-        failure.into_codec_error(|error| {
+        failure.into_codec_error(ctx, |error| {
             CodecError::malformed(format_args!("SAB framing failed: {error}"))
         })
     })?;
@@ -128,7 +128,7 @@ fn decode_acis_binary(
         ),
     };
     let records = framed.map_err(|failure| {
-        failure.into_codec_error(|error| {
+        failure.into_codec_error(ctx, |error| {
             CodecError::malformed(format_args!("ACIS SAB framing failed: {error}"))
         })
     })?;
@@ -165,14 +165,14 @@ fn decode_acis_binary(
 
 fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecError> {
     let stream = sat::parse(ctx, bytes).map_err(|failure| {
-        failure.into_codec_error(|error| {
+        failure.into_codec_error(ctx, |error| {
             unsupported_unframed(
                 &StreamEvidence::Text(None),
                 format!("text stream does not frame: {error}"),
             )
         })
     })?;
-    let header = stream.header.as_kernel_header();
+    let header = stream.header.as_kernel_header(ctx)?;
     let mut attributes = BTreeMap::new();
     header_attributes(&header, stream.terminator.into(), &mut attributes);
     attributes.insert(

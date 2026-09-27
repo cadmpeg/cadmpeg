@@ -17,6 +17,7 @@
 pub mod acis_header;
 pub mod asm_header;
 pub mod brep;
+mod decode_alloc;
 pub mod dialect;
 pub mod edit;
 pub mod ids;

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Siemens JT integer packet decoding used by embedded NX display models.
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteBinary32;
 use serde::{Deserialize, Serialize};
 
@@ -91,25 +92,53 @@ pub(crate) enum Predictor {
     Null,
 }
 
-fn try_vec<T>(capacity: usize) -> Option<Vec<T>> {
+pub(crate) struct DecodedVertexArray<T> {
+    pub(crate) values: Vec<T>,
+    pub(crate) hash: u32,
+    pub(crate) byte_len: usize,
+}
+
+fn try_vec<T>(ctx: &DecodeContext<'_>, capacity: usize) -> Option<Vec<T>> {
+    let count = u64::try_from(capacity).ok()?;
+    ctx.charge_collection_items(count, "nx JT decoded vector")
+        .ok()?;
+    let bytes = capacity.checked_mul(std::mem::size_of::<T>())?;
+    let bytes = u64::try_from(bytes).ok()?;
+    ctx.charge_retained(bytes, "nx JT decoded vector").ok()?;
     let mut values = Vec::new();
-    values.try_reserve_exact(capacity).ok()?;
+    values
+        .try_reserve_exact(capacity)
+        .map_err(|_| ctx.refuse_codec_limit("nx JT decoded vector", 0, count))
+        .ok()?;
     Some(values)
 }
 
 /// Reconstruct JT primal integers from predictor residuals.
-pub(crate) fn unpack_predictor_residuals(residuals: &[i32], predictor: Predictor) -> Vec<i32> {
+pub(crate) fn unpack_predictor_residuals(
+    ctx: &DecodeContext<'_>,
+    residuals: &[i32],
+    predictor: Predictor,
+) -> Result<Vec<i32>, CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(residuals.len()),
+        "unpack JT predictor residuals",
+    )?;
+    let mut values = try_vec(ctx, residuals.len()).ok_or_else(|| {
+        ctx.resource_refusal().map_or_else(
+            || {
+                ctx.refuse_codec_limit(
+                    "nx JT decoded vector",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(residuals.len()),
+                )
+            },
+            CodecError::from,
+        )
+    })?;
     if predictor == Predictor::Null {
-        let Some(mut values) = try_vec(residuals.len()) else {
-            return Vec::new();
-        };
         values.extend_from_slice(residuals);
-        return values;
+        return Ok(values);
     }
-
-    let Some(mut values) = try_vec(residuals.len()) else {
-        return Vec::new();
-    };
     for (index, &residual) in residuals.iter().enumerate() {
         if index < 4 {
             values.push(residual);
@@ -117,17 +146,18 @@ pub(crate) fn unpack_predictor_residuals(residuals: &[i32], predictor: Predictor
         }
         values.push(residual.wrapping_add(values[index - 1]));
     }
-    values
+    Ok(values)
 }
 
 fn lossless_coordinate_component(
+    ctx: &DecodeContext<'_>,
     exponents: &[i32],
     mantissae: &[i32],
 ) -> Option<Vec<FiniteBinary32>> {
     if exponents.len() != mantissae.len() {
         return None;
     }
-    let mut values = try_vec(exponents.len())?;
+    let mut values = try_vec(ctx, exponents.len())?;
     for (&exponent, &mantissa) in exponents.iter().zip(mantissae) {
         let exponent = exponent as u32 & 0x1ff;
         let mantissa = mantissa as u32 & 0x7f_ffff;
@@ -260,8 +290,32 @@ fn deering_normal(
     ])
 }
 
+fn finish_decode<T>(ctx: &DecodeContext<'_>, value: Option<T>) -> Result<Option<T>, CodecError> {
+    ctx.charge_work(0, "complete JT packet decode")?;
+    Ok(value)
+}
+
 /// Decode one JT compressed normal array and its trailing hash.
 pub(crate) fn decode_vertex_normals(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    expected_count: usize,
+    expected_bits: u8,
+) -> Result<Option<DecodedVertexArray<[FiniteBinary32; 3]>>, CodecError> {
+    finish_decode(
+        ctx,
+        decode_vertex_normals_inner(ctx, bytes, expected_count, expected_bits).map(
+            |(values, hash, byte_len)| DecodedVertexArray {
+                values,
+                hash,
+                byte_len,
+            },
+        ),
+    )
+}
+
+fn decode_vertex_normals_inner(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     expected_count: usize,
     expected_bits: u8,
@@ -272,26 +326,26 @@ pub(crate) fn decode_vertex_normals(
     }
     let mut cursor = 6usize;
     let normals = if expected_bits == 0 {
-        let mut components = try_vec(3)?;
+        let mut components = try_vec(ctx, 3)?;
         for _ in 0..3 {
-            let (exponents, exponent_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
+            let (exponents, exponent_len) = decode_int32_cdp2_inner(ctx, bytes.get(cursor..)?, 0)?;
             cursor = cursor.checked_add(exponent_len)?;
-            let (mantissae, mantissa_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
+            let (mantissae, mantissa_len) = decode_int32_cdp2_inner(ctx, bytes.get(cursor..)?, 0)?;
             cursor = cursor.checked_add(mantissa_len)?;
             if exponents.len() != count || mantissae.len() != count {
                 return None;
             }
-            components.push(lossless_coordinate_component(&exponents, &mantissae)?);
+            components.push(lossless_coordinate_component(ctx, &exponents, &mantissae)?);
         }
-        let mut normals = try_vec(count)?;
+        let mut normals = try_vec(ctx, count)?;
         for ((x, y), z) in components[0].iter().zip(&components[1]).zip(&components[2]) {
             normals.push([*x, *y, *z]);
         }
         normals
     } else {
-        let mut codes = try_vec(4)?;
+        let mut codes = try_vec(ctx, 4)?;
         for _ in 0..4 {
-            let (values, byte_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
+            let (values, byte_len) = decode_int32_cdp2_inner(ctx, bytes.get(cursor..)?, 0)?;
             cursor = cursor.checked_add(byte_len)?;
             if values.len() != count {
                 return None;
@@ -299,7 +353,7 @@ pub(crate) fn decode_vertex_normals(
             codes.push(values);
         }
         let bits = NormalBits::new(expected_bits)?;
-        let mut normals = try_vec(count)?;
+        let mut normals = try_vec(ctx, count)?;
         for (((sextant, octant), theta), psi) in
             codes[0].iter().zip(&codes[1]).zip(&codes[2]).zip(&codes[3])
         {
@@ -319,6 +373,25 @@ pub(crate) fn decode_vertex_normals(
 
 /// Decode one JT compressed texture-coordinate array and its trailing hash.
 pub(crate) fn decode_vertex_texture_coordinates(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    expected_count: usize,
+    expected_bits: u8,
+) -> Result<Option<DecodedVertexArray<Vec<FiniteBinary32>>>, CodecError> {
+    finish_decode(
+        ctx,
+        decode_vertex_texture_coordinates_inner(ctx, bytes, expected_count, expected_bits).map(
+            |(values, hash, byte_len)| DecodedVertexArray {
+                values,
+                hash,
+                byte_len,
+            },
+        ),
+    )
+}
+
+fn decode_vertex_texture_coordinates_inner(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     expected_count: usize,
     expected_bits: u8,
@@ -333,20 +406,20 @@ pub(crate) fn decode_vertex_texture_coordinates(
         return None;
     }
     let mut cursor = 6usize;
-    let mut components = try_vec(component_count)?;
+    let mut components = try_vec(ctx, component_count)?;
     if expected_bits == 0 {
         for _ in 0..component_count {
-            let (exponents, exponent_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
+            let (exponents, exponent_len) = decode_int32_cdp2_inner(ctx, bytes.get(cursor..)?, 0)?;
             cursor = cursor.checked_add(exponent_len)?;
-            let (mantissae, mantissa_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
+            let (mantissae, mantissa_len) = decode_int32_cdp2_inner(ctx, bytes.get(cursor..)?, 0)?;
             cursor = cursor.checked_add(mantissa_len)?;
             if exponents.len() != count || mantissae.len() != count {
                 return None;
             }
-            components.push(lossless_coordinate_component(&exponents, &mantissae)?);
+            components.push(lossless_coordinate_component(ctx, &exponents, &mantissae)?);
         }
     } else {
-        let mut ranges = try_vec(component_count)?;
+        let mut ranges = try_vec(ctx, component_count)?;
         for _ in 0..component_count {
             let minimum = View::f32_le_at(bytes, cursor)?;
             let maximum = View::f32_le_at(bytes, cursor + 4)?;
@@ -358,13 +431,13 @@ pub(crate) fn decode_vertex_texture_coordinates(
             cursor = cursor.checked_add(9)?;
         }
         for range in ranges {
-            let (residuals, byte_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
+            let (residuals, byte_len) = decode_int32_cdp2_inner(ctx, bytes.get(cursor..)?, 0)?;
             cursor = cursor.checked_add(byte_len)?;
             if residuals.len() != count {
                 return None;
             }
-            let mut component = try_vec(count)?;
-            for code in unpack_predictor_residuals(&residuals, Predictor::Lag1) {
+            let mut component = try_vec(ctx, count)?;
+            for code in unpack_predictor_residuals(ctx, &residuals, Predictor::Lag1).ok()? {
                 component.push(dequantize_uniform(
                     u32::try_from(code).ok()?,
                     range,
@@ -376,9 +449,9 @@ pub(crate) fn decode_vertex_texture_coordinates(
     }
     let hash = read_u32(bytes, cursor)?;
     cursor = cursor.checked_add(4)?;
-    let mut values = try_vec(count)?;
+    let mut values = try_vec(ctx, count)?;
     for index in 0..count {
-        let mut value = try_vec(component_count)?;
+        let mut value = try_vec(ctx, component_count)?;
         for component in 0..component_count {
             value.push(components.get(component)?.get(index).copied()?);
         }
@@ -389,6 +462,25 @@ pub(crate) fn decode_vertex_texture_coordinates(
 
 /// Decode one JT compressed color array as RGBA values and its trailing hash.
 pub(crate) fn decode_vertex_colors(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    expected_count: usize,
+    expected_bits: u8,
+) -> Result<Option<DecodedVertexArray<[FiniteBinary32; 4]>>, CodecError> {
+    finish_decode(
+        ctx,
+        decode_vertex_colors_inner(ctx, bytes, expected_count, expected_bits).map(
+            |(values, hash, byte_len)| DecodedVertexArray {
+                values,
+                hash,
+                byte_len,
+            },
+        ),
+    )
+}
+
+fn decode_vertex_colors_inner(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     expected_count: usize,
     expected_bits: u8,
@@ -404,20 +496,20 @@ pub(crate) fn decode_vertex_colors(
     }
     let mut cursor = 6usize;
     let colors = if expected_bits == 0 {
-        let mut components = try_vec(component_count)?;
+        let mut components = try_vec(ctx, component_count)?;
         for _ in 0..component_count {
-            let (exponents, exponent_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
+            let (exponents, exponent_len) = decode_int32_cdp2_inner(ctx, bytes.get(cursor..)?, 0)?;
             cursor = cursor.checked_add(exponent_len)?;
-            let (mantissae, mantissa_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
+            let (mantissae, mantissa_len) = decode_int32_cdp2_inner(ctx, bytes.get(cursor..)?, 0)?;
             cursor = cursor.checked_add(mantissa_len)?;
             if exponents.len() != count || mantissae.len() != count {
                 return None;
             }
-            let exponents = unpack_predictor_residuals(&exponents, Predictor::Lag1);
-            let mantissae = unpack_predictor_residuals(&mantissae, Predictor::Lag1);
-            components.push(lossless_coordinate_component(&exponents, &mantissae)?);
+            let exponents = unpack_predictor_residuals(ctx, &exponents, Predictor::Lag1).ok()?;
+            let mantissae = unpack_predictor_residuals(ctx, &mantissae, Predictor::Lag1).ok()?;
+            components.push(lossless_coordinate_component(ctx, &exponents, &mantissae)?);
         }
-        let mut colors = try_vec(count)?;
+        let mut colors = try_vec(ctx, count)?;
         for index in 0..count {
             colors.push([
                 *components.first()?.get(index)?,
@@ -438,8 +530,8 @@ pub(crate) fn decode_vertex_colors(
             _ => return None,
         };
         cursor = cursor.checked_add(1)?;
-        let mut ranges = try_vec(4)?;
-        let mut component_bits = try_vec(4)?;
+        let mut ranges = try_vec(ctx, 4)?;
+        let mut component_bits = try_vec(ctx, 4)?;
         if hsv {
             for range in [[0.0, 6.0], [0.0, 1.0], [0.0, 1.0], [0.0, 1.0]] {
                 let bits = *bytes.get(cursor)?;
@@ -463,15 +555,15 @@ pub(crate) fn decode_vertex_colors(
                 cursor = cursor.checked_add(9)?;
             }
         }
-        let mut components = try_vec(4)?;
+        let mut components = try_vec(ctx, 4)?;
         for component in 0..4 {
-            let (residuals, byte_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
+            let (residuals, byte_len) = decode_int32_cdp2_inner(ctx, bytes.get(cursor..)?, 0)?;
             cursor = cursor.checked_add(byte_len)?;
             if residuals.len() != count {
                 return None;
             }
-            let mut values = try_vec(count)?;
-            for code in unpack_predictor_residuals(&residuals, Predictor::Lag1) {
+            let mut values = try_vec(ctx, count)?;
+            for code in unpack_predictor_residuals(ctx, &residuals, Predictor::Lag1).ok()? {
                 values.push(dequantize_uniform(
                     u32::try_from(code).ok()?,
                     *ranges.get(component)?,
@@ -480,7 +572,7 @@ pub(crate) fn decode_vertex_colors(
             }
             components.push(values);
         }
-        let mut colors = try_vec(count)?;
+        let mut colors = try_vec(ctx, count)?;
         for index in 0..count {
             let first = *components.first()?.get(index)?;
             let second = *components.get(1)?.get(index)?;
@@ -526,6 +618,15 @@ fn hsv_to_rgb(
 
 /// Decode one JT compressed vertex-flag array.
 pub(crate) fn decode_vertex_flags(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    expected_count: usize,
+) -> Result<Option<(Vec<u32>, usize)>, CodecError> {
+    finish_decode(ctx, decode_vertex_flags_inner(ctx, bytes, expected_count))
+}
+
+fn decode_vertex_flags_inner(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     expected_count: usize,
 ) -> Option<(Vec<u32>, usize)> {
@@ -533,11 +634,11 @@ pub(crate) fn decode_vertex_flags(
     if count != expected_count {
         return None;
     }
-    let (values, byte_len) = decode_int32_cdp2(bytes.get(4..)?, 0)?;
+    let (values, byte_len) = decode_int32_cdp2_inner(ctx, bytes.get(4..)?, 0)?;
     if values.len() != count {
         return None;
     }
-    let mut flags = try_vec(count)?;
+    let mut flags = try_vec(ctx, count)?;
     for value in values {
         flags.push(u32::try_from(value).ok().filter(|value| *value <= 1)?);
     }
@@ -564,35 +665,58 @@ fn dequantize_uniform(code: u32, range: QuantizedRange, bits: u8) -> Option<Fini
 
 /// Decode the component vectors and hash of one JT vertex-coordinate array.
 pub(crate) fn decode_vertex_coordinates(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    vertex_count: usize,
+    ranges: [QuantizedRange; 3],
+    quantization_bits: [u8; 3],
+) -> Result<Option<DecodedVertexArray<[FiniteBinary32; 3]>>, CodecError> {
+    finish_decode(
+        ctx,
+        decode_vertex_coordinates_inner(ctx, bytes, vertex_count, ranges, quantization_bits).map(
+            |(values, hash, byte_len)| DecodedVertexArray {
+                values,
+                hash,
+                byte_len,
+            },
+        ),
+    )
+}
+
+fn decode_vertex_coordinates_inner(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     vertex_count: usize,
     ranges: [QuantizedRange; 3],
     quantization_bits: [u8; 3],
 ) -> Option<(Vec<[FiniteBinary32; 3]>, u32, usize)> {
     let mut cursor = 0usize;
-    let mut components = try_vec(3)?;
+    let mut components = try_vec(ctx, 3)?;
     for component in 0..3 {
         if quantization_bits[component] == 0 {
-            let (exponent_residuals, exponent_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
+            let (exponent_residuals, exponent_len) =
+                decode_int32_cdp2_inner(ctx, bytes.get(cursor..)?, 0)?;
             cursor = cursor.checked_add(exponent_len)?;
-            let (mantissa_residuals, mantissa_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
+            let (mantissa_residuals, mantissa_len) =
+                decode_int32_cdp2_inner(ctx, bytes.get(cursor..)?, 0)?;
             cursor = cursor.checked_add(mantissa_len)?;
             if exponent_residuals.len() != vertex_count || mantissa_residuals.len() != vertex_count
             {
                 return None;
             }
             components.push(lossless_coordinate_component(
-                &unpack_predictor_residuals(&exponent_residuals, Predictor::Lag1),
-                &unpack_predictor_residuals(&mantissa_residuals, Predictor::Lag1),
+                ctx,
+                &unpack_predictor_residuals(ctx, &exponent_residuals, Predictor::Lag1).ok()?,
+                &unpack_predictor_residuals(ctx, &mantissa_residuals, Predictor::Lag1).ok()?,
             )?);
         } else {
-            let (residuals, byte_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
+            let (residuals, byte_len) = decode_int32_cdp2_inner(ctx, bytes.get(cursor..)?, 0)?;
             cursor = cursor.checked_add(byte_len)?;
             if residuals.len() != vertex_count {
                 return None;
             }
-            let mut values = try_vec(vertex_count)?;
-            for code in unpack_predictor_residuals(&residuals, Predictor::Lag1) {
+            let mut values = try_vec(ctx, vertex_count)?;
+            for code in unpack_predictor_residuals(ctx, &residuals, Predictor::Lag1).ok()? {
                 values.push(dequantize_uniform(
                     u32::try_from(code).ok()?,
                     ranges[component],
@@ -604,7 +728,7 @@ pub(crate) fn decode_vertex_coordinates(
     }
     let coordinate_hash = read_u32(bytes, cursor)?;
     cursor = cursor.checked_add(4)?;
-    let mut points = try_vec(vertex_count)?;
+    let mut points = try_vec(ctx, vertex_count)?;
     for index in 0..vertex_count {
         points.push([
             *components.first()?.get(index)?,
@@ -616,10 +740,23 @@ pub(crate) fn decode_vertex_coordinates(
 }
 
 /// Bound one complete JT Int32 Compressed Data Packet Mk. 2 without interpreting its symbols.
-pub(crate) fn frame_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(u32, u8, usize)> {
+pub(crate) fn frame_int32_cdp2(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    depth: u8,
+) -> Result<Option<(u32, u8, usize)>, CodecError> {
+    finish_decode(ctx, frame_int32_cdp2_inner(ctx, bytes, depth))
+}
+
+fn frame_int32_cdp2_inner(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    depth: u8,
+) -> Option<(u32, u8, usize)> {
     if depth > 3 {
         return None;
     }
+    let _depth = ctx.enter_nested("frame JT integer packet").ok()?;
     let value_count = read_u32(bytes, 0)?;
     if usize::try_from(value_count).ok()? > MAX_ARITHMETIC_VALUES {
         return None;
@@ -631,15 +768,17 @@ pub(crate) fn frame_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(u32, u8, usiz
     if codec == 4 {
         let &chop_bits = bytes.get(5)?;
         if chop_bits == 0 {
-            let (nested_count, _, nested_len) = frame_int32_cdp2(bytes.get(6..)?, depth + 1)?;
+            let (nested_count, _, nested_len) =
+                frame_int32_cdp2_inner(ctx, bytes.get(6..)?, depth + 1)?;
             return (nested_count == value_count).then_some((value_count, codec, 6 + nested_len));
         }
         let &span_bits = bytes.get(10)?;
         if chop_bits > span_bits || span_bits > 32 {
             return None;
         }
-        let (msb_count, _, msb_len) = frame_int32_cdp2(bytes.get(11..)?, depth + 1)?;
-        let (lsb_count, _, lsb_len) = frame_int32_cdp2(bytes.get(11 + msb_len..)?, depth + 1)?;
+        let (msb_count, _, msb_len) = frame_int32_cdp2_inner(ctx, bytes.get(11..)?, depth + 1)?;
+        let (lsb_count, _, lsb_len) =
+            frame_int32_cdp2_inner(ctx, bytes.get(11 + msb_len..)?, depth + 1)?;
         return (msb_count == value_count && lsb_count == value_count).then_some((
             value_count,
             codec,
@@ -656,10 +795,11 @@ pub(crate) fn frame_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(u32, u8, usiz
     if codec == 1 {
         return Some((value_count, codec, cursor));
     }
-    let (entries, context_len) = parse_probability_context(bytes.get(cursor..)?)?;
+    let (entries, context_len) = parse_probability_context(ctx, bytes.get(cursor..)?)?;
     cursor = cursor.checked_add(context_len)?;
     let code_words = bytes.get(9..9 + code_byte_len)?;
     let symbols = decode_arithmetic(
+        ctx,
         code_words,
         code_bit_len,
         usize::try_from(value_count).ok()?,
@@ -667,7 +807,7 @@ pub(crate) fn frame_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(u32, u8, usiz
     )?;
     let escape_count = symbols.iter().filter(|value| value.is_none()).count();
     let (out_of_band_count, _, out_of_band_len) =
-        frame_int32_cdp2(bytes.get(cursor..)?, depth + 1)?;
+        frame_int32_cdp2_inner(ctx, bytes.get(cursor..)?, depth + 1)?;
     if usize::try_from(out_of_band_count).ok()? != escape_count {
         return None;
     }
@@ -675,7 +815,10 @@ pub(crate) fn frame_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(u32, u8, usiz
     Some((value_count, codec, cursor))
 }
 
-fn parse_probability_context(bytes: &[u8]) -> Option<(Vec<ProbabilityEntry>, usize)> {
+fn parse_probability_context(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Option<(Vec<ProbabilityEntry>, usize)> {
     let entry_count = usize::from(View::u16_be_at(bytes, 0)?);
     let mut bits = MsbBitReader::new(bytes.get(2..)?);
     let symbol_bits = u8::try_from(bits.read(6)?).ok()?;
@@ -697,7 +840,12 @@ fn parse_probability_context(bytes: &[u8]) -> Option<(Vec<ProbabilityEntry>, usi
     // its entries. An all-zero-width context cannot produce a nonzero
     // arithmetic frequency table and is therefore malformed.
     (entry_bits > 0 && entry_count <= available_bits / entry_bits).then_some(())?;
-    let mut entries = try_vec(entry_count)?;
+    ctx.charge_work(
+        u64::try_from(entry_count).ok()?,
+        "parse JT probability context",
+    )
+    .ok()?;
+    let mut entries = try_vec(ctx, entry_count)?;
     for _ in 0..entry_count {
         let symbol = bits.read(symbol_bits)? as i32 - 2;
         let occurrence_count = bits.read(occurrence_bits)?;
@@ -759,6 +907,7 @@ const MAX_ARITHMETIC_VALUES: usize = 1_000_000;
 const MAX_ARITHMETIC_WORK: usize = 64_000_000;
 
 fn decode_arithmetic(
+    ctx: &DecodeContext<'_>,
     code_words: &[u8],
     code_bit_len: usize,
     value_count: usize,
@@ -775,6 +924,9 @@ fn decode_arithmetic(
     {
         return None;
     }
+    let work = entries.len().checked_mul(value_count)?;
+    ctx.charge_work(u64::try_from(work).ok()?, "decode JT arithmetic symbols")
+        .ok()?;
     let total: u32 = entries
         .iter()
         .try_fold(0u32, |sum, entry| sum.checked_add(entry.occurrence_count))?;
@@ -792,7 +944,7 @@ fn decode_arithmetic(
     }
     let mut low = 0u16;
     let mut high = u16::MAX;
-    let mut values = try_vec(value_count)?;
+    let mut values = try_vec(ctx, value_count)?;
     for _ in 0..value_count {
         let range = u32::from(high.wrapping_sub(low)) + 1;
         let scaled = ((u32::from(code.wrapping_sub(low)) + 1) * total - 1) / range;
@@ -831,6 +983,7 @@ fn decode_arithmetic(
 }
 
 fn decode_bitlength(
+    ctx: &DecodeContext<'_>,
     code_words: &[u8],
     code_bit_len: usize,
     value_count: usize,
@@ -842,7 +995,12 @@ fn decode_bitlength(
     };
     let value_count =
         cadmpeg_core::decode::bounded_len(value_count as u64, 1, MAX_ARITHMETIC_VALUES)?;
-    let mut values = try_vec(value_count)?;
+    ctx.charge_work(
+        u64::try_from(value_count).ok()?,
+        "decode JT bitlength symbols",
+    )
+    .ok()?;
+    let mut values = try_vec(ctx, value_count)?;
     if bits.read(1)? == 0 {
         let minimum_bits = u8::try_from(bits.read(6)?).ok()?;
         let maximum_bits = u8::try_from(bits.read(6)?).ok()?;
@@ -902,10 +1060,23 @@ fn decode_bitlength(
 }
 
 /// Decode one complete JT Int32 Compressed Data Packet Mk. 2.
-pub(crate) fn decode_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(Vec<i32>, usize)> {
+pub(crate) fn decode_int32_cdp2(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    depth: u8,
+) -> Result<Option<(Vec<i32>, usize)>, CodecError> {
+    finish_decode(ctx, decode_int32_cdp2_inner(ctx, bytes, depth))
+}
+
+fn decode_int32_cdp2_inner(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    depth: u8,
+) -> Option<(Vec<i32>, usize)> {
     if depth > 3 {
         return None;
     }
+    let _depth = ctx.enter_nested("decode JT integer packet").ok()?;
     let value_count = usize::try_from(read_u32(bytes, 0)?).ok()?;
     if value_count > MAX_ARITHMETIC_VALUES {
         return None;
@@ -917,7 +1088,7 @@ pub(crate) fn decode_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(Vec<i32>, us
     if codec == 4 {
         let &chop_bits = bytes.get(5)?;
         if chop_bits == 0 {
-            let (values, nested_len) = decode_int32_cdp2(bytes.get(6..)?, depth + 1)?;
+            let (values, nested_len) = decode_int32_cdp2_inner(ctx, bytes.get(6..)?, depth + 1)?;
             return (values.len() == value_count).then_some((values, 6 + nested_len));
         }
         let bias = read_u32(bytes, 6)? as i32;
@@ -925,8 +1096,8 @@ pub(crate) fn decode_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(Vec<i32>, us
         if chop_bits > span_bits || span_bits > 32 {
             return None;
         }
-        let (msb, msb_len) = decode_int32_cdp2(bytes.get(11..)?, depth + 1)?;
-        let (lsb, lsb_len) = decode_int32_cdp2(bytes.get(11 + msb_len..)?, depth + 1)?;
+        let (msb, msb_len) = decode_int32_cdp2_inner(ctx, bytes.get(11..)?, depth + 1)?;
+        let (lsb, lsb_len) = decode_int32_cdp2_inner(ctx, bytes.get(11 + msb_len..)?, depth + 1)?;
         if msb.len() != value_count || lsb.len() != value_count {
             return None;
         }
@@ -942,7 +1113,7 @@ pub(crate) fn decode_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(Vec<i32>, us
         {
             return None;
         }
-        let mut values = try_vec(value_count)?;
+        let mut values = try_vec(ctx, value_count)?;
         for (high, low) in msb.into_iter().zip(lsb) {
             values.push((low | high.wrapping_shl(u32::from(shift))).wrapping_add(bias));
         }
@@ -957,20 +1128,20 @@ pub(crate) fn decode_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(Vec<i32>, us
     let code_words = bytes.get(9..9 + code_byte_len)?;
     let mut cursor = 9 + code_byte_len;
     if codec == 1 {
-        let values = decode_bitlength(code_words, code_bit_len, value_count)?;
+        let values = decode_bitlength(ctx, code_words, code_bit_len, value_count)?;
         return Some((values, cursor));
     }
-    let (entries, context_len) = parse_probability_context(bytes.get(cursor..)?)?;
+    let (entries, context_len) = parse_probability_context(ctx, bytes.get(cursor..)?)?;
     cursor += context_len;
-    let symbols = decode_arithmetic(code_words, code_bit_len, value_count, &entries)?;
+    let symbols = decode_arithmetic(ctx, code_words, code_bit_len, value_count, &entries)?;
     let escape_count = symbols.iter().filter(|value| value.is_none()).count();
-    let (out_of_band, oob_len) = decode_int32_cdp2(bytes.get(cursor..)?, depth + 1)?;
+    let (out_of_band, oob_len) = decode_int32_cdp2_inner(ctx, bytes.get(cursor..)?, depth + 1)?;
     if out_of_band.len() != escape_count {
         return None;
     }
     cursor += oob_len;
     let mut out_of_band = out_of_band.into_iter();
-    let mut values = try_vec(value_count)?;
+    let mut values = try_vec(ctx, value_count)?;
     for value in symbols {
         values.push(value.or_else(|| out_of_band.next())?);
     }
