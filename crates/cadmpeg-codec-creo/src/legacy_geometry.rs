@@ -128,7 +128,7 @@ pub(crate) fn scan(
     persistence: &Persistence,
 ) -> Result<LegacyGeometryScan, CodecError> {
     let object_ids = object_id_index(&persistence.objects);
-    let children = child_index(&persistence.objects);
+    let children = child_index(ctx, &persistence.objects)?;
     let integer_fields = value_index(&persistence.integer_values.rows);
     let real_fields = value_index(&persistence.real_values.rows);
     let (rows, mut carriers) = namespace(
@@ -153,14 +153,20 @@ pub(crate) fn scan(
         "inactive_geom",
         LegacySurfaceNamespace::NonVisible,
     )?;
+    ctx.try_reserve_items(
+        &mut carriers,
+        nonvisible_carriers.len(),
+        "creo legacy nonvisible carrier aggregation",
+    )?;
     carriers.append(&mut nonvisible_carriers);
     carriers.sort_by_key(|carrier| carrier.offset);
     let (topology_rows, pcurves) = curve_namespace(
+        ctx,
         &persistence.objects,
         &object_ids,
         &integer_fields,
         &real_fields,
-    );
+    )?;
     Ok(LegacyGeometryScan {
         rows,
         nonvisible_rows,
@@ -171,11 +177,12 @@ pub(crate) fn scan(
 }
 
 fn curve_namespace(
+    ctx: &DecodeContext<'_>,
     objects: &[ObjectRecord],
     object_ids: &ObjectIdIndex<'_>,
     integer_fields: &IntegerFieldIndex<'_>,
     real_fields: &RealFieldIndex<'_>,
-) -> (Vec<CurveTopologyRow>, Vec<PcurveEndpoints>) {
+) -> Result<(Vec<CurveTopologyRow>, Vec<PcurveEndpoints>), CodecError> {
     let Some(elements) = geometry_array_elements(
         objects,
         object_ids,
@@ -183,7 +190,7 @@ fn curve_namespace(
         "active_geom",
         "crv_array",
     ) else {
-        return (Vec::new(), Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     };
     let mut topology_rows = Vec::new();
     let mut pcurves = Vec::new();
@@ -192,15 +199,17 @@ fn curve_namespace(
             continue;
         };
         if let Some(pcurve) = curve_pcurve(curve_object, &row, real_fields) {
+            ctx.try_reserve_items(&mut pcurves, 1, "creo legacy pcurve witnesses")?;
             pcurves.push(pcurve);
         }
+        ctx.try_reserve_items(&mut topology_rows, 1, "creo legacy topology rows")?;
         topology_rows.push(row);
     }
     topology_rows.sort_by_key(|row| row.offset);
     topology_rows.dedup_by_key(|row| row.offset);
     pcurves.sort_by_key(|pcurve| pcurve.offset);
     pcurves.dedup_by_key(|pcurve| pcurve.offset);
-    (topology_rows, pcurves)
+    Ok((topology_rows, pcurves))
 }
 
 fn geometry_array_elements<'a>(
@@ -365,8 +374,10 @@ fn namespace(
             surface_carrier(row_object, &row, children, real_fields, namespace)
         };
         if let Some(carrier) = carrier {
+            ctx.try_reserve_items(&mut carriers, 1, "creo legacy surface carriers")?;
             carriers.push(carrier);
         }
+        ctx.try_reserve_items(&mut rows, 1, "creo legacy surface rows")?;
         rows.push(row);
     }
     rows.sort_by_key(|row| row.offset);
@@ -646,14 +657,30 @@ fn object_id_index(objects: &[ObjectRecord]) -> ObjectIdIndex<'_> {
     objects.iter().map(|object| (object.id(), object)).collect()
 }
 
-fn child_index(objects: &[ObjectRecord]) -> ChildIndex<'_> {
+fn child_index<'a>(
+    ctx: &DecodeContext<'_>,
+    objects: &'a [ObjectRecord],
+) -> Result<ChildIndex<'a>, CodecError> {
     let mut index = BTreeMap::new();
     for object in objects {
         if let Some(parent) = object.parent {
-            index.entry(parent).or_insert_with(Vec::new).push(object);
+            match index.entry(parent) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "creo legacy child index nodes")?;
+                    let mut children = Vec::new();
+                    ctx.try_reserve_items(&mut children, 1, "creo legacy child index rows")?;
+                    children.push(object);
+                    entry.insert(children);
+                }
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    let children = entry.get_mut();
+                    ctx.try_reserve_items(children, 1, "creo legacy child index rows")?;
+                    children.push(object);
+                }
+            }
         }
     }
-    index
+    Ok(index)
 }
 
 fn integer_record<'a>(
@@ -728,7 +755,8 @@ mod tests {
         RealRun, ValueRecord,
     };
     use crate::test_support::{fixture_offset, object};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
 
     fn scan(persistence: &Persistence) -> super::LegacyGeometryScan {
         let arena = DecodeArena::new();
@@ -736,6 +764,33 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
         scan_checked(&ctx, persistence).expect("service admits legacy geometry")
+    }
+
+    fn scan_with_collection_limit(
+        persistence: &Persistence,
+        limit: u64,
+    ) -> Result<super::LegacyGeometryScan, CodecError> {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+        scan_checked(&ctx, persistence)
+    }
+
+    fn assert_collection_refusal(persistence: &Persistence, operation: &'static str) {
+        let refusal = (0..128).find_map(|limit| {
+            let Err(CodecError::ResourceLimit(refusal)) =
+                scan_with_collection_limit(persistence, limit)
+            else {
+                return None;
+            };
+            (refusal.operation == operation).then_some(refusal)
+        });
+        assert!(matches!(
+            refusal,
+            Some(limit) if limit.dimension == ResourceDimension::CollectionItems
+        ), "missing collection refusal for {operation}");
     }
     use cadmpeg_ir::scalar::PositiveLength;
 
@@ -1561,5 +1616,68 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
 
         assert_eq!(result.topology_rows.len(), 1);
         assert_eq!(result.topology_rows[0].id, 10);
+    }
+
+    fn cylinder_persistence(nonvisible: bool) -> Persistence {
+        let data = if nonvisible {
+            String::from_utf8(fixture(2.0, false))
+                .expect("ASCII fixture")
+                .replace("Sld_VisGeom", "Sld_NonVisGeom")
+                .replace("active_geom", "inactive_geom")
+                .into_bytes()
+        } else {
+            fixture(2.0, false)
+        };
+        crate::legacy::scan(&data, std::iter::once(0..data.len()))
+            .expect("fixture states a complete persistence scope")
+    }
+
+    #[test]
+    fn legacy_child_index_nodes_refuse_before_btree_insertion() {
+        let persistence = cylinder_persistence(false);
+        assert_eq!(scan(&persistence).rows.len(), 1);
+        assert_collection_refusal(&persistence, "creo legacy child index nodes");
+    }
+
+    #[test]
+    fn legacy_child_index_rows_refuse_before_vec_growth() {
+        let persistence = cylinder_persistence(false);
+        assert_eq!(scan(&persistence).rows.len(), 1);
+        assert_collection_refusal(&persistence, "creo legacy child index rows");
+    }
+
+    #[test]
+    fn legacy_surface_carriers_refuse_before_vec_growth() {
+        let persistence = cylinder_persistence(false);
+        assert_eq!(scan(&persistence).carriers.len(), 1);
+        assert_collection_refusal(&persistence, "creo legacy surface carriers");
+    }
+
+    #[test]
+    fn legacy_surface_rows_refuse_before_vec_growth() {
+        let persistence = cylinder_persistence(false);
+        assert_eq!(scan(&persistence).rows.len(), 1);
+        assert_collection_refusal(&persistence, "creo legacy surface rows");
+    }
+
+    #[test]
+    fn legacy_nonvisible_carriers_refuse_before_aggregation() {
+        let persistence = cylinder_persistence(true);
+        assert_eq!(scan(&persistence).carriers.len(), 1);
+        assert_collection_refusal(&persistence, "creo legacy nonvisible carrier aggregation");
+    }
+
+    #[test]
+    fn legacy_pcurve_witnesses_refuse_before_vec_growth() {
+        let persistence = topology_persistence();
+        assert_eq!(scan(&persistence).pcurves.len(), 1);
+        assert_collection_refusal(&persistence, "creo legacy pcurve witnesses");
+    }
+
+    #[test]
+    fn legacy_topology_rows_refuse_before_vec_growth() {
+        let persistence = topology_persistence();
+        assert_eq!(scan(&persistence).topology_rows.len(), 2);
+        assert_collection_refusal(&persistence, "creo legacy topology rows");
     }
 }
