@@ -3,7 +3,8 @@
 use super::{
     anonymous, bitmap_header, embedded_bitmap_payload, legacy_text_style_bytes, light_payload,
     model_attributes_status_chunk, modern_font_chunk, object_rendering_with_negative_minor,
-    stored_bitmap_buffer, texture_payload, utf16_bytes, windows_bitmap_payload,
+    stored_bitmap_buffer, texture_payload, utf16_bytes, v5_dimension_style_chunk,
+    v5_dimension_style_extra_chunk, windows_bitmap_payload,
 };
 use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
 use crate::loss::Diagnostics;
@@ -649,6 +650,300 @@ fn rendering_back_material_uuid_refuses_retained_limit_after_obsolete_channel() 
     assert!(
         matches!(rendering_material_refusal(72), FramingError::Resource(refusal) if refusal.operation == "Rhino rendering back material UUID")
     );
+}
+
+fn v5_dimension_extra_refusal(collection_limit: u64, retained_limit: u64) -> FramingError {
+    let bytes = v5_dimension_style_extra_chunk();
+    let descriptor = crate::objects::ClassUserdata {
+        range: 0..bytes.len(),
+        version: (2, 2),
+        class_uuid: crate::presentation::DIMSTYLE_EXTRA,
+        item_uuid: crate::presentation::DIMSTYLE_EXTRA,
+        copy_count: 1,
+        transform_range: 0..0,
+        application_uuid: None,
+        save_context: None,
+        payload_range: 0..bytes.len(),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("dimension extra root admitted");
+    crate::presentation::parse_v5_dimension_style_extra(
+        &ctx,
+        &bytes,
+        &descriptor,
+        ArchiveVersion::V5,
+        crate::settings::MillimeterScale::IDENTITY,
+    )
+    .expect_err("dimension extra exceeds limit")
+}
+
+#[test]
+fn v5_dimension_valid_fields_refuse_collection_limit() {
+    assert!(
+        matches!(v5_dimension_extra_refusal(2, u64::MAX), FramingError::Resource(refusal) if refusal.operation == "Rhino V5 dimension valid fields")
+    );
+}
+
+#[test]
+fn v5_dimension_parent_uuid_refuses_retained_limit() {
+    assert!(
+        matches!(v5_dimension_extra_refusal(u64::MAX, 0), FramingError::Resource(refusal) if refusal.operation == "Rhino V5 dimension parent UUID")
+    );
+}
+
+#[test]
+fn v5_dimension_source_uuid_refuses_retained_limit() {
+    assert!(
+        matches!(v5_dimension_extra_refusal(u64::MAX, 36), FramingError::Resource(refusal) if refusal.operation == "Rhino V5 dimension source UUID")
+    );
+}
+
+fn v5_dimension_style_refusal(limit: u64) -> FramingError {
+    let bytes = v5_dimension_style_chunk();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("dimension root admitted");
+    crate::presentation::parse_v5_dimension_style(
+        &ctx,
+        &bytes,
+        0..bytes.len(),
+        crate::settings::MillimeterScale::IDENTITY,
+        321,
+        None,
+    )
+    .expect_err("V5 dimension text exceeds limit")
+}
+
+macro_rules! v5_dimension_text_limit {
+    ($name:ident, $limit:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            assert!(matches!(v5_dimension_style_refusal($limit), FramingError::Resource(refusal) if refusal.operation == $operation));
+        }
+    };
+}
+
+fn v5_dimension_prefix_budget() -> u64 {
+    let keys = ["v5_version", "v5_arrow_type", "v5_angular_units"];
+    u64::try_from(22 + keys.iter().map(|key| key.len()).sum::<usize>()).expect("prefix budget fits")
+}
+
+fn v5_dimension_id_budget() -> u64 {
+    let later_keys = [
+        "v5_length_factor",
+        "v5_alternate_angle_format",
+        "v5_alternate_angle_resolution",
+        "v5_unused",
+        "v5_leader_arrow_type",
+    ];
+    v5_dimension_prefix_budget()
+        + 4
+        + u64::try_from(later_keys.iter().map(|key| key.len()).sum::<usize>())
+            .expect("ID budget fits")
+}
+
+v5_dimension_text_limit!(
+    v5_dimension_name_refuses_retained_limit,
+    0,
+    "Rhino V5 dimension name"
+);
+v5_dimension_text_limit!(
+    v5_dimension_control_key_refuses_retained_limit,
+    22,
+    "Rhino dimension control key"
+);
+
+#[test]
+fn v5_dimension_controls_refuse_collection_limit() {
+    let bytes = v5_dimension_style_chunk();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("dimension root admitted");
+    let error = crate::presentation::parse_v5_dimension_style(
+        &ctx,
+        &bytes,
+        0..bytes.len(),
+        crate::settings::MillimeterScale::IDENTITY,
+        321,
+        None,
+    )
+    .expect_err("dimension controls exceed collection limit");
+    assert!(
+        matches!(error, FramingError::Resource(refusal) if refusal.operation == "Rhino dimension controls")
+    );
+}
+
+#[test]
+fn dimension_controls_preserve_sorted_serialization_and_replacement() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut entries = crate::presentation::DimensionControlEntries::default();
+    entries
+        .insert_with(&ctx, "z", || Ok(serde_json::json!(1)))
+        .expect("first key admitted");
+    entries
+        .insert_with(&ctx, "a", || Ok(serde_json::json!(2)))
+        .expect("second key admitted");
+    entries
+        .insert_with(&ctx, "z", || Ok(serde_json::json!(3)))
+        .expect("duplicate key replaced");
+    let controls = crate::presentation::DimensionStyleControls {
+        controls: &entries,
+        extra: None,
+    };
+    assert_eq!(
+        serde_json::to_string(&controls).expect("control serialization"),
+        "{\"a\":2,\"z\":3}"
+    );
+}
+v5_dimension_text_limit!(
+    v5_dimension_prefix_refuses_retained_limit,
+    v5_dimension_prefix_budget(),
+    "Rhino V5 dimension prefix"
+);
+v5_dimension_text_limit!(
+    v5_dimension_suffix_refuses_retained_limit,
+    v5_dimension_prefix_budget() + 1,
+    "Rhino V5 dimension suffix"
+);
+v5_dimension_text_limit!(
+    v5_dimension_alternate_prefix_refuses_retained_limit,
+    v5_dimension_prefix_budget() + 2,
+    "Rhino V5 dimension alternate prefix"
+);
+v5_dimension_text_limit!(
+    v5_dimension_alternate_suffix_refuses_retained_limit,
+    v5_dimension_prefix_budget() + 3,
+    "Rhino V5 dimension alternate suffix"
+);
+v5_dimension_text_limit!(
+    v5_dimension_id_refuses_retained_limit,
+    v5_dimension_id_budget(),
+    "Rhino dimension style ID"
+);
+
+#[test]
+fn v5_dimension_source_record_uuid_refuses_retained_limit() {
+    let id_len = "rhino:presentation:dimension_style#33333333-3333-3333-3333-333333333333".len();
+    assert!(
+        matches!(v5_dimension_style_refusal(v5_dimension_id_budget() + u64::try_from(id_len).expect("budget fits")), FramingError::Resource(refusal) if refusal.operation == "Rhino dimension style source UUID")
+    );
+}
+
+fn modern_dimension_style_refusal(limit: u64) -> FramingError {
+    let bytes = super::future_dimension_style_chunk();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("modern dimension root admitted");
+    crate::presentation::parse_dimension_style(
+        &ctx,
+        &bytes,
+        0..bytes.len(),
+        ArchiveVersion::V8,
+        crate::settings::MillimeterScale::IDENTITY,
+        321,
+    )
+    .expect_err("modern dimension text exceeds limit")
+}
+
+#[test]
+fn modern_dimension_prefix_refuses_retained_limit() {
+    assert!(
+        matches!(modern_dimension_style_refusal(15), FramingError::Resource(refusal) if refusal.operation == "Rhino dimension prefix")
+    );
+}
+
+#[test]
+fn modern_dimension_suffix_refuses_retained_limit() {
+    assert!(
+        matches!(modern_dimension_style_refusal(16), FramingError::Resource(refusal) if refusal.operation == "Rhino dimension suffix")
+    );
+}
+
+#[test]
+fn modern_dimension_alternate_prefix_refuses_retained_limit() {
+    assert!(
+        matches!(modern_dimension_style_refusal(17), FramingError::Resource(refusal) if refusal.operation == "Rhino dimension alternate prefix")
+    );
+}
+
+#[test]
+fn modern_dimension_alternate_suffix_refuses_retained_limit() {
+    assert!(
+        matches!(modern_dimension_style_refusal(18), FramingError::Resource(refusal) if refusal.operation == "Rhino dimension alternate suffix")
+    );
+}
+
+#[test]
+fn dimension_override_bits_refuse_collection_limit() {
+    let bytes = super::dimension_style_with_override_bits_chunk();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("dimension root admitted");
+    let error = crate::presentation::parse_dimension_style(
+        &ctx,
+        &bytes,
+        0..bytes.len(),
+        ArchiveVersion::V8,
+        crate::settings::MillimeterScale::IDENTITY,
+        321,
+    )
+    .expect_err("override bits exceed collection limit");
+    assert!(
+        matches!(error, FramingError::Resource(refusal) if refusal.operation == "Rhino dimension override bits")
+    );
+    let admitted = crate::presentation::parse_dimension_style(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        0..bytes.len(),
+        ArchiveVersion::V8,
+        crate::settings::MillimeterScale::IDENTITY,
+        321,
+    )
+    .expect("override bits fit service profile");
+    assert_eq!(
+        admitted.details.controls()["field_override_bits"],
+        serde_json::json!([1])
+    );
+}
+
+#[test]
+fn dimension_child_digest_refuses_retained_limit() {
+    let bytes = anonymous(0, &[]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 63;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("child root admitted");
+    let error = crate::presentation::named_child(
+        &ctx,
+        &bytes,
+        &mut BoundedReader::new(&bytes, 0, bytes.len()).expect("child bounds"),
+        ArchiveVersion::V8,
+    )
+    .expect_err("digest exceeds retained limit");
+    assert!(
+        matches!(error, FramingError::Resource(refusal) if refusal.operation == "Rhino dimension child SHA-256")
+    );
+    let admitted = crate::presentation::named_child(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        &mut BoundedReader::new(&bytes, 0, bytes.len()).expect("child bounds"),
+        ArchiveVersion::V8,
+    )
+    .expect("digest fits service profile");
+    assert_eq!(admitted["sha256"], cadmpeg_ir::hash::sha256_hex(&bytes));
 }
 
 fn font_refusal(limit: u64) -> FramingError {

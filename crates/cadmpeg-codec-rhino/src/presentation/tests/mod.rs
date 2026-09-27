@@ -29,6 +29,7 @@ use crate::presentation::parse_v5_dimension_style_extra;
 use crate::presentation::parse_windows_bitmap;
 use crate::presentation::rendering_attributes;
 use crate::presentation::texture_array;
+use crate::presentation::DimensionControlEntries;
 use crate::presentation::DimensionStyleDetails;
 use crate::presentation::EmbeddedImageCompression;
 use crate::presentation::FontWeight;
@@ -77,10 +78,14 @@ fn assert_presentation_native_limit<T: serde::Serialize>(
 
 #[test]
 fn dimension_style_controls_stream_under_native_retained_limit() {
-    let controls = std::collections::BTreeMap::from([
-        ("v5_dimension_scale".to_owned(), serde_json::json!(2.0)),
-        ("text_height".to_owned(), serde_json::json!(4.0)),
-    ]);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut controls = DimensionControlEntries::default();
+    controls
+        .insert_with(&ctx, "v5_dimension_scale", || Ok(serde_json::json!(2.0)))
+        .expect("dimension control admitted");
+    controls
+        .insert_with(&ctx, "text_height", || Ok(serde_json::json!(4.0)))
+        .expect("text control admitted");
     let details = DimensionStyleDetails::Modern {
         parent_style_uuid: Some("11111111-1111-1111-1111-111111111111".to_owned()),
         controls,
@@ -250,7 +255,7 @@ fn model_attributes_status_chunk(statuses: [u8; 5], name: &str, suffix: &[u8]) -
     bytes
 }
 
-fn dimension_style_chunk(minor: i32) -> Vec<u8> {
+fn dimension_style_chunk(minor: i32, override_bits: &[u8]) -> Vec<u8> {
     let mut body = model_attributes_chunk(7, "dimension style");
     for value in [1.0_f64, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0] {
         body.extend(value.to_le_bytes());
@@ -273,7 +278,15 @@ fn dimension_style_chunk(minor: i32) -> Vec<u8> {
     body.extend([0, 1]);
     body.extend([0x11; 16]);
     body.extend(9_u32.to_le_bytes());
-    body.push(0);
+    body.push(u8::from(!override_bits.is_empty()));
+    if !override_bits.is_empty() {
+        body.extend(
+            i32::try_from(override_bits.len())
+                .expect("fixture count fits")
+                .to_le_bytes(),
+        );
+        body.extend(override_bits);
+    }
     body.extend(10_u32.to_le_bytes());
     body.extend(11_i32.to_le_bytes());
     for value in [12.0_f64, 13.0, 14.0] {
@@ -366,11 +379,15 @@ fn dimension_style_chunk(minor: i32) -> Vec<u8> {
 }
 
 fn future_dimension_style_chunk() -> Vec<u8> {
-    dimension_style_chunk(12)
+    dimension_style_chunk(12, &[])
 }
 
 fn current_dimension_style_chunk() -> Vec<u8> {
-    dimension_style_chunk(11)
+    dimension_style_chunk(11, &[])
+}
+
+fn dimension_style_with_override_bits_chunk() -> Vec<u8> {
+    dimension_style_chunk(11, &[1])
 }
 
 fn v5_dimension_style_chunk() -> Vec<u8> {
@@ -1023,6 +1040,7 @@ fn v5_dimension_style_and_extra_follow_source_gates_and_scaling() {
         payload_range: 0..extra_bytes.len(),
     };
     let extra = parse_v5_dimension_style_extra(
+        &cadmpeg_test_support::service_decode_context(),
         &extra_bytes,
         &descriptor,
         ArchiveVersion::V5,
@@ -1038,6 +1056,7 @@ fn v5_dimension_style_and_extra_follow_source_gates_and_scaling() {
     );
 
     let value = parse_v5_dimension_style(
+        &cadmpeg_test_support::service_decode_context(),
         &base,
         0..base.len(),
         crate::test_support::millimeter_scale(2.0),
@@ -1087,6 +1106,7 @@ fn v5_dimension_style_and_extra_follow_source_gates_and_scaling() {
     let mut minor_zero_descriptor = descriptor;
     minor_zero_descriptor.payload_range = 0..minor_zero.len();
     let minor_zero = parse_v5_dimension_style_extra(
+        &cadmpeg_test_support::service_decode_context(),
         &minor_zero,
         &minor_zero_descriptor,
         ArchiveVersion::V5,
@@ -1099,6 +1119,7 @@ fn v5_dimension_style_and_extra_follow_source_gates_and_scaling() {
     let mut invalid = base;
     invalid[0] = 0x25;
     assert!(parse_v5_dimension_style(
+        &cadmpeg_test_support::service_decode_context(),
         &invalid,
         0..invalid.len(),
         crate::settings::MillimeterScale::IDENTITY,

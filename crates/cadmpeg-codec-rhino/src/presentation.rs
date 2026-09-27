@@ -25,7 +25,7 @@ use crate::objects::{
     parse_class_wrapper_with_userdata, parse_user_string_list, AttributeUserdataDescriptor,
     ClassUserdata, ObjectAttributes, UserdataDescriptor, USER_STRING_LIST,
 };
-use crate::settings::{self, utf16, MillimeterScale, StandardUnit, UnitBinding};
+use crate::settings::{self, MillimeterScale, StandardUnit, UnitBinding};
 use crate::wire::{read_finite, scaled_coordinate, uuid, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
@@ -486,13 +486,49 @@ struct DimensionStyleRecord {
 #[derive(Debug)]
 enum DimensionStyleDetails {
     V5 {
-        controls: BTreeMap<String, serde_json::Value>,
+        controls: DimensionControlEntries,
         extra: Option<V5DimensionStyleExtraRecord>,
     },
     Modern {
         parent_style_uuid: Option<String>,
-        controls: BTreeMap<String, serde_json::Value>,
+        controls: DimensionControlEntries,
     },
+}
+
+#[derive(Debug, Default)]
+struct DimensionControlEntries(Vec<(String, serde_json::Value)>);
+
+impl DimensionControlEntries {
+    fn insert_with(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        name: &'static str,
+        value: impl FnOnce() -> Result<serde_json::Value, FramingError>,
+    ) -> Result<(), FramingError> {
+        match self.0.binary_search_by(|(key, _)| key.as_str().cmp(name)) {
+            Ok(index) => self.0[index].1 = value()?,
+            Err(index) => {
+                let key =
+                    crate::wire::copy_retained_string(ctx, name, "Rhino dimension control key")?;
+                crate::wire::reserve_collection(ctx, &mut self.0, 1, "Rhino dimension controls")?;
+                self.0.insert(index, (key, value()?));
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+impl std::ops::Index<&str> for DimensionControlEntries {
+    type Output = serde_json::Value;
+
+    fn index(&self, name: &str) -> &Self::Output {
+        let index = self
+            .0
+            .binary_search_by(|(key, _)| key.as_str().cmp(name))
+            .expect("dimension control exists");
+        &self.0[index].1
+    }
 }
 
 impl DimensionStyleDetails {
@@ -505,7 +541,7 @@ impl DimensionStyleDetails {
         }
     }
 
-    fn controls(&self) -> &BTreeMap<String, serde_json::Value> {
+    fn controls(&self) -> &DimensionControlEntries {
         match self {
             Self::V5 { controls, .. } | Self::Modern { controls, .. } => controls,
         }
@@ -537,7 +573,7 @@ impl Serialize for DimensionStyleDetails {
 }
 
 struct DimensionStyleControls<'a> {
-    controls: &'a BTreeMap<String, serde_json::Value>,
+    controls: &'a DimensionControlEntries,
     extra: Option<&'a V5DimensionStyleExtraRecord>,
 }
 
@@ -546,7 +582,7 @@ impl Serialize for DimensionStyleControls<'_> {
         use serde::ser::SerializeMap;
 
         let mut map = serializer.serialize_map(None)?;
-        for (key, value) in self.controls {
+        for (key, value) in &self.controls.0 {
             if self.extra.is_some()
                 && (key == "v5_extra_dimension_scale" || key == "v5_extra_dimension_scale_source")
             {
@@ -3424,6 +3460,7 @@ fn scaled_length(
 }
 
 fn named_child(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -3440,21 +3477,22 @@ fn named_child(
     Ok(serde_json::json!({
         "offset": offset,
         "byte_len": chunk.next_offset() - offset,
-        "sha256": cadmpeg_ir::hash::sha256_hex(&data[offset..chunk.next_offset()]),
+        "sha256": hex(ctx, &cadmpeg_ir::hash::sha256(&data[offset..chunk.next_offset()]), "Rhino dimension child SHA-256")?,
     }))
 }
 
 fn dimension_style_controls(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     scale: MillimeterScale,
     minor: i32,
-) -> Result<BTreeMap<String, serde_json::Value>, FramingError> {
-    let mut values = BTreeMap::new();
+) -> Result<DimensionControlEntries, FramingError> {
+    let mut values = DimensionControlEntries::default();
     macro_rules! put {
         ($name:literal, $value:expr) => {{
-            values.insert($name.to_string(), serde_json::json!($value));
+            values.insert_with(ctx, $name, || Ok(serde_json::json!($value)))?;
         }};
     }
     put!("legacy_override_parent_count", reader.u32()?);
@@ -3468,7 +3506,13 @@ fn dimension_style_controls(
             1 << 16,
             reader.position() - 4,
         )?;
-        put!("field_override_bits", reader.take(count)?.to_vec());
+        let mut bits = crate::chunks::admitted_vec(ctx, count, "Rhino dimension override bits")?;
+        for bit in reader.take(count)? {
+            bits.push(serde_json::Value::from(*bit));
+        }
+        values.insert_with(ctx, "field_override_bits", || {
+            Ok(serde_json::Value::Array(bits))
+        })?;
     }
     put!("tolerance_format", reader.u32()?);
     put!("tolerance_resolution", reader.i32()?);
@@ -3490,7 +3534,13 @@ fn dimension_style_controls(
     let source = uuid(reader)?;
     put!(
         "source_dimension_style_uuid",
-        (!source.is_nil()).then(|| source.to_string())
+        (!source.is_nil())
+            .then(|| crate::wire::admitted_format(
+                ctx,
+                format_args!("{source}"),
+                "Rhino dimension control source UUID"
+            ))
+            .transpose()?
     );
     put!("color_sources", reader.array::<4>()?);
     put!(
@@ -3559,9 +3609,21 @@ fn dimension_style_controls(
     put!(
         "arrow_block_uuids",
         [
-            uuid(reader)?.to_string(),
-            uuid(reader)?.to_string(),
-            uuid(reader)?.to_string()
+            crate::wire::admitted_format(
+                ctx,
+                format_args!("{}", uuid(reader)?),
+                "Rhino dimension arrow UUID"
+            )?,
+            crate::wire::admitted_format(
+                ctx,
+                format_args!("{}", uuid(reader)?),
+                "Rhino dimension arrow UUID"
+            )?,
+            crate::wire::admitted_format(
+                ctx,
+                format_args!("{}", uuid(reader)?),
+                "Rhino dimension arrow UUID"
+            )?
         ]
     );
     if minor >= 1 {
@@ -3583,14 +3645,17 @@ fn dimension_style_controls(
         put!("obsolete_leader_horizontal_alignment", reader.u32()?);
         put!("draw_forward", reader.bool()?);
         put!("signed_ordinate", reader.bool()?);
-        put!("scale_value", named_child(data, reader, archive)?);
+        put!("scale_value", named_child(ctx, data, reader, archive)?);
         put!("unit_system", reader.u32()?);
     }
     if minor >= 2 {
-        put!("font_characteristics", named_child(data, reader, archive)?);
+        put!(
+            "font_characteristics",
+            named_child(ctx, data, reader, archive)?
+        );
     }
     if minor >= 3 {
-        put!("text_mask", named_child(data, reader, archive)?);
+        put!("text_mask", named_child(ctx, data, reader, archive)?);
     }
     if minor >= 4 {
         for name in [
@@ -3607,7 +3672,7 @@ fn dimension_style_controls(
             "dimension_text_angle_style",
             "radial_text_angle_style",
         ] {
-            values.insert(name.to_string(), serde_json::json!(reader.u32()?));
+            values.insert_with(ctx, name, || Ok(serde_json::json!(reader.u32()?)))?;
         }
         put!("text_underlined", reader.bool()?);
     }
@@ -3641,6 +3706,7 @@ fn dimension_style_controls(
 }
 
 fn parse_v5_dimension_style_extra(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     extra: &ClassUserdata,
     archive: ArchiveVersion,
@@ -3663,11 +3729,11 @@ fn parse_v5_dimension_style_extra(
         MAX_DIMSTYLE_EXTRA_FIELDS,
         count_offset,
     )?;
-    let valid_fields = reader
-        .take(byte_count)?
-        .iter()
-        .map(|value| *value != 0)
-        .collect();
+    let mut valid_fields =
+        crate::chunks::admitted_vec(ctx, byte_count, "Rhino V5 dimension valid fields")?;
+    for value in reader.take(byte_count)? {
+        valid_fields.push(*value != 0);
+    }
     let tolerance_style = reader.i32()?;
     let tolerance_resolution = reader.i32()?;
     let tolerance_upper_value = read_finite(&mut reader, "tolerance upper value")?;
@@ -3691,7 +3757,15 @@ fn parse_v5_dimension_style_extra(
     };
     reader.skip_remaining()?;
     Ok(V5DimensionStyleExtraRecord {
-        parent_style_uuid: (!parent_style_uuid.is_nil()).then(|| parent_style_uuid.to_string()),
+        parent_style_uuid: (!parent_style_uuid.is_nil())
+            .then(|| {
+                crate::wire::admitted_format(
+                    ctx,
+                    format_args!("{parent_style_uuid}"),
+                    "Rhino V5 dimension parent UUID",
+                )
+            })
+            .transpose()?,
         valid_fields,
         tolerance_style,
         tolerance_resolution,
@@ -3704,11 +3778,20 @@ fn parse_v5_dimension_style_extra(
         mask_color,
         dimension_scale,
         dimension_scale_source,
-        source_style_uuid: (!source_style_uuid.is_nil()).then(|| source_style_uuid.to_string()),
+        source_style_uuid: (!source_style_uuid.is_nil())
+            .then(|| {
+                crate::wire::admitted_format(
+                    ctx,
+                    format_args!("{source_style_uuid}"),
+                    "Rhino V5 dimension source UUID",
+                )
+            })
+            .transpose()?,
     })
 }
 
 fn parse_v5_dimension_style(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
     scale: MillimeterScale,
@@ -3726,7 +3809,7 @@ fn parse_v5_dimension_style(
         ));
     }
     let archive_index = reader.i32()?;
-    let name = utf16(&mut reader)?;
+    let name = crate::settings::utf16_retained(ctx, &mut reader, "Rhino V5 dimension name")?;
     let extension_line_extension_mm =
         scaled_length(&mut reader, scale, "extension-line extension")?;
     let extension_line_offset_mm = scaled_length(&mut reader, scale, "extension-line offset")?;
@@ -3746,16 +3829,14 @@ fn parse_v5_dimension_style(
     } else {
         scale.value()
     };
-    let mut controls = BTreeMap::new();
-    controls.insert(
-        "v5_version".to_string(),
-        serde_json::json!({ "major": major, "minor": minor }),
-    );
-    controls.insert("v5_arrow_type".to_string(), serde_json::json!(arrow_type));
-    controls.insert(
-        "v5_angular_units".to_string(),
-        serde_json::json!(angular_units),
-    );
+    let mut controls = DimensionControlEntries::default();
+    controls.insert_with(ctx, "v5_version", || {
+        Ok(serde_json::json!({ "major": major, "minor": minor }))
+    })?;
+    controls.insert_with(ctx, "v5_arrow_type", || Ok(serde_json::json!(arrow_type)))?;
+    controls.insert_with(ctx, "v5_angular_units", || {
+        Ok(serde_json::json!(angular_units))
+    })?;
     let (
         length_factor,
         alternate_enabled,
@@ -3768,30 +3849,37 @@ fn parse_v5_dimension_style(
         alternate_suffix,
     ) = if minor >= 2 {
         let length_factor = read_finite(&mut reader, "length factor")?;
-        let prefix = utf16(&mut reader)?;
-        let suffix = utf16(&mut reader)?;
+        let prefix =
+            crate::settings::utf16_retained(ctx, &mut reader, "Rhino V5 dimension prefix")?;
+        let suffix =
+            crate::settings::utf16_retained(ctx, &mut reader, "Rhino V5 dimension suffix")?;
         let alternate_enabled = reader.bool()?;
         let alternate_length_factor = read_finite(&mut reader, "alternate length factor")?;
         let alternate_length_format = reader.u32()?;
         let alternate_length_resolution = reader.i32()?;
         let alternate_angle_format = reader.u32()?;
         let alternate_angle_resolution = reader.i32()?;
-        let alternate_prefix = utf16(&mut reader)?;
-        let alternate_suffix = utf16(&mut reader)?;
+        let alternate_prefix = crate::settings::utf16_retained(
+            ctx,
+            &mut reader,
+            "Rhino V5 dimension alternate prefix",
+        )?;
+        let alternate_suffix = crate::settings::utf16_retained(
+            ctx,
+            &mut reader,
+            "Rhino V5 dimension alternate suffix",
+        )?;
         let unused = reader.u32()?;
-        controls.insert(
-            "v5_length_factor".to_string(),
-            serde_json::json!(length_factor),
-        );
-        controls.insert(
-            "v5_alternate_angle_format".to_string(),
-            serde_json::json!(alternate_angle_format),
-        );
-        controls.insert(
-            "v5_alternate_angle_resolution".to_string(),
-            serde_json::json!(alternate_angle_resolution),
-        );
-        controls.insert("v5_unused".to_string(), serde_json::json!(unused));
+        controls.insert_with(ctx, "v5_length_factor", || {
+            Ok(serde_json::json!(length_factor))
+        })?;
+        controls.insert_with(ctx, "v5_alternate_angle_format", || {
+            Ok(serde_json::json!(alternate_angle_format))
+        })?;
+        controls.insert_with(ctx, "v5_alternate_angle_resolution", || {
+            Ok(serde_json::json!(alternate_angle_resolution))
+        })?;
+        controls.insert_with(ctx, "v5_unused", || Ok(serde_json::json!(unused)))?;
         (
             length_factor,
             alternate_enabled,
@@ -3842,20 +3930,34 @@ fn parse_v5_dimension_style(
         (scale.value(), 0, false, false)
     };
     reader.skip_remaining()?;
-    controls.insert(
-        "v5_leader_arrow_type".to_string(),
-        serde_json::json!(leader_arrow_type),
-    );
-    let key = if id.is_nil() {
-        format!("record-{source_offset}")
-    } else {
-        id.to_string()
-    };
+    controls.insert_with(ctx, "v5_leader_arrow_type", || {
+        Ok(serde_json::json!(leader_arrow_type))
+    })?;
     Ok(DimensionStyleRecord {
-        id: format!("rhino:presentation:dimension_style#{key}"),
+        id: if id.is_nil() {
+            crate::wire::admitted_format(
+                ctx,
+                format_args!("rhino:presentation:dimension_style#record-{source_offset}"),
+                "Rhino dimension style ID",
+            )?
+        } else {
+            crate::wire::admitted_format(
+                ctx,
+                format_args!("rhino:presentation:dimension_style#{id}"),
+                "Rhino dimension style ID",
+            )?
+        },
         source_offset: source_offset as u64,
         archive_index: Some(archive_index),
-        source_uuid: (!id.is_nil()).then(|| id.to_string()),
+        source_uuid: (!id.is_nil())
+            .then(|| {
+                crate::wire::admitted_format(
+                    ctx,
+                    format_args!("{id}"),
+                    "Rhino dimension style source UUID",
+                )
+            })
+            .transpose()?,
         name,
         extension_line_extension_mm,
         extension_line_offset_mm,
@@ -3921,26 +4023,43 @@ fn parse_dimension_style(
     let alternate_length_factor = read_finite(&mut reader, "alternate length factor")?;
     let alternate_length_format = reader.u32()?;
     let alternate_length_resolution = reader.i32()?;
-    let prefix = utf16(&mut reader)?;
-    let suffix = utf16(&mut reader)?;
-    let alternate_prefix = utf16(&mut reader)?;
-    let alternate_suffix = utf16(&mut reader)?;
+    let prefix = crate::settings::utf16_retained(ctx, &mut reader, "Rhino dimension prefix")?;
+    let suffix = crate::settings::utf16_retained(ctx, &mut reader, "Rhino dimension suffix")?;
+    let alternate_prefix =
+        crate::settings::utf16_retained(ctx, &mut reader, "Rhino dimension alternate prefix")?;
+    let alternate_suffix =
+        crate::settings::utf16_retained(ctx, &mut reader, "Rhino dimension alternate suffix")?;
     let dimension_line_extension_mm =
         scaled_length(&mut reader, scale, "dimension-line extension")?;
     let suppress_extension_line_1 = reader.bool()?;
     let suppress_extension_line_2 = reader.bool()?;
     let parent = uuid(&mut reader)?;
-    let controls = dimension_style_controls(data, &mut reader, archive, scale, version.1)?;
-    let key = if component.id.is_nil() {
-        format!("record-{source_offset}")
-    } else {
-        component.id.to_string()
-    };
+    let controls = dimension_style_controls(ctx, data, &mut reader, archive, scale, version.1)?;
     Ok(DimensionStyleRecord {
-        id: format!("rhino:presentation:dimension_style#{key}"),
+        id: if component.id.is_nil() {
+            crate::wire::admitted_format(
+                ctx,
+                format_args!("rhino:presentation:dimension_style#record-{source_offset}"),
+                "Rhino dimension style ID",
+            )?
+        } else {
+            crate::wire::admitted_format(
+                ctx,
+                format_args!("rhino:presentation:dimension_style#{}", component.id),
+                "Rhino dimension style ID",
+            )?
+        },
         source_offset: source_offset as u64,
         archive_index: component.index,
-        source_uuid: (!component.id.is_nil()).then(|| component.id.to_string()),
+        source_uuid: (!component.id.is_nil())
+            .then(|| {
+                crate::wire::admitted_format(
+                    ctx,
+                    format_args!("{}", component.id),
+                    "Rhino dimension style source UUID",
+                )
+            })
+            .transpose()?,
         name: component.name,
         extension_line_extension_mm,
         extension_line_offset_mm,
@@ -3968,7 +4087,15 @@ fn parse_dimension_style(
         suppress_extension_line_1,
         suppress_extension_line_2,
         details: DimensionStyleDetails::Modern {
-            parent_style_uuid: (!parent.is_nil()).then(|| parent.to_string()),
+            parent_style_uuid: (!parent.is_nil())
+                .then(|| {
+                    crate::wire::admitted_format(
+                        ctx,
+                        format_args!("{parent}"),
+                        "Rhino dimension parent UUID",
+                    )
+                })
+                .transpose()?,
             controls,
         },
     })
@@ -5263,12 +5390,16 @@ pub(crate) fn install(
                                 });
                         let extra = match extra {
                             Some(value) => match parse_v5_dimension_style_extra(
+                                ctx,
                                 scan.data,
                                 value,
                                 scan.archive,
                                 scale,
                             ) {
                                 Ok(extra) => Some(extra),
+                                Err(FramingError::Resource(limit)) => {
+                                    return Err(CodecError::ResourceLimit(limit));
+                                }
                                 Err(error) => {
                                     extra_requires_opaque = true;
                                     losses.push(RhinoLossCode::PresentationRecordDropped.note(
@@ -5282,13 +5413,20 @@ pub(crate) fn install(
                             },
                             None => None,
                         };
-                        if let Ok(value) = parse_v5_dimension_style(
+                        if let Some(value) = optional_malformed(parse_v5_dimension_style(
+                            ctx,
                             scan.data,
                             range,
                             scale,
                             record.range.start,
                             extra,
-                        ) {
+                        ))? {
+                            crate::wire::reserve_collection(
+                                ctx,
+                                &mut dimension_styles,
+                                1,
+                                "Rhino dimension styles",
+                            )?;
                             dimension_styles.push(value);
                             if extra_requires_opaque {
                                 opaque_records.push(OpaqueRecord {
