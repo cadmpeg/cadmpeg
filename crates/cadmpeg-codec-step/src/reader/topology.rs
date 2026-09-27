@@ -111,8 +111,17 @@ fn admitted_body_clone<'a>(
     } else {
         None
     };
+    let mut values = Vec::new();
+    values.try_reserve_exact(bodies.len()).map_err(|_| {
+        let requested = u64_from_index(bodies.len());
+        match ctx {
+            Some(ctx) => ctx.refuse_codec_limit(operation, 0, requested),
+            None => cadmpeg_core::decode::refuse_local_limit(operation, 0, requested),
+        }
+    })?;
+    values.extend_from_slice(bodies);
     Ok(AdmittedRepresentationBodies {
-        values: bodies.to_vec(),
+        values,
         reservation: bytes,
     })
 }
