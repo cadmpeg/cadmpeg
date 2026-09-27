@@ -137,6 +137,52 @@ fn assert_gui_provider_service(xml: &str) {
 }
 
 #[test]
+fn gui_provider_record_refuses_at_caller_limit() {
+    let xml = "<ViewProvider name=\"P\"><Properties Count=\"0\"/></ViewProvider>";
+    let document = roxmltree::Document::parse(xml).expect("GUI provider XML");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy)
+        .expect("GUI provider context");
+    assert!(matches!(super::super::append_native_provider(&ctx, xml, document.root_element(), 0,
+        None, &mut Vec::new(), &mut Vec::new()),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FCStd GUI provider records"));
+}
+
+#[test]
+fn gui_provider_property_nodes_refuse_at_caller_limit() {
+    let xml = "<ViewProvider name=\"P\"><Properties Count=\"1\"><Property name=\"A\" type=\"T\"/></Properties></ViewProvider>";
+    let document = roxmltree::Document::parse(xml).expect("GUI provider XML");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy)
+        .expect("GUI provider context");
+    assert!(matches!(super::super::append_native_provider(&ctx, xml, document.root_element(), 0,
+        None, &mut Vec::new(), &mut Vec::new()),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FCStd GUI provider property nodes"));
+}
+
+#[test]
+fn gui_side_entry_reference_refuses_at_caller_limit() {
+    let xml = "<ViewProvider name=\"P\"><Properties Count=\"1\"><Property name=\"A\" type=\"T\"><X file=\"asset\"/></Property></Properties></ViewProvider>";
+    assert_gui_provider_service(xml);
+    let document = roxmltree::Document::parse(xml).expect("GUI provider XML");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 4;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy)
+        .expect("GUI provider context");
+    assert!(matches!(super::super::append_native_provider(&ctx, xml, document.root_element(), 0,
+        None, &mut Vec::new(), &mut Vec::new()),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FCStd GUI side entry references"));
+}
+
+#[test]
 fn y4_2_gui_state_xml_copy_refuses_at_the_retained_byte_limit() {
     let xml = "<Camera/>";
     assert_gui_state_service(xml);
