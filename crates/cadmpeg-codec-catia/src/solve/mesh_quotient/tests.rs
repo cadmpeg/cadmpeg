@@ -83,5 +83,6 @@ fn a_face_the_work_counter_cannot_estimate_exhausts_the_search() {
 }
 
 mod face_equation_cache;
+mod orientation_limits;
 mod quotient_search;
 mod selection_limits;

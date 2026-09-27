@@ -426,7 +426,7 @@ pub(super) fn prune_edge_candidates_by_port_domains_with_deferred(
             candidates.clear();
         }
     }
-    if !quotient.edge_domains_viable(&constrained_candidates) {
+    if !quotient.edge_domains_viable(ctx, &constrained_candidates)? {
         return Ok(None);
     }
     let mut result = Vec::new();

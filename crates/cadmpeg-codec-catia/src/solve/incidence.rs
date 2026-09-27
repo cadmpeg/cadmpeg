@@ -2168,12 +2168,13 @@ fn advance_compact_boundary_domains<'a>(
         for (state, oriented_edges) in states {
             for face in &alternatives {
                 for (_, mut candidate) in state.assignment_options_limited(
+                    ctx,
                     face,
                     &candidates,
                     &oriented_edges,
                     MAX_QUOTIENT_STATES.saturating_sub(next.len()),
                     Some(budget),
-                ) {
+                )? {
                     let mut next_oriented = oriented_edges.clone();
                     next_oriented.extend(face.boundaries.iter().flatten().map(|use_| use_.edge));
                     if !budget.charge_by(

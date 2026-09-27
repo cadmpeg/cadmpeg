@@ -4,7 +4,9 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
 
-use cadmpeg_core::decode::{DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit};
+use cadmpeg_core::decode::{
+    DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit, ScopedReservation,
+};
 use cadmpeg_core::CodecError;
 
 fn allocation_failed(
@@ -128,4 +130,48 @@ pub(crate) fn insert_map<K: Eq + Hash, V>(
             .map_err(|_| allocation_failed(values.len(), values.capacity(), 1, operation))?;
     }
     Ok(values.insert(key, value))
+}
+
+fn temporary_bytes<T>(
+    ctx: &DecodeContext<'_>,
+    count: usize,
+    operation: &'static str,
+) -> Result<u64, CodecError> {
+    let item_bytes = std::mem::size_of::<T>().max(1);
+    let Some(bytes) = item_bytes
+        .checked_add(32)
+        .and_then(|size| size.checked_mul(count))
+        .and_then(|size| u64::try_from(size).ok())
+    else {
+        return Err(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX));
+    };
+    Ok(bytes)
+}
+
+pub(crate) fn temporary_set<'a, T: Eq + Hash>(
+    ctx: &'a DecodeContext<'_>,
+    count: usize,
+    operation: &'static str,
+) -> Result<(HashSet<T>, ScopedReservation<'a>), CodecError> {
+    let reservation =
+        ctx.reserve_scoped(temporary_bytes::<T>(ctx, count, operation)?, operation)?;
+    let mut values = HashSet::new();
+    values
+        .try_reserve(count)
+        .map_err(|_| allocation_failed(0, values.capacity(), count, operation))?;
+    Ok((values, reservation))
+}
+
+pub(crate) fn temporary_queue<'a, T>(
+    ctx: &'a DecodeContext<'_>,
+    count: usize,
+    operation: &'static str,
+) -> Result<(VecDeque<T>, ScopedReservation<'a>), CodecError> {
+    let reservation =
+        ctx.reserve_scoped(temporary_bytes::<T>(ctx, count, operation)?, operation)?;
+    let mut values = VecDeque::new();
+    values
+        .try_reserve(count)
+        .map_err(|_| allocation_failed(0, values.capacity(), count, operation))?;
+    Ok((values, reservation))
 }

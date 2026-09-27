@@ -1,25 +1,18 @@
-use crate::families::standard::topology::solve_boundary_orientation_constraints;
-use crate::families::standard::topology::EdgeBoundaryLayout;
-use crate::families::standard::topology::EdgeRow;
-use crate::families::standard::topology::StandardTopology;
-use crate::solve::mesh_quotient::deduplicate_mesh_quotient_assignments;
-use crate::solve::mesh_quotient::initial_mesh_quotient;
-use crate::solve::mesh_quotient::mesh_assignment_can_merge;
-use crate::solve::mesh_quotient::possible_face_choices;
-use crate::solve::mesh_quotient::possible_face_choices_with_limit;
-use crate::solve::mesh_quotient::possible_face_equations;
-use crate::solve::mesh_quotient::MeshQuotient;
-use crate::solve::mesh_quotient::MeshSelectionSearch;
-use crate::solve::mesh_quotient::SearchOutcome;
-use crate::solve::mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS;
-use crate::solve::missing_edge::MeshBoundaryEdgeCandidate;
-use crate::solve::missing_edge::MeshFaceBoundaryAssignment;
-use crate::solve::missing_edge::MeshFaceBoundaryDomain;
+use crate::families::standard::topology::{
+    solve_boundary_orientation_constraints, EdgeBoundaryLayout, EdgeRow, StandardTopology,
+};
+use crate::solve::mesh_quotient::{
+    deduplicate_mesh_quotient_assignments, initial_mesh_quotient, mesh_assignment_can_merge,
+    possible_face_choices, possible_face_choices_with_limit, possible_face_equations, MeshQuotient,
+    MeshSelectionSearch, SearchOutcome, MAX_MESH_CONSTRAINT_OPERATIONS,
+};
+use crate::solve::missing_edge::{
+    MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain,
+};
 use crate::solve::tests::repeated_domain;
 use cadmpeg_core::decode::WorkBudget;
 use std::cell::RefCell;
-use std::collections::HashMap;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 #[test]
@@ -73,6 +66,7 @@ fn quotient_assignments_ignore_span_allocation_with_identical_edge_order() {
 #[test]
 fn mesh_option_enumeration_does_not_scan_fixed_direction_gauges() {
     const EDGE_COUNT: usize = 10;
+    catia_test_context!(ctx);
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![(0..EDGE_COUNT)
             .map(|edge| MeshBoundaryEdgeCandidate {
@@ -87,13 +81,16 @@ fn mesh_option_enumeration_does_not_scan_fixed_direction_gauges() {
     let candidates = vec![vec![[0, 0]]; EDGE_COUNT];
     let budget = WorkBudget::new(30);
 
-    let options = quotient.assignment_options_limited(
-        &assignment,
-        &candidates,
-        &HashSet::new(),
-        2,
-        Some(&budget),
-    );
+    let options = quotient
+        .assignment_options_limited(
+            &ctx,
+            &assignment,
+            &candidates,
+            &HashSet::new(),
+            2,
+            Some(&budget),
+        )
+        .expect("service resource budget");
 
     assert_eq!(options.len(), 1);
     assert_eq!(options[0].0, vec![vec![false; EDGE_COUNT]]);
@@ -102,6 +99,7 @@ fn mesh_option_enumeration_does_not_scan_fixed_direction_gauges() {
 
 #[test]
 fn mesh_option_enumeration_preserves_asymmetric_endpoint_directions() {
+    catia_test_context!(ctx);
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![
             MeshBoundaryEdgeCandidate {
@@ -124,13 +122,16 @@ fn mesh_option_enumeration_preserves_asymmetric_endpoint_directions() {
             .into(),
     );
 
-    let options = quotient.assignment_options_limited(
-        &assignment,
-        &[vec![[0, 1]], vec![[0, 1]]],
-        &HashSet::new(),
-        4,
-        None,
-    );
+    let options = quotient
+        .assignment_options_limited(
+            &ctx,
+            &assignment,
+            &[vec![[0, 1]], vec![[0, 1]]],
+            &HashSet::new(),
+            4,
+            None,
+        )
+        .expect("service resource budget");
 
     assert!(options
         .iter()
@@ -139,13 +140,16 @@ fn mesh_option_enumeration_preserves_asymmetric_endpoint_directions() {
 
 #[test]
 fn quotient_merge_preserves_physical_edge_pair_correlation() {
+    catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(
         [vec![0], vec![0, 1], vec![0], vec![2]]
             .map(|domain| Arc::new(domain.into_iter().collect()))
             .into(),
     );
     quotient.merge(1, 2).expect("nonempty port intersection");
-    assert!(!quotient.edge_domains_viable(&[vec![[0, 1]], vec![[0, 2]]]));
+    assert!(!quotient
+        .edge_domains_viable(&ctx, &[vec![[0, 1]], vec![[0, 2]]])
+        .expect("service resource budget"));
 }
 
 #[test]
@@ -625,6 +629,7 @@ fn common_full_quotient_refuses_each_collection_limit() {
 
 #[test]
 fn quotient_pair_domains_propagate_through_shared_components() {
+    catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(
         [vec![0, 1], vec![2], vec![0, 1], vec![3, 4]]
             .map(|domain| Arc::new(domain.into_iter().collect()))
@@ -632,7 +637,9 @@ fn quotient_pair_domains_propagate_through_shared_components() {
     );
     let root = quotient.merge(0, 2).expect("shared endpoint component");
 
-    assert!(quotient.edge_domains_viable(&[vec![[0, 2]], vec![[0, 3], [1, 4]],]));
+    assert!(quotient
+        .edge_domains_viable(&ctx, &[vec![[0, 2]], vec![[0, 3], [1, 4]],])
+        .expect("service resource budget"));
     assert_eq!(*quotient.domains()[root], HashSet::from([0]));
     let third_root = quotient.find(3);
     assert_eq!(*quotient.domains()[third_root], HashSet::from([3]));
@@ -640,6 +647,7 @@ fn quotient_pair_domains_propagate_through_shared_components() {
 
 #[test]
 fn quotient_assignment_requires_one_consistent_closed_orientation() {
+    catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(
         [vec![0], vec![1], vec![2], vec![3]]
             .map(|domain| Arc::new(domain.into_iter().collect()))
@@ -661,23 +669,30 @@ fn quotient_assignment_requires_one_consistent_closed_orientation() {
             },
         ]],
     };
-    assert!(!quotient.assignment_has_option(&assignment, &[vec![], vec![]], None));
+    assert!(!quotient
+        .assignment_has_option(&ctx, &assignment, &[vec![], vec![]], None)
+        .expect("service resource budget"));
     quotient = MeshQuotient::new(
         [vec![0], vec![1], vec![1, 2], vec![3]]
             .map(|domain| Arc::new(domain.into_iter().collect()))
             .into(),
     );
-    assert!(!quotient.assignment_has_option(&assignment, &[vec![], vec![]], None));
+    assert!(!quotient
+        .assignment_has_option(&ctx, &assignment, &[vec![], vec![]], None)
+        .expect("service resource budget"));
     quotient = MeshQuotient::new(
         [vec![0], vec![1], vec![1, 2], vec![0, 3]]
             .map(|domain| Arc::new(domain.into_iter().collect()))
             .into(),
     );
-    assert!(quotient.assignment_has_option(&assignment, &[vec![], vec![]], None));
+    assert!(quotient
+        .assignment_has_option(&ctx, &assignment, &[vec![], vec![]], None)
+        .expect("service resource budget"));
 }
 
 #[test]
 fn quotient_assignment_declines_when_its_work_budget_is_exhausted() {
+    catia_test_context!(ctx);
     let quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), 2));
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![MeshBoundaryEdgeCandidate {
@@ -689,7 +704,9 @@ fn quotient_assignment_declines_when_its_work_budget_is_exhausted() {
     };
     let budget = WorkBudget::new(0);
 
-    assert!(!quotient.assignment_has_option(&assignment, &[vec![[0, 0]]], Some(&budget),));
+    assert!(!quotient
+        .assignment_has_option(&ctx, &assignment, &[vec![[0, 0]]], Some(&budget),)
+        .expect("service resource budget"));
     assert!(budget.exhausted());
 }
 
@@ -711,6 +728,7 @@ fn face_choice_materialization_declines_when_its_work_budget_is_exhausted() {
 #[test]
 fn fixed_boundary_option_has_no_recursive_depth_limit() {
     const EDGE_COUNT: usize = 10_000;
+    catia_test_context!(ctx);
     let quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), EDGE_COUNT * 2));
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![(0..EDGE_COUNT)
@@ -724,11 +742,14 @@ fn fixed_boundary_option_has_no_recursive_depth_limit() {
     };
     let candidates = vec![vec![[0, 0]]; EDGE_COUNT];
 
-    assert!(quotient.assignment_has_option(&assignment, &candidates, None));
+    assert!(quotient
+        .assignment_has_option(&ctx, &assignment, &candidates, None)
+        .expect("service resource budget"));
 }
 
 #[test]
 fn quotient_options_reject_an_interior_pair_contradiction() {
+    catia_test_context!(ctx);
     let quotient = MeshQuotient::new(
         [vec![0], vec![1, 2], vec![2], vec![3], vec![0, 3], vec![0]]
             .map(|domain| Arc::new(domain.into_iter().collect()))
@@ -758,24 +779,28 @@ fn quotient_options_reject_an_interior_pair_contradiction() {
     };
     let candidates = [vec![[0, 1]], vec![[2, 3]], vec![[0, 3]]];
 
-    let options = quotient.assignment_options(&assignment, &candidates);
+    let options = quotient.assignment_options(&ctx, &assignment, &candidates);
 
     assert!(!options
         .iter()
         .any(|(directions, _)| directions == &[vec![false, false, false]]));
     let unrestricted = [Vec::new(), Vec::new(), Vec::new()];
-    let options = quotient.assignment_options(&assignment, &unrestricted);
-    let limited =
-        quotient.assignment_options_limited(&assignment, &unrestricted, &HashSet::new(), 1, None);
+    let options = quotient.assignment_options(&ctx, &assignment, &unrestricted);
+    let limited = quotient
+        .assignment_options_limited(&ctx, &assignment, &unrestricted, &HashSet::new(), 1, None)
+        .expect("service resource budget");
     assert_eq!(limited.len(), 1);
     assert_eq!(limited[0].0, options[0].0);
-    let unique = quotient.assignment_options_limited(
-        &assignment,
-        &unrestricted,
-        &HashSet::new(),
-        4_096,
-        None,
-    );
+    let unique = quotient
+        .assignment_options_limited(
+            &ctx,
+            &assignment,
+            &unrestricted,
+            &HashSet::new(),
+            4_096,
+            None,
+        )
+        .expect("service resource budget");
     assert!(unique
         .iter()
         .all(|option| options.iter().any(|candidate| candidate.0 == option.0)));
@@ -783,6 +808,7 @@ fn quotient_options_reject_an_interior_pair_contradiction() {
 
 #[test]
 fn quotient_options_decline_when_their_work_budget_is_exhausted() {
+    catia_test_context!(ctx);
     let quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), 2));
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![MeshBoundaryEdgeCandidate {
@@ -794,13 +820,16 @@ fn quotient_options_decline_when_their_work_budget_is_exhausted() {
     };
     let budget = WorkBudget::new(0);
 
-    let options = quotient.assignment_options_limited(
-        &assignment,
-        &[vec![[0, 0]]],
-        &HashSet::new(),
-        1,
-        Some(&budget),
-    );
+    let options = quotient
+        .assignment_options_limited(
+            &ctx,
+            &assignment,
+            &[vec![[0, 0]]],
+            &HashSet::new(),
+            1,
+            Some(&budget),
+        )
+        .expect("service resource budget");
 
     assert!(options.is_empty());
     assert!(budget.exhausted());

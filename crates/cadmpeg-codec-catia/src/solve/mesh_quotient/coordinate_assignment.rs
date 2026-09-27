@@ -1499,7 +1499,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
             root_by_point.insert(point, merged);
         }
     }
-    if !quotient.edge_domains_viable(edge_candidates) {
+    if !quotient.edge_domains_viable(ctx, edge_candidates)? {
         return Ok(None);
     }
     quotient.point_assignment(ctx, point_count, edge_candidates, None)
