@@ -898,7 +898,7 @@ pub(in super::super) fn schema_feature_definition(
         kind: kind.into(),
         parameters: cadmpeg_core::text::named_entries_checked(ctx,
             format_args!("creo:model:feature#{feature_id}"),
-            feature_parameters(scan, feature_id),
+            feature_parameters(ctx, scan, feature_id)?,
         )?,
     }))
 }

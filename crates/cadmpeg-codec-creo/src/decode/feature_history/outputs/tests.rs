@@ -14,7 +14,81 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-use super::insert_feature_source_property;
+use super::{insert_feature_parameter, insert_feature_source_property, replace_feature_parameter};
+
+#[test]
+fn feature_parameter_refuses_before_btree_node() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut parameters = BTreeMap::new();
+    let error = insert_feature_parameter(&ctx, &mut parameters, "choice.value", "x")
+        .expect_err("one parameter needs one BTreeMap node");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo feature parameter nodes"));
+}
+
+#[test]
+fn feature_parameter_refuses_before_retained_value() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut parameters = BTreeMap::new();
+    let error = insert_feature_parameter(&ctx, &mut parameters, "choice.value", "x")
+        .expect_err("value exceeds retained allowance");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo feature parameter value"));
+}
+
+#[test]
+fn feature_parameter_refuses_before_scoped_key_candidate() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut parameters = BTreeMap::new();
+    let error = insert_feature_parameter(&ctx, &mut parameters, "choice.value", "x")
+        .expect_err("candidate exceeds materialized allowance");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::MaterializedBytes
+            && resource.operation == "creo feature parameter key candidate"));
+}
+
+#[test]
+fn feature_parameter_refuses_before_retained_key() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut parameters = BTreeMap::new();
+    let error = insert_feature_parameter(&ctx, &mut parameters, "choice.value", "x")
+        .expect_err("key exceeds retained allowance");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo feature parameter key"));
+}
+
+#[test]
+fn feature_parameter_keeps_duplicate_suffix_and_direct_replacement() {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut parameters = BTreeMap::new();
+    insert_feature_parameter(&ctx, &mut parameters, "choice.value", "a").expect("first fits");
+    insert_feature_parameter(&ctx, &mut parameters, "choice.value", "b").expect("second fits");
+    insert_feature_parameter(&ctx, &mut parameters, "choice.value", "c").expect("third fits");
+    replace_feature_parameter(&ctx, &mut parameters, "choice.value", "z")
+        .expect("replacement fits");
+    assert_eq!(parameters.into_iter().collect::<Vec<_>>(), vec![
+        ("choice.value".into(), "z".into()),
+        ("choice.value#2".into(), "b".into()),
+        ("choice.value#3".into(), "c".into()),
+    ]);
+}
 
 #[test]
 fn feature_source_property_refuses_before_btree_node() {
