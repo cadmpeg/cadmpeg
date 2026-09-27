@@ -284,6 +284,7 @@ fn rotate_symmetry_accepts_nan_padding_and_prototype_omission() {
         let mut reader =
             BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded symmetry reader");
         read_symmetry(
+            &cadmpeg_test_support::service_decode_context(),
             &mut reader,
             ArchiveVersion::V5,
             &mut Vec::new(),
@@ -300,6 +301,7 @@ fn unknown_symmetry_enums_map_to_unset_without_dropping_the_chunk() {
     let bytes = rotate_symmetry(6, false);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded symmetry reader");
     read_symmetry(
+        &cadmpeg_test_support::service_decode_context(),
         &mut reader,
         ArchiveVersion::V5,
         &mut diagnostics,
@@ -313,6 +315,7 @@ fn unknown_symmetry_enums_map_to_unset_without_dropping_the_chunk() {
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded symmetry reader");
     diagnostics.clear();
     read_symmetry(
+        &cadmpeg_test_support::service_decode_context(),
         &mut reader,
         ArchiveVersion::V5,
         &mut diagnostics,
@@ -323,6 +326,50 @@ fn unknown_symmetry_enums_map_to_unset_without_dropping_the_chunk() {
     assert_eq!(
         diagnostics,
         vec![SubdEnumDiagnostic::SymmetryCoordinateSystem(7)]
+    );
+}
+
+#[test]
+fn unknown_symmetry_enum_refuses_collection_limit() {
+    let bytes = rotate_symmetry(6, false);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("root bytes admitted");
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+    let refused = read_symmetry(
+        &ctx,
+        &mut reader,
+        ArchiveVersion::V5,
+        &mut Vec::new(),
+        &mut Diagnostics::new(),
+    )
+    .expect_err("enum diagnostic exceeds zero collection items");
+    assert!(
+        matches!(refused, SubdError::Resource(limit) if limit.operation == "Rhino SubD enum diagnostics")
+    );
+}
+
+#[test]
+fn subd_crc_diagnostic_refuses_collection_limit() {
+    let mut bytes = anonymous(&[0]);
+    let crc = bytes.len() - 1;
+    bytes[crc] ^= 1;
+    let chunk = crate::chunks::chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V5, false)
+        .expect("chunk framing");
+    let mut parent = BoundedReader::new(&bytes, 0, bytes.len()).expect("parent");
+    let child = BoundedReader::new(&bytes, chunk.body().start, chunk.body().end).expect("child");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("root bytes admitted");
+    let refused =
+        super::finish_direct_chunk(&ctx, &mut parent, &chunk, child, &mut Diagnostics::new())
+            .expect_err("CRC diagnostic exceeds zero collection items");
+    assert!(
+        matches!(refused, SubdError::Resource(limit) if limit.operation == "Rhino diagnostics")
     );
 }
 

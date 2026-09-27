@@ -364,7 +364,7 @@ pub(crate) fn decode(
                 &mut warnings,
             )?;
             let surface = materialize(ctx, level, scale, id)?;
-            finish_chunk_children(&mut reader, &chunk, child, &children, &mut warnings)?;
+            finish_chunk_children(ctx, &mut reader, &chunk, child, &children, &mut warnings)?;
             finish_payload(&mut reader)?;
             Ok(Some(DecodedSubd {
                 surface,
@@ -522,13 +522,13 @@ fn read_subdimple(
     if minor >= 1 {
         reader.u8()?;
         let start = reader.position();
-        read_mapping_tag(reader, archive, warnings)?;
+        read_mapping_tag(ctx, reader, archive, warnings)?;
         reserve_subd_vec(ctx, &mut children, 1, "Rhino SubD child ranges")?;
         children.push(start..reader.position());
     }
     if minor >= 2 {
         let start = reader.position();
-        read_symmetry(reader, archive, enum_diagnostics, warnings)?;
+        read_symmetry(ctx, reader, archive, enum_diagnostics, warnings)?;
         reserve_subd_vec(ctx, &mut children, 1, "Rhino SubD child ranges")?;
         children.push(start..reader.position());
     }
@@ -540,7 +540,7 @@ fn read_subdimple(
         reader.take(16)?;
         reader.bool()?;
         let start = reader.position();
-        read_subd_hash(reader, archive, warnings)?;
+        read_subd_hash(ctx, reader, archive, warnings)?;
         reserve_subd_vec(ctx, &mut children, 1, "Rhino SubD child ranges")?;
         children.push(start..reader.position());
     }
@@ -614,7 +614,6 @@ fn read_level(
             archive,
             archive_id,
             level_index,
-            warnings,
         )?);
     }
     let mut edges = charged_subd_vec(ctx, edge_count, "Rhino SubD level edges")?;
@@ -625,7 +624,6 @@ fn read_level(
             archive,
             archive_id,
             level_index,
-            warnings,
         )?);
     }
     let mut faces = charged_subd_vec(ctx, face_count, "Rhino SubD level faces")?;
@@ -636,12 +634,11 @@ fn read_level(
             archive,
             archive_id,
             level_index,
-            warnings,
         )?);
     }
     match reader.u8()? {
         0 => {}
-        1 => consume_anonymous(&mut reader, archive, "SubD render mesh", warnings)?,
+        1 => consume_anonymous(&mut reader, archive, "SubD render mesh")?,
         value => {
             return Err(malformed(
                 reader.position() - 1,
@@ -655,7 +652,7 @@ fn read_level(
         edges,
         faces,
     };
-    finish_chunk(parent, &chunk, reader, warnings)?;
+    finish_chunk(ctx, parent, &chunk, reader, warnings)?;
     Ok(level)
 }
 
@@ -665,9 +662,8 @@ fn read_vertex(
     archive: ArchiveVersion,
     expected_id: u32,
     level: usize,
-    warnings: &mut Diagnostics,
 ) -> Result<RawVertex, SubdError> {
-    let base = read_base(reader, archive, expected_id, level, warnings)?;
+    let base = read_base(reader, archive, expected_id, level)?;
     let tag = match reader.u8()? {
         0 => None,
         1 => Some(SubdVertexTag::Smooth),
@@ -719,7 +715,7 @@ fn read_vertex(
         ));
     }
     let faces = read_pointers(ctx, reader, face_count, false)?;
-    read_record_end(reader, archive, warnings)?;
+    read_record_end(reader, archive)?;
     Ok(RawVertex {
         base,
         point,
@@ -735,9 +731,8 @@ fn read_edge(
     archive: ArchiveVersion,
     expected_id: u32,
     level: usize,
-    warnings: &mut Diagnostics,
 ) -> Result<RawEdge, SubdError> {
-    let base = read_base(reader, archive, expected_id, level, warnings)?;
+    let base = read_base(reader, archive, expected_id, level)?;
     let tag = match reader.u8()? {
         0 => None,
         1 => Some(SubdEdgeTag::Smooth),
@@ -798,7 +793,7 @@ fn read_edge(
                 }
             }
         }
-        finish_additions(reader, archive, warnings)?;
+        finish_additions(reader, archive)?;
     }
     Ok(RawEdge {
         base,
@@ -816,9 +811,8 @@ fn read_face(
     archive: ArchiveVersion,
     expected_id: u32,
     level: usize,
-    warnings: &mut Diagnostics,
 ) -> Result<RawFace, SubdError> {
-    let base = read_base(reader, archive, expected_id, level, warnings)?;
+    let base = read_base(reader, archive, expected_id, level)?;
     reader.u32()?;
     reader.u32()?;
     let edge_count = usize::from(reader.u16()?);
@@ -833,8 +827,7 @@ fn read_face(
     if archive.value() < 70 {
         expect_zero(reader, "SubD face end marker")?;
     } else {
-        match consume_known_addition(reader, archive, 34, "SubD face packing rectangle", warnings)?
-        {
+        match consume_known_addition(reader, archive, 34, "SubD face packing rectangle")? {
             Addition::End => return Ok(RawFace { base, edges }),
             Addition::Absent => {}
             Addition::Present => {
@@ -842,28 +835,28 @@ fn read_face(
                 read_finite_values(reader, 4, "SubD face packing rectangle")?;
             }
         }
-        match consume_known_addition(reader, archive, 4, "SubD face material channel", warnings)? {
+        match consume_known_addition(reader, archive, 4, "SubD face material channel")? {
             Addition::End => return Ok(RawFace { base, edges }),
             Addition::Absent => {}
             Addition::Present => {
                 reader.u32()?;
             }
         }
-        match consume_known_addition(reader, archive, 4, "SubD face color", warnings)? {
+        match consume_known_addition(reader, archive, 4, "SubD face color")? {
             Addition::End => return Ok(RawFace { base, edges }),
             Addition::Absent => {}
             Addition::Present => {
                 reader.u32()?;
             }
         }
-        match consume_known_addition(reader, archive, 4, "SubD face pack ID", warnings)? {
+        match consume_known_addition(reader, archive, 4, "SubD face pack ID")? {
             Addition::End => return Ok(RawFace { base, edges }),
             Addition::Absent => {}
             Addition::Present => {
                 reader.u32()?;
             }
         }
-        match consume_known_addition(reader, archive, 4, "SubD face texture points", warnings)? {
+        match consume_known_addition(reader, archive, 4, "SubD face texture points")? {
             Addition::End => return Ok(RawFace { base, edges }),
             Addition::Absent => {}
             Addition::Present => {
@@ -897,7 +890,7 @@ fn read_face(
                 }
             }
         }
-        finish_additions(reader, archive, warnings)?;
+        finish_additions(reader, archive)?;
     }
     Ok(RawFace { base, edges })
 }
@@ -907,7 +900,6 @@ fn read_base(
     archive: ArchiveVersion,
     expected_id: u32,
     expected_level: usize,
-    warnings: &mut Diagnostics,
 ) -> Result<ComponentBase, SubdError> {
     let source_offset = reader.position();
     let archive_id = reader.u32()?;
@@ -947,7 +939,7 @@ fn read_base(
             read_finite_values(reader, 3, "deprecated SubD vector")?;
         }
     } else {
-        match consume_known_addition(reader, archive, 24, "SubD displacement", warnings)? {
+        match consume_known_addition(reader, archive, 24, "SubD displacement")? {
             Addition::End => {
                 return Ok(ComponentBase {
                     source_offset,
@@ -957,7 +949,7 @@ fn read_base(
             Addition::Absent => {}
             Addition::Present => read_finite_values(reader, 3, "deprecated SubD displacement")?,
         }
-        match consume_known_addition(reader, archive, 4, "SubD group ID", warnings)? {
+        match consume_known_addition(reader, archive, 4, "SubD group ID")? {
             Addition::End => {
                 return Ok(ComponentBase {
                     source_offset,
@@ -969,7 +961,7 @@ fn read_base(
                 reader.u32()?;
             }
         }
-        match consume_known_addition(reader, archive, 5, "SubD symmetry-next", warnings)? {
+        match consume_known_addition(reader, archive, 5, "SubD symmetry-next")? {
             Addition::End => {
                 return Ok(ComponentBase {
                     source_offset,
@@ -979,7 +971,7 @@ fn read_base(
             Addition::Absent => {}
             Addition::Present => read_untyped_pointer(reader)?,
         }
-        finish_additions(reader, archive, warnings)?;
+        finish_additions(reader, archive)?;
     }
     Ok(ComponentBase {
         source_offset,
@@ -992,13 +984,12 @@ fn consume_known_addition(
     archive: ArchiveVersion,
     expected: u8,
     label: &str,
-    warnings: &mut Diagnostics,
 ) -> Result<Addition, SubdError> {
     loop {
         match reader.u8()? {
             0 => return Ok(Addition::Absent),
             value if value == expected => return Ok(Addition::Present),
-            254 => consume_anonymous(reader, archive, label, warnings)?,
+            254 => consume_anonymous(reader, archive, label)?,
             255 => return Ok(Addition::End),
             value => {
                 return Err(malformed(
@@ -1013,12 +1004,11 @@ fn consume_known_addition(
 fn finish_additions(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    warnings: &mut Diagnostics,
 ) -> Result<(), SubdError> {
     loop {
         match reader.u8()? {
             255 => return Ok(()),
-            254 => consume_anonymous(reader, archive, "future SubD addition", warnings)?,
+            254 => consume_anonymous(reader, archive, "future SubD addition")?,
             0 => {}
             size => reader.skip(usize::from(size))?,
         }
@@ -1028,12 +1018,11 @@ fn finish_additions(
 fn read_record_end(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    warnings: &mut Diagnostics,
 ) -> Result<(), SubdError> {
     if archive.value() < 70 {
         expect_zero(reader, "SubD component end marker")
     } else {
-        finish_additions(reader, archive, warnings)
+        finish_additions(reader, archive)
     }
 }
 
@@ -1457,6 +1446,7 @@ fn validate_sharpness(value: f64, offset: usize) -> Result<NonNegativeReal, Subd
 }
 
 fn read_mapping_tag(
+    ctx: &DecodeContext<'_>,
     parent: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
@@ -1478,7 +1468,7 @@ fn read_mapping_tag(
     if minor >= 1 {
         reader.u32()?;
     }
-    finish_direct_chunk(parent, &chunk, reader, warnings)
+    finish_direct_chunk(ctx, parent, &chunk, reader, warnings)
 }
 
 /// One `SubD` symmetry construction, with the layout its transform chunk carries.
@@ -1517,6 +1507,7 @@ impl SubdSymmetry {
 }
 
 fn read_symmetry(
+    ctx: &DecodeContext<'_>,
     parent: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     enum_diagnostics: &mut Vec<SubdEnumDiagnostic>,
@@ -1534,10 +1525,11 @@ fn read_symmetry(
         });
     }
     let symmetry_type = match SubdSymmetry::parse(reader.u8()?) {
-        SubdSymmetry::Absent => return finish_direct_chunk(parent, &chunk, reader, warnings),
+        SubdSymmetry::Absent => return finish_direct_chunk(ctx, parent, &chunk, reader, warnings),
         SubdSymmetry::Invalid(raw) => {
+            reserve_subd_vec(ctx, enum_diagnostics, 1, "Rhino SubD enum diagnostics")?;
             enum_diagnostics.push(SubdEnumDiagnostic::SymmetryType(raw));
-            return finish_direct_chunk(parent, &chunk, reader, warnings);
+            return finish_direct_chunk(ctx, parent, &chunk, reader, warnings);
         }
         SubdSymmetry::Known(symmetry_type) => symmetry_type,
     };
@@ -1578,10 +1570,11 @@ fn read_symmetry(
             }
         }
     }
-    finish_direct_chunk(&mut reader, &inner, transform, warnings)?;
+    finish_direct_chunk(ctx, &mut reader, &inner, transform, warnings)?;
     if version >= 2 {
         let coordinate_system = reader.u8()?;
         if coordinate_system > 2 {
+            reserve_subd_vec(ctx, enum_diagnostics, 1, "Rhino SubD enum diagnostics")?;
             enum_diagnostics.push(SubdEnumDiagnostic::SymmetryCoordinateSystem(
                 coordinate_system,
             ));
@@ -1591,13 +1584,14 @@ fn read_symmetry(
         reader.u64()?;
     }
     if version >= 4 {
-        read_sha1(&mut reader, archive, warnings)?;
-        read_sha1(&mut reader, archive, warnings)?;
+        read_sha1(ctx, &mut reader, archive, warnings)?;
+        read_sha1(ctx, &mut reader, archive, warnings)?;
     }
-    finish_chunk(parent, &chunk, reader, warnings)
+    finish_chunk(ctx, parent, &chunk, reader, warnings)
 }
 
 fn read_subd_hash(
+    ctx: &DecodeContext<'_>,
     parent: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
@@ -1616,16 +1610,17 @@ fn read_subd_hash(
     if !reader.bool()? {
         reader.u8()?;
         reader.u32()?;
-        read_sha1(&mut reader, archive, warnings)?;
+        read_sha1(ctx, &mut reader, archive, warnings)?;
         reader.u32()?;
-        read_sha1(&mut reader, archive, warnings)?;
+        read_sha1(ctx, &mut reader, archive, warnings)?;
         reader.u32()?;
-        read_sha1(&mut reader, archive, warnings)?;
+        read_sha1(ctx, &mut reader, archive, warnings)?;
     }
-    finish_chunk(parent, &chunk, reader, warnings)
+    finish_chunk(ctx, parent, &chunk, reader, warnings)
 }
 
 fn read_sha1(
+    ctx: &DecodeContext<'_>,
     parent: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
@@ -1642,7 +1637,7 @@ fn read_sha1(
         });
     }
     reader.take(20)?;
-    finish_direct_chunk(parent, &chunk, reader, warnings)
+    finish_direct_chunk(ctx, parent, &chunk, reader, warnings)
 }
 
 fn expect_zero(reader: &mut BoundedReader<'_>, label: &str) -> Result<(), SubdError> {
@@ -1681,7 +1676,6 @@ fn consume_anonymous(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     label: &str,
-    _warnings: &mut Diagnostics,
 ) -> Result<(), SubdError> {
     let chunk = anonymous_chunk(reader, archive, label)?;
     reader.skip(chunk.next_offset() - reader.position())?;
@@ -1689,6 +1683,7 @@ fn consume_anonymous(
 }
 
 fn finish_chunk(
+    ctx: &DecodeContext<'_>,
     parent: &mut BoundedReader<'_>,
     chunk: &crate::chunks::Chunk,
     child: BoundedReader<'_>,
@@ -1696,15 +1691,19 @@ fn finish_chunk(
 ) -> Result<(), SubdError> {
     let skipped = child.remaining();
     if skipped != 0 {
-        warnings.push(format!(
-            "SubD anonymous chunk skipped {skipped} trailing bytes"
-        ));
+        warnings
+            .push_admitted(
+                ctx,
+                format_args!("SubD anonymous chunk skipped {skipped} trailing bytes"),
+            )
+            .map_err(FramingError::from)?;
     }
     parent.skip(chunk.next_offset() - parent.position())?;
     Ok(())
 }
 
 fn finish_direct_chunk(
+    ctx: &DecodeContext<'_>,
     parent: &mut BoundedReader<'_>,
     chunk: &crate::chunks::Chunk,
     child: BoundedReader<'_>,
@@ -1712,27 +1711,34 @@ fn finish_direct_chunk(
 ) -> Result<(), SubdError> {
     let skipped = child.remaining();
     if skipped != 0 {
-        warnings.push(format!(
-            "SubD anonymous chunk skipped {skipped} trailing bytes"
-        ));
+        warnings
+            .push_admitted(
+                ctx,
+                format_args!("SubD anonymous chunk skipped {skipped} trailing bytes"),
+            )
+            .map_err(FramingError::from)?;
     }
     if matches!(
         verify_checksum(parent.backing_bytes(), chunk)?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        warnings.push_coded(
-            crate::loss::RhinoLossCode::IntegrityFailure,
-            format!(
-                "SubD anonymous CRC mismatch at offset {}",
-                chunk.header_start
-            ),
-        );
+        warnings
+            .push_coded_admitted(
+                ctx,
+                crate::loss::RhinoLossCode::IntegrityFailure,
+                format_args!(
+                    "SubD anonymous CRC mismatch at offset {}",
+                    chunk.header_start
+                ),
+            )
+            .map_err(FramingError::from)?;
     }
     parent.skip(chunk.next_offset() - parent.position())?;
     Ok(())
 }
 
 fn finish_chunk_children(
+    ctx: &DecodeContext<'_>,
     parent: &mut BoundedReader<'_>,
     chunk: &crate::chunks::Chunk,
     child: BoundedReader<'_>,
@@ -1741,22 +1747,28 @@ fn finish_chunk_children(
 ) -> Result<(), SubdError> {
     let skipped = child.remaining();
     if skipped != 0 {
-        warnings.push(format!(
-            "SubD anonymous chunk skipped {skipped} trailing bytes"
-        ));
+        warnings
+            .push_admitted(
+                ctx,
+                format_args!("SubD anonymous chunk skipped {skipped} trailing bytes"),
+            )
+            .map_err(FramingError::from)?;
     }
     let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), children)?;
     if matches!(
         crate::chunks::verify_checksum_ranges(parent.backing_bytes(), chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        warnings.push_coded(
-            crate::loss::RhinoLossCode::IntegrityFailure,
-            format!(
-                "SubD anonymous CRC mismatch at offset {}",
-                chunk.header_start
-            ),
-        );
+        warnings
+            .push_coded_admitted(
+                ctx,
+                crate::loss::RhinoLossCode::IntegrityFailure,
+                format_args!(
+                    "SubD anonymous CRC mismatch at offset {}",
+                    chunk.header_start
+                ),
+            )
+            .map_err(FramingError::from)?;
     }
     parent.skip(chunk.next_offset() - parent.position())?;
     Ok(())
