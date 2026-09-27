@@ -886,7 +886,7 @@ fn extended_geometry_json(
                 crate::mesh::MeshDecodeOptions {
                     writer_version,
                     association: None,
-                    id: "rhino:history:embedded-mesh".to_string(),
+                    id: "rhino:history:embedded-mesh".to_string().into(),
                     scale,
                     userdata: &value.userdata,
                 },

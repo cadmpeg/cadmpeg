@@ -199,11 +199,41 @@ pub(crate) struct MeshDecodeOptions<'a> {
     /// Source-object association assigned to the tessellation.
     pub(crate) association: Option<cadmpeg_ir::SourceObjectAssociation>,
     /// Deterministic tessellation ID.
-    pub(crate) id: String,
+    pub(crate) id: MeshId,
     /// Native-unit to millimeter scale.
     pub(crate) scale: MillimeterScale,
     /// Class userdata attached to the owning mesh object.
     pub(crate) userdata: &'a [UserdataDescriptor],
+}
+
+pub(crate) enum MeshId {
+    Ready(String),
+    ExtrusionCache(usize),
+    V5ExtrusionCache(usize),
+}
+
+impl From<String> for MeshId {
+    fn from(id: String) -> Self {
+        Self::Ready(id)
+    }
+}
+
+impl MeshId {
+    fn into_string(self, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
+        match self {
+            Self::Ready(id) => Ok(id),
+            Self::ExtrusionCache(index) => crate::wire::admitted_format(
+                ctx,
+                format_args!("rhino:extrusion:mesh-cache#{index}"),
+                "Rhino extrusion mesh-cache ID",
+            ),
+            Self::V5ExtrusionCache(index) => crate::wire::admitted_format(
+                ctx,
+                format_args!("rhino:extrusion:v5-mesh-cache#{index}"),
+                "Rhino V5 extrusion mesh-cache ID",
+            ),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -551,6 +581,7 @@ pub(crate) fn decode(
     }
     let quad_count = quad_face_count(&faces);
     let triangles = triangulate_faces(expand.ctx(), &faces, &vertices, FinitePoint3::get)?;
+    let id = id.into_string(expand.ctx())?;
     Ok(DecodedMesh {
         tessellation: Tessellation::from_parts(
             id,
@@ -1942,7 +1973,9 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "synthetic:test:tessellation#admitted-lanes".to_string(),
+                    id: "synthetic:test:tessellation#admitted-lanes"
+                        .to_string()
+                        .into(),
                     scale: MillimeterScale::IDENTITY,
                     userdata: &[],
                 },
@@ -1974,7 +2007,9 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "synthetic:test:tessellation#scaled-limit".to_string(),
+                    id: "synthetic:test:tessellation#scaled-limit"
+                        .to_string()
+                        .into(),
                     scale: MillimeterScale::IDENTITY,
                     userdata: &[],
                 },
@@ -2006,7 +2041,9 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "synthetic:test:tessellation#legacy-minor-five".to_string(),
+                    id: "synthetic:test:tessellation#legacy-minor-five"
+                        .to_string()
+                        .into(),
                     scale: MillimeterScale::IDENTITY,
                     userdata: &[],
                 },
@@ -2036,7 +2073,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "synthetic:test:tessellation#v5-double".to_string(),
+                    id: "synthetic:test:tessellation#v5-double".to_string().into(),
                     scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
@@ -2070,7 +2107,9 @@ mod tests {
                     MeshDecodeOptions {
                         writer_version: None,
                         association: None,
-                        id: "synthetic:test:tessellation#v5-double-limit".to_string(),
+                        id: "synthetic:test:tessellation#v5-double-limit"
+                            .to_string()
+                            .into(),
                         scale: MillimeterScale::IDENTITY,
                         userdata: std::slice::from_ref(&descriptor),
                     },
@@ -2103,7 +2142,9 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "synthetic:test:tessellation#v5-double-mismatch".to_string(),
+                    id: "synthetic:test:tessellation#v5-double-mismatch"
+                        .to_string()
+                        .into(),
                     scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
@@ -2140,7 +2181,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "synthetic:test:tessellation#v4v5-ngon".to_string(),
+                    id: "synthetic:test:tessellation#v4v5-ngon".to_string().into(),
                     scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
@@ -2204,7 +2245,9 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "synthetic:test:tessellation#v4v5-ngon-later".to_string(),
+                    id: "synthetic:test:tessellation#v4v5-ngon-later"
+                        .to_string()
+                        .into(),
                     scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
@@ -2237,7 +2280,9 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "synthetic:test:tessellation#v4v5-ngon-old".to_string(),
+                    id: "synthetic:test:tessellation#v4v5-ngon-old"
+                        .to_string()
+                        .into(),
                     scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
@@ -2270,7 +2315,9 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "synthetic:test:tessellation#v4v5-ngon-invalid".to_string(),
+                    id: "synthetic:test:tessellation#v4v5-ngon-invalid"
+                        .to_string()
+                        .into(),
                     scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
@@ -2307,7 +2354,9 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "synthetic:test:tessellation#v4v5-ngon-bad-index".to_string(),
+                    id: "synthetic:test:tessellation#v4v5-ngon-bad-index"
+                        .to_string()
+                        .into(),
                     scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
@@ -2346,7 +2395,9 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "synthetic:test:tessellation#v4v5-ngon-crc".to_string(),
+                    id: "synthetic:test:tessellation#v4v5-ngon-crc"
+                        .to_string()
+                        .into(),
                     scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
@@ -2619,7 +2670,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "synthetic:test:tessellation#first".to_string(),
+                    id: "synthetic:test:tessellation#first".to_string().into(),
                     scale: MillimeterScale::IDENTITY,
                     userdata: &[],
                 },
@@ -2634,7 +2685,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "synthetic:test:tessellation#second".to_string(),
+                    id: "synthetic:test:tessellation#second".to_string().into(),
                     scale: MillimeterScale::IDENTITY,
                     userdata: &[],
                 },
@@ -2770,7 +2821,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "test".to_string(),
+                    id: "test".to_string().into(),
                     scale: MillimeterScale::IDENTITY,
                     userdata: &[],
                 },
