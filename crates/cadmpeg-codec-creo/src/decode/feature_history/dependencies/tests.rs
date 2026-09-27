@@ -2,7 +2,9 @@
 
 use super::{
     add_surface_prototype_feature_dependencies, feature_dependencies,
-    feature_generated_dependencies, native_feature_dependency_ids, reconciled_dependencies,
+    feature_entity_dependencies, feature_generated_dependencies,
+    feature_output_surface_dependencies, native_feature_dependency_ids,
+    reconciled_dependencies, surface_merge_entity_dependencies,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -13,6 +15,117 @@ use cadmpeg_ir::features::{
     FeatureOperation as IrFeatureOperation, GeneratedEdgeRef, GeneratedFaceRef,
 };
 use std::collections::BTreeMap;
+
+fn one_dependency_table(
+    feature_id: u32,
+    table_class_id: u32,
+    entity_id: u32,
+    class_id: u32,
+    source_entity_id: Option<u32>,
+    offset: usize,
+) -> crate::feature::entity::FeatureEntityTable {
+    crate::feature::entity::FeatureEntityTable::new(
+        feature_id,
+        table_class_id,
+        vec![crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(
+                class_id,
+                source_entity_id,
+                None,
+                None,
+            ),
+            entity_id,
+            prefixed: true,
+            offset: offset + 1,
+            end_offset: offset + 2,
+        }],
+        &std::collections::BTreeSet::new(),
+        offset,
+    )
+}
+
+fn dependency_collection_error(
+    limit: u64,
+    operation: &'static str,
+    route: &str,
+) {
+    let producer = one_dependency_table(3, 67, 103, 200, Some(3), 10);
+    let consumer = one_dependency_table(17, 100, 103, 201, None, 20);
+    let owned = one_dependency_table(17, 67, 103, 200, Some(17), 30);
+    let surface = crate::surface::SurfaceRow {
+        id: 201,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 3,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 0,
+    };
+    let replay = crate::feature::rows::FeatureSurfaceMergeAffectedIds {
+        feature_id: 17,
+        geometry_ids: Vec::new(),
+        edge_ids: Vec::new(),
+        quilt_ids: vec![103],
+        geometry_extent: crate::feature::rows::ReplayExtentSource::Explicit,
+        edge_extent: crate::feature::rows::ReplayExtentSource::Explicit,
+        quilt_extent: crate::feature::rows::ReplayExtentSource::Explicit,
+        offset: 100,
+    };
+    let parent = crate::feature::rows::FeatureAffectedIds {
+        feature_id: 17,
+        kind: crate::feature::rows::AffectedIdKind::StrongParents,
+        ids: vec![3],
+        offset: 0,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = match route {
+        "parent" => native_feature_dependency_ids(
+            &ctx, &[parent], &[], &[], &[], &[], 17, &[],
+        ).map(|_| ()),
+        "owned" | "output" => feature_output_surface_dependencies(
+            &ctx, &[owned, consumer], &[surface], 17,
+        ).map(|_| ()),
+        "entity" => feature_entity_dependencies(
+            &ctx, &[producer, consumer], 17,
+        ).map(|_| ()),
+        "merge" => surface_merge_entity_dependencies(
+            &ctx, &[], &[replay], &[producer], 17,
+        ).map(|_| ()),
+        _ => panic!("unknown dependency fixture route"),
+    }
+    .expect_err("one dependency exceeds the collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.operation == operation), "{error:?}");
+}
+
+#[test]
+fn agreed_feature_parent_ids_refuse_collection_limit() {
+    dependency_collection_error(0, "creo agreed feature parent IDs", "parent");
+}
+
+#[test]
+fn output_surface_owned_entity_nodes_refuse_collection_limit() {
+    dependency_collection_error(0, "creo output surface owned entity nodes", "owned");
+}
+
+#[test]
+fn output_surface_dependencies_refuse_collection_limit() {
+    dependency_collection_error(1, "creo output surface dependencies", "output");
+}
+
+#[test]
+fn feature_entity_dependencies_refuse_collection_limit() {
+    dependency_collection_error(0, "creo feature entity dependencies", "entity");
+}
+
+#[test]
+fn surface_merge_dependencies_refuse_collection_limit() {
+    dependency_collection_error(0, "creo surface merge dependencies", "merge");
+}
 
 fn feature_dependency_limit_error(
     collection: Option<u64>,

@@ -135,6 +135,39 @@ fn native_feature_dependency_ids_with_service(
     .expect("service profile admits native feature dependencies")
 }
 
+fn feature_entity_dependencies_with_service(
+    tables: &[crate::feature::entity::FeatureEntityTable],
+    feature_id: u32,
+) -> Vec<u32> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        feature_entity_dependencies(ctx, tables, feature_id)
+    })
+    .expect("service profile admits entity dependencies")
+}
+
+fn feature_output_surface_dependencies_with_service(
+    tables: &[crate::feature::entity::FeatureEntityTable],
+    rows: &[crate::surface::SurfaceRow],
+    feature_id: u32,
+) -> Vec<u32> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        feature_output_surface_dependencies(ctx, tables, rows, feature_id)
+    })
+    .expect("service profile admits output surface dependencies")
+}
+
+fn surface_merge_entity_dependencies_with_service(
+    affected: &[crate::feature::rows::FeatureAffectedIds],
+    replay: &[crate::feature::rows::FeatureSurfaceMergeAffectedIds],
+    tables: &[crate::feature::entity::FeatureEntityTable],
+    feature_id: u32,
+) -> Vec<u32> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        surface_merge_entity_dependencies(ctx, affected, replay, tables, feature_id)
+    })
+    .expect("service profile admits surface merge dependencies")
+}
+
 const EPS_REVOLUTION_CONE_ANGLE: f64 = 1.0e-12;
 
 fn placed_tabulated_cylinder_directrix(
@@ -582,7 +615,7 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
     let consumer = table(416, 100, vec![entry(192, 98, None)]);
 
     assert_eq!(
-        feature_entity_dependencies(&[producer.clone(), consumer.clone()], 416),
+        feature_entity_dependencies_with_service(&[producer.clone(), consumer.clone()], 416),
         [175]
     );
     let duplicate_owned_producer = table(
@@ -591,7 +624,7 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         vec![entry(192, 200, Some(175)), entry(192, 200, Some(175))],
     );
     assert_eq!(
-        feature_entity_dependencies(&[duplicate_owned_producer.clone(), consumer.clone()], 416),
+        feature_entity_dependencies_with_service(&[duplicate_owned_producer.clone(), consumer.clone()], 416),
         [175]
     );
     assert_eq!(
@@ -608,7 +641,7 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         Some(vec![192])
     );
     assert_eq!(
-        feature_entity_dependencies(&[source_missing_entry, consumer.clone()], 416),
+        feature_entity_dependencies_with_service(&[source_missing_entry, consumer.clone()], 416),
         [175]
     );
     assert_eq!(
@@ -616,7 +649,7 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         None
     );
     assert_eq!(
-        feature_entity_dependencies(&[consumer.clone(), producer.clone()], 416),
+        feature_entity_dependencies_with_service(&[consumer.clone(), producer.clone()], 416),
         [175]
     );
     assert_eq!(
@@ -632,7 +665,7 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         [40, 175]
     );
     let conflicting = table(312, 67, vec![entry(192, 200, Some(312))]);
-    assert!(feature_entity_dependencies(
+    assert!(feature_entity_dependencies_with_service(
         &[producer.clone(), conflicting.clone(), consumer.clone()],
         416
     )
@@ -665,7 +698,7 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         ],
     );
     assert_eq!(
-        feature_entity_dependencies(
+        feature_entity_dependencies_with_service(
             &[producer.clone(), second_producer, mixed_consumer.clone()],
             419,
         ),
@@ -725,13 +758,13 @@ fn owned_output_entity_depends_on_its_prior_surface_target() {
     };
 
     assert_eq!(
-        feature_output_surface_dependencies(&tables, std::slice::from_ref(&surface), 2976),
+        feature_output_surface_dependencies_with_service(&tables, std::slice::from_ref(&surface), 2976),
         [97]
     );
 
     let mut current_surface = surface;
     current_surface.feature_id = 2976;
-    assert!(feature_output_surface_dependencies(&tables, &[current_surface], 2976).is_empty());
+    assert!(feature_output_surface_dependencies_with_service(&tables, &[current_surface], 2976).is_empty());
 }
 
 #[test]
@@ -770,7 +803,7 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
     ];
 
     assert_eq!(
-        surface_merge_entity_dependencies(&[], std::slice::from_ref(&replay), &tables, 416),
+        surface_merge_entity_dependencies_with_service(&[], std::slice::from_ref(&replay), &tables, 416),
         [97, 175, 312]
     );
     assert_eq!(
@@ -792,7 +825,7 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
     )
     .with_surface_ids([]);
     assert_eq!(
-        surface_merge_entity_dependencies(
+        surface_merge_entity_dependencies_with_service(
             &[],
             std::slice::from_ref(&replay),
             &[producer(97, 103, 10), wrong_class, producer(312, 329, 30)],
@@ -812,7 +845,7 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
         quilt_extent: crate::feature::rows::ReplayExtentSource::Explicit,
         offset: 100,
     };
-    assert!(surface_merge_entity_dependencies(
+    assert!(surface_merge_entity_dependencies_with_service(
         &[],
         std::slice::from_ref(&future_replay),
         std::slice::from_ref(&future),
