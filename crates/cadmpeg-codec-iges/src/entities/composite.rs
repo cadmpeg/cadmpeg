@@ -3,7 +3,7 @@
 
 use super::curve_conversion::{circular_arc_nurbs, elliptical_arc_nurbs, parabolic_arc_nurbs};
 use super::geometry::{resolve_transform, source_object, WireProjectionOutcome};
-use crate::decode_resource::{reserve_admitted_vec, reserve_vec};
+use crate::decode_resource::{copy_optional_identity, reserve_admitted_vec, reserve_optional_vec_growth, reserve_vec};
 use crate::directory::{DirectoryEntry, Hierarchy, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
@@ -1927,7 +1927,7 @@ fn project_native_composite(
     };
     for (position, curve) in child_curves.iter().enumerate() {
         segments.push(CompositeCurveSegment {
-            curve: curve.clone(),
+            curve: copy_optional_identity(ctx, curve.as_str(), "iges composite native segment curve ids")?,
             same_sense: true,
             transition: if position > 0
                 && close_with_tolerance(
@@ -1950,6 +1950,8 @@ fn project_native_composite(
     let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
     let curve_id = crate::ids::curve(&stem);
     let edge_id = crate::ids::edge(&stem);
+    reserve_optional_vec_growth(ctx, &mut ir.model.points, 2, "iges composite native point slots")?;
+    reserve_optional_vec_growth(ctx, &mut ir.model.vertices, 2, "iges composite native vertex slots")?;
     ir.model.points.extend([
         Point::new(start_point.clone(), start, None),
         Point::new(end_point.clone(), end, None),
@@ -1978,6 +1980,7 @@ fn project_native_composite(
             return Ok(None);
         }
     };
+    reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges composite native curve slots")?;
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
@@ -1986,6 +1989,7 @@ fn project_native_composite(
         }),
         source_object: Some(source),
     });
+    reserve_optional_vec_growth(ctx, &mut ir.model.edges, 1, "iges composite native edge slots")?;
     ir.model.edges.push(Edge {
         id: edge_id.clone(),
         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id.clone())),
@@ -2299,6 +2303,7 @@ fn project_with_type_130_policy(
                 ir, &mut index, carrier, &reason, ctx, sequences, &mut losses,
             )?;
             if let Some(edge) = edge {
+                reserve_optional_vec_growth(ctx, &mut wire_edges, 1, "iges composite wire edge ids")?;
                 wire_edges.push(edge);
                 crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges composite decoded sequences")?;
             }
@@ -2330,6 +2335,7 @@ fn project_with_type_130_policy(
                     &mut losses,
                 )?;
                 if let Some(edge) = edge {
+                    reserve_optional_vec_growth(ctx, &mut wire_edges, 1, "iges composite wire edge ids")?;
                     wire_edges.push(edge);
                     crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges composite decoded sequences")?;
                 }
@@ -2347,6 +2353,7 @@ fn project_with_type_130_policy(
                 &mut losses,
             )?;
             if let Some(edge) = edge {
+                reserve_optional_vec_growth(ctx, &mut wire_edges, 1, "iges composite wire edge ids")?;
                 wire_edges.push(edge);
                 crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges composite decoded sequences")?;
                 continue;
@@ -2366,6 +2373,7 @@ fn project_with_type_130_policy(
                 &mut losses,
             )?;
             if let Some(edge) = edge {
+                reserve_optional_vec_growth(ctx, &mut wire_edges, 1, "iges composite wire edge ids")?;
                 wire_edges.push(edge);
                 crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges composite decoded sequences")?;
                 continue;
@@ -2384,6 +2392,7 @@ fn project_with_type_130_policy(
                 &mut losses,
             )?;
             if let Some(edge) = edge {
+                reserve_optional_vec_growth(ctx, &mut wire_edges, 1, "iges composite wire edge ids")?;
                 wire_edges.push(edge);
                 crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges composite decoded sequences")?;
                 continue;
@@ -2399,6 +2408,8 @@ fn project_with_type_130_policy(
         let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
         let curve_id = crate::ids::curve(&stem);
         let edge = crate::ids::edge(&stem);
+        reserve_optional_vec_growth(ctx, &mut ir.model.points, 2, "iges composite solved point slots")?;
+        reserve_optional_vec_growth(ctx, &mut ir.model.vertices, 2, "iges composite solved vertex slots")?;
         ir.model.points.extend([
             Point::new(start_point.clone(), start, None),
             Point::new(end_point.clone(), end, None),
@@ -2416,11 +2427,13 @@ fn project_with_type_130_policy(
             },
         ]);
         sequences.record_curve(&curve_id, entry.sequence, ctx)?;
+        reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges composite solved curve slots")?;
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
             source_object: Some(source_object(entry, ctx)?),
         });
+        reserve_optional_vec_growth(ctx, &mut ir.model.edges, 1, "iges composite solved edge slots")?;
         ir.model.edges.push(Edge {
             id: edge.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
@@ -2443,8 +2456,17 @@ fn project_with_type_130_policy(
             [(start_vertex, start), (end_vertex, end)],
             ctx,
         )?;
-        let mut boundaries = vec![0.0];
-        let mut components = Vec::new();
+        let component_count = segments.preceding.len().checked_add(1).ok_or_else(|| refuse_local_limit("iges composite procedural components", u64::MAX, 1))?;
+        let boundary_count = component_count.checked_add(1).ok_or_else(|| refuse_local_limit("iges composite procedural boundaries", u64::MAX, 1))?;
+        let mut boundaries = match ctx {
+            Some(ctx) => reserve_vec(ctx, boundary_count, "iges composite procedural boundaries")?,
+            None => reserve_admitted_vec(boundary_count, "iges composite procedural boundaries")?,
+        };
+        boundaries.push(0.0);
+        let mut components = match ctx {
+            Some(ctx) => reserve_vec(ctx, component_count, "iges composite procedural components")?,
+            None => reserve_admitted_vec(component_count, "iges composite procedural components")?,
+        };
         for segment in segments.into_iter() {
             boundaries.push(segment.end);
             components.push(cadmpeg_ir::geometry::CompoundComponent {
@@ -2452,6 +2474,7 @@ fn project_with_type_130_policy(
                 component: segment.child,
             });
         }
+        reserve_optional_vec_growth(ctx, &mut ir.model.procedural_curves, 1, "iges composite procedural curve slots")?;
         let _attached = ir.model.add_procedural_curve(
             curve_id,
             ProceduralCurve::new(
@@ -2464,6 +2487,7 @@ fn project_with_type_130_policy(
                 ),
             ),
         );
+        reserve_optional_vec_growth(ctx, &mut wire_edges, 1, "iges composite wire edge ids")?;
         wire_edges.push(edge);
         crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges composite decoded sequences")?;
     }

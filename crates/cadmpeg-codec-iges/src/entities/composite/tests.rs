@@ -159,6 +159,61 @@ fn composite_index_admits_added_entity_nodes_and_identity_keys() {
 }
 
 #[test]
+fn composite_projection_refuses_model_and_procedural_slots_before_growth() {
+    for (bytes, operation) in [
+        (composite_curve_with_join_gap(0.001_001), "iges composite native point slots"),
+        (composite_curve_with_join_gap(0.001_001), "iges composite native vertex slots"),
+        (composite_curve_with_join_gap(0.001_001), "iges composite native curve slots"),
+        (composite_curve_with_join_gap(0.001_001), "iges composite native edge slots"),
+        (composite_curve_file(), "iges composite solved point slots"),
+        (composite_curve_file(), "iges composite solved vertex slots"),
+        (composite_curve_file(), "iges composite solved curve slots"),
+        (composite_curve_file(), "iges composite solved edge slots"),
+        (composite_curve_file(), "iges composite procedural boundaries"),
+        (composite_curve_file(), "iges composite procedural components"),
+        (composite_curve_file(), "iges composite procedural curve slots"),
+        (composite_curve_file(), "iges composite wire edge ids"),
+    ] {
+        let mut cap = 0_u64;
+        let mut found = false;
+        for _ in 0..4096 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            match IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+                Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    if limit.operation == operation { found = true; break; }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                Ok(_) => panic!("composite projection succeeded before {operation}"),
+                Err(error) => panic!("unexpected composite projection failure at {operation}: {error}"),
+            }
+        }
+        assert!(found, "composite projection boundary was not reached: {operation}");
+    }
+}
+
+#[test]
+fn native_composite_segment_curve_ids_refuse_retained_copy() {
+    let bytes = composite_curve_with_join_gap(0.001_001);
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        match IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                if limit.operation == "iges composite native segment curve ids" { return; }
+                cap = limit.used.checked_add(limit.additional).unwrap();
+            }
+            Ok(_) => panic!("native segment copy succeeded before retained refusal"),
+            Err(error) => panic!("unexpected native segment copy failure: {error}"),
+        }
+    }
+    panic!("native composite segment retained boundary was not reached");
+}
+
+#[test]
 fn composite_source_object_refusal_survives_candidate_projection() {
     let bytes = composite_curve_file();
     let mut cap = 0_u64;

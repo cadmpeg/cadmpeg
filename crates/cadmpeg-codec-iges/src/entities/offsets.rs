@@ -917,6 +917,7 @@ pub(super) fn project(
             end: end_vertex,
             tolerance: None,
         });
+        reserve_optional_vec_growth(ctx, &mut ir.model.procedural_curves, 1, "iges offset procedural curve slots")?;
         let _attached = ir.model.add_procedural_curve(curve_id, procedural);
         reserve_optional_vec_growth(ctx, &mut wire_edges, 1, "iges offset wire edge slots")?;
         wire_edges.push(edge_id);
