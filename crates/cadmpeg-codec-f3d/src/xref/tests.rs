@@ -92,6 +92,32 @@ fn xref_occurrence_path_refuses_retained_limit() {
 }
 
 #[test]
+fn xref_record_frame_index_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let ctx = redirections_limit_context(&arena, 0);
+    let mut bytes = vec![0; 15];
+    bytes[..4].copy_from_slice(&3_u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"123");
+    let error = super::indexed_records(&ctx, &bytes).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D xref record frame"));
+}
+
+#[test]
+fn xref_record_frame_scan_preserves_boundaries() {
+    let mut bytes = vec![0; 35];
+    bytes[..4].copy_from_slice(&3_u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"123");
+    bytes[16..20].copy_from_slice(&3_u32.to_le_bytes());
+    bytes[20..23].copy_from_slice(b"456");
+    let frames = super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes)
+        .unwrap();
+    assert_eq!(frames.len(), 2);
+    assert_eq!((frames[0].offset, frames[0].end), (0, 16));
+    assert_eq!((frames[1].offset, frames[1].end), (16, 35));
+}
+
+#[test]
 fn redirections_keep_neutron_role_and_data_independent() {
     let table = super::parse(&cadmpeg_test_support::service_decode_context(),
         br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":[{"from":"root.f3d","relativePath":"part.f3d","type":"XREF","properties":[{"neutronRole":{"value":"role-guid","dataType":"STRING"}},{"neutronData":{"value":"data-guid","dataType":"STRING"}}]}]}"#,
@@ -298,7 +324,7 @@ fn reflected_matrix_is_not_a_placement() {
         [0.0, 0.0, 0.0, 1.0],
     ];
     let bytes = occurrence_record("reflection-role", 10, &[1], Some(reflection));
-    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes), None);
+    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(), None);
     assert!(placements.is_empty(), "reflected placement admitted");
 }
 
@@ -526,7 +552,7 @@ fn repeated_target_placements_decode_identity_and_matrix_forms() {
     bytes.extend(matrix_5);
     bytes.extend(matrix_6);
 
-    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes), None);
+    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(), None);
 
     assert_eq!(placements.len(), 6);
     assert_eq!(
@@ -601,7 +627,7 @@ fn grouped_identity_carrier(role: &str, record_index: u32) -> Vec<u8> {
 fn grouped_identity_carriers_decode_as_identity_placements() {
     let role = "cccccccc-dddd-eeee-ffff-000000000000";
     let bytes = grouped_identity_carrier(role, 10);
-    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes), None);
+    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(), None);
 
     assert_eq!(
         placements,
@@ -682,7 +708,7 @@ fn legacy_typed_placements_decode_identity_and_matrix_forms() {
     assert_eq!(matrix_record.len(), 531);
     let mut bytes = identity;
     bytes.extend(matrix_record);
-    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes), None);
+    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(), None);
 
     assert_eq!(placements.len(), 2);
     assert_eq!(
@@ -698,7 +724,7 @@ fn malformed_legacy_typed_placement_reports_its_role() {
     bytes.pop();
     let (placements, failures) = super::occurrence_placements_with_failures(
         &bytes,
-        &super::indexed_records(&bytes),
+        &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(),
         None,
         None,
     );
@@ -724,7 +750,7 @@ fn occurrence_records_expand_shared_roles_and_decode_rigid_matrices() {
     ];
     let mut bytes = occurrence_record("role", 10, &[1], Some(first));
     bytes.extend_from_slice(&occurrence_record("role", 11, &[1, 2], Some(second)));
-    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes), None);
+    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(), None);
 
     assert_eq!(
         super::occurrence_transforms(&placements, "role"),
@@ -736,7 +762,7 @@ fn occurrence_records_expand_shared_roles_and_decode_rigid_matrices() {
 fn identity_marked_placement_stores_no_matrix() {
     let mut bytes = occurrence_record("role", 10, &[1], None);
     bytes.extend_from_slice(&occurrence_record("role", 11, &[3], None));
-    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes), None);
+    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(), None);
 
     assert_eq!(placements.len(), 2);
     assert_eq!(
@@ -749,7 +775,7 @@ fn identity_marked_placement_stores_no_matrix() {
 fn malformed_role_placement_is_retained_as_a_decode_failure() {
     let mut bytes = occurrence_record("role", 10, &[1], None);
     bytes.pop();
-    let records = super::indexed_records(&bytes);
+    let records = super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
 
     let (placements, failures) =
         super::occurrence_placements_with_failures(&bytes, &records, None, None);
@@ -768,7 +794,7 @@ fn tagged_placement_tail_requires_the_modern_serializer_magic() {
         None,
         Some(crate::metastream::MODERN_SERIALIZER_MAGIC),
     );
-    let records = super::indexed_records(&modern);
+    let records = super::indexed_records(&cadmpeg_test_support::service_decode_context(), &modern).unwrap();
     assert_eq!(
         super::occurrence_placements(
             &modern,
@@ -784,7 +810,7 @@ fn tagged_placement_tail_requires_the_modern_serializer_magic() {
     );
 
     let legacy = occurrence_record("role", 11, &[2], None);
-    let records = super::indexed_records(&legacy);
+    let records = super::indexed_records(&cadmpeg_test_support::service_decode_context(), &legacy).unwrap();
     assert_eq!(
         super::occurrence_placements(&legacy, &records, Some(999)).len(),
         1
@@ -983,7 +1009,7 @@ fn malformed_typed_role_placement_reports_a_loss() {
 #[test]
 fn placement_keeps_the_link_name_of_a_multi_element_path() {
     let bytes = occurrence_record("role", 10, &[7, 4, 2], None);
-    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes), None);
+    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(), None);
 
     assert_eq!(placements[0].link_names, vec!["role".to_owned()]);
 }
@@ -992,7 +1018,7 @@ fn placement_keeps_the_link_name_of_a_multi_element_path() {
 fn a_placement_that_does_not_close_on_the_record_end_is_not_a_placement() {
     let mut bytes = occurrence_record("role", 10, &[1], None);
     bytes.push(0);
-    let records = super::indexed_records(&bytes);
+    let records = super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
 
     assert_eq!(
         super::occurrence_placements(&bytes, &records, None),
@@ -1008,7 +1034,7 @@ fn a_nonrigid_matrix_is_not_a_placement() {
     nonrigid[2][2] = 1.0;
     nonrigid[3][3] = 1.0;
     let bytes = occurrence_record("role", 10, &[1], Some(nonrigid));
-    let records = super::indexed_records(&bytes);
+    let records = super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
 
     assert_eq!(
         super::occurrence_placements(&bytes, &records, None),
@@ -1019,7 +1045,7 @@ fn a_nonrigid_matrix_is_not_a_placement() {
 #[test]
 fn a_role_that_no_path_element_names_places_nothing() {
     let bytes = occurrence_record("role", 10, &[1], None);
-    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes), None);
+    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(), None);
 
     assert_eq!(
         super::occurrence_transforms(&placements, "other"),
@@ -1122,7 +1148,7 @@ fn component_insert_selection_uses_stream_and_role_not_class_tag() {
 #[test]
 fn typed_placement_admission_rejects_shape_collision() {
     let bytes = occurrence_record("role", 10, &[2, 3], None);
-    let records = super::indexed_records(&bytes);
+    let records = super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
     let no_registered_placements = HashSet::new();
     assert!(super::occurrence_placements_filtered(
         &bytes,
