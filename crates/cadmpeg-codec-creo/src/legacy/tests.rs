@@ -22,6 +22,11 @@ use super::{
     StringValue, UnsignedPayload, ValueKind,
 };
 
+fn principal_unit_system(persistence: &super::Persistence) -> Option<PrincipalUnitSystem> {
+    crate::decode::with_test_decode_ctx(|ctx| persistence.principal_unit_system(ctx))
+        .expect("unit selection fits service limits")
+}
+
 #[test]
 fn unknown_declaration_codes_retain_scope_identity() {
     let data = b"@future 1 8\n@future 1 12\n0 1 value\n@next 2 255\n0 2 value\n";
@@ -201,12 +206,11 @@ fn principal_unit_requires_one_complete_known_type_10_scalar() {
     let persistence = scan(millimeter, std::iter::once(0..millimeter.len()))
         .expect("the fixture states every scope inside its own bytes");
     assert_eq!(
-        persistence.principal_unit_system(),
+        principal_unit_system(&persistence),
         Some(PrincipalUnitSystem::MillimeterNewtonSecond)
     );
     assert_eq!(
-        persistence
-            .principal_unit_system()
+        principal_unit_system(&persistence)
             .and_then(PrincipalUnitSystem::length_scale_mm)
             .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(1.0)
@@ -216,12 +220,11 @@ fn principal_unit_requires_one_complete_known_type_10_scalar() {
     let persistence = scan(inch, std::iter::once(0..inch.len()))
         .expect("the fixture states every scope inside its own bytes");
     assert_eq!(
-        persistence.principal_unit_system(),
+        principal_unit_system(&persistence),
         Some(PrincipalUnitSystem::InchPoundMassSecond)
     );
     assert_eq!(
-        persistence
-            .principal_unit_system()
+        principal_unit_system(&persistence)
             .and_then(PrincipalUnitSystem::length_scale_mm)
             .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(25.4)
@@ -231,7 +234,7 @@ fn principal_unit_requires_one_complete_known_type_10_scalar() {
     repeated.extend_from_slice(millimeter);
     let persistence = scan(&repeated, std::iter::once(0..repeated.len()))
         .expect("the fixture states every scope inside its own bytes");
-    assert_eq!(persistence.principal_unit_system(), None);
+    assert_eq!(principal_unit_system(&persistence), None);
 }
 
 #[test]
@@ -258,12 +261,33 @@ fn legacy_unit_array_supplies_length_scale_when_principal_scalar_is_absent() {
         .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(
-        persistence
-            .principal_unit_system()
+        principal_unit_system(&persistence)
             .and_then(PrincipalUnitSystem::length_scale_mm)
             .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(10.0)
     );
+}
+
+#[test]
+fn legacy_unit_array_refuses_before_element_identity_node() {
+    let factor = 0.393_700_787_401_574_8_f64;
+    let data = format!(
+        "@Solid 1 0\n@unit_arr 2 0\n@type 3 1\n@unit_type 4 1\n@factor 5 2\n@name 6 10\n0 1 ->\n1 2 [1]\n2 2 ->\n3 3 11\n3 4 0\n3 5 {factor_bits:016X}\n3 6 CM\n",
+        factor_bits = factor.to_bits()
+    );
+    let persistence = scan(data.as_bytes(), std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = persistence
+        .principal_unit_system(&ctx)
+        .expect_err("one array element needs one identity node");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo legacy unit array element identities"));
 }
 
 #[test]
@@ -291,7 +315,7 @@ fn legacy_unit_array_conflict_withholds_length_scale() {
     let persistence = scan(data.as_bytes(), std::iter::once(0..data.len()))
         .expect("the fixture states every scope inside its own bytes");
 
-    assert_eq!(persistence.principal_unit_system(), None);
+    assert_eq!(principal_unit_system(&persistence), None);
 }
 
 #[test]

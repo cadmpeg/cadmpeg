@@ -725,7 +725,10 @@ impl Persistence {
     }
 
     /// Resolve one unambiguous legacy principal-unit string.
-    pub(crate) fn principal_unit_system(&self) -> Option<PrincipalUnitSystem> {
+    pub(crate) fn principal_unit_system(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<PrincipalUnitSystem>, CodecError> {
         let mut candidate = None;
         let mut found = false;
         for record in self
@@ -735,7 +738,7 @@ impl Persistence {
         {
             found = true;
             if candidate.is_some() {
-                return None;
+                return Ok(None);
             }
             candidate = match &record.payload {
                 StringPayload::Scalar {
@@ -748,17 +751,20 @@ impl Persistence {
                 } if text == INCH_POUND_MASS_SECOND => {
                     Some(PrincipalUnitSystem::InchPoundMassSecond)
                 }
-                _ => return None,
+                _ => return Ok(None),
             };
         }
         if found {
-            candidate
+            Ok(candidate)
         } else {
-            self.legacy_unit_array_system()
+            self.legacy_unit_array_system(ctx)
         }
     }
 
-    fn legacy_unit_array_system(&self) -> Option<PrincipalUnitSystem> {
+    fn legacy_unit_array_system(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<PrincipalUnitSystem>, CodecError> {
         let mut arrays = self.objects.iter().filter_map(|object| {
             let ObjectPayload::Array { elements, .. } = &object.payload else {
                 return None;
@@ -766,40 +772,58 @@ impl Persistence {
             (object.name == "unit_arr" && object.payload.is_complete())
                 .then_some((object, elements))
         });
-        let (array, elements) = arrays.next()?;
-        arrays.next().is_none().then_some(())?;
+        let Some((array, elements)) = arrays.next() else {
+            return Ok(None);
+        };
+        if arrays.next().is_some() {
+            return Ok(None);
+        }
         if elements.is_empty() {
-            return None;
+            return Ok(None);
         }
         let mut element_ids = BTreeSet::new();
-        if !elements
-            .iter()
-            .all(|element_id| element_ids.insert(element_id))
-        {
-            return None;
+        for element_id in elements {
+            if element_ids.contains(element_id) {
+                return Ok(None);
+            }
+            ctx.charge_collection_items(1, "creo legacy unit array element identities")?;
+            element_ids.insert(element_id);
         }
-        let element_records = elements
-            .iter()
-            .map(|element_id| {
-                let mut matches = self.objects.iter().filter(|object| {
-                    object.id() == *element_id
+        let mut first = None;
+        for element_id in elements {
+            let offset = element_id
+                .strip_prefix("creo:legacy_ascii:object#")
+                .and_then(|digits| digits.parse::<usize>().ok());
+            let mut matches = self.objects.iter().filter(|object| {
+                    Some(object.offset) == offset
                         && object.parent == Some(array.offset)
                         && object.name == "unit_arr"
                 });
-                let element = matches.next()?;
-                matches.next().is_none().then_some(element)
-            })
-            .collect::<Option<Vec<_>>>()?;
-        let first = element_records.first()?;
-        let unit_type = self.unique_integer_scalar(first.offset, "unit_type")?;
-        if unit_type != LEGACY_LENGTH_UNIT_TYPE
-            || self.unique_utf8_scalar(first.offset, "name")?.is_empty()
-        {
-            return None;
+            let Some(element) = matches.next() else {
+                return Ok(None);
+            };
+            if matches.next().is_some() {
+                return Ok(None);
+            }
+            first.get_or_insert(element);
         }
-        let factor = self.unique_real_scalar(first.offset, "factor")?;
+        let Some(first) = first else {
+            return Ok(None);
+        };
+        let Some(unit_type) = self.unique_integer_scalar(first.offset, "unit_type") else {
+            return Ok(None);
+        };
+        if unit_type != LEGACY_LENGTH_UNIT_TYPE
+            || self.unique_utf8_scalar(first.offset, "name").is_none_or(str::is_empty)
+        {
+            return Ok(None);
+        }
+        let Some(factor) = self.unique_real_scalar(first.offset, "factor") else {
+            return Ok(None);
+        };
         let scale_mm = factor * LEGACY_INCH_TO_MM;
-        cadmpeg_ir::scalar::PositiveReal::new(scale_mm).map(PrincipalUnitSystem::LegacyLengthScale)
+        Ok(cadmpeg_ir::scalar::PositiveReal::new(scale_mm)
+            .map(PrincipalUnitSystem::LegacyLengthScale))
     }
 
     fn unique_integer_scalar(&self, parent: usize, name: &str) -> Option<i32> {
