@@ -495,9 +495,15 @@ pub(crate) fn admit_history_bound_scope_variants(
                 break;
             }
         }
-        let equivalent_payload = following
-            .iter()
-            .all(|index| equivalent_scope_variant_payload(&scopes[*first], &scopes[*index]));
+        let mut equivalent_payload = history_bound.is_none() && !multiple_history_bounds;
+        if equivalent_payload {
+            for index in following {
+                if !equivalent_scope_variant_payload(ctx, &scopes[*first], &scopes[*index])? {
+                    equivalent_payload = false;
+                    break;
+                }
+            }
+        }
         let keep = match (history_bound, multiple_history_bounds) {
             (Some(keep), false) => keep,
             (None, false) if equivalent_payload => following.iter().copied().fold(*first, |keep, index| {
@@ -537,21 +543,60 @@ pub(crate) fn admit_history_bound_scope_variants(
     Ok(())
 }
 
+/// Count serialized JSON bytes without retaining the serialized document.
+#[derive(Default)]
+struct JsonByteCounter {
+    bytes: usize,
+}
+
+impl std::io::Write for JsonByteCounter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.bytes = self.bytes.checked_add(bytes.len()).ok_or_else(|| {
+            std::io::Error::other("scope JSON length overflow")
+        })?;
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 /// Compare two same-index scope envelopes after removing source-location and
 /// dynamic-class fields. An equivalent envelope is one serialization of the
 /// same logical scope; the later envelope supersedes the earlier one when no
 /// decoded ASM state pair can select a revision.
 fn equivalent_scope_variant_payload(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     left: &DesignParameterScope,
     right: &DesignParameterScope,
-) -> bool {
+) -> Result<bool, CodecError> {
+    let mut left_count = JsonByteCounter::default();
+    let mut right_count = JsonByteCounter::default();
+    if serde_json::to_writer(&mut left_count, left).is_err()
+        || serde_json::to_writer(&mut right_count, right).is_err()
+    {
+        return Ok(false);
+    }
+    let serialized = left_count.bytes.checked_add(right_count.bytes).ok_or_else(|| {
+        ctx.refuse_codec_limit("f3d scope variant JSON size", 0, 1)
+    })?;
+    let work = cadmpeg_core::decode::u64_from_index(serialized).checked_mul(2).ok_or_else(|| {
+        ctx.refuse_codec_limit("f3d scope variant comparison work", 0, 1)
+    })?;
+    ctx.charge_work(work, "f3d scope variant comparison")?;
+    let materialized = cadmpeg_core::decode::u64_from_index(serialized)
+        .checked_mul(16)
+        .and_then(|bytes| bytes.checked_add(2048))
+        .ok_or_else(|| ctx.refuse_codec_limit("f3d scope variant JSON size", 0, 1))?;
+    let _reservation = ctx.reserve_scoped(materialized, "f3d scope variant JSON")?;
     let (Ok(mut left), Ok(mut right)) = (serde_json::to_value(left), serde_json::to_value(right))
     else {
-        return false;
+        return Ok(false);
     };
     strip_scope_variant_provenance(&mut left, true);
     strip_scope_variant_provenance(&mut right, true);
-    left == right
+    Ok(left == right)
 }
 
 fn strip_scope_variant_provenance(value: &mut serde_json::Value, top_level: bool) {
