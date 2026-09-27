@@ -4,13 +4,13 @@
 use cadmpeg_core::container::ContainerRole;
 use std::fmt::Write;
 
-use crate::bytes::{lp_ascii_filtered, take_reference};
+use crate::bytes::take_reference;
 use crate::container::ContainerScan;
 use crate::design::decode::text::lp_utf16_bounded_charged;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::native_scope_charged;
 use crate::design::RECIPES;
-use crate::ids::{self, native_stream};
+use crate::ids::native_stream;
 use crate::layout::indexed_design_record_header;
 use crate::records::{
     bodies::{DesignBodyBinding, DesignBodyBounds, DesignBodyMember},
@@ -25,6 +25,30 @@ use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::{HashMap, HashSet};
+
+fn body_record_id_charged(
+    ctx: &DecodeContext<'_>,
+    stream: &str,
+    kind: &'static str,
+    offset: u64,
+) -> Result<String, CodecError> {
+    let mut id = native_scope_charged(ctx, stream)?;
+    let mut digits = 1;
+    let mut quotient = offset;
+    while quotient >= 10 {
+        quotient /= 10;
+        digits += 1;
+    }
+    let suffix_bytes = kind.len() + 2 + digits;
+    ctx.charge_retained(u64_from_index(suffix_bytes), "f3d body record identifier")?;
+    id.try_reserve(suffix_bytes).map_err(|_| {
+        ctx.refuse_codec_limit("f3d body record identifier allocation", 0, 1)
+    })?;
+    write!(&mut id, ":{kind}#{offset}").map_err(|_| {
+        CodecError::Malformed("F3D body record identifier formatting failed".into())
+    })?;
+    Ok(id)
+}
 
 /// Decode the `BodiesRoot` member list following the doubled `BodiesRoot`
 /// marker in each design `BulkStream` entry in `scan`: each member's entity
@@ -123,6 +147,7 @@ pub(crate) fn decode_body_members(
 /// Decode the three consecutive indexed records that cache each Design body's
 /// axis-aligned model-space bounds.
 pub(crate) fn decode_body_bounds(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignBodyBounds>, CodecError> {
@@ -162,28 +187,31 @@ pub(crate) fn decode_body_bounds(
         else {
             continue;
         };
-        let mut record_offsets = Vec::with_capacity(3);
-        for wanted in record_indices {
-            let matches = indexed_headers_in(bytes, start, end)
+        let mut record_offsets = [0; 3];
+        let mut unique = true;
+        for (ordinal, wanted) in record_indices.into_iter().enumerate() {
+            let mut matches = indexed_headers_in(bytes, start, end)
                 .filter(|(_, record_index)| *record_index == wanted)
-                .map(|(offset, _)| offset)
-                .collect::<Vec<_>>();
-            let [offset] = matches.as_slice() else {
-                record_offsets.clear();
-                break;
-            };
-            record_offsets.push(*offset);
+                .map(|(offset, _)| offset);
+            match (matches.next(), matches.next()) {
+                (Some(offset), None) => record_offsets[ordinal] = offset,
+                _ => {
+                    unique = false;
+                    break;
+                }
+            }
         }
-        let [first, second, third] = record_offsets.as_slice() else {
+        if !unique {
             continue;
-        };
+        }
+        let [first, second, third] = record_offsets;
         if !(first < second && second < third) {
             continue;
         }
         let third_end = next_indexed_record_offset(bytes, third.saturating_add(11))
             .filter(|offset| *offset <= end)
             .unwrap_or(end);
-        let intervals = [(*first, *second), (*second, *third), (*third, third_end)];
+        let intervals = [(first, second), (second, third), (third, third_end)];
         let mut repeated = body_bound_candidates(bytes, intervals[0].0, intervals[0].1)
             .filter_map(|(marker_offset, values)| {
                 let frame = bytes.get(marker_offset..marker_offset + 49)?;
@@ -191,24 +219,24 @@ pub(crate) fn decode_body_bounds(
                 for (ordinal, (record_start, record_end)) in
                     intervals.iter().copied().enumerate().skip(1)
                 {
-                    let matches = body_bound_candidates(bytes, record_start, record_end)
+                    let mut matches = body_bound_candidates(bytes, record_start, record_end)
                         .filter(|(offset, _)| {
                             bytes.get(*offset..offset.saturating_add(49)) == Some(frame)
                         })
-                        .map(|(offset, _)| offset + 1)
-                        .collect::<Vec<_>>();
-                    let [offset] = matches.as_slice() else {
-                        return None;
+                        .map(|(offset, _)| offset + 1);
+                    value_offsets[ordinal] = match (matches.next(), matches.next()) {
+                        (Some(offset), None) => offset,
+                        _ => return None,
                     };
-                    value_offsets[ordinal] = *offset;
                 }
                 Some((values, value_offsets))
-            })
-            .collect::<Vec<_>>();
-        repeated.dedup_by(|left, right| left.0 == right.0 && left.1 == right.1);
-        let [(values, value_offsets)] = repeated.as_slice() else {
+            });
+        let Some((values, value_offsets)) = repeated.next() else {
             continue;
         };
+        if repeated.any(|candidate| candidate.0 != values || candidate.1 != value_offsets) {
+            continue;
+        }
         let corner = |start: usize| {
             FinitePoint3::new(Point3::new(
                 values[start].get() * 10.0,
@@ -219,20 +247,22 @@ pub(crate) fn decode_body_bounds(
                 CodecError::Malformed("scene bounds maximum and minimum must be finite".into())
             })
         };
-        out.push(
-            DesignBodyBounds::from_parts(crate::records::bodies::DesignBodyBoundsWire {
-                id: ids::native_design_body_bounds_id(&entry.name, entity.byte_offset),
+        let record = DesignBodyBounds::from_parts(crate::records::bodies::DesignBodyBoundsWire {
+                id: body_record_id_charged(ctx, &entry.name, "design-body-bounds", entity.byte_offset)?,
                 entity_suffix: entity.entity_id.suffix(),
                 entity_byte_offset: entity.byte_offset,
                 record_indices,
-                record_byte_offsets: [*first as u64, *second as u64, *third as u64],
-                value_byte_offsets: value_offsets.map(|offset| offset as u64),
+                record_byte_offsets: [u64_from_index(first), u64_from_index(second), u64_from_index(third)],
+                value_byte_offsets: value_offsets.map(u64_from_index),
                 body_binding_ids: Vec::new(),
                 maximum: corner(0)?,
                 minimum: corner(3)?,
-            })
-            .map_err(CodecError::Malformed)?,
-        );
+            }).map_err(CodecError::Malformed)?;
+        ctx.charge_collection_items(1, "f3d body bounds")?;
+        out.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d body bounds allocation", 0, 1)
+        })?;
+        out.push(record);
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
@@ -247,17 +277,19 @@ fn indexed_headers_in(
         while position + 11 <= end {
             let at = position;
             position += 1;
-            let Some((class_tag, after_tag)) =
-                lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)
-            else {
+            if View::u32_le_at(bytes, at) != Some(3) {
+                continue;
+            }
+            let Some(class_tag) = bytes.get(at + 4..at + 7) else {
                 continue;
             };
-            if class_tag.len() == 3 && class_tag.bytes().all(|byte| byte.is_ascii_digit()) {
-                let Some(record_index) = View::u32_le_at(bytes, after_tag) else {
-                    continue;
-                };
-                return Some((at, record_index));
+            if !class_tag.iter().all(u8::is_ascii_digit) {
+                continue;
             }
+            let Some(record_index) = View::u32_le_at(bytes, at + 7) else {
+                continue;
+            };
+            return Some((at, record_index));
         }
         None
     })
@@ -286,7 +318,12 @@ fn body_bound_candidates(
     })
 }
 
-pub(super) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<ConstructionRecipe>) {
+pub(super) fn decode_stream(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    stream: &str,
+    out: &mut Vec<ConstructionRecipe>,
+) -> Result<(), CodecError> {
     let mut counters: HashMap<(ConstructionRecipeKind, Option<String>), u32> = HashMap::new();
     for &(name, kind) in RECIPES {
         let mut cursor = 0;
@@ -324,6 +361,12 @@ pub(super) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<Constructi
                 }
             });
             let key = (kind, design.as_ref().map(|design| design.id.value.clone()));
+            if !counters.contains_key(&key) {
+                ctx.charge_collection_items(1, "f3d construction recipe counters")?;
+                counters.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d construction recipe counters allocation", 0, 1)
+                })?;
+            }
             let counter = counters.entry(key).or_default();
             let recipe_index = *counter;
             *counter += 1;
@@ -337,17 +380,28 @@ pub(super) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<Constructi
                     offset: u64_from_index(at),
                 })
             });
-            out.push(ConstructionRecipe {
-                id: ids::native_construction_recipe_id(stream, offset),
+            let recipe = ConstructionRecipe {
+                id: body_record_id_charged(
+                    ctx,
+                    stream,
+                    "construction-recipe",
+                    u64_from_index(offset),
+                )?,
                 byte_offset: u64_from_index(offset),
                 kind,
                 design,
                 recipe_index,
                 record_index,
-            });
+            };
+            ctx.charge_collection_items(1, "f3d construction recipes")?;
+            out.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d construction recipes allocation", 0, 1)
+            })?;
+            out.push(recipe);
         }
     }
     out.sort_by_key(|recipe| recipe.record_index.map(|index| index.value));
+    Ok(())
 }
 
 fn recipe_design_id(bytes: &[u8], offset: usize, name: &[u8]) -> Option<(String, usize)> {
@@ -1157,7 +1211,12 @@ pub(crate) fn decode_design_body_bindings(
             for (ordinal, binding) in (0..pair_count).zip(&record.bindings) {
                 let body = crate::brep::resolve_body_selector(&source_bodies, binding.asm_key)?;
                 let record = DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
-                        id: ids::native_design_body_binding_id(&entry.name, binding.asm_key_offset),
+                        id: body_record_id_charged(
+                            ctx,
+                            &entry.name,
+                            "design-body-binding",
+                            u64_from_index(binding.asm_key_offset),
+                        )?,
                         stream: copy_body_map_name(ctx, &entry.name, "f3d body-binding stream")?,
                         pair_count,
                         pair_ordinal: ordinal,
@@ -1184,24 +1243,41 @@ pub(crate) fn decode_design_body_bindings(
 
 /// Bind each body cache to every BREP map pair carrying the same Design entity
 /// suffix in the same stream.
-pub(crate) fn bind_body_bounds(bounds: &mut [DesignBodyBounds], bindings: &[DesignBodyBinding]) {
+pub(crate) fn bind_body_bounds(
+    ctx: &DecodeContext<'_>,
+    bounds: &mut [DesignBodyBounds],
+    bindings: &[DesignBodyBinding],
+) -> Result<(), CodecError> {
     for bounds in bounds {
         let Some(stream) = native_stream(&bounds.id) else {
             continue;
         };
-        let mut matches = bindings
-            .iter()
-            .filter(|binding| {
-                stream == ids::native_scope(&binding.stream)
-                    && binding.entity_suffix == bounds.entity_suffix()
-            })
-            .collect::<Vec<_>>();
+        let mut matches = Vec::new();
+        for binding in bindings {
+            if binding.entity_suffix != bounds.entity_suffix()
+                || stream != native_scope_charged(ctx, &binding.stream)?
+            {
+                continue;
+            }
+            ctx.charge_collection_items(1, "f3d matching body bounds bindings")?;
+            matches.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d matching body bounds bindings allocation", 0, 1)
+            })?;
+            matches.push(binding);
+        }
         matches.sort_by_key(|binding| binding.asm_body_key_offset());
-        bounds.body_binding_ids = matches
-            .into_iter()
-            .map(|binding| binding.id.clone())
-            .collect();
+        let mut ids = Vec::new();
+        for binding in matches {
+            let id = copy_body_map_name(ctx, &binding.id, "f3d body bounds binding identifier")?;
+            ctx.charge_collection_items(1, "f3d body bounds binding identifiers")?;
+            ids.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d body bounds binding identifiers allocation", 0, 1)
+            })?;
+            ids.push(id);
+        }
+        bounds.body_binding_ids = ids;
     }
+    Ok(())
 }
 
 /// Decode per-body display visibility from the Design `BulkStream`.
@@ -1243,10 +1319,22 @@ pub(crate) fn decode_all_body_visibility(
                 let Some(node) = hidden_by_entity.get(&binding.entity_suffix) else {
                     continue;
                 };
+                ctx.charge_work(u64_from_index(out.len()), "f3d visibility duplicate lookup")?;
+                let existing = out.keys().any(|(name, asm_key)| {
+                    name == &record.blob_name && *asm_key == binding.asm_key
+                });
+                let key = copy_body_map_name(ctx, &record.blob_name, "f3d visibility BREP name")?;
+                let stream = copy_body_map_name(ctx, &entry.name, "f3d visibility stream")?;
+                if !existing {
+                    ctx.charge_collection_items(1, "f3d body visibility entries")?;
+                    out.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit("f3d body visibility entries allocation", 0, 1)
+                    })?;
+                }
                 out.insert(
-                    (record.blob_name.clone(), binding.asm_key),
+                    (key, binding.asm_key),
                     DecodedBodyVisibility {
-                        stream: entry.name.clone(),
+                        stream,
                         byte_offset: node.byte_offset,
                         asm_body_key_offset: binding.asm_key_offset as u64,
                         entity_suffix: binding.entity_suffix,
@@ -1275,19 +1363,34 @@ fn typed_browser_node_hidden_flags(
     let presentations = crate::design::decode::presentation::body_presentations(ctx, bytes, meta)?;
     let mut nodes_by_entity = HashMap::<u64, Vec<_>>::new();
     for node in &nodes {
-        nodes_by_entity
-            .entry(node.entity_suffix)
-            .or_default()
-            .push(node);
+        if !nodes_by_entity.contains_key(&node.entity_suffix) {
+            ctx.charge_collection_items(1, "f3d browser visibility entities")?;
+            nodes_by_entity.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d browser visibility entities allocation", 0, 1)
+            })?;
+        }
+        let candidates = nodes_by_entity.entry(node.entity_suffix).or_default();
+        ctx.charge_collection_items(1, "f3d browser visibility candidates")?;
+        candidates.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d browser visibility candidates allocation", 0, 1)
+        })?;
+        candidates.push(node);
     }
 
     let mut out = HashMap::new();
     for (entity_suffix, candidates) in nodes_by_entity {
-        let mut linked = presentations
+        let mut linked = Vec::new();
+        for node in presentations
             .iter()
             .filter(|presentation| presentation.entity_suffix == entity_suffix)
             .filter_map(|presentation| presentation.browser_node.as_ref())
-            .collect::<Vec<_>>();
+        {
+            ctx.charge_collection_items(1, "f3d linked browser visibility nodes")?;
+            linked.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d linked browser visibility nodes allocation", 0, 1)
+            })?;
+            linked.push(node);
+        }
         linked.sort_by_key(|node| node.record_index);
         linked.dedup_by_key(|node| node.record_index);
         let selected = match linked.as_slice() {
@@ -1299,6 +1402,10 @@ fn typed_browser_node_hidden_flags(
             _ => None,
         };
         if let Some(node) = selected {
+            ctx.charge_collection_items(1, "f3d selected browser visibility")?;
+            out.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d selected browser visibility allocation", 0, 1)
+            })?;
             out.insert(
                 entity_suffix,
                 BrowserNodeVisibility {
@@ -1858,6 +1965,186 @@ mod tests {
             .is_empty());
     }
 
+    #[test]
+    fn composed_body_map_outputs_refuse_caller_limits() {
+        const PREFIX: &str = "FusionAssetName[Active]/Design1/";
+        const BREP: &str = "FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh";
+        let mut bulk = body_map_bytes(10, 1, &[(7, 42)]);
+        let browser_offset = bulk.len();
+        push_browser_node(
+            &mut bulk,
+            100,
+            "11111111-2222-8333-A444-555555555555",
+            false,
+            42,
+        );
+        let metadata = crate::test_support::streams_test::design_metastream_with_records(
+            &[
+                (
+                    crate::design::body::BODY_MAP_CARRIER_TYPE_GUID,
+                    crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID,
+                    crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
+                    DESIGN_MODULE_BODY,
+                    &[900],
+                ),
+                (
+                    BROWSER_NODE_TYPE_GUID,
+                    BROWSER_NODE_BASE_TYPE_GUID,
+                    BROWSER_NODE_TYPE_VERSION,
+                    DESIGN_MODULE_FUSION,
+                    &[100],
+                ),
+            ],
+            &[(900, 0), (100, browser_offset as u64)],
+        );
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        write_synthetic_manifests(&mut zip, stored);
+        zip.start_file(format!("{PREFIX}BulkStream.dat"), stored).unwrap();
+        zip.write_all(&bulk).unwrap();
+        zip.start_file(format!("{PREFIX}MetaStream.dat"), stored).unwrap();
+        zip.write_all(&metadata).unwrap();
+        zip.start_file(BREP, stored).unwrap();
+        zip.write_all(&[0]).unwrap();
+        let archive = zip.finish().unwrap().into_inner();
+        with_scan(&archive, |scan| {
+            let visibility = super::decode_all_body_visibility(
+                &cadmpeg_test_support::service_decode_context(),
+                scan,
+            ).unwrap();
+            assert!(visibility.get(&("BREP.synthetic.smbh".to_owned(), 7)).unwrap().visible);
+            let names = super::design_model_blob_names(
+                &cadmpeg_test_support::service_decode_context(),
+                scan,
+            ).unwrap();
+            assert_eq!(names, ["BREP.synthetic.smbh"]);
+            let bindings = super::decode_design_body_bindings(
+                &cadmpeg_test_support::service_decode_context(),
+                scan,
+                None,
+                &[],
+            ).unwrap();
+            assert_eq!(bindings.len(), 1);
+            let body_key = cadmpeg_asm::brep::records::BodyNativeKey {
+                source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                    crate::ids::ID_FORMAT,
+                ),
+                body: "f3d:brep:entity#7".try_into().unwrap(),
+                record_index: 7,
+                body_ordinal: 0,
+                source_brep: Some("BREP.synthetic.smbh".into()),
+                asm_body_key: Some(7),
+            };
+            let blob_len = "BREP.synthetic.smbh".len() as u64;
+            let stream_name = format!("{PREFIX}BulkStream.dat");
+            let scope_len = crate::ids::native_scope(&stream_name).len() as u64;
+            let suffix_len = format!(
+                ":design-body-binding#{}",
+                bindings[0].asm_body_key_offset(),
+            ).len() as u64;
+            for (items, operation) in [
+                (30, "f3d body visibility entries"),
+            ] {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_collection_items = items;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = super::decode_all_body_visibility(&ctx, scan);
+                assert!(matches!(
+                    &result,
+                    Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                        if failure.dimension == ResourceDimension::CollectionItems
+                            && failure.operation == operation
+                ), "item limit {items}: {result:?}");
+            }
+            for (items, operation) in [
+                (7, "f3d body-map carrier counts"),
+                (8, "f3d selected body-map names"),
+                (9, "f3d archive BREP counts"),
+            ] {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_collection_items = items;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = super::design_model_blob_names(&ctx, scan);
+                assert!(matches!(
+                    &result,
+                    Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                        if failure.dimension == ResourceDimension::CollectionItems
+                            && failure.operation == operation
+                ), "blob-name item limit {items}: {result:?}");
+            }
+            for (retained, operation) in [
+                (blob_len, "f3d body-map carrier name"),
+                (blob_len * 2, "f3d selected body-map name"),
+                (blob_len * 3, "f3d archive BREP basename"),
+            ] {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_retained_bytes = retained;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = super::design_model_blob_names(&ctx, scan);
+                assert!(matches!(
+                    &result,
+                    Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                        if failure.dimension == ResourceDimension::RetainedBytes
+                            && failure.operation == operation
+                ), "blob-name retained limit {retained}: {result:?}");
+            }
+            for (items, operation) in [
+                (5, "f3d source BREP body keys"),
+                (6, "f3d decoded body bindings"),
+            ] {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_collection_items = items;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = super::decode_design_body_bindings(&ctx, scan, None, &[body_key.clone()]);
+                assert!(matches!(
+                    &result,
+                    Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                        if failure.dimension == ResourceDimension::CollectionItems
+                            && failure.operation == operation
+                ), "binding item limit {items}: {result:?}");
+            }
+            for (retained, operation) in [
+                (blob_len, "f3d native stream key"),
+                (blob_len + scope_len, "f3d body record identifier"),
+                (blob_len + scope_len + suffix_len, "f3d body-binding stream"),
+                (blob_len + scope_len + suffix_len + stream_name.len() as u64,
+                    "f3d body-binding blob name"),
+            ] {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_retained_bytes = retained;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = super::decode_design_body_bindings(&ctx, scan, None, &[body_key.clone()]);
+                assert!(matches!(
+                    &result,
+                    Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                        if failure.dimension == ResourceDimension::RetainedBytes
+                            && failure.operation == operation
+                ), "binding retained limit {retained}: {result:?}");
+            }
+            for (retained, operation) in [
+                (72 + blob_len, "f3d visibility BREP name"),
+                (72 + blob_len * 2, "f3d visibility stream"),
+            ] {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_retained_bytes = retained;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = super::decode_all_body_visibility(&ctx, scan);
+                assert!(matches!(
+                    &result,
+                    Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                        if failure.dimension == ResourceDimension::RetainedBytes
+                            && failure.operation == operation
+                ), "visibility retained limit {retained}: {result:?}");
+            }
+        });
+    }
+
     fn push_browser_node(
         out: &mut Vec<u8>,
         record_index: u32,
@@ -1983,6 +2270,61 @@ mod tests {
     }
 
     #[test]
+    fn browser_visibility_refuses_entity_candidate_and_output_limits() {
+        let mut bytes = Vec::new();
+        push_browser_node(
+            &mut bytes,
+            100,
+            "11111111-2222-8333-A444-555555555555",
+            true,
+            42,
+        );
+        let metadata = crate::metastream::MetaStream {
+            types: vec![
+                design_type(
+                    BODY_PRESENTATION_TYPE_GUID,
+                    Some(BODY_PRESENTATION_BASE_TYPE_GUID),
+                    BODY_PRESENTATION_TYPE_VERSION,
+                    DESIGN_MODULE_BODY,
+                    Vec::new(),
+                ),
+                design_type(
+                    BROWSER_NODE_TYPE_GUID,
+                    Some(BROWSER_NODE_BASE_TYPE_GUID),
+                    BROWSER_NODE_TYPE_VERSION,
+                    DESIGN_MODULE_FUSION,
+                    vec![100],
+                ),
+            ],
+            records: vec![primary_record(100, 0)],
+            secondary_records: Vec::new(),
+        };
+        for (items, operation) in [
+            (15, "f3d browser visibility entities"),
+            (16, "f3d browser visibility candidates"),
+            (17, "f3d selected browser visibility"),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = items;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = typed_browser_node_hidden_flags(&ctx, &bytes, &metadata);
+            assert!(matches!(
+                &result,
+                Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                    if failure.dimension == ResourceDimension::CollectionItems
+                        && failure.operation == operation
+            ), "item limit {items}: {result:?}");
+        }
+        let selected = typed_browser_node_hidden_flags(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &metadata,
+        ).unwrap();
+        assert!(selected.get(&42).unwrap().hidden);
+    }
+
+    #[test]
     fn body_bound_candidate_has_one_marker_and_six_ordered_f64_values() {
         let values: [f64; 6] = [4.0, 6.0, 1.5, -1.0, 0.0, -0.25];
         let mut bytes = vec![1];
@@ -2005,6 +2347,121 @@ mod tests {
     }
 
     #[test]
+    fn body_bounds_binding_refuses_matching_and_identifier_limits() {
+        use crate::records::bodies::{
+            DesignBodyBinding, DesignBodyBindingWire, DesignBodyBounds, DesignBodyBoundsWire,
+        };
+        const STREAM: &str = "Design/BulkStream.dat";
+        let binding = DesignBodyBinding::try_from(DesignBodyBindingWire {
+            id: "f3d:binding#1".into(),
+            stream: STREAM.into(),
+            pair_count: 1,
+            pair_ordinal: 0,
+            asm_body_key: 9,
+            asm_body_key_offset: 20,
+            entity_suffix: 7,
+            entity_suffix_offset: 28,
+            blob_name: "BREP.synthetic.smbh".into(),
+            blob_name_offset: 40,
+            body: None,
+        }).unwrap();
+        let make_bounds = || DesignBodyBounds::try_from(DesignBodyBoundsWire {
+            id: format!("{}:design-body-bounds#0", crate::ids::native_scope(STREAM)),
+            entity_suffix: 7,
+            entity_byte_offset: 0,
+            record_indices: [8, 9, 10],
+            record_byte_offsets: [10, 20, 30],
+            value_byte_offsets: [11, 21, 31],
+            body_binding_ids: Vec::new(),
+            maximum: cadmpeg_ir::math::Point3::new(1.0, 1.0, 1.0),
+            minimum: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+        }).unwrap();
+        let scope_len = crate::ids::native_scope(STREAM).len() as u64;
+        for (items, retained, dimension, operation) in [
+            (0, u64::MAX, ResourceDimension::CollectionItems, "f3d matching body bounds bindings"),
+            (1, u64::MAX, ResourceDimension::CollectionItems, "f3d body bounds binding identifiers"),
+            (u64::MAX, 0, ResourceDimension::RetainedBytes, "f3d native stream key"),
+            (u64::MAX, scope_len, ResourceDimension::RetainedBytes, "f3d body bounds binding identifier"),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = items;
+            policy.limits.max_retained_bytes = retained;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut bounds = [make_bounds()];
+            assert!(matches!(
+                super::bind_body_bounds(&ctx, &mut bounds, &[binding.clone()]),
+                Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                    if failure.dimension == dimension && failure.operation == operation
+            ));
+        }
+        let mut bounds = [make_bounds()];
+        super::bind_body_bounds(&cadmpeg_test_support::service_decode_context(), &mut bounds, &[binding]).unwrap();
+        assert_eq!(bounds[0].body_binding_ids, ["f3d:binding#1"]);
+    }
+
+    #[test]
+    fn decoded_body_bounds_refuse_output_and_identifier_limits() {
+        const ENTRY: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
+        let mut bulk = Vec::new();
+        indexed_header(&mut bulk, *b"256", 7);
+        bulk.extend_from_slice(&[0; 5]);
+        for record_index in [8, 9, 10] {
+            indexed_header(&mut bulk, *b"257", record_index);
+            bulk.push(1);
+            for value in [4.0_f64, 6.0, 1.5, -1.0, 0.0, -0.25] {
+                bulk.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        let entity = crate::records::entity_header::DesignEntityHeader {
+            id: format!("{}:design-entity-header#0", crate::ids::native_scope(ENTRY)),
+            byte_offset: 0,
+            entity_id: crate::records::identity::DesignEntityId::try_from("0_7".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
+            optional_slot_present: false,
+            registration: crate::records::entity_header::DesignEntityRegistration::new(
+                Some(DESIGN_MODULE_BODY.to_owned()),
+                None,
+                crate::records::identity::ReferenceRun::unlocated(Vec::new()),
+            ).unwrap(),
+        };
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        write_synthetic_manifests(&mut zip, stored);
+        zip.start_file(ENTRY, stored).unwrap();
+        zip.write_all(&bulk).unwrap();
+        let archive = zip.finish().unwrap().into_inner();
+        let scope_len = crate::ids::native_scope(ENTRY).len() as u64;
+        let suffix_len = ":design-body-bounds#0".len() as u64;
+        with_scan(&archive, |scan| {
+            for (items, retained, dimension, operation) in [
+                (0, u64::MAX, ResourceDimension::CollectionItems, "f3d body bounds"),
+                (u64::MAX, 0, ResourceDimension::RetainedBytes, "f3d native stream key"),
+                (u64::MAX, scope_len + suffix_len - 1, ResourceDimension::RetainedBytes, "f3d body record identifier"),
+            ] {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_collection_items = items;
+                policy.limits.max_retained_bytes = retained;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = super::decode_body_bounds(&ctx, scan, &[entity.clone()]);
+                assert!(matches!(
+                    &result,
+                    Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                        if failure.dimension == dimension && failure.operation == operation
+                ), "item limit {items}, retained limit {retained}: {result:?}");
+            }
+            let bounds = super::decode_body_bounds(
+                &cadmpeg_test_support::service_decode_context(),
+                scan,
+                &[entity.clone()],
+            ).unwrap();
+            assert_eq!(bounds.len(), 1);
+            assert_eq!(bounds[0].entity_suffix(), 7);
+        });
+    }
+
+    #[test]
     fn a_recipe_marker_before_the_record_index_word_states_no_record_index() {
         // The family marker opens at offset four, so the stream holds no index
         // word sixteen bytes before it.
@@ -2012,12 +2469,40 @@ mod tests {
         bytes.extend_from_slice(&16u32.to_le_bytes());
         bytes.extend_from_slice(b"body_recipe_data");
         let mut recipes = Vec::new();
-        crate::design::decode::body::decode_stream(&bytes, "Design/BulkStream.dat", &mut recipes);
+        crate::design::decode::body::decode_stream(&cadmpeg_test_support::service_decode_context(), &bytes, "Design/BulkStream.dat", &mut recipes).unwrap();
         assert_eq!(recipes.len(), 1);
         assert_eq!(recipes[0].record_index, None);
         let wire = serde_json::to_value(&recipes[0]).expect("recipe wire");
         assert_eq!(wire.get("record_index"), None);
         assert_eq!(wire.get("record_index_offset"), None);
+    }
+
+    #[test]
+    fn construction_recipe_refuses_counter_output_and_identifier_limits() {
+        const STREAM: &str = "Design/BulkStream.dat";
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(b"body_recipe_data");
+        let scope_len = crate::ids::native_scope(STREAM).len() as u64;
+        let suffix_len = ":construction-recipe#4".len() as u64;
+        for (items, retained, dimension, operation) in [
+            (0, u64::MAX, ResourceDimension::CollectionItems, "f3d construction recipe counters"),
+            (1, u64::MAX, ResourceDimension::CollectionItems, "f3d construction recipes"),
+            (u64::MAX, 0, ResourceDimension::RetainedBytes, "f3d native stream key"),
+            (u64::MAX, scope_len + suffix_len - 1, ResourceDimension::RetainedBytes, "f3d body record identifier"),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = items;
+            policy.limits.max_retained_bytes = retained;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut recipes = Vec::new();
+            assert!(matches!(
+                super::decode_stream(&ctx, &bytes, STREAM, &mut recipes),
+                Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                    if failure.dimension == dimension && failure.operation == operation
+            ));
+        }
     }
 
     #[test]
@@ -2032,7 +2517,7 @@ mod tests {
             bytes.extend_from_slice(&(-1i64).to_le_bytes());
         }
         let mut recipes = Vec::new();
-        crate::design::decode::body::decode_stream(&bytes, "Design/BulkStream.dat", &mut recipes);
+        crate::design::decode::body::decode_stream(&cadmpeg_test_support::service_decode_context(), &bytes, "Design/BulkStream.dat", &mut recipes).unwrap();
         assert_eq!(recipes.len(), 2);
         assert!(recipes
             .iter()
@@ -2049,7 +2534,7 @@ mod tests {
         body.extend_from_slice(&16u32.to_le_bytes());
         body.extend_from_slice(b"body_recipe_data");
         let mut recipes = Vec::new();
-        crate::design::decode::body::decode_stream(&body, "Design/BulkStream.dat", &mut recipes);
+        crate::design::decode::body::decode_stream(&cadmpeg_test_support::service_decode_context(), &body, "Design/BulkStream.dat", &mut recipes).unwrap();
         assert_eq!(recipes.len(), 1);
         assert_eq!(
             recipes[0]

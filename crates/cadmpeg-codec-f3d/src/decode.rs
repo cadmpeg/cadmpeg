@@ -2291,7 +2291,8 @@ impl<'a> F3dDecodeSession<'a> {
                 self.native.asm_histories.push(history);
             }
         }
-        self.native.construction_recipes = crate::design::decode::parameters::decode_recipes(scan)?;
+        self.native.construction_recipes =
+            crate::design::decode::parameters::decode_recipes(ctx, scan)?;
         self.native.persistent_references =
             crate::design::decode::sketch::decode_persistent_references(scan)?;
         self.native.lost_edge_references =
@@ -2408,13 +2409,15 @@ impl<'a> F3dDecodeSession<'a> {
                 )?;
         }
         self.native.design_body_bounds = crate::design::decode::body::decode_body_bounds(
+            ctx,
             scan,
             &self.native.design_entity_headers,
         )?;
         crate::design::decode::body::bind_body_bounds(
+            ctx,
             &mut self.native.design_body_bounds,
             &self.native.design_body_bindings,
-        );
+        )?;
         self.native.design_configurations =
             crate::design::configurations::decode_configurations(scan)?;
         self.ir.model.configurations = crate::design::configurations::project_configurations(
