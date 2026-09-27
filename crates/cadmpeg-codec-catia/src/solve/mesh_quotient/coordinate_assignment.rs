@@ -220,7 +220,7 @@ fn partial_compact_assignment_viable(
                     "catia_deferred_compatible_cycles",
                 )?;
                 for (slot, cycle) in row.iter_mut().zip(&domain.cycles) {
-                    *slot = deferred_boundary_cycle_matches(cycle, incidence.as_slice(), &missing);
+                    *slot = deferred_boundary_cycle_matches(ctx, cycle, incidence.as_slice(), &missing)?;
                 }
             }
             let mut matched =

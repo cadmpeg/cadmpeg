@@ -7,8 +7,7 @@ use crate::solve::tests::repeated_domain;
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use std::collections::HashSet;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 #[test]
@@ -84,6 +83,66 @@ fn face_configuration_singleton_refuses_trial_copies() {
         "catia face configuration singleton order",
         "catia face configuration trial rows",
         "catia face configuration trial masks",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
+fn incidence_degree_adjustment_refuses_before_undo_and_point_growth() {
+    for (cap, operation) in [
+        (0, "catia incidence degree undo entries"),
+        (4, "catia incidence degree points"),
+    ] {
+        let mut degrees = vec![BTreeMap::new(), BTreeMap::new()];
+        assert!(matches!(
+            crate::test_support::with_collection_limit(cap, |ctx| {
+                super::super::adjust_incidence_degrees(ctx, &mut degrees, &[[0, 1]], 0, [2, 3])
+            }),
+            Err(CodecError::ResourceLimit(limit)) if limit.operation == operation
+        ));
+        assert!(degrees.iter().all(BTreeMap::is_empty));
+    }
+    let mut degrees = vec![BTreeMap::new(), BTreeMap::new()];
+    let undo = crate::test_support::with_service_context(|ctx| {
+        super::super::adjust_incidence_degrees(ctx, &mut degrees, &[[0, 1]], 0, [2, 3])
+    }).expect("service resource budget");
+    assert_eq!(undo.entries.len(), 4);
+    assert_eq!(degrees[0].len(), 2);
+    assert_eq!(degrees[1].len(), 2);
+}
+
+#[test]
+fn deferred_cycle_assignment_refuses_each_inner_collection_limit() {
+    let use_ = |edge, start| MeshBoundaryEdgeCandidate {
+        edge,
+        start,
+        end: (start + 1) % 2,
+        reversed: None,
+    };
+    let mesh = crate::solve::missing_edge::MeshDeferredBoundaryCycle {
+        length: 2,
+        exact_uses: vec![(use_(0, 0), 1), (use_(1, 1), 1)],
+    };
+    let incidence = [(0, false), (1, false)];
+    let missing = HashSet::new();
+    let run = |ctx: &DecodeContext<'_>| {
+        super::super::deferred_boundary_cycle_matches(ctx, &mesh, &incidence, &missing)
+    };
+    assert!(crate::test_support::with_service_context(run).expect("service resource budget"));
+    let mut refused = HashSet::new();
+    for cap in 0..32 {
+        match crate::test_support::with_collection_limit(cap, run) {
+            Err(CodecError::ResourceLimit(limit)) => { refused.insert(limit.operation); }
+            Ok(true) => break,
+            other => panic!("unexpected deferred cycle result: {other:?}"),
+        }
+    }
+    for operation in [
+        "catia deferred cycle expected edges",
+        "catia deferred cycle actual edges",
+        "catia deferred cycle positions",
+        "catia deferred cycle boundary uses",
     ] {
         assert!(refused.contains(operation), "no refusal at {operation}");
     }

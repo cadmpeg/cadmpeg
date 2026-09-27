@@ -1909,7 +1909,7 @@ fn incidence_candidate_uses_a_separate_global_quotient_validation_budget() {
         .candidate_fits(0, [0, 0])
         .expect("service resource budget"));
     assert!(!budget.exhausted());
-    search.adjust(0, [0, 0]);
+    search.adjust(0, [0, 0]).expect("service resource budget");
     search.assignment[0] = Some([0, 0]);
     assert!(search
         .ordered_faces_feasible([0])
