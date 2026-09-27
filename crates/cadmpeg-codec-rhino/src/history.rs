@@ -1062,17 +1062,462 @@ fn object_reference_properties(
     Ok(())
 }
 
-fn cage_json(cage: &crate::cage::Cage) -> serde_json::Value {
-    serde_json::json!({
-        "kind": "nurbs_cage",
-        "dimension": cage.dimension,
-        "rational": cage.rational(),
-        "orders": cage.orders,
-        "counts": cage.counts,
-        "knots": cage.knots,
-        "control_points": cage.control_points,
-        "weights": cage.weights,
-    })
+struct CageJson<'a>(&'a crate::cage::Cage);
+
+struct MeshVertices<'a>(&'a cadmpeg_ir::tessellation::TessellationMesh<cadmpeg_ir::features::FinitePoint3, cadmpeg_ir::features::FiniteVector3>);
+
+impl serde::Serialize for MeshVertices<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use cadmpeg_ir::tessellation::TessellationMesh;
+        use serde::ser::SerializeSeq;
+        match self.0 {
+            TessellationMesh::List { vertices, .. }
+            | TessellationMesh::CornerShadedList { vertices, .. } => vertices.serialize(serializer),
+            TessellationMesh::ShadedList { vertices, .. } => {
+                let mut sequence = serializer.serialize_seq(Some(vertices.len()))?;
+                for vertex in vertices {
+                    sequence.serialize_element(&vertex.position)?;
+                }
+                sequence.end()
+            }
+            TessellationMesh::Strips { strips } => {
+                let mut sequence = serializer.serialize_seq(Some(self.0.vertex_count()))?;
+                for strip in strips.as_slice() {
+                    for vertex in strip.vertices() {
+                        sequence.serialize_element(vertex)?;
+                    }
+                }
+                sequence.end()
+            }
+            TessellationMesh::ShadedStrips { strips } => {
+                let mut sequence = serializer.serialize_seq(Some(self.0.vertex_count()))?;
+                for strip in strips.as_slice() {
+                    for vertex in strip.vertices() {
+                        sequence.serialize_element(&vertex.position)?;
+                    }
+                }
+                sequence.end()
+            }
+        }
+    }
+}
+
+struct MeshTriangles<'a>(&'a cadmpeg_ir::tessellation::TessellationMesh<cadmpeg_ir::features::FinitePoint3, cadmpeg_ir::features::FiniteVector3>);
+
+fn serialize_strip_triangles<S: serde::Serializer, V>(
+    strips: &cadmpeg_ir::tessellation::Strips<V>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::{Error as _, SerializeSeq};
+    let count = strips.as_slice().iter().map(|strip| strip.triangle_count()).sum();
+    let mut sequence = serializer.serialize_seq(Some(count))?;
+    let mut base = 0_u32;
+    for strip in strips.as_slice() {
+        for index in 0..strip.triangle_count() {
+            let index = u32::try_from(index).map_err(S::Error::custom)?;
+            let a = base.checked_add(index).ok_or_else(|| S::Error::custom("mesh index overflow"))?;
+            let b = a.checked_add(1).ok_or_else(|| S::Error::custom("mesh index overflow"))?;
+            let c = a.checked_add(2).ok_or_else(|| S::Error::custom("mesh index overflow"))?;
+            sequence.serialize_element(&if index.is_multiple_of(2) { [a, b, c] } else { [a, c, b] })?;
+        }
+        let length = u32::try_from(strip.vertices().len()).map_err(S::Error::custom)?;
+        base = base.checked_add(length).ok_or_else(|| S::Error::custom("mesh strip base overflow"))?;
+    }
+    sequence.end()
+}
+
+fn serialize_strip_lengths<S: serde::Serializer, V>(
+    strips: &cadmpeg_ir::tessellation::Strips<V>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::{Error as _, SerializeSeq};
+    let mut sequence = serializer.serialize_seq(Some(strips.as_slice().len()))?;
+    for strip in strips.as_slice() {
+        sequence.serialize_element(&u32::try_from(strip.vertices().len()).map_err(S::Error::custom)?)?;
+    }
+    sequence.end()
+}
+
+impl serde::Serialize for MeshTriangles<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use cadmpeg_ir::tessellation::TessellationMesh;
+        use serde::ser::SerializeSeq;
+        match self.0 {
+            TessellationMesh::List { triangles, .. }
+            | TessellationMesh::ShadedList { triangles, .. } => triangles.serialize(serializer),
+            TessellationMesh::CornerShadedList { triangles, .. } => {
+                let mut sequence = serializer.serialize_seq(Some(triangles.len()))?;
+                for triangle in triangles {
+                    sequence.serialize_element(&triangle.corners)?;
+                }
+                sequence.end()
+            }
+            TessellationMesh::Strips { strips } => serialize_strip_triangles(strips, serializer),
+            TessellationMesh::ShadedStrips { strips } => serialize_strip_triangles(strips, serializer),
+        }
+    }
+}
+
+struct MeshStripLengths<'a>(&'a cadmpeg_ir::tessellation::TessellationMesh<cadmpeg_ir::features::FinitePoint3, cadmpeg_ir::features::FiniteVector3>);
+
+impl serde::Serialize for MeshStripLengths<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use cadmpeg_ir::tessellation::TessellationMesh;
+        match self.0 {
+            TessellationMesh::List { .. }
+            | TessellationMesh::ShadedList { .. }
+            | TessellationMesh::CornerShadedList { .. } => ([] as [u32; 0]).serialize(serializer),
+            TessellationMesh::Strips { strips } => serialize_strip_lengths(strips, serializer),
+            TessellationMesh::ShadedStrips { strips } => serialize_strip_lengths(strips, serializer),
+        }
+    }
+}
+
+struct MeshNormals<'a>(&'a cadmpeg_ir::tessellation::TessellationMesh<cadmpeg_ir::features::FinitePoint3, cadmpeg_ir::features::FiniteVector3>);
+
+impl serde::Serialize for MeshNormals<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use cadmpeg_ir::tessellation::TessellationMesh;
+        use serde::ser::SerializeSeq;
+        match self.0 {
+            TessellationMesh::List { .. }
+            | TessellationMesh::CornerShadedList { .. }
+            | TessellationMesh::Strips { .. } => ([] as [u32; 0]).serialize(serializer),
+            TessellationMesh::ShadedList { vertices, .. } => {
+                let mut sequence = serializer.serialize_seq(Some(vertices.len()))?;
+                for vertex in vertices {
+                    sequence.serialize_element(&vertex.normal)?;
+                }
+                sequence.end()
+            }
+            TessellationMesh::ShadedStrips { strips } => {
+                let mut sequence = serializer.serialize_seq(Some(self.0.vertex_count()))?;
+                for strip in strips.as_slice() {
+                    for vertex in strip.vertices() {
+                        sequence.serialize_element(&vertex.normal)?;
+                    }
+                }
+                sequence.end()
+            }
+        }
+    }
+}
+
+struct MeshJson<'a>(&'a crate::mesh::DecodedMesh);
+
+impl serde::Serialize for MeshJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let tessellation = &self.0.tessellation;
+        let mut map = serializer.serialize_map(Some(6))?;
+        map.serialize_entry("channels", tessellation.channels())?;
+        map.serialize_entry("kind", "mesh")?;
+        map.serialize_entry("normals", &MeshNormals(tessellation.mesh()))?;
+        map.serialize_entry("strip_lengths", &MeshStripLengths(tessellation.mesh()))?;
+        map.serialize_entry("triangles", &MeshTriangles(tessellation.mesh()))?;
+        map.serialize_entry("vertices", &MeshVertices(tessellation.mesh()))?;
+        map.end()
+    }
+}
+
+struct CapPcurveJson<'a>(&'a crate::extrusion::CapPcurve);
+
+impl serde::Serialize for CapPcurveJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(5))?;
+        map.serialize_entry("control_points", &self.0.control_points)?;
+        map.serialize_entry("degree", &self.0.degree)?;
+        map.serialize_entry("knots", &self.0.knots)?;
+        map.serialize_entry("periodic", &self.0.periodic)?;
+        map.serialize_entry("weights", &self.0.weights)?;
+        map.end()
+    }
+}
+
+struct BoundaryJson<'a>(&'a crate::extrusion::ExtrusionBoundary);
+
+impl serde::Serialize for BoundaryJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(5))?;
+        map.serialize_entry("end_nurbs", &self.0.end_nurbs)?;
+        map.serialize_entry("end_pcurve", &CapPcurveJson(&self.0.end_pcurve))?;
+        map.serialize_entry("start_curve", self.0.start_curve.reported_geometry())?;
+        map.serialize_entry("start_nurbs", &self.0.start_nurbs)?;
+        map.serialize_entry("start_pcurve", &CapPcurveJson(&self.0.start_pcurve))?;
+        map.end()
+    }
+}
+
+struct BoundariesJson<'a>(&'a [crate::extrusion::ExtrusionBoundary]);
+
+impl serde::Serialize for BoundariesJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for boundary in self.0 {
+            sequence.serialize_element(&BoundaryJson(boundary))?;
+        }
+        sequence.end()
+    }
+}
+
+struct LateralsJson<'a>(&'a [crate::extrusion::ExtrusionBoundary]);
+
+impl serde::Serialize for LateralsJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for boundary in self.0 {
+            sequence.serialize_element(&boundary.lateral)?;
+        }
+        sequence.end()
+    }
+}
+
+struct ExtrusionJson<'a>(&'a crate::extrusion::DecodedExtrusion);
+
+impl serde::Serialize for ExtrusionJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(8))?;
+        map.serialize_entry("boundaries", &BoundariesJson(&self.0.boundaries))?;
+        map.serialize_entry("cap_normals", &self.0.cap_normals)?;
+        map.serialize_entry("cap_origins", &self.0.cap_origins)?;
+        map.serialize_entry("cap_u_axes", &self.0.cap_u_axes)?;
+        map.serialize_entry("caps", &self.0.caps)?;
+        map.serialize_entry("direction", &self.0.direction)?;
+        map.serialize_entry("kind", "extrusion")?;
+        map.serialize_entry("laterals", &LateralsJson(&self.0.boundaries))?;
+        map.end()
+    }
+}
+
+struct MorphControlJson<'a>(&'a crate::morph::Control);
+
+impl serde::Serialize for MorphControlJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(3))?;
+        match self.0 {
+            crate::morph::Control::Curve { start, end } => {
+                map.serialize_entry("end", end)?;
+                map.serialize_entry("kind", "curve")?;
+                map.serialize_entry("start", start)?;
+            }
+            crate::morph::Control::Surface { start, end } => {
+                map.serialize_entry("end", end)?;
+                map.serialize_entry("kind", "surface")?;
+                map.serialize_entry("start", start)?;
+            }
+            crate::morph::Control::Cage { start_transform, end } => {
+                map.serialize_entry("end", &CageJson(end))?;
+                map.serialize_entry("kind", "cage")?;
+                map.serialize_entry("start_transform", start_transform)?;
+            }
+        }
+        map.end()
+    }
+}
+
+struct LocalizerJson<'a>(&'a crate::morph::Localizer);
+
+impl serde::Serialize for LocalizerJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(6))?;
+        map.serialize_entry("curve", &self.0.curve)?;
+        map.serialize_entry("interval", &self.0.interval)?;
+        map.serialize_entry("kind", &self.0.kind)?;
+        map.serialize_entry("point", &self.0.point)?;
+        map.serialize_entry("surface", &self.0.surface)?;
+        map.serialize_entry("vector", &self.0.vector)?;
+        map.end()
+    }
+}
+
+struct LocalizersJson<'a>(&'a [crate::morph::Localizer]);
+
+impl serde::Serialize for LocalizersJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for localizer in self.0 {
+            sequence.serialize_element(&LocalizerJson(localizer))?;
+        }
+        sequence.end()
+    }
+}
+
+struct MorphJson<'a>(&'a crate::morph::Morph);
+
+impl serde::Serialize for MorphJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(7))?;
+        map.serialize_entry("captive_ids", &UuidList(&self.0.captive_ids))?;
+        map.serialize_entry("control", &MorphControlJson(&self.0.control))?;
+        map.serialize_entry("kind", "morph_control")?;
+        map.serialize_entry("localizers", &LocalizersJson(&self.0.localizers))?;
+        map.serialize_entry("preserve_structure", &self.0.preserve_structure)?;
+        map.serialize_entry("quick_preview", &self.0.quick_preview)?;
+        map.serialize_entry("tolerance", &self.0.tolerance)?;
+        map.end()
+    }
+}
+
+struct DetailJson<'a>(&'a crate::detail::Detail);
+
+impl serde::Serialize for DetailJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(3))?;
+        map.serialize_entry("boundary", self.0.boundary.reported_geometry())?;
+        map.serialize_entry("kind", "detail_view")?;
+        map.serialize_entry("page_per_model_ratio", &self.0.page_per_model_ratio)?;
+        map.end()
+    }
+}
+
+struct HatchLoopJson<'a>(&'a crate::hatch::HatchLoop);
+
+impl serde::Serialize for HatchLoopJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(2))?;
+        map.serialize_entry("curve", self.0.curve.reported_geometry())?;
+        map.serialize_entry("kind", match self.0.kind {
+            crate::hatch::LoopKind::Outer => "outer",
+            crate::hatch::LoopKind::Inner => "inner",
+        })?;
+        map.end()
+    }
+}
+
+struct HatchLoopsJson<'a>(&'a [crate::hatch::HatchLoop]);
+
+impl serde::Serialize for HatchLoopsJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for hatch_loop in self.0 {
+            sequence.serialize_element(&HatchLoopJson(hatch_loop))?;
+        }
+        sequence.end()
+    }
+}
+
+struct HatchPlaneJson<'a> {
+    plane: &'a crate::settings::Plane,
+    origin: [cadmpeg_ir::scalar::FiniteReal; 3],
+    equation_constant: cadmpeg_ir::scalar::FiniteReal,
+}
+
+impl serde::Serialize for HatchPlaneJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(5))?;
+        map.serialize_entry("equation", &[
+            self.plane.equation[0],
+            self.plane.equation[1],
+            self.plane.equation[2],
+            self.equation_constant.get(),
+        ])?;
+        map.serialize_entry("origin", &self.origin)?;
+        map.serialize_entry("xaxis", &self.plane.xaxis.get())?;
+        map.serialize_entry("yaxis", &self.plane.yaxis.get())?;
+        map.serialize_entry("zaxis", &self.plane.zaxis.get())?;
+        map.end()
+    }
+}
+
+struct HatchJson<'a> {
+    hatch: &'a crate::hatch::Hatch,
+    plane: HatchPlaneJson<'a>,
+}
+
+impl serde::Serialize for HatchJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(7 + usize::from(self.hatch.gradient.is_some())))?;
+        map.serialize_entry("basepoint", &self.hatch.basepoint)?;
+        if let Some(gradient) = &self.hatch.gradient {
+            map.serialize_entry("gradient", &crate::hatch::gradient_semantic(gradient))?;
+        }
+        map.serialize_entry("kind", "hatch")?;
+        map.serialize_entry("loops", &HatchLoopsJson(&self.hatch.loops))?;
+        map.serialize_entry("pattern_index", &self.hatch.pattern_index)?;
+        map.serialize_entry("pattern_rotation", &self.hatch.pattern_rotation)?;
+        map.serialize_entry("pattern_scale", &self.hatch.pattern_scale)?;
+        map.serialize_entry("plane", &self.plane)?;
+        map.end()
+    }
+}
+
+struct SubdDiagnostics<'a>(&'a [crate::subd::SubdEnumDiagnostic]);
+
+impl serde::Serialize for SubdDiagnostics<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        struct Text(crate::subd::SubdEnumDiagnostic);
+        impl serde::Serialize for Text {
+            fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                serializer.collect_str(&self.0)
+            }
+        }
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for diagnostic in self.0 {
+            sequence.serialize_element(&Text(*diagnostic))?;
+        }
+        sequence.end()
+    }
+}
+
+#[derive(serde::Serialize)]
+struct SubdJson<'a, S: serde::Serialize, M: serde::Serialize> {
+    enum_diagnostics: SubdDiagnostics<'a>,
+    kind: &'static str,
+    neutral_metadata: &'a M,
+    surface: &'a S,
+}
+
+#[derive(serde::Serialize)]
+struct EmptySubdJson {
+    empty: bool,
+    kind: &'static str,
+}
+
+impl serde::Serialize for CageJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let cage = self.0;
+        let mut map = serializer.serialize_map(Some(8))?;
+        map.serialize_entry("control_points", &cage.control_points)?;
+        map.serialize_entry("counts", &cage.counts)?;
+        map.serialize_entry("dimension", &cage.dimension)?;
+        map.serialize_entry("kind", "nurbs_cage")?;
+        map.serialize_entry("knots", &cage.knots)?;
+        map.serialize_entry("orders", &cage.orders)?;
+        map.serialize_entry("rational", &cage.rational())?;
+        map.serialize_entry("weights", &cage.weights)?;
+        map.end()
+    }
+}
+
+fn embedded_json(
+    ctx: &DecodeContext<'_>,
+    value: &impl serde::Serialize,
+    refusal: &mut Option<CodecError>,
+) -> Option<String> {
+    match crate::wire::admitted_canonical_json(ctx, value, "Rhino embedded history geometry JSON") {
+        Ok(text) => Some(text),
+        Err(error @ CodecError::ResourceLimit(_)) => {
+            *refusal = Some(error);
+            None
+        }
+        Err(_) => None,
+    }
 }
 
 fn extended_geometry_json(
@@ -1085,7 +1530,7 @@ fn extended_geometry_json(
     refusal: &mut Option<cadmpeg_core::CodecError>,
 ) -> Option<String> {
     let data = expand.data();
-    let semantic = if crate::mesh::supported_class(value.class_id) {
+    if crate::mesh::supported_class(value.class_id) {
         let mut budget = crate::mesh::MeshBudget::new();
         let mesh = optional_geometry(
             crate::mesh::decode(
@@ -1104,14 +1549,7 @@ fn extended_geometry_json(
             ),
             refusal,
         )?;
-        serde_json::json!({
-            "kind": "mesh",
-            "vertices": mesh.tessellation.vertices(),
-            "triangles": mesh.tessellation.triangles(),
-            "strip_lengths": mesh.tessellation.strip_lengths(),
-            "normals": mesh.tessellation.vertex_normals(),
-            "channels": mesh.tessellation.channels(),
-        })
+        return embedded_json(expand.ctx(), &MeshJson(&mesh), refusal);
     } else if crate::subd::supported_class(value.class_id) {
         let subd = match crate::subd::decode(
             expand.ctx(),
@@ -1132,24 +1570,18 @@ fn extended_geometry_json(
             Err(_) => return None,
         };
         match subd {
-            None => serde_json::json!({
-                "kind": "subd",
-                "empty": true,
-            }),
+            None => return embedded_json(expand.ctx(), &EmptySubdJson { empty: true, kind: "subd" }, refusal),
             Some(crate::subd::DecodedSubd {
                 surface,
                 neutral_metadata,
                 enum_diagnostics,
                 ..
-            }) => serde_json::json!({
-                "kind": "subd",
-                "surface": surface,
-                "neutral_metadata": neutral_metadata,
-                "enum_diagnostics": enum_diagnostics
-                    .into_iter()
-                    .map(crate::subd::SubdEnumDiagnostic::message)
-                    .collect::<Vec<_>>(),
-            }),
+            }) => return embedded_json(expand.ctx(), &SubdJson {
+                enum_diagnostics: SubdDiagnostics(&enum_diagnostics),
+                kind: "subd",
+                neutral_metadata: &neutral_metadata,
+                surface: &surface,
+            }, refusal),
         }
     } else if crate::extrusion::supported_class(value.class_id) {
         let mut budget = crate::mesh::MeshBudget::new();
@@ -1166,99 +1598,19 @@ fn extended_geometry_json(
             ),
             refusal,
         )?;
-        let boundaries = extrusion
-            .boundaries
-            .iter()
-            .map(|boundary| {
-                serde_json::json!({
-                    "start_curve": boundary.start_curve.reported_geometry(),
-                    "start_nurbs": boundary.start_nurbs,
-                    "end_nurbs": boundary.end_nurbs,
-                    "start_pcurve": {
-                        "degree": boundary.start_pcurve.degree,
-                        "knots": boundary.start_pcurve.knots,
-                        "control_points": boundary.start_pcurve.control_points,
-                        "weights": boundary.start_pcurve.weights,
-                        "periodic": boundary.start_pcurve.periodic,
-                    },
-                    "end_pcurve": {
-                        "degree": boundary.end_pcurve.degree,
-                        "knots": boundary.end_pcurve.knots,
-                        "control_points": boundary.end_pcurve.control_points,
-                        "weights": boundary.end_pcurve.weights,
-                        "periodic": boundary.end_pcurve.periodic,
-                    },
-                })
-            })
-            .collect::<Vec<_>>();
-        serde_json::json!({
-            "kind": "extrusion",
-            "boundaries": boundaries,
-            "laterals": extrusion
-                .boundaries
-                .iter()
-                .map(|boundary| boundary.lateral.clone())
-                .collect::<Vec<_>>(),
-            "direction": extrusion.direction,
-            "cap_origins": extrusion.cap_origins,
-            "cap_normals": extrusion.cap_normals,
-            "cap_u_axes": extrusion.cap_u_axes,
-            "caps": extrusion.caps,
-        })
+        return embedded_json(expand.ctx(), &ExtrusionJson(&extrusion), refusal);
     } else if value.class_id == crate::cage::CLASS {
         let cage = optional_geometry(
             crate::cage::decode(expand, value.class_data_range.clone(), scale, archive),
             refusal,
         )?;
-        cage_json(&cage)
+        return embedded_json(expand.ctx(), &CageJson(&cage), refusal);
     } else if value.class_id == crate::morph::CLASS {
         let morph = optional_geometry(
             crate::morph::decode(expand, value.class_data_range.clone(), scale, archive),
             refusal,
         )?;
-        let control = match &morph.control {
-            crate::morph::Control::Curve { start, end } => serde_json::json!({
-                "kind": "curve",
-                "start": start,
-                "end": end,
-            }),
-            crate::morph::Control::Surface { start, end } => serde_json::json!({
-                "kind": "surface",
-                "start": start,
-                "end": end,
-            }),
-            crate::morph::Control::Cage {
-                start_transform,
-                end,
-            } => serde_json::json!({
-                "kind": "cage",
-                "start_transform": start_transform,
-                "end": cage_json(end),
-            }),
-        };
-        let localizers = morph
-            .localizers
-            .iter()
-            .map(|localizer| {
-                serde_json::json!({
-                    "kind": localizer.kind,
-                    "point": localizer.point,
-                    "vector": localizer.vector,
-                    "interval": localizer.interval,
-                    "curve": localizer.curve,
-                    "surface": localizer.surface,
-                })
-            })
-            .collect::<Vec<_>>();
-        serde_json::json!({
-            "kind": "morph_control",
-            "control": control,
-            "captive_ids": morph.captive_ids.iter().map(ToString::to_string).collect::<Vec<_>>(),
-            "localizers": localizers,
-            "tolerance": morph.tolerance,
-            "quick_preview": morph.quick_preview,
-            "preserve_structure": morph.preserve_structure,
-        })
+        return embedded_json(expand.ctx(), &MorphJson(&morph), refusal);
     } else if crate::brep::supported_class(value.class_id) {
         return crate::decode::embedded_brep_json(
             expand,
@@ -1324,62 +1676,16 @@ fn extended_geometry_json(
                 return None;
             }
         };
-        let loops = hatch
-            .loops
-            .iter()
-            .map(|hatch_loop| {
-                serde_json::json!({
-                    "kind": match hatch_loop.kind {
-                        crate::hatch::LoopKind::Outer => "outer",
-                        crate::hatch::LoopKind::Inner => "inner",
-                    },
-                    "curve": hatch_loop.curve.reported_geometry(),
-                })
-            })
-            .collect::<Vec<_>>();
-        let mut semantic = serde_json::json!({
-            "kind": "hatch",
-            "plane": {
-                "origin": origin,
-                "xaxis": plane.xaxis.get(),
-                "yaxis": plane.yaxis.get(),
-                "zaxis": plane.zaxis.get(),
-                "equation": [
-                    plane.equation[0],
-                    plane.equation[1],
-                    plane.equation[2],
-                    equation_constant,
-                ],
-            },
-            "pattern_scale": hatch.pattern_scale,
-            "pattern_rotation": hatch.pattern_rotation,
-            "pattern_index": hatch.pattern_index,
-            "loops": loops,
-            "basepoint": hatch.basepoint,
-        });
-        if let Some(gradient) = hatch.gradient.as_ref() {
-            let value = match crate::hatch::gradient_json(expand.ctx(), gradient) {
-                Ok(value) => value,
-                Err(error) => {
-                    *refusal = Some(error);
-                    return None;
-                }
-            };
-            if let Ok(gradient) = serde_json::from_str::<serde_json::Value>(&value) {
-                semantic["gradient"] = gradient;
-            }
-        }
-        semantic
+        return embedded_json(expand.ctx(), &HatchJson {
+            hatch: &hatch,
+            plane: HatchPlaneJson { plane: &plane, origin, equation_constant },
+        }, refusal);
     } else if value.class_id == crate::detail::CLASS {
         let detail = optional_geometry(
             crate::detail::decode(expand.ctx(), data, value.class_data_range.clone(), archive),
             refusal,
         )?;
-        serde_json::json!({
-            "kind": "detail_view",
-            "boundary": detail.boundary.reported_geometry(),
-            "page_per_model_ratio": detail.page_per_model_ratio,
-        })
+        return embedded_json(expand.ctx(), &DetailJson(&detail), refusal);
     } else if crate::dimensions::supported_class(value.class_id) {
         let dimension = match crate::dimensions::decode(
             expand.ctx(),
@@ -1422,8 +1728,12 @@ fn extended_geometry_json(
             )?;
             return None;
         }
-        return match crate::dimensions::semantic_json(&dimension) {
+        return match crate::dimensions::semantic_json(expand.ctx(), &dimension) {
             Ok(semantic) => Some(semantic),
+            Err(error @ CodecError::ResourceLimit(_)) => {
+                *refusal = Some(error);
+                None
+            }
             Err(error) => {
                 optional_warning(
                     expand.ctx(),
@@ -1466,19 +1776,7 @@ fn extended_geometry_json(
             }
         };
     } else {
-        return None;
-    };
-    match crate::wire::admitted_json(
-        expand.ctx(),
-        &semantic,
-        "Rhino embedded history geometry JSON",
-    ) {
-        Ok(text) => Some(text),
-        Err(error @ CodecError::ResourceLimit(_)) => {
-            *refusal = Some(error);
-            None
-        }
-        Err(_) => None,
+        None
     }
 }
 

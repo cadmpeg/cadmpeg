@@ -10,7 +10,8 @@ use std::hash::{Hash, Hasher};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{
-    de::DeserializeOwned, ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer,
+    de::DeserializeOwned, ser::{SerializeMap, SerializeSeq, SerializeStruct}, Deserialize,
+    Deserializer, Serialize, Serializer,
 };
 
 use cadmpeg_core::dialect::{DialectLayers, DialectMatch, FormatIdentity};
@@ -609,6 +610,125 @@ arena_registry!(declare_model);
 arena_registry!(assert_entity_schemas);
 arena_registry!(declare_model_view);
 arena_registry!(declare_arena_name);
+
+/// Borrowed geometry and topology arenas for an embedded semantic record.
+pub struct GeometrySnapshot<'a> {
+    model: &'a Model,
+    kind: &'a str,
+}
+
+impl Model {
+    /// Serializes the geometry and topology arenas without staging owned rows.
+    pub fn geometry_snapshot<'a>(&'a self, kind: &'a str) -> GeometrySnapshot<'a> {
+        GeometrySnapshot { model: self, kind }
+    }
+}
+
+struct SurfaceRows<'a>(&'a [Surface]);
+
+impl Serialize for SurfaceRows<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for surface in self.0 {
+            sequence.serialize_element(&SurfaceWire(surface))?;
+        }
+        sequence.end()
+    }
+}
+
+struct CurveRows<'a>(&'a [Curve]);
+
+impl Serialize for CurveRows<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for curve in self.0 {
+            sequence.serialize_element(&CurveWire(curve))?;
+        }
+        sequence.end()
+    }
+}
+
+struct ProceduralSurfaceRows<'a>(&'a Model);
+
+impl Serialize for ProceduralSurfaceRows<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        struct Row<'a> {
+            owner: &'a SurfaceId,
+            procedural: &'a ProceduralSurface,
+        }
+        impl Serialize for Row<'_> {
+            fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                let mut state = serializer.serialize_struct("ProceduralSurfaceRow", 4)?;
+                state.serialize_field("id", &self.procedural.id)?;
+                state.serialize_field("surface", self.owner)?;
+                state.serialize_field("definition", self.procedural.definition())?;
+                if let Some(bounds) = self.procedural.record_bounds() {
+                    state.serialize_field("record_bounds", &bounds)?;
+                }
+                state.end()
+            }
+        }
+        let mut sequence = serializer.serialize_seq(Some(self.0.procedural_surfaces.len()))?;
+        for procedural in &self.0.procedural_surfaces {
+            let owner = self.0.procedural_surface_owner(&procedural.id).ok_or_else(||
+                serde::ser::Error::custom(format_args!("procedural surface {} has no unique owning surface", procedural.id)))?;
+            sequence.serialize_element(&Row { owner, procedural })?;
+        }
+        sequence.end()
+    }
+}
+
+struct ProceduralCurveRows<'a>(&'a Model);
+
+impl Serialize for ProceduralCurveRows<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        struct Row<'a> {
+            owner: &'a CurveId,
+            procedural: &'a ProceduralCurve,
+        }
+        impl Serialize for Row<'_> {
+            fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                let mut state = serializer.serialize_struct("ProceduralCurveRow", 3)?;
+                state.serialize_field("id", &self.procedural.id)?;
+                state.serialize_field("curve", self.owner)?;
+                state.serialize_field("definition", self.procedural.definition())?;
+                state.end()
+            }
+        }
+        let mut sequence = serializer.serialize_seq(Some(self.0.procedural_curves.len()))?;
+        for procedural in &self.0.procedural_curves {
+            let owner = self.0.procedural_curve_owner(&procedural.id).ok_or_else(||
+                serde::ser::Error::custom(format_args!("procedural curve {} has no unique owning curve", procedural.id)))?;
+            sequence.serialize_element(&Row { owner, procedural })?;
+        }
+        sequence.end()
+    }
+}
+
+impl Serialize for GeometrySnapshot<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let model = self.model;
+        validate_feature_parents(&[model]).map_err(serde::ser::Error::custom)?;
+        let mut map = serializer.serialize_map(Some(16))?;
+        map.serialize_entry("bodies", &model.bodies)?;
+        map.serialize_entry("coedges", &model.coedges)?;
+        map.serialize_entry("curves", &CurveRows(&model.curves))?;
+        map.serialize_entry("edges", &model.edges)?;
+        map.serialize_entry("faces", &model.faces)?;
+        map.serialize_entry("kind", self.kind)?;
+        map.serialize_entry("loops", &model.loops)?;
+        map.serialize_entry("pcurves", &model.pcurves)?;
+        map.serialize_entry("points", &model.points)?;
+        map.serialize_entry("procedural_curves", &ProceduralCurveRows(model))?;
+        map.serialize_entry("procedural_surfaces", &ProceduralSurfaceRows(model))?;
+        map.serialize_entry("regions", &model.regions)?;
+        map.serialize_entry("shells", &model.shells)?;
+        map.serialize_entry("surfaces", &SurfaceRows(&model.surfaces))?;
+        map.serialize_entry("tessellations", &model.tessellations)?;
+        map.serialize_entry("vertices", &model.vertices)?;
+        map.end()
+    }
+}
 
 const SURFACES_UNKNOWN_GEOMETRY: &str = "surfaces_unknown_geometry";
 

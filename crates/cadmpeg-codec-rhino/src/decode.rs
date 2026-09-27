@@ -58,6 +58,20 @@ fn append_report_losses(
     Ok(())
 }
 
+fn instance_members_are_unique(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    members: &[crate::wire::Uuid],
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let mut unique_members = BTreeSet::new();
+    for member in members {
+        if !unique_members.contains(member) {
+            ctx.charge_collection_items(1, "Rhino instance unique members")?;
+            unique_members.insert(*member);
+        }
+    }
+    Ok(unique_members.len() == members.len())
+}
+
 fn insert_feature_property(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
@@ -1107,15 +1121,17 @@ impl<'a> DecodeContext<'a> {
                         self.scan_warning(source_order, format_args!("dimension retained because the annotation arena exceeds u32 ordinals"))?;
                         continue;
                     };
-                    let object = Self::mint_unknown_id(source_order).to_string();
+                    let object = self.unknowns[source_order].id().as_str();
                     let (annotation, unresolved) = match crate::dimensions::project(
+                        self.expand.ctx(),
                         &dimension,
                         key.as_str(),
-                        (!identity.name.is_empty()).then(|| identity.name.clone()),
-                        &object,
+                        (!identity.name.is_empty()).then_some(identity.name.as_str()),
+                        object,
                         order,
                     ) {
                         Ok(value) => value,
+                        Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Err(error),
                         Err(error) => {
                             self.scan_warning(source_order, format_args!("{error}"))?;
                             continue;
@@ -2066,14 +2082,7 @@ impl<'a> DecodeContext<'a> {
         if matches!(definition.kind, crate::instances::DefinitionKind::Unset) {
             return Err(format!("definition {} has unset type", definition.id()).into());
         }
-        let mut unique_members = BTreeSet::new();
-        for member in &definition.members {
-            if !unique_members.contains(member) {
-                self.expand.ctx().charge_collection_items(1, "Rhino instance unique members")?;
-                unique_members.insert(*member);
-            }
-        }
-        if unique_members.len() != definition.members.len() {
+        if !instance_members_are_unique(self.expand.ctx(), &definition.members)? {
             return Err(format!(
                 "definition {} contains duplicate member UUIDs",
                 definition.id()
@@ -4115,7 +4124,9 @@ fn stage_extrusion_caps(
         kind: BodyKind::Sheet,
         regions: region_ids,
         transform: None,
-        name: association.name.clone(),
+        name: association.name.as_deref().map(|name| {
+            crate::wire::copy_retained_string(ctx, name, "Rhino extrusion cap body name")
+        }).transpose()?,
         color: association.color,
         visible: association.visible,
     });
@@ -4965,7 +4976,9 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         },
         regions: body_regions,
         transform: None,
-        name: association.name.clone(),
+        name: association.name.as_deref().map(|name| {
+            crate::wire::copy_retained_string(ctx, name, "Rhino staged Brep body name")
+        }).transpose()?,
         color: association.color,
         visible: association.visible,
     });
@@ -4975,23 +4988,19 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         staged.draft.model().curves.len() + staged.draft.model().surfaces.len() + 1,
         "Rhino staged Brep links",
     )?;
-    staged.links.extend(
-        staged
-            .draft
-            .model()
-            .curves
-            .iter()
-            .map(|curve| curve.id.to_string())
-            .chain(
-                staged
-                    .draft
-                    .model()
-                    .surfaces
-                    .iter()
-                    .map(|surface| surface.id.to_string()),
-            ),
-    );
-    staged.links.push(body_id.to_string());
+    for curve in &staged.draft.model().curves {
+        staged.links.push(crate::wire::admitted_format(
+            ctx, format_args!("{}", curve.id), "Rhino staged Brep link text",
+        )?);
+    }
+    for surface in &staged.draft.model().surfaces {
+        staged.links.push(crate::wire::admitted_format(
+            ctx, format_args!("{}", surface.id), "Rhino staged Brep link text",
+        )?);
+    }
+    staged.links.push(crate::wire::admitted_format(
+        ctx, format_args!("{body_id}"), "Rhino staged Brep link text",
+    )?);
     let derived_ids = {
         let model = staged.draft.model();
         let count = model.bodies.len()
@@ -5005,21 +5014,27 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             + model.points.len()
             + model.pcurves.len();
         let mut ids = crate::curves::charged_vec(ctx, count, "Rhino staged Brep derived IDs")?;
-        ids.extend(
-            model
-                .bodies
-                .iter()
-                .map(|value| value.id.to_string())
-                .chain(model.regions.iter().map(|value| value.id.to_string()))
-                .chain(model.shells.iter().map(|value| value.id.to_string()))
-                .chain(model.faces.iter().map(|value| value.id.to_string()))
-                .chain(model.loops.iter().map(|value| value.id.to_string()))
-                .chain(model.coedges.iter().map(|value| value.id.to_string()))
-                .chain(model.edges.iter().map(|value| value.id.to_string()))
-                .chain(model.vertices.iter().map(|value| value.id.to_string()))
-                .chain(model.points.iter().map(|value| value.id.to_string()))
-                .chain(model.pcurves.iter().map(|value| value.id.to_string())),
-        );
+        macro_rules! append_ids {
+            ($field:ident) => {
+                for value in &model.$field {
+                    ids.push(crate::wire::admitted_format(
+                        ctx,
+                        format_args!("{}", value.id),
+                        "Rhino staged Brep derived ID text",
+                    )?);
+                }
+            };
+        }
+        append_ids!(bodies);
+        append_ids!(regions);
+        append_ids!(shells);
+        append_ids!(faces);
+        append_ids!(loops);
+        append_ids!(coedges);
+        append_ids!(edges);
+        append_ids!(vertices);
+        append_ids!(points);
+        append_ids!(pcurves);
         ids
     };
     for id in derived_ids {
@@ -5117,31 +5132,18 @@ pub(crate) fn embedded_brep_json(
     if staged.kind != BrepTransferKind::FullTopology {
         return None;
     }
-    // Model serialization supplies loop-ring context for the coedge wire form.
-    let mut value = serde_json::to_value(staged.draft.model()).ok()?;
-    let object = value.as_object_mut()?;
-    object.retain(|key, _| {
-        matches!(
-            key.as_str(),
-            "bodies"
-                | "regions"
-                | "shells"
-                | "faces"
-                | "loops"
-                | "coedges"
-                | "edges"
-                | "vertices"
-                | "points"
-                | "surfaces"
-                | "curves"
-                | "procedural_curves"
-                | "procedural_surfaces"
-                | "pcurves"
-                | "tessellations"
-        )
-    });
-    object.insert("kind".into(), serde_json::json!("brep"));
-    serde_json::to_string(&value).ok()
+    match crate::wire::admitted_canonical_json(
+        expand.ctx(),
+        &staged.draft.model().geometry_snapshot("brep"),
+        "Rhino embedded Brep JSON",
+    ) {
+        Ok(text) => Some(text),
+        Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => {
+            *refusal = Some(error);
+            None
+        }
+        Err(_) => None,
+    }
 }
 
 /// Rhino trim curves live in the surface's native parameter space. A plane's
