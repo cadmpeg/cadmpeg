@@ -2,7 +2,7 @@
 use super::{
     bounded_pcurve_range, close_radial_rings, connected_components, edge_endpoint_uses,
     is_identity, normalize_occt_curve_range, normalize_pcurve_parameter_range, occurrence_label,
-    pcurve_geometry, select_exact_curve_representation, select_pcurve_representation,
+    pcurve_geometry, referenced_pcurve_ids, select_exact_curve_representation, select_pcurve_representation,
     source_topology_indices, unique_fallback_polygon_representation, IndexedPolygon, OccurrenceKey,
     SourceOccurrenceKey, Tables,
 };
@@ -15,10 +15,10 @@ use crate::FcstdCodec;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{pcurve::PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
-use cadmpeg_ir::ids::{CoedgeId, EdgeId, LoopId};
+use cadmpeg_ir::ids::{CoedgeId, EdgeId, LoopId, PcurveId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
-use cadmpeg_ir::topology::{Coedge, Sense};
+use cadmpeg_ir::topology::{Coedge, PcurveUse, Sense};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::collections::HashSet;
@@ -236,7 +236,11 @@ fn source_indices_span_root_order_and_deduplicate_repeated_placements() {
         roots: &roots,
     };
 
-    let indices = source_topology_indices(tables).expect("valid locations");
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    let indices = source_topology_indices(&ctx, tables).expect("valid locations");
 
     assert_eq!(
         indices.get(&(
@@ -249,6 +253,73 @@ fn source_indices_span_root_order_and_deduplicate_repeated_placements() {
         indices.get(&(TextShapeKind::Edge, SourceOccurrenceKey::new(1, translated),)),
         Some(&2)
     );
+}
+
+#[test]
+fn source_topology_stack_refuses_at_caller_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    let tshapes = crate::brep::TextTShapes::from(vec![TextTShape {
+        geometry: geometry_for_kind(TextShapeKind::Edge),
+        flags: [false; 7],
+        children: Vec::new(),
+    }]);
+    let roots = [TextShapeUse {
+        shape: 1,
+        orientation: TextOrientation::Forward,
+        location: 0.into(),
+    }];
+    let tables = Tables {
+        locations: &[], curve2ds: &[], curves: &[], surfaces: &[],
+        polygons3d: &[], polygons_on_triangulations: &[], tshapes: &tshapes,
+        triangulations: &[], roots: &roots,
+    };
+    assert!(matches!(source_topology_indices(&ctx, tables),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD source topology stack"));
+}
+
+#[test]
+fn radial_edge_index_refuses_at_caller_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    let id = CoedgeId::mint("fcstd:test:coedge#radial").expect("identity grammar");
+    let mut coedges = vec![Coedge {
+        id: id.clone(), owner_loop: LoopId::mint("fcstd:test:loop#radial").expect("identity grammar"),
+        edge: EdgeId::mint("fcstd:test:edge#radial").expect("identity grammar"),
+        radial_next: id, sense: Sense::Forward, use_curve: None, pcurves: Vec::new(),
+    }];
+    assert!(matches!(close_radial_rings(&ctx, &mut coedges),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD radial edge index"));
+}
+
+#[test]
+fn referenced_pcurves_refuse_at_caller_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    let id = CoedgeId::mint("fcstd:test:coedge#pcurve").expect("identity grammar");
+    let coedges = [Coedge {
+        id: id.clone(), owner_loop: LoopId::mint("fcstd:test:loop#pcurve").expect("identity grammar"),
+        edge: EdgeId::mint("fcstd:test:edge#pcurve").expect("identity grammar"),
+        radial_next: id, sense: Sense::Forward, use_curve: None,
+        pcurves: vec![PcurveUse {
+            pcurve: PcurveId::mint("fcstd:test:pcurve#1").expect("identity grammar"),
+            isoparametric: None, parameter_range: None,
+        }],
+    }];
+    assert!(matches!(referenced_pcurve_ids(&ctx, &coedges),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD referenced pcurves"));
 }
 
 #[test]
@@ -292,7 +363,11 @@ fn source_indices_follow_depth_first_topology_order() {
         triangulations: &[],
         roots: &roots,
     };
-    let indices = source_topology_indices(tables).expect("valid locations");
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    let indices = source_topology_indices(&ctx, tables).expect("valid locations");
     let index =
         |kind, shape| indices.get(&(kind, SourceOccurrenceKey::new(shape, Transform::identity())));
 
@@ -344,7 +419,11 @@ fn source_indices_stop_at_nested_same_kind_shapes() {
         roots: &roots,
     };
 
-    let indices = source_topology_indices(tables).expect("valid locations");
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    let indices = source_topology_indices(&ctx, tables).expect("valid locations");
 
     assert_eq!(
         indices.get(&(
@@ -704,7 +783,11 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
             }
         })
         .collect::<Vec<_>>();
-    close_radial_rings(&mut coedges);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    close_radial_rings(&ctx, &mut coedges).expect("radial map fits policy");
     assert!(coedges.iter().all(|coedge| coedge.radial_next == coedge.id));
 
     let mut four = (0..4)
@@ -727,7 +810,7 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
         .iter()
         .map(|coedge| coedge.radial_next.clone())
         .collect::<Vec<_>>();
-    close_radial_rings(&mut four);
+    close_radial_rings(&ctx, &mut four).expect("radial map fits policy");
     assert_eq!(
         four.iter()
             .map(|coedge| &coedge.radial_next)
@@ -745,7 +828,7 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
         use_curve: None,
         pcurves: Vec::new(),
     }];
-    close_radial_rings(&mut singleton);
+    close_radial_rings(&ctx, &mut singleton).expect("radial map fits policy");
     assert_eq!(singleton[0].radial_next, id);
 }
 
