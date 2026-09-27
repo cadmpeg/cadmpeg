@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use super::{feature_result_surface_ids, feature_result_topology};
+use super::super::selections::feature_result_edge_ids;
+
 fn one_result_surface() -> (
     Vec<crate::feature::entity::FeatureEntityTable>,
     Vec<crate::surface::SurfaceRow>,
@@ -179,4 +182,99 @@ fn feature_surface_transitions_reject_duplicate_output_roster_entry() {
         super::feature_surface_transitions(17, std::slice::from_ref(&table), &rows),
         None
     );
+}
+
+#[test]
+fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
+    let row = |id, feature_id| crate::surface::SurfaceRow {
+        id,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 0,
+    };
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
+
+            entity_id,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        };
+    let table = crate::feature::entity::FeatureEntityTable::new(
+        97,
+        29,
+        vec![entry(98, 200, Some(1)), entry(145, 203, None)],
+        &std::collections::BTreeSet::new(),
+        0,
+    )
+    .with_surface_ids([98, 145]);
+    let rows = [row(98, 97), row(145, 97)];
+    let curve_rows = [crate::curve::CurveTopologyRow {
+        id: 77,
+        type_byte: 8,
+        feature_id: 97,
+        directions: [1, 0xf6],
+        faces: [
+            std::num::NonZeroU32::new(98),
+            std::num::NonZeroU32::new(145),
+        ],
+        next_edges: [77, 77],
+        offset: 0,
+    }];
+    assert_eq!(feature_result_edge_ids(&curve_rows, 97), Some(vec![77]));
+    let duplicate_curve_rows = [
+        curve_rows[0].clone(),
+        crate::curve::CurveTopologyRow {
+            offset: 1,
+            ..curve_rows[0].clone()
+        },
+    ];
+    assert!(feature_result_edge_ids(&duplicate_curve_rows, 97).is_none());
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| feature_result_surface_ids(ctx, std::slice::from_ref(&table), &rows, 97))
+            .expect("service profile admits the result surfaces"),
+        Some(vec![98, 145])
+    );
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| feature_result_topology(ctx, std::slice::from_ref(&table), &rows, &curve_rows, 97))
+            .expect("service profile admits the result topology")
+            .expect("complete result topology")
+            .faces(),
+        vec!["surface#98", "surface#145"]
+    );
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| feature_result_topology(ctx, std::slice::from_ref(&table), &rows, &curve_rows, 97))
+            .expect("service profile admits the result topology")
+            .expect("complete result topology")
+            .edges(),
+        vec!["curve#77"]
+    );
+
+    let mut duplicate = table.clone();
+    let extra = entry(98, 204, None);
+    duplicate.entries.push(extra);
+    duplicate.mark_surface_id(98);
+    assert!(crate::decode::with_test_decode_ctx(|ctx| feature_result_surface_ids(ctx, &[duplicate], &rows, 97))
+        .expect("service profile admits the duplicate check").is_none());
+
+    let mut missing = table;
+    missing.entries[1] = entry(146, 203, None);
+    missing.mark_surface_id(146);
+    assert!(crate::decode::with_test_decode_ctx(|ctx| feature_result_surface_ids(ctx, &[missing], &rows, 97))
+        .expect("service profile admits the missing-row check").is_none());
+
+    let foreign = crate::feature::entity::FeatureEntityTable::new(
+        97,
+        29,
+        vec![entry(145, 203, None)],
+        &std::collections::BTreeSet::new(),
+        0,
+    )
+    .with_surface_ids([145]);
+    assert!(crate::decode::with_test_decode_ctx(|ctx| feature_result_surface_ids(ctx, &[foreign], &[row(145, 144)], 97))
+        .expect("service profile admits the foreign-row check").is_none());
 }
