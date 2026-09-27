@@ -273,16 +273,6 @@ impl fmt::Display for UuidTail {
     }
 }
 
-impl Uuid {
-    /// Renders the UUID as a source identifier, which always has a leading hex digit.
-    pub(crate) fn to_nonempty(self) -> cadmpeg_core::text::NonBlankString {
-        cadmpeg_core::text::NonBlankString::prefixed(
-            cadmpeg_core::text::NonWhitespaceChar::hex_digit(self.bytes[0] >> 4),
-            UuidTail(self.bytes),
-        )
-    }
-}
-
 impl fmt::Display for Uuid {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let leading = HEX_DIGITS[usize::from(self.bytes[0] >> 4)];

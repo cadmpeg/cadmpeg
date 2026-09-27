@@ -58,21 +58,6 @@ fn parses_mixed_endian_uuid_and_nil_uuid() {
     );
 }
 
-#[test]
-fn nonempty_source_id_matches_the_uuid_rendering() {
-    for wire in [
-        [
-            0xdd, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01,
-            0x22, 0xf0,
-        ],
-        [0; 16],
-        [0xff; 16],
-    ] {
-        let uuid = Uuid::from_wire(wire);
-        assert_eq!(uuid.to_nonempty().as_str(), uuid.to_string());
-    }
-}
-
 /// A non-finite coordinate and an overflowing product are both refused, so the
 /// single product test covers every non-finite input.
 #[test]
