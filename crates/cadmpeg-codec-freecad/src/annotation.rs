@@ -163,7 +163,7 @@ pub(crate) fn transfer_neutral(
             runtime_type: retained_string(ctx, record.kind.as_str(), "fcstd annotation runtime type")?,
             order: order as u32,
             text: retained_strings(ctx, &record.text, "fcstd annotation neutral text")?,
-            references: cadmpeg_core::text::named_entries(&record.object, references)?,
+            references: crate::resource::named_entries_charged(ctx, &record.object, references, "fcstd annotation keyed references")?,
             value: None,
             format: match schema.text {
                 Some(carrier) if carrier.has_format_spec => {
@@ -172,9 +172,8 @@ pub(crate) fn transfer_neutral(
                 _ => None,
             },
             position: annotation_position(ctx, &owned, schema.position)?,
-            parameters: cadmpeg_core::text::named_entries(
-                &record.object,
-                parameters,
+            parameters: crate::resource::named_entries_charged(
+                ctx, &record.object, parameters, "fcstd annotation keyed parameters",
             )?,
             assets,
             native_ref: retained_string(ctx, &record.id, "fcstd annotation native reference")?,
@@ -729,6 +728,48 @@ pub(crate) mod tests {
         assert!(matches!(super::transfer(&ctx, &[object], &[]),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.operation == "FreeCAD native identity"));
+    }
+
+    #[test]
+    fn annotation_keyed_references_refuse_at_collection_limit() {
+        let record = crate::native::SemanticAnnotationRecord {
+            id: "fcstd:native:annotation#Note".into(),
+            object: "fcstd:native:object#Note".into(),
+            kind: crate::native::AnnotationRuntimeType::Annotation,
+            text: Vec::new(),
+            references: std::collections::BTreeMap::from([("role".into(), Vec::new())]),
+            parameters: Default::default(),
+            side_entries: Vec::new(),
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = 2;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        assert!(matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[], &[]),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "fcstd annotation keyed references"));
+    }
+
+    #[test]
+    fn annotation_keyed_parameters_refuse_at_collection_limit() {
+        let record = crate::native::SemanticAnnotationRecord {
+            id: "fcstd:native:annotation#Note".into(),
+            object: "fcstd:native:object#Note".into(),
+            kind: crate::native::AnnotationRuntimeType::Annotation,
+            text: Vec::new(),
+            references: Default::default(),
+            parameters: std::collections::BTreeMap::from([("role".into(), "value".into())]),
+            side_entries: Vec::new(),
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = 2;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        assert!(matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[], &[]),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "fcstd annotation keyed parameters"));
     }
 
     #[test]
