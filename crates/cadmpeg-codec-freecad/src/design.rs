@@ -1454,7 +1454,7 @@ fn parse_sketch(
                 geometry.id
             ))
         })?;
-        let records = direct_counted_records(&xml, "GeometryList", "Geometry", &geometry.id)?;
+        let records = direct_counted_records(ctx, &xml, "GeometryList", "Geometry", &geometry.id)?;
         for (index, node) in records.into_iter().enumerate() {
             let carrier = sketch_carrier(node);
             if let (Some(kind), Some(carrier)) = (node.attribute("type"), carrier.as_ref()) {
@@ -1510,7 +1510,7 @@ fn parse_sketch(
             ))
         })?;
         let records =
-            direct_counted_records(&xml, "GeometryList", "Geometry", &external_geometry.id)?;
+            direct_counted_records(ctx, &xml, "GeometryList", "Geometry", &external_geometry.id)?;
         validate_external_geo_prefix(&records, &external_geometry.id)?;
         let references = property(properties, "ExternalGeometry");
         if let Some(references) = references {
@@ -2067,7 +2067,7 @@ fn parse_constraints(
             property.id
         ))
     })?;
-    let records = direct_counted_records(&xml, "ConstraintList", "Constrain", &property.id)?;
+    let records = direct_counted_records(ctx, &xml, "ConstraintList", "Constrain", &property.id)?;
     let mut constraints = Vec::new();
     let mut parameters = Vec::new();
     for (index, node) in records.into_iter().enumerate() {
@@ -2699,17 +2699,20 @@ fn constraint_operands(node: roxmltree::Node<'_, '_>) -> Result<Vec<(i64, i64)>,
 }
 
 fn direct_counted_records<'a, 'input>(
+    ctx: &DecodeContext<'_>,
     xml: &'a roxmltree::Document<'input>,
     container_tag: &str,
     record_tag: &str,
     owner: &str,
 ) -> Result<Vec<roxmltree::Node<'a, 'input>>, CodecError> {
-    let containers = xml
-        .root_element()
-        .children()
-        .filter(|node| node.is_element() && node.has_tag_name(container_tag))
-        .collect::<Vec<_>>();
-    if containers.len() != 1
+    let mut containers = xml.root_element().children()
+        .filter(|node| node.is_element() && node.has_tag_name(container_tag));
+    let Some(container) = containers.next() else {
+        return Err(CodecError::malformed(format_args!(
+            "{owner} must contain exactly one direct {container_tag} value"
+        )));
+    };
+    if containers.next().is_some()
         || xml
             .descendants()
             .filter(|node| node.has_tag_name(container_tag))
@@ -2720,7 +2723,6 @@ fn direct_counted_records<'a, 'input>(
             "{owner} must contain exactly one direct {container_tag} value"
         )));
     }
-    let container = containers[0];
     let declared = container
         .attribute("count")
         .and_then(|value| value.parse::<usize>().ok())
@@ -2732,11 +2734,8 @@ fn direct_counted_records<'a, 'input>(
             "{owner} record count exceeds {MAX_SKETCH_RECORDS}"
         )));
     }
-    let records = container
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    if records.iter().any(|node| !node.has_tag_name(record_tag)) {
+    let found = container.children().filter(roxmltree::Node::is_element).count();
+    if container.children().filter(roxmltree::Node::is_element).any(|node| !node.has_tag_name(record_tag)) {
         return Err(CodecError::malformed(format_args!(
             "{owner} has a non-{record_tag} direct child"
         )));
@@ -2745,18 +2744,20 @@ fn direct_counted_records<'a, 'input>(
         .descendants()
         .filter(|node| node.has_tag_name(record_tag))
         .count()
-        != records.len()
+        != found
     {
         return Err(CodecError::malformed(format_args!(
             "{owner} has nested {record_tag} records"
         )));
     }
-    if declared != records.len() {
+    if declared != found {
         return Err(CodecError::malformed(format_args!(
             "{owner} declares {declared} records but contains {}",
-            records.len()
+            found
         )));
     }
+    let mut records = collection_vec(ctx, found, "fcstd counted sketch records")?;
+    records.extend(container.children().filter(roxmltree::Node::is_element));
     Ok(records)
 }
 

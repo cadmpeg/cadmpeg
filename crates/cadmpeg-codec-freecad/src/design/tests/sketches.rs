@@ -11,6 +11,22 @@ use std::io::Cursor;
 const EPS_PARAMETER_VALUE: f64 = 1.0e-12;
 
 #[test]
+fn counted_sketch_records_refuse_at_caller_limit() {
+    let xml = roxmltree::Document::parse(
+        "<Property><GeometryList count=\"1\"><Geometry/></GeometryList></Property>",
+    ).expect("valid geometry XML");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::super::direct_counted_records(
+        &ctx, &xml, "GeometryList", "Geometry", "geometry",
+    ), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "fcstd counted sketch records"));
+}
+
+#[test]
 fn circular_arc_admits_finite_fields_and_keeps_invalid_native_fallback() {
     let mut attributes = std::collections::BTreeMap::from([
         ("CenterX".to_owned(), "1".to_owned()),
