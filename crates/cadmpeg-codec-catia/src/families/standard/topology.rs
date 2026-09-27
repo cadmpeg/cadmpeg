@@ -123,6 +123,52 @@ fn classify_body_groups(
 }
 
 impl StandardTopology {
+    pub(crate) fn clone_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        let mut faces = Vec::new();
+        for face in &self.faces {
+            let mut boundaries = Vec::new();
+            for boundary in &face.boundaries {
+                let coedges = crate::resource::copy_slice(
+                    ctx,
+                    boundary.coedges.as_slice(),
+                    "catia_standard_topology_copy_coedges",
+                )?;
+                let coedges = NonEmptyCoedges::try_from(coedges).map_err(CodecError::malformed)?;
+                crate::resource::push(
+                    ctx,
+                    &mut boundaries,
+                    Boundary { coedges },
+                    "catia_standard_topology_copy_boundaries",
+                )?;
+            }
+            crate::resource::push(
+                ctx,
+                &mut faces,
+                FaceTopology { boundaries },
+                "catia_standard_topology_copy_faces",
+            )?;
+        }
+        let mut edge_rows = Vec::new();
+        for row in &self.edge_rows {
+            crate::resource::push(
+                ctx,
+                &mut edge_rows,
+                row.clone_charged(ctx)?,
+                "catia_standard_topology_copy_edge_rows",
+            )?;
+        }
+        Ok(Self {
+            faces,
+            edge_rows,
+            vertex_points: crate::resource::copy_slice(
+                ctx,
+                &self.vertex_points,
+                "catia_standard_topology_copy_vertex_points",
+            )?,
+            logical_vertex_count: self.logical_vertex_count,
+        })
+    }
+
     /// Number of faces, equal to the largest contiguous `30 04 04 ff` FBB
     /// run's row count ([spec §5.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#52-spine-grammar)).
     #[must_use]
@@ -401,6 +447,18 @@ pub(crate) struct EdgeRow {
 }
 
 impl EdgeRow {
+    pub(crate) fn clone_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        Ok(Self {
+            kind: self.kind,
+            handles: crate::resource::copy_slice(
+                ctx,
+                &self.handles,
+                "catia_standard_edge_row_copy_handles",
+            )?,
+            boundary_layout: self.boundary_layout,
+        })
+    }
+
     pub(crate) fn boundary_pattern(&self) -> Option<&[u32]> {
         match self.boundary_layout {
             EdgeBoundaryLayout::InteriorWithFlankingCorners => {
