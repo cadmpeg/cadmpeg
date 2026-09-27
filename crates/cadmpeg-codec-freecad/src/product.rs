@@ -142,7 +142,7 @@ pub(crate) fn transfer(
         };
         reserve_vec_items(ctx, &mut output, 1, "fcstd product records")?;
         output.push(ProductNodeRecord {
-            id: crate::native::native_id("product", &object.name),
+            id: crate::native::native_id_charged(ctx, "product", &object.name)?,
             object: retained_string(ctx, &object.id, "fcstd product object")?,
             node,
         });
