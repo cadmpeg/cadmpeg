@@ -20,6 +20,7 @@ use super::{
     append_path, cluster_boundary_positions, coordinate_quantum, create_boundary_vertices,
     linear_boundary_relationship_is_valid, linear_boundary_rings, pcurve_within_declared_bounds,
     BoundaryEndpoint, BoundarySpace, BoundarySurfaceKind, BoundaryVertexClusterError,
+    BoundaryVertexCreationError,
     BoundaryVertexSourceEndpoint, DeclaredInterval, FaceTolerancePolicy, LinearBoundaryGeometry,
     SimpleRing,
 };
@@ -67,6 +68,23 @@ fn assert_trimming_collection_refusal(bytes: &[u8], operation: &str) {
     panic!("trimming collection refusal was not reached: {operation}");
 }
 
+fn assert_trimming_retained_refusal(bytes: &[u8], operation: &str) {
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        match IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+            Err(cadmpeg_ir::codec::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                if limit.operation == operation { return; }
+                cap = limit.used.checked_add(limit.additional).unwrap();
+            }
+            other => panic!("expected trimming retained refusal at {operation}: {other:?}"),
+        }
+    }
+    panic!("trimming retained refusal was not reached: {operation}");
+}
+
 #[test]
 fn trimming_projection_refuses_counted_boundary_vectors() {
     for (bytes, operation) in [
@@ -77,8 +95,24 @@ fn trimming_projection_refuses_counted_boundary_vectors() {
         (bounded_plane_file(), "iges trimming linear candidates"),
         (bounded_plane_file(), "iges trimming boundary items"),
         (multi_pcurve_boundary_file(), "iges trimming segment pcurves"),
+        (bounded_plane_file(), "iges trimming coedge ids"),
+        (bounded_plane_file(), "iges trimming source endpoints"),
+        (bounded_plane_file(), "iges trimming candidate vertex derivations"),
     ] {
         assert_trimming_collection_refusal(&bytes, operation);
+    }
+}
+
+#[test]
+fn trimming_projection_refuses_retained_boundary_source_text() {
+    let bytes = bounded_plane_file();
+    for operation in [
+        "iges trimming source endpoint edge text",
+        "iges trimming source entity text",
+        "iges boundary derivation edge text",
+        "iges boundary derivation source text",
+    ] {
+        assert_trimming_retained_refusal(&bytes, operation);
     }
 }
 
@@ -351,23 +385,28 @@ fn decode_admits_pcurve_whose_source_intervals_reach_support_bounds() {
 
 #[test]
 fn boundary_vertex_clustering_rejects_non_transitive_tolerance_neighborhoods() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let points = [
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(0.75, 0.0, 0.0),
         Point3::new(1.5, 0.0, 0.0),
     ];
 
-    assert_eq!(
+    assert!(matches!(
         cluster_boundary_positions(
             &points.map(|point| cadmpeg_ir::features::FinitePoint3::new(point).unwrap()),
-            cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap()
+            cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),
+            &ctx,
         ),
-        Err(BoundaryVertexClusterError::NonTransitive)
-    );
+        Err(BoundaryVertexCreationError::Cluster(BoundaryVertexClusterError::NonTransitive))
+    ));
 }
 
 #[test]
 fn boundary_vertex_clustering_uses_canonical_representatives() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let points = [
         Point3::new(10.25, 0.0, 0.0),
         Point3::new(0.5, 0.0, 0.0),
@@ -377,6 +416,7 @@ fn boundary_vertex_clustering_uses_canonical_representatives() {
     let clusters = cluster_boundary_positions(
         &points.map(|point| cadmpeg_ir::features::FinitePoint3::new(point).unwrap()),
         cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),
+        &ctx,
     )
     .unwrap();
 
@@ -435,6 +475,103 @@ fn boundary_vertex_creation_retains_every_source_endpoint() {
         derivations[0].source_endpoints[1].position,
         Point3::new(0.0, 0.0, 0.0)
     );
+}
+
+#[test]
+fn boundary_vertex_creation_refuses_each_collection_before_growth() {
+    let source_endpoints = [
+        BoundaryVertexSourceEndpoint {
+            edge: "iges:model:edge#source-a".into(),
+            endpoint: BoundaryEndpoint::Start,
+            position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+        },
+        BoundaryVertexSourceEndpoint {
+            edge: "iges:model:edge#source-b".into(),
+            endpoint: BoundaryEndpoint::End,
+            position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.25, 0.0, 0.0)).unwrap(),
+        },
+    ];
+    for operation in [
+        "iges boundary endpoint positions",
+        "iges boundary cluster parents",
+        "iges boundary cluster roots",
+        "iges boundary cluster members",
+        "iges boundary cluster slots",
+        "iges boundary endpoint vertex slots",
+        "iges boundary vertex derivations",
+        "iges boundary points",
+        "iges boundary vertices",
+        "iges boundary derivation endpoints",
+        "iges boundary result vertex ids",
+    ] {
+        let mut cap = 0_u64;
+        let mut found = false;
+        for _ in 0..128 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = create_boundary_vertices(
+                &mut ModelDraft::new(),
+                &crate::ids::Stem::directory(9_u32),
+                "iges:entity:directory#9",
+                0,
+                &source_endpoints,
+                cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),
+                &mut crate::entities::geometry::SourceSequences::default(),
+                &ctx,
+            );
+            match result {
+                Err(BoundaryVertexCreationError::Resource(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    if limit.operation == operation {
+                        found = true;
+                        break;
+                    }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                other => panic!("expected boundary collection refusal at {operation}: {other:?}"),
+            }
+        }
+        assert!(found, "boundary collection refusal was not reached: {operation}");
+    }
+}
+
+#[test]
+fn boundary_vertex_clustering_refuses_pairwise_work_before_comparisons() {
+    let points = [
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(0.25, 0.0, 0.0),
+        Point3::new(0.5, 0.0, 0.0),
+    ].map(|point| cadmpeg_ir::features::FinitePoint3::new(point).unwrap());
+    for (cap, operation, used) in [
+        (2, "iges boundary clustering comparisons", 0),
+        (5, "iges boundary cluster transitivity comparisons", 3),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = cluster_boundary_positions(
+            &points,
+            cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),
+            &ctx,
+        );
+        assert!(matches!(result,
+            Err(BoundaryVertexCreationError::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == operation
+                    && limit.used == used
+                    && limit.additional == 3
+        ));
+    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(cluster_boundary_positions(
+        &points,
+        cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),
+        &ctx,
+    ).unwrap().len(), 1);
 }
 
 #[test]
