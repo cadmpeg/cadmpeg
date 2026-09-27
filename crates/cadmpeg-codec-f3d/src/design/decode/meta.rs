@@ -4,6 +4,7 @@
 use cadmpeg_core::container::{ContainerEntry, ContainerRole};
 
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -73,6 +74,7 @@ pub(crate) fn decode_types(scan: &ContainerScan) -> Result<Vec<SegmentType>, Cod
 }
 
 fn insert_component_naming_space(
+    ctx: &DecodeContext<'_>,
     by_component: &mut HashMap<u64, DesignComponentNamingSpace>,
     bulk_name: &str,
     marker: usize,
@@ -80,26 +82,58 @@ fn insert_component_naming_space(
     context_uuid: crate::records::mesh::DesignRelaxedGuidText,
     context_uuid_offset: usize,
 ) -> Result<(), CodecError> {
-    let binding = DesignComponentNamingSpace {
-        id: ids::native_design_component_naming_space_id(bulk_name, marker),
-        byte_offset: marker as u64,
-        component_record_index,
-        context_uuid,
-        context_uuid_offset: context_uuid_offset as u64,
-    };
-    if let Some(existing) = by_component.insert(component_record_index, binding.clone()) {
-        if existing.context_uuid != binding.context_uuid {
+    if let Some(existing) = by_component.get(&component_record_index) {
+        if existing.context_uuid != context_uuid {
             return Err(CodecError::malformed(format_args!(
                 "Design component {component_record_index} has conflicting context UUID bindings"
             )));
         }
-        by_component.insert(component_record_index, existing);
+        return Ok(());
     }
+    ctx.charge_collection_items(1, "f3d component naming spaces by entity")?;
+    by_component.try_reserve(1).map_err(|_| {
+        ctx.refuse_codec_limit("f3d component naming spaces map allocation", 0, 1)
+    })?;
+    let mut id = super::sketch::native_scope_charged(ctx, bulk_name)?;
+    let suffix = ":design-component-naming-space#";
+    let digits = usize::try_from(marker.checked_ilog10().unwrap_or(0) + 1).map_err(|_| {
+        ctx.refuse_codec_limit("f3d component naming space id length", 0, 1)
+    })?;
+    let additional = suffix.len().checked_add(digits).ok_or_else(|| {
+        ctx.refuse_codec_limit("f3d component naming space id length", 0, 1)
+    })?;
+    ctx.charge_retained(
+        u64::try_from(additional).map_err(|_| {
+            ctx.refuse_codec_limit("f3d component naming space id length", 0, 1)
+        })?,
+        "f3d component naming space id suffix",
+    )?;
+    id.try_reserve(additional).map_err(|_| {
+        ctx.refuse_codec_limit("f3d component naming space id allocation", 0, 1)
+    })?;
+    id.push_str(suffix);
+    write!(id, "{marker}").map_err(|_| {
+        ctx.refuse_codec_limit("f3d component naming space id formatting", 0, 1)
+    })?;
+    let byte_offset = u64::try_from(marker).map_err(|_| {
+        ctx.refuse_codec_limit("f3d component naming marker offset", 0, 1)
+    })?;
+    let context_uuid_offset = u64::try_from(context_uuid_offset).map_err(|_| {
+        ctx.refuse_codec_limit("f3d component naming UUID offset", 0, 1)
+    })?;
+    by_component.insert(component_record_index, DesignComponentNamingSpace {
+        id,
+        byte_offset,
+        component_record_index,
+        context_uuid,
+        context_uuid_offset,
+    });
     Ok(())
 }
 
 /// Decode each component entity's UUID-bound local naming space.
 pub(crate) fn decode_component_naming_spaces(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<DesignComponentNamingSpace>, CodecError> {
     let mut out = Vec::new();
@@ -109,10 +143,8 @@ pub(crate) fn decode_component_naming_spaces(
         .filter_map(|entry| MetaStreamEntry::from_design_entry(scan, entry))
     {
         let meta = scan.parsed_metastream(&meta_entry.entry.name)?;
-        let component_entities = meta
-            .types
-            .iter()
-            .filter(|design_type| {
+        let mut component_entities = HashSet::new();
+        for design_type in meta.types.iter().filter(|design_type| {
                 design_type.module == COMPONENT_MODULE
                     && design_type
                         .base_type_guid
@@ -121,15 +153,46 @@ pub(crate) fn decode_component_naming_spaces(
                         .is_some_and(|base| {
                             base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
                         })
-            })
-            .flat_map(|design_type| design_type.entities.values().copied())
-            .collect::<HashSet<_>>();
+            }) {
+            for &entity_id in design_type.entities.values() {
+                if component_entities.contains(&entity_id) {
+                    continue;
+                }
+                ctx.charge_collection_items(1, "f3d component naming registered entities")?;
+                component_entities.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d component naming entities allocation", 0, 1)
+                })?;
+                component_entities.insert(entity_id);
+            }
+        }
         if component_entities.is_empty() {
             continue;
         }
         let prefix = meta_entry.prefix;
-        let bulk_name = format!("{prefix}BulkStream.dat");
-        let bytes = scan.entry_bytes(&bulk_name)?;
+        let bulk_name = scan.entries.iter()
+            .find(|entry| entry.name.strip_prefix(prefix) == Some("BulkStream.dat"))
+            .map(|entry| entry.name.as_str());
+        let Some(bulk_name) = bulk_name else {
+            let length = "entry ".len()
+                .checked_add(prefix.len())
+                .and_then(|length| length.checked_add("BulkStream.dat not found".len()))
+                .ok_or_else(|| ctx.refuse_codec_limit("f3d missing component bulk name length", 0, 1))?;
+            ctx.charge_retained(
+                u64::try_from(length).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d missing component bulk name length", 0, 1)
+                })?,
+                "f3d missing component BulkStream error",
+            )?;
+            let mut message = String::new();
+            message.try_reserve(length).map_err(|_| {
+                ctx.refuse_codec_limit("f3d missing component BulkStream error allocation", 0, 1)
+            })?;
+            message.push_str("entry ");
+            message.push_str(prefix);
+            message.push_str("BulkStream.dat not found");
+            return Err(CodecError::Malformed(message));
+        };
+        let bytes = scan.entry_bytes(bulk_name)?;
         let mut by_component = HashMap::<u64, DesignComponentNamingSpace>::new();
         for reserved_len in COMPONENT_UUID_RESERVED_LENGTHS {
             let prefix_len = 1 + 8 + reserved_len;
@@ -156,8 +219,9 @@ pub(crate) fn decode_component_naming_spaces(
                     continue;
                 };
                 insert_component_naming_space(
+                    ctx,
                     &mut by_component,
-                    &bulk_name,
+                    bulk_name,
                     marker,
                     component_record_index,
                     context_uuid,
@@ -202,8 +266,9 @@ pub(crate) fn decode_component_naming_spaces(
                 continue;
             };
             insert_component_naming_space(
+                ctx,
                 &mut by_component,
-                &bulk_name,
+                bulk_name,
                 marker,
                 component_record_index,
                 context_uuid,
@@ -219,6 +284,13 @@ pub(crate) fn decode_component_naming_spaces(
                 "Design component {missing} has no context UUID binding"
             )));
         }
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(by_component.len()),
+            "f3d component naming spaces output",
+        )?;
+        out.try_reserve(by_component.len()).map_err(|_| {
+            ctx.refuse_codec_limit("f3d component naming spaces output allocation", 0, 1)
+        })?;
         out.extend(by_component.into_values());
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
