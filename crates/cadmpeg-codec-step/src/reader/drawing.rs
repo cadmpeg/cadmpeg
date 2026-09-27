@@ -455,12 +455,18 @@ fn add_source_typed_targets(
             continue;
         }
         let identity = opaque_record_id(id, record, ctx)?;
-        let source_type = record
-            .partials
-            .iter()
-            .map(|partial| partial.name.as_str())
-            .collect::<Vec<_>>()
-            .join("+");
+        let source_type = crate::decode_alloc::charged_join(
+            ctx,
+            "step_drawing_source_type_text",
+            record.partials.iter().map(|partial| partial.name.as_str()),
+            "+",
+        )?;
+        reserve_drawing_items(
+            &mut native_targets,
+            1,
+            ctx,
+            "step_drawing_native_target_items",
+        )?;
         native_targets.push(NativeRecord::from_identity(
             identity.clone(),
             [
@@ -468,17 +474,31 @@ fn add_source_typed_targets(
                 ("source_type".to_owned(), NativeField::Text(source_type)),
             ],
         ));
+        charge_drawing_map_key(
+            target_identities,
+            &id,
+            ctx,
+            "step_drawing_native_target_groups",
+        )?;
+        ctx.charge_collection_items(1, "step_drawing_native_target_members")?;
         target_identities.insert(id, BTreeSet::from([identity.into_string()]));
     }
     if native_targets.is_empty() {
         return Ok(());
     }
     let namespace = ir.native.namespace_mut("step");
-    namespace
-        .arenas_mut()
-        .entry("drawing_targets".into())
-        .or_default()
-        .extend(native_targets);
+    let arenas = namespace.arenas_mut();
+    if !arenas.contains_key("drawing_targets") {
+        ctx.charge_collection_items(1, "step_drawing_native_arena")?;
+    }
+    let target_arena = arenas.entry("drawing_targets".into()).or_default();
+    reserve_drawing_items(
+        target_arena,
+        native_targets.len(),
+        ctx,
+        "step_drawing_native_arena_items",
+    )?;
+    target_arena.extend(native_targets);
     Ok(())
 }
 

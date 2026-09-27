@@ -15,7 +15,12 @@ fn drawing_refuses(records: &str, operation: &str) {
 }
 
 fn drawing_refuses_source(source: &[u8], operation: &str) {
+    drawing_refuses_source_with_typed(source, operation, &[]);
+}
+
+fn drawing_refuses_source_with_typed(source: &[u8], operation: &str, typed: &[u64]) {
     let (exchange, _) = crate::parse::parse(source).expect("valid drawing exchange");
+    let known_typed = typed.iter().copied().collect::<HashSet<_>>();
     let refused = (0..=256).any(|limit| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -26,7 +31,7 @@ fn drawing_refuses_source(source: &[u8], operation: &str) {
             super::super::decode(
                 &exchange,
                 &mut cadmpeg_ir::document::CadIr::empty(),
-                &HashSet::new(),
+                &known_typed,
                 &BTreeMap::new(),
                 &ctx,
             ),
@@ -36,6 +41,32 @@ fn drawing_refuses_source(source: &[u8], operation: &str) {
         )
     });
     assert!(refused, "no collection limit refused {operation}");
+}
+
+fn drawing_retained_refuses_with_typed(records: &str, operation: &str, typed: &[u64]) {
+    let source = format!("{HEADER}{records}{TAIL}");
+    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid drawing exchange");
+    let known_typed = typed.iter().copied().collect::<HashSet<_>>();
+    let refused = (0..=4096).any(|limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+            .expect("root fits retained policy");
+        matches!(
+            super::super::decode(
+                &exchange,
+                &mut cadmpeg_ir::document::CadIr::empty(),
+                &known_typed,
+                &BTreeMap::new(),
+                &ctx,
+            ),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::RetainedBytes
+                    && refusal.operation == operation
+        )
+    });
+    assert!(refused, "no retained limit refused {operation}");
 }
 
 #[test]
@@ -116,4 +147,41 @@ fn drawing_referenced_targets_refuse_collection_limit() {
         "#1=DRAWING_DEFINITION('Main','detail');#2=DRAWING_REVISION('A',#1,'revision');",
         "step_drawing_referenced_targets",
     );
+}
+
+const TYPED_TARGET_SOURCE: &str = "#1=REPRESENTATION_CONTEXT('','');#2=PRESENTATION_VIEW('Front',(#3),#1);#3=ITEM('opaque');";
+
+#[test]
+fn drawing_source_type_text_refuses_retained_limit() {
+    drawing_retained_refuses_with_typed(TYPED_TARGET_SOURCE, "step_drawing_source_type_text", &[3]);
+}
+
+#[test]
+fn drawing_native_target_items_refuse_collection_limit() {
+    let source = format!("{HEADER}{TYPED_TARGET_SOURCE}{TAIL}");
+    drawing_refuses_source_with_typed(source.as_bytes(), "step_drawing_native_target_items", &[3]);
+}
+
+#[test]
+fn drawing_native_target_groups_refuse_collection_limit() {
+    let source = format!("{HEADER}{TYPED_TARGET_SOURCE}{TAIL}");
+    drawing_refuses_source_with_typed(source.as_bytes(), "step_drawing_native_target_groups", &[3]);
+}
+
+#[test]
+fn drawing_native_target_members_refuse_collection_limit() {
+    let source = format!("{HEADER}{TYPED_TARGET_SOURCE}{TAIL}");
+    drawing_refuses_source_with_typed(source.as_bytes(), "step_drawing_native_target_members", &[3]);
+}
+
+#[test]
+fn drawing_native_arena_refuses_collection_limit() {
+    let source = format!("{HEADER}{TYPED_TARGET_SOURCE}{TAIL}");
+    drawing_refuses_source_with_typed(source.as_bytes(), "step_drawing_native_arena", &[3]);
+}
+
+#[test]
+fn drawing_native_arena_items_refuse_collection_limit() {
+    let source = format!("{HEADER}{TYPED_TARGET_SOURCE}{TAIL}");
+    drawing_refuses_source_with_typed(source.as_bytes(), "step_drawing_native_arena_items", &[3]);
 }
