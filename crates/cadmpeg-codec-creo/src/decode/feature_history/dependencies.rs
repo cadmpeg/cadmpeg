@@ -70,23 +70,25 @@ pub(in super::super) fn native_feature_dependency_ids(
         entity_tables,
         surface_rows,
     )?;
+    let parents = agreed_feature_parent_ids(ctx, affected_ids, feature_id)?;
+    let merged = surface_merge_entity_dependencies(
+        ctx,
+        affected_ids,
+        surface_merge_replay_affected_ids,
+        entity_tables,
+        feature_id,
+    )?;
+    let entity_dependencies = feature_entity_dependencies(ctx, entity_tables, feature_id)?;
+    let surface_dependencies =
+        feature_output_surface_dependencies(ctx, entity_tables, surface_rows, feature_id)?;
     let mut dependencies = Vec::new();
-    for dependency in agreed_feature_parent_ids(affected_ids, feature_id)
+    for dependency in parents
         .into_iter()
         .chain(current_feature_recipe_parent(operations, feature_id))
         .chain(prototype_dependencies.iter().copied())
-        .chain(surface_merge_entity_dependencies(
-            affected_ids,
-            surface_merge_replay_affected_ids,
-            entity_tables,
-            feature_id,
-        ))
-        .chain(feature_entity_dependencies(entity_tables, feature_id))
-        .chain(feature_output_surface_dependencies(
-            entity_tables,
-            surface_rows,
-            feature_id,
-        ))
+        .chain(merged)
+        .chain(entity_dependencies)
+        .chain(surface_dependencies)
         .chain(transition_dependencies)
     {
         if !dependencies.contains(&dependency) {
@@ -98,98 +100,108 @@ pub(in super::super) fn native_feature_dependency_ids(
 }
 
 pub(in super::super) fn feature_output_surface_dependencies(
+    ctx: &DecodeContext<'_>,
     tables: &[crate::feature::entity::FeatureEntityTable],
     surface_rows: &[crate::surface::SurfaceRow],
     feature_id: u32,
-) -> Vec<u32> {
-    let owned_entities = tables
+) -> Result<Vec<u32>, CodecError> {
+    let mut owned_entities = BTreeSet::new();
+    for entry in tables
         .iter()
         .filter(|table| table.feature_id == feature_id && table.table_class_id == 67)
         .flat_map(|table| &table.entries)
         .filter(|entry| entry.source_entity_id() == Some(feature_id))
-        .map(|entry| entry.entity_id)
-        .collect::<BTreeSet<_>>();
-    tables
+    {
+        if !owned_entities.contains(&entry.entity_id) {
+            ctx.charge_collection_items(1, "creo output surface owned entity nodes")?;
+            owned_entities.insert(entry.entity_id);
+        }
+    }
+    let mut dependencies = Vec::new();
+    for entry in tables
         .iter()
         .filter(|table| table.feature_id == feature_id && table.table_class_id == 100)
         .flat_map(|table| &table.entries)
         .filter(|entry| owned_entities.contains(&entry.entity_id))
-        .filter_map(|entry| {
-            let row = crate::surface::unique_surface_row(surface_rows, entry.class_id())?;
-            (row.feature_id != feature_id).then_some(row.feature_id)
-        })
-        .fold(Vec::new(), |mut dependencies, dependency| {
-            if !dependencies.contains(&dependency) {
-                dependencies.push(dependency);
-            }
-            dependencies
-        })
+    {
+        let Some(row) = crate::surface::unique_surface_row(surface_rows, entry.class_id()) else {
+            continue;
+        };
+        if row.feature_id != feature_id && !dependencies.contains(&row.feature_id) {
+            ctx.try_reserve_items(&mut dependencies, 1, "creo output surface dependencies")?;
+            dependencies.push(row.feature_id);
+        }
+    }
+    Ok(dependencies)
 }
 
 pub(in super::super) fn feature_entity_dependencies(
+    ctx: &DecodeContext<'_>,
     tables: &[crate::feature::entity::FeatureEntityTable],
     feature_id: u32,
-) -> Vec<u32> {
+) -> Result<Vec<u32>, CodecError> {
     let mut dependencies = Vec::new();
     for table in tables {
         if table.feature_id != feature_id || table.table_class_id != 100 {
             continue;
         }
         for entry in &table.entries {
-            let producers = feature_entity_producers(tables, entry.entity_id);
-            let [producer] = producers.as_slice() else {
+            let Some(producer) = unique_feature_entity_producer(tables, entry.entity_id) else {
                 continue;
             };
-            if *producer == feature_id {
+            if producer == feature_id {
                 continue;
             }
-            if !dependencies.contains(producer) {
-                dependencies.push(*producer);
+            if !dependencies.contains(&producer) {
+                ctx.try_reserve_items(&mut dependencies, 1, "creo feature entity dependencies")?;
+                dependencies.push(producer);
             }
         }
     }
-    dependencies
+    Ok(dependencies)
 }
 
-fn feature_entity_producers(
+fn unique_feature_entity_producer(
     tables: &[crate::feature::entity::FeatureEntityTable],
     entity_id: u32,
-) -> Vec<u32> {
-    tables
-        .iter()
-        .filter_map(|table| {
-            let owner = table.feature_id;
-            table
-                .entries
-                .iter()
-                .any(|entry| entry.class_id() == 200 && entry.entity_id == entity_id)
-                .then_some(owner)
-        })
-        .fold(Vec::new(), |mut producers, producer| {
-            if !producers.contains(&producer) {
-                producers.push(producer);
+) -> Option<u32> {
+    let mut producer = None;
+    for table in tables {
+        if table
+            .entries
+            .iter()
+            .any(|entry| entry.class_id() == 200 && entry.entity_id == entity_id)
+        {
+            match producer {
+                Some(owner) if owner != table.feature_id => return None,
+                None => producer = Some(table.feature_id),
+                _ => {}
             }
-            producers
-        })
+        }
+    }
+    producer
 }
 
-pub(super) fn preceding_feature_entity_producers(
+fn unique_preceding_feature_entity_producer(
     tables: &[crate::feature::entity::FeatureEntityTable],
     entity_id: u32,
     consumer_offset: usize,
-) -> Vec<u32> {
-    tables
-        .iter()
-        .map(|table| (table.feature_id, table))
-        .flat_map(|(owner, table)| {
-            table.entries.iter().filter_map(move |entry| {
-                (entry.class_id() == 200
-                    && entry.entity_id == entity_id
-                    && entry.offset < consumer_offset)
-                    .then_some(owner)
-            })
-        })
-        .collect()
+) -> Option<u32> {
+    let mut producer = None;
+    for table in tables {
+        for entry in &table.entries {
+            if entry.class_id() == 200
+                && entry.entity_id == entity_id
+                && entry.offset < consumer_offset
+            {
+                if producer.is_some() {
+                    return None;
+                }
+                producer = Some(table.feature_id);
+            }
+        }
+    }
+    producer
 }
 
 fn agreed_surface_merge_replay_quilt_ids(
@@ -269,33 +281,33 @@ pub(super) fn surface_merge_quilt_state_offset(
 }
 
 pub(in super::super) fn surface_merge_entity_dependencies(
+    ctx: &DecodeContext<'_>,
     affected_ids: &[crate::feature::rows::FeatureAffectedIds],
     replay: &[crate::feature::rows::FeatureSurfaceMergeAffectedIds],
     tables: &[crate::feature::entity::FeatureEntityTable],
     feature_id: u32,
-) -> Vec<u32> {
+) -> Result<Vec<u32>, CodecError> {
     let Some(ids) = surface_merge_quilt_ids(affected_ids, replay, feature_id) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(consumer_offset) =
         surface_merge_quilt_state_offset(affected_ids, replay, feature_id, ids)
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    ids.iter()
-        .filter_map(|entity_id| {
-            let producers = preceding_feature_entity_producers(tables, *entity_id, consumer_offset);
-            let [owner] = producers.as_slice() else {
-                return None;
-            };
-            (*owner != feature_id).then_some(*owner)
-        })
-        .fold(Vec::new(), |mut dependencies, dependency| {
-            if !dependencies.contains(&dependency) {
-                dependencies.push(dependency);
-            }
-            dependencies
-        })
+    let mut dependencies = Vec::new();
+    for &entity_id in ids {
+        let Some(owner) =
+            unique_preceding_feature_entity_producer(tables, entity_id, consumer_offset)
+        else {
+            continue;
+        };
+        if owner != feature_id && !dependencies.contains(&owner) {
+            ctx.try_reserve_items(&mut dependencies, 1, "creo surface merge dependencies")?;
+            dependencies.push(owner);
+        }
+    }
+    Ok(dependencies)
 }
 
 pub(in super::super) fn has_feature_affected_ids(
@@ -309,10 +321,12 @@ pub(in super::super) fn has_feature_affected_ids(
 }
 
 fn agreed_feature_parent_ids(
+    ctx: &DecodeContext<'_>,
     records: &[crate::feature::rows::FeatureAffectedIds],
     feature_id: u32,
-) -> Vec<u32> {
-    let mut emitted_kinds = Vec::new();
+) -> Result<Vec<u32>, CodecError> {
+    let mut strong_emitted = false;
+    let mut parent_emitted = false;
     let mut ids = Vec::new();
     for record in records.iter().filter(|record| {
         record.feature_id == feature_id
@@ -322,15 +336,21 @@ fn agreed_feature_parent_ids(
                     | crate::feature::rows::AffectedIdKind::Parents
             )
     }) {
-        if emitted_kinds.contains(&record.kind) {
+        let emitted = match record.kind {
+            crate::feature::rows::AffectedIdKind::StrongParents => &mut strong_emitted,
+            crate::feature::rows::AffectedIdKind::Parents => &mut parent_emitted,
+            _ => continue,
+        };
+        if *emitted {
             continue;
         }
-        emitted_kinds.push(record.kind);
+        *emitted = true;
         if let Some(agreed) = agreed_feature_affected_ids(records, feature_id, record.kind) {
+            ctx.try_reserve_items(&mut ids, agreed.len(), "creo agreed feature parent IDs")?;
             ids.extend_from_slice(agreed);
         }
     }
-    ids
+    Ok(ids)
 }
 
 pub(in super::super) fn surface_prototype_feature_dependencies(
