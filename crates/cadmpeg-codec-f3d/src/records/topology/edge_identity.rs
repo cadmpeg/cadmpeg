@@ -61,11 +61,8 @@ impl DesignEdgeIdentityLayout {
 }
 
 /// Persistent selection identity owned by a Fillet or Chamfer operand group.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignEdgeIdentityOperandWire",
-    into = "DesignEdgeIdentityOperandWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignEdgeIdentityOperandWire")]
 pub(crate) struct DesignEdgeIdentityOperand {
     frame: crate::records::frame_chain::RecordFrameChain,
     /// Globally unique deterministic identifier for this native operand.
@@ -105,6 +102,93 @@ pub(crate) struct DesignEdgeIdentityOperand {
     pub(crate) resolution_identity_id: Option<String>,
 }
 
+#[cfg(test)]
+thread_local! {
+    static EDGE_IDENTITY_OPERAND_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignEdgeIdentityOperand {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        EDGE_IDENTITY_OPERAND_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            frame: self.frame,
+            id: self.id.clone(),
+            scope_record_index: self.scope_record_index,
+            group_record_index: self.group_record_index,
+            group_member_ordinal: self.group_member_ordinal,
+            class_tag: self.class_tag.clone(),
+            layout: self.layout,
+            local_id: self.local_id,
+            asset_id: self.asset_id.clone(),
+            context_id: self.context_id.clone(),
+            historical: self.historical.clone(),
+            treatment_radius_candidates: self.treatment_radius_candidates.clone(),
+            transition_edge_candidates: self.transition_edge_candidates.clone(),
+            resolved_edge_slots: self.resolved_edge_slots.clone(),
+            resolved_edge_slot: self.resolved_edge_slot,
+            resolution_identity_id: self.resolution_identity_id.clone(),
+        }
+    }
+}
+
+impl Serialize for DesignEdgeIdentityOperand {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            id: &'a str,
+            scope_record_index: u32,
+            group_record_index: u32,
+            group_member_ordinal: u32,
+            record_index: u32,
+            byte_offset: u64,
+            class_tag: &'a str,
+            compact_layout: bool,
+            local_id: u64,
+            local_id_offset: u64,
+            asset_id: &'a str,
+            asset_id_offset: u64,
+            context_id: &'a str,
+            context_id_offset: u64,
+            #[serde(flatten, skip_serializing_if = "Option::is_none")]
+            historical: Option<&'a HistoricalBinding>,
+            #[serde(skip_serializing_if = "<[DesignEdgeTreatmentRadiusCandidate]>::is_empty")]
+            treatment_radius_candidates: &'a [DesignEdgeTreatmentRadiusCandidate],
+            #[serde(skip_serializing_if = "<[i64]>::is_empty")]
+            transition_edge_candidates: &'a [i64],
+            #[serde(skip_serializing_if = "<[i64]>::is_empty")]
+            resolved_edge_slots: &'a [i64],
+            #[serde(skip_serializing_if = "Option::is_none")]
+            resolved_edge_slot: Option<i64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            resolution_identity_id: Option<&'a str>,
+        }
+        WireRef {
+            id: &self.id,
+            scope_record_index: self.scope_record_index,
+            group_record_index: self.group_record_index,
+            group_member_ordinal: self.group_member_ordinal,
+            record_index: self.record_index(),
+            byte_offset: self.byte_offset(),
+            class_tag: self.class_tag.as_str(),
+            compact_layout: self.layout.is_compact(),
+            local_id: self.local_id,
+            local_id_offset: self.local_id_offset(),
+            asset_id: self.asset_id.as_str(),
+            asset_id_offset: self.asset_id_offset(),
+            context_id: self.context_id.as_str(),
+            context_id_offset: self.context_id_offset(),
+            historical: self.historical.as_ref(),
+            treatment_radius_candidates: &self.treatment_radius_candidates,
+            transition_edge_candidates: &self.transition_edge_candidates,
+            resolved_edge_slots: &self.resolved_edge_slots,
+            resolved_edge_slot: self.resolved_edge_slot,
+            resolution_identity_id: self.resolution_identity_id.as_deref(),
+        }
+        .serialize(serializer)
+    }
+}
+
 impl DesignEdgeIdentityOperand {
     pub(crate) fn try_new(draft: DesignEdgeIdentityOperandDraft) -> Result<Self, String> {
         let frame = crate::records::frame_chain::RecordFrameChain::try_new(
@@ -139,6 +223,7 @@ impl DesignEdgeIdentityOperand {
         }
         Ok(value)
     }
+    #[cfg(test)]
     pub(crate) fn into_draft(self) -> DesignEdgeIdentityOperandDraft {
         let record_index = self.record_index();
         let byte_offset = self.byte_offset();
@@ -316,6 +401,7 @@ impl TryFrom<DesignEdgeIdentityOperandWire> for DesignEdgeIdentityOperand {
     }
 }
 
+#[cfg(test)]
 impl From<DesignEdgeIdentityOperand> for DesignEdgeIdentityOperandWire {
     fn from(operand: DesignEdgeIdentityOperand) -> Self {
         let local_id_offset = operand.local_id_offset();
