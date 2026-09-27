@@ -226,6 +226,20 @@ impl<'a> DecodeContext<'a> {
         self.budget.reserve_scoped(bytes, operation)
     }
 
+    /// Reserves scoped bytes and fallible string capacity for temporary text.
+    pub fn reserve_scoped_string(
+        &self,
+        bytes: usize,
+        operation: &'static str,
+    ) -> Result<(String, ScopedReservation<'_>), CodecError> {
+        let reservation = self.reserve_scoped(bytes as u64, operation)?;
+        let mut text = String::new();
+        text.try_reserve_exact(bytes).map_err(|_| {
+            self.budget.scoped_allocation_failed(bytes as u64, operation)
+        })?;
+        Ok((text, reservation))
+    }
+
     /// Charges bytes retained for the remainder of this session.
     pub fn charge_retained(&self, bytes: u64, operation: &'static str) -> Result<(), CodecError> {
         self.budget.charge_retained(bytes, operation)

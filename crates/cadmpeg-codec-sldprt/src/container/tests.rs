@@ -122,6 +122,47 @@ fn native_marker_name_refuses_retained_byte_limit() {
     assert_eq!(limit.operation, "retain SLDPRT section name");
 }
 
+fn utf16_envelope_with_replacements() -> Vec<u8> {
+    let mut payload = vec![0xff, 0xfe];
+    for unit in "<swSolidWorks>".encode_utf16() {
+        payload.extend_from_slice(&unit.to_le_bytes());
+    }
+    for _ in 0..1000 {
+        payload.extend_from_slice(&0xd800_u16.to_le_bytes());
+    }
+    for unit in "</swSolidWorks>".encode_utf16() {
+        payload.extend_from_slice(&unit.to_le_bytes());
+    }
+    payload
+}
+
+#[test]
+fn container_scan_refuses_xml_materialization_limit() {
+    let payload = utf16_envelope_with_replacements();
+    let mut source = outer_header();
+    source.extend(make_block(0x43, "Contents/SolidWorks", &payload));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = payload.len() as u64;
+    let (ctx, root) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let Err(CodecError::ResourceLimit(limit)) = container::scan(&ctx, root) else {
+        panic!("expected XML materialization refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(limit.operation, "materialize SLDPRT XML text");
+}
+
+#[test]
+fn charged_container_scan_preserves_utf16_envelope() {
+    let payload = utf16_envelope_with_replacements();
+    let mut source = outer_header();
+    source.extend(make_block(0x43, "Contents/SolidWorks", &payload));
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::service()).unwrap();
+    let scan = container::scan(&ctx, root).unwrap();
+    assert!(container::solidworks_envelope(&scan).is_some());
+}
+
 #[test]
 fn site_keys_use_outer_container_identity() {
     let first = Block {
