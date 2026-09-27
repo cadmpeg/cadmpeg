@@ -86,6 +86,28 @@ fn x62_persistence_object_collection_is_admitted_before_allocation() {
 }
 
 #[test]
+fn dependency_lookup_refuses_on_collection_limit() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="1" Dependencies="1"><ObjectDeps Name="A" Count="0"/><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"/></ObjectData></Document>"#;
+    let nodes = crate::container::xml_envelope_counts(document.as_bytes())
+        .expect("XML node count").0;
+    assert_item_operation(
+        &parse_with_item_limit(document, nodes + 2),
+        "FCStd dependency lookup",
+    );
+}
+
+#[test]
+fn extension_name_set_refuses_on_collection_limit() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Extensions Count="1"><Extension name="E" type="T"/></Extensions></Object></ObjectData></Document>"#;
+    let nodes = crate::container::xml_envelope_counts(document.as_bytes())
+        .expect("XML node count").0;
+    assert_item_operation(
+        &parse_with_item_limit(document, nodes + 5),
+        "FCStd extension name set",
+    );
+}
+
+#[test]
 fn x62_persistence_extension_collection_is_admitted_before_allocation() {
     let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object name="A" type="Part::Feature"/></Objects><ObjectData Count="1"><Object name="A"><Extensions Count="1"><Extension name="E" type="T"/></Extensions><Properties Count="0"/></Object></ObjectData></Document>"#;
     let nodes = crate::container::xml_envelope_counts(document.as_bytes())

@@ -47,6 +47,29 @@ pub(crate) fn optional_collection_vec<T>(
     }
 }
 
+pub(crate) fn decode_reserved_vec<T>(
+    ctx: Option<&DecodeContext<'_>>,
+    count: usize,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    match ctx {
+        Some(ctx) => reserved_vec(ctx, count, operation),
+        None => Ok(Vec::new()),
+    }
+}
+
+pub(crate) fn reserve_charged_vec_items<T>(
+    ctx: Option<&DecodeContext<'_>>,
+    items: &mut Vec<T>,
+    count: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if let Some(ctx) = ctx {
+        items.try_reserve(count).map_err(|_| collection_allocation_failed(ctx, count as u64, operation))?;
+    }
+    Ok(())
+}
+
 pub(crate) fn reserve_vec_items<T>(
     ctx: &DecodeContext<'_>,
     items: &mut Vec<T>,
@@ -107,11 +130,11 @@ pub(crate) fn insert_hash_set<T: Eq + Hash>(
         return Ok(false);
     }
     ctx.charge_collection_items(1, operation)?;
-    items.try_reserve(1).map_err(|_| allocation_failed(ctx, 1, operation))?;
+    items.try_reserve(1).map_err(|_| collection_allocation_failed(ctx, 1, operation))?;
     Ok(items.insert(value))
 }
 
-fn allocation_failed(
+pub(crate) fn collection_allocation_failed(
     ctx: &DecodeContext<'_>,
     count: u64,
     operation: &'static str,
