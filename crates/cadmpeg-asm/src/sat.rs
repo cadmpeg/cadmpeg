@@ -82,18 +82,25 @@ impl TextHeader {
     /// `scale` is reported as `10.0`: [`parse`] converts length-bearing values
     /// into the centimetre convention, including `resabs`, so the decoders see
     /// the same unit a binary stream carries.
-    pub fn as_kernel_header(&self) -> KernelHeader {
-        KernelHeader {
+    pub fn as_kernel_header(&self, ctx: &DecodeContext<'_>) -> Result<KernelHeader, CodecError> {
+        let copy = |value: &str| -> Result<String, CodecError> {
+            let requested = u64::try_from(value.len()).map_err(|_| {
+                ctx.refuse_codec_limit("retain SAT kernel header string", u64::MAX, u64::MAX)
+            })?;
+            ctx.charge_retained(requested, "retain SAT kernel header string")?;
+            copy_sat_string(ctx, value, "SAT kernel header string")
+        };
+        Ok(KernelHeader {
             save_format_version: Some(self.save_format_version),
             entity_count: Some(self.entity_count),
             flags: Some(self.flags),
-            product_family: Some(self.product_family.clone()),
-            product_version: Some(self.product_version.clone()),
-            save_date: Some(self.save_date.clone()),
+            product_family: Some(copy(&self.product_family)?),
+            product_version: Some(copy(&self.product_version)?),
+            save_date: Some(copy(&self.save_date)?),
             scale: Some(10.0),
             linear: Some(self.normalized_resabs_cm.get()),
             angular: Some(self.resnor.get()),
-        }
+        })
     }
 }
 
@@ -1911,6 +1918,16 @@ mod tests {
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::scalar::{NonNegativeReal, PositiveReal};
 
+    fn kernel_header(header: &super::TextHeader) -> crate::kernel_header::KernelHeader {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test input fits input limit");
+        header
+            .as_kernel_header(&ctx)
+            .expect("service profile admits header copy")
+    }
+
     #[test]
     fn sat_framing_refuses_each_resource_before_record_materialization() {
         type LimitCase = (ResourceDimension, fn(&mut DecodePolicy));
@@ -2003,6 +2020,26 @@ mod tests {
         }
     }
 
+    #[test]
+    fn sat_kernel_header_copy_refuses_retained_limit() {
+        let source = asm_stream("");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 91;
+        let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
+            .expect("source fits input limit");
+        let stream = super::parse(&ctx, &source).expect("header and terminator fit retained limit");
+        let error = stream
+            .header
+            .as_kernel_header(&ctx)
+            .expect_err("kernel header copy exceeds retained limit");
+        let CodecError::ResourceLimit(refusal) = error else {
+            panic!("expected resource refusal, got {error:?}");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(refusal.operation, "retain SAT kernel header string");
+    }
+
     fn parse(bytes: &[u8]) -> Result<TextStream, StreamError> {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
@@ -2078,7 +2115,7 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(stream.records[0].ref_at(0), Some(4_294_967_296));
-        let header = stream.header.as_kernel_header();
+        let header = kernel_header(&stream.header);
         for family in [
             crate::dialect::KernelHeaderRef::TextAsm(&header),
             crate::dialect::KernelHeaderRef::TextAcis(&header),
@@ -2093,7 +2130,7 @@ mod tests {
     #[test]
     fn header_conversion_reports_the_centimetre_convention() {
         let stream = parse(&asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n")).expect("stream");
-        let header = stream.header.as_kernel_header();
+        let header = kernel_header(&stream.header);
         assert_eq!(header.save_format_version, Some(23200));
         assert_eq!(header.entity_count, Some(2));
         assert_eq!(header.flags, Some(2));
@@ -2109,7 +2146,7 @@ mod tests {
             .expect("ASCII stream");
         let source = source.replacen("1 1e-06 1.0e-10", "25.4 1e-06 1.0e-10", 1);
         let stream = parse(source.as_bytes()).expect("inch-scale stream");
-        let actual = stream.header.as_kernel_header().linear.expect("resabs");
+        let actual = kernel_header(&stream.header).linear.expect("resabs");
         let expected_resabs_cm = stream.header.resabs().get() * 2.54;
         assert!((actual / expected_resabs_cm - 1.0).abs() < f64::EPSILON);
     }
@@ -2127,7 +2164,7 @@ mod tests {
         assert_eq!(resabs.get(), 1.0e-6);
         assert_eq!(resnor.get(), 1.0e-10);
         let expected = resabs.get() * (scale.get() / 10.0);
-        assert_eq!(stream.header.as_kernel_header().linear, Some(expected));
+        assert_eq!(kernel_header(&stream.header).linear, Some(expected));
     }
 
     #[test]

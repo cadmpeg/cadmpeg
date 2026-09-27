@@ -172,7 +172,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
             )
         })
     })?;
-    let header = stream.header.as_kernel_header();
+    let header = stream.header.as_kernel_header(ctx)?;
     let mut attributes = BTreeMap::new();
     header_attributes(&header, stream.terminator.into(), &mut attributes);
     attributes.insert(
