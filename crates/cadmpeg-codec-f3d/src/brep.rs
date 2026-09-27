@@ -234,8 +234,12 @@ impl Brep {
     }
 
     /// Append a disjoint, already-qualified BREP graph.
-    pub(crate) fn append(&mut self, mut other: Self) {
-        self.asm.append(other.asm);
+    pub(crate) fn append(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        mut other: Self,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        self.asm.append(ctx, other.asm)?;
         macro_rules! append_vecs {
             ($($field:ident),+ $(,)?) => {
                 $(self.$field.append(&mut other.$field);)+
@@ -247,6 +251,7 @@ impl Brep {
             persistent_subentity_tags,
             creation_timestamps,
         );
+        Ok(())
     }
 }
 

@@ -1377,7 +1377,11 @@ fn append_preserves_body_ordinals_within_each_source_brep() {
     first.body_native_keys.push(key("first"));
     let mut second = AsmBrep::default();
     second.body_native_keys.push(key("second"));
-    first.append(second);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test decode context");
+    first.append(&ctx, second).expect("append source BREP");
     assert_eq!(first.body_native_keys.len(), 2);
     assert_eq!(first.body_native_keys[0].body_ordinal, 0);
     assert_eq!(first.body_native_keys[1].body_ordinal, 0);
@@ -1645,4 +1649,50 @@ fn loss_kind_count_refuses_collection_limit() {
         panic!("expected collection refusal: {error:?}");
     };
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn brep_append_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::ids::BodyId;
+    use cadmpeg_ir::topology::Region;
+
+    let mut whole = AsmBrep::default();
+    let mut part = AsmBrep::default();
+    part.regions.push(Region {
+        id: RegionId::from(id(FORMAT, 1)),
+        body: BodyId::from(id(FORMAT, 2)),
+        shells: Vec::new(),
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = whole.append(&ctx, part).expect_err("one region exceeds zero items");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.operation, "ASM append regions");
+}
+
+#[test]
+fn stats_merge_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut whole = super::stats::Stats::default();
+    let mut part = super::stats::Stats::default();
+    part.unknown_surface_kinds.insert("unknown".into(), 1);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = whole.merge(&ctx, part).expect_err("one kind exceeds zero items");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.operation, "ASM merge loss kinds");
 }

@@ -32,6 +32,23 @@ pub(crate) fn push_vec<T>(
     Ok(())
 }
 
+pub(crate) fn append_vec<T>(
+    ctx: &DecodeContext<'_>,
+    target: &mut Vec<T>,
+    source: &mut Vec<T>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let count = source.len();
+    let amount = u64::try_from(count)
+        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    ctx.charge_collection_items(amount, operation)?;
+    target
+        .try_reserve(count)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, amount))?;
+    target.append(source);
+    Ok(())
+}
+
 pub(crate) fn reserve_vec_slot<T>(
     ctx: &DecodeContext<'_>,
     values: &mut Vec<T>,

@@ -210,10 +210,17 @@ impl<'de> Deserialize<'de> for AsmBrep {
 
 impl AsmBrep {
     /// Append a disjoint, already-qualified ASM graph.
-    pub fn append(&mut self, mut other: Self) {
+    pub fn append(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        mut other: Self,
+    ) -> Result<(), cadmpeg_core::CodecError> {
         macro_rules! append_vecs {
             ($($field:ident),+ $(,)?) => {
-                $(self.$field.append(&mut other.$field);)+
+                $(crate::decode_alloc::append_vec(
+                    ctx, &mut self.$field, &mut other.$field,
+                    concat!("ASM append ", stringify!($field)),
+                )?;)+
             };
         }
         append_vecs!(
@@ -247,7 +254,8 @@ impl AsmBrep {
             unknowns,
             annotation_records,
         );
-        self.stats.merge(other.stats);
+        self.stats.merge(ctx, other.stats)?;
+        Ok(())
     }
 }
 
