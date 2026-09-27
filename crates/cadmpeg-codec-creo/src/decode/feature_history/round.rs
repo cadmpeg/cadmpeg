@@ -31,10 +31,18 @@ const EPS_ROUND_RADIUS_RECONCILIATION: f64 = 1.0e-9;
 const EPS_ROUND_SUPPORT_ORTHOGONAL: f64 = 1.0e-9;
 
 pub(in super::super) fn parallel_support_radius(planes: &[PlaneEquation]) -> Option<f64> {
+    parallel_support_radius_from_iter(planes.iter().copied().map(Some))
+}
+
+fn parallel_support_radius_from_iter(
+    planes: impl Iterator<Item = Option<PlaneEquation>> + Clone,
+) -> Option<f64> {
     let mut first_radius: Option<f64> = None;
     let mut agrees = true;
-    for (first_index, first) in planes.iter().enumerate() {
-        for second in planes.iter().skip(first_index + 1) {
+    for (first_index, first) in planes.clone().enumerate() {
+        for second in planes.clone().skip(first_index + 1) {
+            let first = first?;
+            let second = second?;
             let first_normal = normalize(first.normal)?;
             let second_normal = normalize(second.normal)?;
             let alignment = first_normal
@@ -716,19 +724,22 @@ pub(in super::super) fn round_support_radius(
     if cap_gap <= EPS_ROUND_CAP_GAP {
         return None;
     }
-    let support_planes = support_ids
+    support_ids
         .iter()
-        .map(|id| reconciled_model_plane(&local_planes, ir, source_carriers, *id))
-        .collect::<Option<Vec<_>>>()?;
-    support_planes
-        .iter()
-        .all(|plane| {
+        .all(|id| {
+            let Some(plane) = reconciled_model_plane(&local_planes, ir, source_carriers, *id) else {
+                return false;
+            };
             normalize(plane.normal).is_some_and(|normal| {
                 dot(first_cap_normal, normal).abs() <= EPS_ROUND_SUPPORT_ORTHOGONAL
             })
         })
         .then_some(())?;
-    parallel_support_radius(&support_planes)
+    parallel_support_radius_from_iter(
+        support_ids
+            .iter()
+            .map(|id| reconciled_model_plane(&local_planes, ir, source_carriers, *id)),
+    )
 }
 
 pub(in super::super) fn round_support_envelope_cylinder(
