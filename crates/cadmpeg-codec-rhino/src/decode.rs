@@ -3218,7 +3218,11 @@ impl<'a> DecodeContext<'a> {
         let session = self.expand.ctx();
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
             let mut links = Vec::new();
-            let mut boundaries = Vec::with_capacity(extrusion.boundaries.len());
+            let mut boundaries = crate::wire::admitted_collection(
+                session,
+                extrusion.boundaries.len(),
+                "Rhino committed extrusion boundaries",
+            )?;
             for (index, boundary) in extrusion.boundaries.iter().enumerate() {
                 let id = commit_curve_tree(
                     session,
@@ -3283,15 +3287,15 @@ impl<'a> DecodeContext<'a> {
                 links.push(surface_id.to_string());
             }
             if extrusion.caps[0] || extrusion.caps[1] {
-                stage_extrusion_caps(
+                links.push(stage_extrusion_caps(
+                    session,
                     candidate,
                     candidate_annotations,
                     key.as_str(),
                     &association,
                     &extrusion,
                     &boundaries,
-                    &mut links,
-                )?;
+                )?);
             }
             for (index, mut mesh) in extrusion.meshes.into_iter().enumerate() {
                 mesh.tessellation.id = cadmpeg_ir::tessellation::TessellationId::mint(format!(
@@ -3778,14 +3782,14 @@ struct CommittedExtrusionBoundary<'a> {
 }
 
 fn stage_extrusion_caps(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut cadmpeg_ir::Annotations,
     key: &str,
     association: &SourceObjectAssociation,
     extrusion: &crate::extrusion::DecodedExtrusion,
     boundaries: &[CommittedExtrusionBoundary<'_>],
-    links: &mut Vec<String>,
-) -> Result<(), String> {
+) -> Result<String, CandidateError> {
     let key = IdentityKey::try_new(key.to_owned()).map_err(|error| error.to_string())?;
     let body_id = cadmpeg_ir::ids::BodyId::compose(
         &cadmpeg_ir::identity_namespace!("rhino", "object", "body"),
@@ -3835,7 +3839,11 @@ fn stage_extrusion_caps(
             )),
             source_object: Some(association.clone()),
         });
-        let mut loop_ids = Vec::with_capacity(boundaries.len());
+        let mut loop_ids = crate::wire::admitted_collection(
+            ctx,
+            boundaries.len(),
+            "Rhino extrusion cap loop IDs",
+        )?;
         for (profile, committed) in boundaries.iter().enumerate() {
             let boundary = committed.boundary;
             let suffix = key
@@ -3869,7 +3877,8 @@ fn stage_extrusion_caps(
             let Some(endpoint) = endpoint else {
                 return Err(format!(
                     "extrusion cap staging: cap {cap} profile {profile} has no endpoint"
-                ));
+                )
+                .into());
             };
             let point_id = cadmpeg_ir::ids::PointId::compose(
                 &cadmpeg_ir::identity_namespace!("rhino", "object", "point"),
@@ -4030,7 +4039,7 @@ fn stage_extrusion_caps(
         region_ids.push(region_id);
     }
     if region_ids.is_empty() {
-        return Err("extrusion cap staging: no enabled caps".to_string());
+        return Err("extrusion cap staging: no enabled caps".to_string().into());
     }
     ir.model.bodies.push(Body {
         id: body_id.clone(),
@@ -4042,8 +4051,7 @@ fn stage_extrusion_caps(
         visible: association.visible,
     });
     annotate_derived(annotations, &body_id.to_string());
-    links.push(body_id.to_string());
-    Ok(())
+    Ok(body_id.to_string())
 }
 
 #[derive(Debug)]
