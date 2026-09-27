@@ -1079,19 +1079,26 @@ impl Parser<'_, '_, '_> {
             .map_err(|error| error.into_parse_error(0))?;
         for record in records.values_mut() {
             if record.partials.len() == 1 && omitted_entity_name(&record.partials[0]) {
-                let previous_capacity = record.partials[0].parameters.capacity();
+                let parameters = &mut record.partials[0].parameters;
+                if let Some(ctx) = self.budget {
+                    ctx.charge_collection_items(1, "step_omitted_name_recovery_item")?;
+                    if parameters.len() == parameters.capacity() {
+                        ctx.charge_retained(
+                            u64_from_index(size_of::<Value>()),
+                            "step_omitted_name_recovery_storage",
+                        )?;
+                    }
+                }
+                parameters.try_reserve_exact(1).map_err(|_| {
+                    ParseError::Resource(refuse_index(
+                        self.budget,
+                        "step_omitted_name_recovery_storage",
+                    ))
+                })?;
                 record.partials[0]
                     .parameters
                     .insert(0, Value::String(Vec::new()));
                 record.partials[0].parameters.shrink_to_fit();
-                let added_capacity = record.partials[0]
-                    .parameters
-                    .capacity()
-                    .saturating_sub(previous_capacity);
-                self.charge_retained(
-                    allocation_bytes(added_capacity, size_of::<Value>()),
-                    "step_omitted_name_recovery_storage",
-                )?;
                 match &mut self.omitted_entity_names {
                     Some((_, count)) => *count = count.saturating_add(1),
                     None => {
@@ -1358,7 +1365,11 @@ impl Parser<'_, '_, '_> {
                 TokenKind::Omitted => Value::Omitted,
                 TokenKind::Derived => Value::Derived,
                 TokenKind::Name(name) => self.typed_parameter(name)?,
-                TokenKind::UserName(name) => self.typed_parameter(format!("!{name}"))?,
+                TokenKind::UserName(name) => self.typed_parameter(format_parser_text(
+                    self.budget,
+                    "step_parse_user_name_prefix",
+                    format_args!("!{name}"),
+                )?)?,
                 _ => return self.err("expected parameter value"),
             }
         };
@@ -1384,7 +1395,11 @@ impl Parser<'_, '_, '_> {
     fn take_name(&mut self) -> Result<String, ParseError> {
         match self.next_kind()? {
             TokenKind::Name(name) => Ok(name),
-            TokenKind::UserName(name) => Ok(format!("!{name}")),
+            TokenKind::UserName(name) => Ok(format_parser_text(
+                self.budget,
+                "step_parse_user_name_prefix",
+                format_args!("!{name}"),
+            )?),
             _ => self.err("expected name"),
         }
     }
@@ -1393,7 +1408,15 @@ impl Parser<'_, '_, '_> {
         if actual == expected {
             Ok(())
         } else {
-            self.err(&format!("expected {expected}, found {actual}"))
+            let message = format_parser_text(
+                self.budget,
+                "step_parse_expected_name_error",
+                format_args!("expected {expected}, found {actual}"),
+            )?;
+            Err(ParseError::Syntax {
+                offset: self.current_offset(),
+                message,
+            })
         }
     }
     fn punct(&mut self, expected: &TokenKind) -> Result<(), ParseError> {
