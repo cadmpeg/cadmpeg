@@ -1767,7 +1767,11 @@ impl<'a> DecodeContext<'a> {
                 let validation = with_native_unknowns(&mut self.ir, &self.unknowns, |ir| {
                     cadmpeg_ir::admit(ir, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new())
                 });
-                if validation.as_ref().is_ok_and(|result| result.as_ref().is_ok_and(cadmpeg_ir::report::check::ValidationReport::is_ok)) {
+                if validation.as_ref().is_ok_and(|result| {
+                    result
+                        .as_ref()
+                        .is_ok_and(cadmpeg_ir::report::check::ValidationReport::is_ok)
+                }) {
                     self.append_links(source_order, &links);
                     self.mark_decoded(source_order);
                     self.geometry_transferred = true;
@@ -1778,10 +1782,7 @@ impl<'a> DecodeContext<'a> {
                     Ok(Err(limit)) => return Err(cadmpeg_core::CodecError::ResourceLimit(limit)),
                     Err(error) => error.to_string(),
                 };
-                format!(
-                    "instance expansion rejected atomically by IR admission: {}",
-                    findings
-                )
+                format!("instance expansion rejected atomically by IR admission: {findings}")
             }
             Err(ReferenceFailure::Codec(error)) => return Err(error),
             Err(ReferenceFailure::Semantic(message)) => format!("instance retained: {message}"),

@@ -8853,7 +8853,6 @@ where
 /// existing solver, so optional incidences never become required trim uses.
 /// A second solved assignment is semantic ambiguity: no topology gauge may
 /// erase a different edge-to-face incidence graph.
-#[must_use]
 pub(crate) fn parse_standard_mesh_candidate_outcome_with_face_assignments<F>(
     candidates: MeshFaceAssignmentCandidates<'_>,
     budget: &WorkBudget<'_>,
@@ -8955,23 +8954,29 @@ where
         )));
     }
     if let Some(ambiguity) = ambiguity {
-        return Ok(MeshSolve::Failed(MeshCandidateFailure::Ambiguous(ambiguity)));
+        return Ok(MeshSolve::Failed(MeshCandidateFailure::Ambiguous(
+            ambiguity,
+        )));
     }
     if let Some(exhaustion) = exhaustion {
-        return Ok(MeshSolve::Failed(MeshCandidateFailure::Exhausted(exhaustion)));
+        return Ok(MeshSolve::Failed(MeshCandidateFailure::Exhausted(
+            exhaustion,
+        )));
     }
     if matches!(visit, Some(DuplicateFaceAssignmentVisit::Exhausted)) {
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Exhausted(
             MeshCandidateExhaustion::FaceDomainEnumeration,
         )));
     }
-    Ok(if let Some((faces, topology, point_assignment)) = solution {
-        MeshSolve::Solved((faces, topology, point_assignment))
-    } else {
-        MeshSolve::Failed(MeshCandidateFailure::Rejected(
-            rejection.unwrap_or(MeshCandidateRejection::InputStructure),
-        ))
-    })
+    Ok(
+        if let Some((faces, topology, point_assignment)) = solution {
+            MeshSolve::Solved((faces, topology, point_assignment))
+        } else {
+            MeshSolve::Failed(MeshCandidateFailure::Rejected(
+                rejection.unwrap_or(MeshCandidateRejection::InputStructure),
+            ))
+        },
+    )
 }
 
 #[test]
@@ -9073,7 +9078,8 @@ fn face_domain_solver_returns_the_unique_concrete_assignment() {
                 ))
             })
         },
-    ).expect("face assignment evaluator allocation succeeds");
+    )
+    .expect("face assignment evaluator allocation succeeds");
 
     let MeshSolve::Solved((faces, _, _)) = result else {
         panic!("face-domain solver did not retain the unique branch");
@@ -9111,7 +9117,8 @@ fn face_domain_solver_evaluates_only_endpoint_closed_assignments() {
                 ))
             })
         },
-    ).expect("face assignment evaluator allocation succeeds");
+    )
+    .expect("face assignment evaluator allocation succeeds");
 
     let MeshSolve::Solved((faces, _, _)) = result else {
         panic!("face-domain solver did not retain the closed assignment");
@@ -9143,7 +9150,8 @@ fn face_domain_solver_reports_distinct_assignments_as_ambiguity() {
                 vec![assignment[0][1]],
             )))
         },
-    ).expect("face assignment evaluator allocation succeeds");
+    )
+    .expect("face assignment evaluator allocation succeeds");
 
     assert!(matches!(
         result,
