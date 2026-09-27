@@ -1049,3 +1049,87 @@ fn step_source_ids_keep_the_hash_prefixed_spelling() {
         assert_eq!(super::step_source_id(id).as_str(), format!("#{id}"));
     }
 }
+
+#[test]
+fn reference_walk_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &policy)
+        .expect("root fits collection policy");
+    let error = super::collect_references(
+        &crate::parse::Value::Reference(7),
+        &mut BTreeSet::new(),
+        &ctx,
+    )
+    .expect_err("reference needs one set item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "step_reference_walk_ids"));
+}
+
+#[test]
+fn reference_walk_refuses_depth_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &policy)
+        .expect("root fits depth policy");
+    let error = super::collect_references(
+        &crate::parse::Value::List(vec![crate::parse::Value::Reference(7)]),
+        &mut BTreeSet::new(),
+        &ctx,
+    )
+    .expect_err("nested reference needs another depth level");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RecursionDepth
+            && limit.operation == "step_reference_walk"));
+}
+
+#[test]
+fn record_closure_pending_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("root fits collection policy");
+    let error = super::record_closure(&BTreeSet::from([1]), &exchange, &ctx)
+        .expect_err("pending root needs one item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "step_record_closure_pending"));
+}
+
+#[test]
+fn record_closure_ids_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("root fits collection policy");
+    let error = super::record_closure(&BTreeSet::from([1]), &exchange, &ctx)
+        .expect_err("closure needs one item after the pending root");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "step_record_closure_ids"));
+}

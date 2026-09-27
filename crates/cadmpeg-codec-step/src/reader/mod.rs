@@ -463,7 +463,8 @@ fn decode_exchange_mode(
         &mut session.ir,
         &mut session.typed_records,
         &mut post_decode_losses,
-    );
+        session.ctx,
+    )?;
     session.body.losses.append(&mut post_decode_losses);
 
     session.charge_stage("step_opaque_record_retention")?;
@@ -508,10 +509,9 @@ fn decode_exchange_mode(
                 .map(reference_work_units)
                 .fold(0, u64::saturating_add);
             for partial in &record.partials {
-                partial
-                    .parameters
-                    .iter()
-                    .for_each(|value| collect_references(value, &mut links));
+                for value in &partial.parameters {
+                    collect_references(value, &mut links, session.ctx)?;
+                }
             }
             opaque_sources.push(OpaqueSourceRecord {
                 unknown_id: opaque_ids[&id].clone(),
@@ -731,7 +731,8 @@ fn retain_unowned_carriers(
     ir: &mut CadIr,
     typed_records: &mut HashSet<u64>,
     losses: &mut Vec<LossNote>,
-) {
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
     let owned = ir
         .model
         .coedges
@@ -777,7 +778,7 @@ fn retain_unowned_carriers(
         .map(|(&id, _)| id)
         .filter(|id| !owned.contains(ids::data(kind!("pcurve"), id).as_str()))
         .collect::<BTreeSet<_>>();
-    let referenced = referenced_record_ids(exchange);
+    let referenced = referenced_record_ids(exchange, ctx)?;
     let unowned_direct_carriers = ir
         .model
         .points
@@ -803,7 +804,7 @@ fn retain_unowned_carriers(
         .collect::<BTreeSet<_>>();
     associate_unowned_direct_carriers(ir, &unowned_direct_carriers);
     if unowned_pcurves.is_empty() {
-        return;
+        return Ok(());
     }
     let mut roots = BTreeSet::new();
     for identity in ir
@@ -872,8 +873,8 @@ fn retain_unowned_carriers(
         .into_iter()
         .filter(|id| !unowned_pcurves.contains(id))
         .collect::<BTreeSet<_>>();
-    let protected = record_closure(&protected_roots, exchange);
-    let removed_closure = record_closure(&unowned_pcurves, exchange);
+    let protected = record_closure(&protected_roots, exchange, ctx)?;
+    let removed_closure = record_closure(&unowned_pcurves, exchange, ctx)?;
     let deleted_pcurves = ir
         .model
         .pcurves
@@ -936,9 +937,10 @@ fn retain_unowned_carriers(
         .filter(|id| protected.contains(id))
         .count();
     let opaque_pcurves = unowned_pcurves.len() - protected_pcurves;
-    losses.push(StepLossCode::DecodeWarning.note(format!(
+    push_decode_loss(losses, StepLossCode::DecodeWarning.note(format!(
         "unowned STEP carrier retention: opaque_pcurves={opaque_pcurves}, protected_pcurves={protected_pcurves}, deleted pcurves={deleted_pcurves}, points={deleted_points}, curves={deleted_curves}, surfaces={deleted_surfaces}, procedural_curves={deleted_procedural_curves}, procedural_surfaces={deleted_procedural_surfaces}"
-    )));
+    )), ctx)?;
+    Ok(())
 }
 
 fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
@@ -1000,28 +1002,45 @@ fn step_instance_id(identity: &str) -> Option<u64> {
     identity.rsplit_once('#')?.1.parse().ok()
 }
 
-fn record_closure(roots: &BTreeSet<u64>, exchange: &Exchange) -> BTreeSet<u64> {
+fn record_closure(
+    roots: &BTreeSet<u64>,
+    exchange: &Exchange,
+    ctx: &DecodeContext<'_>,
+) -> Result<BTreeSet<u64>, CodecError> {
     let mut closure = BTreeSet::new();
-    let mut pending = roots.iter().copied().collect::<Vec<_>>();
+    ctx.charge_collection_items(u64_from_index(roots.len()), "step_record_closure_pending")?;
+    let mut pending = Vec::new();
+    pending.try_reserve_exact(roots.len()).map_err(|_| {
+        ctx.refuse_codec_limit("step_record_closure_pending", 0, u64_from_index(roots.len()))
+    })?;
+    pending.extend(roots.iter().copied());
     while let Some(id) = pending.pop() {
-        if !closure.insert(id) {
+        if closure.contains(&id) {
             continue;
         }
+        ctx.charge_collection_items(1, "step_record_closure_ids")?;
+        closure.insert(id);
         let Some(record) = exchange.records().get(&id) else {
             continue;
         };
         let mut references = BTreeSet::new();
-        record
+        for value in record
             .partials
             .iter()
             .flat_map(|partial| partial.parameters.iter())
-            .for_each(|value| collect_references(value, &mut references));
+        {
+            collect_references(value, &mut references, ctx)?;
+        }
+        ctx.charge_collection_items(u64_from_index(references.len()), "step_record_closure_pending")?;
+        pending.try_reserve(references.len()).map_err(|_| {
+            ctx.refuse_codec_limit("step_record_closure_pending", 0, u64_from_index(references.len()))
+        })?;
         pending.extend(references);
     }
-    closure
+    Ok(closure)
 }
 
-fn referenced_record_ids(exchange: &Exchange) -> BTreeSet<u64> {
+fn referenced_record_ids(exchange: &Exchange, ctx: &DecodeContext<'_>) -> Result<BTreeSet<u64>, CodecError> {
     let mut references = BTreeSet::new();
     for record in exchange.records().values() {
         for parameter in record
@@ -1029,10 +1048,10 @@ fn referenced_record_ids(exchange: &Exchange) -> BTreeSet<u64> {
             .iter()
             .flat_map(|partial| partial.parameters.iter())
         {
-            collect_references(parameter, &mut references);
+            collect_references(parameter, &mut references, ctx)?;
         }
     }
-    references
+    Ok(references)
 }
 
 fn opaque_record_id(id: u64, record: &parse::RawRecord) -> UnknownId {
@@ -1282,17 +1301,28 @@ fn decode_text_charged(
     }
 }
 
-fn collect_references(value: &Value, output: &mut BTreeSet<u64>) {
+fn collect_references(
+    value: &Value,
+    output: &mut BTreeSet<u64>,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    let _nested = ctx.enter_nested("step_reference_walk")?;
     match value {
         Value::Reference(id) => {
-            output.insert(*id);
+            if !output.contains(id) {
+                ctx.charge_collection_items(1, "step_reference_walk_ids")?;
+                output.insert(*id);
+            }
         }
-        Value::List(values) => values
-            .iter()
-            .for_each(|value| collect_references(value, output)),
-        Value::Typed(_, value) => collect_references(value, output),
+        Value::List(values) => {
+            for value in values {
+                collect_references(value, output, ctx)?;
+            }
+        }
+        Value::Typed(_, value) => collect_references(value, output, ctx)?,
         _ => {}
     }
+    Ok(())
 }
 
 /// Record accessors shared by the reader submodules.
