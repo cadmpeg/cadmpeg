@@ -242,6 +242,41 @@ fn standard_face_edge_entries_refuse_collection_limit() {
 }
 
 #[test]
+fn standard_incidence_mapped_collections_refuse_nested_limits() {
+    use super::{reconstruct_incidence, EdgeBoundaryLayout, EdgeRow};
+    use cadmpeg_core::CodecError;
+    use std::collections::HashSet;
+
+    let rows = || {
+        vec![EdgeRow {
+            kind: 0,
+            handles: vec![7, 7],
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        }]
+    };
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        reconstruct_incidence(ctx, rows(), vec![[1.0, 0.0, 0.0]], &[[0, 1]], &[[0, 0]], 2)
+    };
+    assert!(crate::test_support::with_service_context(run)
+        .expect("service resource budget")
+        .is_some());
+    let mut refused = HashSet::new();
+    for cap in 0..48 {
+        let result = crate::test_support::with_collection_limit(cap, run);
+        if let Err(CodecError::ResourceLimit(limit)) = result {
+            refused.insert(limit.operation);
+        }
+    }
+    for operation in [
+        "catia_standard_incidence_coedges",
+        "catia_standard_incidence_boundaries",
+        "catia_standard_incidence_faces",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
 fn standard_boundary_constraints_propagate_collection_refusal() {
     let operation = standard_collection_limit_operation(0, |ctx| {
         solve_boundary_orientation_constraints(
