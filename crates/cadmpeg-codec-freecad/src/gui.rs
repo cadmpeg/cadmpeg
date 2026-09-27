@@ -26,7 +26,7 @@ use crate::native::{
     copy_xml_text, parse_bool, GuiDocumentRecord, GuiPropertyRecord, GuiStateRecord,
     GuiViewProviderRecord, ObjectRecord, PropertyRecord, ValueRecord,
 };
-use crate::resource::{collection_vec, reserve_vec_items};
+use crate::resource::{collection_vec, insert_hash_map, reserve_vec_items, reserved_vec};
 
 use schema::Admission as GuiSchemaAdmission;
 
@@ -282,14 +282,14 @@ fn transfer_schema_one(
         .filter(roxmltree::Node::is_element)
         .filter(|node| !node.has_tag_name("ViewProviderData"))
         .count();
-    ctx.charge_collection_items(state_count as u64, "FCStd GUI state records")?;
-    let states = root
+    let mut states = collection_vec(ctx, state_count, "FCStd GUI state records")?;
+    for (order, node) in root
         .children()
         .filter(roxmltree::Node::is_element)
         .filter(|node| !node.has_tag_name("ViewProviderData"))
-        .enumerate()
-        .map(|(order, node)| gui_state(ctx, text, order, node))
-        .collect::<Result<Vec<_>, _>>()?;
+        .enumerate() {
+        states.push(gui_state(ctx, text, order, node)?);
+    }
     let document = GuiDocumentRecord {
         id: "fcstd:gui:document#0".into(),
         schema_version: schema_declaration
@@ -311,26 +311,24 @@ fn transfer_schema_one(
             .collect::<Result<_, CodecError>>()?,
         states,
     };
-    let objects_by_name = objects
-        .iter()
-        .map(|object| (object.name.as_str(), object.id.as_str()))
-        .collect::<HashMap<_, _>>();
+    let mut objects_by_name = HashMap::new();
+    for object in objects {
+        insert_hash_map(ctx, &mut objects_by_name, object.name.as_str(), object.id.as_str(), "FCStd GUI object names")?;
+    }
     let mut native_providers = Vec::new();
     let mut native_properties = Vec::new();
     let mut losses = Vec::new();
-    let payloads_by_owner = payloads
-        .iter()
-        .filter_map(|payload| {
-            let property = properties
-                .iter()
-                .find(|property| property.id == payload.property)?;
-            Some((
+    let mut payloads_by_owner = Vec::new();
+    for payload in payloads {
+        if let Some(property) = properties.iter().find(|property| property.id == payload.property) {
+            reserve_vec_items(ctx, &mut payloads_by_owner, 1, "FCStd GUI payload owners")?;
+            payloads_by_owner.push((
                 property.owner.as_str(),
                 property.name.as_str(),
                 payload.id.as_str(),
-            ))
-        })
-        .collect::<Vec<_>>();
+            ));
+        }
+    }
     let mut view_provider_data = xml
         .descendants()
         .filter(|node| node.has_tag_name("ViewProviderData"));
@@ -345,10 +343,10 @@ fn transfer_schema_one(
         .filter(|node| node.has_tag_name("ViewProvider"))
         .count();
     ctx.charge_collection_items(provider_count as u64, "FCStd GUI provider nodes")?;
-    let providers = xml
+    let mut providers = reserved_vec(ctx, provider_count, "FCStd GUI provider nodes")?;
+    providers.extend(xml
         .descendants()
-        .filter(|node| node.has_tag_name("ViewProvider"))
-        .collect::<Vec<_>>();
+        .filter(|node| node.has_tag_name("ViewProvider")));
     if let Some(container) = first_view_provider_data {
         let declared = container
             .attribute("Count")
@@ -361,12 +359,12 @@ fn transfer_schema_one(
             )));
         }
     }
-    let mut provider_names = HashSet::new();
     for (provider_order, provider) in providers.into_iter().enumerate() {
         let Some(name) = provider.attribute("name") else {
             return Err(CodecError::Malformed("ViewProvider has no name".into()));
         };
-        if !provider_names.insert(name) {
+        ctx.charge_work(native_providers.len() as u64, "FCStd GUI duplicate provider scan")?;
+        if native_providers.iter().any(|record: &GuiViewProviderRecord| record.name == name) {
             return Err(CodecError::Malformed(
                 "GuiDocument.xml has duplicate ViewProvider names".into(),
             ));
@@ -396,11 +394,13 @@ fn transfer_schema_one(
         let properties_node = unique_child(provider, "Properties")?.ok_or_else(|| {
             CodecError::malformed(format_args!("ViewProvider {name} has no Properties"))
         })?;
-        let property_nodes = properties_node
+        let property_count = properties_node.children().filter(|node| node.has_tag_name("Property")).count();
+        let mut property_nodes = collection_vec(ctx, property_count, "FCStd GUI presentation property nodes")?;
+        property_nodes.extend(properties_node
             .children()
-            .filter(|node| node.has_tag_name("Property"))
-            .collect::<Vec<_>>();
-        let values = property_nodes
+            .filter(|node| node.has_tag_name("Property")));
+        let mut values = HashMap::new();
+        for property in property_nodes
             .iter()
             .copied()
             .filter(|property| {
@@ -409,13 +409,13 @@ fn transfer_schema_one(
                     .and_then(presentation_property_type)
                     .is_some_and(|expected| property.attribute("type") == Some(expected))
             })
-            .filter_map(|property| {
-                Some((
-                    property.attribute("name")?,
-                    property.children().find(roxmltree::Node::is_element)?,
-                ))
-            })
-            .collect::<HashMap<_, _>>();
+            {
+            if let (Some(name), Some(value)) = (
+                property.attribute("name"), property.children().find(roxmltree::Node::is_element),
+            ) {
+                insert_hash_map(ctx, &mut values, name, value, "FCStd GUI presentation values")?;
+            }
+        }
         let property_provenance = |property_name: &str, type_name: &str| {
             SourceProvenance::in_stream(
                 "fcstd",
