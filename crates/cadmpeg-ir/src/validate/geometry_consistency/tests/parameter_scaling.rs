@@ -44,6 +44,7 @@ fn numerical_audit_mapped_pcurve_search_ignores_knot_units() {
             crate::scalar::FiniteReal::ZERO,
             EPS_POINT,
         )
+        .expect("resource allocation did not fail")
         .unwrap()
         .get();
         assert!((pcurve_uv(&p, t).unwrap().u - 0.3).abs() <= EPS_POINT);

@@ -1358,7 +1358,7 @@ fn decode_mixed_analytic_and_unknown_faces_sharing_an_edge() {
         .count();
     assert_eq!(paired, 2);
 
-    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(report.is_ok(), "findings: {:?}", report.findings);
     assert_eq!(result.ir().model.surfaces.len(), 2);
 }

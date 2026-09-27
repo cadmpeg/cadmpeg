@@ -1245,7 +1245,7 @@ fn decode_types_round_with_labeled_edge_selection() {
             .map(String::as_str),
         Some("44,45")
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 

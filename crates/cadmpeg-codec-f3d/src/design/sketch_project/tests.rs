@@ -541,11 +541,12 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         .expect("non-clamped NURBS projects");
     let endpoints = sketch_entity_endpoints(nurbs).expect("non-clamped NURBS endpoints");
     assert_eq!(endpoints, [Point2::new(1.0, 0.0), Point2::new(3.0, 2.0)]);
-    assert!(point_on_sketch_entity(Point2::new(2.0, 1.0), nurbs, 1.0e-9));
-    assert!(point_lies_on_sketch_geometry(
-        Point2::new(2.0, 1.0),
-        &nurbs.geometry
-    ));
+    assert!(point_on_sketch_entity(Point2::new(2.0, 1.0), nurbs, 1.0e-9)
+        .expect("resource allocation did not fail"));
+    assert!(
+        point_lies_on_sketch_geometry(Point2::new(2.0, 1.0), &nurbs.geometry)
+            .expect("resource allocation did not fail")
+    );
 
     let relation = |record_index, member| {
         SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {

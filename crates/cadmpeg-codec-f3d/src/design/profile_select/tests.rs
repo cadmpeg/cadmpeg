@@ -1717,12 +1717,13 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
         profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(profiles).unwrap(),
         native_ref: None,
     };
-    let transition_selection = |selections| {
-        crate::design::profile_select::transition_inserted_profile_selection(
-            &sketch, &entities, 1.0e-6, selections, None,
-        )
-        .unwrap()
-    };
+    let transition_selection =
+        |selections: Vec<Option<crate::design::profile_select::ResolvedProfileSelection>>| {
+            crate::design::profile_select::transition_inserted_profile_selection(
+                &sketch, &entities, 1.0e-6, selections, None,
+            )
+            .unwrap()
+        };
 
     assert_eq!(
         crate::design::profile_select::unique_resolved_selection([Some(3), Some(3), Some(3)]),

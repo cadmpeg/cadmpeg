@@ -65,6 +65,7 @@ fn numerical_0922_contact_inverse_ignores_knot_units() {
             None,
             &GeometryWorkBudget::new(100_000),
         )
+        .unwrap()
         .unwrap();
         let hit = pcurve_uv(&p, t).unwrap();
         println!("NX plane contact domain{d:e}: parameter{t:e}, hit{hit:?}");
@@ -136,8 +137,9 @@ fn numerical_0922b_unclamped_curve_inverse() {
         .unwrap();
         let target = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 0.).unwrap();
         let budget = GeometryWorkBudget::new(100_000);
-        let p =
-            closest_nurbs_curve_parameter_with_budget(&curve, target.get(), None, &budget).unwrap();
+        let p = closest_nurbs_curve_parameter_with_budget(&curve, target.get(), None, &budget)
+            .expect("evaluator allocation succeeds")
+            .unwrap();
         let actual = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, p).unwrap();
         println!(
             "NX knots{:?}, exact start{target:?}: inverse{p}, residual{}",
@@ -164,8 +166,9 @@ fn numerical_0922b_small_domain_inverse() {
         .unwrap();
         let target = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 0.75 * d).unwrap();
         let budget = GeometryWorkBudget::new(100_000);
-        let p =
-            closest_nurbs_curve_parameter_with_budget(&curve, target.get(), None, &budget).unwrap();
+        let p = closest_nurbs_curve_parameter_with_budget(&curve, target.get(), None, &budget)
+            .expect("evaluator allocation succeeds")
+            .unwrap();
         let actual = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, p).unwrap();
         println!(
             "NX d{d:e},target{target:?}:inverse{},residual{}",
@@ -195,6 +198,7 @@ fn numerical_0922b_discontinuous_curve_inverse() {
         None,
         &GeometryWorkBudget::new(100_000),
     )
+    .expect("evaluator allocation succeeds")
     .unwrap();
     let actual = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, p).unwrap();
     println!("NX discontinuous quadratic target11: parameter{p}, actual{actual:?}");
@@ -217,7 +221,8 @@ fn numerical_0922b_common_weight_inverse() {
             Point3::new(0., 0., 0.),
             None,
             &budget,
-        );
+        )
+        .expect("evaluator allocation succeeds");
         println!("NX commonweight{w:e}: inverse{p:?}");
         assert_eq!(p, Some(0.));
     }
@@ -240,7 +245,9 @@ fn numerical_audit_pcurve_newton_converges_on_small_chart() {
             )
             .unwrap(),
         };
-        let t = closest_pcurve_parameter_from_seed(&p, Point2::new(0.25, 0.), 0.9 * d).unwrap();
+        let t = closest_pcurve_parameter_from_seed(&p, Point2::new(0.25, 0.), 0.9 * d)
+            .expect("evaluator allocation succeeds")
+            .unwrap();
         assert!((pcurve_uv(&p, t).unwrap().u - 0.25).abs() < 64. * f64::EPSILON);
     }
 }
@@ -261,6 +268,7 @@ fn numerical_audit_inverse_and_grid_keep_wide_finite_chart() {
             None,
             &GeometryWorkBudget::new(100_000),
         )
+        .expect("evaluator allocation succeeds")
         .unwrap();
         assert!(
             (cadmpeg_ir::eval::nurbs_curve_point_at(&curve, t).unwrap().x - 0.3).abs()
@@ -276,7 +284,9 @@ fn numerical_audit_inverse_and_grid_keep_wide_finite_chart() {
             )
             .unwrap(),
         };
-        let t = closest_pcurve_parameter_from_coarse_grid(&p, Point2::new(0.3, 0.)).unwrap();
+        let t = closest_pcurve_parameter_from_coarse_grid(&p, Point2::new(0.3, 0.))
+            .expect("evaluator allocation succeeds")
+            .unwrap();
         assert!((pcurve_uv(&p, t).unwrap().u - 0.3).abs() < 64. * f64::EPSILON);
     }
     assert_eq!(scalar_bezier_value(&[0., 1.], 0., [-1e308, 1e308]), 0.5);
@@ -313,7 +323,8 @@ fn a_decoded_surface_point_that_overflows_is_returned_without_a_fallback() {
     let index = cadmpeg_ir::index::ModelIndex::new(&ir);
     let budget = GeometryWorkBudget::new(1024);
     for point in [
-        decoded_surface_point_inner_with_budget(&index, &surface_id, f64::MAX, 3.0, 0, &budget),
+        decoded_surface_point_inner_with_budget(&index, &surface_id, f64::MAX, 3.0, 0, &budget)
+            .expect("evaluator allocation succeeds"),
         decoded_surface_point_with_geometry_and_budget(
             &index,
             &surface_id,
@@ -322,7 +333,8 @@ fn a_decoded_surface_point_that_overflows_is_returned_without_a_fallback() {
             3.0,
             0,
             &budget,
-        ),
+        )
+        .expect("evaluator allocation succeeds"),
     ] {
         assert!(
             point.is_some_and(|point| point.x.is_nan() && point.y == 3.0 && point.z == 0.0),
@@ -364,7 +376,8 @@ fn a_decoded_placed_surface_point_that_overflows_is_returned_without_a_fallback(
     let index = cadmpeg_ir::index::ModelIndex::new(&ir);
     let budget = GeometryWorkBudget::new(1024);
     for point in [
-        decoded_surface_point_inner_with_budget(&index, &surface_id, f64::MAX, 3.0, 0, &budget),
+        decoded_surface_point_inner_with_budget(&index, &surface_id, f64::MAX, 3.0, 0, &budget)
+            .expect("evaluator allocation succeeds"),
         decoded_surface_point_with_geometry_and_budget(
             &index,
             &surface_id,
@@ -373,7 +386,8 @@ fn a_decoded_placed_surface_point_that_overflows_is_returned_without_a_fallback(
             3.0,
             0,
             &budget,
-        ),
+        )
+        .expect("evaluator allocation succeeds"),
     ] {
         assert_eq!(point, Some(Point3::new(f64::INFINITY, 3.0, 0.0)));
     }

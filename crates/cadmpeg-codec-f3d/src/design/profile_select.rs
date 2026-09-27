@@ -1177,9 +1177,12 @@ fn inserted_cylindrical_profile_selection(
             ((candidate_center.u - center.u).hypot(candidate_center.v - center.v)
                 <= linear_tolerance
                 && (candidate_radius.get() - cylinder.radius).abs() <= linear_tolerance
-                && projected
-                    .iter()
-                    .all(|point| point_on_sketch_entity(*point, entity, linear_tolerance)))
+                && projected.iter().all(|point| {
+                    ((point.u - candidate_center.u).hypot(point.v - candidate_center.v)
+                        - candidate_radius.get())
+                    .abs()
+                        <= linear_tolerance
+                }))
             .then(|| u32::try_from(index).ok())?
         });
     let profile = matches.next()?;
@@ -1889,25 +1892,33 @@ fn selection_containing_points(
     else {
         return Ok(None);
     };
-    let Some(boundaries) = sketch
-        .profiles
-        .iter()
-        .enumerate()
-        .filter(|(_, profile)| {
-            projected.iter().all(|point| {
-                profile.iter().any(|use_| {
-                    entities
-                        .iter()
-                        .find(|entity| entity.id() == &use_.entity)
-                        .is_some_and(|entity| point_on_sketch_entity(*point, entity, tolerance))
-                })
-            })
-        })
-        .map(|(index, _)| u32::try_from(index).ok())
-        .collect::<Option<Vec<_>>>()
-    else {
-        return Ok(None);
-    };
+    let mut boundaries = Vec::new();
+    for (index, profile) in sketch.profiles.iter().enumerate() {
+        let mut matches = true;
+        for point in &projected {
+            let mut on_boundary = false;
+            for use_ in profile {
+                let Some(entity) = entities.iter().find(|entity| entity.id() == &use_.entity)
+                else {
+                    continue;
+                };
+                if point_on_sketch_entity(*point, entity, tolerance)? {
+                    on_boundary = true;
+                    break;
+                }
+            }
+            if !on_boundary {
+                matches = false;
+                break;
+            }
+        }
+        if matches {
+            let Some(index) = u32::try_from(index).ok() else {
+                return Ok(None);
+            };
+            boundaries.push(index);
+        }
+    }
     if let [profile] = boundaries.as_slice() {
         return Ok(Some(ResolvedProfileSelection::Loops(vec![*profile])));
     }

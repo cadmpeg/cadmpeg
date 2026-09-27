@@ -32,7 +32,7 @@ fn tessellation_counts_must_be_consistent() {
         ]),
     );
     ir.finalize();
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report
         .findings
         .iter()
@@ -114,7 +114,7 @@ fn tessellation_triangle_groups_and_texture_assignments_validate() {
     );
     ir.model.tessellations.extend([valid, invalid_texture]);
     ir.finalize();
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     let errors_for = |entity: &str| {
         report
             .findings
@@ -152,6 +152,6 @@ fn finite_nonzero_signed_sphere_radius_is_valid_without_a_size_floor() {
         )
         .unwrap(),
     ));
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }

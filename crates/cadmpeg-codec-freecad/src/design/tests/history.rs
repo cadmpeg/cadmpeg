@@ -103,7 +103,7 @@ fn distinguishes_stored_base_and_application_owned_features() {
                     .expect("identity grammar"),
             },
         ));
-    assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
+    assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new()).expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.message.contains("source feature")));

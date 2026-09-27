@@ -150,7 +150,7 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
         native_ref: None,
     });
     ir.finalize();
-    assert!(validate_neutral(&ir, Vec::new()).is_ok());
+    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
     let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
     assert_eq!(
         round_trip.model.sketch_constraints,
@@ -370,7 +370,7 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
         native_ref: None,
     });
     ir.finalize();
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(constraint_id.0.as_str())
             && finding.check == Check::GeometricConsistency
@@ -379,7 +379,7 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
         cadmpeg_core::text::NonBlankString::new("center-bearing-curve")
             .expect("nonempty source identity"),
     );
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(!report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(constraint_id.0.as_str())
             && finding.check == Check::GeometricConsistency
@@ -476,7 +476,7 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
             native_ref: None,
         }));
     ir.finalize();
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(!report.findings.iter().any(|finding| {
         finding
             .entity
@@ -499,7 +499,7 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
         position: Point2::new(3.0, 1.0),
     })
     .unwrap();
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some("synthetic:test:constraint#point-coordinates")
             && finding.check == Check::Counts

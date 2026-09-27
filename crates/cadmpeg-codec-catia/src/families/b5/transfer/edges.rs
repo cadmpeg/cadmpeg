@@ -171,14 +171,18 @@ pub(super) fn b5_supports_follow_edge(
     tolerances: [f64; 2],
     surfaces: &BTreeMap<u32, SurfacePlan>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
-) -> bool {
-    supports.iter().all(|support| {
-        let Some([start, end]) = b5_support_endpoints(support, surfaces, pcurves) else {
-            return false;
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+    for support in supports {
+        let Some([start, end]) = b5_support_endpoints(support, surfaces, pcurves)? else {
+            return Ok(false);
         };
-        distance(start, endpoints[0]) <= tolerances[0]
-            && distance(end, endpoints[1]) <= tolerances[1]
-    })
+        if !(distance(start, endpoints[0]) <= tolerances[0]
+            && distance(end, endpoints[1]) <= tolerances[1])
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 pub(super) fn orient_b5_supports_to_edge(
@@ -187,9 +191,9 @@ pub(super) fn orient_b5_supports_to_edge(
     tolerances: [f64; 2],
     surfaces: &BTreeMap<u32, SurfacePlan>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
-) {
+) -> Result<(), cadmpeg_core::decode::ResourceLimit> {
     for support in supports {
-        let Some([start, end]) = b5_support_endpoints(support, surfaces, pcurves) else {
+        let Some([start, end]) = b5_support_endpoints(support, surfaces, pcurves)? else {
             continue;
         };
         let forward_residuals = [distance(start, endpoints[0]), distance(end, endpoints[1])];
@@ -208,48 +212,73 @@ pub(super) fn orient_b5_supports_to_edge(
             support.2.swap(0, 1);
         }
     }
+    Ok(())
 }
 
 pub(super) fn b5_supports_agree(
     supports: &[B5Support],
     surfaces: &BTreeMap<u32, SurfacePlan>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
-) -> bool {
-    let mut lifted = supports
-        .iter()
-        .map(|support| b5_support_endpoints(support, surfaces, pcurves));
-    let Some(Some(reference)) = lifted.next() else {
-        return false;
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+    let mut supports = supports.iter();
+    let Some(first) = supports.next() else {
+        return Ok(false);
     };
-    lifted.all(|candidate| {
-        candidate.is_some_and(|candidate| {
-            distance(reference[0], candidate[0]).max(distance(reference[1], candidate[1]))
-                <= EPS_SUPPORT_ENDPOINT
-        })
-    })
+    let Some(reference) = b5_support_endpoints(first, surfaces, pcurves)? else {
+        return Ok(false);
+    };
+    for support in supports {
+        let Some(candidate) = b5_support_endpoints(support, surfaces, pcurves)? else {
+            return Ok(false);
+        };
+        let endpoint_error =
+            distance(reference[0], candidate[0]).max(distance(reference[1], candidate[1]));
+        if endpoint_error
+            .partial_cmp(&EPS_SUPPORT_ENDPOINT)
+            .is_none_or(std::cmp::Ordering::is_gt)
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 pub(super) fn b5_support_endpoints(
     (surface, pcurve, range): &(u32, u32, [FiniteReal; 2]),
     surfaces: &BTreeMap<u32, SurfacePlan>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
-) -> Option<[[f64; 3]; 2]> {
-    let surface = surfaces.get(surface)?;
-    let (pcurve, _, domain) = pcurves.get(pcurve)?;
-    bounded_occurrence_range(*range, *domain)?;
-    let lifted = range.map(|parameter| {
-        let uv = pcurve_uv(pcurve, parameter.get()).ok()?;
-        // A non-finite support point is compared as a finite one is.
-        let point = match surface_point(&surface.geometry, uv.u, uv.v) {
-            Ok(point) => point.get(),
-            Err(failure) => failure.non_finite()?,
-        };
-        Some([point.x, point.y, point.z])
-    });
-    let [Some(start), Some(end)] = lifted else {
-        return None;
+) -> Result<Option<[[f64; 3]; 2]>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(surface) = surfaces.get(surface) else {
+        return Ok(None);
     };
-    Some([start, end])
+    let Some((pcurve, _, domain)) = pcurves.get(pcurve) else {
+        return Ok(None);
+    };
+    if bounded_occurrence_range(*range, *domain).is_none() {
+        return Ok(None);
+    }
+    let lifted = range.map(
+        |parameter| -> Result<Option<[f64; 3]>, cadmpeg_core::decode::ResourceLimit> {
+            let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(pcurve_uv(pcurve, parameter.get()))?
+            else {
+                return Ok(None);
+            };
+            // A non-finite support point is compared as a finite one is.
+            let point = match surface_point(&surface.geometry, uv.u, uv.v) {
+                Ok(point) => point.get(),
+                Err(failure) => match failure.non_finite()? {
+                    Some(point) => point,
+                    None => return Ok(None),
+                },
+            };
+            Ok(Some([point.x, point.y, point.z]))
+        },
+    );
+    let [start, end] = lifted;
+    let [Some(start), Some(end)] = [start?, end?] else {
+        return Ok(None);
+    };
+    Ok(Some([start, end]))
 }
 
 pub(super) fn b5_supports_follow_curve(
@@ -257,24 +286,33 @@ pub(super) fn b5_supports_follow_curve(
     curve: &CurvePlan,
     surfaces: &BTreeMap<u32, SurfacePlan>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
-) -> bool {
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     const EXACT_TOLERANCE: f64 = 1.0e-6;
 
     let Some(range) = curve_plan_parameter_range(curve) else {
-        return false;
+        return Ok(false);
     };
-    let solved = range.map(|parameter| curve_point(&curve.geometry, parameter).ok());
-    let [Some(solved_start), Some(solved_end)] = solved else {
-        return false;
+    let solved = range.map(|parameter| {
+        cadmpeg_ir::eval::finite_or_refusal(curve_point(&curve.geometry, parameter))
+    });
+    let [start, end] = solved;
+    let [Some(solved_start), Some(solved_end)] = [start?, end?] else {
+        return Ok(false);
     };
-    supports.iter().all(|support| {
-        let Some([start, end]) = b5_support_endpoints(support, surfaces, pcurves) else {
-            return false;
+    for support in supports {
+        let Some([start, end]) = b5_support_endpoints(support, surfaces, pcurves)? else {
+            return Ok(false);
         };
-        distance([solved_start.x, solved_start.y, solved_start.z], start)
-            .max(distance([solved_end.x, solved_end.y, solved_end.z], end))
-            <= EXACT_TOLERANCE
-    })
+        let endpoint_error = distance([solved_start.x, solved_start.y, solved_start.z], start)
+            .max(distance([solved_end.x, solved_end.y, solved_end.z], end));
+        if endpoint_error
+            .partial_cmp(&EXACT_TOLERANCE)
+            .is_none_or(std::cmp::Ordering::is_gt)
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 /// Emit the edges, their lifted 3D curves, and any procedural curve

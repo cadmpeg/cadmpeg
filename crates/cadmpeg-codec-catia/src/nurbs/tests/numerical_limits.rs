@@ -214,7 +214,7 @@ fn isocurve_is_invariant_under_common_weight_scale() {
                     cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V
                 },
                 0.5,
-            )
+            ).expect("resource allocation did not fail")
             .expect("finite isocurve at any common weight scale");
             assert_eq!(curve.control_points(), expected);
             let weights = curve.weights().expect("rational isocurve");
@@ -237,7 +237,7 @@ fn isocurve_preserves_weight_ratios_between_output_poles() {
             &surface,
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             0.5,
-        )
+        ).expect("resource allocation did not fail")
         .expect("finite isocurve");
         let weights = curve.weights().expect("rational isocurve");
         assert!((weights[1].get() / weights[0].get() - 2.0).abs() < RELATIVE_ROUNDOFF);
@@ -258,7 +258,7 @@ fn isocurve_keeps_finite_maximum_coordinates() {
         &surface,
         cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
         0.5,
-    )
+    ).expect("resource allocation did not fail")
     .expect("constant finite surface");
     assert_eq!(curve.control_points(), [Point3::new(f64::MAX, 0.0, 0.0); 2]);
 }

@@ -462,7 +462,8 @@ fn decode_e5_stream_transfers_circle_carrier() {
         .links
         .iter()
         .any(|link| link.as_str() == "catia:e5:surf#0"));
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -508,7 +509,8 @@ fn decode_e5_stream_transfers_standalone_d8_carrier() {
     assert!((point.y - expected).abs() < TEST_TOLERANCE);
     assert!(point.z.abs() < TEST_TOLERANCE);
 
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -665,7 +667,8 @@ fn decode_e5_stream_transfers_reference_closed_torus_topology() {
             && loss.message.contains("two trailing orientation signs")
     }));
 
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 

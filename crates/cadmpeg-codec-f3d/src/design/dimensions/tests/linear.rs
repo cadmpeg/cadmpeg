@@ -649,7 +649,7 @@ fn unclassified_two_locus_linear_group_is_parameter_backed_distance() {
     let parameter = cadmpeg_ir::features::ParameterId::mint("generated:test:parameter#distance")
         .expect("identity grammar");
 
-    assert!(exact_counted_dimension_relation(&[&point, &line]).is_none());
+    assert!(exact_counted_dimension_relation(&[&point, &line]).expect("resource allocation did not fail").is_none());
     assert!(matches!(
         two_locus_distance_dimension(&[&point, &line], parameter.clone()),
         Some(SketchConstraintDefinitionInput::Distance {
@@ -732,26 +732,26 @@ fn counted_linear_graph_projects_exact_auxiliary_relations() {
     );
 
     assert!(matches!(
-        exact_counted_dimension_relation(&[&horizontal, &vertical]),
+        exact_counted_dimension_relation(&[&horizontal, &vertical]).expect("resource allocation did not fail"),
         Some(SketchConstraintDefinitionInput::Perpendicular { .. })
     ));
     assert!(matches!(
-        exact_counted_dimension_relation(&[&horizontal, &parallel]),
+        exact_counted_dimension_relation(&[&horizontal, &parallel]).expect("resource allocation did not fail"),
         Some(SketchConstraintDefinitionInput::Parallel { .. })
     ));
     assert!(matches!(
-        exact_counted_dimension_relation(&[&horizontal, &point]),
+        exact_counted_dimension_relation(&[&horizontal, &point]).expect("resource allocation did not fail"),
         Some(SketchConstraintDefinitionInput::Coincident { .. })
     ));
     assert!(matches!(
-        exact_counted_dimension_relation(&[&point, &duplicate_point]),
+        exact_counted_dimension_relation(&[&point, &duplicate_point]).expect("resource allocation did not fail"),
         Some(SketchConstraintDefinitionInput::Coincident { .. })
     ));
     assert!(matches!(
-        exact_counted_dimension_relation(&[&arc_start, &arc]),
+        exact_counted_dimension_relation(&[&arc_start, &arc]).expect("resource allocation did not fail"),
         Some(SketchConstraintDefinitionInput::Coincident { .. })
     ));
-    assert!(exact_counted_dimension_relation(&[&outside_arc, &arc]).is_none());
+    assert!(exact_counted_dimension_relation(&[&outside_arc, &arc]).expect("resource allocation did not fail").is_none());
 }
 
 #[test]

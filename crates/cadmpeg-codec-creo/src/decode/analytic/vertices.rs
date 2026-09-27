@@ -554,7 +554,7 @@ pub(in crate::decode) fn solve_topological_vertices(
         crate::topology::edge_start_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
     let mut fixed_points = carrier_points;
     let (endpoint_evidence, pcurve_diagnostics) =
-        pcurve_edge_endpoint_evidence_with_carriers(scan, ir, carriers, source_carriers);
+        pcurve_edge_endpoint_evidence_with_carriers(scan, ir, carriers, source_carriers)?;
     diagnostics.pcurve = pcurve_diagnostics;
     let edge_endpoints = endpoint_evidence
         .into_iter()

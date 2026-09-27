@@ -472,7 +472,7 @@ fn native_parameter_loops_order_non_planar_cylindrical_face() {
             &solved_vertices,
             &native_pcurves,
             &BTreeSet::new(),
-        ),
+        ).expect("evaluator allocation succeeds"),
         Some(outer_polygon.into_iter().collect())
     );
     let ordered = ordered_native_parameter_face_loops(
@@ -487,7 +487,7 @@ fn native_parameter_loops_order_non_planar_cylindrical_face() {
             model_curves: &[],
             source_carriers: &crate::decode::source_carriers::SourceUnitCarriers::default(),
         },
-    )
+    ).expect("evaluator allocation succeeds")
     .expect("one parameter-space outer loop");
     assert_eq!(ordered[0].half_edges[0].curve_id, 10);
     assert_eq!(ordered[1].half_edges[0].curve_id, 20);
@@ -582,7 +582,7 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
             &solved_vertices,
             &native_pcurves,
             &typed_nonlinear_curve_ids,
-        ),
+        ).expect("evaluator allocation succeeds"),
         Some(vec![[2.0, 0.0], [-2.0, 0.0]])
     );
     assert!(native_parameter_loop_polygon(
@@ -593,7 +593,7 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
         &solved_vertices,
         &native_pcurves,
         &BTreeSet::new(),
-    )
+    ).expect("evaluator allocation succeeds")
     .is_none());
 
     let ordered = ordered_native_parameter_face_loops(
@@ -608,7 +608,7 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
             model_curves: &model_curves,
             source_carriers: &crate::decode::source_carriers::SourceUnitCarriers::default(),
         },
-    )
+    ).expect("evaluator allocation succeeds")
     .expect("concentric two-edge circles have a proven outer loop");
     assert_eq!(ordered[0].half_edges[0].curve_id, 10);
     assert_eq!(ordered[1].half_edges[0].curve_id, 20);

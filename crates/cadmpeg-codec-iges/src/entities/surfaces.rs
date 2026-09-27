@@ -394,10 +394,10 @@ fn homogeneous_bezier_spans(
         }
         None => None,
     };
-    let Some(controls) = positive_controls(&curve.control_points(), weights.as_deref()) else {
+    let Some(controls) = positive_controls(&curve.control_points(), weights.as_deref())? else {
         return Ok(None);
     };
-    Ok(homogeneous_spans(degree, curve.knots(), controls))
+    Ok(homogeneous_spans(degree, curve.knots(), controls)?)
 }
 
 fn bernstein_binomial(n: usize, k: usize) -> Option<f64> {
@@ -717,11 +717,7 @@ fn ruled_surface_carrier(
                 .map_err(cadmpeg_core::CodecError::malformed);
         }
     }
-    let mut pole_refusal = None;
-    let lanes = ruled_surface_span_lanes(first, second, ctx, &mut pole_refusal)?;
-    if let Some(error) = pole_refusal {
-        return Err(error);
-    }
+    let lanes = ruled_surface_span_lanes(first, second, ctx)?;
     let Some((degree, u_knots, control_points, weights)) = lanes else {
         return Ok(None);
     };
@@ -748,14 +744,12 @@ type RuledSpanLanes = (u32, Vec<f64>, Vec<FinitePoint3>, Option<Vec<PositiveReal
 
 /// The span lanes of a ruled carrier, or `None` when the rails state none.
 ///
-/// `pole_refusal` carries the one answer that is a refusal rather than an
-/// absent carrier: a pole count above the codec limit. The caller returns it,
-/// so the limit is not lost in the `None` that every other exit means.
+/// Resource refusals from span extraction and pole admission remain distinct
+/// from a carrier that the two rails do not define.
 fn ruled_surface_span_lanes(
     first: &NurbsCurve,
     second: &NurbsCurve,
     ctx: Option<&DecodeContext<'_>>,
-    pole_refusal: &mut Option<cadmpeg_core::CodecError>,
 ) -> Result<Option<RuledSpanLanes>, CodecError> {
     let (Ok(first_degree), Ok(second_degree)) = (
         usize::try_from(first.degree()),
@@ -782,10 +776,7 @@ fn ruled_surface_span_lanes(
     let Some(pole_count) = u_count.checked_mul(2) else {
         return Ok(None);
     };
-    if let Err(error) = admit_surface_pole_count(ctx, pole_count) {
-        *pole_refusal = Some(error);
-        return Ok(None);
-    }
+    admit_surface_pole_count(ctx, pole_count)?;
     let mut homogeneous = Vec::with_capacity(pole_count);
     let Some(knot_count) = u_count
         .checked_add(degree)
@@ -898,7 +889,7 @@ fn homogeneous_curve_boundary_matches(
             return Ok(None);
         }
         let Some(within_resolution) =
-            boundaries_within_resolution(&first_span.controls, &second_span.controls, resolution)
+            boundaries_within_resolution(&first_span.controls, &second_span.controls, resolution)?
         else {
             return Ok(None);
         };
@@ -917,12 +908,13 @@ fn surface_boundary_is_closed(
     varying_range: [f64; 2],
     resolution: f64,
 ) -> Result<Option<bool>, CodecError> {
-    let Some(first) = cadmpeg_ir::eval::nurbs_surface_isocurve(surface, fixed_axis, fixed_range[0])
+    let Some(first) =
+        cadmpeg_ir::eval::nurbs_surface_isocurve(surface, fixed_axis, fixed_range[0])?
     else {
         return Ok(None);
     };
     let Some(second) =
-        cadmpeg_ir::eval::nurbs_surface_isocurve(surface, fixed_axis, fixed_range[1])
+        cadmpeg_ir::eval::nurbs_surface_isocurve(surface, fixed_axis, fixed_range[1])?
     else {
         return Ok(None);
     };

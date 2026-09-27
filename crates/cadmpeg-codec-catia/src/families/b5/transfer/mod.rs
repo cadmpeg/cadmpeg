@@ -509,16 +509,29 @@ fn build_plan(
                 }) {
                     supports.push((loop_.surface, pcurve_id, support_range));
                 }
-                let lifted = lifted_curve_geometry(pcurve, surface).or_else(|| {
-                    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(cache)) =
-                        &surface_plan.get(&loop_.surface)?.geometry
-                    else {
-                        return None;
-                    };
-                    nurbs_isocurve(pcurve, cache)
-                        .map(SolvedCurveGeometry::Nurbs)
-                        .map(CurveGeometry::Solved)
-                });
+                let lifted = match lifted_curve_geometry(pcurve, surface) {
+                    Ok(Some(geometry)) => Some(geometry),
+                    Ok(None) => {
+                        let cache = surface_plan.get(&loop_.surface).and_then(|surface| {
+                            let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(cache)) =
+                                &surface.geometry
+                            else {
+                                return None;
+                            };
+                            Some(cache)
+                        });
+                        match cache {
+                            Some(cache) => match nurbs_isocurve(pcurve, cache) {
+                                Ok(curve) => curve
+                                    .map(SolvedCurveGeometry::Nurbs)
+                                    .map(CurveGeometry::Solved),
+                                Err(limit) => return Some(Err(limit.into())),
+                            },
+                            None => None,
+                        }
+                    }
+                    Err(limit) => return Some(Err(limit.into())),
+                };
                 if let Some(geometry) = lifted {
                     let [edge_start, edge_end] = graph.vertices.edge_points(edge_id)?;
                     let oriented_plan = if matches!(surface, B5Surface::Plane { .. }) {
@@ -638,8 +651,15 @@ fn build_plan(
             Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         };
-        let vertex_tolerances =
-            transfer_vertex_tolerances(graph, &edge_support_plan, &surface_plan, &pcurve_plan);
+        let vertex_tolerances = match transfer_vertex_tolerances(
+            graph,
+            &edge_support_plan,
+            &surface_plan,
+            &pcurve_plan,
+        ) {
+            Ok(tolerances) => tolerances,
+            Err(limit) => return Some(Err(limit.into())),
+        };
         for (&edge, supports) in &mut edge_support_plan {
             let vertices = graph.vertices.edges()[&edge];
             let [start, end] = graph.vertices.edge_points(edge)?;
@@ -650,50 +670,59 @@ fn build_plan(
                         .copied(),
                 )
             });
-            orient_b5_supports_to_edge(
+            if let Err(limit) = orient_b5_supports_to_edge(
                 supports,
                 [start, end],
                 tolerances,
                 &surface_plan,
                 &pcurve_plan,
-            );
+            ) {
+                return Some(Err(limit.into()));
+            }
         }
-        let exact_support_edges = edge_support_plan
-            .iter()
-            .filter_map(|(&edge, supports)| {
-                let vertices = *graph.vertices.edges().get(&edge)?;
-                let [start, end] = graph.vertices.edge_points(edge)?;
-                let tolerances = vertices.map(|vertex| {
-                    endpoint_gate_radius(
-                        vertex_tolerances
-                            .get(&vertex.combined_index(graph.vertices.raw_points().len()))
-                            .copied(),
-                    )
-                });
-                b5_supports_follow_edge(
-                    supports,
-                    [start, end],
-                    tolerances,
-                    &surface_plan,
-                    &pcurve_plan,
+        let mut exact_support_edges = HashSet::new();
+        for (&edge, supports) in &edge_support_plan {
+            let Some(&vertices) = graph.vertices.edges().get(&edge) else {
+                continue;
+            };
+            let Some([start, end]) = graph.vertices.edge_points(edge) else {
+                continue;
+            };
+            let tolerances = vertices.map(|vertex| {
+                endpoint_gate_radius(
+                    vertex_tolerances
+                        .get(&vertex.combined_index(graph.vertices.raw_points().len()))
+                        .copied(),
                 )
-                .then_some(edge)
-            })
-            .collect::<HashSet<_>>();
-        let exact_support_curves = edge_support_plan
-            .iter()
-            .filter_map(|(&edge, supports)| {
-                edge_curve_plan
-                    .get(&edge)
-                    .map_or_else(
-                        || b5_supports_agree(supports, &surface_plan, &pcurve_plan),
-                        |plan| {
-                            b5_supports_follow_curve(supports, plan, &surface_plan, &pcurve_plan)
-                        },
-                    )
-                    .then_some(edge)
-            })
-            .collect::<HashSet<_>>();
+            });
+            let follows = match b5_supports_follow_edge(
+                supports,
+                [start, end],
+                tolerances,
+                &surface_plan,
+                &pcurve_plan,
+            ) {
+                Ok(follows) => follows,
+                Err(limit) => return Some(Err(limit.into())),
+            };
+            if follows {
+                exact_support_edges.insert(edge);
+            }
+        }
+        let mut exact_support_curves = HashSet::new();
+        for (&edge, supports) in &edge_support_plan {
+            let follows = match edge_curve_plan.get(&edge) {
+                Some(plan) => b5_supports_follow_curve(supports, plan, &surface_plan, &pcurve_plan),
+                None => b5_supports_agree(supports, &surface_plan, &pcurve_plan),
+            };
+            match follows {
+                Ok(true) => {
+                    exact_support_curves.insert(edge);
+                }
+                Ok(false) => {}
+                Err(limit) => return Some(Err(limit.into())),
+            }
+        }
 
         let used_vertices: HashSet<usize> = edge_ids
             .iter()
@@ -1092,7 +1121,10 @@ pub(in crate::families) fn resolved_extrusion_surface(
                             format_args!("b5 extrusion pcurve record #{pcurve_object_id}"),
                         )?,
                     };
-                    let curve = lifted_curve_geometry(pcurve, source_surface);
+                    let curve = match lifted_curve_geometry(pcurve, source_surface) {
+                        Ok(curve) => curve,
+                        Err(limit) => return Some(Err(limit.into())),
+                    };
                     Some(Ok(ResolvedExtrusionSupport {
                         surface_object_id,
                         surface,

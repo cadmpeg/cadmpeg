@@ -342,7 +342,8 @@ fn decode_standard_transfers_vertices_and_cylinder() {
     );
 
     // The produced IR validates (free carriers, no dangling references).
-    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 

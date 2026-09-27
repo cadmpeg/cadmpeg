@@ -79,7 +79,7 @@ fn inline(program: &str) -> Vec<Token> {
 
 fn emit(record: &Record) -> Result<(), cadmpeg_core::CodecError> {
     let table = nurbs::toks::SubtypeTable::from_records(std::slice::from_ref(record));
-    let decoded = nurbs::proc_surface::procedural_surface_resolving_refs(&record.tokens, &table)
+    let decoded = nurbs::proc_surface::procedural_surface_resolving_refs(&record.tokens, &table).transpose().expect("resource allocation did not fail")
         .expect("syntactically complete T-spline reaches surface admission");
     let mut carriers = Carriers::default();
     carriers.surface_geo.insert(

@@ -11,6 +11,7 @@ use crate::report::{
     check::{Check, ValidationReport},
     loss::LossNote,
 };
+use cadmpeg_core::decode::ResourceLimit;
 
 /// Expand [`DRAFT_CORE_CHECKS`], optionally appending extra [`Check`] variants.
 macro_rules! with_draft_core {
@@ -74,8 +75,8 @@ pub fn filter_checks(mut report: ValidationReport, allowed: &[Check]) -> Validat
 }
 
 /// Run full neutral validation, then retain only findings in `allowed`.
-pub fn admit(ir: &CadIr, allowed: &[Check], losses: Vec<LossNote>) -> ValidationReport {
-    filter_checks(super::validate_neutral(ir, losses), allowed)
+pub fn admit(ir: &CadIr, allowed: &[Check], losses: Vec<LossNote>) -> Result<ValidationReport, ResourceLimit> {
+    Ok(filter_checks(super::validate_neutral(ir, losses)?, allowed))
 }
 
 /// Admit with borrowed annotations, retaining only findings in `allowed`.
@@ -84,11 +85,11 @@ pub fn admit_with_annotations(
     annotations: &Annotations,
     allowed: &[Check],
     losses: Vec<LossNote>,
-) -> ValidationReport {
-    filter_checks(
-        super::validate_neutral_with_annotations(ir, annotations, losses),
+) -> Result<ValidationReport, ResourceLimit> {
+    Ok(filter_checks(
+        super::validate_neutral_with_annotations(ir, annotations, losses)?,
         allowed,
-    )
+    ))
 }
 
 /// Admit while treating staged native identities as resolvable.
@@ -97,11 +98,11 @@ pub fn admit_with_additional_native_identities<'a>(
     additional: impl IntoIterator<Item = &'a str>,
     allowed: &[Check],
     losses: Vec<LossNote>,
-) -> ValidationReport {
-    filter_checks(
-        super::validate_neutral_with_additional_native_identities(ir, additional, losses),
+) -> Result<ValidationReport, ResourceLimit> {
+    Ok(filter_checks(
+        super::validate_neutral_with_additional_native_identities(ir, additional, losses)?,
         allowed,
-    )
+    ))
 }
 
 #[cfg(test)]
@@ -125,23 +126,23 @@ mod tests {
     #[test]
     fn draft_core_agrees_with_full_on_freeze_fixtures() {
         let accepted = fixture(accepted_empty());
-        assert!(super::super::validate_neutral(&accepted, Vec::new()).is_ok());
-        assert!(admit(&accepted, DRAFT_CORE_CHECKS, Vec::new()).is_ok());
+        assert!(super::super::validate_neutral(&accepted, Vec::new()).expect("resource allocation did not fail").is_ok());
+        assert!(admit(&accepted, DRAFT_CORE_CHECKS, Vec::new()).expect("resource allocation did not fail").is_ok());
 
         let missing_point = fixture(rejected_missing_point("test:model").expect("valid identity"));
-        assert!(!super::super::validate_neutral(&missing_point, Vec::new()).is_ok());
-        assert!(!admit(&missing_point, DRAFT_CORE_CHECKS, Vec::new()).is_ok());
+        assert!(!super::super::validate_neutral(&missing_point, Vec::new()).expect("resource allocation did not fail").is_ok());
+        assert!(!admit(&missing_point, DRAFT_CORE_CHECKS, Vec::new()).expect("resource allocation did not fail").is_ok());
 
         let missing_region =
             fixture(rejected_missing_region("test:model").expect("valid identity"));
-        assert!(!super::super::validate_neutral(&missing_region, Vec::new()).is_ok());
-        assert!(!admit(&missing_region, DRAFT_CORE_CHECKS, Vec::new()).is_ok());
+        assert!(!super::super::validate_neutral(&missing_region, Vec::new()).expect("resource allocation did not fail").is_ok());
+        assert!(!admit(&missing_region, DRAFT_CORE_CHECKS, Vec::new()).expect("resource allocation did not fail").is_ok());
     }
 
     #[test]
     fn filter_checks_drops_out_of_set_findings() {
         let ir = fixture(rejected_missing_point("test:model").expect("valid identity"));
-        let filtered = admit(&ir, &[Check::Identity], Vec::new());
+        let filtered = admit(&ir, &[Check::Identity], Vec::new()).expect("resource allocation did not fail");
         assert!(
             filtered.is_ok(),
             "referential_integrity must not reject under Identity-only set: {filtered:?}"
@@ -193,8 +194,8 @@ mod tests {
             CATIA_ADMISSION_CHECKS,
             SLDPRT_EXPORT_PRECONDITION_CHECKS,
         ] {
-            assert!(admit(&accepted, allowed, Vec::new()).is_ok());
-            assert!(!admit(&rejected, allowed, Vec::new()).is_ok());
+            assert!(admit(&accepted, allowed, Vec::new()).expect("resource allocation did not fail").is_ok());
+            assert!(!admit(&rejected, allowed, Vec::new()).expect("resource allocation did not fail").is_ok());
         }
     }
 }

@@ -792,7 +792,7 @@ fn decode_attaches_generated_pcurve_to_its_coedge() {
             .count(),
         1
     );
-    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
 

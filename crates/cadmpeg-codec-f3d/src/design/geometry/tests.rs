@@ -1028,12 +1028,12 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         })
         .unwrap(),
     );
-    assert!(point_on_sketch_entity(Point2::new(0.0, 2.0), &arc, 1.0e-6));
-    assert!(!point_on_sketch_entity(
-        Point2::new(-2.0, 0.0),
-        &arc,
-        1.0e-6
-    ));
+    assert!(point_on_sketch_entity(Point2::new(0.0, 2.0), &arc, 1.0e-6)
+        .expect("resource allocation did not fail"));
+    assert!(
+        !point_on_sketch_entity(Point2::new(-2.0, 0.0), &arc, 1.0e-6)
+            .expect("resource allocation did not fail")
+    );
     let clockwise_arc = entity(
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(0.0, 0.0),
@@ -1046,11 +1046,12 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
     assert!(point_lies_on_sketch_geometry(
         Point2::new(std::f64::consts::SQRT_2, std::f64::consts::SQRT_2),
         &clockwise_arc.geometry
-    ));
-    assert!(!point_lies_on_sketch_geometry(
-        Point2::new(-2.0, 0.0),
-        &clockwise_arc.geometry
-    ));
+    )
+    .expect("resource allocation did not fail"));
+    assert!(
+        !point_lies_on_sketch_geometry(Point2::new(-2.0, 0.0), &clockwise_arc.geometry)
+            .expect("resource allocation did not fail")
+    );
 
     let ellipse = entity(
         SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
@@ -1067,21 +1068,18 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         })
         .unwrap(),
     );
-    assert!(point_on_sketch_entity(
-        Point2::new(-1.0, -1.0),
-        &ellipse,
-        1.0e-6
-    ));
-    assert!(!point_on_sketch_entity(
-        Point2::new(3.0, -1.0),
-        &ellipse,
-        1.0e-6
-    ));
-    assert!(!point_on_sketch_entity(
-        Point2::new(-1.0, -0.9),
-        &ellipse,
-        1.0e-6
-    ));
+    assert!(
+        point_on_sketch_entity(Point2::new(-1.0, -1.0), &ellipse, 1.0e-6)
+            .expect("resource allocation did not fail")
+    );
+    assert!(
+        !point_on_sketch_entity(Point2::new(3.0, -1.0), &ellipse, 1.0e-6)
+            .expect("resource allocation did not fail")
+    );
+    assert!(
+        !point_on_sketch_entity(Point2::new(-1.0, -0.9), &ellipse, 1.0e-6)
+            .expect("resource allocation did not fail")
+    );
 
     let nurbs = entity(SketchGeometry::nurbs(
         cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
@@ -1097,16 +1095,14 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         )
         .unwrap(),
     ));
-    assert!(point_on_sketch_entity(
-        Point2::new(3.0, 2.0),
-        &nurbs,
-        1.0e-6
-    ));
-    assert!(!point_on_sketch_entity(
-        Point2::new(2.0, 4.0),
-        &nurbs,
-        1.0e-6
-    ));
+    assert!(
+        point_on_sketch_entity(Point2::new(3.0, 2.0), &nurbs, 1.0e-6)
+            .expect("resource allocation did not fail")
+    );
+    assert!(
+        !point_on_sketch_entity(Point2::new(2.0, 4.0), &nurbs, 1.0e-6)
+            .expect("resource allocation did not fail")
+    );
     let SketchGeometryDefinition::Nurbs { curve } = nurbs.geometry.definition() else {
         unreachable!()
     };
@@ -1120,7 +1116,8 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         0.375,
     )
     .unwrap();
-    assert!(point_on_sketch_entity(*interior.as_raw(), &nurbs, 1.0e-9));
+    assert!(point_on_sketch_entity(*interior.as_raw(), &nurbs, 1.0e-9)
+        .expect("resource allocation did not fail"));
 }
 
 #[test]
@@ -1370,7 +1367,7 @@ fn numerical_followup_profile_speed_bound_retains_common_weights() {
             false,
         )
         .unwrap();
-        assert_eq!(super::nurbs_speed_bound(&curve, None).unwrap(), Some(1.0));
+        assert_eq!(super::nurbs_speed_bound(&curve), Some(1.0));
     }
 }
 
@@ -1394,8 +1391,8 @@ fn implicit_profile_unit_weights_match_explicit_units() {
     )
     .expect("unit-weight pcurve");
     assert_eq!(
-        super::nurbs_speed_bound(&implicit, None).expect("no session"),
-        super::nurbs_speed_bound(&explicit, None).expect("no session")
+        super::nurbs_speed_bound(&implicit),
+        super::nurbs_speed_bound(&explicit)
     );
 }
 
