@@ -1074,7 +1074,7 @@ fn scan_with_record_limit<'a>(
         data.len(),
         archive,
     )? {
-        warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
+        warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{note}"))?;
     }
     let mut tables = Vec::new();
     let mut offset = comment.range.end;
@@ -1205,10 +1205,10 @@ fn scan_with_record_limit<'a>(
                         record.typecode, chunk.typecode
                     )));
                 }
-                warnings.push(format!(
+                warnings.push_admitted(ctx, format_args!(
                     "unknown bounded record {:#x} skipped in table {:#x} at offset {child_offset}",
                     record.typecode, chunk.typecode
-                ));
+                ))?;
             }
             if let Some(note) = checksum_warning(
                 ctx,
@@ -1218,7 +1218,7 @@ fn scan_with_record_limit<'a>(
                 chunk.body().end,
                 archive,
             )? {
-                warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
+                warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{note}"))?;
             }
             if table_base(chunk.typecode) == TCODE_OBJECTS && record.typecode == TCODE_OBJECT_RECORD
             {
@@ -1235,9 +1235,9 @@ fn scan_with_record_limit<'a>(
                         return Err(CodecError::ResourceLimit(limit))
                     }
                     Err(error) => {
-                        warnings.push(format!(
+                        warnings.push_admitted(ctx, format_args!(
                             "bounded object record at {child_offset} is malformed: {error}"
-                        ));
+                        ))?;
                         degraded_object_record(&record, &error)
                     }
                 };
@@ -1258,10 +1258,10 @@ fn scan_with_record_limit<'a>(
             child_offset = child.next_offset();
         }
         if !terminated {
-            warnings.push(format!(
+            warnings.push_admitted(ctx, format_args!(
                 "table {:#x} has no end-of-table marker",
                 chunk.typecode
-            ));
+            ))?;
         }
         if let Some(note) = checksum_warning(
             ctx,
@@ -1271,7 +1271,7 @@ fn scan_with_record_limit<'a>(
             chunk.next_offset(),
             archive,
         )? {
-            warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
+            warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{note}"))?;
         }
         if table_base(chunk.typecode) == TCODE_INSTANCE_DEFINITION {
             let parsed = parse_definitions(ctx, data, &records, archive, chunk.typecode)?;
