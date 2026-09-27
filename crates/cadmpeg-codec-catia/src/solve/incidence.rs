@@ -43,6 +43,28 @@ fn charge_collection_items(
     ctx.charge_collection_items(count, operation)
 }
 
+fn copy_incidence_degree_rows(
+    ctx: &DecodeContext<'_>,
+    rows: &[BTreeMap<usize, u8>],
+) -> Result<Vec<BTreeMap<usize, u8>>, CodecError> {
+    let mut copy = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut copy, rows.len(), "catia_incidence_degree_copy_rows")?;
+    for row in rows {
+        let mut copied_row = BTreeMap::new();
+        for (&point, &degree) in row {
+            crate::resource::insert_btree_map(
+                ctx,
+                &mut copied_row,
+                point,
+                degree,
+                "catia_incidence_degree_copy_entries",
+            )?;
+        }
+        copy.push(copied_row);
+    }
+    Ok(copy)
+}
+
 fn prune_incidence_choices(
     ctx: &DecodeContext<'_>,
     choices: &mut [Vec<[usize; 2]>],
@@ -4395,21 +4417,23 @@ where
                 }
             }
         }
-        let mut constraints = constraints.into_iter().collect::<Vec<_>>();
+        let mut sorted_constraints = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut sorted_constraints, constraints.len(), "catia_incidence_sorted_constraints")?;
+        sorted_constraints.extend(constraints);
+        let mut constraints = sorted_constraints;
         constraints.sort_unstable();
-        let explicit_point_supports = choices
-            .iter()
-            .map(|pairs| {
-                let mut supports = HashMap::<usize, Vec<[usize; 2]>>::new();
-                for &pair in pairs {
-                    supports.entry(pair[0]).or_default().push(pair);
-                    if pair[1] != pair[0] {
-                        supports.entry(pair[1]).or_default().push(pair);
-                    }
+        let mut explicit_point_supports = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut explicit_point_supports, choices.len(), "catia_incidence_explicit_support_rows")?;
+        for pairs in choices {
+            let mut supports = HashMap::<usize, Vec<[usize; 2]>>::new();
+            for &pair in pairs {
+                for point in [Some(pair[0]), (pair[1] != pair[0]).then_some(pair[1])].into_iter().flatten() {
+                    crate::resource::admit_map_entry(ctx, &mut supports, &point, "catia_incidence_explicit_support_keys")?;
+                    crate::resource::push(ctx, supports.entry(point).or_default(), pair, "catia_incidence_explicit_support_pairs")?;
                 }
-                supports
-            })
-            .collect();
+            }
+            explicit_point_supports.push(supports);
+        }
         let face_configuration_domains = prepare_face_configuration_domains(
             ctx,
             mesh_assignments,
@@ -4418,7 +4442,7 @@ where
             &active,
         )?;
         let filter = |solution: &[MeshEndpointPair]| -> Result<bool, CodecError> {
-            let mut completed = assignment.to_vec();
+            let mut completed = crate::resource::copy_slice(ctx, assignment, "catia_incidence_filter_assignment")?;
             for &(edge, pair) in solution {
                 completed[edge] = Some(pair);
             }
@@ -4470,8 +4494,8 @@ where
             active,
             edges: component,
             constraints,
-            assignment: assignment.to_vec(),
-            degrees: degrees.to_vec(),
+            assignment: crate::resource::copy_slice(ctx, assignment, "catia_incidence_search_assignment")?,
+            degrees: copy_incidence_degree_rows(ctx, degrees)?,
             solutions: Vec::new(),
             solution_filter,
             solution_visitor,
@@ -4519,23 +4543,28 @@ where
         V: FnMut(&[[usize; 2]]) -> Result<ControlFlow<()>, CodecError>,
     {
         let Some(component) = components.get(component_index) else {
-            let pairs = assignment
-                .iter()
-                .copied()
-                .collect::<Option<Vec<_>>>()
-                .ok_or(IncidenceVisitError::Exhausted)?;
+            if assignment.iter().any(Option::is_none) {
+                return Err(IncidenceVisitError::Exhausted);
+            }
+            let mut pairs = Vec::new();
+            crate::resource::reserve_vec(ctx, &mut pairs, assignment.len(), "catia_incidence_completed_pairs")?;
+            for pair in assignment {
+                if let Some(pair) = pair {
+                    pairs.push(*pair);
+                }
+            }
             let boundary_closed = boundary_domains_close(ctx, mesh_assignments, &pairs)?;
             let solution_accepted = boundary_closed && solution_valid(&pairs)?;
             if !solution_accepted {
                 return Ok(ControlFlow::Continue(()));
             }
             if let Some(quotient) = mesh_quotient {
-                let singleton = pairs
-                    .iter()
-                    .copied()
-                    .map(|pair| vec![pair])
-                    .collect::<Vec<_>>();
-                let mut quotient = quotient.clone();
+                let mut singleton = Vec::new();
+                crate::resource::reserve_vec(ctx, &mut singleton, pairs.len(), "catia_incidence_singleton_rows")?;
+                for &pair in &pairs {
+                    singleton.push(ctx.alloc_filled(1, pair, "catia_incidence_singleton_pair")?);
+                }
+                let mut quotient = quotient.clone_charged(ctx)?;
                 let Some(domains) = mesh_assignments else {
                     if !quotient.point_assignment_exists(
                         ctx,
@@ -4592,8 +4621,8 @@ where
             return Ok(visitor(&pairs)?);
         };
 
-        let base_assignment = assignment.to_vec();
-        let base_degrees = degrees.to_vec();
+        let base_assignment = crate::resource::copy_slice(ctx, assignment, "catia_incidence_base_assignment")?;
+        let base_degrees = copy_incidence_degree_rows(ctx, degrees)?;
         let mut downstream_control = Ok(ControlFlow::Continue(()));
         let mut visit_solution =
             |solution: &[MeshEndpointPair]| -> Result<ControlFlow<()>, CodecError> {
@@ -4601,7 +4630,8 @@ where
                     downstream_control = Err(IncidenceVisitError::Exhausted);
                     return Ok(ControlFlow::Break(()));
                 }
-                let mut degree_undo = Vec::with_capacity(solution.len());
+                let mut degree_undo = Vec::new();
+                crate::resource::reserve_vec(ctx, &mut degree_undo, solution.len(), "catia_incidence_degree_undo")?;
                 for &(edge, pair) in solution {
                     assignment[edge] = Some(pair);
                     degree_undo.push((
@@ -4609,15 +4639,20 @@ where
                         adjust_incidence_degrees(ctx, degrees, edge_faces, edge, pair)?,
                     ));
                 }
-                let candidates = coordinate_domains.map(|_| {
-                    assignment
-                        .iter()
-                        .enumerate()
-                        .map(|(edge, pair)| {
-                            pair.map_or_else(|| choices[edge].clone(), |pair| vec![pair])
-                        })
-                        .collect::<Vec<_>>()
-                });
+                let candidates = if coordinate_domains.is_some() {
+                    let mut candidates = Vec::new();
+                    crate::resource::reserve_vec(ctx, &mut candidates, assignment.len(), "catia_incidence_candidate_rows")?;
+                    for (edge, pair) in assignment.iter().enumerate() {
+                        candidates.push(if let Some(pair) = pair {
+                            ctx.alloc_filled(1, *pair, "catia_incidence_fixed_candidate")?
+                        } else {
+                            crate::resource::copy_slice(ctx, &choices[edge], "catia_incidence_open_candidates")?
+                        });
+                    }
+                    Some(candidates)
+                } else {
+                    None
+                };
                 let control = (|| -> Result<ControlFlow<()>, IncidenceVisitError> {
                     // Refinement only narrows later component searches. A complete
                     // assignment is checked against the quotient before visitation.
@@ -4728,7 +4763,7 @@ where
         }
         let mut coordinate_domains = if choices.iter().any(|candidates| candidates.len() != 1) {
             if let Some(quotient) = mesh_quotient {
-                let mut quotient = quotient.clone();
+                let mut quotient = quotient.clone_charged(ctx)?;
                 let Some(preparation_limit) =
                     quotient.coordinate_domain_preparation_limit(point_count, choices)
                 else {
@@ -4753,11 +4788,20 @@ where
         } else {
             None
         };
-        let base_choices = coordinate_domains
-            .as_ref()
-            .map_or(choices, MeshCoordinateRootDomains::edge_candidates)
-            .to_vec();
-        let mut narrowed_choices = base_choices.clone();
+        let base_choices = crate::resource::copy_retained_rows(
+            ctx,
+            coordinate_domains
+                .as_ref()
+                .map_or(choices, MeshCoordinateRootDomains::edge_candidates),
+            "catia_incidence_base_choice_rows",
+            "catia_incidence_base_choice_pairs",
+        )?;
+        let mut narrowed_choices = crate::resource::copy_retained_rows(
+            ctx,
+            &base_choices,
+            "catia_incidence_narrow_choice_rows",
+            "catia_incidence_narrow_choice_pairs",
+        )?;
         if let Some(domains) = mesh_assignments {
             let implicit_support_budget =
                 session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
@@ -4777,9 +4821,9 @@ where
                 return Ok(None);
             }
             if implicit_support_budget.exhausted() {
-                narrowed_choices.clone_from(&base_choices);
+                narrowed_choices = crate::resource::copy_retained_rows(ctx, &base_choices, "catia_incidence_restore_choice_rows", "catia_incidence_restore_choice_pairs")?;
             }
-            let implicit_choices = narrowed_choices.clone();
+            let implicit_choices = crate::resource::copy_retained_rows(ctx, &narrowed_choices, "catia_incidence_implicit_choice_rows", "catia_incidence_implicit_choice_pairs")?;
             let face_support_budget =
                 session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
             if !prune_ordered_face_endpoint_support(
@@ -4798,11 +4842,11 @@ where
                     session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
                 match domains.refine_candidates(ctx, &narrowed_choices, Some(&refinement_budget))? {
                     Some(refined) => {
-                        narrowed_choices = refined.edge_candidates().to_vec();
+                        narrowed_choices = crate::resource::copy_retained_rows(ctx, refined.edge_candidates(), "catia_incidence_refined_choice_rows", "catia_incidence_refined_choice_pairs")?;
                         coordinate_domains = Some(refined);
                     }
                     None if refinement_budget.exhausted() => {
-                        narrowed_choices.clone_from(&base_choices);
+                        narrowed_choices = crate::resource::copy_retained_rows(ctx, &base_choices, "catia_incidence_restore_choice_rows", "catia_incidence_restore_choice_pairs")?;
                         coordinate_domains = Some(domains);
                     }
                     None => {
@@ -4859,6 +4903,7 @@ where
                     continue;
                 }
                 for point in pair {
+                    crate::resource::admit_btree_entry(ctx, &degrees[face], point, "catia_incidence_fixed_degree_points")?;
                     let degree = degrees[face].entry(*point).or_default();
                     let Some(next) = degree.checked_add(1) else {
                         return Ok(None);
