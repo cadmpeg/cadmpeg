@@ -40,7 +40,7 @@ use crate::brep::{
 };
 use crate::loss::FreecadLossCode;
 use crate::native::PropertyRecord;
-use crate::resource::{collection_vec, copied_items, insert_hash_map, insert_hash_set, reserve_vec_items, retained_format, retained_string};
+use crate::resource::{collection_vec, copied_identity, copied_items, insert_hash_map, insert_hash_set, reserve_vec_items, retained_format, retained_string};
 use cadmpeg_ir::report::loss::LossNote;
 
 const EPS_TOPOLOGY_TRANSFER_GEOMETRY: f64 = 1.0e-9;
@@ -553,7 +553,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         let body_id = BodyId::mint(crate::native::model_id_charged_at(
             self.ctx, "body", &self.payload.id, &body_key,
         "FreeCAD body identity", )?).map_err(CodecError::malformed)?;
-        self.current_body = Some(body_id.clone());
+        self.current_body = Some(copied_identity(self.ctx, body_id.as_str(), "FreeCAD current body identity")?);
         let kind = match root_kind {
             TextShapeKind::Solid => BodyKind::Solid,
             TextShapeKind::Wire | TextShapeKind::Edge => BodyKind::Wire,
@@ -577,7 +577,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         }
         reserve_vec_items(self.ctx, &mut ir.model.bodies, 1, "FreeCAD bodies records")?;
         ir.model.bodies.push(Body {
-            id: body_id.clone(),
+            id: copied_identity(self.ctx, body_id.as_str(), "FreeCAD body record identity")?,
             kind,
             regions,
             transform: (!is_identity(root.transform)).then_some(root.transform),
@@ -661,8 +661,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         if !shells.is_empty() {
             reserve_vec_items(self.ctx, &mut ir.model.regions, 1, "FreeCAD regions records")?;
             ir.model.regions.push(Region {
-                id: region_id.clone(),
-                body: body.clone(),
+                id: copied_identity(self.ctx, region_id.as_str(), "FreeCAD region record identity")?,
+                body: copied_identity(self.ctx, body.as_str(), "FreeCAD region body identity")?,
                 shells,
             });
             if shape.kind() == TextShapeKind::Solid {
@@ -731,7 +731,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             )?;
             for (component_index, component) in components.iter().enumerate() {
                 let component_id = if component_index == 0 {
-                    shell_id.clone()
+                    copied_identity(self.ctx, shell_id.as_str(), "FreeCAD first shell component identity")?
                 } else {
                     self.shell_component_id(&key, component_index)?
                 };
@@ -754,8 +754,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 reserve_vec_items(self.ctx, &mut ir.model.shells, 1, "FreeCAD shells records")?;
                 ir.model.shells.push(
                     Shell::new(
-                        component_id.clone(),
-                        region.clone(),
+                        copied_identity(self.ctx, component_id.as_str(), "FreeCAD component shell record identity")?,
+                        copied_identity(self.ctx, region.as_str(), "FreeCAD component shell region identity")?,
                         faces,
                         Vec::new(),
                         Vec::new(),
@@ -821,8 +821,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 reserve_vec_items(self.ctx, &mut ir.model.shells, 1, "FreeCAD shells records")?;
                 ir.model.shells.push(
                     Shell::new(
-                        shell_id.clone(),
-                        region.clone(),
+                        copied_identity(self.ctx, shell_id.as_str(), "FreeCAD vertex shell record identity")?,
+                        copied_identity(self.ctx, region.as_str(), "FreeCAD vertex shell region identity")?,
                         faces,
                         wire_edges,
                         vec![vertex],
@@ -836,8 +836,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         reserve_vec_items(self.ctx, &mut ir.model.shells, 1, "FreeCAD shells records")?;
         ir.model.shells.push(
             Shell::new(
-                shell_id.clone(),
-                region.clone(),
+                copied_identity(self.ctx, shell_id.as_str(), "FreeCAD shell record identity")?,
+                copied_identity(self.ctx, region.as_str(), "FreeCAD shell region identity")?,
                 faces,
                 wire_edges,
                 Vec::new(),
@@ -1114,11 +1114,11 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 let edge = self.ensure_edge(ir, edge_use, wire_transform)?;
                 let pcurve =
                     self.face_pcurve(edge_use, edge_transform, surface, surface_transform)?;
-                let id = coedge_ids[index].clone();
+                let id: CoedgeId = copied_identity(self.ctx, coedge_ids[index].as_str(), "FreeCAD coedge radial identity")?;
                 reserve_vec_items(self.ctx, &mut ir.model.coedges, 1, "FreeCAD coedges records")?;
                 ir.model.coedges.push(Coedge {
-                    id: id.clone(),
-                    owner_loop: loop_id.clone(),
+                    id: copied_identity(self.ctx, id.as_str(), "FreeCAD coedge record identity")?,
+                    owner_loop: copied_identity(self.ctx, loop_id.as_str(), "FreeCAD coedge loop identity")?,
                     edge,
                     radial_next: id,
                     sense: sense(is_reversed(edge_use.orientation) ^ wire_reversed),
@@ -1140,8 +1140,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             }
             reserve_vec_items(self.ctx, &mut ir.model.loops, 1, "FreeCAD loops records")?;
             ir.model.loops.push(Loop {
-                id: loop_id.clone(),
-                face: face_id.clone(),
+                id: copied_identity(self.ctx, loop_id.as_str(), "FreeCAD loop record identity")?,
+                face: copied_identity(self.ctx, face_id.as_str(), "FreeCAD loop face identity")?,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                     cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()).map_err(
                         |error| {
@@ -1165,8 +1165,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         }
         reserve_vec_items(self.ctx, &mut ir.model.faces, 1, "FreeCAD faces records")?;
         ir.model.faces.push(Face {
-            id: face_id.clone(),
-            shell: shell.clone(),
+            id: copied_identity(self.ctx, face_id.as_str(), "FreeCAD face record identity")?,
+            shell: copied_identity(self.ctx, shell.as_str(), "FreeCAD face shell identity")?,
             surface: surface_id,
             sense: sense(face_reversed),
             loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
@@ -1198,7 +1198,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 .compose(transform)
                 .map_err(location_transform_error)?,
         );
-        if let Some(id) = self.edges.get(&key).cloned() {
+        if let Some(id) = self.edges.get(&key) {
+            let id: EdgeId = copied_identity(self.ctx, id.as_str(), "FreeCAD cached edge lookup identity")?;
             self.bind_topology(
                 TextShapeKind::Edge,
                 edge_use.shape,
@@ -1268,7 +1269,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             });
         reserve_vec_items(self.ctx, &mut ir.model.edges, 1, "FreeCAD edges records")?;
         ir.model.edges.push(Edge {
-            id: id.clone(),
+            id: copied_identity(self.ctx, id.as_str(), "FreeCAD edge record identity")?,
             carrier: cadmpeg_ir::topology::EdgeCarrier::from_finite_parts(curve, param_range)
                 .map_err(CodecError::malformed)?,
             start,
@@ -1444,7 +1445,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 .compose(transform)
                 .map_err(location_transform_error)?,
         );
-        if let Some(id) = self.vertices.get(&key).cloned() {
+        if let Some(id) = self.vertices.get(&key) {
+            let id: VertexId = copied_identity(self.ctx, id.as_str(), "FreeCAD cached vertex lookup identity")?;
             self.bind_topology(
                 TextShapeKind::Vertex,
                 vertex_use.shape,
@@ -1480,21 +1482,13 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         };
         reserve_vec_items(self.ctx, &mut ir.model.points, 1, "FreeCAD points records")?;
         ir.model.points.push(Point::new(
-            point_id.clone(),
+            copied_identity(self.ctx, point_id.as_str(), "FreeCAD point record identity")?,
             position,
-            Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Fcstd,
-                object_id: self.source_object.clone(),
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
+            Some(self.source_association()?),
         ));
         reserve_vec_items(self.ctx, &mut ir.model.vertices, 1, "FreeCAD vertices records")?;
         ir.model.vertices.push(Vertex {
-            id: vertex_id.clone(),
+            id: copied_identity(self.ctx, vertex_id.as_str(), "FreeCAD vertex record identity")?,
             point: point_id,
             tolerance: positive_tolerance(tolerance.get() * uniform_scale(transform)?.get()),
         });
@@ -1543,7 +1537,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 .clone();
             reserve_vec_items(self.ctx, &mut ir.model.curves, 1, "FreeCAD curves records")?;
             ir.model.curves.push(Curve {
-                id: id.clone(),
+                id: copied_identity(self.ctx, id.as_str(), "FreeCAD located curve record identity")?,
                 geometry: transform_curve(&base.geometry, transform)?,
                 source_object: base.source_object,
             });
@@ -1588,14 +1582,14 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 });
             reserve_vec_items(self.ctx, &mut ir.model.surfaces, 1, "FreeCAD surfaces records")?;
             ir.model.surfaces.push(Surface {
-                id: id.clone(),
+                id: copied_identity(self.ctx, id.as_str(), "FreeCAD located surface record identity")?,
                 geometry: transform_surface(&base.geometry, transform)?,
                 source_object: base.source_object,
             });
             if has_procedural_construction {
                 ir.model
                     .add_procedural_surface(
-                        id.clone(),
+                        copied_identity(self.ctx, id.as_str(), "FreeCAD procedural surface owner identity")?,
                         ProceduralSurface::new(
                             ProceduralSurfaceId::compose(
                                 &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
