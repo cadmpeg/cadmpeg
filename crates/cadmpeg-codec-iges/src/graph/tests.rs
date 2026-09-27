@@ -128,10 +128,17 @@ fn semantic_expectation_labels_are_preserved_in_pointer_losses() {
 
 #[test]
 fn directory_pointers_enforce_the_seven_digit_sequence_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let maximum = u32::try_from(MAX_POINTER_SEQUENCE).unwrap();
     let mut source = directory_target(1, 116);
     source.transform = i64::from(maximum);
-    let graph = build(&[source, directory_target(maximum, 124)]);
+    let graph = build(&[source, directory_target(maximum, 124)], &ctx).unwrap();
     let edge = graph[&1]
         .iter()
         .find(|edge| edge.origin == ReferenceOrigin::Directory(ReferenceKind::Transform))
@@ -140,7 +147,7 @@ fn directory_pointers_enforce_the_seven_digit_sequence_limit() {
 
     let mut source = directory_target(1, 116);
     source.transform = i64::from(maximum) + 1;
-    let graph = build(&[source]);
+    let graph = build(&[source], &ctx).unwrap();
     let edge = graph[&1]
         .iter()
         .find(|edge| edge.origin == ReferenceOrigin::Directory(ReferenceKind::Transform))
@@ -150,7 +157,40 @@ fn directory_pointers_enforce_the_seven_digit_sequence_limit() {
 }
 
 #[test]
+fn directory_reference_edge_refuses_collection_limit_before_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut source = directory_target(1, 116);
+    source.transform = 3;
+    let directory = [source];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = build(&directory, &ctx);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 1
+                && limit.additional == 1
+                && limit.operation == "iges directory reference edges"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert!(build(&directory, &ctx).is_ok());
+}
+
+#[test]
 fn transform_cycle_detection_does_not_rewalk_a_long_acyclic_prefix() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let chain_length = 100_000_u32;
     let edges = (1..=chain_length)
         .map(|source| {
@@ -170,7 +210,7 @@ fn transform_cycle_detection_does_not_rewalk_a_long_acyclic_prefix() {
         })
         .collect::<BTreeMap<_, _>>();
 
-    assert!(cyclic_transform_nodes(&edges).is_empty());
+    assert!(cyclic_transform_nodes(&edges, &ctx).unwrap().is_empty());
 }
 
 #[test]
@@ -240,8 +280,15 @@ fn inspect_preserves_transform_cycles_as_named_reference_states() {
 
 #[test]
 fn zero_pointer_absence_creates_no_reference_edge() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let directory = [directory_target(1, 116)];
-    let mut graph = build(&directory);
+    let mut graph = build(&directory, &ctx).unwrap();
     assert!(graph[&1].is_empty());
     let resolver = ParameterResolver::new(&directory);
     let expectation = ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry);

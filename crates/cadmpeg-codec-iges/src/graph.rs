@@ -5,9 +5,14 @@ pub(crate) mod expectation;
 use expectation::{ExpectationLabel, ReferenceExpectation};
 
 use crate::card::{CardScan, Section};
+use crate::decode_resource::{
+    insert_optional_btree_map, insert_optional_btree_set, reserve_vec, reserve_vec_growth,
+};
 use crate::directory::DirectoryEntry;
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
@@ -351,41 +356,34 @@ fn negative_pointer_sequence(raw_pointer: i64) -> Option<u32> {
     u32::try_from(magnitude).ok()
 }
 
-fn candidates(entry: &DirectoryEntry) -> Vec<Candidate> {
-    let mut values = Vec::new();
-    if entry.structure < 0 {
-        values.push(negative_candidate(
-            ReferenceKind::Structure,
-            entry.structure,
-        ));
-    }
-    if entry.line_font < 0 {
-        values.push(negative_candidate(ReferenceKind::LineFont, entry.line_font));
-    }
-    if entry.level < 0 {
-        values.push(negative_candidate(ReferenceKind::Level, entry.level));
-    }
-    for (kind, pointer) in [
-        (ReferenceKind::View, entry.view),
-        (ReferenceKind::Transform, entry.transform),
-        (ReferenceKind::LabelDisplay, entry.label_display),
-    ] {
-        if pointer != 0 {
-            values.push(positive_candidate(kind, pointer));
-        }
-    }
-    if entry.color < 0 {
-        values.push(negative_candidate(ReferenceKind::Color, entry.color));
-    }
-    values
+fn candidates(entry: &DirectoryEntry) -> impl Iterator<Item = Candidate> {
+    [
+        (entry.structure < 0)
+            .then(|| negative_candidate(ReferenceKind::Structure, entry.structure)),
+        (entry.line_font < 0)
+            .then(|| negative_candidate(ReferenceKind::LineFont, entry.line_font)),
+        (entry.level < 0).then(|| negative_candidate(ReferenceKind::Level, entry.level)),
+        (entry.view != 0).then(|| positive_candidate(ReferenceKind::View, entry.view)),
+        (entry.transform != 0)
+            .then(|| positive_candidate(ReferenceKind::Transform, entry.transform)),
+        (entry.label_display != 0)
+            .then(|| positive_candidate(ReferenceKind::LabelDisplay, entry.label_display)),
+        (entry.color < 0).then(|| negative_candidate(ReferenceKind::Color, entry.color)),
+    ]
+    .into_iter()
+    .flatten()
 }
 
-fn expected(kind: ReferenceKind, source: &DirectoryEntry) -> ReferenceExpectation {
-    match kind {
+fn expected(
+    kind: ReferenceKind,
+    source: &DirectoryEntry,
+    ctx: &DecodeContext<'_>,
+) -> Result<ReferenceExpectation, CodecError> {
+    Ok(match kind {
         ReferenceKind::Structure => match source.entity_type {
             422 if matches!(source.form, 0..=1) => ReferenceExpectation::Type {
                 entity_type: 322,
-                forms: vec![0],
+                forms: expected_forms(ctx, &[0])?,
             },
             402 if matches!(source.form, 5001..=9999) => {
                 ReferenceExpectation::Named(ExpectationLabel::Type302MatchingForm)
@@ -401,28 +399,34 @@ fn expected(kind: ReferenceKind, source: &DirectoryEntry) -> ReferenceExpectatio
         },
         ReferenceKind::LineFont => ReferenceExpectation::Type {
             entity_type: 304,
-            forms: vec![],
+            forms: Vec::new(),
         },
         ReferenceKind::Level => ReferenceExpectation::Type {
             entity_type: 406,
-            forms: vec![1],
+            forms: expected_forms(ctx, &[1])?,
         },
         ReferenceKind::View => {
             ReferenceExpectation::Named(ExpectationLabel::Type410OrType402Form3419)
         }
         ReferenceKind::Transform => ReferenceExpectation::Type {
             entity_type: 124,
-            forms: vec![],
+            forms: Vec::new(),
         },
         ReferenceKind::LabelDisplay => ReferenceExpectation::Type {
             entity_type: 402,
-            forms: vec![5],
+            forms: expected_forms(ctx, &[5])?,
         },
         ReferenceKind::Color => ReferenceExpectation::Type {
             entity_type: 314,
-            forms: vec![],
+            forms: Vec::new(),
         },
-    }
+    })
+}
+
+fn expected_forms(ctx: &DecodeContext<'_>, forms: &[i64]) -> Result<Vec<i64>, CodecError> {
+    let mut copied = reserve_vec(ctx, forms.len(), "iges reference expected forms")?;
+    copied.extend_from_slice(forms);
+    Ok(copied)
 }
 
 fn accepts(kind: ReferenceKind, source: &DirectoryEntry, target: &DirectoryEntry) -> bool {
@@ -449,16 +453,25 @@ fn accepts(kind: ReferenceKind, source: &DirectoryEntry, target: &DirectoryEntry
     }
 }
 
-fn cyclic_transform_nodes(edges: &BTreeMap<u32, Vec<ReferenceEdge>>) -> BTreeSet<u32> {
-    let next = edges
-        .iter()
-        .filter_map(|(source, values)| {
-            values
-                .iter()
-                .find_map(|edge| edge.resolved_target_sequence_for(ReferenceKind::Transform))
-                .map(|target| (*source, target))
-        })
-        .collect::<BTreeMap<_, _>>();
+fn cyclic_transform_nodes(
+    edges: &BTreeMap<u32, Vec<ReferenceEdge>>,
+    ctx: &DecodeContext<'_>,
+) -> Result<BTreeSet<u32>, CodecError> {
+    let mut next = BTreeMap::new();
+    for (source, values) in edges {
+        if let Some(target) = values
+            .iter()
+            .find_map(|edge| edge.resolved_target_sequence_for(ReferenceKind::Transform))
+        {
+            insert_optional_btree_map(
+                Some(ctx),
+                &mut next,
+                *source,
+                target,
+                "iges transform reference successors",
+            )?;
+        }
+    }
     let mut cyclic = BTreeSet::new();
     let mut completed = BTreeSet::new();
     let mut active = BTreeMap::<u32, usize>::new();
@@ -466,14 +479,29 @@ fn cyclic_transform_nodes(edges: &BTreeMap<u32, Vec<ReferenceEdge>>) -> BTreeSet
         let mut path = Vec::new();
         let mut current = start;
         loop {
+            ctx.charge_work(1, "iges transform reference cycle walk")?;
             if completed.contains(&current) {
                 break;
             }
             if let Some(position) = active.get(&current).copied() {
-                cyclic.extend(path[position..].iter().copied());
+                for node in path[position..].iter().copied() {
+                    insert_optional_btree_set(
+                        Some(ctx),
+                        &mut cyclic,
+                        node,
+                        "iges cyclic transform references",
+                    )?;
+                }
                 break;
             }
-            active.insert(current, path.len());
+            insert_optional_btree_map(
+                Some(ctx),
+                &mut active,
+                current,
+                path.len(),
+                "iges active transform reference walk",
+            )?;
+            reserve_vec_growth(ctx, &mut path, 1, "iges transform reference path")?;
             path.push(current);
             let Some(target) = next.get(&current).copied() else {
                 break;
@@ -482,41 +510,59 @@ fn cyclic_transform_nodes(edges: &BTreeMap<u32, Vec<ReferenceEdge>>) -> BTreeSet
         }
         for node in path {
             active.remove(&node);
-            completed.insert(node);
+            insert_optional_btree_set(
+                Some(ctx),
+                &mut completed,
+                node,
+                "iges completed transform references",
+            )?;
         }
     }
-    cyclic
+    Ok(cyclic)
 }
 
-pub(crate) fn build(directory: &[DirectoryEntry]) -> BTreeMap<u32, Vec<ReferenceEdge>> {
-    let index = directory
-        .iter()
-        .map(|entry| (entry.sequence, entry))
-        .collect::<BTreeMap<_, _>>();
-    let mut graph = directory
-        .iter()
-        .map(|entry| {
-            let edges = candidates(entry)
-                .into_iter()
-                .map(|candidate| {
-                    let target = candidate
-                        .target_sequence
-                        .and_then(|value| index.get(&value).copied());
-                    let resolution = classify(candidate.target_sequence, target, |value| {
-                        accepts(candidate.kind, entry, value)
-                    });
-                    ReferenceEdge {
-                        origin: ReferenceOrigin::Directory(candidate.kind),
-                        raw_pointer: candidate.raw_pointer,
-                        resolution,
-                        expected: expected(candidate.kind, entry),
-                    }
-                })
-                .collect();
-            (entry.sequence, edges)
-        })
-        .collect::<BTreeMap<_, Vec<_>>>();
-    let cyclic = cyclic_transform_nodes(&graph);
+pub(crate) fn build(
+    directory: &[DirectoryEntry],
+    ctx: &DecodeContext<'_>,
+) -> Result<BTreeMap<u32, Vec<ReferenceEdge>>, CodecError> {
+    let mut index = BTreeMap::new();
+    for entry in directory {
+        insert_optional_btree_map(
+            Some(ctx),
+            &mut index,
+            entry.sequence,
+            entry,
+            "iges reference directory index",
+        )?;
+    }
+    let mut graph = BTreeMap::new();
+    for entry in directory {
+        let mut edges = Vec::new();
+        for candidate in candidates(entry) {
+            let target = candidate
+                .target_sequence
+                .and_then(|value| index.get(&value).copied());
+            let resolution = classify(candidate.target_sequence, target, |value| {
+                accepts(candidate.kind, entry, value)
+            });
+            let expected = expected(candidate.kind, entry, ctx)?;
+            reserve_vec_growth(ctx, &mut edges, 1, "iges directory reference edges")?;
+            edges.push(ReferenceEdge {
+                origin: ReferenceOrigin::Directory(candidate.kind),
+                raw_pointer: candidate.raw_pointer,
+                resolution,
+                expected,
+            });
+        }
+        insert_optional_btree_map(
+            Some(ctx),
+            &mut graph,
+            entry.sequence,
+            edges,
+            "iges directory reference graph",
+        )?;
+    }
+    let cyclic = cyclic_transform_nodes(&graph, ctx)?;
     for source in cyclic {
         if let Some(edge) = graph.get_mut(&source).and_then(|edges| {
             edges
@@ -528,7 +574,7 @@ pub(crate) fn build(directory: &[DirectoryEntry]) -> BTreeMap<u32, Vec<Reference
             }
         }
     }
-    graph
+    Ok(graph)
 }
 
 pub(crate) fn resolved_structure_sequence(
