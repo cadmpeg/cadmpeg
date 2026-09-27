@@ -37,70 +37,26 @@ pub(super) fn decode(
     let mut typed = HashSet::new();
     let mut losses = Vec::new();
     let graph_limit = super::record_graph_limit(ctx);
-    let face_indices = ir
-        .model
-        .faces
-        .iter()
-        .enumerate()
-        .map(|(index, face)| (face.id.as_str().to_owned(), index))
-        .collect::<BTreeMap<_, _>>();
-    let body_indices = ir
-        .model
-        .bodies
-        .iter()
-        .enumerate()
-        .map(|(index, body)| (body.id.as_str().to_owned(), index))
-        .collect::<BTreeMap<_, _>>();
+    let face_indices = collect_identity_indices(
+        ir.model.faces.iter().map(|face| face.id.as_str()),
+        ctx,
+        "step_presentation_face_indices",
+    )?;
+    let body_indices = collect_identity_indices(
+        ir.model.bodies.iter().map(|body| body.id.as_str()),
+        ctx,
+        "step_presentation_body_indices",
+    )?;
     let entity_ids = EntityIds {
-        edges: ir
-            .model
-            .edges
-            .iter()
-            .map(|item| item.id.as_str().to_owned())
-            .collect(),
-        vertices: ir
-            .model
-            .vertices
-            .iter()
-            .map(|item| item.id.as_str().to_owned())
-            .collect(),
-        points: ir
-            .model
-            .points
-            .iter()
-            .map(|item| item.id.as_str().to_owned())
-            .collect(),
-        curves: ir
-            .model
-            .curves
-            .iter()
-            .map(|item| item.id.as_str().to_owned())
-            .collect(),
-        surfaces: ir
-            .model
-            .surfaces
-            .iter()
-            .map(|item| item.id.as_str().to_owned())
-            .collect(),
-        products: product_definition_ids_by_source.clone(),
-        occurrences: ir
-            .model
-            .occurrences
-            .iter()
-            .map(|item| item.id.as_str().to_owned())
-            .collect(),
-        pmi: ir
-            .model
-            .pmi
-            .iter()
-            .map(|item| item.id.as_str().to_owned())
-            .collect(),
-        tessellations: ir
-            .model
-            .tessellations
-            .iter()
-            .map(|item| item.id.to_string())
-            .collect(),
+        edges: collect_borrowed_identity_set(ir.model.edges.iter().map(|item| item.id.as_str()), ctx, "step_presentation_edge_ids")?,
+        vertices: collect_borrowed_identity_set(ir.model.vertices.iter().map(|item| item.id.as_str()), ctx, "step_presentation_vertex_ids")?,
+        points: collect_borrowed_identity_set(ir.model.points.iter().map(|item| item.id.as_str()), ctx, "step_presentation_point_ids")?,
+        curves: collect_borrowed_identity_set(ir.model.curves.iter().map(|item| item.id.as_str()), ctx, "step_presentation_curve_ids")?,
+        surfaces: collect_borrowed_identity_set(ir.model.surfaces.iter().map(|item| item.id.as_str()), ctx, "step_presentation_surface_ids")?,
+        products: product_definition_ids_by_source,
+        occurrences: collect_borrowed_identity_set(ir.model.occurrences.iter().map(|item| item.id.as_str()), ctx, "step_presentation_occurrence_ids")?,
+        pmi: collect_borrowed_identity_set(ir.model.pmi.iter().map(|item| item.id.as_str()), ctx, "step_presentation_pmi_ids")?,
+        tessellations: collect_borrowed_identity_set(ir.model.tessellations.iter().map(|item| item.id.as_str()), ctx, "step_presentation_tessellation_ids")?,
     };
     let mut appearance_ids = BTreeMap::<(u64, u32), AppearanceId>::new();
     let mut hidden_style_ids = BTreeSet::new();
@@ -697,7 +653,7 @@ fn appearance_targets(
     id: u64,
     exchange: &Exchange,
     topology: &TopologyData,
-    entity_ids: &EntityIds,
+    entity_ids: &EntityIds<'_>,
     face_indices: &BTreeMap<String, usize>,
     body_indices: &BTreeMap<String, usize>,
 ) -> Vec<AppearanceTarget> {
@@ -775,7 +731,7 @@ fn presentation_item(
     id: u64,
     exchange: &Exchange,
     topology: &TopologyData,
-    entity_ids: &EntityIds,
+    entity_ids: &EntityIds<'_>,
     face_indices: &BTreeMap<String, usize>,
     body_indices: &BTreeMap<String, usize>,
 ) -> Vec<PresentationItem> {
@@ -830,7 +786,7 @@ fn presentation_item(
 fn presentation_item_one(
     id: u64,
     exchange: &Exchange,
-    entity_ids: &EntityIds,
+    entity_ids: &EntityIds<'_>,
     face_indices: &BTreeMap<String, usize>,
     body_indices: &BTreeMap<String, usize>,
 ) -> PresentationItem {
@@ -922,16 +878,59 @@ fn presentation_item_one(
     }
 }
 
-struct EntityIds {
-    edges: BTreeSet<String>,
-    vertices: BTreeSet<String>,
-    points: BTreeSet<String>,
-    curves: BTreeSet<String>,
-    surfaces: BTreeSet<String>,
-    products: BTreeMap<u64, Vec<ProductDefinitionId>>,
-    occurrences: BTreeSet<String>,
-    pmi: BTreeSet<String>,
-    tessellations: BTreeSet<String>,
+struct EntityIds<'a> {
+    edges: BTreeSet<&'a str>,
+    vertices: BTreeSet<&'a str>,
+    points: BTreeSet<&'a str>,
+    curves: BTreeSet<&'a str>,
+    surfaces: BTreeSet<&'a str>,
+    products: &'a BTreeMap<u64, Vec<ProductDefinitionId>>,
+    occurrences: BTreeSet<&'a str>,
+    pmi: BTreeSet<&'a str>,
+    tessellations: BTreeSet<&'a str>,
+}
+
+fn collect_borrowed_identity_set<'a>(
+    identities: impl IntoIterator<Item = &'a str>,
+    ctx: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<BTreeSet<&'a str>, CodecError> {
+    let mut result = BTreeSet::new();
+    for identity in identities {
+        if !result.contains(identity) {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, operation)?;
+            }
+            result.insert(identity);
+        }
+    }
+    Ok(result)
+}
+
+fn collect_identity_indices<'a>(
+    identities: impl IntoIterator<Item = &'a str>,
+    ctx: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<BTreeMap<String, usize>, CodecError> {
+    let mut result = BTreeMap::new();
+    for (index, identity) in identities.into_iter().enumerate() {
+        if let Some(existing) = result.get_mut(identity) {
+            *existing = index;
+            continue;
+        }
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, operation)?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(identity.len()), operation)?;
+        }
+        let mut copy = String::new();
+        copy.try_reserve_exact(identity.len()).map_err(|_| match ctx {
+            Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
+            None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
+        })?;
+        copy.push_str(identity);
+        result.insert(copy, index);
+    }
+    Ok(result)
 }
 
 fn overridden_style(style: &RawRecord) -> Option<u64> {

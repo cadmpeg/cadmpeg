@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 mod surface_styles;
 mod string_limits;
+mod collection_limits;
 
 /// A style whose override walk does not terminate states no depth. Its
 /// position is stated as absence and sorts after every stated depth; the
