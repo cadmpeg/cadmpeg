@@ -311,10 +311,13 @@ pub(super) fn decode(
         let datum_references = match datum_references.try_into() {
             Ok(references) => references,
             Err(error) => {
-                losses.push(
+                push_pmi_vec(
+                    &mut losses,
                     StepLossCode::PmiDatumSystemInvalid
                         .note(format!("DATUM_SYSTEM #{id} omitted: {error}")),
-                );
+                    ctx,
+                    "step_pmi_losses",
+                )?;
                 continue;
             }
         };
@@ -543,14 +546,14 @@ pub(super) fn decode(
                     claim_pmi_typed(&mut typed, id, ctx)?;
                     claim_pmi_typed_many(&mut typed, refs, ctx)?;
                 } else {
-                    losses.push(StepLossCode::DecodeWarning.note(format!(
+                    push_pmi_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                         "PLUS_MINUS_TOLERANCE #{id} is an additional tolerance for one dimension"
-                    )));
+                    )), ctx, "step_pmi_losses")?;
                 }
             } else {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
+                push_pmi_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                     "PLUS_MINUS_TOLERANCE #{id} does not contain both deviation values"
-                )));
+                )), ctx, "step_pmi_losses")?;
             }
         } else if let (Some(index), Some((fit_id, fit))) = (dimension, fit) {
             if set_dimension_tolerance(
@@ -562,14 +565,14 @@ pub(super) fn decode(
             })? {
                 claim_pmi_typed_many(&mut typed, [id, fit_id], ctx)?;
             } else {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
+                push_pmi_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                     "PLUS_MINUS_TOLERANCE #{id} is an additional tolerance for one dimension"
-                )));
+                )), ctx, "step_pmi_losses")?;
             }
         } else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
+            push_pmi_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "PLUS_MINUS_TOLERANCE #{id} has no resolvable dimension and limits"
-            )));
+            )), ctx, "step_pmi_losses")?;
         }
     }
 
@@ -635,10 +638,20 @@ pub(super) fn decode(
             )?,
         };
         let Some(magnitude) = magnitude.and_then(cadmpeg_ir::pmi::PmiMagnitude::new) else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "{} #{id} has no numeric magnitude",
-                record.display_name()
-            )));
+            let message = match ctx {
+                Some(ctx) => crate::decode_alloc::charged_format(
+                    ctx,
+                    "step_pmi_invalid_tolerance_text",
+                    format_args!("{} #{id} has no numeric magnitude", record.display_name()),
+                )?,
+                None => format!("{} #{id} has no numeric magnitude", record.display_name()),
+            };
+            push_pmi_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning.note(message),
+                ctx,
+                "step_pmi_losses",
+            )?;
             continue;
         };
         let defined_unit = record
@@ -804,11 +817,11 @@ pub(super) fn decode(
             0 => None,
             1 => placement_candidates.values().next().copied(),
             count => {
-                losses.push(StepLossCode::PresentationAnnotationPlacementAmbiguous.note(
+                push_pmi_vec(&mut losses, StepLossCode::PresentationAnnotationPlacementAmbiguous.note(
                     format!(
                         "presentation annotation #{id} has {count} reachable placement carriers with no unique placement"
                     ),
-                ));
+                ), ctx, "step_pmi_losses")?;
                 None
             }
         };
@@ -1628,9 +1641,9 @@ fn find_annotation_text(
         Ok(Some(text))
     } else {
         let count = candidates.len() + 1;
-        losses.push(StepLossCode::PresentationAnnotationTextUnordered.note(format!(
+        push_pmi_vec(losses, StepLossCode::PresentationAnnotationTextUnordered.note(format!(
                     "presentation annotation #{id} has {count} reachable text carriers with no ordered composition"
-                )));
+                )), ctx, "step_pmi_losses")?;
         Ok(None)
     }
 }
@@ -2140,19 +2153,19 @@ fn characteristic_values(
         let selected = if named_count == 1 {
             named_first
         } else if named_count > 1 {
-            losses.push(StepLossCode::DimensionalNominalAmbiguous.note(format!(
+            push_pmi_vec(losses, StepLossCode::DimensionalNominalAmbiguous.note(format!(
                 "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION #{id} has {} nominal value measures; the nominal is ambiguous",
                 named_count
-                )));
+                )), ctx, "step_pmi_losses")?;
             None
         } else if values.len() == 1 {
             values.first().map(|(_, value)| *value)
         } else {
             if values.len() > 1 {
-                losses.push(StepLossCode::DimensionalUnnamedMeasureAmbiguous.note(format!(
+                push_pmi_vec(losses, StepLossCode::DimensionalUnnamedMeasureAmbiguous.note(format!(
                         "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION #{id} has {} unnamed measure values; the nominal is ambiguous",
                         values.len()
-                    )));
+                    )), ctx, "step_pmi_losses")?;
             }
             None
         };
