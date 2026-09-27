@@ -6292,7 +6292,8 @@ fn complete_pcurve_values(record: &CurveParameterRecord) -> Option<[f64; 8]> {
 
     record.references.is_empty().then_some(())?;
     let mut tokens = record.scalar_tokens.iter().peekable();
-    let mut values = Vec::with_capacity(8);
+    let mut values = [0.0; 8];
+    let mut value_count = 0;
     let mut cursor = 0;
     while cursor < record.body.len() {
         if record.body.get(cursor..cursor + HELD_SCALAR_OPEN.len()) == Some(HELD_SCALAR_OPEN) {
@@ -6301,7 +6302,8 @@ fn complete_pcurve_values(record: &CurveParameterRecord) -> Option<[f64; 8]> {
             (!token.raw.is_empty()
                 && record.body.get(cursor..cursor + token.raw.len()) == Some(token.raw.as_slice()))
             .then_some(())?;
-            values.push(token.value);
+            *values.get_mut(value_count)? = token.value;
+            value_count += 1;
             cursor += token.raw.len();
             (record.body.get(cursor) == Some(&HELD_SCALAR_CLOSE)).then_some(())?;
             cursor += 1;
@@ -6311,46 +6313,59 @@ fn complete_pcurve_values(record: &CurveParameterRecord) -> Option<[f64; 8]> {
             (!token.raw.is_empty()
                 && record.body.get(cursor..cursor + token.raw.len()) == Some(token.raw.as_slice()))
             .then_some(())?;
-            values.push(token.value);
+            *values.get_mut(value_count)? = token.value;
+            value_count += 1;
             cursor += token.raw.len();
             tokens.next();
         } else if record.body[cursor] == 0x12 {
-            values.push(0.0);
+            *values.get_mut(value_count)? = 0.0;
+            value_count += 1;
             cursor += 1;
         } else {
             return None;
         }
     }
     tokens.next().is_none().then_some(())?;
-    values.iter().all(|value| value.is_finite()).then_some(())?;
-    values.try_into().ok()
+    (value_count == values.len() && values.iter().all(|value| value.is_finite()))
+        .then_some(values)
 }
 
 /// Interpret complete eight-slot parameter lanes for pcurve-family rows.
 pub(crate) fn pcurve_endpoints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     parameters: &[CurveParameterRecord],
     topology: &[CurveTopologyRow],
-) -> Vec<PcurveEndpoints> {
-    let mut result = uniquely_bounded_parameter_records(parameters)
-        .into_iter()
-        .filter(|record| matches!(record.type_byte, 0x00 | 0x01 | 0x06 | 0x08))
-        .filter_map(|record| {
-            let values = complete_pcurve_values(record)?;
-            let mut matching = topology.iter().filter(|row| row.id == record.curve_id);
-            let topology = matching.next()?;
-            matching.next().is_none().then_some(())?;
-            (topology.type_byte == record.type_byte).then_some(())?;
-            Some(PcurveEndpoints {
+) -> Result<Vec<PcurveEndpoints>, cadmpeg_core::CodecError> {
+    let mut result = Vec::new();
+    for record in crate::identity::uniquely_identified_rows_checked(
+        ctx,
+        parameters,
+        |record| record.curve_id,
+    )? {
+        if !matches!(record.type_byte, 0x00 | 0x01 | 0x06 | 0x08) {
+            continue;
+        }
+        let Some(values) = complete_pcurve_values(record) else {
+            continue;
+        };
+        let mut matching = topology.iter().filter(|row| row.id == record.curve_id);
+        let Some(topology) = matching.next() else {
+            continue;
+        };
+        if matching.next().is_some() || topology.type_byte != record.type_byte {
+            continue;
+        }
+        ctx.try_reserve_items(&mut result, 1, "creo pcurve endpoint rows")?;
+        result.push(PcurveEndpoints {
                 curve_id: record.curve_id,
                 faces: topology.faces,
                 face_0_endpoints: [[values[0], values[1]], [values[4], values[5]]],
                 face_1_endpoints: [[values[2], values[3]], [values[6], values[7]]],
                 offset: record.offset,
-            })
-        })
-        .collect::<Vec<_>>();
+        });
+    }
     result.sort_by_key(|record| record.offset);
-    result
+    Ok(result)
 }
 
 fn decode_two_chart_scalar(
