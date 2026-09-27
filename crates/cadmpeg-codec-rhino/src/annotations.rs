@@ -652,8 +652,9 @@ fn annotation_record_dropped(
     error: impl std::fmt::Display,
 ) -> Result<(), CodecError> {
     reserve_record_slot(ctx, losses, "Rhino annotation loss notes")?;
-    let message = admitted_format(
+    let loss = crate::wire::admitted_loss(
         ctx,
+        RhinoLossCode::AnnotationRecordDropped,
         format_args!("annotation object {source_id} at offset {source_offset} (class {class_uuid}) could not be transferred: {error}"),
         "Rhino annotation loss text",
     )?;
@@ -663,9 +664,7 @@ fn annotation_record_dropped(
         "Rhino annotation loss tag",
     )?;
     losses.push(
-        RhinoLossCode::AnnotationRecordDropped
-            .note(message)
-            .with_provenance(SourceProvenance::root("rhino", source_offset as u64).with_tag(tag)),
+        loss.with_provenance(SourceProvenance::root("rhino", source_offset as u64).with_tag(tag)),
     );
     Ok(())
 }
@@ -752,14 +751,15 @@ pub(crate) fn install(
                     }
                     Err(error) => {
                         reserve_record_slot(ctx, &mut losses, "Rhino annotation loss notes")?;
-                        losses.push(RhinoLossCode::AnnotationUserdataDropped.note(admitted_format(
+                        losses.push(crate::wire::admitted_loss(
                             ctx,
+                            RhinoLossCode::AnnotationUserdataDropped,
                             format_args!(
                                 "V5 text-extra userdata at offset {} could not be transferred: {error}",
                                 extra.range.start
                             ),
                             "Rhino annotation userdata loss text",
-                        )?));
+                        )?);
                     }
                 }
             }
@@ -1915,6 +1915,34 @@ mod tests {
             result,
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.operation == "Rhino annotation loss notes"
+        ));
+    }
+
+    #[test]
+    fn dropped_annotation_loss_note_copy_refuses_retained_limit() {
+        let class_uuid = Uuid::from_canonical([1; 16]);
+        let message = format!(
+            "annotation object fixture at offset 0 (class {class_uuid}) could not be transferred: malformed"
+        );
+        let refusal = with_retained_limit(
+            &[],
+            u64::try_from(message.len()).expect("test text fits u64"),
+            |ctx| {
+                super::annotation_record_dropped(
+                    ctx,
+                    &mut Vec::new(),
+                    "fixture",
+                    0,
+                    class_uuid,
+                    "malformed",
+                )
+                .expect_err("loss note copy exceeds the exact first-message budget")
+            },
+        );
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(item)
+                if item.operation == "Rhino annotation loss text"
         ));
     }
 
