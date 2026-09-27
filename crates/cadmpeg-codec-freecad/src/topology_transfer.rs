@@ -40,7 +40,7 @@ use crate::brep::{
 };
 use crate::loss::FreecadLossCode;
 use crate::native::PropertyRecord;
-use crate::resource::{collection_vec, copied_items, insert_hash_map, insert_hash_set, reserve_vec_items, retained_string};
+use crate::resource::{collection_vec, copied_items, insert_hash_map, insert_hash_set, reserve_vec_items, retained_format, retained_string};
 use cadmpeg_ir::report::loss::LossNote;
 
 const EPS_TOPOLOGY_TRANSFER_GEOMETRY: f64 = 1.0e-9;
@@ -431,21 +431,18 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
 
     fn body_roots(&self) -> Result<Vec<BodyRoot>, CodecError> {
         let has_multiple_roots = self.tables.roots.len() > 1;
-        self.tables
-            .roots
-            .iter()
-            .enumerate()
-            .map(|(index, root)| {
-                self.shape(root.shape)?;
-                let transform = self.tables.location(root.location)?;
-                Ok(BodyRoot {
-                    shape: root.shape,
-                    transform,
-                    reversed: is_reversed(root.orientation),
-                    root_ordinal: has_multiple_roots.then_some(index + 1),
-                })
-            })
-            .collect()
+        let mut roots = collection_vec(self.ctx, self.tables.roots.len(), "FreeCAD topology body roots")?;
+        for (index, root) in self.tables.roots.iter().enumerate() {
+            self.shape(root.shape)?;
+            let transform = self.tables.location(root.location)?;
+            roots.push(BodyRoot {
+                shape: root.shape,
+                transform,
+                reversed: is_reversed(root.orientation),
+                root_ordinal: has_multiple_roots.then_some(index + 1),
+            });
+        }
+        Ok(roots)
     }
 
     fn append_body(
@@ -650,11 +647,13 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             crate::native::model_key(&self.payload.id, &key).map_err(CodecError::malformed)?,
         );
         if shape.kind() == TextShapeKind::Shell {
-            let face_uses = shape
-                .children
-                .iter()
-                .filter(|child| self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Face)
-                .collect::<Vec<_>>();
+            let face_count = shape.children.iter().filter(|child| {
+                self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Face
+            }).count();
+            let mut face_uses = collection_vec(self.ctx, face_count, "FreeCAD shell face uses")?;
+            face_uses.extend(shape.children.iter().filter(|child| {
+                self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Face
+            }));
             let components = self.face_components(ctx, &face_uses, transform)?;
             let mut shell_ids = crate::resource::collection_vec(
                 self.ctx,
@@ -835,7 +834,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                             .compose(edge_transform)
                             .map_err(location_transform_error)?,
                     );
-                    keys.insert(format!("edge:{}", edge_key.0));
+                    let key = retained_format(ctx, format_args!("edge:{}", edge_key.0), "FreeCAD face connectivity edge identity")?;
+                    insert_hash_set(ctx, &mut keys, key, "FreeCAD face connectivity edge keys")?;
                     let edge = self.shape(edge_use.shape)?;
                     for vertex_use in edge.children.iter().filter(|child| {
                         self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Vertex
@@ -849,7 +849,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                                 .compose(vertex_transform)
                                 .map_err(location_transform_error)?,
                         );
-                        keys.insert(format!("vertex:{}", vertex_key.0));
+                        let key = retained_format(ctx, format_args!("vertex:{}", vertex_key.0), "FreeCAD face connectivity vertex identity")?;
+                        insert_hash_set(ctx, &mut keys, key, "FreeCAD face connectivity vertex keys")?;
                     }
                 }
             }
@@ -1020,12 +1021,13 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 .compose(self.tables.location(wire_use.location)?)
                 .map_err(location_transform_error)?;
             let wire = self.shape(wire_use.shape)?.clone();
-            let mut edge_uses = wire
-                .children
-                .iter()
-                .filter(|child| self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Edge)
-                .cloned()
-                .collect::<Vec<_>>();
+            let edge_count = wire.children.iter().filter(|child| {
+                self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Edge
+            }).count();
+            let mut edge_uses = collection_vec(self.ctx, edge_count, "FreeCAD wire edge uses")?;
+            edge_uses.extend(wire.children.iter().filter(|child| {
+                self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Edge
+            }).cloned());
             let wire_reversed = face_reversed ^ is_reversed(wire_use.orientation);
             if wire_reversed {
                 edge_uses.reverse();
@@ -1041,18 +1043,17 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 )
                 .map_err(CodecError::malformed)?,
             );
-            let coedge_ids = (0..edge_uses.len())
-                .map(|index| {
-                    Ok(CoedgeId::compose(
+            let mut coedge_ids = collection_vec(self.ctx, edge_uses.len(), "FreeCAD loop coedge IDs")?;
+            for index in 0..edge_uses.len() {
+                coedge_ids.push(CoedgeId::compose(
                         &cadmpeg_ir::identity_namespace!("fcstd", "model", "coedge"),
                         crate::native::model_key(
                             &self.payload.id,
                             format!("{}:{}:{}", face_key, loop_index + 1, index + 1),
                         )
                         .map_err(CodecError::malformed)?,
-                    ))
-                })
-                .collect::<Result<Vec<_>, CodecError>>()?;
+                    ));
+            }
             for (index, edge_use) in edge_uses.iter().enumerate() {
                 let edge_transform = wire_transform
                     .compose(self.tables.location(edge_use.location)?)
@@ -1329,11 +1330,9 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
     ) -> Result<IndexedPolygon, CodecError> {
         let polygon = &self.tables.polygons_on_triangulations[index - 1];
         let triangulation = &self.tables.triangulations[triangulation_index - 1];
-        let points = polygon
-            .nodes
-            .iter()
-            .map(|node| {
-                usize::try_from(*node)
+        let mut points = collection_vec(self.ctx, polygon.nodes.len(), "FreeCAD indexed polygon points")?;
+        for node in &polygon.nodes {
+                let point = usize::try_from(*node)
                     .ok()
                     .and_then(|node| node.checked_sub(1))
                     .and_then(|node| triangulation.nodes().get(node).copied())
@@ -1341,10 +1340,13 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                         CodecError::Malformed(
                             "polygon-on-triangulation node is out of bounds".into(),
                         )
-                    })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        IndexedPolygon::try_new(self.ctx, points, polygon.parameters.clone(), polygon.deflection)
+                    })?;
+                points.push(point);
+        }
+        let parameters = polygon.parameters.as_ref().map(|parameters| {
+            copied_items(self.ctx, parameters, "FreeCAD indexed polygon parameters")
+        }).transpose()?;
+        IndexedPolygon::try_new(self.ctx, points, parameters, polygon.deflection)
     }
 
     fn polygon_parameters(&self, representation: &TextEdgeRepresentation) -> Option<&[FiniteReal]> {
@@ -2327,6 +2329,9 @@ pub(crate) fn normalize_occt_curve_range(
 
 #[cfg(test)]
 pub(crate) mod tests;
+
+#[cfg(test)]
+mod admission_tests;
 
 #[cfg(test)]
 mod numerical_range_tests;

@@ -24,7 +24,7 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::collections::HashSet;
 use std::io::Cursor;
 
-fn assert_codec_collection_refusal(bytes: &[u8], operation: &str) {
+pub(super) fn assert_codec_collection_refusal(bytes: &[u8], operation: &str) {
     let mut options = DecodeOptions::default();
     options.policy.limits.max_collection_items = 0;
     for _ in 0..4096 {
@@ -49,7 +49,7 @@ fn assert_codec_collection_refusal(bytes: &[u8], operation: &str) {
     panic!("{operation} was not reached");
 }
 
-fn assert_codec_retained_refusal(bytes: &[u8], operation: &str) {
+pub(super) fn assert_codec_retained_refusal(bytes: &[u8], operation: &str) {
     let mut options = DecodeOptions::default();
     options.policy.limits.max_retained_bytes = 0;
     for _ in 0..4096 {
@@ -74,7 +74,7 @@ fn assert_codec_retained_refusal(bytes: &[u8], operation: &str) {
     panic!("{operation} was not reached");
 }
 
-fn triangulated_face_archive() -> Vec<u8> {
+pub(super) fn triangulated_face_archive() -> Vec<u8> {
     let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="MeshShape" id="1"/></Objects><ObjectData Count="1"><Object name="MeshShape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
     let brep = b"CASCADE Topology V3, (c) Open Cascade
 Locations 1
