@@ -1253,7 +1253,10 @@ fn binary_principal_unit(data: &[u8]) -> Option<legacy::PrincipalUnitSystem> {
     }
 }
 
-fn cmnm_model_name(data: &[u8]) -> Option<(String, usize)> {
+fn cmnm_model_name(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+) -> Option<Result<(String, usize), CodecError>> {
     const PREFIX: &[u8] = &cmnm::PREFIX_VALUE;
     let marker = find(data, PREFIX, 0)?;
     let start = marker + cmnm::NAME_LENGTH_HEX;
@@ -1263,15 +1266,19 @@ fn cmnm_model_name(data: &[u8]) -> Option<(String, usize)> {
     let name = data.get(marker + cmnm::LEN..marker + cmnm::LEN + length)?;
     (!name.is_empty() && !name.iter().any(|byte| matches!(byte, 0 | b'\n' | b'\r')))
         .then_some(())?;
-    Some((
-        std::str::from_utf8(name).ok()?.to_string(),
-        marker + cmnm::LEN,
-    ))
+    let name = std::str::from_utf8(name).ok()?;
+    Some(
+        ctx.copy_retained_text(name, "creo CMNM model name")
+            .map(|name| (name, marker + cmnm::LEN)),
+    )
 }
 
 /// Find the root model name stored by binary sections that do not carry a
 /// `CMNM` header record.
-fn native_model_name(sections: &[ScannedSection<'_>]) -> Option<(String, usize)> {
+fn native_model_name(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+) -> Option<Result<(String, usize), CodecError>> {
     const FIELD: &[u8] = b"model_name\0";
 
     for section in sections {
@@ -1296,7 +1303,10 @@ fn native_model_name(sections: &[ScannedSection<'_>]) -> Option<(String, usize)>
             let value = &region[name_start..value_end];
             if let Ok(name) = std::str::from_utf8(value) {
                 if !name.is_empty() && name.chars().all(|character| !character.is_control()) {
-                    return Some((name.to_owned(), section.section.offset() + name_start));
+                    return Some(
+                        ctx.copy_retained_text(name, "creo native model name")
+                            .map(|name| (name, section.section.offset() + name_start)),
+                    );
                 }
             }
             from = value_end + 1;
@@ -2542,7 +2552,9 @@ pub(crate) fn scan_bytes<'a>(
 ) -> Result<ContainerScan<'a>, CodecError> {
     let data = data.into();
     let version_line = line_at(&data, 0);
-    let mut model_name = cmnm_model_name(&data).map(|(name, offset)| ModelName { name, offset });
+    let mut model_name = cmnm_model_name(ctx, &data)
+        .transpose()?
+        .map(|(name, offset)| ModelName { name, offset });
 
     // The binary body begins after the ASCII header and TOC. Prefer the TOC end
     // marker; fall back to the header end; fall back to the magic line.
@@ -2638,7 +2650,7 @@ pub(crate) fn scan_bytes<'a>(
     let references = reference_scan(ctx, &sections)?;
     let layout = identify_layout(&data, &sections, legacy_ascii);
     if model_name.is_none() && !matches!(layout, Layout::LegacyAscii(_)) {
-        if let Some((name, offset)) = native_model_name(&sections) {
+        if let Some((name, offset)) = native_model_name(ctx, &sections).transpose()? {
             model_name = Some(ModelName { name, offset });
         }
     }
