@@ -401,3 +401,144 @@ fn drawing_external_target_text_refuses_retained_limit() {
                 && refusal.operation == "step_drawing_external_target_text"
     ));
 }
+
+#[test]
+fn drawing_untyped_relationship_loss_refuses_collection_limit() {
+    let source = format!("{HEADER}#1=REPRESENTATION_CONTEXT('','');#2=PRESENTATION_VIEW('Front',(#3),#1);#3=ITEM();{TAIL}");
+    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid drawing exchange");
+    let record = exchange.records().get(&2).expect("view record");
+    let parameters = super::super::source_parameters(record, "PRESENTATION_VIEW");
+    let refused = (0..=128).any(|limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+            .expect("root fits collection policy");
+        let identities = BTreeMap::new();
+        let typed = HashSet::from([3]);
+        let documents = BTreeMap::new();
+        let targets = super::super::TargetContext {
+            target_identities: &identities,
+            known_typed: &typed,
+            exchange: &exchange,
+            external_documents: &documents,
+            ctx: &ctx,
+        };
+        matches!(
+            super::super::add_reference_fields(
+                &mut BTreeMap::new(), "PRESENTATION_VIEW", parameters, 2, &targets, &mut Vec::new(),
+            ),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == "step_drawing_losses"
+        )
+    });
+    assert!(refused, "no collection limit refused the drawing relationship loss");
+}
+
+fn decoded_drawings(
+    source: &[u8],
+    exchange: &crate::parse::Exchange,
+) -> BTreeMap<u64, cadmpeg_ir::drawings::Drawing> {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("root fits default policy");
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    super::super::decode(exchange, &mut ir, &HashSet::new(), &BTreeMap::new(), &ctx)
+        .expect("valid drawing graph");
+    ir.model.drawings.into_iter().map(|drawing| {
+        let id = drawing.native_ref.rsplit_once('#')
+            .expect("drawing source identity").1.parse().expect("numeric source identity");
+        (id, drawing)
+    }).collect()
+}
+
+fn sheet_usage_loss_refuses(typed_id: u64) {
+    let source = format!("{HEADER}#1=DRAWING_DEFINITION('Main','detail');#2=DRAWING_REVISION('A',#1,'revision');#3=REPRESENTATION_CONTEXT('','');#4=DRAWING_SHEET_REVISION('Sheet',(),#3,#2);#5=DRAWING_SHEET_REVISION_USAGE(#4,#2,'one');{TAIL}");
+    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid sheet exchange");
+    let baseline = decoded_drawings(source.as_bytes(), &exchange);
+    let refused = (0..=128).any(|limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+            .expect("root fits collection policy");
+        let identities = BTreeMap::new();
+        let typed = HashSet::from([typed_id]);
+        let documents = BTreeMap::new();
+        let targets = super::super::TargetContext {
+            target_identities: &identities,
+            known_typed: &typed,
+            exchange: &exchange,
+            external_documents: &documents,
+            ctx: &ctx,
+        };
+        matches!(
+            super::super::add_sheet_revision_usages(
+                &exchange, &mut baseline.clone(), &targets, &mut Vec::new(), Some(&ctx),
+            ),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == "step_drawing_losses"
+        )
+    });
+    assert!(refused, "no collection limit refused sheet usage loss");
+}
+
+#[test]
+fn drawing_sheet_unresolved_loss_refuses_collection_limit() {
+    sheet_usage_loss_refuses(2);
+}
+
+#[test]
+fn drawing_revision_unresolved_loss_refuses_collection_limit() {
+    sheet_usage_loss_refuses(4);
+}
+
+fn association_loss_refuses(typed_id: u64) {
+    let source = format!("{HEADER}#1=REPRESENTATION_CONTEXT('','');#2=DRAUGHTING_MODEL('Model',(),#1);#3=ITEM('semantic');#4=DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER('','',#3,#2,(#5),#6);#5=ITEM('associated');#6=ANNOTATION_PLACEHOLDER_OCCURRENCE('placeholder',(),#5,.GPS_DATA.,$);{TAIL}");
+    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid association exchange");
+    let baseline = decoded_drawings(source.as_bytes(), &exchange);
+    let refused = (0..=128).any(|limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+            .expect("root fits collection policy");
+        let identities = BTreeMap::new();
+        let typed_records = HashSet::from([typed_id]);
+        let documents = BTreeMap::new();
+        let targets = super::super::TargetContext {
+            target_identities: &identities,
+            known_typed: &typed_records,
+            exchange: &exchange,
+            external_documents: &documents,
+            ctx: &ctx,
+        };
+        matches!(
+            super::super::add_draughting_model_associations(
+                &exchange, &mut baseline.clone(), &targets, &mut Vec::new(), &mut HashSet::new(),
+            ),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == "step_drawing_losses"
+        )
+    });
+    assert!(refused, "no collection limit refused association loss");
+}
+
+#[test]
+fn drawing_semantic_definition_loss_refuses_collection_limit() {
+    association_loss_refuses(3);
+}
+
+#[test]
+fn drawing_associated_item_loss_refuses_collection_limit() {
+    association_loss_refuses(5);
+}
+
+#[test]
+fn drawing_placeholder_loss_refuses_collection_limit() {
+    association_loss_refuses(6);
+}
