@@ -78,3 +78,45 @@ fn edge_operand_wire_rejects_partial_resolved_axis() {
         assert!(error.contains("resolved_axis_direction"));
     }
 }
+
+fn edge_operand_for_borrowed(axis: bool) -> super::DesignEdgeOperand {
+    let mut wire = serde_json::json!({
+        "id":"f3d:native:edge-operand#0", "scope_record_index":1,
+        "scope_reference_ordinal":0, "record_index":2,"byte_offset":10,
+        "class_tag":"346","paired_byte_offset":20,"paired_class_tag":"262",
+        "recipe_record_index":5,"recipe_record_byte_offset":30,
+        "recipe_id":"recipe","recipe_prefix_offset":41,"recipe_prefix_bytes":"",
+        "recipe_references":[],"recipe_program_offset":50,"recipe_program":[],
+        "next_record_index":4,"next_byte_offset":100
+    });
+    if axis {
+        wire["resolved_axis_origin"] =
+            serde_json::to_value(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)).unwrap();
+        wire["resolved_axis_direction"] =
+            serde_json::to_value(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)).unwrap();
+    }
+    serde_json::from_value(wire).unwrap()
+}
+
+#[test]
+fn edge_operand_borrowed_wire_matches_owned_wire_bytes() {
+    for axis in [false, true] {
+        let operand = edge_operand_for_borrowed(axis);
+        let owned = super::DesignEdgeOperandDraft::from(operand.clone());
+        assert_eq!(
+            serde_json::to_vec(&operand).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+}
+
+#[test]
+fn edge_operand_native_retained_limit_refuses_before_clone() {
+    let operand = edge_operand_for_borrowed(true);
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &operand,
+        "design_edge_operands",
+        || super::EDGE_OPERAND_CLONE_COUNT.with(|count| count.set(0)),
+        || super::EDGE_OPERAND_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
