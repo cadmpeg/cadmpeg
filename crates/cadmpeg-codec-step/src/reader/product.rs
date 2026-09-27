@@ -639,7 +639,7 @@ fn apply_body_placements(
         .collect::<BTreeMap<_, _>>();
     let mut representation_cache = BTreeMap::new();
     let mut placements_by_body = BTreeMap::<BodyId, Vec<(u64, Transform)>>::new();
-    let drawing_owned_items = drawing_owned_items(exchange);
+    let drawing_owned_items = drawing_owned_items(exchange, ctx)?;
     for (id, item) in exchange.entities("MAPPED_ITEM") {
         if item.partial("MAPPED_ITEM").is_none() {
             continue;
@@ -716,7 +716,10 @@ fn apply_body_placements(
     Ok(())
 }
 
-fn drawing_owned_items(exchange: &Exchange) -> BTreeSet<u64> {
+fn drawing_owned_items(
+    exchange: &Exchange,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<BTreeSet<u64>, CodecError> {
     let mut pending = Vec::new();
     for record in exchange.records().values() {
         let drawing_owner = record
@@ -729,25 +732,34 @@ fn drawing_owned_items(exchange: &Exchange) -> BTreeSet<u64> {
                 .iter()
                 .flat_map(|partial| partial.parameters.iter())
             {
-                collect_references(value, &mut pending);
+                collect_references(value, &mut pending, ctx)?;
             }
         }
     }
     let mut items = BTreeSet::new();
     let mut visited = BTreeSet::new();
     while let Some(id) = pending.pop() {
-        if !visited.insert(id) {
+        if visited.contains(&id) {
             continue;
         }
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "step_drawing_owned_visited")?;
+        }
+        visited.insert(id);
         let Some(record) = exchange.records().get(&id) else {
             continue;
         };
         if record.partial("MAPPED_ITEM").is_some() {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "step_drawing_owned_items")?;
+            }
             items.insert(id);
             continue;
         }
         if let Some(representation_items) = super::representation::items(record) {
-            pending.extend(representation_items);
+            for item in representation_items {
+                push_drawing_reference(&mut pending, item, ctx)?;
+            }
         }
         for partial in record.partials.iter().filter(|partial| {
             matches!(
@@ -762,26 +774,51 @@ fn drawing_owned_items(exchange: &Exchange) -> BTreeSet<u64> {
                 continue;
             };
             for value in values {
-                collect_references(value, &mut pending);
+                collect_references(value, &mut pending, ctx)?;
             }
         }
     }
-    items
+    Ok(items)
 }
 
-fn collect_references(value: &Value, references: &mut Vec<u64>) {
+fn collect_references(
+    value: &Value,
+    references: &mut Vec<u64>,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
+    let _nested = ctx
+        .map(|ctx| ctx.enter_nested("step_drawing_reference_walk"))
+        .transpose()?;
     match value {
         Value::Reference(id) => {
-            references.push(*id);
+            push_drawing_reference(references, *id, ctx)?;
         }
         Value::List(values) => {
             for value in values {
-                collect_references(value, references);
+                collect_references(value, references, ctx)?;
             }
         }
-        Value::Typed(_, value) => collect_references(value, references),
+        Value::Typed(_, value) => collect_references(value, references, ctx)?,
         _ => {}
     }
+    Ok(())
+}
+
+fn push_drawing_reference(
+    references: &mut Vec<u64>,
+    id: u64,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
+    const OPERATION: &str = "step_drawing_owned_pending";
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, OPERATION)?;
+    }
+    references.try_reserve(1).map_err(|_| match ctx {
+        Some(ctx) => ctx.refuse_codec_limit(OPERATION, 0, 1),
+        None => cadmpeg_core::decode::refuse_local_limit(OPERATION, 0, 1),
+    })?;
+    references.push(id);
+    Ok(())
 }
 
 struct Usage {

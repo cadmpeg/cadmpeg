@@ -17,6 +17,65 @@ use crate::loss::StepLossCode;
 use crate::test_support::exchange::{decode_inline, export};
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
+const DRAWING_OWNED_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=DRAUGHTING_MODEL('',(#2),$);#2=REPRESENTATION('',(#3),$);#3=MAPPED_ITEM();ENDSEC;END-ISO-10303-21;";
+
+fn drawing_owned_refuses(operation: &str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (exchange, _) = crate::parse::parse(DRAWING_OWNED_SOURCE)
+        .expect("valid drawing owned source");
+    let refused = (0..=16).any(|limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(DRAWING_OWNED_SOURCE, &arena, &policy)
+            .expect("root fits selected policy");
+        matches!(
+            super::drawing_owned_items(&exchange, Some(&ctx)),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == operation
+        )
+    });
+    assert!(refused, "no collection limit refused {operation}");
+}
+
+#[test]
+fn drawing_owned_pending_refuses_collection_limit() {
+    drawing_owned_refuses("step_drawing_owned_pending");
+}
+
+#[test]
+fn drawing_owned_visited_refuses_collection_limit() {
+    drawing_owned_refuses("step_drawing_owned_visited");
+}
+
+#[test]
+fn drawing_owned_items_refuse_collection_limit() {
+    drawing_owned_refuses("step_drawing_owned_items");
+}
+
+#[test]
+fn drawing_reference_walk_refuses_depth_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (exchange, _) = crate::parse::parse(DRAWING_OWNED_SOURCE)
+        .expect("valid drawing owned source");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(DRAWING_OWNED_SOURCE, &arena, &policy)
+        .expect("root fits selected policy");
+    assert!(matches!(
+        super::drawing_owned_items(&exchange, Some(&ctx)),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RecursionDepth
+                && refusal.operation == "step_drawing_reference_walk"
+    ));
+}
+
 #[test]
 fn pending_occurrence_refuses_caller_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
