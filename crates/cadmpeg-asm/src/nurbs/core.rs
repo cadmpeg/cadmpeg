@@ -223,7 +223,12 @@ where
     D: Fn(&cadmpeg_core::decode::DecodeContext<'_>, toks::SubtypeScope<'_>) -> Option<Result<T, cadmpeg_core::CodecError>>,
 {
     let mut seen = std::collections::HashSet::new();
-    let mut pending = vec![toks::subtype_refs(toks)];
+    let mut pending = propagate_resource!(crate::decode_alloc::counted_vec(
+        ctx,
+        1,
+        "ASM subtype search stack",
+    ));
+    pending.push(toks::subtype_refs(toks));
     while let Some(references) = pending.last_mut() {
         let Some(index) = references.next() else {
             pending.pop();
@@ -246,7 +251,12 @@ where
         if let Some(decoded) = decode_scope(ctx, target) {
             return Some(decoded);
         }
-        pending.push(toks::subtype_refs(target.tokens()));
+        propagate_resource!(crate::decode_alloc::push_vec(
+            ctx,
+            &mut pending,
+            toks::subtype_refs(target.tokens()),
+            "ASM subtype search stack",
+        ));
     }
     None
 }
@@ -565,4 +575,28 @@ fn decode_unique_cache<T>(
         }
     }
     decoded
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cache_from_subtype_refs;
+    use crate::nurbs::toks::SubtypeTable;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn subtype_search_stack_refuses_collection_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let table = SubtypeTable::from_records(&ctx, &[]).unwrap();
+        let error = cache_from_subtype_refs::<(), _>(&ctx, &[], &table, |_, _| None)
+            .expect("stack allocation must refuse")
+            .expect_err("stack allocation must refuse");
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected collection refusal: {error:?}");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    }
 }

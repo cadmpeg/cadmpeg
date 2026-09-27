@@ -119,6 +119,91 @@ fn unknown_carrier_source_copy_refuses_retained_limit_before_emission() {
 }
 
 #[test]
+fn unknown_passthrough_output_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let bytes = b"opaque";
+    let records = [Record {
+        index: 0,
+        name: "unknown".into(),
+        tokens: Vec::<Token>::new().into(),
+        offset: 0,
+        len: bytes.len(),
+    }];
+    let reach = Reachable {
+        undecoded_carriers: HashSet::from([0]),
+        ..Reachable::default()
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let mut out = AsmBrep::default();
+    let error = super::emit_passthrough_unknowns(
+        &ctx,
+        &mut out,
+        &records,
+        bytes,
+        &reach,
+        crate::asm_format!("f3d"),
+    )
+    .expect_err("the emitted unknown vector must be charged");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert!(out.unknowns.is_empty());
+}
+
+#[test]
+fn emitted_vertices_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let records = [Record {
+        index: 0,
+        name: "vertex".into(),
+        tokens: vec![
+            Token::Ref(-1),
+            Token::Long(-1),
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Long(0),
+            Token::Ref(1),
+        ]
+        .into(),
+        offset: 0,
+        len: 0,
+    }];
+    let by_index = [(0, &records[0])].into_iter().collect();
+    let reach = Reachable {
+        vertices: HashSet::from([0]),
+        points: HashSet::from([1]),
+        ..Reachable::default()
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut out = AsmBrep::default();
+    let error = emit_vertices(
+        &ctx,
+        &mut out,
+        &records,
+        &by_index,
+        &reach,
+        crate::asm_format!("f3d"),
+    )
+    .expect_err("the emitted vertex vector must be charged");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert!(out.vertices.is_empty());
+}
+
+#[test]
 fn face_sidedness_retains_the_decode_time_carrier_flip() {
     for (cosine, native, normalized) in [
         (1.0, Sense::Forward, Sense::Forward),
@@ -386,7 +471,11 @@ fn tolerant_vertex_uses_the_third_double_for_evaluation_and_unset_state() {
                 ..Reachable::default()
             };
             let mut out = AsmBrep::default();
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let policy = cadmpeg_core::decode::DecodePolicy::service();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             emit_vertices(
+                &ctx,
                 &mut out,
                 &records,
                 &by_index,
@@ -443,7 +532,11 @@ fn tolerant_vertex_refuses_nonfinite_leading_tolerance_at_read() {
         points: HashSet::from([1]),
         ..Reachable::default()
     };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = emit_vertices(
+        &ctx,
         &mut AsmBrep::default(),
         &records,
         &by_index,
@@ -604,7 +697,11 @@ fn evaluated_and_absent_vertex_slots_have_distinct_native_tail_wires() {
             ..Reachable::default()
         };
         let mut out = AsmBrep::default();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         emit_vertices(
+            &ctx,
             &mut out,
             &records,
             &by_index,
