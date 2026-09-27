@@ -1545,16 +1545,28 @@ fn edge_range_matches_curve(
     )
 }
 
-fn select_boundary_edge(
-    candidates: &[Edge],
-    carrier_index: &ModelIndex<'_>,
-    surface_id: &SurfaceId,
-    pcurves: &[(PcurveGeometry, [f64; 2])],
+#[derive(Clone, Copy)]
+struct BoundaryMatch<'a> {
+    surface_id: &'a SurfaceId,
+    pcurves: &'a [(PcurveGeometry, [f64; 2])],
     sense: Sense,
     tolerance: f64,
     parameter_curves_authoritative: bool,
+}
+
+fn select_boundary_edge(
+    candidates: &[Edge],
+    carrier_index: &ModelIndex<'_>,
+    boundary: BoundaryMatch<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(Edge, FinitePoint3, FinitePoint3, bool), BoundaryEdgeSelectionError> {
+    let BoundaryMatch {
+        surface_id,
+        pcurves,
+        sense,
+        tolerance,
+        parameter_curves_authoritative,
+    } = boundary;
     let mut candidates_with_endpoints = 0;
     let mut matched = reserve_vec(ctx, candidates.len(), "iges trimmed edge candidates")
         .map_err(BoundaryEdgeSelectionError::Resource)?;
@@ -2179,11 +2191,13 @@ pub(super) fn project(
                 let (source_edge, start, end, pcurves_agree) = match select_boundary_edge(
                     candidates,
                     &carrier_index,
-                    &surface_id,
-                    &pcurves,
-                    segment.sense,
-                    carrier_agreement_tolerance,
-                    segment.parameter_curves_authoritative,
+                    BoundaryMatch {
+                        surface_id: &surface_id,
+                        pcurves: &pcurves,
+                        sense: segment.sense,
+                        tolerance: carrier_agreement_tolerance,
+                        parameter_curves_authoritative: segment.parameter_curves_authoritative,
+                    },
                     ctx,
                 ) {
                     Ok(selected) => selected,

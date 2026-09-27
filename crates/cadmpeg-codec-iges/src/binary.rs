@@ -1463,7 +1463,8 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("valid test fixture");
         let result = super::normalize_start(&payload, lengths(), &ctx);
         assert!(matches!(
             result,
@@ -1475,10 +1476,10 @@ mod tests {
         ));
 
         let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service())
+            .expect("valid test fixture");
         assert_eq!(
-            super::normalize_start(&payload, lengths(), &ctx).unwrap(),
+            super::normalize_start(&payload, lengths(), &ctx).expect("valid test fixture"),
             b"ab"
         );
     }
@@ -1491,7 +1492,8 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 7;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("valid test fixture");
         let result = super::normalize_global(&values, &ctx);
         assert!(matches!(
             result,
@@ -1503,8 +1505,8 @@ mod tests {
         ));
 
         let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("valid test fixture");
         assert!(super::normalize_global(&values, &ctx).is_ok());
     }
 
@@ -1515,7 +1517,8 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 3;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("valid test fixture");
         let result = super::parameter_text(116, &[super::BinaryValue::Integer(1)], &ctx);
         assert!(matches!(
             result,
@@ -1527,10 +1530,11 @@ mod tests {
         ));
 
         let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("valid test fixture");
         assert_eq!(
-            super::parameter_text(116, &[super::BinaryValue::Integer(1)], &ctx).unwrap(),
+            super::parameter_text(116, &[super::BinaryValue::Integer(1)], &ctx)
+                .expect("valid test fixture"),
             b"116,1;"
         );
     }
@@ -1542,7 +1546,8 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("valid test fixture");
         let value = super::BinaryValue::String(b"ab".to_vec());
         let result = super::render_parameter_value(&value, false, &ctx);
         assert!(matches!(
@@ -1555,10 +1560,10 @@ mod tests {
         ));
 
         let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("valid test fixture");
         assert_eq!(
-            super::render_parameter_value(&value, false, &ctx).unwrap(),
+            super::render_parameter_value(&value, false, &ctx).expect("valid test fixture"),
             b"2Hab"
         );
     }
@@ -1570,11 +1575,12 @@ mod tests {
         let mut values = std::array::from_fn(|_| super::BinaryValue::Default);
         values[0] = super::BinaryValue::Integer(116);
         values[1] = super::BinaryValue::Pointer(0);
-        let directory = [super::BinaryDirectory::new(1, values).unwrap()];
+        let directory = [super::BinaryDirectory::new(1, values).expect("valid test fixture")];
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("valid test fixture");
         let result = super::normalize_directory_and_parameters(
             &mut Vec::new(),
             &directory,
@@ -1591,8 +1597,8 @@ mod tests {
         ));
 
         let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("valid test fixture");
         assert!(super::normalize_directory_and_parameters(
             &mut Vec::new(),
             &directory,
@@ -1610,7 +1616,7 @@ mod tests {
             &arena,
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
-        .unwrap();
+        .expect("valid test fixture");
         let mut output = Vec::new();
         assert!(super::render_parameter_line(&mut output, b"116;", 100_000_000, 1, &ctx).is_err());
         assert!(output.is_empty());
@@ -1623,7 +1629,8 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 80;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("valid test fixture");
         let mut output = Vec::new();
         let result = super::render_parameter_line(&mut output, b"116;", 1, 1, &ctx);
         assert!(matches!(
@@ -1637,9 +1644,9 @@ mod tests {
         assert!(output.is_empty());
 
         let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        super::render_parameter_line(&mut output, b"116;", 1, 1, &ctx).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("valid test fixture");
+        super::render_parameter_line(&mut output, b"116;", 1, 1, &ctx).expect("valid test fixture");
         assert_eq!(output.len(), 81);
     }
 
@@ -2093,7 +2100,8 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("valid test fixture");
         let mut stream = ValueStream::new(&bytes, lengths, Some(&ctx));
         assert!(matches!(
             stream.next(),
@@ -2104,11 +2112,11 @@ mod tests {
         ));
 
         let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("valid test fixture");
         let mut stream = ValueStream::new(&bytes, lengths, Some(&ctx));
         assert_eq!(
-            stream.next().unwrap(),
+            stream.next().expect("valid test fixture"),
             Some(BinaryValue::String(b"abc".to_vec()))
         );
     }
@@ -2132,7 +2140,8 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("valid test fixture");
         let mut stream = ValueStream::new(&bytes, lengths, Some(&ctx));
         assert!(matches!(
             stream.next(),
@@ -2143,10 +2152,13 @@ mod tests {
         ));
 
         let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("valid test fixture");
         let mut stream = ValueStream::new(&bytes, lengths, Some(&ctx));
-        assert_eq!(stream.next().unwrap(), Some(BinaryValue::Integer(7)));
+        assert_eq!(
+            stream.next().expect("valid test fixture"),
+            Some(BinaryValue::Integer(7))
+        );
     }
 
     #[test]
@@ -2168,7 +2180,8 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 3;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("valid test fixture");
         let mut stream = ValueStream::new(&bytes, lengths, Some(&ctx));
         assert!(matches!(
             stream.next(),
@@ -2180,11 +2193,11 @@ mod tests {
         ));
 
         let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("valid test fixture");
         let mut stream = ValueStream::new(&bytes, lengths, Some(&ctx));
         assert_eq!(
-            stream.next().unwrap(),
+            stream.next().expect("valid test fixture"),
             Some(BinaryValue::String(b"ab".to_vec()))
         );
     }
