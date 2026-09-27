@@ -257,9 +257,10 @@ pub(super) fn knit_surface_feature_definition(
 /// feature-owned surface row and that row is a plane. The table class is not
 /// part of the rule: Draft records use more than one enclosing table class.
 pub(in super::super) fn draft_neutral_plane_selection(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
-) -> FaceSelection {
+) -> Result<FaceSelection, CodecError> {
     let Some((table, entry)) = exactly_one(
         scan.features
             .entity_tables
@@ -273,7 +274,7 @@ pub(in super::super) fn draft_neutral_plane_selection(
                     .map(move |entry| (table, entry))
             }),
     ) else {
-        return FaceSelection::Unresolved;
+        return Ok(FaceSelection::Unresolved);
     };
     if table
         .surface_ids_iter()
@@ -281,16 +282,19 @@ pub(in super::super) fn draft_neutral_plane_selection(
         .count()
         != 1
     {
-        return FaceSelection::Unresolved;
+        return Ok(FaceSelection::Unresolved);
     }
     let Some(surface) = crate::surface::unique_surface_row(&scan.surfaces.rows, entry.entity_id)
         .filter(|surface| {
             surface.feature_id == feature_id && surface.kind == crate::surface::SurfaceKind::Plane
         })
     else {
-        return FaceSelection::Unresolved;
+        return Ok(FaceSelection::Unresolved);
     };
-    FaceSelection::Native(format!("creo:visibgeom:surface#{}", surface.id))
+    Ok(FaceSelection::Native(ctx.format_retained(
+        format_args!("creo:visibgeom:surface#{}", surface.id),
+        "creo draft neutral plane native",
+    )?))
 }
 
 pub(in super::super) fn feature_surface_transitions(
