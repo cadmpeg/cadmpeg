@@ -16,7 +16,7 @@ use cadmpeg_container::compression::{
     inflate_bounded_probe, inflate_deflate_owned, inflate_zlib_member_owned,
 };
 use cadmpeg_core::bytes::contains;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, View};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, ScopedReservation, View};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::hash::sha256_hex;
@@ -383,7 +383,7 @@ pub(crate) fn scan_bytes(bytes: &[u8]) -> ContainerScan<'_> {
     let version = native_version(bytes);
     let (blocks, directory, cache_cells) = match walk_native_markers(
         bytes,
-        MarkerAdmission::Probe,
+        ScanAdmission::Probe,
         |off| Ok(try_block(bytes, off)),
         |off| Ok(try_cache_cell(bytes, off)),
         |off| Ok(try_directory_entry(bytes, off)),
@@ -403,20 +403,42 @@ fn completed_scan(
     cache_cells: Vec<CacheCell>,
     compound_streams: Vec<CompoundStream>,
 ) -> ContainerScan<'_> {
+    let mut scan = assemble_scan(source_image, version, blocks, directory, cache_cells, compound_streams);
     let solidworks = scan_solidworks_envelopes(
-        blocks
-            .iter()
-            .map(|block| (block.section.name(), block.payload.as_slice()))
-            .chain(compound_streams.iter().map(|stream| {
-                (
-                    Some(stream.path.as_str()),
-                    stream
-                        .decoded_payload
-                        .as_deref()
-                        .unwrap_or(stream.payload.as_slice()),
-                )
-            })),
-    );
+        scan.sections().map(|section| (section.name(), section.payload())),
+        ScanAdmission::Probe,
+    )
+    .unwrap_or_default();
+    scan.solidworks = solidworks;
+    scan
+}
+
+fn completed_scan_charged<'a>(
+    ctx: &DecodeContext<'_>,
+    source_image: &'a [u8],
+    version: u32,
+    blocks: Vec<Block>,
+    directory: Vec<DirectoryEntry>,
+    cache_cells: Vec<CacheCell>,
+    compound_streams: Vec<CompoundStream>,
+) -> Result<ContainerScan<'a>, CodecError> {
+    let mut scan = assemble_scan(source_image, version, blocks, directory, cache_cells, compound_streams);
+    let solidworks = scan_solidworks_envelopes(
+        scan.sections().map(|section| (section.name(), section.payload())),
+        ScanAdmission::Decode(ctx),
+    )?;
+    scan.solidworks = solidworks;
+    Ok(scan)
+}
+
+fn assemble_scan(
+    source_image: &[u8],
+    version: u32,
+    blocks: Vec<Block>,
+    directory: Vec<DirectoryEntry>,
+    cache_cells: Vec<CacheCell>,
+    compound_streams: Vec<CompoundStream>,
+) -> ContainerScan<'_> {
     ContainerScan {
         source_image,
         version,
@@ -424,7 +446,7 @@ fn completed_scan(
         directory,
         cache_cells,
         compound_streams,
-        solidworks,
+        solidworks: SolidWorksEnvelopeScan::default(),
     }
 }
 
@@ -439,12 +461,12 @@ fn native_version(bytes: &[u8]) -> u32 {
 /// false-positive-free), then as a cache cell, then as a directory entry.
 type NativeWalk = Result<(Vec<Block>, Vec<DirectoryEntry>, Vec<CacheCell>), CodecError>;
 
-enum MarkerAdmission<'a, 'ctx> {
+enum ScanAdmission<'a, 'ctx> {
     Probe,
     Decode(&'ctx DecodeContext<'a>),
 }
 
-impl MarkerAdmission<'_, '_> {
+impl ScanAdmission<'_, '_> {
     fn reserve<T>(&self, values: &mut Vec<T>, operation: &'static str) -> Result<(), CodecError> {
         if let Self::Decode(ctx) = self {
             ctx.reserve_collection_vec(values, 1, operation)?;
@@ -456,7 +478,7 @@ impl MarkerAdmission<'_, '_> {
 
 fn walk_native_markers(
     bytes: &[u8],
-    admission: MarkerAdmission<'_, '_>,
+    admission: ScanAdmission<'_, '_>,
     mut try_one_block: impl FnMut(usize) -> Result<Option<RawBlock>, CodecError>,
     mut try_one_cell: impl FnMut(usize) -> Result<Option<CacheCell>, CodecError>,
     mut try_one_directory: impl FnMut(usize) -> Result<Option<DirectoryEntry>, CodecError>,
@@ -518,32 +540,34 @@ pub(crate) fn scan<'a>(
 ) -> Result<ContainerScan<'a>, CodecError> {
     if root.window().starts_with(&COMPOUND_FILE_MAGIC) {
         let compound_streams = compound_streams(ctx, root)?;
-        return Ok(completed_scan(
+        return completed_scan_charged(
+            ctx,
             root.window(),
             0,
             Vec::new(),
             Vec::new(),
             Vec::new(),
             compound_streams,
-        ));
+        );
     }
     let bytes = root.window();
     let version = native_version(bytes);
     let (blocks, directory, cache_cells) = walk_native_markers(
         bytes,
-        MarkerAdmission::Decode(ctx),
+        ScanAdmission::Decode(ctx),
         |off| try_block_budgeted(ctx, root, off),
         |off| try_cache_cell_with(bytes, off, |raw| nibble_swap_name_charged(ctx, raw)),
         |off| try_directory_entry_with(bytes, off, |raw| nibble_swap_name_charged(ctx, raw)),
     )?;
-    Ok(completed_scan(
+    completed_scan_charged(
+        ctx,
         bytes,
         version,
         blocks,
         directory,
         cache_cells,
         Vec::new(),
-    ))
+    )
 }
 
 /// CFB directory/FAT/open is [`CompoundSnapshot`]; ZLB unwrap and Parasolid
@@ -1142,14 +1166,14 @@ fn is_features_manifest_name(name: Option<&str>) -> bool {
 /// Resolve a manifest row to its configuration name without depending on XML
 /// namespace prefixes or on the order of the model rows.
 fn manifest_configuration_name(
+    admission: &ScanAdmission<'_, '_>,
     document: &roxmltree::Document<'_>,
     row: roxmltree::Node<'_, '_>,
     id: &str,
-) -> Option<String> {
+) -> Result<Option<String>, CodecError> {
     let direct = row
         .attribute("swName")
-        .filter(|value| !value.is_empty())
-        .map(str::to_string);
+        .filter(|value| !value.is_empty());
     let model = row
         .attribute("swModelRef")
         .and_then(|reference| {
@@ -1163,12 +1187,12 @@ fn manifest_configuration_name(
                     && node.attribute("swConfigurationId") == Some(id)
             })
         });
-    direct.or_else(|| {
+    let name = direct.or_else(|| {
         model
             .and_then(|node| node.attribute("swConfigurationName"))
             .filter(|value| !value.is_empty())
-            .map(str::to_string)
-    })
+    });
+    admission.copy_opt(name, "retain SLDPRT manifest configuration name")
 }
 
 fn explicit_active_configuration_index(scan: &ContainerScan<'_>) -> Option<usize> {
@@ -1204,6 +1228,97 @@ pub(crate) fn xml_text(bytes: &[u8]) -> Option<String> {
         Some(String::from_utf16_lossy(&units))
     } else {
         std::str::from_utf8(bytes).ok().map(str::to_string)
+    }
+}
+
+struct EnvelopeText<'a> {
+    text: String,
+    _scope: Option<ScopedReservation<'a>>,
+}
+
+impl ScanAdmission<'_, '_> {
+    fn text<'scope>(&'scope self, bytes: &[u8]) -> Result<Option<EnvelopeText<'scope>>, CodecError> {
+        match self {
+            Self::Probe => Ok(xml_text(bytes).map(|text| EnvelopeText { text, _scope: None })),
+            Self::Decode(ctx) => xml_text_charged(ctx, bytes),
+        }
+    }
+
+    fn copy_str(&self, value: &str, operation: &'static str) -> Result<String, CodecError> {
+        match self {
+            Self::Probe => Ok(value.to_owned()),
+            Self::Decode(ctx) => {
+                let mut copy = String::new();
+                ctx.reserve_retained_string(&mut copy, value.len(), operation)?;
+                copy.push_str(value);
+                Ok(copy)
+            }
+        }
+    }
+
+    fn copy_opt(&self, value: Option<&str>, operation: &'static str) -> Result<Option<String>, CodecError> {
+        value.map(|value| self.copy_str(value, operation)).transpose()
+    }
+
+    fn charge_item(&self, operation: &'static str) -> Result<(), CodecError> {
+        if let Self::Decode(ctx) = self {
+            ctx.charge_collection_items(1, operation)?;
+        }
+        Ok(())
+    }
+
+    fn reserve_vec<T>(&self, values: &mut Vec<T>, operation: &'static str) -> Result<(), CodecError> {
+        if let Self::Decode(ctx) = self {
+            ctx.reserve_collection_vec(values, 1, operation)?;
+        }
+        Ok(())
+    }
+
+    fn new_string(&self, bytes: usize, operation: &'static str) -> Result<String, CodecError> {
+        match self {
+            Self::Probe => Ok(String::with_capacity(bytes)),
+            Self::Decode(ctx) => {
+                let mut value = String::new();
+                ctx.reserve_retained_string(&mut value, bytes, operation)?;
+                Ok(value)
+            }
+        }
+    }
+}
+
+fn xml_text_charged<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<EnvelopeText<'ctx>>, CodecError> {
+    let bytes = bytes.strip_prefix(&[0x86]).unwrap_or(bytes);
+    if bytes.starts_with(&[0xff, 0xfe]) {
+        let utf16 = &bytes[2..];
+        let chars = || {
+            char::decode_utf16(
+                (0..utf16.len() / 2).filter_map(|index| View::u16_le_at(utf16, index * 2)),
+            )
+            .map(|result| match result {
+                Ok(value) => value,
+                Err(_) => char::REPLACEMENT_CHARACTER,
+            })
+        };
+        let length = chars().try_fold(0usize, |length, value| {
+            length.checked_add(value.len_utf8()).ok_or_else(|| {
+                ctx.refuse_codec_limit("materialize SLDPRT XML text", u64::MAX, u64::MAX)
+            })
+        })?;
+        let (mut text, scope) = ctx.reserve_scoped_string(length, "materialize SLDPRT XML text")?;
+        for value in chars() {
+            text.push(value);
+        }
+        Ok(Some(EnvelopeText { text, _scope: Some(scope) }))
+    } else {
+        let Ok(source) = std::str::from_utf8(bytes) else {
+            return Ok(None);
+        };
+        let (mut text, scope) = ctx.reserve_scoped_string(source.len(), "materialize SLDPRT XML text")?;
+        text.push_str(source);
+        Ok(Some(EnvelopeText { text, _scope: Some(scope) }))
     }
 }
 
@@ -1272,19 +1387,20 @@ impl ManifestActiveConfiguration {
 
 fn scan_solidworks_envelopes<'a>(
     sections: impl IntoIterator<Item = (Option<&'a str>, &'a [u8])>,
-) -> SolidWorksEnvelopeScan {
+    admission: ScanAdmission<'_, '_>,
+) -> Result<SolidWorksEnvelopeScan, CodecError> {
     let mut scan = SolidWorksEnvelopeScan::default();
     for (section, payload) in sections {
-        let Some(text) = xml_text(payload) else {
+        let Some(text) = admission.text(payload)? else {
             continue;
         };
-        let Ok(document) = roxmltree::Document::parse(&text) else {
+        let Ok(document) = roxmltree::Document::parse(&text.text) else {
             continue;
         };
         let root = document.root_element();
         if is_features_manifest_name(section) && root.tag_name().name() == "swSolidWorks" {
             scan.manifest_active_configuration
-                .merge(manifest_active_configuration_in(&document));
+                .merge(manifest_active_configuration_in(&admission, &document)?);
         }
         if root.tag_name().name().contains("Keywords") {
             for configuration in document
@@ -1303,26 +1419,38 @@ fn scan_solidworks_envelopes<'a>(
                 else {
                     continue;
                 };
-                scan.configuration_source_indices
-                    .entry(name.to_owned())
-                    .or_default()
-                    .push(index);
+                if let Some(indices) = scan.configuration_source_indices.get_mut(name) {
+                    admission.reserve_vec(indices, "collect SLDPRT configuration source indices")?;
+                    indices.push(index);
+                } else {
+                    admission.charge_item("collect SLDPRT configuration source names")?;
+                    let name = admission.copy_str(name, "retain SLDPRT configuration source name")?;
+                    let mut indices = Vec::new();
+                    admission.reserve_vec(&mut indices, "collect SLDPRT configuration source indices")?;
+                    indices.push(index);
+                    scan.configuration_source_indices.insert(name, indices);
+                }
             }
         }
         if root.tag_name().name() != "swSolidWorks" {
             continue;
         }
-        scan.configuration_names.extend(
-            root.descendants()
-                .filter(|node| node.has_tag_name("swModel"))
-                .filter_map(|node| node.attribute("swConfigurationName"))
-                .map(str::to_owned),
-        );
+        for name in root
+            .descendants()
+            .filter(|node| node.has_tag_name("swModel"))
+            .filter_map(|node| node.attribute("swConfigurationName"))
+        {
+            if !scan.configuration_names.contains(name) {
+                admission.charge_item("collect SLDPRT configuration names")?;
+                let name = admission.copy_str(name, "retain SLDPRT configuration name")?;
+                scan.configuration_names.insert(name);
+            }
+        }
         if scan.first.is_some() {
             continue;
         }
         let model = root.descendants().find(|node| node.has_tag_name("swModel"));
-        let mut configuration_attributes = BTreeMap::new();
+        let mut source_attributes = BTreeMap::new();
         for configuration in root
             .descendants()
             .filter(|node| node.has_tag_name("swConfiguration"))
@@ -1340,63 +1468,86 @@ fn scan_solidworks_envelopes<'a>(
                 ("swConfigurationAlternateName", "alternate_name"),
             ] {
                 if let Some(value) = configuration.attribute(source) {
-                    configuration_attributes.insert(
-                        format!("sw_configuration_{slot}_{target}"),
-                        value.to_owned(),
-                    );
+                    if !source_attributes.contains_key(&(slot, target)) {
+                        admission.charge_item("collect SLDPRT configuration attributes")?;
+                    }
+                    source_attributes.insert((slot, target), value);
                 }
             }
         }
+        let mut configuration_attributes = BTreeMap::new();
+        for ((slot, target), value) in source_attributes {
+            let length = "sw_configuration_".len() + slot.len() + 1 + target.len();
+            let mut key = admission.new_string(length, "retain SLDPRT configuration key")?;
+            key.push_str("sw_configuration_");
+            key.push_str(slot);
+            key.push('_');
+            key.push_str(target);
+            let value = admission.copy_str(value, "retain SLDPRT configuration value")?;
+            admission.charge_item("retain SLDPRT configuration attribute")?;
+            configuration_attributes.insert(key, value);
+        }
         scan.first = Some(SolidWorksEnvelope {
-            sw_version: root.attribute("swVersion").map(str::to_owned),
-            creation_time: root.attribute("swCreationTime").map(str::to_owned),
-            path: root.attribute("swPath").map(str::to_owned),
-            model_name: model
-                .and_then(|node| node.attribute("swName"))
-                .map(str::to_owned),
-            configuration_name: model
-                .and_then(|node| node.attribute("swConfigurationName"))
-                .map(str::to_owned),
+            sw_version: admission.copy_opt(root.attribute("swVersion"), "retain SLDPRT version")?,
+            creation_time: admission.copy_opt(root.attribute("swCreationTime"), "retain SLDPRT creation time")?,
+            path: admission.copy_opt(root.attribute("swPath"), "retain SLDPRT path")?,
+            model_name: admission.copy_opt(model.and_then(|node| node.attribute("swName")), "retain SLDPRT model name")?,
+            configuration_name: admission.copy_opt(model.and_then(|node| node.attribute("swConfigurationName")), "retain SLDPRT envelope configuration name")?,
             configuration_attributes,
         });
     }
-    scan
+    Ok(scan)
 }
 
 fn manifest_active_configuration_in(
+    admission: &ScanAdmission<'_, '_>,
     document: &roxmltree::Document<'_>,
-) -> ManifestActiveConfiguration {
-    let configurations = document
+) -> Result<ManifestActiveConfiguration, CodecError> {
+    let mut any_configuration = false;
+    let mut active = None;
+    for row in document
         .descendants()
         .filter(|node| node.is_element() && node.tag_name().name() == "swConfiguration")
-        .collect::<Vec<_>>();
-    if configurations.is_empty() {
-        return ManifestActiveConfiguration::Absent;
+    {
+        any_configuration = true;
+        if row.attribute("swMostRecentConfiguration") == Some("YES") {
+            if active.is_some() {
+                return Ok(ManifestActiveConfiguration::Ambiguous);
+            }
+            active = Some(row);
+        }
     }
-    let rows = configurations
-        .into_iter()
-        .filter(|node| node.attribute("swMostRecentConfiguration") == Some("YES"))
-        .collect::<Vec<_>>();
-    let [row] = rows.as_slice() else {
-        return ManifestActiveConfiguration::Ambiguous;
+    if !any_configuration {
+        return Ok(ManifestActiveConfiguration::Absent);
+    }
+    let Some(row) = active else {
+        return Ok(ManifestActiveConfiguration::Ambiguous);
     };
     let Some(id) = row.attribute("swID") else {
-        return ManifestActiveConfiguration::Ambiguous;
+        return Ok(ManifestActiveConfiguration::Ambiguous);
     };
     let Some(index) = (!id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit()))
         .then(|| id.parse::<usize>().ok())
         .flatten()
     else {
-        return ManifestActiveConfiguration::Ambiguous;
+        return Ok(ManifestActiveConfiguration::Ambiguous);
     };
-    ManifestActiveConfiguration::Unique(index, manifest_configuration_name(document, *row, id))
+    Ok(ManifestActiveConfiguration::Unique(
+        index,
+        manifest_configuration_name(admission, document, row, id)?,
+    ))
 }
 
 /// Returns the first parsed `swSolidWorks` envelope even if an attribute is absent.
 pub(crate) fn first_solidworks_envelope<'a>(
     payloads: impl IntoIterator<Item = &'a [u8]>,
 ) -> Option<SolidWorksEnvelope> {
-    scan_solidworks_envelopes(payloads.into_iter().map(|payload| (None, payload))).first
+    scan_solidworks_envelopes(
+        payloads.into_iter().map(|payload| (None, payload)),
+        ScanAdmission::Probe,
+    )
+    .ok()
+    .and_then(|scan| scan.first)
 }
 
 pub(crate) fn solidworks_envelope<'a>(
