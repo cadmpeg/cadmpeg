@@ -915,20 +915,17 @@ fn append_spreadsheet(
             property.id
         )));
     }
-    let records = cells
-        .children()
-        .filter(|node| node.has_tag_name("Cell"))
-        .collect::<Vec<_>>();
-    if declared != records.len() {
+    let found = cells.children().filter(|node| node.has_tag_name("Cell")).count();
+    if declared != found {
         return Err(CodecError::malformed(format_args!(
             "{} declares {declared} cells but contains {}",
             property.id,
-            records.len()
+            found
         )));
     }
-    let mut cell_ids = collection_vec(ctx, records.len(), "FreeCAD spreadsheet cells")?;
+    let mut cell_ids = collection_vec(ctx, found, "FreeCAD spreadsheet cells")?;
     let mut merged_ranges: Vec<SpreadsheetRange> = Vec::new();
-    for (index, cell) in records.into_iter().enumerate() {
+    for (index, cell) in cells.children().filter(|node| node.has_tag_name("Cell")).enumerate() {
         let address = cell.attribute("address").ok_or_else(|| {
             CodecError::malformed(format_args!("{} cell has no address", property.id))
         })?;
@@ -936,7 +933,7 @@ fn append_spreadsheet(
         let name = cell.attribute("alias").unwrap_or(address);
         let mut retained = BTreeMap::from([(
             cadmpeg_core::nonblank_literal!("address"),
-            address.to_owned(),
+            retained_string(ctx, address, "fcstd spreadsheet address")?,
         )]);
         for attribute in [
             cadmpeg_core::nonblank_literal!("alias"),
@@ -949,7 +946,7 @@ fn append_spreadsheet(
             cadmpeg_core::nonblank_literal!("colSpan"),
         ] {
             if let Some(value) = cell.attribute(attribute.as_str()) {
-                retained.insert(attribute, value.to_owned());
+                retained.insert(attribute, retained_string(ctx, value, "fcstd spreadsheet cell attribute")?);
             }
         }
         let cell_address = CellAddress::parse(address).ok_or_else(|| {
@@ -963,22 +960,25 @@ fn append_spreadsheet(
         );
         cell_ids.push(SpreadsheetCell {
             address: cell_address,
-            parameter: id.clone(),
+            parameter: ParameterId::mint(retained_string(ctx, id.as_str(), "fcstd spreadsheet cell parameter")?)
+                .map_err(CodecError::malformed)?,
         });
         if let Some(range) = merged_range(cell)? {
             if !merged_ranges
                 .iter()
                 .any(|existing| existing.contains(range.start()))
             {
+                reserve_vec_items(ctx, &mut merged_ranges, 1, "fcstd spreadsheet merged ranges")?;
                 merged_ranges.push(range);
             }
         }
+        reserve_vec_items(ctx, parameters, 1, "fcstd spreadsheet parameters")?;
         parameters.push(DesignParameter {
             id,
             owner: Some(feature_id(object)?),
             ordinal: index as u32,
-            name: name.to_owned(),
-            expression: content.to_owned(),
+            name: retained_string(ctx, name, "fcstd spreadsheet cell name")?,
+            expression: retained_string(ctx, content, "fcstd spreadsheet cell expression")?,
             display: None,
             value: (!content.starts_with('='))
                 .then(|| {
@@ -992,7 +992,7 @@ fn append_spreadsheet(
             dependencies: DistinctMembers::default(),
             properties: retained,
             pmi: None,
-            native_ref: Some(property.id.clone()),
+            native_ref: Some(retained_string(ctx, &property.id, "fcstd spreadsheet parameter native reference")?),
         });
     }
     Spreadsheet::new(
@@ -1003,6 +1003,7 @@ fn append_spreadsheet(
         feature_id(object)?,
         cell_ids,
         spreadsheet_dimensions(
+            ctx,
             properties,
             "Spreadsheet::PropertyColumnWidths",
             "columnWidths",
@@ -1011,6 +1012,7 @@ fn append_spreadsheet(
             "width",
         )?,
         spreadsheet_dimensions(
+            ctx,
             properties,
             "Spreadsheet::PropertyRowHeights",
             "rowHeights",
@@ -1019,12 +1021,13 @@ fn append_spreadsheet(
             "height",
         )?,
         merged_ranges,
-        Some(object.id.clone()),
+        Some(retained_string(ctx, &object.id, "fcstd spreadsheet native reference")?),
     )
     .map_err(CodecError::malformed)
 }
 
 fn spreadsheet_dimensions(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     type_name: &str,
     property_name: &str,
@@ -1050,25 +1053,21 @@ fn spreadsheet_dimensions(
         ))
     })?;
     let root = direct_spreadsheet_value(&xml, container, &property.id)?;
-    let records = root
-        .children()
-        .filter(|node| node.has_tag_name(element))
-        .collect::<Vec<_>>();
+    let found = root.children().filter(|node| node.has_tag_name(element)).count();
     let declared = root
         .attribute("Count")
         .and_then(|value| value.parse::<usize>().ok())
         .ok_or_else(|| {
             CodecError::malformed(format_args!("{} has invalid dimension count", property.id))
         })?;
-    if declared != records.len() || declared > MAX_SKETCH_RECORDS {
+    if declared != found || declared > MAX_SKETCH_RECORDS {
         return Err(CodecError::malformed(format_args!(
             "{} dimension count does not match its records",
             property.id
         )));
     }
-    records
-        .into_iter()
-        .map(|record| {
+    let mut dimensions = collection_vec(ctx, found, "fcstd spreadsheet dimensions")?;
+    for record in root.children().filter(|node| node.has_tag_name(element)) {
             let name = record.attribute("name").ok_or_else(|| {
                 CodecError::malformed(format_args!("{} dimension has no name", property.id))
             })?;
@@ -1082,7 +1081,7 @@ fn spreadsheet_dimensions(
                     ))
                 })?;
             let index = if element == "Column" {
-                CellAddress::parse(&format!("{name}1"))
+                CellAddress::parse(&crate::resource::retained_suffix(ctx, name, "1", "fcstd spreadsheet column address")?)
                     .map(cadmpeg_ir::CellAddress::col)
                     .ok_or_else(|| {
                         CodecError::malformed(format_args!(
@@ -1107,9 +1106,9 @@ fn spreadsheet_dimensions(
                     property.id
                 ))
             })?;
-            Ok(SpreadsheetDimension { index, pixels })
-        })
-        .collect()
+            dimensions.push(SpreadsheetDimension { index, pixels });
+    }
+    Ok(dimensions)
 }
 
 fn merged_range(cell: roxmltree::Node<'_, '_>) -> Result<Option<SpreadsheetRange>, CodecError> {
