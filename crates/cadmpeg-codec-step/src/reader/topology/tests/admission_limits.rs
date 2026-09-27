@@ -404,3 +404,76 @@ fn built_outcome_refuses_collection_limit() {
                 && refusal.operation == "step_topology_built_outcome"
     ));
 }
+
+#[test]
+fn connected_wire_typed_claims_refuse_collection_limit() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CONNECTED_EDGE_SET('',(#2));#2=DUMMY();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid connected set");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("source fits policy");
+    let carriers = crate::reader::index::CarrierIndex::from_ir(&cadmpeg_ir::CadIr::empty(), &ctx)
+        .expect("empty carrier index fits policy");
+    assert!(matches!(
+        super::super::build_wire_set(3, 1, &exchange, &BTreeMap::new(), &BTreeMap::new(), &carriers, false, &mut Vec::new(), &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_wire_typed"
+    ));
+}
+
+#[test]
+fn shell_wire_typed_claims_refuse_collection_limit() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=WIRE_SHELL('',(#2));#2=DUMMY();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid wire shell");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("source fits policy");
+    let carriers = crate::reader::index::CarrierIndex::from_ir(&cadmpeg_ir::CadIr::empty(), &ctx)
+        .expect("empty carrier index fits policy");
+    assert!(matches!(
+        super::super::build_shell_wire_set(3, 1, &exchange, &BTreeMap::new(), &BTreeMap::new(), &carriers, false, false, &mut Vec::new(), &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_wire_typed"
+    ));
+}
+
+#[test]
+fn subset_parent_loss_refuses_collection_limit() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CONNECTED_EDGE_SUB_SET('',(),$);ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid subset syntax");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("source fits policy");
+    assert!(matches!(
+        super::super::validate_subset_parent(1, exchange.records().get(&1).expect("subset"), "CONNECTED_EDGE_SUB_SET", &exchange, &mut Vec::new(), &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_topology_losses"
+    ));
+}
+
+#[test]
+fn curve_less_wire_edge_loss_refuses_collection_limit() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid empty exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("source fits policy");
+    let edge = super::super::EdgeDef::Bare { start: 1, end: 2 };
+    assert!(matches!(
+        super::super::edge_curve_id_reported(1, &edge, &exchange, &mut Vec::new(), &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_topology_losses"
+    ));
+}
