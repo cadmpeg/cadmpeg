@@ -482,19 +482,23 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         representation: usize,
         secondary: bool,
     ) -> Result<PcurveId, CodecError> {
-        Ok(PcurveId::compose(
-            &cadmpeg_ir::identity_namespace!("fcstd", "model", "pcurve"),
-            crate::native::model_key(
-                &self.payload.id,
-                format!(
-                    "{}:{}:{}",
-                    edge,
-                    representation + 1,
-                    usize::from(secondary) + 1
-                ),
-            )
-            .map_err(CodecError::malformed)?,
-        ))
+        let key = retained_format(self.ctx,
+            format_args!("{}:{}:{}", edge, representation + 1, usize::from(secondary) + 1),
+            "FreeCAD pcurve key")?;
+        PcurveId::mint(crate::native::model_id_charged_at(
+            self.ctx, "pcurve", &self.payload.id,
+            &key,
+        "FreeCAD pcurve identity", )?).map_err(CodecError::malformed)
+    }
+
+    fn shell_component_id(&self, key: &str, component_index: usize) -> Result<ShellId, CodecError> {
+        let child = retained_format(self.ctx,
+            format_args!("{key}:component:{}", component_index + 1),
+            "FreeCAD shell component key")?;
+        ShellId::mint(crate::native::model_id_charged_at(
+            self.ctx, "shell", &self.payload.id, &child,
+            "FreeCAD shell component identity",
+        )?).map_err(CodecError::malformed)
     }
 
     fn body_roots(&self) -> Result<Vec<BodyRoot>, CodecError> {
@@ -546,10 +550,9 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             }
         }
         let body_key = self.topology_label(root.shape, Transform::identity())?;
-        let body_id = BodyId::compose(
-            &cadmpeg_ir::identity_namespace!("fcstd", "model", "body"),
-            crate::native::model_key(&self.payload.id, &body_key).map_err(CodecError::malformed)?,
-        );
+        let body_id = BodyId::mint(crate::native::model_id_charged_at(
+            self.ctx, "body", &self.payload.id, &body_key,
+        "FreeCAD body identity", )?).map_err(CodecError::malformed)?;
         self.current_body = Some(body_id.clone());
         let kind = match root_kind {
             TextShapeKind::Solid => BodyKind::Solid,
@@ -629,10 +632,9 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             return Ok(());
         }
         let key = self.topology_label(shape_index, transform)?;
-        let region_id = RegionId::compose(
-            &cadmpeg_ir::identity_namespace!("fcstd", "model", "region"),
-            crate::native::model_key(&self.payload.id, &key).map_err(CodecError::malformed)?,
-        );
+        let region_id = RegionId::mint(crate::native::model_id_charged_at(
+            self.ctx, "region", &self.payload.id, &key,
+        "FreeCAD region identity", )?).map_err(CodecError::malformed)?;
         let mut shells = Vec::new();
         if shape.kind() == TextShapeKind::Solid {
             for child in shape
@@ -710,10 +712,9 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
     ) -> Result<Vec<ShellId>, CodecError> {
         let shape = copy_shape_for_transfer(ctx, self.shape(shape_index)?, "FreeCAD shell shape copy")?;
         let key = self.topology_label(shape_index, transform)?;
-        let shell_id = ShellId::compose(
-            &cadmpeg_ir::identity_namespace!("fcstd", "model", "shell"),
-            crate::native::model_key(&self.payload.id, &key).map_err(CodecError::malformed)?,
-        );
+        let shell_id = ShellId::mint(crate::native::model_id_charged_at(
+            self.ctx, "shell", &self.payload.id, &key,
+        "FreeCAD shell identity", )?).map_err(CodecError::malformed)?;
         if shape.kind() == TextShapeKind::Shell {
             let face_count = shape.children.iter().filter(|child| {
                 self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Face
@@ -732,14 +733,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 let component_id = if component_index == 0 {
                     shell_id.clone()
                 } else {
-                    ShellId::compose(
-                        &cadmpeg_ir::identity_namespace!("fcstd", "model", "shell"),
-                        crate::native::model_key(
-                            &self.payload.id,
-                            format!("{key}:component:{}", component_index + 1),
-                        )
-                        .map_err(CodecError::malformed)?,
-                    )
+                    self.shell_component_id(&key, component_index)?
                 };
                 let mut faces = crate::resource::collection_vec(
                     self.ctx,
@@ -955,10 +949,9 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             .compose(self.tables.location(location)?)
             .map_err(location_transform_error)?;
         let face_key = self.topology_label(face_use.shape, face_transform)?;
-        let face_id = FaceId::compose(
-            &cadmpeg_ir::identity_namespace!("fcstd", "model", "face"),
-            crate::native::model_key(&self.payload.id, &face_key).map_err(CodecError::malformed)?,
-        );
+        let face_id = FaceId::mint(crate::native::model_id_charged_at(
+            self.ctx, "face", &self.payload.id, &face_key,
+        "FreeCAD face identity", )?).map_err(CodecError::malformed)?;
         // OCCT triangulation nodes are already expressed in the face's surface-location frame.
         // Only the owning topological face placement remains to be applied here.
         let located_triangulation = triangulation
@@ -987,14 +980,11 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         } else if let Some((index, triangulation, vertices, triangles, deflection_scale)) =
             &located_triangulation
         {
-            let id = SurfaceId::compose(
-                &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
-                crate::native::model_key(
-                    &self.payload.id,
-                    format!("triangulation:{index}@{face_key}"),
-                )
-                .map_err(CodecError::malformed)?,
-            );
+            let key = retained_format(self.ctx,
+                format_args!("triangulation:{index}@{face_key}"), "FreeCAD triangulation surface key")?;
+            let id = SurfaceId::mint(crate::native::model_id_charged_at(
+                self.ctx, "surface", &self.payload.id, &key,
+            "FreeCAD triangulation surface identity", )?).map_err(CodecError::malformed)?;
             let new_surface = !self.emitted_surfaces.contains(&id);
             if new_surface {
                 insert_hash_set(self.ctx, &mut self.emitted_surfaces,
@@ -1103,24 +1093,19 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             if edge_uses.is_empty() {
                 continue;
             }
-            let loop_id = LoopId::compose(
-                &cadmpeg_ir::identity_namespace!("fcstd", "model", "loop"),
-                crate::native::model_key(
-                    &self.payload.id,
-                    format!("{}:{}", face_key, loop_index + 1),
-                )
-                .map_err(CodecError::malformed)?,
-            );
+            let loop_key = retained_format(self.ctx,
+                format_args!("{}:{}", face_key, loop_index + 1), "FreeCAD face loop key")?;
+            let loop_id = LoopId::mint(crate::native::model_id_charged_at(
+                self.ctx, "loop", &self.payload.id, &loop_key,
+            "FreeCAD face loop identity", )?).map_err(CodecError::malformed)?;
             let mut coedge_ids = collection_vec(self.ctx, edge_uses.len(), "FreeCAD loop coedge IDs")?;
             for index in 0..edge_uses.len() {
-                coedge_ids.push(CoedgeId::compose(
-                        &cadmpeg_ir::identity_namespace!("fcstd", "model", "coedge"),
-                        crate::native::model_key(
-                            &self.payload.id,
-                            format!("{}:{}:{}", face_key, loop_index + 1, index + 1),
-                        )
-                        .map_err(CodecError::malformed)?,
-                    ));
+                let key = retained_format(self.ctx,
+                    format_args!("{}:{}:{}", face_key, loop_index + 1, index + 1),
+                    "FreeCAD face coedge key")?;
+                coedge_ids.push(CoedgeId::mint(crate::native::model_id_charged_at(
+                    self.ctx, "coedge", &self.payload.id, &key,
+                "FreeCAD face coedge identity", )?).map_err(CodecError::malformed)?);
             }
             for (index, edge_use) in edge_uses.iter().enumerate() {
                 let edge_transform = wire_transform
@@ -1238,14 +1223,10 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         let (start_use, end_use) = edge_endpoint_uses(edge_use.shape, &shape.children)?;
         let start = self.ensure_vertex(ir, start_use, transform)?;
         let end = self.ensure_vertex(ir, end_use, transform)?;
-        let id = EdgeId::compose(
-            &cadmpeg_ir::identity_namespace!("fcstd", "model", "edge"),
-            crate::native::model_key(
-                &self.payload.id,
-                self.topology_label(edge_use.shape, transform)?,
-            )
-            .map_err(CodecError::malformed)?,
-        );
+        let label = self.topology_label(edge_use.shape, transform)?;
+        let id = EdgeId::mint(crate::native::model_id_charged_at(
+            self.ctx, "edge", &self.payload.id, &label,
+        "FreeCAD edge identity", )?).map_err(CodecError::malformed)?;
         let curve_representation =
             select_exact_curve_representation(edge_use.shape, &representations, &self.tables)?;
         let polygon_representation = if curve_representation.is_none() {
@@ -1471,14 +1452,12 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             )));
         };
         let label = self.topology_label(vertex_use.shape, transform)?;
-        let point_id = PointId::compose(
-            &cadmpeg_ir::identity_namespace!("fcstd", "model", "point"),
-            crate::native::model_key(&self.payload.id, &label).map_err(CodecError::malformed)?,
-        );
-        let vertex_id = VertexId::compose(
-            &cadmpeg_ir::identity_namespace!("fcstd", "model", "vertex"),
-            crate::native::model_key(&self.payload.id, &label).map_err(CodecError::malformed)?,
-        );
+        let point_id = PointId::mint(crate::native::model_id_charged_at(
+            self.ctx, "point", &self.payload.id, &label,
+        "FreeCAD point identity", )?).map_err(CodecError::malformed)?;
+        let vertex_id = VertexId::mint(crate::native::model_id_charged_at(
+            self.ctx, "vertex", &self.payload.id, &label,
+        "FreeCAD vertex identity", )?).map_err(CodecError::malformed)?;
         // A finite point and a finite location still multiply and add to a
         // non-finite coordinate, which states no position.
         let Some(position) = transform.apply_point(point.get()) else {
@@ -1523,22 +1502,19 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         source: usize,
         transform: Transform,
     ) -> Result<CurveId, CodecError> {
-        let base_id = CurveId::compose(
-            &cadmpeg_ir::identity_namespace!("fcstd", "model", "curve"),
-            crate::native::model_key(&self.payload.id, source.to_string())
-                .map_err(CodecError::malformed)?,
-        );
+        let base_key = retained_format(self.ctx, format_args!("{source}"), "FreeCAD base curve key")?;
+        let base_id = CurveId::mint(crate::native::model_id_charged_at(
+            self.ctx, "curve", &self.payload.id, &base_key,
+        "FreeCAD base curve identity", )?).map_err(CodecError::malformed)?;
         if is_identity(transform) {
             return Ok(base_id);
         }
-        let id = CurveId::compose(
-            &cadmpeg_ir::identity_namespace!("fcstd", "model", "curve"),
-            crate::native::model_key(
-                &self.payload.id,
-                format!("{}@{}", source, transform_digest(transform)),
-            )
-            .map_err(CodecError::malformed)?,
-        );
+        let key = retained_format(self.ctx,
+            format_args!("{}@{}", source, transform_digest(transform)),
+            "FreeCAD located curve key")?;
+        let id = CurveId::mint(crate::native::model_id_charged_at(
+            self.ctx, "curve", &self.payload.id, &key,
+        "FreeCAD located curve identity", )?).map_err(CodecError::malformed)?;
         if self.emitted_curves.insert(id.clone()) {
             let base = ir
                 .model
@@ -1565,22 +1541,19 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         source: usize,
         transform: Transform,
     ) -> Result<SurfaceId, CodecError> {
-        let base_id = SurfaceId::compose(
-            &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
-            crate::native::model_key(&self.payload.id, source.to_string())
-                .map_err(CodecError::malformed)?,
-        );
+        let base_key = retained_format(self.ctx, format_args!("{source}"), "FreeCAD base surface key")?;
+        let base_id = SurfaceId::mint(crate::native::model_id_charged_at(
+            self.ctx, "surface", &self.payload.id, &base_key,
+        "FreeCAD base surface identity", )?).map_err(CodecError::malformed)?;
         if is_identity(transform) {
             return Ok(base_id);
         }
-        let id = SurfaceId::compose(
-            &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
-            crate::native::model_key(
-                &self.payload.id,
-                format!("{}@{}", source, transform_digest(transform)),
-            )
-            .map_err(CodecError::malformed)?,
-        );
+        let key = retained_format(self.ctx,
+            format_args!("{}@{}", source, transform_digest(transform)),
+            "FreeCAD located surface key")?;
+        let id = SurfaceId::mint(crate::native::model_id_charged_at(
+            self.ctx, "surface", &self.payload.id, &key,
+        "FreeCAD located surface identity", )?).map_err(CodecError::malformed)?;
         if self.emitted_surfaces.insert(id.clone()) {
             let base = ir
                 .model
