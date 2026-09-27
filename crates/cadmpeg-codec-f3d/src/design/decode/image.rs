@@ -68,10 +68,11 @@ pub(super) fn decode_scoped_images<T>(
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     kind: &crate::records::feature::scope::DesignFeatureKind,
     mut parse: impl FnMut(
+        &DecodeContext<'_>,
         &[u8],
         &str,
         &crate::records::feature::scope::DesignParameterScope,
-    ) -> Option<T>,
+    ) -> Result<Option<T>, CodecError>,
     id: impl Fn(&T) -> &str,
 ) -> Result<Vec<T>, CodecError> {
     let mut images = Vec::new();
@@ -86,7 +87,7 @@ pub(super) fn decode_scoped_images<T>(
             scope.kind().as_str() == kind.as_str()
                 && crate::ids::native_stream(&scope.id) == Some(stream.as_str())
         }) {
-            if let Some(image) = parse(bytes, &entry.name, scope) {
+            if let Some(image) = parse(ctx, bytes, &entry.name, scope)? {
                 ctx.charge_collection_items(1, "f3d scoped image records")?;
                 images.try_reserve(1).map_err(|_| {
                     ctx.refuse_codec_limit("f3d scoped image records allocation", 0, 1)
@@ -207,7 +208,7 @@ mod tests {
                 assert!(matches!(
                     super::decode_scoped_images(
                         &ctx, scan, std::slice::from_ref(&scope), &kind,
-                        |_, _, _| Some(17_u32), |_| "image",
+                        |_, _, _, _| Ok(Some(17_u32)), |_| "image",
                     ),
                     Err(cadmpeg_core::CodecError::ResourceLimit(failure))
                         if failure.dimension == dimension && failure.operation == operation
@@ -216,7 +217,7 @@ mod tests {
             crate::design::test_support::with_test_decode_context(|ctx| {
                 let images = super::decode_scoped_images(
                     ctx, scan, std::slice::from_ref(&scope), &kind,
-                    |_, _, _| Some(17_u32), |_| "image",
+                    |_, _, _, _| Ok(Some(17_u32)), |_| "image",
                 )
                 .unwrap();
                 assert_eq!(images, [17]);

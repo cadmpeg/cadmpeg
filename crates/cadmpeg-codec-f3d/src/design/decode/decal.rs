@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse exact raster and face bindings owned by Design `Decal` scopes.
 
-use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded};
+use crate::bytes::lp_ascii_filtered;
 use crate::container::ContainerScan;
 use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::scopes::shared_frames::marked_reference;
 use crate::design::decode::sketch::next_indexed_record_offset;
+use crate::design::decode::text::lp_utf16_bounded_charged;
 use crate::ids;
 use crate::layout::design_decal_image_asset_record as decal_asset;
 use crate::layout::design_decal_image_name_prefix as decal_name;
@@ -120,24 +121,31 @@ pub(crate) fn project_decal_images(
 }
 
 fn parse_decal_image(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     stream: &str,
     scope: &DesignParameterScope,
-) -> Option<DesignDecalImage> {
+) -> Result<Option<DesignDecalImage>, CodecError> {
+    let Ok(scope_at) = usize::try_from(scope.byte_offset()) else {
+        return Ok(None);
+    };
     parse_decal_image_frame(
+        ctx,
         bytes,
         stream,
         scope.record_index,
-        usize::try_from(scope.byte_offset()).ok()?,
+        scope_at,
     )
 }
 
 fn parse_decal_image_frame(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     stream: &str,
     scope_record_index: u32,
     scope_at: usize,
-) -> Option<DesignDecalImage> {
+) -> Result<Option<DesignDecalImage>, CodecError> {
+    let parsed = (|| {
     if bytes.get(scope_at + decal_scope::ZERO_RUN_10..scope_at + decal_scope::ASSET_REFERENCE)?
         != [0; 10]
     {
@@ -168,8 +176,10 @@ fn parse_decal_image_frame(
         if View::u32_le_at(bytes, asset_at + 7) != Some(asset_record_index) {
             continue;
         }
-        let Some(candidate) = parse_decal_asset_record(bytes, asset_at, asset_record_index) else {
-            continue;
+        let candidate = match parse_decal_asset_record(ctx, bytes, asset_at, asset_record_index) {
+            Ok(Some(candidate)) => candidate,
+            Ok(None) => continue,
+            Err(error) => return Some(Err(error)),
         };
         if asset_record.replace(candidate).is_some() {
             return None;
@@ -185,14 +195,18 @@ fn parse_decal_image_frame(
         target_group_record_index,
         asset_record?,
     )
-    .ok()
+    .ok().map(Ok)
+    })();
+    parsed.transpose()
 }
 
 fn parse_decal_asset_record(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     asset_at: usize,
     asset_record_index: u32,
-) -> Option<DesignDecalAsset> {
+) -> Result<Option<DesignDecalAsset>, CodecError> {
+    let parsed = (|| {
     let (asset_class_tag, after_asset_tag) =
         lp_ascii_filtered(bytes, asset_at, 0..=2000, u8::is_ascii_graphic)?;
     if View::u32_le_at(bytes, after_asset_tag)? != asset_record_index
@@ -221,11 +235,13 @@ fn parse_decal_asset_record(
     {
         return None;
     }
-    let (asset_name, after_asset_name) = lp_utf16_bounded(
-        bytes,
-        name_at + decal_name::ASSET_NAME_CODE_UNIT_COUNT,
-        1..=1024,
-    )?;
+    let (asset_name, after_asset_name) = match lp_utf16_bounded_charged(
+        ctx, bytes, name_at + decal_name::ASSET_NAME_CODE_UNIT_COUNT, 1..=1024,
+    ) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     let next_at = next_indexed_record_offset(bytes, name_at + decal_name::ZERO_RUN_10)?;
     if after_asset_name != next_at {
         return None;
@@ -238,7 +254,9 @@ fn parse_decal_asset_record(
         asset_entity_suffix,
         asset_name,
     )
-    .ok()
+    .ok().map(Ok)
+    })();
+    parsed.transpose()
 }
 
 #[cfg(test)]
@@ -281,7 +299,8 @@ mod tests {
     #[test]
     fn decal_frame_decodes_image_mode_and_target() {
         let (bytes, scope_at) = fixture();
-        let image = parse_decal_image_frame(&bytes, "Design/BulkStream.dat", 23, scope_at)
+        let image = parse_decal_image_frame(&cadmpeg_test_support::service_decode_context(), &bytes, "Design/BulkStream.dat", 23, scope_at)
+            .unwrap()
             .expect("complete synthetic Decal frame");
         assert_eq!(image.asset.record_index(), 17);
         assert_eq!(image.asset.entity_suffix(), 50);
@@ -302,6 +321,22 @@ mod tests {
     fn decal_frame_rejects_an_unframed_name() {
         let (mut bytes, scope_at) = fixture();
         bytes[scope_at..scope_at + 4].fill(0);
-        assert!(parse_decal_image_frame(&bytes, "Design/BulkStream.dat", 23, scope_at).is_none());
+        assert!(parse_decal_image_frame(&cadmpeg_test_support::service_decode_context(), &bytes, "Design/BulkStream.dat", 23, scope_at).unwrap().is_none());
+    }
+
+    #[test]
+    fn decal_asset_name_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let (bytes, scope_at) = fixture();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 7;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = parse_decal_image_frame(&ctx, &bytes, "Design/BulkStream.dat", 23, scope_at)
+            .err().unwrap();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "f3d Design UTF-16 text"));
     }
 }

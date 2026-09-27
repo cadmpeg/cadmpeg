@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse exact image-plane bindings owned by Design `Canvas` scopes.
 
-use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded};
+use crate::bytes::lp_ascii_filtered;
 use crate::container::ContainerScan;
 use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::scopes::shared_frames::marked_reference;
 use crate::design::decode::sketch::next_indexed_record_offset_with_index;
+use crate::design::decode::text::lp_utf16_bounded_charged;
 use crate::ids;
 use crate::records::{
     canvas::{
@@ -113,10 +114,12 @@ pub(crate) fn project_canvas_images(
 }
 
 fn parse_canvas_image(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     stream: &str,
     scope: &DesignParameterScope,
-) -> Option<DesignCanvasImage> {
+) -> Result<Option<DesignCanvasImage>, CodecError> {
+    let parsed = (|| {
     let scope_at = usize::try_from(scope.byte_offset()).ok()?;
     let geometry_reference_at = if bytes.get(scope_at + 11..scope_at + 21)? == [0; 10] {
         scope_at + 21
@@ -203,7 +206,11 @@ fn parse_canvas_image(
     let geometry_payload = bytes.get(geometry_at + 69..geometry_at + 146)?;
     let geometry_payload = DesignCanvasGeometryPayload::try_from(geometry_payload).ok()?;
 
-    let (label, after_label) = lp_utf16_bounded(bytes, geometry_at + 213, 1..=256)?;
+    let (label, after_label) = match lp_utf16_bounded_charged(ctx, bytes, geometry_at + 213, 1..=256) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     if after_label != paired_at {
         return None;
     }
@@ -215,7 +222,11 @@ fn parse_canvas_image(
     {
         return None;
     }
-    let (asset_name, after_asset_name) = lp_utf16_bounded(bytes, asset_record_at + 21, 1..=1024)?;
+    let (asset_name, after_asset_name) = match lp_utf16_bounded_charged(ctx, bytes, asset_record_at + 21, 1..=1024) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     if after_asset_name != scope_at {
         return None;
     }
@@ -243,5 +254,98 @@ fn parse_canvas_image(
         plane_entity_suffix,
         component_entity_suffix,
     )
-    .ok()
+    .ok().map(Ok)
+    })();
+    parsed.transpose()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_canvas_image;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    fn header(bytes: &mut [u8], at: usize, tag: [u8; 3], index: u32) {
+        bytes[at..at + 4].copy_from_slice(&3u32.to_le_bytes());
+        bytes[at + 4..at + 7].copy_from_slice(&tag);
+        bytes[at + 7..at + 11].copy_from_slice(&index.to_le_bytes());
+    }
+
+    fn reference(bytes: &mut [u8], at: usize, index: u32) {
+        bytes[at] = 1;
+        bytes[at + 1..at + 5].copy_from_slice(&index.to_le_bytes());
+    }
+
+    fn fixture() -> (Vec<u8>, crate::records::feature::scope::DesignParameterScope) {
+        let mut bytes = vec![0; 320];
+        header(&mut bytes, 0, *b"300", 10);
+        header(&mut bytes, 219, *b"301", 10);
+        header(&mut bytes, 249, *b"302", 20);
+        header(&mut bytes, 284, *b"303", 30);
+        for (at, value) in [(26, 0.0f64), (34, 0.0), (42, 1.0), (50, 0.0),
+            (181, 0.0), (189, 1.0), (197, 1.0), (205, 1.0),
+            (98, 1.0), (130, 1.0)] {
+            bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        bytes[69..73].copy_from_slice(&1.0f32.to_le_bytes());
+        reference(&mut bytes, 58, 40);
+        reference(&mut bytes, 146, 30);
+        reference(&mut bytes, 157, 50);
+        reference(&mut bytes, 169, 20);
+        bytes[180] = 1;
+        bytes[213..217].copy_from_slice(&1u32.to_le_bytes());
+        bytes[217..219].copy_from_slice(&u16::from(b'L').to_le_bytes());
+        reference(&mut bytes, 238, 50);
+        bytes[270..274].copy_from_slice(&5u32.to_le_bytes());
+        for (ordinal, unit) in "a.png".encode_utf16().enumerate() {
+            let at = 274 + ordinal * 2;
+            bytes[at..at + 2].copy_from_slice(&unit.to_le_bytes());
+        }
+        reference(&mut bytes, 305, 10);
+        let scope = serde_json::from_value(serde_json::json!({
+            "id": "f3d:Design/BulkStream.dat:scope#30",
+            "byte_offset": 284,
+            "class_tag": "303",
+            "record_index": 30,
+            "frame_length": 216,
+            "kind": "Canvas",
+            "kind_offset": 316,
+            "feature_ordinal": 1,
+            "feature_ordinal_offset": 428,
+            "history_state_id": 8,
+            "history_state_id_offset": 308,
+            "previous_history_state_id": 7,
+            "previous_history_state_id_offset": 458,
+            "reference_count_offset": 293,
+            "reference_members": [10],
+            "reference_member_offsets": [298],
+            "paired_class_tag": "304",
+            "paired_byte_offset": 500
+        })).unwrap();
+        (bytes, scope)
+    }
+
+    #[test]
+    fn canvas_label_and_asset_name_refuse_retained_limits() {
+        let (bytes, scope) = fixture();
+        let image = parse_canvas_image(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            "Design/BulkStream.dat",
+            &scope,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(image.asset_name(), "a.png");
+        for limit in [0, 5] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let error = parse_canvas_image(&ctx, &bytes, "Design/BulkStream.dat", &scope)
+                .err().unwrap();
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.dimension == ResourceDimension::RetainedBytes
+                    && refusal.operation == "f3d Design UTF-16 text"));
+        }
+    }
 }
