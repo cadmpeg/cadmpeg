@@ -12,6 +12,8 @@ use crate::loss::StepLossCode;
 use crate::test_support::exchange::decode_inline;
 use crate::StepCodec;
 
+mod string_limits;
+
 #[test]
 fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
     let result = decode_inline(

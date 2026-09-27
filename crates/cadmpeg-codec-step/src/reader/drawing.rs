@@ -4,7 +4,10 @@
 use crate::ids::kind;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::fmt;
 
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
@@ -19,7 +22,7 @@ use crate::parse::{Exchange, RawRecord, ReferenceName, Value};
 
 use super::representation;
 use super::ValueExt;
-use super::{decode_text, opaque_record_id, record_targets, StageOutcome};
+use super::{decode_text_charged, opaque_record_id, record_targets, StageOutcome};
 
 const DRAWING_ASSOCIATION_TYPES: &[&str] = &[
     "DRAUGHTING_MODEL_ITEM_ASSOCIATION",
@@ -65,7 +68,8 @@ pub(super) fn decode(
     ir: &mut CadIr,
     known_typed: &HashSet<u64>,
     product_definition_ids_by_shape: &BTreeMap<u64, ProductDefinitionId>,
-) -> StageOutcome<()> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<StageOutcome<()>, CodecError> {
     let mut losses = Vec::new();
     let mut candidates = exchange
         .records()
@@ -91,12 +95,12 @@ pub(super) fn decode(
     candidates.sort_by_key(|candidate| candidate.offset);
 
     if candidates.is_empty() {
-        return StageOutcome {
+        return Ok(StageOutcome {
             value: (),
             claims: HashSet::new(),
             losses,
             notes: Vec::new(),
-        };
+        });
     }
 
     let drawing_ids = candidates
@@ -182,7 +186,8 @@ pub(super) fn decode(
                 &mut losses,
                 id,
                 &format!("drawing parameter {index}"),
-            ) {
+                ctx,
+            )? {
                 stored_parameters.insert(parameter_key(name, index), value);
             }
         }
@@ -225,7 +230,7 @@ pub(super) fn decode(
         );
     }
 
-    add_sheet_revision_usages(exchange, &mut drawings, &target_context, &mut losses);
+    add_sheet_revision_usages(exchange, &mut drawings, &target_context, &mut losses, ctx)?;
     let mut association_ids = HashSet::new();
     add_draughting_model_associations(
         exchange,
@@ -238,12 +243,12 @@ pub(super) fn decode(
     let mut typed_records = drawings.keys().copied().collect::<HashSet<_>>();
     typed_records.extend(association_ids);
     ir.model.drawings.extend(drawings.into_values());
-    StageOutcome {
+    Ok(StageOutcome {
         value: (),
         claims: typed_records,
         losses,
         notes: Vec::new(),
-    }
+    })
 }
 
 pub(super) fn is_supported_invisibility_target(record: &RawRecord) -> bool {
@@ -521,20 +526,16 @@ fn add_sheet_revision_usages(
     drawings: &mut BTreeMap<u64, Drawing>,
     target_context: &TargetContext<'_>,
     losses: &mut Vec<LossNote>,
-) {
-    let usages = exchange
-        .entities("DRAWING_SHEET_REVISION_USAGE")
-        .filter_map(|(id, record)| {
-            let parameters = source_parameters(record, "DRAWING_SHEET_REVISION_USAGE");
-            Some((
-                id,
-                parameters.first()?.reference()?,
-                parameters.get(1)?.reference()?,
-                parameters.get(2).cloned(),
-            ))
-        })
-        .collect::<Vec<_>>();
-    for (usage_id, sheet_id, revision_id, sequence) in usages {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
+    for (usage_id, record) in exchange.entities("DRAWING_SHEET_REVISION_USAGE") {
+        let parameters = source_parameters(record, "DRAWING_SHEET_REVISION_USAGE");
+        let Some(sheet_id) = parameters.first().and_then(ValueExt::reference) else {
+            continue;
+        };
+        let Some(revision_id) = parameters.get(1).and_then(ValueExt::reference) else {
+            continue;
+        };
         let sheet_target = target_context.resolve(revision_id);
         let revision_target = target_context.resolve(sheet_id);
         if let Some(sheet) = drawings.get_mut(&sheet_id) {
@@ -557,15 +558,16 @@ fn add_sheet_revision_usages(
                     )));
                 }
             }
-            if let Some(sequence) = sequence.and_then(|value| {
+            if let Some(sequence) = parameters.get(2).map(|value| {
                 value_text(
                     target_context.exchange,
-                    &value,
+                    value,
                     losses,
                     usage_id,
                     "drawing sheet revision usage sequence",
+                    ctx,
                 )
-            }) {
+            }).transpose()?.flatten() {
                 sheet.parameters.insert(
                     cadmpeg_core::nonblank_literal!("usage_{usage_id}_sequence"),
                     sequence,
@@ -594,6 +596,7 @@ fn add_sheet_revision_usages(
             }
         }
     }
+    Ok(())
 }
 
 fn add_draughting_model_associations(
@@ -925,44 +928,95 @@ fn value_text(
     losses: &mut Vec<LossNote>,
     record_id: u64,
     field: &str,
-) -> Option<String> {
-    match value {
-        Value::Reference(id) => Some(format!("#{id}")),
-        Value::ValueReference(id) => Some(format!("@{id}")),
-        Value::ConstantEntity(name) => Some(format!("#{name}")),
-        Value::ConstantValue(name) => Some(format!("@{name}")),
-        Value::Integer(value) => Some(value.to_string()),
-        Value::Real(value) => Some(value.to_string()),
-        Value::Enumeration(value) => Some(format!(".{value}.")),
-        Value::String(_) => decode_text(
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<String>, CodecError> {
+    let _depth_guard = ctx
+        .map(|ctx| ctx.enter_nested("step_drawing_value_text_depth"))
+        .transpose()?;
+    let text = match value {
+        Value::Reference(id) => format_value_text(ctx, format_args!("#{id}"))?,
+        Value::ValueReference(id) => format_value_text(ctx, format_args!("@{id}"))?,
+        Value::ConstantEntity(name) => format_value_text(ctx, format_args!("#{name}"))?,
+        Value::ConstantValue(name) => format_value_text(ctx, format_args!("@{name}"))?,
+        Value::Integer(value) => format_value_text(ctx, format_args!("{value}"))?,
+        Value::Real(value) => format_value_text(ctx, format_args!("{value}"))?,
+        Value::Enumeration(value) => format_value_text(ctx, format_args!(".{value}."))?,
+        Value::String(_) => return decode_text_charged(
             exchange,
             value,
             losses,
             record_id,
             field,
             StepLossCode::MetadataStringInvalid,
+            ctx,
         ),
-        Value::Binary(value) => Some(format!(
-            "binary:{}:{}",
-            value.bit_len(),
-            value.data().iter().fold(String::new(), |mut output, byte| {
-                const HEX: &[u8; 16] = b"0123456789ABCDEF";
-                output.push(char::from(HEX[(byte >> 4) as usize]));
-                output.push(char::from(HEX[(byte & 0x0F) as usize]));
-                output
-            })
-        )),
-        Value::Resource(value) => Some(format!("<{value}>")),
-        Value::Omitted => Some("$".into()),
-        Value::Derived => Some("*".into()),
-        Value::List(values) => values
-            .iter()
-            .map(|value| value_text(exchange, value, losses, record_id, field))
-            .collect::<Option<Vec<_>>>()
-            .map(|values| format!("({})", values.join(","))),
-        Value::Typed(name, value) => value_text(exchange, value, losses, record_id, field)
-            .map(|value| format!("{name}({value})")),
+        Value::Binary(value) => {
+            const HEX: &[u8; 16] = b"0123456789ABCDEF";
+            let mut text = format_value_text(ctx, format_args!("binary:{}:", value.bit_len()))?;
+            for byte in value.data() {
+                if let Some(ctx) = ctx {
+                    ctx.charge_retained(2, "step_drawing_value_text")?;
+                }
+                text.try_reserve(2).map_err(|_| match ctx {
+                    Some(ctx) => ctx.refuse_codec_limit("step_drawing_value_text", 0, 2),
+                    None => cadmpeg_core::decode::refuse_local_limit("step_drawing_value_text", 0, 2),
+                })?;
+                text.push(char::from(HEX[usize::from(byte >> 4)]));
+                text.push(char::from(HEX[usize::from(byte & 0x0f)]));
+            }
+            text
+        }
+        Value::Resource(value) => format_value_text(ctx, format_args!("<{value}>"))?,
+        Value::Omitted => format_value_text(ctx, format_args!("$"))?,
+        Value::Derived => format_value_text(ctx, format_args!("*"))?,
+        Value::List(values) => {
+            let mut text = format_value_text(ctx, format_args!("("))?;
+            for (index, value) in values.iter().enumerate() {
+                let Some(part) = value_text(exchange, value, losses, record_id, field, ctx)? else {
+                    return Ok(None);
+                };
+                if index != 0 {
+                    append_value_text(&mut text, ",", ctx)?;
+                }
+                append_value_text(&mut text, &part, ctx)?;
+            }
+            append_value_text(&mut text, ")", ctx)?;
+            text
+        }
+        Value::Typed(name, value) => {
+            let Some(value) = value_text(exchange, value, losses, record_id, field, ctx)? else {
+                return Ok(None);
+            };
+            format_value_text(ctx, format_args!("{name}({value})"))?
+        }
+    };
+    Ok(Some(text))
+}
+
+fn format_value_text(
+    ctx: Option<&DecodeContext<'_>>,
+    arguments: fmt::Arguments<'_>,
+) -> Result<String, CodecError> {
+    match ctx {
+        Some(ctx) => crate::decode_alloc::charged_format(ctx, "step_drawing_value_text", arguments),
+        None => Ok(arguments.to_string()),
     }
+}
+
+fn append_value_text(
+    output: &mut String,
+    text: &str,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
+    if let Some(ctx) = ctx {
+        ctx.charge_retained(u64_from_index(text.len()), "step_drawing_value_text")?;
+    }
+    output.try_reserve(text.len()).map_err(|_| match ctx {
+        Some(ctx) => ctx.refuse_codec_limit("step_drawing_value_text", 0, u64_from_index(text.len())),
+        None => cadmpeg_core::decode::refuse_local_limit("step_drawing_value_text", 0, u64_from_index(text.len())),
+    })?;
+    output.push_str(text);
+    Ok(())
 }
 
 #[cfg(test)]
