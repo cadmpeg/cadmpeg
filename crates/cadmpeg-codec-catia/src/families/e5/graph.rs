@@ -437,22 +437,34 @@ pub(crate) fn parse_topology(
     }
     (|| -> Option<Result<E5Topology, CodecError>> {
         let records = admitted_records;
-        let by_id: HashMap<u32, &Record<'_>> =
-            records.iter().map(|record| (record.id, record)).collect();
+        let mut by_id = HashMap::new();
+        for record in &records {
+            if let Err(error) = crate::resource::insert_map(ctx, &mut by_id, record.id, record, "catia_e5_records_by_id") {
+                return Some(Err(error));
+            }
+        }
         if by_id.len() != records.len() {
             return None;
         }
 
-        let edges: BTreeMap<u32, E5Edge> = records
-            .iter()
-            .filter(|record| record.class == 0xff)
-            .map(|record| parse_edge(record).map(|edge| (record.id, edge)))
-            .collect::<Option<_>>()?;
-        let pcurves: BTreeMap<u32, E5Pcurve> = records
-            .iter()
-            .filter(|record| matches!(record.class, 0x96 | 0x97 | 0xa0 | 0xaa))
-            .map(|record| parse_pcurve(record).map(|pcurve| (record.id, pcurve)))
-            .collect::<Option<_>>()?;
+        let mut edges = BTreeMap::new();
+        let mut pcurves = BTreeMap::new();
+        for record in &records {
+            if record.class == 0xff {
+                let edge = parse_edge(record)?;
+                if let Err(error) = ctx.charge_collection_items(1, "catia_e5_topology_edges") {
+                    return Some(Err(error));
+                }
+                edges.insert(record.id, edge);
+            }
+            if matches!(record.class, 0x96 | 0x97 | 0xa0 | 0xaa) {
+                let pcurve = parse_pcurve(record)?;
+                if let Err(error) = ctx.charge_collection_items(1, "catia_e5_topology_pcurves") {
+                    return Some(Err(error));
+                }
+                pcurves.insert(record.id, pcurve);
+            }
+        }
         for pcurve in pcurves.values() {
             let surface = match pcurve {
                 E5Pcurve::Line { surface, .. }
@@ -467,36 +479,60 @@ pub(crate) fn parse_topology(
                 return None;
             }
         }
-        let bounds: BTreeMap<u32, E5Bounds> = records
-            .iter()
-            .filter(|record| record.class == 0x0e)
-            .map(|record| parse_bounds(record).map(|bounds| (record.id, bounds)))
-            .collect::<Option<_>>()?;
-        let curve_supports: BTreeMap<u32, E5CurveSupport> = records
-            .iter()
-            .filter(|record| matches!(record.class, 0xc0 | 0xc1))
-            .map(|record| parse_curve_support(record).map(|support| (record.id, support)))
-            .collect::<Option<_>>()?;
-        let loops: HashMap<u32, RawLoop> = records
-            .iter()
-            .filter(|record| record.class == 0x09)
-            .map(|record| parse_loop(record).map(|loop_| (record.id, loop_)))
-            .collect::<Option<_>>()?;
-        let raw_faces: Vec<RawFace> = records
-            .iter()
-            .filter(|record| record.class == 0x00)
-            .map(|record| parse_face(record))
-            .collect::<Option<_>>()?;
-        let vertex_ids: HashSet<u32> = records
-            .iter()
-            .filter(|record| record.class == 0xfe)
-            .map(|record| record.id)
-            .collect();
+        let mut bounds = BTreeMap::new();
+        let mut curve_supports = BTreeMap::new();
+        let mut loops = HashMap::new();
+        let mut raw_faces = Vec::new();
+        let mut vertex_ids = HashSet::new();
+        for record in &records {
+            match record.class {
+                0x0e => {
+                    let value = parse_bounds(record)?;
+                    if let Err(error) = ctx.charge_collection_items(1, "catia_e5_topology_bounds") {
+                        return Some(Err(error));
+                    }
+                    bounds.insert(record.id, value);
+                }
+                0xc0 | 0xc1 => {
+                    let value = parse_curve_support(record)?;
+                    if let Err(error) = ctx.charge_collection_items(1, "catia_e5_curve_supports") {
+                        return Some(Err(error));
+                    }
+                    curve_supports.insert(record.id, value);
+                }
+                0x09 => {
+                    let value = match parse_loop(ctx, record) {
+                        Ok(Some(value)) => value,
+                        Ok(None) => return None,
+                        Err(error) => return Some(Err(error)),
+                    };
+                    if let Err(error) = crate::resource::insert_map(ctx, &mut loops, record.id, value, "catia_e5_raw_loops") {
+                        return Some(Err(error));
+                    }
+                }
+                0x00 => {
+                    let value = match parse_face(ctx, record) {
+                        Ok(Some(value)) => value,
+                        Ok(None) => return None,
+                        Err(error) => return Some(Err(error)),
+                    };
+                    if let Err(error) = crate::resource::push(ctx, &mut raw_faces, value, "catia_e5_raw_faces") {
+                        return Some(Err(error));
+                    }
+                }
+                0xfe => {
+                    if let Err(error) = crate::resource::insert_set(ctx, &mut vertex_ids, record.id, "catia_e5_vertex_ids") {
+                        return Some(Err(error));
+                    }
+                }
+                _ => {}
+            }
+        }
         if raw_faces.is_empty() || loops.is_empty() || edges.is_empty() || vertex_ids.is_empty() {
             return None;
         }
 
-        let mut faces = Vec::with_capacity(raw_faces.len());
+        let mut faces = Vec::new();
         let mut reachable_edges = HashSet::new();
         for face in raw_faces {
             if !by_id
@@ -505,7 +541,7 @@ pub(crate) fn parse_topology(
             {
                 return None;
             }
-            let mut resolved_loops = Vec::with_capacity(face.loops.len());
+            let mut resolved_loops = Vec::new();
             for (loop_position, loop_id) in face.loops.into_iter().enumerate() {
                 let raw = loops.get(&loop_id)?;
                 if raw.surface != face.surface {
@@ -517,7 +553,11 @@ pub(crate) fn parse_topology(
                 if raw.pcurves.len() != raw.edges.len() {
                     return None;
                 }
-                let reversed = solve_loop_chain(&raw.edges, &edges)?;
+                let reversed = match solve_loop_chain(ctx, &raw.edges, &edges) {
+                    Ok(Some(reversed)) => reversed,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
                 if reversed.len() != raw.edges.len() {
                     return None;
                 }
@@ -558,7 +598,9 @@ pub(crate) fn parse_topology(
                     }) {
                         return None;
                     }
-                    reachable_edges.insert(*edge_id);
+                    if let Err(error) = crate::resource::insert_set(ctx, &mut reachable_edges, *edge_id, "catia_e5_reachable_edges") {
+                        return Some(Err(error));
+                    }
                 }
                 let orientation_hint = plane_digon_orientation_hint(
                     face.trailer_sign,
@@ -572,31 +614,31 @@ pub(crate) fn parse_topology(
                     &curve_supports,
                     &bounds,
                 );
-                resolved_loops.push(E5Loop {
+                let mut members = Vec::new();
+                for ((&pcurve, &edge_use), &reversed) in raw.pcurves.iter().zip(&raw.edges).zip(&reversed) {
+                    if let Err(error) = crate::resource::push(ctx, &mut members, E5LoopMember { pcurve, edge_use, reversed }, "catia_e5_loop_members") {
+                        return Some(Err(error));
+                    }
+                }
+                if let Err(error) = crate::resource::push(ctx, &mut resolved_loops, E5Loop {
                     record_id: raw.id,
                     surface: raw.surface,
-                    members: raw
-                        .pcurves
-                        .iter()
-                        .zip(&raw.edges)
-                        .zip(&reversed)
-                        .map(|((&pcurve, &edge_use), &reversed)| E5LoopMember {
-                            pcurve,
-                            edge_use,
-                            reversed,
-                        })
-                        .collect(),
+                    members,
                     oriented_members: None,
                     outer: raw.outer,
                     orientation_hint,
-                });
+                }, "catia_e5_resolved_loops") {
+                    return Some(Err(error));
+                }
             }
-            faces.push(E5Face {
+            if let Err(error) = crate::resource::push(ctx, &mut faces, E5Face {
                 record_id: face.id,
                 surface: face.surface,
                 trailer_sign: face.trailer_sign,
                 loops: resolved_loops,
-            });
+            }, "catia_e5_topology_faces") {
+                return Some(Err(error));
+            }
         }
         let oriented = match solve_absolute_orientation(ctx, &mut faces) {
             Ok(oriented) => oriented,
@@ -605,24 +647,43 @@ pub(crate) fn parse_topology(
         if !oriented {
             return None;
         }
-        let edges: BTreeMap<u32, E5Edge> = edges
-            .into_iter()
-            .filter(|(id, _)| reachable_edges.contains(id))
-            .collect();
-        let mut vertex_refs: Vec<u32> = edges
-            .values()
-            .flat_map(|edge| [edge.start_vertex, edge.end_vertex])
-            .collect();
+        edges.retain(|id, _| reachable_edges.contains(id));
+        let mut vertex_refs = Vec::new();
+        for edge in edges.values() {
+            for vertex in [edge.start_vertex, edge.end_vertex] {
+                if let Err(error) = crate::resource::push(ctx, &mut vertex_refs, vertex, "catia_e5_vertex_refs") {
+                    return Some(Err(error));
+                }
+            }
+        }
         vertex_refs.sort_unstable();
         vertex_refs.dedup();
-        let bodies = parse_bodies(&records, &by_id)?;
+        let bodies = match parse_bodies(ctx, &records, &by_id) {
+            Ok(Some(bodies)) => bodies,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         if !bodies.is_empty() {
-            let roster: Vec<u32> = bodies
-                .iter()
-                .flat_map(|body| body.faces.iter().copied())
-                .collect();
-            let roster_set: HashSet<u32> = roster.iter().copied().collect();
-            let face_set: HashSet<u32> = faces.iter().map(|face| face.record_id).collect();
+            let mut roster = Vec::new();
+            for body in &bodies {
+                for &face in &body.faces {
+                    if let Err(error) = crate::resource::push(ctx, &mut roster, face, "catia_e5_body_face_roster") {
+                        return Some(Err(error));
+                    }
+                }
+            }
+            let mut roster_set = HashSet::new();
+            for &face in &roster {
+                if let Err(error) = crate::resource::insert_set(ctx, &mut roster_set, face, "catia_e5_body_face_set") {
+                    return Some(Err(error));
+                }
+            }
+            let mut face_set = HashSet::new();
+            for face in &faces {
+                if let Err(error) = crate::resource::insert_set(ctx, &mut face_set, face.record_id, "catia_e5_topology_face_set") {
+                    return Some(Err(error));
+                }
+            }
             if roster.len() != roster_set.len() || roster_set != face_set {
                 return None;
             }
@@ -1365,66 +1426,70 @@ fn solve_absolute_orientation(
     Ok(solved.into_iter().all(|value| value.is_some()))
 }
 
-fn parse_bodies(records: &[Record<'_>], by_id: &HashMap<u32, &Record<'_>>) -> Option<Vec<E5Body>> {
-    records
-        .iter()
-        .filter(|record| record.class == 0x01)
-        .map(|record| {
-            let (roots, end) = wire::tokens::counted_refs(record.payload, false)?;
-            if roots.len() != 1 || end != record.payload.len() {
-                return None;
-            }
-            let root = *by_id.get(&roots[0])?;
-            if root.class != 0x08 {
-                return None;
-            }
-            let faces = parse_body_root(root.payload)?;
-            if faces
-                .iter()
-                .any(|face| by_id.get(face).is_none_or(|target| target.class != 0x00))
-            {
-                return None;
-            }
-            Some(E5Body {
-                record_id: record.id,
-                faces,
-            })
-        })
-        .collect()
+fn parse_bodies(
+    ctx: &DecodeContext<'_>,
+    records: &[Record<'_>],
+    by_id: &HashMap<u32, &Record<'_>>,
+) -> Result<Option<Vec<E5Body>>, CodecError> {
+    let mut bodies = Vec::new();
+    for record in records.iter().filter(|record| record.class == 0x01) {
+        if record.payload.first() != Some(&0x81) {
+            return Ok(None);
+        }
+        let mut position = 1;
+        let Some(root_id) = wire::tokens::object_ref(record.payload, &mut position, false) else { return Ok(None); };
+        if position != record.payload.len() {
+            return Ok(None);
+        }
+        let Some(root) = by_id.get(&root_id) else { return Ok(None); };
+        if root.class != 0x08 {
+            return Ok(None);
+        }
+        let Some(faces) = parse_body_root(ctx, root.payload)? else { return Ok(None); };
+        if faces.iter().any(|face| by_id.get(face).is_none_or(|target| target.class != 0x00)) {
+            return Ok(None);
+        }
+        crate::resource::push(ctx, &mut bodies, E5Body { record_id: record.id, faces }, "catia_e5_bodies")?;
+    }
+    Ok(Some(bodies))
 }
 
-fn parse_body_root(payload: &[u8]) -> Option<Vec<u32>> {
-    let (faces, mut position) = if payload.first() == Some(&0x08) {
-        let count = usize::from(*payload.get(1)?);
-        let mut position = 2;
-        let mut faces = Vec::with_capacity(count);
-        for _ in 0..count {
-            let face = wire::tokens::object_ref(payload, &mut position, false)?;
-            if face > u32::from(u16::MAX) {
-                return None;
-            }
-            faces.push(face);
-        }
-        (faces, position)
+fn parse_body_root(ctx: &DecodeContext<'_>, payload: &[u8]) -> Result<Option<Vec<u32>>, CodecError> {
+    let (count, mut position, narrow) = if payload.first() == Some(&0x08) {
+        let Some(count) = payload.get(1) else { return Ok(None); };
+        (usize::from(*count), 2, true)
     } else {
-        wire::tokens::counted_refs(payload, false)?
+        let Some(count) = payload.first().and_then(|lead| lead.checked_sub(0x80)) else { return Ok(None); };
+        (usize::from(count), 1, false)
     };
-    let count = u8::try_from(faces.len()).ok()?;
+    let mut faces = Vec::new();
+    for _ in 0..count {
+        let Some(face) = wire::tokens::object_ref(payload, &mut position, false) else { return Ok(None); };
+        if narrow && face > u32::from(u16::MAX) {
+            return Ok(None);
+        }
+        crate::resource::push(ctx, &mut faces, face, "catia_e5_body_root_faces")?;
+    }
+    let Some(count) = u8::try_from(faces.len()).ok() else { return Ok(None); };
     if payload.get(position..position + 2) == Some(&[0x08, count]) {
         position += 2;
-    } else if faces.len() <= 0x7f && payload.get(position) == Some(&0x80u8.checked_add(count)?) {
+    } else if faces.len() <= 0x7f
+        && 0x80u8.checked_add(count).is_some_and(|head| payload.get(position) == Some(&head))
+    {
         position += 1;
     } else {
-        return None;
+        return Ok(None);
     }
-    let sign_bytes = payload.get(position..)?;
+    let Some(sign_bytes) = payload.get(position..) else { return Ok(None); };
     if sign_bytes.len() != (faces.len() + 2) * 2 {
-        return None;
+        return Ok(None);
     }
     for bytes in sign_bytes.chunks_exact(2) {
-        Sign::from_i16(View::i16_le_at(bytes, 0)?)?;
+        if View::i16_le_at(bytes, 0).and_then(Sign::from_i16).is_none() {
+            return Ok(None);
+        }
     }
-    Some(faces)
+    Ok(Some(faces))
 }
 
 fn records(bytes: &[u8]) -> impl Iterator<Item = Record<'_>> + '_ {
@@ -1459,62 +1524,65 @@ fn records(bytes: &[u8]) -> impl Iterator<Item = Record<'_>> + '_ {
     })
 }
 
-fn parse_face(record: &Record<'_>) -> Option<RawFace> {
-    let count = usize::from(record.payload.first()?.checked_sub(0x81)?);
+fn parse_face(ctx: &DecodeContext<'_>, record: &Record<'_>) -> Result<Option<RawFace>, CodecError> {
+    let Some(count) = record.payload.first().and_then(|lead| lead.checked_sub(0x81)).map(usize::from) else { return Ok(None); };
     if count == 0 {
-        return None;
+        return Ok(None);
     }
     let mut position = 1;
-    let surface = wire::tokens::object_ref(record.payload, &mut position, false)?;
-    let mut loops = Vec::with_capacity(count);
+    let Some(surface) = wire::tokens::object_ref(record.payload, &mut position, false) else { return Ok(None); };
+    let mut loops = Vec::new();
     for _ in 0..count {
-        loops.push(wire::tokens::object_ref(
+        let Some(loop_id) = wire::tokens::object_ref(
             record.payload,
             &mut position,
             false,
-        )?);
+        ) else { return Ok(None); };
+        crate::resource::push(ctx, &mut loops, loop_id, "catia_e5_face_loop_ids")?;
     }
-    let trailer_sign = Sign::from_i16(View::i16_le_at(record.payload, position)?)?;
+    let Some(trailer_sign) = View::i16_le_at(record.payload, position).and_then(Sign::from_i16) else { return Ok(None); };
     if position + 2 != record.payload.len() {
-        return None;
+        return Ok(None);
     }
-    Some(RawFace {
+    Ok(Some(RawFace {
         id: record.id,
         surface,
         loops,
         trailer_sign,
-    })
+    }))
 }
 
-fn parse_loop(record: &Record<'_>) -> Option<RawLoop> {
-    let member_count = usize::from(record.payload.first()?.checked_sub(0x81)?);
+fn parse_loop(ctx: &DecodeContext<'_>, record: &Record<'_>) -> Result<Option<RawLoop>, CodecError> {
+    let Some(member_count) = record.payload.first().and_then(|lead| lead.checked_sub(0x81)).map(usize::from) else { return Ok(None); };
     if member_count == 0 || member_count % 2 != 0 {
-        return None;
+        return Ok(None);
     }
     let mut position = 1;
-    let mut pcurves = Vec::with_capacity(member_count / 2);
-    let mut edges = Vec::with_capacity(member_count / 2);
+    let mut pcurves = Vec::new();
+    let mut edges = Vec::new();
     for _ in 0..member_count / 2 {
-        pcurves.push(wire::tokens::object_ref(
+        let Some(pcurve) = wire::tokens::object_ref(
             record.payload,
             &mut position,
             false,
-        )?);
-        edges.push(wire::tokens::object_ref(
+        ) else { return Ok(None); };
+        let Some(edge) = wire::tokens::object_ref(
             record.payload,
             &mut position,
             false,
-        )?);
+        ) else { return Ok(None); };
+        crate::resource::push(ctx, &mut pcurves, pcurve, "catia_e5_loop_pcurves")?;
+        crate::resource::push(ctx, &mut edges, edge, "catia_e5_loop_edges")?;
     }
-    let surface = wire::tokens::object_ref(record.payload, &mut position, false)?;
-    let outer = parse_loop_signs(record.payload.get(position..)?, member_count / 2).ok()?;
-    Some(RawLoop {
+    let Some(surface) = wire::tokens::object_ref(record.payload, &mut position, false) else { return Ok(None); };
+    let Some(outer) = record.payload.get(position..).and_then(|tail| parse_loop_signs(tail, member_count / 2).ok()) else { return Ok(None); };
+    Ok(Some(RawLoop {
         id: record.id,
         surface,
         pcurves,
         edges,
         outer,
-    })
+    }))
 }
 
 #[derive(Debug)]
@@ -1567,8 +1635,12 @@ fn parse_edge(record: &Record<'_>) -> Option<E5Edge> {
     })
 }
 
-fn solve_loop_chain(edge_ids: &[u32], edges: &BTreeMap<u32, E5Edge>) -> Option<Vec<bool>> {
-    let first = edges.get(edge_ids.first()?)?;
+fn solve_loop_chain(
+    ctx: &DecodeContext<'_>,
+    edge_ids: &[u32],
+    edges: &BTreeMap<u32, E5Edge>,
+) -> Result<Option<Vec<bool>>, CodecError> {
+    let Some(first) = edge_ids.first().and_then(|id| edges.get(id)) else { return Ok(None); };
     let mut solutions = Vec::new();
     for first_reversed in [false, true] {
         let initial = if first_reversed {
@@ -1581,17 +1653,18 @@ fn solve_loop_chain(edge_ids: &[u32], edges: &BTreeMap<u32, E5Edge>) -> Option<V
         } else {
             first.end_vertex
         };
-        let mut senses = vec![first_reversed];
+        let mut senses = Vec::new();
+        crate::resource::push(ctx, &mut senses, first_reversed, "catia_e5_chain_senses")?;
         let mut valid = true;
         for edge_id in &edge_ids[1..] {
-            let edge = edges.get(edge_id)?;
+            let Some(edge) = edges.get(edge_id) else { return Ok(None); };
             match (edge.start_vertex == current, edge.end_vertex == current) {
                 (true, false) => {
-                    senses.push(false);
+                    crate::resource::push(ctx, &mut senses, false, "catia_e5_chain_senses")?;
                     current = edge.end_vertex;
                 }
                 (false, true) => {
-                    senses.push(true);
+                    crate::resource::push(ctx, &mut senses, true, "catia_e5_chain_senses")?;
                     current = edge.start_vertex;
                 }
                 _ => {
@@ -1601,11 +1674,11 @@ fn solve_loop_chain(edge_ids: &[u32], edges: &BTreeMap<u32, E5Edge>) -> Option<V
             }
         }
         if valid && current == initial {
-            solutions.push(senses);
+            crate::resource::push(ctx, &mut solutions, senses, "catia_e5_chain_solutions")?;
         }
     }
     if solutions.len() == 1 {
-        return solutions.pop();
+        return Ok(solutions.pop());
     }
     if edge_ids.len() == 2
         && solutions.len() == 2
@@ -1614,9 +1687,9 @@ fn solve_loop_chain(edge_ids: &[u32], edges: &BTreeMap<u32, E5Edge>) -> Option<V
             .zip(&solutions[1])
             .all(|(left, right)| left != right)
     {
-        return solutions.into_iter().find(|solution| !solution[0]);
+        return Ok(solutions.into_iter().find(|solution| !solution[0]));
     }
-    None
+    Ok(None)
 }
 
 #[cfg(test)]
@@ -1824,7 +1897,9 @@ mod tests {
             ]
             .concat(),
         );
-        let faces = parse_body_root(&payload).expect("widened body root");
+        let faces = crate::test_support::with_service_context(|ctx| parse_body_root(ctx, &payload))
+            .expect("service resource budget")
+            .expect("widened body root");
         assert_eq!(faces, [0x1600, 0x1601]);
     }
 
@@ -1896,7 +1971,7 @@ mod tests {
                 },
             ),
         ]);
-        assert_eq!(solve_loop_chain(&[1, 2], &edges), Some(vec![false, false]));
+        assert_eq!(crate::test_support::with_service_context(|ctx| solve_loop_chain(ctx, &[1, 2], &edges)).expect("service resource budget"), Some(vec![false, false]));
     }
 
     #[test]
@@ -2217,6 +2292,50 @@ mod tests {
         assert!(parse_topology(&ctx, &bytes)
             .expect("service decode")
             .is_none());
+    }
+
+    #[test]
+    fn e5_topology_collections_refuse_before_growth() {
+        let bytes = crate::test_support::test_e5::e5_torus_topology_stream();
+        assert!(crate::test_support::with_service_context(|ctx| parse_topology(ctx, &bytes))
+            .expect("service resource budget")
+            .is_some());
+        let mut operations = std::collections::HashSet::new();
+        for cap in 0..256 {
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+                crate::test_support::with_collection_limit(cap, |ctx| parse_topology(ctx, &bytes))
+            {
+                operations.insert(limit.operation);
+            }
+        }
+        for operation in [
+            "catia_e5_graph_records",
+            "catia_e5_records_by_id",
+            "catia_e5_topology_edges",
+            "catia_e5_topology_pcurves",
+            "catia_e5_topology_bounds",
+            "catia_e5_curve_supports",
+            "catia_e5_raw_loops",
+            "catia_e5_raw_faces",
+            "catia_e5_vertex_ids",
+            "catia_e5_face_loop_ids",
+            "catia_e5_loop_pcurves",
+            "catia_e5_loop_edges",
+            "catia_e5_chain_senses",
+            "catia_e5_chain_solutions",
+            "catia_e5_reachable_edges",
+            "catia_e5_loop_members",
+            "catia_e5_resolved_loops",
+            "catia_e5_topology_faces",
+            "catia_e5_vertex_refs",
+            "catia_e5_body_root_faces",
+            "catia_e5_bodies",
+            "catia_e5_body_face_roster",
+            "catia_e5_body_face_set",
+            "catia_e5_topology_face_set",
+        ] {
+            assert!(operations.contains(operation), "no refusal at {operation}");
+        }
     }
 
     #[test]
