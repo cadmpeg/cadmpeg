@@ -2,6 +2,7 @@
 //! Modern Rhino dimension payload decoding.
 
 use crate::loss::Diagnostics;
+use std::fmt;
 use std::ops::Range;
 
 use crate::chunks::{
@@ -1422,10 +1423,54 @@ pub(crate) fn apply_userdata(
 ///
 /// Returns the annotation and the codes for every reference the annotation could
 /// not carry.
+fn insert_dimension_property(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parameters: &mut std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    key: &'static str,
+    value: fmt::Arguments<'_>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    ctx.charge_collection_items(1, "Rhino dimension parameter entries")?;
+    let key = crate::wire::copy_retained_string(ctx, key, "Rhino dimension parameter key")?;
+    let key = cadmpeg_core::text::NonBlankString::new(key)
+        .ok_or_else(|| cadmpeg_core::CodecError::malformed("generated dimension key is blank"))?;
+    let value = crate::wire::admitted_format(ctx, value, "Rhino dimension parameter value")?;
+    parameters.insert(key, value);
+    Ok(())
+}
+
+struct CommaValues<'a>(&'a [f64]);
+
+impl fmt::Display for CommaValues<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, value) in self.0.iter().enumerate() {
+            if index > 0 {
+                f.write_str(",")?;
+            }
+            write!(f, "{value}")?;
+        }
+        Ok(())
+    }
+}
+
+struct SemicolonPoints<'a>(&'a [FiniteVector<2>]);
+
+impl fmt::Display for SemicolonPoints<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, point) in self.0.iter().enumerate() {
+            if index > 0 {
+                f.write_str(";")?;
+            }
+            write!(f, "{},{}", point[0], point[1])?;
+        }
+        Ok(())
+    }
+}
+
 pub(crate) fn project(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     dimension: &Dimension,
     key: &str,
-    name: Option<String>,
+    name: Option<&str>,
     object: &str,
     order: u32,
 ) -> Result<
@@ -1458,236 +1503,81 @@ pub(crate) fn project(
         // construction. Its radius is the one persisted numeric it does carry.
         Definition::CenterMark { radius } => ("center_mark", radius.get()),
     };
-    let mut parameters =
-        BTreeMap::from([("measurement".to_string(), dimension.measurement.to_string())]);
-    let mut properties = BTreeMap::from([
-        (
-            "annotation_type".to_string(),
-            dimension.annotation_type.to_string(),
-        ),
-        (
-            "detail_measured".to_string(),
-            dimension.detail_measured.to_string(),
-        ),
-        (
-            "distance_scale".to_string(),
-            dimension.distance_scale.get().to_string(),
-        ),
-        ("rich_text".to_string(), dimension.rich_text.clone()),
-        ("user_text".to_string(), dimension.user_text.clone()),
-        (
-            "use_default_text_point".to_string(),
-            dimension.use_default_text_point.to_string(),
-        ),
-        (
-            "user_text_point".to_string(),
-            format!(
-                "{},{}",
-                dimension.user_text_point[0], dimension.user_text_point[1]
-            ),
-        ),
-        (
-            "flip_arrows".to_string(),
-            format!("{},{}", dimension.flip_arrows[0], dimension.flip_arrows[1]),
-        ),
-        (
-            "arrow_position".to_string(),
-            dimension.arrow_position.to_string(),
-        ),
-        (
-            "allow_text_scaling".to_string(),
-            dimension.allow_text_scaling.to_string(),
-        ),
-        (
-            "plane_origin".to_string(),
-            dimension
-                .plane
-                .origin
-                .iter()
-                .map(f64::to_string)
-                .collect::<Vec<_>>()
-                .join(","),
-        ),
-        (
-            "plane_x_axis".to_string(),
-            dimension
-                .plane
-                .xaxis
-                .iter()
-                .map(f64::to_string)
-                .collect::<Vec<_>>()
-                .join(","),
-        ),
-        (
-            "plane_y_axis".to_string(),
-            dimension
-                .plane
-                .yaxis
-                .iter()
-                .map(f64::to_string)
-                .collect::<Vec<_>>()
-                .join(","),
-        ),
-        (
-            "plane_z_axis".to_string(),
-            dimension
-                .plane
-                .zaxis
-                .iter()
-                .map(f64::to_string)
-                .collect::<Vec<_>>()
-                .join(","),
-        ),
-        (
-            "plane_equation".to_string(),
-            dimension
-                .plane
-                .equation
-                .iter()
-                .map(f64::to_string)
-                .collect::<Vec<_>>()
-                .join(","),
-        ),
-        (
-            "horizontal_direction".to_string(),
-            dimension
-                .horizontal_direction
-                .iter()
-                .map(f64::to_string)
-                .collect::<Vec<_>>()
-                .join(","),
-        ),
-    ]);
-    match &dimension.family {
-        DimensionFamily::Modern { dimstyle_id } => {
-            properties.insert("dimstyle_id".to_string(), dimstyle_id.to_string());
+    let mut parameters = BTreeMap::new();
+    {
+        macro_rules! put {
+            ($key:expr, $value:expr) => {
+                insert_dimension_property(ctx, &mut parameters, $key, $value)
+            };
         }
-        DimensionFamily::Legacy {
-            dimstyle_index,
-            text_display_mode,
-            text_height,
-            justification,
-        } => {
-            properties.insert("dimstyle_index".to_string(), dimstyle_index.to_string());
-            properties.insert(
-                "text_display_mode".to_string(),
-                text_display_mode.to_string(),
-            );
-            properties.insert("text_height".to_string(), text_height.get().to_string());
-            properties.insert("justification".to_string(), justification.to_string());
+        put!("measurement", format_args!("{}", dimension.measurement))?;
+        put!("annotation_type", format_args!("{}", dimension.annotation_type))?;
+        put!("detail_measured", format_args!("{}", dimension.detail_measured))?;
+        put!("distance_scale", format_args!("{}", dimension.distance_scale.get()))?;
+        put!("rich_text", format_args!("{}", dimension.rich_text))?;
+        put!("user_text", format_args!("{}", dimension.user_text))?;
+        put!("use_default_text_point", format_args!("{}", dimension.use_default_text_point))?;
+        put!("user_text_point", format_args!("{},{}", dimension.user_text_point[0], dimension.user_text_point[1]))?;
+        put!("flip_arrows", format_args!("{},{}", dimension.flip_arrows[0], dimension.flip_arrows[1]))?;
+        put!("arrow_position", format_args!("{}", dimension.arrow_position))?;
+        put!("allow_text_scaling", format_args!("{}", dimension.allow_text_scaling))?;
+        put!("plane_origin", format_args!("{}", CommaValues(&dimension.plane.origin[..])))?;
+        put!("plane_x_axis", format_args!("{}", CommaValues(&dimension.plane.xaxis[..])))?;
+        put!("plane_y_axis", format_args!("{}", CommaValues(&dimension.plane.yaxis[..])))?;
+        put!("plane_z_axis", format_args!("{}", CommaValues(&dimension.plane.zaxis[..])))?;
+        put!("plane_equation", format_args!("{}", CommaValues(&dimension.plane.equation[..])))?;
+        put!("horizontal_direction", format_args!("{}", CommaValues(&dimension.horizontal_direction[..])))?;
+        match &dimension.family {
+            DimensionFamily::Modern { dimstyle_id } => {
+                put!("dimstyle_id", format_args!("{dimstyle_id}"))?;
+            }
+            DimensionFamily::Legacy { dimstyle_index, text_display_mode, text_height, justification } => {
+                put!("dimstyle_index", format_args!("{dimstyle_index}"))?;
+                put!("text_display_mode", format_args!("{text_display_mode}"))?;
+                put!("text_height", format_args!("{}", text_height.get()))?;
+                put!("justification", format_args!("{justification}"))?;
+            }
+            DimensionFamily::V2 { default_text, points, angular_radius } => {
+                put!("v2_default_text", format_args!("{default_text}"))?;
+                put!("v2_points", format_args!("{}", SemicolonPoints(points)))?;
+                if let Some(radius) = angular_radius {
+                    let angle = dimension.measurement;
+                    put!("v2_angle_radians", format_args!("{angle}"))?;
+                    put!("v2_numeric_value_degrees", format_args!("{}", angle * 180.0 / std::f64::consts::PI))?;
+                    put!("v2_radius", format_args!("{}", radius.get()))?;
+                }
+            }
         }
-        DimensionFamily::V2 {
-            default_text,
-            points,
-            angular_radius,
-        } => {
-            properties.insert("v2_default_text".to_string(), default_text.clone());
-            properties.insert(
-                "v2_points".to_string(),
-                points
-                    .iter()
-                    .map(|point| format!("{},{}", point[0], point[1]))
-                    .collect::<Vec<_>>()
-                    .join(";"),
-            );
-            if let Some(radius) = *angular_radius {
-                let angle = dimension.measurement;
-                properties.insert("v2_angle_radians".to_string(), angle.to_string());
-                properties.insert(
-                    "v2_numeric_value_degrees".to_string(),
-                    (angle * 180.0 / std::f64::consts::PI).to_string(),
-                );
-                properties.insert("v2_radius".to_string(), radius.get().to_string());
+        match &dimension.definition {
+            Definition::Linear { definition_point, dimension_line_point } => {
+                put!("definition_point", format_args!("{},{}", definition_point[0], definition_point[1]))?;
+                put!("dimension_line_point", format_args!("{},{}", dimension_line_point[0], dimension_line_point[1]))?;
+            }
+            Definition::Angular { first_direction, second_direction, first_extension_offset, second_extension_offset, dimension_line_point } => {
+                put!("first_direction", format_args!("{},{}", first_direction[0], first_direction[1]))?;
+                put!("second_direction", format_args!("{},{}", second_direction[0], second_direction[1]))?;
+                put!("first_extension_offset", format_args!("{}", first_extension_offset.get()))?;
+                put!("second_extension_offset", format_args!("{}", second_extension_offset.get()))?;
+                put!("dimension_line_point", format_args!("{},{}", dimension_line_point[0], dimension_line_point[1]))?;
+            }
+            Definition::Radial { radius_point, dimension_line_point, .. } => {
+                put!("radius_point", format_args!("{},{}", radius_point[0], radius_point[1]))?;
+                put!("dimension_line_point", format_args!("{},{}", dimension_line_point[0], dimension_line_point[1]))?;
+            }
+            Definition::Ordinate { definition_point, leader_point, measured_direction, kink_offsets } => {
+                put!("definition_point", format_args!("{},{}", definition_point[0], definition_point[1]))?;
+                put!("leader_point", format_args!("{},{}", leader_point[0], leader_point[1]))?;
+                put!("measured_direction", format_args!("{}", measured_direction.value()))?;
+                put!("kink_offsets", format_args!("{},{}", kink_offsets[0].get(), kink_offsets[1].get()))?;
+            }
+            Definition::CenterMark { radius } => {
+                put!("radius", format_args!("{}", radius.get()))?;
             }
         }
     }
-    match &dimension.definition {
-        Definition::Linear {
-            definition_point,
-            dimension_line_point,
-        } => {
-            properties.insert(
-                "definition_point".to_string(),
-                format!("{},{}", definition_point[0], definition_point[1]),
-            );
-            properties.insert(
-                "dimension_line_point".to_string(),
-                format!("{},{}", dimension_line_point[0], dimension_line_point[1]),
-            );
-        }
-        Definition::Angular {
-            first_direction,
-            second_direction,
-            first_extension_offset,
-            second_extension_offset,
-            dimension_line_point,
-        } => {
-            properties.insert(
-                "first_direction".to_string(),
-                format!("{},{}", first_direction[0], first_direction[1]),
-            );
-            properties.insert(
-                "second_direction".to_string(),
-                format!("{},{}", second_direction[0], second_direction[1]),
-            );
-            properties.insert(
-                "first_extension_offset".to_string(),
-                first_extension_offset.get().to_string(),
-            );
-            properties.insert(
-                "second_extension_offset".to_string(),
-                second_extension_offset.get().to_string(),
-            );
-            properties.insert(
-                "dimension_line_point".to_string(),
-                format!("{},{}", dimension_line_point[0], dimension_line_point[1]),
-            );
-        }
-        Definition::Radial {
-            radius_point,
-            dimension_line_point,
-            ..
-        } => {
-            properties.insert(
-                "radius_point".to_string(),
-                format!("{},{}", radius_point[0], radius_point[1]),
-            );
-            properties.insert(
-                "dimension_line_point".to_string(),
-                format!("{},{}", dimension_line_point[0], dimension_line_point[1]),
-            );
-        }
-        Definition::Ordinate {
-            definition_point,
-            leader_point,
-            measured_direction,
-            kink_offsets,
-        } => {
-            properties.insert(
-                "definition_point".to_string(),
-                format!("{},{}", definition_point[0], definition_point[1]),
-            );
-            properties.insert(
-                "leader_point".to_string(),
-                format!("{},{}", leader_point[0], leader_point[1]),
-            );
-            properties.insert(
-                "measured_direction".to_string(),
-                measured_direction.value().to_string(),
-            );
-            properties.insert(
-                "kink_offsets".to_string(),
-                format!("{},{}", kink_offsets[0].get(), kink_offsets[1].get()),
-            );
-        }
-        Definition::CenterMark { radius } => {
-            properties.insert("radius".to_string(), radius.get().to_string());
-        }
-    }
     if let Some(name) = name {
-        parameters.insert("object_name".to_string(), name);
+        insert_dimension_property(ctx, &mut parameters, "object_name", format_args!("{name}"))?;
     }
-    parameters.extend(properties);
 
     // Model-space text point via the dimension plane (stored UV, not world xyz).
     let position = (!dimension.use_default_text_point)
@@ -1704,16 +1594,24 @@ pub(crate) fn project(
     // non-nil -> charge and keep the raw UUID in parameters.
     let mut references = BTreeMap::new();
     let mut unresolved = Vec::new();
-    let mut reference = |role: &str, id: Option<Uuid>, code: RhinoLossCode| match id {
-        None => {}
+    let mut reference = |role: &'static str, id: Option<Uuid>, code: RhinoLossCode| -> Result<(), cadmpeg_core::CodecError> { match id {
+        None => Ok(()),
         Some(id) if id.is_nil() => {
-            references.insert(
-                role.to_string(),
-                vec![ReferenceSelection::new(ReferenceTarget::Null, Vec::new())],
-            );
+            ctx.charge_collection_items(1, "Rhino dimension reference entries")?;
+            let role = crate::wire::copy_retained_string(ctx, role, "Rhino dimension reference key")?;
+            let role = cadmpeg_core::text::NonBlankString::new(role)
+                .ok_or_else(|| cadmpeg_core::CodecError::malformed("generated dimension reference role is blank"))?;
+            let mut selections = crate::wire::admitted_collection(ctx, 1, "Rhino dimension reference selections")?;
+            selections.push(ReferenceSelection::new(ReferenceTarget::Null, Vec::new()));
+            references.insert(role, selections);
+            Ok(())
         }
-        Some(_) => unresolved.push(code),
-    };
+        Some(_) => {
+            crate::wire::reserve_collection(ctx, &mut unresolved, 1, "Rhino unresolved dimension references")?;
+            unresolved.push(code);
+            Ok(())
+        }
+    }};
     reference(
         "dimstyle_id",
         match &dimension.family {
@@ -1721,12 +1619,12 @@ pub(crate) fn project(
             DimensionFamily::Legacy { .. } | DimensionFamily::V2 { .. } => None,
         },
         RhinoLossCode::DimensionStyleUnresolved,
-    );
+    )?;
     reference(
         "detail_measured",
         Some(dimension.detail_measured),
         RhinoLossCode::DimensionDetailReferenceUnresolved,
-    );
+    )?;
 
     let value = cadmpeg_ir::scalar::FiniteReal::new(value)
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("dimension value must be finite"))?;
@@ -1737,46 +1635,59 @@ pub(crate) fn project(
             })
         })
         .transpose()?;
-    let key = cadmpeg_ir::ids::IdentityKey::try_new(key.to_owned())
+    let key = cadmpeg_ir::ids::IdentityKey::try_new(crate::wire::copy_retained_string(ctx, key, "Rhino dimension identity key")?)
         .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
-    let annotation_id = SemanticAnnotationId::compose(
-        &cadmpeg_ir::identity_namespace!("rhino", "dimension", "annotation"),
-        key,
-    );
+    let annotation_id = SemanticAnnotationId::try_from(crate::wire::admitted_format(
+        ctx,
+        format_args!("rhino:dimension:annotation#{}", key.as_str()),
+        "Rhino dimension annotation identity",
+    )?)
+    .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
+    let mut text = Vec::new();
+    if !dimension.user_text.is_empty() {
+        crate::wire::reserve_collection(ctx, &mut text, 1, "Rhino dimension annotation text")?;
+        text.push(crate::wire::copy_retained_string(ctx, &dimension.user_text, "Rhino dimension annotation text copy")?);
+    }
     let annotation = SemanticAnnotation {
-        id: annotation_id.clone(),
-        object: object.to_string(),
+        id: annotation_id,
+        object: crate::wire::copy_retained_string(ctx, object, "Rhino dimension annotation object")?,
         kind: SemanticAnnotationKind::Dimension,
-        runtime_type: runtime_type.to_string(),
+        runtime_type: crate::wire::copy_retained_string(ctx, runtime_type, "Rhino dimension runtime type")?,
         order,
-        text: (!dimension.user_text.is_empty())
-            .then(|| dimension.user_text.clone())
-            .into_iter()
-            .collect(),
-        references: cadmpeg_core::text::named_entries(annotation_id.as_str(), references)?,
+        text,
+        references,
         value: Some(value),
-        format: (!dimension.rich_text.is_empty()).then(|| dimension.rich_text.clone()),
+        format: (!dimension.rich_text.is_empty()).then(|| crate::wire::copy_retained_string(ctx, &dimension.rich_text, "Rhino dimension format text")).transpose()?,
         position,
-        parameters: cadmpeg_core::text::named_entries(annotation_id.as_str(), parameters)?,
+        parameters,
         assets: Vec::new(),
-        native_ref: object.to_string(),
+        native_ref: crate::wire::copy_retained_string(ctx, object, "Rhino dimension native reference")?,
     };
     Ok((annotation, unresolved))
 }
 
 /// Serializes one decoded dimension without source-record identity.
-pub(crate) fn semantic_json(dimension: &Dimension) -> Result<String, cadmpeg_core::CodecError> {
-    let (annotation, _) = project(dimension, "embedded-history-dimension", None, "", 0)?;
-    Ok(serde_json::json!({
-        "kind": "dimension",
-        "runtime_type": annotation.runtime_type,
-        "value": annotation.value,
-        "format": annotation.format,
-        "position": annotation.position,
-        "references": annotation.references,
-        "parameters": annotation.parameters,
-    })
-    .to_string())
+pub(crate) fn semantic_json(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    dimension: &Dimension,
+) -> Result<String, cadmpeg_core::CodecError> {
+    struct DimensionJson<'a>(&'a cadmpeg_ir::semantic_annotations::SemanticAnnotation);
+    impl serde::Serialize for DimensionJson<'_> {
+        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            use serde::ser::SerializeMap;
+            let mut map = serializer.serialize_map(Some(7))?;
+            map.serialize_entry("format", &self.0.format)?;
+            map.serialize_entry("kind", "dimension")?;
+            map.serialize_entry("parameters", &self.0.parameters)?;
+            map.serialize_entry("position", &self.0.position)?;
+            map.serialize_entry("references", &self.0.references)?;
+            map.serialize_entry("runtime_type", &self.0.runtime_type)?;
+            map.serialize_entry("value", &self.0.value)?;
+            map.end()
+        }
+    }
+    let (annotation, _) = project(ctx, dimension, "embedded-history-dimension", None, "", 0)?;
+    crate::wire::admitted_canonical_json(ctx, &DimensionJson(&annotation), "Rhino dimension semantic JSON")
 }
 
 #[cfg(test)]
@@ -2569,7 +2480,7 @@ pub(crate) mod tests {
         assert_eq!(linear.measurement, 60.0);
         assert_eq!(linear.horizontal_direction.get(), [1.0, 0.0]);
         let semantic: serde_json::Value =
-            serde_json::from_str(&semantic_json(&linear).expect("required invariant"))
+            serde_json::from_str(&semantic_json(&cadmpeg_test_support::service_decode_context(), &linear).expect("required invariant"))
                 .expect("required invariant");
         assert_eq!(semantic["kind"], "dimension");
         assert_eq!(semantic["runtime_type"], "linear_dimension");
@@ -2654,6 +2565,51 @@ pub(crate) mod tests {
                 && leader_point.get() == [20.0, 120.0]
                 && kink_offsets.map(FiniteReal::get) == [15.0, 7.5]
         ));
+    }
+
+    #[test]
+    fn dimension_projection_refuses_parameter_limit_and_preserves_semantic_json() {
+        let family = [3.0_f64, 4.0, 8.0, 9.0]
+            .into_iter()
+            .flat_map(f64::to_le_bytes)
+            .collect::<Vec<_>>();
+        let bytes = payload(1, &family);
+        let dimension = test_decode(
+            &bytes,
+            LINEAR,
+            0..bytes.len(),
+            crate::test_support::millimeter_scale(10.0),
+            ArchiveVersion::V8,
+        )
+        .expect("valid linear dimension");
+        let refusal = with_collection_limit(&[], 0, |ctx| {
+            super::project(ctx, &dimension, "test", None, "", 0)
+                .expect_err("first parameter exceeds zero items")
+        });
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "Rhino dimension parameter entries"
+        ));
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let (annotation, _) = super::project(&ctx, &dimension, "embedded-history-dimension", None, "", 0)
+            .expect("service profile admits projection");
+        let baseline = serde_json::json!({
+            "kind": "dimension",
+            "runtime_type": annotation.runtime_type,
+            "value": annotation.value,
+            "format": annotation.format,
+            "position": annotation.position,
+            "references": annotation.references,
+            "parameters": annotation.parameters,
+        })
+        .to_string();
+        let semantic = super::semantic_json(
+            &cadmpeg_test_support::service_decode_context(),
+            &dimension,
+        )
+        .expect("service profile admits semantic JSON");
+        assert_eq!(semantic, baseline);
     }
 
     #[test]

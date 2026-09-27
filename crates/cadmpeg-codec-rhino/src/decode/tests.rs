@@ -383,6 +383,24 @@ fn typed_install_loss_transfer_refuses_collection_limit() {
 }
 
 #[test]
+fn instance_unique_members_refuse_collection_limit() {
+    let members = [crate::wire::Uuid::from_canonical([0x51; 16])];
+    let refusal = with_collection_limit(0, |ctx| {
+        super::instance_members_are_unique(ctx, &members)
+            .expect_err("one member requires one set node")
+    });
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino instance unique members"
+    ));
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert!(super::instance_members_are_unique(&ctx, &members).expect("one unique member"));
+    assert!(!super::instance_members_are_unique(&ctx, &[members[0], members[0]])
+        .expect("duplicate members are admitted before rejection"));
+}
+
+#[test]
 fn candidate_validation_propagates_entity_limit() {
     let scan = scan_with_objects(&[]);
     let refusal = with_entity_limit(&scan, 0, |expand| {

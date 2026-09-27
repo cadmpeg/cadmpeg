@@ -1579,3 +1579,119 @@ fn embedded_history_hatch_retains_base_geometry_after_malformed_gradient() {
         .messages()
         .any(|message| message.contains("invalid gradient type")));
 }
+
+#[test]
+fn embedded_cage_json_preserves_bytes_and_refuses_retained_limit() {
+    let bytes = embedded_cage_payload();
+    let cage = crate::decode::with_expand_bytes(&bytes, |expand| {
+        crate::cage::decode(
+            expand,
+            0..bytes.len(),
+            crate::test_support::millimeter_scale(10.0),
+            ArchiveVersion::V8,
+        )
+    })
+    .expect("valid embedded cage");
+    let baseline = serde_json::json!({
+        "kind": "nurbs_cage",
+        "dimension": cage.dimension,
+        "rational": cage.rational(),
+        "orders": cage.orders,
+        "counts": cage.counts,
+        "knots": cage.knots,
+        "control_points": cage.control_points,
+        "weights": cage.weights,
+    })
+    .to_string();
+    let value = super::embedded_json(
+        &cadmpeg_test_support::service_decode_context(),
+        &super::CageJson(&cage),
+        &mut None,
+    )
+    .expect("service profile admits cage JSON");
+    assert_eq!(value, baseline);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(baseline.len() - 1).expect("test size fits");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let mut refusal = None;
+    assert!(super::embedded_json(&ctx, &super::CageJson(&cage), &mut refusal).is_none());
+    assert!(matches!(
+        refusal,
+        Some(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino embedded history geometry JSON"
+    ));
+}
+
+#[test]
+fn embedded_subd_diagnostics_stream_without_message_vector() {
+    let diagnostics = [crate::subd::SubdEnumDiagnostic::SymmetryType(9)];
+    let surface = serde_json::json!({"source": "subd"});
+    let value = super::SubdJson {
+        enum_diagnostics: super::SubdDiagnostics(&diagnostics),
+        kind: "subd",
+        neutral_metadata: &false,
+        surface: &surface,
+    };
+    let text = super::embedded_json(
+        &cadmpeg_test_support::service_decode_context(),
+        &value,
+        &mut None,
+    )
+    .expect("service profile admits SubD diagnostic JSON");
+    assert_eq!(
+        text,
+        "{\"enum_diagnostics\":[\"SubD symmetry type 9 mapped to neutral Unset\"],\"kind\":\"subd\",\"neutral_metadata\":false,\"surface\":{\"source\":\"subd\"}}"
+    );
+}
+
+#[test]
+fn embedded_mesh_json_preserves_bytes_and_refuses_retained_limit() {
+    let bytes = crate::test_support::test_dump::mesh_payload();
+    let mesh = crate::decode::with_expand_bytes(&bytes, |expand| {
+        crate::mesh::decode(
+            expand,
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V5,
+            crate::mesh::MeshDecodeOptions {
+                writer_version: None,
+                association: None,
+                id: "rhino:history:mesh#embedded".to_string().into(),
+                scale: MillimeterScale::IDENTITY,
+                userdata: &[],
+            },
+            &mut crate::mesh::MeshBudget::new(),
+        )
+    })
+    .expect("valid embedded mesh");
+    let baseline = serde_json::json!({
+        "kind": "mesh",
+        "vertices": mesh.tessellation.vertices(),
+        "triangles": mesh.tessellation.triangles(),
+        "strip_lengths": mesh.tessellation.strip_lengths(),
+        "normals": mesh.tessellation.vertex_normals(),
+        "channels": mesh.tessellation.channels(),
+    })
+    .to_string();
+    let text = super::embedded_json(
+        &cadmpeg_test_support::service_decode_context(),
+        &super::MeshJson(&mesh),
+        &mut None,
+    )
+    .expect("service profile admits mesh JSON");
+    assert_eq!(text, baseline);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(baseline.len() - 1).expect("test size fits");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let mut refusal = None;
+    assert!(super::embedded_json(&ctx, &super::MeshJson(&mesh), &mut refusal).is_none());
+    assert!(matches!(
+        refusal,
+        Some(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino embedded history geometry JSON"
+    ));
+}

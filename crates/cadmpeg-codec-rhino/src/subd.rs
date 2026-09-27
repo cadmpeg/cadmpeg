@@ -76,20 +76,6 @@ pub(crate) enum SubdEnumDiagnostic {
     SymmetryCoordinateSystem(u8),
 }
 
-impl SubdEnumDiagnostic {
-    /// Returns the typed-loss message for the retained raw value.
-    pub(crate) fn message(self) -> String {
-        match self {
-            Self::SymmetryType(value) => {
-                format!("SubD symmetry type {value} mapped to neutral Unset")
-            }
-            Self::SymmetryCoordinateSystem(value) => {
-                format!("SubD symmetry coordinate system {value} mapped to neutral Unset")
-            }
-        }
-    }
-}
-
 impl std::fmt::Display for SubdEnumDiagnostic {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

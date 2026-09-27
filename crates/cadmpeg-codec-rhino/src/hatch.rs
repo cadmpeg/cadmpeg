@@ -456,31 +456,32 @@ fn gradient_point(
     Ok([x, y, z])
 }
 
+#[derive(serde::Serialize)]
+struct GradientJson<'a> {
+    colors: &'a [GradientColorStop],
+    end: [FiniteReal; 3],
+    repeat: FiniteReal,
+    start: [FiniteReal; 3],
+    r#type: &'static str,
+    type_value: i32,
+}
+
+pub(crate) fn gradient_semantic(gradient: &Gradient) -> impl serde::Serialize + '_ {
+    GradientJson {
+        colors: &gradient.colors,
+        end: gradient.end,
+        repeat: gradient.repeat,
+        start: gradient.start,
+        r#type: gradient.kind.name(),
+        type_value: gradient.kind.value(),
+    }
+}
+
 pub(crate) fn gradient_json(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     gradient: &Gradient,
 ) -> Result<String, CodecError> {
-    #[derive(serde::Serialize)]
-    struct GradientJson<'a> {
-        colors: &'a [GradientColorStop],
-        end: [FiniteReal; 3],
-        repeat: FiniteReal,
-        start: [FiniteReal; 3],
-        r#type: &'static str,
-        type_value: i32,
-    }
-    crate::wire::admitted_json(
-        ctx,
-        &GradientJson {
-            colors: &gradient.colors,
-            end: gradient.end,
-            repeat: gradient.repeat,
-            start: gradient.start,
-            r#type: gradient.kind.name(),
-            type_value: gradient.kind.value(),
-        },
-        "Rhino hatch gradient JSON",
-    )
+    crate::wire::admitted_json(ctx, &gradient_semantic(gradient), "Rhino hatch gradient JSON")
 }
 
 fn parse_userdata(

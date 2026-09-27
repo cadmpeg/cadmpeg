@@ -43,6 +43,34 @@ fn plane_pcurve_lookup_set_refuses_collection_limit() {
 }
 
 #[test]
+fn embedded_brep_snapshot_refuses_retained_limit() {
+    let model = cadmpeg_ir::document::Model::default();
+    let semantic = cadmpeg_test_support::service_decode_context();
+    let expected = crate::wire::admitted_json(
+        &semantic,
+        &model.geometry_snapshot("brep"),
+        "Rhino embedded Brep JSON",
+    )
+    .expect("service profile admits snapshot");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(expected.len() - 1).expect("test size fits");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let refusal = crate::wire::admitted_json(
+        &ctx,
+        &model.geometry_snapshot("brep"),
+        "Rhino embedded Brep JSON",
+    )
+    .expect_err("snapshot text exceeds retained limit");
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino embedded Brep JSON"
+    ));
+}
+
+#[test]
 fn fallback_discards_topology_and_unknown_record_self_link() {
     let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#x.c3-0"
         .try_into()
@@ -788,6 +816,64 @@ fn staged_brep_collections_refuse_just_below_each_required_count() {
             witnessed.contains(operation),
             "missing refusal at {operation}"
         );
+    }
+}
+
+#[test]
+fn staged_brep_retained_copies_refuse_before_allocation() {
+    let (data, raw) = source_shaped_plane_brep();
+    let brep = with_expand_bytes(&data, |expand| {
+        crate::brep::ValidatedRawBrep::try_new(expand.ctx(), raw)
+    })
+    .expect("validate source-shaped Brep");
+    let association = SourceObjectAssociation {
+        format: cadmpeg_ir::CodecFormat::Rhino,
+        object_id: cadmpeg_core::text::NonBlankString::new("plane-brep".to_string())
+            .expect("nonempty source identity"),
+        name: Some("plane".to_string()),
+        color: None,
+        visible: Some(true),
+        layer: None,
+        instance_path: Vec::new(),
+    };
+    let unknown: UnknownId = "rhino:object:record#plane".try_into().expect("valid identity");
+    let mut witnessed = std::collections::BTreeSet::new();
+    let mut limit = 0_u64;
+    for _ in 0..512 {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
+            .expect("source bytes fit root limit");
+        let result = stage_brep(BrepTransferInput {
+            expand: crate::mesh::MeshExpand::new(&ctx, root),
+            data: &data,
+            archive: ArchiveVersion::V5,
+            writer_version: Some(200_206_180),
+            brep: &brep,
+            key: "plane",
+            association: &association,
+            unknown: &unknown,
+            scale: crate::test_support::millimeter_scale(25.4),
+            mesh_budget: &mut crate::mesh::MeshBudget::new(),
+        });
+        match result {
+            Err(crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))) => {
+                witnessed.insert(refusal.operation);
+                let next = refusal.used.checked_add(refusal.additional).expect("fixture budget fits");
+                assert!(next > limit, "retained refusal must advance the budget");
+                limit = next;
+            }
+            Ok(_) => break,
+            Err(other) => panic!("unexpected Brep staging error: {other}"),
+        }
+    }
+    for operation in [
+        "Rhino staged Brep body name",
+        "Rhino staged Brep link text",
+        "Rhino staged Brep derived ID text",
+    ] {
+        assert!(witnessed.contains(operation), "missing refusal at {operation}");
     }
 }
 

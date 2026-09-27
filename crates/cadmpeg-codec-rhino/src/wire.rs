@@ -3,6 +3,7 @@
 #![deny(clippy::disallowed_methods)]
 
 use std::collections::{HashMap, HashSet};
+use std::cell::RefCell;
 use std::fmt;
 use std::hash::Hash;
 
@@ -204,6 +205,157 @@ pub(crate) fn admitted_json(
     serde_json::to_writer(&mut bytes, value)
         .map_err(|error| CodecError::malformed(error.to_string()))?;
     String::from_utf8(bytes).map_err(|error| CodecError::malformed(error.to_string()))
+}
+
+/// Preserves the sorted object-key order of `serde_json::Value` without building
+/// an uncharged intermediate tree.
+pub(crate) fn admitted_canonical_json(
+    ctx: &DecodeContext<'_>,
+    value: &impl serde::Serialize,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    struct ByteCount(usize);
+    impl std::io::Write for ByteCount {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0 = self.0.checked_add(bytes.len()).ok_or(std::io::ErrorKind::OutOfMemory)?;
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+    }
+    let mut count = ByteCount(0);
+    serde_json::to_writer(&mut count, value)
+        .map_err(|error| CodecError::malformed(error.to_string()))?;
+    let _temporary = ctx.reserve_scoped(u64_from_index(count.0), operation)?;
+    let mut raw = Vec::new();
+    raw.try_reserve_exact(count.0).map_err(|_| allocation_failure(
+        ResourceDimension::MaterializedBytes, count.0, operation,
+    ))?;
+    serde_json::to_writer(&mut raw, value)
+        .map_err(|error| CodecError::malformed(error.to_string()))?;
+    let _tree = ctx.reserve_scoped(u64_from_index(count.0), operation)?;
+    let failure = RefCell::new(None);
+    let seed = CanonicalSeed { ctx, operation, failure: &failure };
+    let mut decoder = serde_json::Deserializer::from_slice(&raw);
+    let canonical = serde::de::DeserializeSeed::deserialize(seed, &mut decoder).map_err(|error| {
+        failure.into_inner().unwrap_or_else(|| CodecError::malformed(error.to_string()))
+    })?;
+    decoder.end().map_err(|error| CodecError::malformed(error.to_string()))?;
+    admitted_json(ctx, &canonical, operation)
+}
+
+fn allocation_failure(
+    dimension: ResourceDimension,
+    amount: usize,
+    operation: &'static str,
+) -> CodecError {
+    CodecError::ResourceLimit(ResourceLimit {
+        dimension,
+        reason: ResourceFailure::AllocationFailed,
+        limit: u64::MAX,
+        used: 0,
+        additional: u64_from_index(amount),
+        operation,
+    })
+}
+
+struct CanonicalSeed<'a, 'b> {
+    ctx: &'a DecodeContext<'a>,
+    operation: &'static str,
+    failure: &'b RefCell<Option<CodecError>>,
+}
+
+impl<'a, 'b> Copy for CanonicalSeed<'a, 'b> {}
+impl<'a, 'b> Clone for CanonicalSeed<'a, 'b> {
+    fn clone(&self) -> Self { *self }
+}
+
+impl<'de> serde::de::DeserializeSeed<'de> for CanonicalSeed<'_, '_> {
+    type Value = serde_json::Value;
+    fn deserialize<D: serde::Deserializer<'de>>(self, decoder: D) -> Result<Self::Value, D::Error> {
+        decoder.deserialize_any(CanonicalVisitor(self))
+    }
+}
+
+struct CanonicalVisitor<'a, 'b>(CanonicalSeed<'a, 'b>);
+
+impl<'de> serde::de::Visitor<'de> for CanonicalVisitor<'_, '_> {
+    type Value = serde_json::Value;
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a JSON value")
+    }
+    fn visit_bool<E: serde::de::Error>(self, value: bool) -> Result<Self::Value, E> { Ok(value.into()) }
+    fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Self::Value, E> { Ok(value.into()) }
+    fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Self::Value, E> { Ok(value.into()) }
+    fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Self::Value, E> {
+        Ok(serde_json::Number::from_f64(value).map_or(serde_json::Value::Null, serde_json::Value::Number))
+    }
+    fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> { Ok(serde_json::Value::Null) }
+    fn visit_none<E: serde::de::Error>(self) -> Result<Self::Value, E> { Ok(serde_json::Value::Null) }
+    fn visit_some<D: serde::Deserializer<'de>>(self, decoder: D) -> Result<Self::Value, D::Error> {
+        serde::de::DeserializeSeed::deserialize(self.0, decoder)
+    }
+    fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+        let mut copy = String::new();
+        copy.try_reserve_exact(value.len()).map_err(|_| self.0.fail(allocation_failure(
+            ResourceDimension::MaterializedBytes, value.len(), self.0.operation,
+        )))?;
+        copy.push_str(value);
+        Ok(serde_json::Value::String(copy))
+    }
+    fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
+        Ok(serde_json::Value::String(value))
+    }
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut sequence: A) -> Result<Self::Value, A::Error> {
+        let mut values = Vec::new();
+        while let Some(value) = sequence.next_element_seed(self.0)? {
+            reserve_collection(self.0.ctx, &mut values, 1, self.0.operation)
+                .map_err(|error| self.0.fail(error))?;
+            values.push(value);
+        }
+        Ok(serde_json::Value::Array(values))
+    }
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+        let mut values = serde_json::Map::new();
+        while let Some(key) = map.next_key_seed(CanonicalKeySeed(self.0))? {
+            self.0.ctx.charge_collection_items(1, self.0.operation)
+                .map_err(|error| self.0.fail(error))?;
+            let value = map.next_value_seed(self.0)?;
+            values.insert(key, value);
+        }
+        Ok(serde_json::Value::Object(values))
+    }
+}
+
+struct CanonicalKeySeed<'a, 'b>(CanonicalSeed<'a, 'b>);
+
+impl<'de> serde::de::DeserializeSeed<'de> for CanonicalKeySeed<'_, '_> {
+    type Value = String;
+    fn deserialize<D: serde::Deserializer<'de>>(self, decoder: D) -> Result<Self::Value, D::Error> {
+        decoder.deserialize_string(CanonicalKeyVisitor(self.0))
+    }
+}
+
+struct CanonicalKeyVisitor<'a, 'b>(CanonicalSeed<'a, 'b>);
+
+impl<'de> serde::de::Visitor<'de> for CanonicalKeyVisitor<'_, '_> {
+    type Value = String;
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result { formatter.write_str("a JSON object key") }
+    fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+        let mut copy = String::new();
+        copy.try_reserve_exact(value.len()).map_err(|_| self.0.fail(allocation_failure(
+            ResourceDimension::MaterializedBytes, value.len(), self.0.operation,
+        )))?;
+        copy.push_str(value);
+        Ok(copy)
+    }
+    fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> { Ok(value) }
+}
+
+impl CanonicalSeed<'_, '_> {
+    fn fail<E: serde::de::Error>(&self, error: CodecError) -> E {
+        *self.failure.borrow_mut() = Some(error);
+        E::custom("JSON allocation refused")
+    }
 }
 
 impl<T> ExactVec<T> {
