@@ -229,3 +229,51 @@ fn pmi_other_dimension_name_refuses_retained_limit() {
                 && refusal.operation == "step_pmi_other_dimension_name"
     ));
 }
+
+#[test]
+fn pmi_modifier_text_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits retained policy");
+    let value = crate::parse::Value::Enumeration("ABC".into());
+    assert!(matches!(
+        super::super::modifier_values(&value, &mut Vec::new(), Some(&ctx)),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_pmi_modifier_text"
+    ));
+}
+
+#[test]
+fn pmi_modifier_items_refuse_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits collection policy");
+    let value = crate::parse::Value::Enumeration("ABC".into());
+    assert!(matches!(
+        super::super::modifier_values(&value, &mut Vec::new(), Some(&ctx)),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_pmi_modifier_items"
+    ));
+}
+
+#[test]
+fn pmi_modifier_walk_refuses_depth_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits depth policy");
+    let value = crate::parse::Value::List(vec![crate::parse::Value::Enumeration("ABC".into())]);
+    assert!(matches!(
+        super::super::modifier_values(&value, &mut Vec::new(), Some(&ctx)),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RecursionDepth
+                && refusal.operation == "step_pmi_modifier_walk"
+    ));
+}

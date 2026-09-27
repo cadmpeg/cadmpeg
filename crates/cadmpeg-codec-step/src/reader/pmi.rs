@@ -650,7 +650,7 @@ pub(super) fn decode(
                 defined_area_unit,
                 defined_area_second_unit,
                 datum_system,
-                modifiers: tolerance_modifiers(record),
+                modifiers: tolerance_modifiers(record, ctx)?,
             },
         )?;
         claim_pmi_typed(&mut typed, id, ctx)?;
@@ -1829,24 +1829,46 @@ fn tolerance_kind(name: Option<&str>) -> Option<GeometricToleranceKind> {
     })
 }
 
-fn tolerance_modifiers(record: &RawRecord) -> Vec<String> {
-    record
+fn tolerance_modifiers(
+    record: &RawRecord,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Vec<String>, CodecError> {
+    let mut modifiers = Vec::new();
+    if let Some(partial) = record
         .partials
         .iter()
         .find(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_MODIFIERS")
-        .into_iter()
-        .flat_map(|partial| partial.parameters.iter())
-        .flat_map(modifier_values)
-        .collect()
+    {
+        for value in &partial.parameters {
+            modifier_values(value, &mut modifiers, ctx)?;
+        }
+    }
+    Ok(modifiers)
 }
 
-fn modifier_values(value: &Value) -> Vec<String> {
+fn modifier_values(
+    value: &Value,
+    output: &mut Vec<String>,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
+    let _nested = ctx
+        .map(|ctx| ctx.enter_nested("step_pmi_modifier_walk"))
+        .transpose()?;
     match value {
-        Value::Enumeration(value) => vec![value.to_ascii_lowercase()],
-        Value::List(values) => values.iter().flat_map(modifier_values).collect(),
-        Value::Typed(_, value) => modifier_values(value),
-        _ => Vec::new(),
+        Value::Enumeration(value) => {
+            let mut text = clone_pmi_text(value, ctx, "step_pmi_modifier_text")?;
+            text.make_ascii_lowercase();
+            push_pmi_vec(output, text, ctx, "step_pmi_modifier_items")?;
+        }
+        Value::List(values) => {
+            for value in values {
+                modifier_values(value, output, ctx)?;
+            }
+        }
+        Value::Typed(_, value) => modifier_values(value, output, ctx)?,
+        _ => {}
     }
+    Ok(())
 }
 
 fn characteristic_values(
