@@ -2549,13 +2549,15 @@ impl<'a> DecodeContext<'a> {
             }
         }
         self.report.typed_losses.extend(omissions);
-        losses.extend(
-            self.scan
-                .definitions
-                .diagnostics()
-                .iter()
-                .map(crate::instances::DefinitionDiagnostic::to_loss),
-        );
+        for diagnostic in self.scan.definitions.diagnostics() {
+            crate::wire::reserve_collection(
+                self.expand.ctx(),
+                &mut losses,
+                1,
+                "Rhino final decode losses",
+            )?;
+            losses.push(diagnostic.to_loss(self.expand.ctx())?);
+        }
         losses.append(&mut self.report.typed_losses);
         losses.extend(self.scan.warnings.iter().map(|diagnostic| {
             diagnostic

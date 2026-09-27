@@ -105,6 +105,31 @@ fn sha256_text_refuses_retained_limit() {
 }
 
 #[test]
+fn definition_diagnostic_loss_refuses_retained_limit() {
+    let diagnostic = crate::instances::DefinitionDiagnostic {
+        diagnostic: crate::loss::RhinoDiagnostic {
+            code: None,
+            message: "fixture warning".to_owned(),
+        },
+        source_range: 0..1,
+    };
+    with_retained_limit(0, |ctx| {
+        let error = diagnostic
+            .to_loss(ctx)
+            .expect_err("loss text exceeds retained limit");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.operation == "Rhino instance-definition loss text"
+        ));
+    });
+    let loss = diagnostic
+        .to_loss(&cadmpeg_test_support::service_decode_context())
+        .expect("service profile admits loss text");
+    assert!(loss.message.contains("fixture warning"));
+}
+
+#[test]
 fn reference_object_array_ranges_refuse_collection_limit() {
     let archive = ArchiveVersion::V8;
     let mut data = 1_i32.to_le_bytes().to_vec();
