@@ -585,6 +585,8 @@ pub(super) struct ExpressionDeclaration {
 
 #[cfg(test)]
 mod expression_wire_tests;
+#[cfg(test)]
+mod record_wire_tests;
 
 #[derive(Serialize)]
 struct ExpressionDeclarationRef<'a> {
@@ -1208,8 +1210,8 @@ impl TryFrom<FieldDefinitionWire> for FieldDefinition {
 }
 
 /// Directory entry for one externally bounded NX OM entity record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "ObjectRecordWire", into = "ObjectRecordWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "ObjectRecordWire")]
 pub(super) struct ObjectRecord {
     /// Globally unique record identity.
     id: String,
@@ -1238,6 +1240,48 @@ pub(super) struct ObjectRecord {
     source_entry: String,
     /// Absolute file offset of the record start.
     source_offset: u64,
+}
+
+#[derive(Serialize)]
+struct ObjectRecordRef<'a> {
+    id: &'a str,
+    object_id: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    object_id_source_offset: Option<u64>,
+    section_ordinal: u32,
+    record_ordinal: u32,
+    section_offset: u64,
+    byte_len: u64,
+    sha256: &'a crate::native::hex::Sha256Hex,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stable_identity: Option<&'a str>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    dependencies: &'a Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    dependents: &'a Vec<String>,
+    source_entry: &'a str,
+    source_offset: u64,
+}
+
+impl Serialize for ObjectRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ObjectRecordRef {
+            id: &self.id,
+            object_id: Some(self.object_id.0),
+            object_id_source_offset: Some(self.object_id.1),
+            section_ordinal: self.section_ordinal,
+            record_ordinal: self.record_ordinal,
+            section_offset: self.section_offset,
+            byte_len: self.byte_len,
+            sha256: &self.sha256,
+            stable_identity: self.stable_identity.as_deref(),
+            dependencies: &self.dependencies,
+            dependents: &self.dependents,
+            source_entry: &self.source_entry,
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 // The identity and its offset are stated together, so the refusal names which
@@ -1277,6 +1321,7 @@ struct ObjectRecordWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<ObjectRecord> for ObjectRecordWire {
     fn from(value: ObjectRecord) -> Self {
         let (id, offset) = value.object_id;
@@ -1600,11 +1645,8 @@ enum DataBlockControlFormKind {
 }
 
 /// Atomic classification of one complete offset-store control lane.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DataBlockControlFormWire",
-    into = "DataBlockControlFormWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DataBlockControlFormWire")]
 pub(super) struct DataBlockControlForm {
     /// Globally unique control-form identity.
     pub(super) id: String,
@@ -1614,6 +1656,46 @@ pub(super) struct DataBlockControlForm {
     kind: DataBlockControlFormKind,
     /// Absolute file offset of the control block.
     pub(super) source_offset: u64,
+}
+
+#[derive(Serialize)]
+struct DataBlockControlFormRef<'a> {
+    id: &'a str,
+    data_block: &'a str,
+    kind: DataBlockControlFormKindWire,
+    value_count: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    leading_value_width: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    leading_value: Option<u32>,
+    byte_len: u64,
+    source_offset: u64,
+}
+
+impl Serialize for DataBlockControlForm {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (kind, leading_value_width, leading_value) = match self.kind {
+            DataBlockControlFormKind::ZeroPrefixed { .. } => {
+                (DataBlockControlFormKindWire::ZeroPrefixed, None, None)
+            }
+            DataBlockControlFormKind::ProductAnchored { leading, .. } => (
+                DataBlockControlFormKindWire::ProductAnchored,
+                leading.map(ControlLeadingValue::width),
+                leading.map(ControlLeadingValue::value),
+            ),
+        };
+        DataBlockControlFormRef {
+            id: &self.id,
+            data_block: &self.data_block,
+            kind,
+            value_count: self.kind.value_count(),
+            leading_value_width,
+            leading_value,
+            byte_len: self.kind.byte_len(),
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 impl DataBlockControlFormKind {
@@ -1662,6 +1744,7 @@ enum DataBlockControlFormKindWire {
     ProductAnchored,
 }
 
+#[cfg(test)]
 impl From<DataBlockControlForm> for DataBlockControlFormWire {
     fn from(value: DataBlockControlForm) -> Self {
         let (kind, leading_value_width, leading_value) = match value.kind {
@@ -1773,11 +1856,8 @@ pub(super) struct DataBlockControlIndexValue {
 }
 
 /// Registered class selected by the leading lane of an offset-store control block.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DataBlockControlClassReferenceWire",
-    into = "DataBlockControlClassReferenceWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DataBlockControlClassReferenceWire")]
 pub(super) struct DataBlockControlClassReference {
     /// Globally unique class-reference identity.
     pub(super) id: String,
@@ -1791,6 +1871,34 @@ pub(super) struct DataBlockControlClassReference {
     class: Option<DataBlockControlClassRef>,
     /// Absolute file offset of the four-byte control word.
     pub(super) source_offset: u64,
+}
+
+#[derive(Serialize)]
+struct DataBlockControlClassReferenceRef<'a> {
+    id: &'a str,
+    data_block: &'a str,
+    ordinal: u32,
+    class_ordinal: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    class_definition: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    class_name: Option<&'a str>,
+    source_offset: u64,
+}
+
+impl Serialize for DataBlockControlClassReference {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DataBlockControlClassReferenceRef {
+            id: &self.id,
+            data_block: &self.data_block,
+            ordinal: self.ordinal,
+            class_ordinal: self.class_ordinal,
+            class_definition: self.class.as_ref().map(|class| class.definition.as_str()),
+            class_name: self.class.as_ref().map(|class| class.name.as_str()),
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Retained class-definition identity and registered name.
@@ -1821,6 +1929,7 @@ struct DataBlockControlClassReferenceWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<DataBlockControlClassReference> for DataBlockControlClassReferenceWire {
     fn from(value: DataBlockControlClassReference) -> Self {
         let (class_definition, class_name) = match value.class {
@@ -1864,8 +1973,8 @@ impl TryFrom<DataBlockControlClassReferenceWire> for DataBlockControlClassRefere
 }
 
 /// Ordered object reference carried by an offset-only OM data block.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "DataBlockReferenceWire", into = "DataBlockReferenceWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DataBlockReferenceWire")]
 pub(super) struct DataBlockReference {
     /// Globally unique reference identity.
     pub(super) id: String,
@@ -1881,6 +1990,36 @@ pub(super) struct DataBlockReference {
     pub(super) target_expression_declaration: Option<String>,
     /// Absolute file offset of the object-index token.
     pub(super) source_offset: u64,
+}
+
+#[derive(Serialize)]
+struct DataBlockReferenceRef<'a> {
+    id: &'a str,
+    data_block: &'a str,
+    ordinal: u32,
+    object_id: u32,
+    raw_object_id: &'a [u8],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    target_record: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    target_expression_declaration: Option<&'a str>,
+    source_offset: u64,
+}
+
+impl Serialize for DataBlockReference {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DataBlockReferenceRef {
+            id: &self.id,
+            data_block: &self.data_block,
+            ordinal: self.ordinal,
+            object_id: self.object.value(),
+            raw_object_id: self.object.raw(),
+            target_record: self.target_record.as_deref(),
+            target_expression_declaration: self.target_expression_declaration.as_deref(),
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1913,6 +2052,7 @@ struct DataBlockReferenceWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<DataBlockReference> for DataBlockReferenceWire {
     fn from(value: DataBlockReference) -> Self {
         Self {
@@ -2008,13 +2148,33 @@ pub(super) struct DataBlockColumnIndexTable {
 }
 
 /// Product/version header from one indexed NX OM store.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(from = "StoreHeaderWire", into = "StoreHeaderWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(from = "StoreHeaderWire")]
 pub(super) enum StoreHeader {
     /// Header in an ID-bounded store record.
     Fixed(FixedStoreHeader),
     /// Header in an offset-bounded store block.
     OffsetOnly(OffsetStoreHeader),
+}
+
+#[derive(Serialize)]
+struct StoreHeaderRef<'a> {
+    object_id: Option<u32>,
+    #[serde(flatten)]
+    header: &'a OffsetStoreHeader,
+}
+
+impl Serialize for StoreHeader {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        StoreHeaderRef {
+            object_id: match self {
+                Self::Fixed(value) => Some(value.object_id),
+                Self::OffsetOnly(_) => None,
+            },
+            header: self.header(),
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Product/version header in an ID-bounded store record.
@@ -2069,6 +2229,7 @@ impl From<StoreHeaderWire> for StoreHeader {
     }
 }
 
+#[cfg(test)]
 impl From<StoreHeader> for StoreHeaderWire {
     fn from(header: StoreHeader) -> Self {
         match header {
