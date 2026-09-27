@@ -1658,7 +1658,7 @@ fn parse_sketch(
             );
         }
     }
-    let (horizontal_axis, vertical_axis, root_point) = builtin_reference_usage(properties);
+    let (horizontal_axis, vertical_axis, root_point) = builtin_reference_usage(ctx, properties)?;
     if horizontal_axis {
         reserve_vec_items(ctx, &mut entities, 1, "fcstd sketch entities")?;
         entities.push(
@@ -1740,12 +1740,12 @@ fn parse_sketch(
     })
 }
 
-fn builtin_reference_usage(properties: &[&PropertyRecord]) -> (bool, bool, bool) {
+fn builtin_reference_usage(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord]) -> Result<(bool, bool, bool), CodecError> {
     let Some(property) = property(properties, "Constraints") else {
-        return (false, false, false);
+        return Ok((false, false, false));
     };
     let Ok(xml) = roxmltree::Document::parse(property.xml.text()) else {
-        return (false, false, false);
+        return Ok((false, false, false));
     };
     let mut horizontal = false;
     let mut vertical = false;
@@ -1755,8 +1755,10 @@ fn builtin_reference_usage(properties: &[&PropertyRecord]) -> (bool, bool, bool)
         .filter(|node| node.has_tag_name("Constrain"))
     {
         let type_code = int_attr(node, "Type");
-        let Ok(operands) = constraint_operands(node) else {
-            continue;
+        let operands = match constraint_operands(ctx, node) {
+            Ok(operands) => operands,
+            Err(CodecError::ResourceLimit(limit)) => return Err(CodecError::ResourceLimit(limit)),
+            Err(_) => continue,
         };
         root |= matches!(type_code, Some(7 | 8)) && operands.len() == 1;
         for (entity, position) in operands {
@@ -1772,7 +1774,7 @@ fn builtin_reference_usage(properties: &[&PropertyRecord]) -> (bool, bool, bool)
             vertical |= entity == -2 && position == 0;
         }
     }
-    (horizontal, vertical, root)
+    Ok((horizontal, vertical, root))
 }
 
 /// Lanes of a sketch B-spline record, as the source states them.
@@ -2102,12 +2104,11 @@ fn parse_constraints(
                 Err(_) => (None, "malformed_type".to_owned()),
             },
         };
-        let operands = constraint_operands(node).map_err(|message| {
-            CodecError::malformed(format_args!(
-                "{} constraint {}: {message}",
-                property.id,
-                index + 1
-            ))
+        let operands = constraint_operands(ctx, node).map_err(|error| match error {
+            CodecError::Malformed(message) => CodecError::malformed(format_args!(
+                "{} constraint {}: {message}", property.id, index + 1
+            )),
+            error => error,
         })?;
         let resolve = |entity, position| {
             if type_code == Some(9) {
@@ -2675,25 +2676,23 @@ fn sketch_axis(locus: &SketchLocus) -> Option<SketchAxis> {
     }
 }
 
-fn constraint_operands(node: roxmltree::Node<'_, '_>) -> Result<Vec<(i64, i64)>, &'static str> {
+fn constraint_operands(ctx: &DecodeContext<'_>, node: roxmltree::Node<'_, '_>) -> Result<Vec<(i64, i64)>, CodecError> {
     match (
         node.attribute("ElementIds"),
         node.attribute("ElementPositions"),
     ) {
         (Some(ids), Some(positions)) => {
-            let ids = split_ints(ids)?;
-            let positions = split_ints(positions)?;
+            let ids = split_ints(ctx, ids)?;
+            let positions = split_ints(ctx, positions)?;
             if ids.len() != positions.len() {
-                return Err("ElementIds and ElementPositions counts differ");
+                return Err(CodecError::malformed("ElementIds and ElementPositions counts differ"));
             }
-            return Ok(ids
-                .into_iter()
-                .zip(positions)
-                .filter(|(entity, _)| *entity != -2000)
-                .collect());
+            let mut operands = collection_vec(ctx, ids.len(), "fcstd constraint operand pairs")?;
+            operands.extend(ids.into_iter().zip(positions).filter(|(entity, _)| *entity != -2000));
+            return Ok(operands);
         }
         (Some(_), None) | (None, Some(_)) => {
-            return Err("ElementIds and ElementPositions must both be present");
+            return Err(CodecError::malformed("ElementIds and ElementPositions must both be present"));
         }
         (None, None) => {}
     }
@@ -2708,15 +2707,15 @@ fn constraint_operands(node: roxmltree::Node<'_, '_>) -> Result<Vec<(i64, i64)>,
             (Some(entity), Some(position)) => {
                 let entity = entity
                     .parse::<i64>()
-                    .map_err(|_| "constraint entity is not an integer")?;
+                    .map_err(|_| CodecError::malformed("constraint entity is not an integer"))?;
                 let position = position
                     .parse::<i64>()
-                    .map_err(|_| "constraint position is not an integer")?;
+                    .map_err(|_| CodecError::malformed("constraint position is not an integer"))?;
                 if entity != -2000 {
                     operands.push((entity, position));
                 }
             }
-            _ => return Err("constraint entity and position must both be present"),
+            _ => return Err(CodecError::malformed("constraint entity and position must both be present")),
         }
     }
     Ok(operands)
@@ -2785,19 +2784,20 @@ fn direct_counted_records<'a, 'input>(
     Ok(records)
 }
 
-fn split_ints(value: &str) -> Result<Vec<i64>, &'static str> {
+fn split_ints(ctx: &DecodeContext<'_>, value: &str) -> Result<Vec<i64>, CodecError> {
     if value.trim().is_empty() {
         return Ok(Vec::new());
     }
     let mut values = Vec::new();
     for group in value.split(',') {
         if group.trim().is_empty() {
-            return Err("constraint integer list has an empty item");
+            return Err(CodecError::malformed("constraint integer list has an empty item"));
         }
         for part in group.split_ascii_whitespace() {
+            reserve_vec_items(ctx, &mut values, 1, "fcstd constraint integer list")?;
             values.push(
                 part.parse::<i64>()
-                    .map_err(|_| "constraint integer list has an invalid integer")?,
+                    .map_err(|_| CodecError::malformed("constraint integer list has an invalid integer"))?,
             );
         }
     }

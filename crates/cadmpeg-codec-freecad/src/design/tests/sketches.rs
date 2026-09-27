@@ -55,6 +55,18 @@ fn sketch_carrier_attributes_refuse_at_caller_limit() {
 }
 
 #[test]
+fn constraint_integer_list_refuses_at_caller_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::super::split_ints(&ctx, "1 2"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "fcstd constraint integer list"));
+}
+
+#[test]
 fn circular_arc_admits_finite_fields_and_keeps_invalid_native_fallback() {
     let mut attributes = std::collections::BTreeMap::from([
         ("CenterX".to_owned(), "1".to_owned()),
