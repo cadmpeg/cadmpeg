@@ -742,42 +742,49 @@ fn reference_state_packets(
     stream: &[u8],
     census: &Census,
 ) -> Result<Vec<ReferenceStatePacket>, CodecError> {
-    Ok(uncovered_spans(ctx, stream.len(), census, true)?
-        .flat_map(|(offset, gap_end)| {
-            let mut packets = Vec::new();
-            let mut at = offset;
-            while let Some(packet) = reference_state_packet(stream, at, gap_end) {
-                at = packet.end;
-                packets.push(packet);
-            }
-            packets
-        })
-        .collect())
+    let mut packets = Vec::new();
+    for (offset, gap_end) in uncovered_spans(ctx, stream.len(), census, true)? {
+        let mut at = offset;
+        while let Some(packet) = reference_state_packet(ctx, stream, at, gap_end)? {
+            at = packet.end;
+            census::push_event(ctx, &mut packets, packet, "NX reference state packets")?;
+        }
+    }
+    Ok(packets)
 }
 
 fn reference_state_packet(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     offset: usize,
     gap_end: usize,
-) -> Option<ReferenceStatePacket> {
-    (View::u16_be_at(stream, offset) == Some(1) && View::u16_be_at(stream, offset + 2) == Some(1))
-        .then_some(())?;
-    let first_offset = offset.checked_add(4)?;
-    let (first, mut at) = reference_state_frame(stream, first_offset, gap_end)?;
-    let mut frames = StateFrames::new(first);
+) -> Result<Option<ReferenceStatePacket>, CodecError> {
+    if View::u16_be_at(stream, offset) != Some(1)
+        || View::u16_be_at(stream, offset + 2) != Some(1)
+    {
+        return Ok(None);
+    }
+    let Some((first, mut at)) = offset
+        .checked_add(4)
+        .and_then(|first_offset| reference_state_frame(stream, first_offset, gap_end))
+    else {
+        return Ok(None);
+    };
+    let mut frames = StateFrames::new(ctx, first)?;
     while let Some((frame, end)) = reference_state_frame(stream, at, gap_end) {
-        frames.push(frame);
+        ctx.charge_work(1, "scan NX reference state frames")?;
+        frames.push(ctx, frame)?;
         at = end;
     }
     let terminal_end = reference_state_terminal(stream, at, gap_end);
     let terminal = terminal_end.is_some();
     at = terminal_end.unwrap_or(at);
-    Some(ReferenceStatePacket {
+    Ok(Some(ReferenceStatePacket {
         frames,
         terminal,
         offset,
         end: at,
-    })
+    }))
 }
 
 fn reference_state_frame(
