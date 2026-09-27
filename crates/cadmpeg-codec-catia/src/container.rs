@@ -573,25 +573,23 @@ fn e5_record_spans(data: &[u8]) -> Vec<Range<usize>> {
 /// framed E5 records. Route selection still uses [`e5_record_spans`] because
 /// it needs a contiguous declared-stride walk; carrier decoders need the
 /// complete frame inventory instead.
-pub(crate) fn all_e5_record_spans(data: &[u8]) -> Vec<Range<usize>> {
-    let mut spans = Vec::new();
+pub(crate) fn all_e5_record_spans(data: &[u8]) -> impl Iterator<Item = Range<usize>> + '_ {
     let mut search = 0;
-    while search < data.len() {
-        let Some(relative) = data[search..]
+    std::iter::from_fn(move || loop {
+        if search >= data.len() {
+            return None;
+        }
+        let relative = data[search..]
             .windows(E5_MARKER.len())
-            .position(|bytes| bytes == E5_MARKER)
-        else {
-            break;
-        };
+            .position(|bytes| bytes == E5_MARKER)?;
         let start = search + relative;
         let Some(end) = e5_record_end(data, start) else {
             search = start.saturating_add(1);
             continue;
         };
-        spans.push(start..end);
         search = end;
-    }
-    spans
+        return Some(start..end);
+    })
 }
 
 fn e5_record_walk(data: &[u8], start: usize) -> (Vec<Range<usize>>, usize) {

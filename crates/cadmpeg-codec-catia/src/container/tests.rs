@@ -330,7 +330,7 @@ fn all_e5_record_spans_cross_other_framed_records() {
     append_e5_test_record(&mut body, 1);
     body.extend_from_slice(&[0xe5, 0x0d, 0x13, 0xf4, 0x01, 0x09, 0, 0, 0]);
     append_e5_test_record(&mut body, 2);
-    assert_eq!(super::all_e5_record_spans(&body).len(), 2);
+    assert_eq!(super::all_e5_record_spans(&body).count(), 2);
 }
 
 #[test]
