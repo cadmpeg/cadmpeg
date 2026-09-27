@@ -1,6 +1,43 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #[test]
+fn mesh_record_identity_borrowed_wire_matches_owned_wire_bytes() {
+    let record: super::DesignMeshRecordIdentity = serde_json::from_str(
+        r#"{"class_tag":"256","record_index":1,"byte_offset":100,"frame_length":11}"#,
+    )
+    .unwrap();
+    let owned = super::DesignMeshRecordIdentityWire::from(record.clone());
+    assert_eq!(
+        serde_json::to_vec(&record).unwrap(),
+        serde_json::to_vec(&owned).unwrap()
+    );
+}
+
+#[test]
+fn mesh_record_identity_native_retained_limit_refuses_before_record_clone() {
+    #[derive(serde::Serialize)]
+    struct NativeRecord<'a> {
+        id: &'static str,
+        identity: &'a super::DesignMeshRecordIdentity,
+    }
+
+    let identity: super::DesignMeshRecordIdentity = serde_json::from_str(
+        r#"{"class_tag":"256","record_index":1,"byte_offset":100,"frame_length":11}"#,
+    )
+    .unwrap();
+    let record = NativeRecord {
+        id: "f3d:native:mesh-record#0",
+        identity: &identity,
+    };
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_mesh_features",
+        || super::MESH_RECORD_IDENTITY_CLONE_COUNT.with(|count| count.set(0)),
+        || super::MESH_RECORD_IDENTITY_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+
+#[test]
 fn mesh_feature_body_rows_preserve_wire_and_reject_duplicate_arrays() {
     let identity = serde_json::json!({
         "class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 200

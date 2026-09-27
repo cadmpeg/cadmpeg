@@ -17,11 +17,9 @@ cadmpeg_core::named_optional_field!(deserialize_occurrence_identity, u64, "occur
 cadmpeg_core::named_optional_field!(deserialize_transform, SketchPlacementMatrix, "transform");
 cadmpeg_core::named_optional_field!(deserialize_transform_offset, u64, "transform_offset");
 /// External occurrence and placement joined through a `Component Insert` scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignComponentInsertConstructionWire",
-    into = "DesignComponentInsertConstructionWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "DesignComponentInsertConstructionWire")]
 pub(crate) struct DesignComponentInsertConstruction {
     /// Scope-owned relation record.
     pub(crate) relation_record_index: u32,
@@ -38,6 +36,26 @@ pub(crate) struct DesignComponentInsertConstruction {
     /// Explicit scope-local placement and its optional repeated carrier location.
     /// Absence is the encoded identity form.
     pub(crate) placement: Option<DesignComponentInsertMatrix>,
+}
+
+#[cfg(test)]
+thread_local! {
+    static COMPONENT_INSERT_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for DesignComponentInsertConstruction {
+    fn clone(&self) -> Self {
+        COMPONENT_INSERT_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            relation_record_index: self.relation_record_index,
+            carrier_record_index: self.carrier_record_index,
+            occurrence_identity: self.occurrence_identity,
+            neutron_role: self.neutron_role.clone(),
+            neutron_role_offset: self.neutron_role_offset,
+            placement: self.placement.clone(),
+        }
+    }
 }
 
 /// Scope-local matrix with an optional equal matrix in the grouped carrier.
@@ -109,6 +127,36 @@ struct DesignComponentInsertConstructionWire {
     carrier_transform_offset: Option<u64>,
 }
 
+impl Serialize for DesignComponentInsertConstruction {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            relation_record_index: u32,
+            carrier_record_index: u32,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            occurrence_identity: Option<u64>,
+            neutron_role: &'a str,
+            neutron_role_offset: u64,
+            transform: SketchPlacementMatrix,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            transform_offset: Option<u64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            carrier_transform_offset: Option<u64>,
+        }
+        WireRef {
+            relation_record_index: self.relation_record_index,
+            carrier_record_index: self.carrier_record_index,
+            occurrence_identity: self.occurrence_identity,
+            neutron_role: &self.neutron_role,
+            neutron_role_offset: self.neutron_role_offset,
+            transform: *self.transform(),
+            transform_offset: self.transform_offset(),
+            carrier_transform_offset: self.carrier_transform_offset(),
+        }
+        .serialize(serializer)
+    }
+}
+
 impl TryFrom<DesignComponentInsertConstructionWire> for DesignComponentInsertConstruction {
     type Error = String;
     fn try_from(wire: DesignComponentInsertConstructionWire) -> Result<Self, Self::Error> {
@@ -147,6 +195,7 @@ impl TryFrom<DesignComponentInsertConstructionWire> for DesignComponentInsertCon
     }
 }
 
+#[cfg(test)]
 impl From<DesignComponentInsertConstruction> for DesignComponentInsertConstructionWire {
     fn from(record: DesignComponentInsertConstruction) -> Self {
         let transform = *record.transform();
@@ -425,3 +474,6 @@ pub(crate) struct DesignCopyPasteComponentOperation {
     /// Byte offset of the scope-local copied placement.
     pub(crate) copied_transform_offset: u64,
 }
+
+#[cfg(test)]
+mod tests;
