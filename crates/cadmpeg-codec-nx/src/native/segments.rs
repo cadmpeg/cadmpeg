@@ -100,8 +100,9 @@ pub(super) enum SegmentIndexSlot {
 }
 
 /// Validated link from a segment-index word to a compressed stream wrapper.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "row_wire::Wire", into = "row_wire::Wire")]
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "row_wire::Wire")]
 pub(super) struct SegmentStreamLink {
     /// Globally unique link identity.
     pub(super) id: String,
@@ -117,6 +118,27 @@ pub(super) struct SegmentStreamLink {
     wrapper_byte_len: u32,
     /// Absolute file offset of the wrapper.
     pub(super) source_offset: u64,
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static STREAM_LINK_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for SegmentStreamLink {
+    fn clone(&self) -> Self {
+        STREAM_LINK_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            row: self.row,
+            slot: self.slot,
+            stream_ordinal: self.stream_ordinal,
+            stream_kind: self.stream_kind,
+            wrapper_byte_len: self.wrapper_byte_len,
+            source_offset: self.source_offset,
+        }
+    }
 }
 
 /// Body-image identity carried beside one validated Parasolid stream wrapper.
