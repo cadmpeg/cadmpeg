@@ -4,11 +4,19 @@
 use std::ops::Range;
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
+use cadmpeg_core::decode::{alloc_filled, u64_from_index, DecodeContext};
 
 use crate::parse::ParseError;
 
-pub(crate) fn decode_payload(input: &[u8], payload: &Range<usize>) -> Result<Vec<u8>, ParseError> {
-    let mut compact = Vec::with_capacity(payload.len());
+pub(crate) fn decode_payload(
+    input: &[u8],
+    payload: &Range<usize>,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Vec<u8>, ParseError> {
+    let mut compact = Vec::new();
+    let mut compact_reservation = ctx
+        .map(|ctx| ctx.reserve_scoped(0, "step_signature_compact_temp"))
+        .transpose()?;
     let mut at = payload.start;
     while at < payload.end {
         if input[at].is_ascii_control() || input[at] == b' ' {
@@ -31,15 +39,40 @@ pub(crate) fn decode_payload(input: &[u8], payload: &Range<usize>) -> Result<Vec
                 continue;
             }
         }
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "step_signature_compact_items")?;
+        }
+        if let Some(reservation) = compact_reservation.as_mut() {
+            reservation.grow(1)?;
+        }
+        compact.try_reserve(1).map_err(|_| {
+            ParseError::Resource(match ctx {
+                Some(ctx) => ctx.refuse_codec_limit("step_signature_compact_items", 0, 1),
+                None => cadmpeg_core::decode::refuse_local_limit(
+                    "step_signature_compact_items",
+                    0,
+                    1,
+                ),
+            })
+        })?;
         compact.push(input[at]);
         at += 1;
     }
-    let cms = STANDARD
-        .decode(compact)
+    let estimate = base64::decoded_len_estimate(compact.len());
+    let _cms_reservation = ctx
+        .map(|ctx| ctx.reserve_scoped(u64_from_index(estimate), "step_signature_cms_temp"))
+        .transpose()?;
+    let mut cms = match ctx {
+        Some(ctx) => ctx.alloc_filled(estimate, 0_u8, "step_signature_cms_bytes")?,
+        None => alloc_filled(estimate, 0_u8, "step_signature_cms_bytes")?,
+    };
+    let decoded = STANDARD
+        .decode_slice(&compact, &mut cms)
         .map_err(|error| ParseError::Syntax {
             offset: payload.start,
             message: format!("invalid SIGNATURE Base64 payload: {error}"),
         })?;
+    cms.truncate(decoded);
     // SG-04: this is a structural detached-CMS gate. It does not compute the
     // Part 21 alphabet digest, verify a signer key, or apply caller policy;
     // the codec retains an admitted signature as opaque source data.

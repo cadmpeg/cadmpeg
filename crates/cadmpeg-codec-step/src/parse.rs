@@ -899,7 +899,7 @@ impl Parser<'_, '_, '_> {
             self.punct(&TokenKind::Semicolon)?;
             let span = start..self.previous_end();
             let payload = payload_start..payload_end;
-            crate::signature::decode_payload(self.lexer.input(), &payload)?;
+            crate::signature::decode_payload(self.lexer.input(), &payload, self.budget)?;
             signatures.push(span);
         }
         if self.current.is_some() {
