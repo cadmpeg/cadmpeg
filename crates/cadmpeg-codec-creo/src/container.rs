@@ -2125,23 +2125,24 @@ fn feature_operations(
     Ok(current)
 }
 
-fn feature_reference_names(sections: &[ScannedSection<'_>]) -> Vec<FeatureReferenceName> {
+fn feature_reference_names(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+) -> Result<Vec<FeatureReferenceName>, CodecError> {
     let mut records = Vec::new();
     for section in sections
         .iter()
         .filter(|section| section.section.name() == "MdlRefInfo")
     {
         let section_bytes = section.region;
-        records.extend(
-            feature::operations::reference_names(section_bytes)
-                .into_iter()
-                .map(|mut record| {
-                    record.offset += section.section.offset();
-                    record
-                }),
-        );
+        let decoded = feature::operations::reference_names(section_bytes);
+        ctx.try_reserve_items(&mut records, decoded.len(), "creo feature reference names")?;
+        records.extend(decoded.into_iter().map(|mut record| {
+            record.offset += section.section.offset();
+            record
+        }));
     }
-    records
+    Ok(records)
 }
 
 fn feature_operation_states(
@@ -2530,7 +2531,7 @@ pub(crate) fn scan_bytes<'a>(
     let datum_cylinders = datum_cylinders(ctx, &sections)?;
     let feature_operation_states = feature_operation_states(ctx, &sections)?;
     let feature_operations = feature_operations(ctx, &sections)?;
-    let feature_reference_names = feature_reference_names(&sections);
+    let feature_reference_names = feature_reference_names(ctx, &sections)?;
     let structural_feature_ids =
         structural_feature_ids(&sections, &surface_rows, &curve_topology_rows);
     let mut candidate_feature_ids = structural_feature_ids.clone();
