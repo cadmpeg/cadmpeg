@@ -977,9 +977,15 @@ impl JtMaterialVersion {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "Vec<f32>", into = "Vec<f32>")]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "Vec<f32>")]
 struct JtRangeLimits(Vec<FiniteBinary32>);
+
+impl Serialize for JtRangeLimits {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
+    }
+}
 
 impl JtRangeLimits {
     fn from_finite(values: Vec<FiniteBinary32>) -> Result<Self, &'static str> {
@@ -1007,8 +1013,16 @@ impl TryFrom<Vec<f32>> for JtRangeLimits {
     }
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static JT_RANGE_LIMITS_INTO_WIRE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static JT_STRING_PROPERTY_INTO_WIRE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
 impl From<JtRangeLimits> for Vec<f32> {
     fn from(value: JtRangeLimits) -> Self {
+        JT_RANGE_LIMITS_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         value.0.into_iter().map(FiniteBinary32::get).collect()
     }
 }
@@ -1481,11 +1495,8 @@ impl From<DisplayJtCompressedElementSequence> for DisplayJtCompressedElementSequ
 }
 
 /// One UTF-16 string property atom in a type-31 JT segment.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DisplayJtStringPropertyAtomWire",
-    into = "DisplayJtStringPropertyAtomWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DisplayJtStringPropertyAtomWire")]
 pub(super) struct DisplayJtStringPropertyAtom {
     /// Globally unique property-atom identity.
     pub(super) id: String,
@@ -1499,7 +1510,44 @@ pub(super) struct DisplayJtStringPropertyAtom {
     pub(super) source_offset: u64,
 }
 
-#[derive(Serialize, Deserialize)]
+struct Utf16CodeUnits<'a>(&'a str);
+
+impl Serialize for Utf16CodeUnits<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut sequence = serializer.serialize_seq(Some(self.0.encode_utf16().count()))?;
+        for unit in self.0.encode_utf16() {
+            sequence.serialize_element(&unit)?;
+        }
+        sequence.end()
+    }
+}
+
+#[derive(Serialize)]
+struct DisplayJtStringPropertyAtomRef<'a> {
+    id: &'a str,
+    element: &'a str,
+    object_id: u32,
+    code_units: Utf16CodeUnits<'a>,
+    value: &'a str,
+    source_offset: u64,
+}
+
+impl Serialize for DisplayJtStringPropertyAtom {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DisplayJtStringPropertyAtomRef {
+            id: &self.id,
+            element: &self.element,
+            object_id: self.object_id,
+            code_units: Utf16CodeUnits(&self.value),
+            value: &self.value,
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct DisplayJtStringPropertyAtomWire {
     id: String,
     element: String,
@@ -1509,8 +1557,10 @@ struct DisplayJtStringPropertyAtomWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<DisplayJtStringPropertyAtom> for DisplayJtStringPropertyAtomWire {
     fn from(value: DisplayJtStringPropertyAtom) -> Self {
+        JT_STRING_PROPERTY_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         let code_units = value.value.encode_utf16().collect();
         Self {
             id: value.id,
@@ -1993,17 +2043,69 @@ fn parse_jt_element_sequence<'a>(
     }
 }
 
-fn parse_jt_string_property_atom_body(body: &[u8]) -> Option<String> {
+fn utf16_utf8_len(bytes: &[u8]) -> Option<usize> {
+    let mut view = View::over_retained(bytes);
+    let mut byte_len = 0usize;
+    while !view.is_empty() {
+        let first = view.u16_le()?;
+        let scalar = if (0xd800..=0xdbff).contains(&first) {
+            let second = view.u16_le()?;
+            if !(0xdc00..=0xdfff).contains(&second) {
+                return None;
+            }
+            0x10000 + ((u32::from(first) - 0xd800) << 10) + (u32::from(second) - 0xdc00)
+        } else if (0xdc00..=0xdfff).contains(&first) {
+            return None;
+        } else {
+            u32::from(first)
+        };
+        byte_len = byte_len.checked_add(char::from_u32(scalar)?.len_utf8())?;
+    }
+    Some(byte_len)
+}
+
+fn parse_jt_string_property_atom_body(
+    ctx: Option<&DecodeContext<'_>>,
+    body: &[u8],
+) -> Result<Option<String>, CodecError> {
     const PREFIX: [u8; 8] = [1, 0, 0, 0, 0, 0x40, 1, 0];
     if body.get(..8) != Some(PREFIX.as_slice()) {
-        return None;
+        return Ok(None);
     }
     let mut view = View::over_retained(body);
-    view.seek(8)?;
-    let count = usize::try_from(view.u32_le()?).ok()?;
-    let value = view.utf16_le(count)?;
-    view.is_empty().then_some(())?;
-    Some(value)
+    if view.seek(8).is_none() {
+        return Ok(None);
+    }
+    let Some(count) = view.u32_le().and_then(|count| usize::try_from(count).ok()) else {
+        return Ok(None);
+    };
+    let Some(unit_bytes) = count.checked_mul(2) else {
+        return Ok(None);
+    };
+    if view.remaining() != unit_bytes {
+        return Ok(None);
+    }
+    if let Some(ctx) = ctx {
+        ctx.charge_work(count as u64, "decode DisplayJT string code units")?;
+    }
+    let Some(raw) = body.get(view.position()..) else {
+        return Ok(None);
+    };
+    let Some(utf8_len) = utf16_utf8_len(raw) else {
+        return Ok(None);
+    };
+    let _units_reservation = if let Some(ctx) = ctx {
+        ctx.charge_collection_items(count as u64, "decode DisplayJT string code units")?;
+        ctx.charge_retained(utf8_len as u64, "retain DisplayJT string property")?;
+        Some(ctx.reserve_scoped(unit_bytes as u64, "decode DisplayJT string code units")?)
+    } else {
+        None
+    };
+    let value = view.utf16_le(count);
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    Ok(Some(value))
 }
 
 fn parse_jt9_tri_strip_lod_header(body: &[u8]) -> Option<(u64, u16, u32, u16, &[u8])> {
@@ -3723,7 +3825,9 @@ pub(super) fn display_jt_string_property_atoms(
             {
                 return Ok(Vec::new());
             }
-            let Some(value) = parse_jt_string_property_atom_body(element.body) else {
+            let Some(value) =
+                parse_jt_string_property_atom_body(budget.map(|(ctx, _)| ctx), element.body)?
+            else {
                 return Ok(Vec::new());
             };
             atoms.push(DisplayJtStringPropertyAtom {
@@ -3781,7 +3885,9 @@ pub(super) fn display_jt_shape_lod_bindings(
         let mut late_loaded = BTreeMap::new();
         for atom in property_atoms {
             if atom.object_type_id == STRING_PROPERTY_ATOM_TYPE && atom.object_base_type == 5 {
-                let Some(value) = parse_jt_string_property_atom_body(atom.body) else {
+                let Some(value) =
+                    parse_jt_string_property_atom_body(budget.map(|(ctx, _)| ctx), atom.body)?
+                else {
                     return Ok(Vec::new());
                 };
                 strings.insert(atom.object_id, value);
@@ -5130,6 +5236,10 @@ mod tests {
                 serde_json::json!(valid)
             );
             assert_eq!(
+                serde_json::to_vec(&admitted).unwrap(),
+                serde_json::to_vec(&Vec::<f32>::from(admitted.clone())).unwrap()
+            );
+            assert_eq!(
                 serde_json::from_value::<super::JtRangeLimits>(serde_json::json!(valid)).unwrap(),
                 admitted
             );
@@ -5144,6 +5254,26 @@ mod tests {
             assert!(super::JtRangeLimits::try_from(invalid).is_err());
         }
         assert!(serde_json::from_str::<super::JtRangeLimits>("[2,1]").is_err());
+    }
+
+    #[test]
+    fn jt_range_limits_native_limit_refuses_before_owned_wire_conversion() {
+        #[derive(serde::Serialize)]
+        struct Record<'a> {
+            id: &'static str,
+            limits: &'a super::JtRangeLimits,
+        }
+        let limits = super::JtRangeLimits::try_from(vec![0.0, 1.0, 2.0]).unwrap();
+        let record = Record {
+            id: "nx:jt:range-limits#0",
+            limits: &limits,
+        };
+        super::JT_RANGE_LIMITS_INTO_WIRE_COUNT.with(|count| count.set(0));
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::json!({"id":"nx:jt:range-limits#0", "limits":[0.0,1.0,2.0]}),
+        );
+        super::JT_RANGE_LIMITS_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }
 
     #[test]
@@ -5314,8 +5444,29 @@ mod tests {
         let wire = r#"{"id":"atom","element":"element","object_id":1,"code_units":[78,88,55357,56960],"value":"NX🚀","source_offset":0}"#;
         let record: super::DisplayJtStringPropertyAtom = serde_json::from_str(wire).unwrap();
         assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&super::DisplayJtStringPropertyAtomWire::from(
+                record.clone()
+            ))
+            .unwrap()
+        );
         let inconsistent = wire.replace("[78,88,55357,56960]", "[78,88,55357]");
         assert!(serde_json::from_str::<super::DisplayJtStringPropertyAtom>(&inconsistent).is_err());
+    }
+
+    #[test]
+    fn jt_string_property_native_limit_refuses_before_code_unit_allocation() {
+        let wire = serde_json::json!({
+            "id": "nx:jt:string-property#0", "element": "nx:jt:compressed-element#0",
+            "object_id": 1, "code_units": [78, 88, 55357, 56960],
+            "value": "NX🚀", "source_offset": 0
+        });
+        let record: super::DisplayJtStringPropertyAtom =
+            serde_json::from_value(wire.clone()).unwrap();
+        super::JT_STRING_PROPERTY_INTO_WIRE_COUNT.with(|count| count.set(0));
+        cadmpeg_test_support::native_serialization::assert_native_limit(&record, wire);
+        super::JT_STRING_PROPERTY_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }
 
     use std::io::Write;
@@ -5800,7 +5951,9 @@ mod tests {
         let mut body = vec![1, 0, 0, 0, 0, 0x40, 1, 0];
         body.extend_from_slice(&3_u32.to_le_bytes());
         body.extend_from_slice(&[b'N', 0, b'X', 0, 0xa9, 0x03]);
-        let value = super::parse_jt_string_property_atom_body(&body).expect("required invariant");
+        let value = super::parse_jt_string_property_atom_body(None, &body)
+            .unwrap()
+            .expect("required invariant");
         assert_eq!(
             value.encode_utf16().collect::<Vec<_>>(),
             [0x4e, 0x58, 0x3a9]
@@ -5808,7 +5961,85 @@ mod tests {
         assert_eq!(value, "NXΩ");
 
         body.push(0);
-        assert!(super::parse_jt_string_property_atom_body(&body).is_none());
+        assert!(super::parse_jt_string_property_atom_body(None, &body)
+            .unwrap()
+            .is_none());
+    }
+
+    fn assert_jt_string_resource_limit(
+        policy: cadmpeg_core::decode::DecodePolicy,
+        dimension: cadmpeg_core::decode::ResourceDimension,
+        operation: &'static str,
+    ) {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let mut body = vec![1, 0, 0, 0, 0, 0x40, 1, 0];
+        body.extend_from_slice(&3_u32.to_le_bytes());
+        body.extend_from_slice(&[b'N', 0, b'X', 0, 0xa9, 0x03]);
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::parse_jt_string_property_atom_body(Some(&ctx), &body).unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == dimension && limit.operation == operation)
+        );
+
+        let (service, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        assert_eq!(
+            super::parse_jt_string_property_atom_body(Some(&service), &body)
+                .unwrap()
+                .as_deref(),
+            Some("NXΩ")
+        );
+    }
+
+    #[test]
+    fn jt_string_code_units_refuse_before_collection_growth() {
+        use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 2;
+        assert_jt_string_resource_limit(
+            policy,
+            ResourceDimension::CollectionItems,
+            "decode DisplayJT string code units",
+        );
+    }
+
+    #[test]
+    fn jt_string_code_units_refuse_before_scoped_allocation() {
+        use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 5;
+        assert_jt_string_resource_limit(
+            policy,
+            ResourceDimension::MaterializedBytes,
+            "decode DisplayJT string code units",
+        );
+    }
+
+    #[test]
+    fn jt_string_value_refuses_before_retained_allocation() {
+        use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 3;
+        assert_jt_string_resource_limit(
+            policy,
+            ResourceDimension::RetainedBytes,
+            "retain DisplayJT string property",
+        );
+    }
+
+    #[test]
+    fn jt_string_scan_refuses_before_utf16_work() {
+        use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 2;
+        assert_jt_string_resource_limit(
+            policy,
+            ResourceDimension::WorkUnits,
+            "decode DisplayJT string code units",
+        );
     }
 
     #[test]
