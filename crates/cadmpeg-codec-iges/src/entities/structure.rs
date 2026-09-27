@@ -7,7 +7,7 @@ use super::geometry::{
     planar_polyline_has_self_intersection, plane_coordinates, resolve_transform, ProjectionOutcome,
     TransformResolutionError,
 };
-use crate::decode_resource::{collect_optional_vec, reserve_vec, reserve_vec_growth};
+use crate::decode_resource::{collect_optional_vec, copy_optional_identity, reserve_vec, reserve_vec_growth};
 use crate::directory::{DirectoryEntry, Hierarchy, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
 use crate::parameter::{
@@ -1687,8 +1687,8 @@ fn plane_boundary_edge(
         .get(&boundary_sequence)
         .is_some_and(|entry| entry.entity_type == 106 && entry.form == 63);
     let mut active = BTreeSet::new();
-    ctx.charge_collection_items(1, "iges plane boundary active curve")?;
-    if !active.insert(curve_id.clone())
+    let active_id = copy_optional_identity(Some(ctx), curve_id.as_str(), "iges plane boundary active curve ID")?;
+    if !crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut active, active_id, "iges plane boundary active curve")?
         || !bounded_plane_curve_is_simple(
             geometry,
             PlaneBoundarySimplicity {
@@ -1724,7 +1724,7 @@ fn plane_boundary_edge(
     if start.distance(end) > resolution {
         return Err(PlaneBoundaryError::NotClosed);
     }
-    Ok(source_edge.clone())
+    Ok(super::trimming::clone_boundary_edge(source_edge, ctx)?)
 }
 
 fn plane_face_draft(
@@ -1751,12 +1751,14 @@ fn plane_face_draft(
     let face_id = crate::ids::face(stem);
     sequences.record_face(&face_id, source_sequence, Some(ctx))?;
     let mut candidate = ModelDraft::new();
-    let mut loop_ids = Vec::with_capacity(boundary_edges.len());
+    let mut loop_ids = reserve_vec(ctx, boundary_edges.len(), "iges legacy plane loop IDs")?;
     for (boundary_index, edge) in boundary_edges.into_iter().enumerate() {
         let edge_id = edge.id.clone();
+        reserve_vec_growth(ctx, &mut candidate.model_mut().edges, 1, "iges legacy plane edge slots")?;
         candidate.model_mut().edges.push(edge);
         let loop_id = crate::ids::r#loop(&stem.slot(boundary_index));
         let coedge_id = crate::ids::coedge(&stem.slot(boundary_index));
+        reserve_vec_growth(ctx, &mut candidate.model_mut().coedges, 1, "iges legacy plane coedge slots")?;
         candidate.model_mut().coedges.push(Coedge {
             id: coedge_id.clone(),
             owner_loop: loop_id.clone(),
@@ -1766,46 +1768,59 @@ fn plane_face_draft(
             pcurves: Vec::new(),
             use_curve: None,
         });
+        let mut ring_coedges = reserve_vec(ctx, 1, "iges legacy plane ring coedges")?;
+        ring_coedges.push(coedge_id);
+        let ring = match cadmpeg_ir::topology::LoopRing::new_admitted(ring_coedges, Vec::new(), ctx) {
+            Ok(ring) => ring,
+            Err(cadmpeg_ir::topology::LoopRingAdmissionError::Resource(error)) => return Err(error.into()),
+            Err(cadmpeg_ir::topology::LoopRingAdmissionError::Invalid(_)) => return Err("legacy plane loop ring is invalid".into()),
+        };
+        reserve_vec_growth(ctx, &mut candidate.model_mut().loops, 1, "iges legacy plane loop slots")?;
         candidate.model_mut().loops.push(Loop {
             id: loop_id.clone(),
             face: face_id.clone(),
-            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                cadmpeg_ir::topology::LoopRing::single(coedge_id),
-            ),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
         });
         loop_ids.push(loop_id);
     }
+    let face_loops = if loop_ids.is_empty() {
+        cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new())
+    } else {
+        let outer = loop_ids.remove(0);
+        cadmpeg_ir::topology::FaceLoops::classified(outer, loop_ids)
+    };
+    reserve_vec_growth(ctx, &mut candidate.model_mut().faces, 1, "iges legacy plane face slots")?;
     candidate.model_mut().faces.push(Face {
         id: face_id.clone(),
         shell: shell_id.clone(),
         surface: crate::ids::surface(&crate::ids::Stem::directory(surface_sequence)),
         sense: Sense::Forward,
-        loops: match loop_ids.split_first() {
-            // The bounded plane states its bounding curve as the outer
-            // boundary, first and in its own field.
-            Some((outer, inner)) => {
-                cadmpeg_ir::topology::FaceLoops::classified(outer.clone(), inner.to_vec())
-            }
-            None => cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-        },
+        loops: face_loops,
         name: None,
         color: None,
         tolerance,
     });
-    candidate.model_mut().shells.push(Shell::with_face(
-        shell_id.clone(),
-        region_id.clone(),
-        face_id,
-    ));
+    let mut shell_faces = reserve_vec(ctx, 1, "iges legacy plane shell faces")?;
+    shell_faces.push(face_id);
+    let shell = Shell::new(shell_id.clone(), region_id.clone(), shell_faces, Vec::new(), Vec::new())
+        .map_err(|_| LegacyPlaneError::Invalid("legacy plane shell is empty"))?;
+    reserve_vec_growth(ctx, &mut candidate.model_mut().shells, 1, "iges legacy plane shell slots")?;
+    candidate.model_mut().shells.push(shell);
+    let mut region_shells = reserve_vec(ctx, 1, "iges legacy plane region shells")?;
+    region_shells.push(shell_id);
+    reserve_vec_growth(ctx, &mut candidate.model_mut().regions, 1, "iges legacy plane region slots")?;
     candidate.model_mut().regions.push(Region {
         id: region_id.clone(),
         body: body_id.clone(),
-        shells: vec![shell_id],
+        shells: region_shells,
     });
+    let mut body_regions = reserve_vec(ctx, 1, "iges legacy plane body regions")?;
+    body_regions.push(region_id);
+    reserve_vec_growth(ctx, &mut candidate.model_mut().bodies, 1, "iges legacy plane body slots")?;
     candidate.model_mut().bodies.push(Body {
         id: body_id,
         kind: BodyKind::Sheet,
-        regions: vec![region_id],
+        regions: body_regions,
         transform: None,
         name: None,
         color: None,
@@ -1869,12 +1884,13 @@ fn legacy_single_parent_face(
     let Some(child_count) = record.count(2).filter(|count| *count > 0) else {
         return Err("legacy single-parent plane hole has no children".into());
     };
-    let Some(children) = (0..child_count)
-        .map(|offset| existing_pointer(record, 4 + offset, entries))
-        .collect::<Option<Vec<_>>>()
-    else {
-        return Err("legacy single-parent plane hole has an invalid child pointer".into());
-    };
+    let mut children = reserve_vec(ctx, child_count, "iges legacy plane child pointers")?;
+    for offset in 0..child_count {
+        let Some(child) = existing_pointer(record, 4 + offset, entries) else {
+            return Err("legacy single-parent plane hole has an invalid child pointer".into());
+        };
+        children.push(child);
+    }
     if children.iter().any(|sequence| {
         entries
             .get(sequence)
@@ -1893,20 +1909,19 @@ fn legacy_single_parent_face(
         );
     }
 
-    let boundary_sequences = std::iter::once(parent_sequence)
-        .chain(children.iter().copied())
-        .map(|sequence| {
-            records
-                .get(&sequence)
-                .and_then(|plane| existing_pointer(plane, 5, entries))
-                .ok_or("legacy single-parent plane has an invalid boundary pointer")
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let boundary_count = child_count.checked_add(1).ok_or("legacy single-parent plane hole has an invalid child pointer")?;
+    let mut boundary_sequences = reserve_vec(ctx, boundary_count, "iges legacy plane boundary pointers")?;
+    for sequence in std::iter::once(parent_sequence).chain(children.iter().copied()) {
+        boundary_sequences.push(records
+            .get(&sequence)
+            .and_then(|plane| existing_pointer(plane, 5, entries))
+            .ok_or("legacy single-parent plane has an invalid boundary pointer")?);
+    }
     let index = ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
     let parent_plane = plane_carrier(&index, parent_sequence)
         .ok_or("legacy single-parent parent plane was not projected")?;
     let resolution = global.minimum_resolution_mm();
-    let mut boundary_edges = Vec::with_capacity(boundary_sequences.len());
+    let mut boundary_edges = reserve_vec(ctx, boundary_sequences.len(), "iges legacy plane boundary edges")?;
     for (boundary_index, (plane_sequence, boundary_sequence)) in std::iter::once(parent_sequence)
         .chain(children.iter().copied())
         .zip(boundary_sequences.iter().copied())
@@ -1933,6 +1948,8 @@ fn legacy_single_parent_face(
     }
     let stem =
         crate::ids::Stem::word_directory(crate::ids::Word::LegacySingleParent, entry.sequence);
+    reserve_vec_growth(ctx, &mut children, 1, "iges legacy plane sequence list")?;
+    children.insert(0, parent_sequence);
     Ok(Some((
         plane_face_draft(
             parent_sequence,
@@ -1943,7 +1960,7 @@ fn legacy_single_parent_face(
             sequences,
             ctx,
         )?,
-        std::iter::once(parent_sequence).chain(children).collect(),
+        children,
     )))
 }
 

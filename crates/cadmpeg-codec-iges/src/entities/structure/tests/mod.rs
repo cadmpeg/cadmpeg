@@ -1495,6 +1495,60 @@ fn decode_projects_legacy_single_parent_plane_holes_in_v4_and_v5_profiles() {
 }
 
 #[test]
+fn legacy_single_parent_face_refuses_nested_topology_storage() {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let bytes = legacy_perforated_plane_file(global);
+    for operation in [
+        "iges legacy plane child pointers",
+        "iges legacy plane boundary pointers",
+        "iges legacy plane boundary edges",
+        "iges legacy plane sequence list",
+        "iges legacy plane loop IDs",
+        "iges legacy plane ring coedges",
+        "iges legacy plane shell faces",
+        "iges legacy plane region shells",
+        "iges legacy plane body regions",
+    ] {
+        let mut cap = 0_u64;
+        let mut reached = false;
+        for _ in 0..4096 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            match IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+                Err(cadmpeg_ir::codec::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    if limit.operation == operation {
+                        reached = true;
+                        break;
+                    }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                _ => panic!("expected legacy plane collection refusal at {operation}"),
+            }
+        }
+        assert!(reached, "legacy plane collection refusal was not reached: {operation}");
+    }
+    let mut cap = 0_u64;
+    let mut reached = false;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        match IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+            Err(cadmpeg_ir::codec::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                if limit.operation == "iges plane boundary active curve ID" {
+                    reached = true;
+                    break;
+                }
+                cap = limit.used.checked_add(limit.additional).unwrap();
+            }
+            _ => panic!("expected legacy plane retained refusal before the active curve copy"),
+        }
+    }
+    assert!(reached, "legacy plane active curve identity copy was not reached");
+}
+
+#[test]
 fn decode_keeps_nonplane_single_parent_relations_native_and_transfers_the_bounded_parent() {
     let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
     let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
