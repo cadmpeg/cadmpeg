@@ -79,9 +79,8 @@ fn brep_counted_vectors_refuse_before_nested_allocation() {
     assert!(admitted.capacity() >= 2);
 }
 
-#[test]
-fn brep_definition_nodes_and_nested_shells_refuse_before_allocation() {
-    let two_loop_face = owned_test_file(&[
+fn two_loop_face_file() -> Vec<u8> {
+    owned_test_file(&[
         OwnedTestEntity { entity_type: 116, form: 0, label: "CENTER".into(), status: "00010000", parameters: "116,0,0,0,0;".into() },
         OwnedTestEntity { entity_type: 196, form: 0, label: "SPHERE".into(), status: "00010000", parameters: "196,1,1;".into() },
         OwnedTestEntity { entity_type: 502, form: 1, label: "POLE".into(), status: "00010000", parameters: "502,1,0,0,1;".into() },
@@ -89,12 +88,16 @@ fn brep_definition_nodes_and_nested_shells_refuse_before_allocation() {
         OwnedTestEntity { entity_type: 508, form: 1, label: "VLOOP2".into(), status: "00010000", parameters: "508,1,1,5,1,0,0;".into() },
         OwnedTestEntity { entity_type: 510, form: 1, label: "FACE".into(), status: "00010000", parameters: "510,3,2,1,7,9;".into() },
         OwnedTestEntity { entity_type: 514, form: 2, label: "SHELL".into(), status: "00000000", parameters: "514,1,11,1;".into() },
-    ]);
+    ])
+}
+
+#[test]
+fn brep_definition_nodes_and_nested_shells_refuse_before_allocation() {
     for (bytes, operation) in [
         (explicit_vertex_loop_file(), "iges B-rep vertex-list nodes"),
         (explicit_tetrahedron_solid_file(), "iges B-rep edge-list nodes"),
         (explicit_vertex_loop_file(), "iges B-rep loop nodes"),
-        (two_loop_face, "iges B-rep face loop pointers"),
+        (two_loop_face_file(), "iges B-rep face loop pointers"),
         (explicit_vertex_loop_file(), "iges B-rep face nodes"),
         (explicit_vertex_loop_file(), "iges B-rep shell nodes"),
         (explicit_vertex_loop_file(), "iges B-rep sheet shell uses"),
@@ -161,6 +164,92 @@ fn brep_projected_pcurve_uses_refuse_before_both_vector_allocations() {
     let projected = super::project_pcurve_uses(&mut candidate, &uses, resolved(), None, &stem, &ctx).unwrap();
     assert_eq!(projected.len(), 1);
     assert_eq!(candidate.model().pcurves.len(), 1);
+}
+
+#[test]
+fn brep_topology_indexes_and_adjacency_refuse_before_growth() {
+    for (bytes, operation) in [
+        (explicit_vertex_loop_file(), "iges B-rep surface index nodes"),
+        (explicit_vertex_loop_file(), "iges B-rep region shell ids"),
+        (explicit_vertex_loop_file(), "iges B-rep shell face ids"),
+        (explicit_vertex_loop_file(), "iges B-rep loop vertex uses"),
+        (explicit_vertex_loop_file(), "iges B-rep topology points"),
+        (explicit_vertex_loop_file(), "iges B-rep topology vertices"),
+        (explicit_vertex_loop_file(), "iges B-rep topology vertex index"),
+        (explicit_tetrahedron_solid_file(), "iges B-rep curve index nodes"),
+        (explicit_tetrahedron_solid_file(), "iges B-rep edge-use positions"),
+        (explicit_tetrahedron_solid_file(), "iges B-rep coedge ids"),
+        (explicit_tetrahedron_solid_file(), "iges B-rep coedge use nodes"),
+        (explicit_tetrahedron_solid_file(), "iges B-rep source edge index nodes"),
+        (explicit_tetrahedron_solid_file(), "iges B-rep source edge positions"),
+        (explicit_tetrahedron_solid_file(), "iges B-rep topology edges"),
+        (explicit_tetrahedron_solid_file(), "iges B-rep topology edge index"),
+        (explicit_tetrahedron_solid_file(), "iges B-rep radial index nodes"),
+        (explicit_tetrahedron_solid_file(), "iges B-rep radial coedge ids"),
+        (explicit_tetrahedron_solid_file(), "iges B-rep topology coedges"),
+        (explicit_tetrahedron_solid_file(), "iges B-rep decoded topology sequences"),
+        (explicit_vertex_loop_file(), "iges B-rep topology loops"),
+        (explicit_vertex_loop_file(), "iges B-rep consumed loop nodes"),
+        (explicit_vertex_loop_file(), "iges B-rep topology faces"),
+        (explicit_vertex_loop_file(), "iges B-rep consumed face nodes"),
+        (explicit_vertex_loop_file(), "iges B-rep topology shells"),
+        (explicit_vertex_loop_file(), "iges B-rep consumed shell nodes"),
+        (explicit_vertex_loop_file(), "iges B-rep topology regions"),
+        (explicit_vertex_loop_file(), "iges B-rep body region ids"),
+        (explicit_vertex_loop_file(), "iges B-rep topology bodies"),
+        (two_loop_face_file(), "iges B-rep face inner loop ids"),
+        (explicit_vertex_loop_file_with_outer_flag(false), "iges B-rep face unspecified loop ids"),
+    ] {
+        let mut cap = 0_u64;
+        let mut found = false;
+        for _ in 0..4096 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let result = IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() });
+            match result {
+                Err(cadmpeg_ir::codec::DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    if limit.operation == operation {
+                        found = true;
+                        break;
+                    }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                Ok(_) => panic!("decode succeeded before B-rep topology refusal at {operation}"),
+                Err(error) => panic!("unexpected B-rep topology result at {operation}: {error}"),
+            }
+        }
+        assert!(found, "B-rep topology refusal was not reached: {operation}");
+    }
+}
+
+#[test]
+fn brep_index_key_copies_refuse_retained_budget_before_allocation() {
+    for (bytes, operation) in [
+        (explicit_vertex_loop_file(), "iges B-rep surface index keys"),
+        (explicit_tetrahedron_solid_file(), "iges B-rep curve index keys"),
+    ] {
+        let mut cap = 0_u64;
+        let mut found = false;
+        for _ in 0..4096 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let result = IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() });
+            match result {
+                Err(cadmpeg_ir::codec::DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                    if limit.operation == operation {
+                        found = true;
+                        break;
+                    }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                Ok(_) => panic!("decode succeeded before B-rep key refusal at {operation}"),
+                Err(error) => panic!("unexpected B-rep key result at {operation}: {error}"),
+            }
+        }
+        assert!(found, "B-rep key refusal was not reached: {operation}");
+    }
 }
 
 #[test]
