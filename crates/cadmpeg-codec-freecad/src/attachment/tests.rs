@@ -67,7 +67,7 @@ fn retains_support_attachment_and_distinct_offset_frame() {
             .x,
         10.0
     );
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
 

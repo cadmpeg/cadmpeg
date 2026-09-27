@@ -925,7 +925,7 @@ pub(crate) mod tests {
                 .collect::<Vec<_>>(),
             [Some([10.0, 20.0, 0.0]), Some([30.0, 40.0, 0.0])]
         );
-        assert!(crate::validate_native(result.ir()).is_empty());
+        assert!(crate::test_support::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());
     }
 
@@ -1133,7 +1133,7 @@ pub(crate) mod tests {
             semantic_note.references["View"][0].local_target(),
             Some(neutral_view.id.as_str())
         );
-        assert!(crate::validate_native(result.ir()).is_empty());
+        assert!(crate::test_support::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());
     }
 
@@ -1195,7 +1195,7 @@ pub(crate) mod tests {
             .expect("semantic symbol");
         assert_eq!(symbol.assets.len(), 1);
         assert!(symbol.assets[0].ends_with("symbol.svg"));
-        assert!(crate::validate_native(result.ir()).is_empty());
+        assert!(crate::test_support::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());
     }
 }

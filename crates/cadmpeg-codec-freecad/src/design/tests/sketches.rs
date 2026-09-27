@@ -103,7 +103,7 @@ fn transfers_application_saved_rotated_conics_and_profile_chain() {
         .iter()
         .any(|shell| shell.wire_edges().len() == 3));
     assert_valid_document(result.ir());
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -446,7 +446,7 @@ fn follows_freecad_null_axis_fallback_for_sketch_placements() {
         assert!((x_axis.x - expected_x_axis.x).abs() < f64::EPSILON * 16.0);
         assert!((x_axis.y - expected_x_axis.y).abs() < f64::EPSILON * 16.0);
         assert!((x_axis.z - expected_x_axis.z).abs() < f64::EPSILON * 16.0);
-        assert!(crate::validate_native(result.ir()).is_empty());
+        assert!(crate::test_support::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());
     }
 }
@@ -475,7 +475,7 @@ fn accepts_nonzero_sketch_quaternion_below_machine_epsilon() {
     assert!(x_axis.x.abs() < f64::EPSILON * 16.0);
     assert!(x_axis.y.abs() < f64::EPSILON * 16.0);
     assert!(x_axis.z < -1.0 + f64::EPSILON * 16.0);
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
 

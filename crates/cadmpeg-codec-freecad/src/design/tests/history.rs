@@ -842,7 +842,7 @@ fn retains_native_dependency_cycles_without_neutral_cycle_edges() {
     assert_eq!(objects[0].dependencies.as_slice(), [objects[1].id.clone()]);
     assert_eq!(objects[1].dependencies.as_slice(), [objects[0].id.clone()]);
     assert_valid_document(result.ir());
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -909,7 +909,7 @@ fn retains_cycle_affected_expression_links_only_in_native_properties() {
         2
     );
     assert_valid_document(result.ir());
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -971,7 +971,7 @@ fn retains_spreadsheet_expression_cycles_only_in_native_properties() {
         .iter()
         .any(|property| { property.name == "cells" && property.xml.text().contains("=second") }));
     assert_valid_document(result.ir());
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -994,5 +994,5 @@ fn encodes_feature_names_into_neutral_identity_keys() {
         Some("fcstd:native:object#Source%23part")
     );
     assert_valid_document(result.ir());
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }

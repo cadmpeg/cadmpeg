@@ -127,7 +127,7 @@ fn element_map_nodes_admit_only_contiguous_one_based_wire_indices() {
             .unwrap();
         let roundtrip: cadmpeg_ir::CadIr =
             serde_json::from_value(serde_json::to_value(&ir).unwrap()).unwrap();
-        let findings = crate::validate_native(&roundtrip);
+        let findings = crate::test_support::validate_native(&roundtrip);
         assert!(findings.iter().any(|finding| {
             finding.message.contains("maps[")
                 && finding.check == cadmpeg_ir::report::check::Check::NativeLinks

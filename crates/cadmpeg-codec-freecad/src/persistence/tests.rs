@@ -280,7 +280,7 @@ pub(crate) fn schema_three_uses_the_object_envelope_and_defaults_file_version() 
         properties[1].links()[0].as_ref().expect("link").object(),
         Some(objects[0].id.as_str())
     );
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -316,7 +316,7 @@ pub(crate) fn schema_two_uses_the_feature_envelope_and_common_property_grammar()
         Some(objects[0].id.as_str())
     );
     assert!(objects.iter().all(|object| object.persistent_id.is_none()));
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -688,7 +688,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert!(coverage[0]
         .named_opaque_entries
         .contains(&"Payload.bin".to_owned()));
-    let findings = crate::validate_native(result.ir());
+    let findings = crate::test_support::validate_native(result.ir());
     assert!(findings.is_empty(), "{findings:#?}");
 
     let mut corrupted = result.ir().clone();
@@ -706,7 +706,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
             &missing_payload,
         )
         .expect("replace logical ledger");
-    assert!(crate::validate_native(&corrupted).iter().any(|finding| {
+    assert!(crate::test_support::validate_native(&corrupted).iter().any(|finding| {
         finding
             .message
             .contains("logical ledger omits nonempty entry Payload.bin")
@@ -828,7 +828,7 @@ fn native_validation_rejects_duplicate_extension_identity() {
             &extensions,
         )
         .expect("replace extensions");
-    let findings = crate::validate_native(&corrupted);
+    let findings = crate::test_support::validate_native(&corrupted);
     assert!(findings.iter().any(|finding| {
         finding.message.contains("duplicate FCStd native identity")
             || finding.message.contains("duplicates extension name")

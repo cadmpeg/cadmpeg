@@ -83,7 +83,7 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
             && record["byte_len"] == bytes(record).len() as u64
             && record["sha256"] == cadmpeg_ir::hash::sha256_hex(&bytes(record))
     }));
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 
     let mut altered = records;
@@ -105,7 +105,7 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
             &altered,
         )
         .unwrap();
-    assert!(crate::validate_native(&edited).iter().any(|finding| {
+    assert!(crate::test_support::validate_native(&edited).iter().any(|finding| {
         finding
             .message
             .contains("application preservation records do not match authoritative bytes")
@@ -191,7 +191,7 @@ fn unregistered_application_payloads_remain_whole_named_opaque_entries() {
     assert_eq!(span.classification.as_str(), "named_opaque");
     assert_eq!(span.classification.owner(), Some(entry.id.as_str()));
     assert_eq!(entry.data, payload);
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -320,5 +320,5 @@ fn producer_specific_side_entries_remain_whole_until_their_grammar_is_registered
         assert_eq!(span.classification.as_str(), "named_opaque");
         assert_eq!(span.classification.owner(), Some(entry.id.as_str()));
     }
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
