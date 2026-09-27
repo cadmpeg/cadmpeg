@@ -39,7 +39,7 @@ pub(in super::super) fn resolved_revolution_axis(
         return Ok(None);
     };
     let points = resolved_section_points(ctx, definition)?;
-    let candidates = segments
+    let mut candidates = segments
         .rows
         .ordinary()
         .filter(|segment| {
@@ -62,12 +62,14 @@ pub(in super::super) fn resolved_revolution_axis(
                 direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::from(direction))?,
                 reference: None,
             })
-        })
-        .collect::<Vec<_>>();
-    let [axis] = candidates.as_slice() else {
+        });
+    let Some(axis) = candidates.next() else {
         return Ok(None);
     };
-    Ok(Some(axis.clone()))
+    if candidates.next().is_some() {
+        return Ok(None);
+    }
+    Ok(Some(axis))
 }
 
 pub(in super::super) fn full_turn_revolution_carrier_axis(
@@ -227,16 +229,12 @@ pub(super) fn feature_revolution_axis_for_transfer(
         &scan.features.section_transforms,
         feature_id,
     );
-    let transforms = scan
+    let mut transforms = scan
         .features
         .section_transforms
         .iter()
-        .filter(|transform| transform.feature_id == Some(feature_id))
-        .collect::<Vec<_>>();
-    let transform = match transforms.as_slice() {
-        [transform] => Some(*transform),
-        _ => None,
-    };
+        .filter(|transform| transform.feature_id == Some(feature_id));
+    let transform = transforms.next().filter(|_| transforms.next().is_none());
     let axis = match definition.zip(transform) {
         Some((definition, transform)) => revolution_axis_for_transfer(
             ctx,

@@ -61,13 +61,12 @@ pub(super) fn unique_feature_profile_definition<'a>(
     transforms: &[crate::placement::FeatureSectionTransform],
     feature_id: u32,
 ) -> Option<&'a crate::feature::definitions::FeatureDefinition> {
-    let feature_transforms = transforms
+    let mut feature_transforms = transforms
         .iter()
-        .filter(|transform| transform.feature_id == Some(feature_id))
-        .collect::<Vec<_>>();
-    match feature_transforms.as_slice() {
-        [transform] => unique_feature_definition_for_transform(definitions, transform),
-        [] => unique_owned_feature_definition(definitions, feature_id),
+        .filter(|transform| transform.feature_id == Some(feature_id));
+    match (feature_transforms.next(), feature_transforms.next()) {
+        (Some(transform), None) => unique_feature_definition_for_transform(definitions, transform),
+        (None, None) => unique_owned_feature_definition(definitions, feature_id),
         _ => None,
     }
 }
