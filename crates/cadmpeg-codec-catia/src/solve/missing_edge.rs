@@ -1547,6 +1547,7 @@ pub(super) enum DuplicateFaceAssignmentVisit {
 /// adds each distinct admitted second face as another. The visitor returns
 /// `true` to continue and `false` to stop after a solved or terminal result.
 pub(super) fn visit_duplicate_face_assignments<F>(
+    ctx: &DecodeContext<'_>,
     serialized: &[[usize; 2]],
     allowed_faces: &[Vec<usize>],
     face_count: usize,
@@ -1557,6 +1558,7 @@ where
     F: FnMut(&[[usize; 2]]) -> Result<bool, cadmpeg_core::CodecError>,
 {
     fn visit<F>(
+        ctx: &DecodeContext<'_>,
         branches: &[(usize, Vec<usize>)],
         at: usize,
         assignment: &mut [[usize; 2]],
@@ -1567,6 +1569,8 @@ where
     where
         F: FnMut(&[[usize; 2]]) -> Result<bool, cadmpeg_core::CodecError>,
     {
+        let _depth = ctx.enter_nested("catia_duplicate_face_visit_depth")?;
+        ctx.charge_work(1, "catia_duplicate_face_visit_work")?;
         if at == branches.len() {
             if *visited >= max_assignments {
                 return Ok(DuplicateFaceAssignmentVisit::Exhausted);
@@ -1582,6 +1586,7 @@ where
         for &face in choices {
             assignment[*edge][1] = face;
             match visit(
+                ctx,
                 branches,
                 at + 1,
                 assignment,
@@ -1605,7 +1610,7 @@ where
     {
         return Ok(None);
     }
-    let mut assignment = serialized.to_vec();
+    let mut assignment = crate::resource::copy_retained_slice(ctx, serialized, "catia_duplicate_visit_assignment")?;
     let mut branches = Vec::<(usize, Vec<usize>)>::new();
     for (edge, faces) in serialized.iter().enumerate() {
         let allowed = &allowed_faces[edge];
@@ -1615,18 +1620,21 @@ where
             }
             continue;
         }
-        let mut choices = vec![faces[0]];
-        choices.extend(allowed.iter().copied().filter(|face| *face != faces[0]));
+        let mut choices = ctx.alloc_filled(1, faces[0], "catia_duplicate_visit_choices")?;
+        for face in allowed.iter().copied().filter(|face| *face != faces[0]) {
+            crate::resource::push(ctx, &mut choices, face, "catia_duplicate_visit_choices")?;
+        }
         choices.sort_unstable();
         choices.dedup();
         if choices.len() > 1 {
-            branches.push((edge, choices));
+            crate::resource::push(ctx, &mut branches, (edge, choices), "catia_duplicate_visit_branches")?;
         }
     }
     branches.sort_unstable_by_key(|(edge, choices)| (choices.len(), *edge));
 
     let mut visited = 0;
     Ok(Some(visit(
+        ctx,
         &branches,
         0,
         &mut assignment,

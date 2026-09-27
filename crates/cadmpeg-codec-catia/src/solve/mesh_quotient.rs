@@ -11965,6 +11965,7 @@ where
             allowed_faces,
             face_count,
         } => visit_duplicate_face_assignments(
+            ctx,
             edge_faces,
             allowed_faces,
             face_count,
