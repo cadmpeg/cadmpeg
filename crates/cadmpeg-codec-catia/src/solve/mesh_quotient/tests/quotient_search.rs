@@ -564,6 +564,66 @@ fn ordered_corner_equations_propagate_direction_collection_refusals() {
 }
 
 #[test]
+fn common_full_quotient_refuses_each_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let domains = repeated_domain(HashSet::from([0, 1]), 4);
+    let base = MeshQuotient::new(domains.clone());
+    let mut alternative = MeshQuotient::new(domains);
+    alternative.merge(0, 2).expect("shared domain");
+    alternative.merge(1, 3).expect("shared domain");
+    let run = |ctx: &DecodeContext<'_>| {
+        let mut quotient = base.clone();
+        let result = crate::solve::mesh_quotient::propagate_common_full_quotients(
+            ctx,
+            vec![alternative.clone()],
+            &[Vec::new(), Vec::new()],
+            &mut quotient,
+        )?;
+        Ok::<_, CodecError>((result, quotient))
+    };
+    catia_test_context!(service_ctx);
+    let (result, mut quotient) = run(&service_ctx).expect("service resource budget");
+    assert_eq!(result, Some(()));
+    assert_eq!(quotient.find(0), quotient.find(2));
+    assert_eq!(quotient.find(1), quotient.find(3));
+
+    let mut operations = HashSet::new();
+    for cap in 0..128 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits input limit");
+        match run(&ctx) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                operations.insert(limit.operation);
+            }
+            Ok((Some(()), mut quotient)) => {
+                assert_eq!(quotient.find(0), quotient.find(2));
+                assert_eq!(quotient.find(1), quotient.find(3));
+            }
+            Ok((None, _)) => panic!("shared domains must admit the quotient"),
+            Err(error) => panic!("unexpected quotient refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_common_quotient_signature",
+        "catia_common_quotient_members",
+        "catia_common_quotient_classes",
+        "catia_quotient_intersection",
+        "catia_quotient_merged_members",
+        "catia_common_quotient_roots",
+        "catia_common_quotient_allowed",
+        "catia_common_quotient_narrowed",
+    ] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
 fn quotient_pair_domains_propagate_through_shared_components() {
     let mut quotient = MeshQuotient::new(
         [vec![0, 1], vec![2], vec![0, 1], vec![3, 4]]

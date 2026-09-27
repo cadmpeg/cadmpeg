@@ -31,6 +31,16 @@ impl UnionFind {
         }
     }
 
+    pub(crate) fn clone_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok(Self {
+            parents: crate::resource::copy_slice(ctx, &self.parents, operation)?,
+        })
+    }
+
     /// Returns the number of nodes.
     pub(crate) fn len(&self) -> usize {
         self.parents.len()
