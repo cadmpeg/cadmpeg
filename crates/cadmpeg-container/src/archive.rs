@@ -354,10 +354,101 @@ impl<'a> ArchiveSnapshot<'a> {
             .collect()
     }
 
+    /// Builds entry summaries while charging each retained name and collection entry.
+    pub fn container_entries_with_context(
+        &self,
+        ctx: &DecodeContext<'_>,
+        classify: impl Fn(&str) -> cadmpeg_core::container::ContainerRole,
+    ) -> Result<Vec<ContainerEntry>, CodecError> {
+        let mut summaries = Vec::new();
+        for entry in &self.entries {
+            let operation = "ZIP summary entries";
+            ctx.charge_collection_items(1, operation)?;
+            summaries
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+
+            let name_operation = "ZIP summary entry name";
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(entry.name.len()),
+                name_operation,
+            )?;
+            let mut name = String::new();
+            name.try_reserve_exact(entry.name.len()).map_err(|_| {
+                ctx.refuse_codec_limit(
+                    name_operation,
+                    0,
+                    cadmpeg_core::decode::u64_from_index(entry.name.len()),
+                )
+            })?;
+            name.push_str(&entry.name);
+
+            let mut attributes = BTreeMap::new();
+            insert_summary_attribute(ctx, &mut attributes, "crc32", format!("{:08x}", entry.crc32))?;
+            insert_summary_attribute(
+                ctx,
+                &mut attributes,
+                "header_offset",
+                entry.header_start.to_string(),
+            )?;
+            insert_summary_attribute(
+                ctx,
+                &mut attributes,
+                "data_offset",
+                entry.data_start.to_string(),
+            )?;
+            insert_summary_attribute(
+                ctx,
+                &mut attributes,
+                "central_header_offset",
+                entry.central_start.to_string(),
+            )?;
+            let storage = match entry
+                .compression
+                .storage(entry.compressed_size, entry.uncompressed_size)
+            {
+                Ok(storage) => storage,
+                Err(message) => {
+                    insert_summary_attribute(
+                        ctx,
+                        &mut attributes,
+                        "storage_declaration",
+                        format!(
+                            "{message}: {}/{}",
+                            entry.compressed_size, entry.uncompressed_size
+                        ),
+                    )?;
+                    cadmpeg_core::container::EntryStorage::payload_only(
+                        cadmpeg_core::container::VerbatimLabel::Stored,
+                        entry.uncompressed_size,
+                    )
+                }
+            };
+            summaries.push(ContainerEntry {
+                name,
+                role: classify(&entry.name),
+                storage,
+                attributes,
+            });
+        }
+        Ok(summaries)
+    }
+
     /// Partitions every physical archive byte by ZIP structural role.
     pub fn physical_ledger(&self) -> Result<Vec<PhysicalSpan>, CodecError> {
         physical_ledger(self.root.window(), &self.entries, self.central_start)
     }
+}
+
+fn insert_summary_attribute(
+    ctx: &DecodeContext<'_>,
+    attributes: &mut BTreeMap<String, String>,
+    key: &'static str,
+    value: String,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "ZIP summary attributes")?;
+    attributes.insert(key.into(), value);
+    Ok(())
 }
 
 fn preflight_central_directory(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<(), CodecError> {
@@ -997,6 +1088,58 @@ mod tests {
     use zip::CompressionMethod;
 
     use super::{ArchiveSnapshot, EntryRecord, PhysicalSpan, ZipCompression, ZipSpanRole};
+
+    fn summary_refuses(
+        dimension: ResourceDimension,
+        limit: u64,
+        operation: &str,
+    ) {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        writer
+            .start_file(
+                "part.p21",
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored),
+            )
+            .expect("start ZIP member");
+        writer.write_all(b"part").expect("write ZIP member");
+        let bytes = writer.finish().expect("finish ZIP").into_inner();
+
+        let setup_arena = DecodeArena::new();
+        let setup_policy = DecodePolicy::service();
+        let (setup_ctx, root) = DecodeContext::from_root_bytes(&bytes, &setup_arena, &setup_policy)
+            .expect("root fits setup policy");
+        let snapshot = ArchiveSnapshot::new(&setup_ctx, root).expect("ZIP snapshot");
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+            _ => panic!("test only selects collection or retained limits"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("root fits selected policy");
+        assert!(matches!(
+            snapshot.container_entries_with_context(&ctx, |_| cadmpeg_core::container::ContainerRole::Stream),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == dimension && refusal.operation == operation
+        ));
+    }
+
+    #[test]
+    fn zip_summary_entries_refuse_collection_limit() {
+        summary_refuses(ResourceDimension::CollectionItems, 0, "ZIP summary entries");
+    }
+
+    #[test]
+    fn zip_summary_attributes_refuse_collection_limit() {
+        summary_refuses(ResourceDimension::CollectionItems, 1, "ZIP summary attributes");
+    }
+
+    #[test]
+    fn zip_summary_name_refuses_retained_limit() {
+        summary_refuses(ResourceDimension::RetainedBytes, 3, "ZIP summary entry name");
+    }
 
     #[test]
     fn empty_zip_ledger_covers_its_end_record() {

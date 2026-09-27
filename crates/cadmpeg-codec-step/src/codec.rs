@@ -400,7 +400,7 @@ fn inspect_zip(
         inspected.entries.iter().map(|entry| entry.name.as_str()),
         ",",
     )?;
-    let mut entries = archive.container_entries(archive::classify_entry);
+    let mut entries = archive.container_entries_with_context(ctx, archive::classify_entry)?;
     if let Some(root_entry) = entries
         .iter_mut()
         .find(|entry| entry.name == archive::ROOT_NAME)
