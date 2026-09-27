@@ -1783,7 +1783,7 @@ pub(super) fn project(
             continue;
         };
         let mut index = 5;
-        let mut segments = Vec::with_capacity(segment_count);
+        let mut segments = reserve_vec(ctx, segment_count, "iges Type141 boundary segments")?;
         let mut valid = true;
         for _ in 0..segment_count {
             let Some(model_curve) = pointer(record, index) else {
@@ -1812,7 +1812,7 @@ pub(super) fn project(
                 valid = false;
                 break;
             }
-            let mut pcurves = Vec::with_capacity(pcurve_count);
+            let mut pcurves = reserve_vec(ctx, pcurve_count, "iges Type141 segment pcurves")?;
             for pcurve_index in 0..pcurve_count {
                 let Some(pcurve) = pointer(record, index + 3 + pcurve_index) else {
                     pcurves.clear();
@@ -1883,7 +1883,9 @@ pub(super) fn project(
                 super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "trimmed-surface inner-boundary count is invalid"))?;
                 continue;
             };
-            let mut sequences = Vec::with_capacity(inner_count + usize::from(has_explicit_outer));
+            let sequence_count = inner_count.checked_add(usize::from(has_explicit_outer))
+                .ok_or_else(|| ctx.refuse_codec_limit("iges Type144 boundary sequences", u64::MAX, 1))?;
+            let mut sequences = reserve_vec(ctx, sequence_count, "iges Type144 boundary sequences")?;
             // The outer boundary is stated in its own PTO field, so it travels
             // as its own value and is never recovered from a list position.
             let mut explicit_outer_sequence = None;
@@ -1946,7 +1948,7 @@ pub(super) fn project(
                 super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "bounded-surface boundary count is not positive"))?;
                 continue;
             };
-            let mut sequences = Vec::with_capacity(count);
+            let mut sequences = reserve_vec(ctx, count, "iges Type143 boundary sequences")?;
             let mut valid = true;
             for index in 0..count {
                 let Some(sequence) = pointer(record, 4 + index) else {
@@ -2021,7 +2023,7 @@ pub(super) fn project(
         let mut implicit_boundary_pcurves = Vec::new();
         let mut loop_ids = Vec::new();
         let mut explicit_outer_loop: Option<cadmpeg_ir::ids::LoopId> = None;
-        let mut linear_boundary_candidates = Vec::with_capacity(boundary_sequences.len());
+        let mut linear_boundary_candidates = reserve_vec(ctx, boundary_sequences.len(), "iges trimming linear candidates")?;
         let mut face_tolerance = 0.0_f64;
         for (boundary_index, sequence) in boundary_sequences.iter().copied().enumerate() {
             let Some(boundary) = boundaries.get(&sequence).cloned() else {
@@ -2034,7 +2036,7 @@ pub(super) fn project(
                 valid = false;
                 break;
             }
-            let mut items = Vec::with_capacity(boundary.segments.len());
+            let mut items = reserve_vec(ctx, boundary.segments.len(), "iges trimming boundary items")?;
             for segment in &boundary.segments {
                 let model_curve_id =
                     crate::ids::curve(&crate::ids::Stem::directory(segment.model_curve));
@@ -2043,7 +2045,7 @@ pub(super) fn project(
                     valid = false;
                     break;
                 };
-                let mut pcurves = Some(Vec::with_capacity(segment.pcurves.len()));
+                let mut pcurves = Some(reserve_vec(ctx, segment.pcurves.len(), "iges trimming segment pcurves")?);
                 let mut pcurve_refusal = None;
                 for sequence in &segment.pcurves {
                     match pcurve_geometry(
