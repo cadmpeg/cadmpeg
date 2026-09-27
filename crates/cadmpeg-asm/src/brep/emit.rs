@@ -58,6 +58,22 @@ macro_rules! charged_push {
     }};
 }
 
+fn append_source_id<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    sources: &mut Vec<(i64, T)>,
+    record_index: i64,
+    id: &str,
+    operation: &'static str,
+) -> Result<(), cadmpeg_core::CodecError>
+where
+    T: TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>,
+{
+    crate::decode_alloc::reserve_vec_slot(ctx, sources, operation)?;
+    let copied = crate::decode_alloc::copy_string(ctx, id, operation)?;
+    sources.push((record_index, T::try_from(copied).map_err(cadmpeg_core::CodecError::malformed)?));
+    Ok(())
+}
+
 fn map_law_formula(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     formula: EmbeddedLawFormula,
@@ -513,16 +529,12 @@ fn emit_carrier_surface(
                 format,
             )?,
         };
-        procedural_support_sources.extend(
-            out.surfaces[support_start..]
-                .iter()
-                .map(|surface| (i, surface.id.clone())),
-        );
-        procedural_curve_child_sources.extend(
-            out.curves[curve_start..]
-                .iter()
-                .map(|curve| (i, curve.id.clone())),
-        );
+        for surface in &out.surfaces[support_start..] {
+            append_source_id(ctx, procedural_support_sources, i, surface.id.as_str(), "ASM procedural support sources")?;
+        }
+        for curve in &out.curves[curve_start..] {
+            append_source_id(ctx, procedural_curve_child_sources, i, curve.id.as_str(), "ASM procedural curve child sources")?;
+        }
         let cache_fit_tolerance = match cache {
             ProceduralSurfaceCache::Legacy(tolerance) => tolerance,
             ProceduralSurfaceCache::Revision => None,
