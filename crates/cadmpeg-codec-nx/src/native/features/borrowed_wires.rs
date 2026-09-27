@@ -5,9 +5,9 @@ use serde::ser::SerializeMap;
 use serde::Serialize;
 
 use super::{
-    ColumnIndexRowKind, FeatureBodyReference, FeatureInputBlockIdentityGroup,
-    FeatureInputColumnTarget, FeatureInputColumnTargetRow, FeatureOperationObjectReference,
-    FeatureParameterUse,
+    ColumnIndexRowKind, FeatureBodyReference, FeatureDatumCsysConstruction,
+    FeatureDatumCsysDescriptor, FeatureInputBlockIdentityGroup, FeatureInputColumnTarget,
+    FeatureInputColumnTargetRow, FeatureOperationObjectReference, FeatureParameterUse,
 };
 use crate::native::iter_wire::IterWire;
 
@@ -148,15 +148,69 @@ impl Serialize for FeatureParameterUse {
     }
 }
 
+impl Serialize for FeatureDatumCsysConstruction {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut wire = serializer.serialize_map(None)?;
+        wire.serialize_entry("id", &self.id)?;
+        wire.serialize_entry("operation_label", &self.operation_label)?;
+        wire.serialize_entry("control", &self.frame.control())?;
+        wire.serialize_entry(
+            "object_indices",
+            &self
+                .frame
+                .members()
+                .each_ref()
+                .map(|(token, _)| token.value()),
+        )?;
+        wire.serialize_entry(
+            "raw_object_indices",
+            &self
+                .frame
+                .members()
+                .each_ref()
+                .map(|(token, _)| token.raw()),
+        )?;
+        wire.serialize_entry(
+            "data_blocks",
+            &self.frame.members().each_ref().map(|(_, binding)| binding),
+        )?;
+        wire.serialize_entry("source_offsets", &self.frame.offsets())?;
+        wire.end()
+    }
+}
+
+impl Serialize for FeatureDatumCsysDescriptor {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let descriptor = self.descriptor.descriptor();
+        let mut wire = serializer.serialize_map(None)?;
+        wire.serialize_entry("id", &self.id)?;
+        wire.serialize_entry("operation_label", &self.operation_label)?;
+        wire.serialize_entry("construction", &self.construction)?;
+        wire.serialize_entry("reference_ordinal", &u8::from(self.reference_ordinal))?;
+        wire.serialize_entry("data_block", &self.data_block)?;
+        wire.serialize_entry("prefix", descriptor.prefix())?;
+        wire.serialize_entry("identity", descriptor.identity().as_str())?;
+        wire.serialize_entry("suffix", descriptor.suffix())?;
+        wire.serialize_entry("source_offset", &self.descriptor.source_offset())?;
+        wire.serialize_entry(
+            "identity_source_offset",
+            &self.descriptor.identity_source_offset(),
+        )?;
+        wire.end()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::{
-        FeatureBodyReferenceWire, FeatureInputBlockIdentityGroupWire, FeatureInputColumnTargetWire,
+        FeatureBodyReferenceWire, FeatureDatumCsysConstructionWire, FeatureDatumCsysDescriptorWire,
+        FeatureInputBlockIdentityGroupWire, FeatureInputColumnTargetWire,
         FeatureOperationObjectReferenceWire, FeatureParameterUseWire,
     };
     use super::{
-        FeatureBodyReference, FeatureInputBlockIdentityGroup, FeatureInputColumnTarget,
-        FeatureOperationObjectReference, FeatureParameterUse,
+        FeatureBodyReference, FeatureDatumCsysConstruction, FeatureDatumCsysDescriptor,
+        FeatureInputBlockIdentityGroup, FeatureInputColumnTarget, FeatureOperationObjectReference,
+        FeatureParameterUse,
     };
 
     macro_rules! route_tests {
@@ -218,6 +272,20 @@ mod tests {
         FeatureParameterUse,
         FeatureParameterUseWire,
         r#"{"id":"nx:feature:parameter-use#0","operation_label":"operation","expression":"expression","bindings":["a","b"],"source_offsets":[100,200]}"#
+    );
+    route_tests!(
+        datum_csys_construction_borrowed_wire_preserves_bytes,
+        datum_csys_construction_native_limit_refuses_before_clone,
+        FeatureDatumCsysConstruction,
+        FeatureDatumCsysConstructionWire,
+        r#"{"id":"nx:feature:datum-csys-construction#0","operation_label":"operation","control":19,"object_indices":[0,1,2,3,4,5,6,7],"raw_object_indices":[[240,0],[240,1],[240,2],[240,3],[240,4],[240,5],[240,6],[240,7]],"data_blocks":["a","b","c","d","e","f","g","h"],"source_offsets":[14,16,18,20,22,24,26,28]}"#
+    );
+    route_tests!(
+        datum_csys_descriptor_borrowed_wire_preserves_bytes,
+        datum_csys_descriptor_native_limit_refuses_before_clone,
+        FeatureDatumCsysDescriptor,
+        FeatureDatumCsysDescriptorWire,
+        r#"{"id":"nx:feature:datum-csys-descriptor#0","operation_label":"operation","construction":"construction","reference_ordinal":7,"data_block":"block","prefix":[2,1],"identity":"012345678901234567890123456789","suffix":[63,65],"source_offset":10,"identity_source_offset":12}"#
     );
 
     #[test]

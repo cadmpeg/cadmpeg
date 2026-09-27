@@ -958,11 +958,8 @@ pub(super) struct FeatureSketchRecord {
 }
 
 /// Completely resolved native construction lane of a datum coordinate system.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureDatumCsysConstructionWire",
-    into = "FeatureDatumCsysConstructionWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureDatumCsysConstructionWire")]
 pub(super) struct FeatureDatumCsysConstruction {
     pub(super) id: String,
     pub(super) operation_label: String,
@@ -980,6 +977,7 @@ struct FeatureDatumCsysConstructionWire {
     source_offsets: [u64; 8],
 }
 
+#[cfg(test)]
 impl From<FeatureDatumCsysConstruction> for FeatureDatumCsysConstructionWire {
     fn from(value: FeatureDatumCsysConstruction) -> Self {
         Self {
@@ -1478,11 +1476,8 @@ impl FeatureScalarPayload {
 }
 
 /// Typed descriptor from one of the final three datum-CSYS construction lanes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureDatumCsysDescriptorWire",
-    into = "FeatureDatumCsysDescriptorWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureDatumCsysDescriptorWire")]
 pub(super) struct FeatureDatumCsysDescriptor {
     /// Globally unique descriptor identity.
     pub(super) id: String,
@@ -1522,6 +1517,7 @@ struct FeatureDatumCsysDescriptorWire {
     identity_source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureDatumCsysDescriptor> for FeatureDatumCsysDescriptorWire {
     fn from(value: FeatureDatumCsysDescriptor) -> Self {
         let identity_source_offset = value.descriptor.identity_source_offset();
