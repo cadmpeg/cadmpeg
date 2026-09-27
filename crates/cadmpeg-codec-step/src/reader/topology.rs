@@ -86,6 +86,19 @@ fn push_topology_group<K: Ord, V>(
     push_topology_vec(values.entry(key).or_default(), value, ctx, member_operation)
 }
 
+fn insert_topology_set<T: Ord>(
+    values: &mut BTreeSet<T>,
+    value: T,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !values.contains(&value) {
+        ctx.charge_collection_items(1, operation)?;
+    }
+    values.insert(value);
+    Ok(())
+}
+
 mod admissions;
 
 pub(super) struct TopologyData {
@@ -607,13 +620,12 @@ pub(super) fn decode(
             )), ctx, "step_topology_losses")?;
         }
     }
-    let decoded_pcurves = commit_session
-        .document()
-        .model
-        .pcurves
-        .iter()
-        .map(|pcurve| pcurve.id.clone())
-        .collect::<BTreeSet<_>>();
+    let mut decoded_pcurves = BTreeSet::new();
+    for pcurve in &commit_session.document().model.pcurves {
+        if let Some(id) = source_numeric_id(pcurve.id.as_str(), "pcurve") {
+            insert_topology_set(&mut decoded_pcurves, id, ctx, "step_decoded_topology_pcurves")?;
+        }
+    }
     let topology_root_types = [
         "SHELL_BASED_SURFACE_MODEL",
         "FACE_BASED_SURFACE_MODEL",
@@ -2214,7 +2226,7 @@ fn build(
     edefs: &BTreeMap<u64, Rc<EdgeDef>>,
     odefs: &BTreeMap<u64, OrientedDef>,
     shell_definitions: &BTreeMap<u64, ShellDef>,
-    decoded_pcurves: &BTreeSet<PcurveId>,
+    decoded_pcurves: &BTreeSet<u64>,
     point_positions: &CarrierIndex,
     scope_root: bool,
     losses: &mut Vec<LossNote>,
@@ -2357,7 +2369,7 @@ fn build_one(
     edefs: &BTreeMap<u64, Rc<EdgeDef>>,
     odefs: &BTreeMap<u64, OrientedDef>,
     shell_definitions: &BTreeMap<u64, ShellDef>,
-    decoded_pcurves: &BTreeSet<PcurveId>,
+    decoded_pcurves: &BTreeSet<u64>,
     point_positions: &CarrierIndex,
     shell_steps: &[u64],
     bid: BodyId,
@@ -3689,7 +3701,7 @@ fn associated_pcurves(
     curve_step: u64,
     surface_step: u64,
     exchange: &Exchange,
-    decoded_pcurves: &BTreeSet<PcurveId>,
+    decoded_pcurves: &BTreeSet<u64>,
 ) -> Vec<PcurveId> {
     let Some(curve) = exchange.records().get(&curve_step) else {
         return Vec::new();
@@ -3712,7 +3724,7 @@ fn associated_pcurves(
             let pcurve_id = PcurveId::from(ids::data(kind!("pcurve"), pcurve_step));
             (pcurve.partial("PCURVE").is_some()
                 && entity_parameter(pcurve, "PCURVE", 1)?.reference()? == surface_step
-                && decoded_pcurves.contains(&pcurve_id))
+                && decoded_pcurves.contains(&pcurve_step))
             .then_some(pcurve_id)
         })
         .collect()
