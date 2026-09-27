@@ -5829,44 +5829,43 @@ fn parse_depdb_curve_segment(
     absolute_offset: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<DepdbCurveRow>, cadmpeg_core::CodecError> {
-    let suffixes = (4..=11)
-        .filter_map(|suffix_length| {
-            let start = segment.len().checked_sub(suffix_length)?;
-            let (zero0, p1) = compact_int(segment, start);
-            let (x1, p2) = compact_int(segment, p1);
-            let (f1, p3) = compact_int(segment, p2);
-            let (zero1, end) = compact_int(segment, p3);
-            (p1 > start && p2 > p1 && p3 > p2 && end == segment.len())
-                .then_some((start, [zero0, x1, f1, zero1]))
-        })
-        .filter(|(_, suffix)| suffix[0] == 0 && suffix[3] == 0)
-        .collect::<Vec<_>>();
-    let [(suffix_start, suffix)] = suffixes.as_slice() else {
+    let mut suffix_candidate = None;
+    for suffix_length in 4..=11 {
+        let Some(start) = segment.len().checked_sub(suffix_length) else {
+            continue;
+        };
+        let (zero0, p1) = compact_int(segment, start);
+        let (x1, p2) = compact_int(segment, p1);
+        let (f1, p3) = compact_int(segment, p2);
+        let (zero1, end) = compact_int(segment, p3);
+        if p1 > start && p2 > p1 && p3 > p2 && end == segment.len() && zero0 == 0 && zero1 == 0 {
+            if suffix_candidate.is_some() {
+                return Ok(None);
+            }
+            suffix_candidate = Some((start, [zero0, x1, f1, zero1]));
+        }
+    }
+    let Some((suffix_start, suffix)) = suffix_candidate else {
         return Ok(None);
     };
-    let prefixes = (0..*suffix_start).filter_map(|start| {
-        let prefix = topology_prefix_fields(segment, start)?;
-        (prefix.end <= *suffix_start).then_some((start, prefix))
-    });
-    let prefixes = prefixes
-        .fold(BTreeMap::new(), |mut by_end, (start, prefix)| {
-            by_end
-                .entry(prefix.end)
-                .and_modify(|(known_start, known_prefix)| {
-                    if start < *known_start {
-                        *known_start = start;
-                        *known_prefix = prefix;
-                    }
-                })
-                .or_insert((start, prefix));
-            by_end
-        })
-        .into_values()
-        .collect::<Vec<_>>();
-    let [(row_start, prefix)] = prefixes.as_slice() else {
+    let mut prefix_candidate: Option<(usize, TopologyPrefix)> = None;
+    for start in 0..suffix_start {
+        let Some(prefix) = topology_prefix_fields(segment, start) else {
+            continue;
+        };
+        if prefix.end > suffix_start {
+            continue;
+        }
+        match prefix_candidate {
+            None => prefix_candidate = Some((start, prefix)),
+            Some((_, known)) if known.end == prefix.end => {}
+            Some(_) => return Ok(None),
+        }
+    }
+    let Some((row_start, prefix)) = prefix_candidate else {
         return Ok(None);
     };
-    let body = ctx.copy_retained(&segment[prefix.end..*suffix_start], "creo curve row body")?;
+    let body = ctx.copy_retained(&segment[prefix.end..suffix_start], "creo curve row body")?;
     let CurveScalarLane {
         scalar_tokens,
         references,
