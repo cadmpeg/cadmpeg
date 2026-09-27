@@ -31,18 +31,13 @@ const EPS_ROUND_CAP_PARALLEL: f64 = 1.0e-10;
 const EPS_ROUND_RADIUS_RECONCILIATION: f64 = 1.0e-9;
 const EPS_ROUND_SUPPORT_ORTHOGONAL: f64 = 1.0e-9;
 
-pub(in super::super) fn parallel_support_radius<I>(planes: I) -> Option<f64>
-where
-    I: IntoIterator<Item = ([f64; 3], [f64; 3])>,
-    I::IntoIter: Clone,
-{
-    let planes = planes.into_iter();
+pub(in super::super) fn parallel_support_radius(planes: &[PlaneEquation]) -> Option<f64> {
     let mut first_radius: Option<f64> = None;
     let mut agrees = true;
-    for (first_index, first) in planes.clone().enumerate() {
-        for second in planes.clone().skip(first_index + 1) {
-            let first_normal = normalize(first.1)?;
-            let second_normal = normalize(second.1)?;
+    for (first_index, first) in planes.iter().enumerate() {
+        for second in planes.iter().skip(first_index + 1) {
+            let first_normal = normalize(first.normal)?;
+            let second_normal = normalize(second.normal)?;
             let alignment = first_normal
                 .iter()
                 .zip(second_normal)
@@ -52,17 +47,17 @@ where
                 continue;
             }
             let gap = second
-                .0
+                .origin
                 .iter()
-                .zip(first.0)
+                .zip(first.origin)
                 .zip(first_normal)
                 .map(|((second, first), normal)| (second - first) * normal)
                 .sum::<f64>()
                 .abs();
             let scale = first
-                .0
+                .origin
                 .iter()
-                .chain(&second.0)
+                .chain(&second.origin)
                 .map(|value| value.abs())
                 .fold(1.0, f64::max);
             if gap > EPS_GEOMETRY_AGREEMENT * scale {
@@ -713,11 +708,7 @@ pub(in super::super) fn round_support_radius(
             })
         })
         .then_some(())?;
-    parallel_support_radius(
-        support_planes
-            .into_iter()
-            .map(|plane| (plane.origin, plane.normal)),
-    )
+    parallel_support_radius(&support_planes)
 }
 
 pub(in super::super) fn round_support_envelope_cylinder(

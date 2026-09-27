@@ -514,6 +514,7 @@ fn torus_outline_identifies_exactly_one_prototype_radius_delta() {
 
 #[test]
 fn unique_parallel_round_supports_define_constant_radius() {
+    let plane = |origin, normal| PlaneEquation { origin, normal };
     assert_eq!(
         unique_positive_length(&[0.5, 0.5 + 1.0e-12]).map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(0.5)
@@ -524,28 +525,28 @@ fn unique_parallel_round_supports_define_constant_radius() {
     assert!(differing_positive_lengths(&[15.0, 7.0, 15.0]));
     assert!(!differing_positive_lengths(&[0.0, 1.0]));
     assert_eq!(
-        parallel_support_radius([
-            ([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
-            ([0.0, 0.0, -6.1], [0.0, 0.0, 1.0]),
-            ([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+        parallel_support_radius(&[
+            plane([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+            plane([0.0, 0.0, -6.1], [0.0, 0.0, 1.0]),
+            plane([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
         ]),
         Some(0.5)
     );
     assert_eq!(
-        parallel_support_radius([
-            ([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
-            ([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
-            ([0.0, 0.0, -6.0], [0.0, 0.0, 1.0]),
-            ([0.0, 0.0, -8.0], [0.0, 0.0, 1.0]),
+        parallel_support_radius(&[
+            plane([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+            plane([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+            plane([0.0, 0.0, -6.0], [0.0, 0.0, 1.0]),
+            plane([0.0, 0.0, -8.0], [0.0, 0.0, 1.0]),
         ]),
         None
     );
     assert_eq!(
-        parallel_support_radius([
-            ([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
-            ([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
-            ([0.0, 0.0, -6.0], [0.0, 0.0, 1.0]),
-            ([0.0, 0.0, -7.0], [0.0, 0.0, 1.0]),
+        parallel_support_radius(&[
+            plane([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+            plane([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+            plane([0.0, 0.0, -6.0], [0.0, 0.0, 1.0]),
+            plane([0.0, 0.0, -7.0], [0.0, 0.0, 1.0]),
         ]),
         Some(0.5)
     );
