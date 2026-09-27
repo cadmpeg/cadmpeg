@@ -5577,10 +5577,10 @@ pub(crate) fn decode_tabulated_cylinder_frame(
     const FRAME_MARKER: &[u8] = &[0x00, 0x0c, 0x9a];
     let marker = find(body, FRAME_MARKER, 0)?;
     let mut cursor = marker + FRAME_MARKER.len();
-    let mut values = Vec::with_capacity(6);
-    let mut prefixes = Vec::with_capacity(6);
+    let mut values = [0.0; 6];
+    let mut prefixes = [0; 6];
     for slot in 0..6 {
-        prefixes.push(*body.get(cursor)?);
+        prefixes[slot] = *body.get(cursor)?;
         let (value, next) = if matches!(slot, 1 | 4) && body.get(cursor) == Some(&0x18) {
             (0.0, cursor + 1)
         } else if matches!(slot, 0 | 3)
@@ -5590,11 +5590,11 @@ pub(crate) fn decode_tabulated_cylinder_frame(
         } else {
             scalar::decode_tabulated_cylinder_frame_coordinate(body, cursor, cache)?
         };
-        values.push(value);
+        values[slot] = value;
         cursor = next;
     }
     Some((
-        TabulatedCylinderFrame::new(values.try_into().ok()?, prefixes.try_into().ok()?)?,
+        TabulatedCylinderFrame::new(values, prefixes)?,
         cursor,
     ))
 }
