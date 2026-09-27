@@ -544,13 +544,29 @@ impl std::error::Error for DesignParameterScopePayloadError {}
 /// parameter scope.
 const HISTORY_STATE_ID_BACK_OFFSET: u64 = 8;
 
+#[cfg(test)]
+std::thread_local! {
+    static SCOPE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+#[derive(Debug, PartialEq)]
+struct ScopeCloneProbe;
+
+#[cfg(test)]
+impl Clone for ScopeCloneProbe {
+    fn clone(&self) -> Self {
+        SCOPE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self
+    }
+}
+
 /// Indexed sketch or construction-operation record that scopes parameters.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignParameterScopeSerde",
-    into = "DesignParameterScopeSerde"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "DesignParameterScopeSerde")]
 pub(crate) struct DesignParameterScope {
+    #[cfg(test)]
+    clone_probe: ScopeCloneProbe,
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
     /// Byte offset of the primary indexed record header.
@@ -2106,6 +2122,8 @@ impl DesignParameterScope {
             return Err(fail("reference_member_offsets/kind_offset"));
         }
         Ok(Self {
+            #[cfg(test)]
+            clone_probe: ScopeCloneProbe,
             id: draft.id,
             byte_offset: draft.byte_offset,
             class_tag: draft.class_tag,
@@ -2792,3 +2810,5 @@ impl DesignParameterScope {
 
 #[cfg(test)]
 mod tests;
+
+mod serialize;
