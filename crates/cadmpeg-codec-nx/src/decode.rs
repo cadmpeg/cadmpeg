@@ -270,7 +270,7 @@ fn build_metadata_ir(
             TypedNative::ContainerOnly,
         )?;
     } else {
-        let mut parsed = crate::native::substrate::ParsedStreams::parse(scan);
+        let mut parsed = crate::native::substrate::ParsedStreams::parse(ctx, scan)?;
         let model = crate::native::model::NativeModel::extract(
             ctx,
             root,

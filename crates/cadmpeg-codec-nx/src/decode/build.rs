@@ -153,7 +153,7 @@ pub(super) fn try_decode_geometry(
     let mut stream_unknowns = Vec::new();
     let mut counts = Counts::default();
     let mut body_node_ids = BTreeMap::new();
-    let mut parsed = crate::native::substrate::ParsedStreams::parse(scan);
+    let mut parsed = crate::native::substrate::ParsedStreams::parse(ctx, scan)?;
     let mut carrier_refusals: Vec<LossNote> = Vec::new();
     let mut topology_losses: Vec<LossNote> = Vec::new();
     let mut native_losses: Vec<LossNote> = Vec::new();
