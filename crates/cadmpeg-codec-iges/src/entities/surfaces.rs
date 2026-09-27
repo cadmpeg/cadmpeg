@@ -20,7 +20,7 @@ use cadmpeg_ir::geometry::nurbs::bezier::{
 };
 use cadmpeg_ir::geometry::{
     nurbs::{
-        KnotVector, NurbsCurve, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes,
+        KnotVector, NurbsCurve, NurbsError, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes, WeightedPole3,
         SurfaceParameterAxis,
     },
     Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, RecordBounds,
@@ -39,6 +39,65 @@ use std::collections::{BTreeMap, BTreeSet};
 const EPS_SURFACES_SIMILARITY_ORIENTATION_E10: f64 = 1.0e-10;
 
 const MAX_SURFACE_POLES: usize = 1_000_000;
+
+trait SurfaceGridWeight {
+    fn admit(self, index: usize) -> Result<NonZeroReal, NurbsError>;
+}
+
+impl SurfaceGridWeight for NonZeroReal {
+    fn admit(self, _index: usize) -> Result<NonZeroReal, NurbsError> {
+        Ok(self)
+    }
+}
+
+impl SurfaceGridWeight for f64 {
+    fn admit(self, index: usize) -> Result<NonZeroReal, NurbsError> {
+        NonZeroReal::new(self).ok_or_else(|| NurbsError::UnusableWeight {
+            field: "pole grid row".to_owned(),
+            index,
+            weight: self,
+        })
+    }
+}
+
+fn pair_admitted_surface_poles<W: SurfaceGridWeight>(
+    ctx: Option<&DecodeContext<'_>>,
+    rows: Vec<Vec<FinitePoint3>>,
+    weights: Option<Vec<Vec<W>>>,
+    outer_operation: &'static str,
+    inner_operation: &'static str,
+) -> Result<Result<NurbsPoleGrid<FinitePoint3>, NurbsError>, CodecError> {
+    let Some(weights) = weights else {
+        return Ok(Ok(NurbsPoleGrid::Polynomial { rows }));
+    };
+    if rows.len() != weights.len() {
+        return Ok(Err(NurbsError::WeightLaneLength {
+            field: "pole grid".to_owned(),
+            poles: rows.len(),
+            weights: weights.len(),
+        }));
+    }
+    let mut paired = reserve_optional_vec(ctx, rows.len(), outer_operation)?;
+    for (row, weight_row) in rows.into_iter().zip(weights) {
+        if row.len() != weight_row.len() {
+            return Ok(Err(NurbsError::WeightLaneLength {
+                field: "pole grid row".to_owned(),
+                poles: row.len(),
+                weights: weight_row.len(),
+            }));
+        }
+        let mut paired_row = reserve_optional_vec(ctx, row.len(), inner_operation)?;
+        for (index, (point, weight)) in row.into_iter().zip(weight_row).enumerate() {
+            let weight = match weight.admit(index) {
+                Ok(weight) => weight,
+                Err(error) => return Ok(Err(error)),
+            };
+            paired_row.push(WeightedPole3 { point, weight });
+        }
+        paired.push(paired_row);
+    }
+    Ok(Ok(NurbsPoleGrid::Rational { rows: paired }))
+}
 
 /// Return the source-declared intervals for a Type 128 surface's four
 /// parameter-range fields.
@@ -702,8 +761,14 @@ fn same_basis_ruled_surface(
         }
         Some(rows)
     };
-    let poles = NurbsPoleGrid::from_checked_lanes(pole_rows, weight_rows)
-        .map_err(CodecError::malformed)?;
+    let poles = pair_admitted_surface_poles(
+        ctx,
+        pole_rows,
+        weight_rows,
+        "iges ruled same-basis weighted rows",
+        "iges ruled same-basis weighted row controls",
+    )?
+    .map_err(CodecError::malformed)?;
     let mut u_knots = reserve_optional_vec(ctx, first.knots().len(), "iges ruled same-basis u knots")?;
     u_knots.extend_from_slice(first.knots());
     let mut v_knots = reserve_optional_vec(ctx, 4, "iges ruled same-basis v knots")?;
