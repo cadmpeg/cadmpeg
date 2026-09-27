@@ -1281,7 +1281,9 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             transform,
             id.as_str(),
         )?;
-        self.edges.insert(key, id.clone());
+        let cached_id = EdgeId::mint(retained_string(self.ctx, id.as_str(), "FreeCAD cached edge identity")?)
+            .map_err(CodecError::malformed)?;
+        insert_hash_map(self.ctx, &mut self.edges, key, cached_id, "FreeCAD cached edges")?;
         Ok(id)
     }
 
@@ -1492,7 +1494,9 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             transform,
             vertex_id.as_str(),
         )?;
-        self.vertices.insert(key, vertex_id.clone());
+        let cached_id = VertexId::mint(retained_string(self.ctx, vertex_id.as_str(), "FreeCAD cached vertex identity")?)
+            .map_err(CodecError::malformed)?;
+        insert_hash_map(self.ctx, &mut self.vertices, key, cached_id, "FreeCAD cached vertices")?;
         Ok(vertex_id)
     }
 
@@ -1515,7 +1519,9 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         let id = CurveId::mint(crate::native::model_id_charged_at(
             self.ctx, "curve", &self.payload.id, &key,
         "FreeCAD located curve identity", )?).map_err(CodecError::malformed)?;
-        if self.emitted_curves.insert(id.clone()) {
+        let cached_id = CurveId::mint(retained_string(self.ctx, id.as_str(), "FreeCAD emitted curve identity")?)
+            .map_err(CodecError::malformed)?;
+        if insert_hash_set(self.ctx, &mut self.emitted_curves, cached_id, "FreeCAD emitted curves")? {
             let base = ir
                 .model
                 .curves
@@ -1554,7 +1560,9 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         let id = SurfaceId::mint(crate::native::model_id_charged_at(
             self.ctx, "surface", &self.payload.id, &key,
         "FreeCAD located surface identity", )?).map_err(CodecError::malformed)?;
-        if self.emitted_surfaces.insert(id.clone()) {
+        let cached_id = SurfaceId::mint(retained_string(self.ctx, id.as_str(), "FreeCAD emitted surface identity")?)
+            .map_err(CodecError::malformed)?;
+        if insert_hash_set(self.ctx, &mut self.emitted_surfaces, cached_id, "FreeCAD emitted surfaces")? {
             let base = ir
                 .model
                 .surfaces
