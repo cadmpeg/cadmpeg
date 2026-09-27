@@ -863,6 +863,43 @@ fn decode_reports_unbound_pmi_semantic_dimension() {
 }
 
 #[test]
+fn decode_bound_pmi_report_refuses_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x49,
+        "Contents/PMISemanticDataDB",
+        &pmi_semantic_payload(),
+    ));
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_collection_items = 0;
+    for _ in 0..1024 {
+        let error = SldprtCodec
+            .decode(&mut Cursor::new(&source), &options)
+            .expect_err("collection limit must refuse the PMI decode route");
+        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            error
+        else {
+            panic!("expected a collection resource refusal");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        if limit.operation == "collect SLDPRT bound PMI dimensions" {
+            assert_eq!(options.policy.limits.max_collection_items, limit.used);
+            assert_eq!(limit.additional, 1);
+            return;
+        }
+        options.policy.limits.max_collection_items = limit.used + limit.additional;
+    }
+    panic!("bound PMI report charge was not reached");
+}
+
+#[test]
 fn duplicate_pmi_records_share_one_parameter_and_round_trip_edits() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
