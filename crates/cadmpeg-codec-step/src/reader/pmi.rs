@@ -523,11 +523,15 @@ pub(super) fn decode(
             let lower = limits
                 .parameters()
                 .first()
-                .and_then(|value| measure(value, exchange, &mut measurements));
+                .map(|value| measure(value, exchange, &mut measurements, ctx))
+                .transpose()?
+                .flatten();
             let upper = limits
                 .parameters()
                 .get(1)
-                .and_then(|value| measure(value, exchange, &mut measurements));
+                .map(|value| measure(value, exchange, &mut measurements, ctx))
+                .transpose()?
+                .flatten();
             if let (Some(lower), Some(upper)) = (lower, upper) {
                 if set_dimension_tolerance(
                     &mut ir.model.pmi[index.get()].definition,
@@ -611,21 +615,25 @@ pub(super) fn decode(
                 },
             );
         let mut measurements = measure_context(geometry, id, &mut losses, graph_limit);
-        let magnitude = record
+        let magnitude = first_measure(record
             .partials
             .iter()
             .find(|partial| partial.name == "GEOMETRIC_TOLERANCE")
             .into_iter()
-            .flat_map(|partial| partial.parameters.iter())
-            .find_map(|value| measure(value, exchange, &mut measurements))
-            .or_else(|| {
+            .flat_map(|partial| partial.parameters.iter()), exchange, &mut measurements, ctx)?;
+        let magnitude = match magnitude {
+            Some(magnitude) => Some(magnitude),
+            None => first_measure(
                 record
                     .partials
                     .iter()
                     .filter(|partial| partial.name != "GEOMETRIC_TOLERANCE")
-                    .flat_map(|partial| partial.parameters.iter())
-                    .find_map(|value| measure(value, exchange, &mut measurements))
-            });
+                    .flat_map(|partial| partial.parameters.iter()),
+                exchange,
+                &mut measurements,
+                ctx,
+            )?,
+        };
         let Some(magnitude) = magnitude.and_then(cadmpeg_ir::pmi::PmiMagnitude::new) else {
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "{} #{id} has no numeric magnitude",
@@ -638,24 +646,34 @@ pub(super) fn decode(
             .iter()
             .find(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_DEFINED_UNIT")
             .and_then(|partial| partial.parameters.first())
-            .and_then(|value| measure(value, exchange, &mut measurements));
-        let (defined_area_unit, defined_area_second_unit) = record
+            .map(|value| measure(value, exchange, &mut measurements, ctx))
+            .transpose()?
+            .flatten();
+        let (defined_area_unit, defined_area_second_unit) = if let Some(partial) = record
             .partials
             .iter()
             .find(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_DEFINED_AREA_UNIT")
-            .map_or((None, None), |partial| {
-                (
-                    partial
-                        .parameters
-                        .first()
-                        .and_then(ValueExt::enumeration)
-                        .map(str::to_ascii_lowercase),
-                    partial
-                        .parameters
-                        .get(1)
-                        .and_then(|value| measure(value, exchange, &mut measurements)),
-                )
-            });
+        {
+            let area = partial
+                .parameters
+                .first()
+                .and_then(ValueExt::enumeration)
+                .map(|name| {
+                    let mut name = clone_pmi_text(name, ctx, "step_pmi_defined_area_unit_text")?;
+                    name.make_ascii_lowercase();
+                    Ok::<_, CodecError>(name)
+                })
+                .transpose()?;
+            let second = partial
+                .parameters
+                .get(1)
+                .map(|value| measure(value, exchange, &mut measurements, ctx))
+                .transpose()?
+                .flatten();
+            (area, second)
+        } else {
+            (None, None)
+        };
         // A complex tolerance keeps its base targets in GEOMETRIC_TOLERANCE,
         // while GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE carries the datum
         // system as a separate aggregate.
@@ -1471,7 +1489,7 @@ fn modifier_text(
             let Some(measure_id) = parameters.get(1).and_then(ValueExt::reference) else {
                 return Ok(None);
             };
-            let Some(value) = measure(&Value::Reference(measure_id), exchange, measurements) else {
+            let Some(value) = measure(&Value::Reference(measure_id), exchange, measurements, ctx)? else {
                 return Ok(None);
             };
             let value = value
@@ -2196,7 +2214,7 @@ fn characteristic_measure_values(
     })?;
     let mut values = Vec::new();
     for id in measure_ids {
-        if let Some(value) = measure(&Value::Reference(id), exchange, measurements) {
+        if let Some(value) = measure(&Value::Reference(id), exchange, measurements, ctx)? {
             let name = exchange
                 .records()
                 .get(&id)
@@ -2215,7 +2233,7 @@ fn characteristic_measure_values(
     }
     if values.is_empty() {
         parameters.visit(|parameter| {
-            if let Some(value) = measure(parameter, exchange, measurements) {
+            if let Some(value) = measure(parameter, exchange, measurements, ctx)? {
                 if let Some(ctx) = ctx {
                     ctx.charge_collection_items(1, "step_pmi_measure_values")?;
                 }
@@ -2335,12 +2353,27 @@ fn measure_context<'a>(
     }
 }
 
+fn first_measure<'a>(
+    values: impl IntoIterator<Item = &'a Value>,
+    exchange: &Exchange,
+    measurements: &mut MeasureContext<'_>,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<PmiValue>, CodecError> {
+    for value in values {
+        if let Some(measured) = measure(value, exchange, measurements, ctx)? {
+            return Ok(Some(measured));
+        }
+    }
+    Ok(None)
+}
+
 fn measure(
     value: &Value,
     exchange: &Exchange,
     measurements: &mut MeasureContext<'_>,
-) -> Option<PmiValue> {
-    measure_inner(value, exchange, &mut BTreeSet::new(), 0, measurements)
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<PmiValue>, CodecError> {
+    measure_inner(value, exchange, &mut BTreeSet::new(), 0, measurements, ctx)
 }
 
 fn measure_inner(
@@ -2349,11 +2382,15 @@ fn measure_inner(
     active: &mut BTreeSet<u64>,
     depth: usize,
     measurements: &mut MeasureContext<'_>,
-) -> Option<PmiValue> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<PmiValue>, CodecError> {
     if depth >= measurements.graph_limit {
-        return None;
+        return Ok(None);
     }
-    match value {
+    let _nested = ctx
+        .map(|ctx| ctx.enter_nested("step_pmi_measure_eval_walk"))
+        .transpose()?;
+    Ok(match value {
         Value::Integer(value) => PmiValue::new(*value as f64, PmiQuantity::Ratio),
         Value::Real(value) => PmiValue::new(*value, PmiQuantity::Ratio),
         Value::Typed(name, value) => value.number().and_then(|number| {
@@ -2375,12 +2412,13 @@ fn measure_inner(
             )
         }),
         Value::Reference(id) => {
-            if !active.insert(*id) {
-                return None;
+            if active.contains(id) {
+                return Ok(None);
             }
+            insert_pmi_set(active, *id, ctx, "step_pmi_measure_eval_active")?;
             let Some(record) = exchange.records().get(id) else {
                 active.remove(id);
-                return None;
+                return Ok(None);
             };
             let quantity = record
                 .partials
@@ -2409,47 +2447,75 @@ fn measure_inner(
                     })
                 });
             let scale = match quantity {
-                PmiQuantity::Length => unit
-                    .and_then(|unit| {
+                PmiQuantity::Length => {
+                    if let Some(scale) = unit.and_then(|unit| {
                         super::geometry::unit_scale_mm(unit, exchange, &mut BTreeSet::new())
-                    })
-                    .map_or_else(|| {
-                        measurements.losses.push(StepLossCode::PmiLengthUnitUnresolved.note(format!(
+                    }) {
+                        scale.get()
+                    } else {
+                        push_pmi_vec(
+                            measurements.losses,
+                            StepLossCode::PmiLengthUnitUnresolved.note(format!(
                                 "PMI length measure #{id} unit scale did not resolve; the document length scale was used"
-                            )));
+                            )),
+                            ctx,
+                            "step_pmi_losses",
+                        )?;
                         measurements.length_scale
-                    }, cadmpeg_ir::scalar::PositiveReal::get),
-                PmiQuantity::Angle => unit
-                    .and_then(|unit| {
+                    }
+                }
+                PmiQuantity::Angle => {
+                    if let Some(scale) = unit.and_then(|unit| {
                         super::geometry::unit_scale_radians(unit, exchange, &mut BTreeSet::new())
-                    })
-                    .map_or_else(|| {
-                        measurements.losses.push(StepLossCode::PmiAngleUnitUnresolved.note(format!(
+                    }) {
+                        scale.get()
+                    } else {
+                        push_pmi_vec(
+                            measurements.losses,
+                            StepLossCode::PmiAngleUnitUnresolved.note(format!(
                                 "PMI angle measure #{id} unit scale did not resolve; the document plane-angle scale was used"
-                            )));
+                            )),
+                            ctx,
+                            "step_pmi_losses",
+                        )?;
                         measurements.angle_scale
-                    }, cadmpeg_ir::scalar::PositiveReal::get),
+                    }
+                }
                 PmiQuantity::Ratio => 1.0,
             };
-            let result = record
-                .partials
-                .iter()
-                .flat_map(|partial| &partial.parameters)
-                .find_map(|parameter| {
-                    ValueExt::typed_number(parameter)
-                        .and_then(|number| PmiValue::new(number * scale, quantity))
-                        .or_else(|| {
-                            measure_inner(parameter, exchange, active, depth + 1, measurements)
-                        })
-                });
+            let mut result = None;
+            for parameter in record.partials.iter().flat_map(|partial| &partial.parameters) {
+                result = ValueExt::typed_number(parameter)
+                    .and_then(|number| PmiValue::new(number * scale, quantity));
+                if result.is_none() {
+                    result = measure_inner(
+                        parameter,
+                        exchange,
+                        active,
+                        depth + 1,
+                        measurements,
+                        ctx,
+                    )?;
+                }
+                if result.is_some() {
+                    break;
+                }
+            }
             active.remove(id);
             result
         }
-        Value::List(values) => values
-            .iter()
-            .find_map(|value| measure_inner(value, exchange, active, depth + 1, measurements)),
+        Value::List(values) => {
+            let mut result = None;
+            for value in values {
+                result = measure_inner(value, exchange, active, depth + 1, measurements, ctx)?;
+                if result.is_some() {
+                    break;
+                }
+            }
+            result
+        }
         _ => None,
-    }
+    })
 }
 
 fn measure_quantity(value: &Value) -> Option<PmiQuantity> {
