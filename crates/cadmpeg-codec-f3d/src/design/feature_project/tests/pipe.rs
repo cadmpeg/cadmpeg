@@ -153,7 +153,9 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         std::slice::from_ref(&path_group),
         &[],
         &[],
+        None,
     )
+    .unwrap()
     .expect("exact legacy Pipe reference form");
     assert!(matches!(
         definition, FeatureDefinition::Operation(FeatureOperation::Sweep {
@@ -193,7 +195,9 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         std::slice::from_ref(&path_group),
         &[],
         &[],
+        None,
     )
+    .unwrap()
     .expect("exact hollow circular Pipe reference form");
     assert!(matches!(
         hollow_definition, FeatureDefinition::Operation(FeatureOperation::Sweep {
@@ -241,7 +245,9 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         std::slice::from_ref(&path_group),
         &[],
         &[],
+        None
     )
+    .unwrap()
     .is_none());
 
     {
@@ -286,7 +292,9 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         std::slice::from_ref(&path_group),
         &[],
         &[],
+        None
     )
+    .unwrap()
     .is_none());
 
     scope
@@ -312,7 +320,9 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         std::slice::from_ref(&path_group),
         &[],
         &[],
+        None
     )
+    .unwrap()
     .is_some());
 
     scope.class_tag =
@@ -347,6 +357,8 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         std::slice::from_ref(&path_group),
         &[],
         &[],
+        None
     )
+    .unwrap()
     .is_some());
 }
