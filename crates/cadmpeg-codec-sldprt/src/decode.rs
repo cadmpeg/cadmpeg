@@ -2801,7 +2801,7 @@ fn build_geometry_ir(
             properties: BTreeMap::new(),
         });
     }
-    let feature_appearance_sources = crate::appearance::feature_assignments(scan)
+    let feature_appearance_sources = crate::appearance::feature_assignments(ctx, scan)?
         .into_iter()
         .map(|assignment| assignment.feature_source_id)
         .collect::<BTreeSet<_>>();
@@ -2833,7 +2833,7 @@ fn build_geometry_ir(
             }
         }
         let resolved =
-            crate::appearance::resolve_display_appearances(scan, display, &display_faces);
+            crate::appearance::resolve_display_appearances(ctx, scan, display, &display_faces)?;
         matched_feature_sources.extend(resolved.matched_feature_sources);
         let mut display_links = Vec::with_capacity(display_faces.len());
         for (table_index, display_face) in display_faces.into_iter().enumerate() {
@@ -3734,9 +3734,10 @@ fn project_design_history(
         pmi_dimensions,
     } = input;
     let mut semantic_projection = histories.to_vec();
+    let scene_feature_classes = crate::tessellation::scene_feature_classes(ctx, scan)?;
     crate::history::enrich_scene_classes(
         &mut semantic_projection,
-        &crate::tessellation::scene_feature_classes(scan),
+        &scene_feature_classes,
     );
     crate::history::configuration::enrich_history_semantic(
         &mut semantic_projection,
