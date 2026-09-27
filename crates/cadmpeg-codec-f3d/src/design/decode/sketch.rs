@@ -108,6 +108,46 @@ impl IndexedRecordOffsets {
     }
 }
 
+/// Build the retained native stream key with the identity component's percent encoding.
+pub(in crate::design) fn native_scope_charged(
+    ctx: &DecodeContext<'_>,
+    name: &str,
+) -> Result<String, CodecError> {
+    let encoded_len = name.chars().try_fold(ids::SCHEME_PREFIX.len(), |length, character| {
+        let character_len = if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+            character.len_utf8().checked_mul(3)?
+        } else {
+            character.len_utf8()
+        };
+        length.checked_add(character_len)
+    }).ok_or_else(|| ctx.refuse_codec_limit("f3d native stream key length", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_retained(
+        u64::try_from(encoded_len).map_err(|_| {
+            ctx.refuse_codec_limit("f3d native stream key length", u64::MAX - 1, u64::MAX)
+        })?,
+        "f3d native stream key",
+    )?;
+    let mut out = String::new();
+    out.try_reserve_exact(encoded_len).map_err(|_| {
+        ctx.refuse_codec_limit("f3d native stream key allocation", 0, 1)
+    })?;
+    out.push_str(ids::SCHEME_PREFIX);
+    for character in name.chars() {
+        if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+            let mut bytes = [0; 4];
+            for byte in character.encode_utf8(&mut bytes).as_bytes() {
+                const HEX: &[u8; 16] = b"0123456789ABCDEF";
+                out.push('%');
+                out.push(char::from(HEX[usize::from(byte >> 4)]));
+                out.push(char::from(HEX[usize::from(byte & 0x0f)]));
+            }
+        } else {
+            out.push(character);
+        }
+    }
+    Ok(out)
+}
+
 /// Copy a stream identity for a mutable decode pass under a scoped byte charge.
 pub(in crate::design) fn copy_scoped_stream<'a>(
     ctx: &'a DecodeContext<'_>,

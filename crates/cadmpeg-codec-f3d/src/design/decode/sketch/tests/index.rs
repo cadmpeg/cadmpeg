@@ -108,3 +108,29 @@ fn scoped_stream_copy_refuses_materialized_limit() {
             if limit.dimension == ResourceDimension::MaterializedBytes
     ));
 }
+
+#[test]
+fn charged_native_scope_matches_identity_encoding() {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    for name in ["Design/BulkStream.dat", "a:b#c%d e", "α\u{2003}β"] {
+        assert_eq!(
+            crate::design::decode::sketch::native_scope_charged(&ctx, name).unwrap(),
+            crate::ids::native_scope(name)
+        );
+    }
+}
+
+#[test]
+fn native_scope_key_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::decode::sketch::native_scope_charged(&ctx, "a"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+    ));
+}
