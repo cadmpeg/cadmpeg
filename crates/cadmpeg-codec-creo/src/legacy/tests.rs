@@ -7,6 +7,7 @@ use crate::test_support::build_prt;
 use crate::test_support::build_prt_raw;
 use crate::test_support::visibgeom_payload;
 use std::io::Cursor;
+use std::ops::Range;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -17,7 +18,7 @@ use crate::CreoCodec;
 
 use super::type_code::LegacyTypeCode;
 use super::{
-    object_node_id, parse_declaration, scan, IntegerPayload, IntegerRun, NumericPayload,
+    object_node_id, parse_declaration, IntegerPayload, IntegerRun, NumericPayload,
     NumericRun, ObjectPayload, PrincipalUnitSystem, Real, RealPayload, RealRun, StringPayload,
     StringValue, UnsignedPayload, ValueKind,
 };
@@ -25,6 +26,66 @@ use super::{
 fn principal_unit_system(persistence: &super::Persistence) -> Option<PrincipalUnitSystem> {
     crate::decode::with_test_decode_ctx(|ctx| persistence.principal_unit_system(ctx))
         .expect("unit selection fits service limits")
+}
+
+fn scan(
+    data: &[u8],
+    ranges: impl IntoIterator<Item = Range<usize>>,
+) -> Result<super::Persistence, cadmpeg_core::CodecError> {
+    crate::decode::with_test_decode_ctx(|ctx| super::scan(ctx, data, ranges))
+}
+
+fn assert_scope_collection_refusal(data: &[u8], limit: u64, operation: &'static str) {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = super::scan(&ctx, data, std::iter::once(0..data.len()))
+        .expect_err("the next collection item exceeds the limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+#[test]
+fn legacy_scope_vec_refuses_before_first_scope() {
+    assert_scope_collection_refusal(b"@size 1 1\n0 1 9\n", 0, "creo legacy parsed scopes");
+}
+
+#[test]
+fn legacy_declaration_index_refuses_before_new_node() {
+    assert_scope_collection_refusal(b"@size 1 1\n0 1 9\n", 1, "creo legacy declaration index nodes");
+}
+
+#[test]
+fn legacy_declaration_vec_refuses_before_row() {
+    assert_scope_collection_refusal(b"@size 1 1\n0 1 9\n", 2, "creo legacy declarations");
+}
+
+#[test]
+fn legacy_scope_candidate_vec_refuses_before_value_row() {
+    assert_scope_collection_refusal(b"@size 1 1\n0 1 9\n", 3, "creo legacy scope value candidates");
+}
+
+#[test]
+fn legacy_conflicting_id_set_refuses_before_new_node() {
+    assert_scope_collection_refusal(b"@size 1 1\n@size 1 2\n", 3, "creo legacy conflicting declaration IDs");
+}
+
+#[test]
+fn legacy_declaration_name_refuses_before_retained_copy() {
+    let data = b"@size 1 1\n0 1 9\n";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = super::scan(&ctx, data, std::iter::once(0..data.len()))
+        .expect_err("four name bytes exceed the retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo legacy declaration names"));
 }
 
 #[test]
@@ -40,7 +101,7 @@ fn unknown_declaration_codes_retain_scope_identity() {
         persistence.scopes[0].declarations[1].type_code,
         LegacyTypeCode::Other(_)
     ));
-    assert!(parse_declaration(b"@future 1 256", 0).is_none());
+    assert!(parse_declaration(b"@future 1 256").is_none());
 }
 
 #[test]
