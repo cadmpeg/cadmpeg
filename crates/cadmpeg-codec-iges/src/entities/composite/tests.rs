@@ -217,9 +217,12 @@ fn native_composite_segment_curve_ids_refuse_retained_copy() {
 fn composite_child_carriers_refuse_nested_collection_admission() {
     let bytes = composite_curve_file();
     for operation in [
+        "iges composite child pointer slots",
         "iges composite child carrier nodes",
         "iges composite curve child sequences",
         "iges composite child curve ids",
+        "iges composite line knots",
+        "iges composite line points",
     ] {
         let mut cap = 0_u64;
         let mut found = false;
