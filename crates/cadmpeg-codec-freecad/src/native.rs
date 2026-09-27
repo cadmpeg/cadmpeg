@@ -198,6 +198,25 @@ mod tests {
     use super::{model_id, native_child_id, native_id};
 
     #[test]
+    fn boolean_tokens_parse_without_a_lowercase_copy() {
+        for (text, expected) in [
+            ("true", Some(true)),
+            ("TRUE", Some(true)),
+            ("TrUe", Some(true)),
+            ("1", Some(true)),
+            ("false", Some(false)),
+            ("FALSE", Some(false)),
+            ("FaLsE", Some(false)),
+            ("0", Some(false)),
+            ("truex", None),
+            ("1 ", None),
+            ("Å", None),
+        ] {
+            assert_eq!(super::parse_bool(text), expected, "{text}");
+        }
+    }
+
+    #[test]
     fn charged_native_identity_preserves_encoding_and_refuses_at_retained_limit() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
@@ -3082,10 +3101,12 @@ pub(crate) fn malformed(message: impl Into<String>) -> CodecError {
 
 /// Reads a `FreeCAD` boolean property text, which is `true`, `false`, `1` or `0`.
 pub(crate) fn parse_bool(value: &str) -> Option<bool> {
-    match value.to_ascii_lowercase().as_str() {
-        "true" | "1" => Some(true),
-        "false" | "0" => Some(false),
-        _ => None,
+    if value == "1" || value.eq_ignore_ascii_case("true") {
+        Some(true)
+    } else if value == "0" || value.eq_ignore_ascii_case("false") {
+        Some(false)
+    } else {
+        None
     }
 }
 
