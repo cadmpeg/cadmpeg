@@ -323,6 +323,61 @@ fn ruled_homogeneous_carriers_refuse_copied_poles_weights_and_controls() {
 }
 
 #[test]
+fn aligned_ruled_spans_refuse_nested_split_and_partition_storage() {
+    let first = NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    ).unwrap();
+    let second = NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 0.5, 1.0, 1.0],
+        vec![
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(0.5, 1.0, 0.0),
+            Point3::new(1.0, 1.0, 0.0),
+        ],
+        None,
+        false,
+    ).unwrap();
+    let spans = super::aligned_homogeneous_spans(None, &first, &second).unwrap().unwrap();
+    assert_eq!(spans.len(), 2);
+    for operation in [
+        "iges span normalized boundaries",
+        "iges span combined boundaries",
+        "iges span partition controls",
+        "iges span split levels",
+        "iges span split first controls",
+        "iges span split level controls",
+        "iges span split left controls",
+        "iges span split right controls",
+        "iges span partition slots",
+        "iges span aligned pairs",
+    ] {
+        let mut cap = 0_u64;
+        let mut found = false;
+        for _ in 0..4096 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            match super::aligned_homogeneous_spans(Some(&ctx), &first, &second) {
+                Err(CodecError::ResourceLimit(limit)) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    if limit.operation == operation { found = true; break; }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                Ok(_) => panic!("expected aligned-span refusal at {operation}, but alignment succeeded"),
+                Err(error) => panic!("expected aligned-span refusal at {operation}: {error:?}"),
+            }
+        }
+        assert!(found, "aligned-span refusal was not reached: {operation}");
+    }
+}
+
+#[test]
 fn same_basis_ruled_surface_refuses_nested_weight_rows() {
     let rail = NurbsCurve::from_lanes(
         1,
