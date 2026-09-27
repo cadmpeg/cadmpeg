@@ -318,6 +318,10 @@ fn design_body_member_identity_refuses_at_retained_limit() {
         &[], "fcstd body member feature identity",
         |ctx| super::body_definition(ctx, &[&property], &feature_ids),
     );
+    crate::test_support::assert_collection_refusal_at(
+        &[], "fcstd distinct body children",
+        |ctx| super::body_definition(ctx, &[&property], &feature_ids),
+    );
 }
 
 #[test]
@@ -352,6 +356,64 @@ fn design_body_tip_identity_refuses_at_retained_limit() {
     crate::test_support::assert_retained_refusal_at(
         &[], "fcstd body tip feature identity",
         |ctx| super::body_definition(ctx, &[&property], &feature_ids),
+    );
+}
+
+#[test]
+fn design_unresolved_profile_identity_refuses_at_retained_limit() {
+    let object = crate::native::ObjectRecord {
+        id: "fcstd:native:object#Pad".into(),
+        name: "Pad".into(),
+        type_name: "PartDesign::Pad".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: Default::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd unresolved profile identity",
+        |ctx| super::transfer(
+            ctx, &mut cadmpeg_ir::document::CadIr::empty(),
+            &[object.clone()], &[], &[], &[], None,
+        ),
+    );
+}
+
+#[test]
+fn design_distinct_feature_dependencies_refuse_at_collection_limit() {
+    let source = crate::native::ObjectRecord {
+        id: "fcstd:native:object#Source".into(),
+        name: "Source".into(),
+        type_name: "Part::Feature".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: Default::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    let dependent = crate::native::ObjectRecord {
+        id: "fcstd:native:object#Dependent".into(),
+        name: "Dependent".into(),
+        type_name: "Part::Feature".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: Default::default(),
+        dependencies: vec![source.id.clone()],
+        dependency_allow_partial: None,
+        order: 1,
+        data: None,
+    };
+    crate::test_support::assert_collection_refusal_at(
+        &[], "fcstd distinct feature dependencies",
+        |ctx| super::transfer(
+            ctx, &mut cadmpeg_ir::document::CadIr::empty(),
+            &[source.clone(), dependent.clone()], &[], &[], &[], None,
+        ),
     );
 }
 
