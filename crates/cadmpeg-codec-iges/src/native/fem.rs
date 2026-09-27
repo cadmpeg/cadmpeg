@@ -106,14 +106,14 @@ pub(in crate::native) enum NativeFemEntity {
 pub(super) fn build(
     directory: &[DirectoryEntry],
     records: &BTreeMap<u32, &ParameterRecord>,
-    resolver: &ParameterResolver<'_>,
+    resolver: &ParameterResolver<'_, '_>,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Vec<NativeFemEntity>, CodecError> {
     let mut result = Vec::new();
     for entry in directory.iter().filter(|entry| is_fem(entry)) {
         let record = records.get(&entry.sequence).copied();
         let native = match entry.entity_type {
-            134 => node(entry, record, resolver),
+            134 => node(entry, record, resolver)?,
             136 => finite_element(entry, record, resolver, ctx)?,
             138 => nodal_displacement_rotation(entry, record, resolver, ctx)?,
             146 => nodal_results(entry, record, resolver, ctx)?,
@@ -186,59 +186,65 @@ fn resolved_id(sequence: u32) -> String {
 }
 
 fn resolve_type(
-    resolver: &ParameterResolver<'_>,
+    resolver: &ParameterResolver<'_, '_>,
     source: u32,
     index: usize,
     raw_pointer: Option<i64>,
     entity_type: i64,
     forms: &[i64],
-) -> Option<String> {
-    resolver
-        .resolve_type(source, index, raw_pointer?, entity_type, forms)
-        .map(resolved_id)
+) -> Result<Option<String>, CodecError> {
+    let Some(raw_pointer) = raw_pointer else {
+        return Ok(None);
+    };
+    Ok(resolver
+        .resolve_type(source, index, raw_pointer, entity_type, forms)?
+        .map(resolved_id))
 }
 
 fn resolve_note(
-    resolver: &ParameterResolver<'_>,
+    resolver: &ParameterResolver<'_, '_>,
     source: u32,
     index: usize,
     raw_pointer: Option<i64>,
-) -> Option<String> {
-    resolver
+) -> Result<Option<String>, CodecError> {
+    let Some(raw_pointer) = raw_pointer else {
+        return Ok(None);
+    };
+    Ok(resolver
         .resolve(
             source,
             index,
-            raw_pointer?,
+            raw_pointer,
             ReferenceExpectation::Named(ExpectationLabel::Type212GeneralNote),
             |target| target.entity_type == 212 && FEM_NOTE_FORMS.contains(&target.form),
-        )
-        .map(resolved_id)
+        )?
+        .map(resolved_id))
 }
 
 fn resolve_transformation(
-    resolver: &ParameterResolver<'_>,
+    resolver: &ParameterResolver<'_, '_>,
     source: u32,
     index: usize,
     raw_pointer: i64,
-) -> Option<String> {
-    resolver
+) -> Result<Option<String>, CodecError> {
+    Ok(resolver
         .resolve(
             source,
             index,
             raw_pointer,
             ReferenceExpectation::Named(ExpectationLabel::Type124Transformation),
             |target| target.entity_type == 124,
-        )
-        .map(resolved_id)
+        )?
+        .map(resolved_id))
 }
 
 fn node(
     entry: &DirectoryEntry,
     record: Option<&ParameterRecord>,
-    resolver: &ParameterResolver<'_>,
-) -> NativeFemEntity {
+    resolver: &ParameterResolver<'_, '_>,
+) -> Result<NativeFemEntity, CodecError> {
     let sequence = entry.sequence;
-    NativeFemEntity::Node {
+    Ok(NativeFemEntity::Node {
         id: entity_id("node", sequence),
         source_entity: source_entity(sequence),
         form: entry.form,
@@ -248,7 +254,7 @@ fn node(
             record_number(record, 2),
             record_number(record, 3),
         ],
-        definition_transformation: resolve_transformation(resolver, sequence, 7, entry.transform),
+        definition_transformation: resolve_transformation(resolver, sequence, 7, entry.transform)?,
         displacement_transformation: resolve_type(
             resolver,
             sequence,
@@ -256,14 +262,14 @@ fn node(
             record_integer(record, 4),
             124,
             &[10, 11, 12],
-        ),
-    }
+        )?,
+    })
 }
 
 fn finite_element(
     entry: &DirectoryEntry,
     record: Option<&ParameterRecord>,
-    resolver: &ParameterResolver<'_>,
+    resolver: &ParameterResolver<'_, '_>,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<NativeFemEntity, CodecError> {
     let sequence = entry.sequence;
@@ -287,7 +293,7 @@ fn finite_element(
                     &[0],
                 )
             })
-            .collect()
+            .collect::<Result<Vec<_>, CodecError>>()?
     } else {
         Vec::new()
     };
@@ -320,7 +326,7 @@ fn nodal_displacement_layout(
 fn nodal_displacement_rotation(
     entry: &DirectoryEntry,
     record: Option<&ParameterRecord>,
-    resolver: &ParameterResolver<'_>,
+    resolver: &ParameterResolver<'_, '_>,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<NativeFemEntity, CodecError> {
     let sequence = entry.sequence;
@@ -337,7 +343,7 @@ fn nodal_displacement_rotation(
                 let index = 2 + offset;
                 resolve_note(resolver, sequence, index, record_integer(record, index))
             })
-            .collect()
+            .collect::<Result<Vec<_>, CodecError>>()?
     } else {
         Vec::new()
     };
@@ -349,7 +355,7 @@ fn nodal_displacement_rotation(
             "iges_fem_displacement_values",
         )?;
         (0..node_count)
-            .map(|node_offset| {
+            .map(|node_offset| -> Result<NativeFemNodeSample, CodecError> {
                 let base = start + node_offset * stride;
                 let identifier = record_integer(record, base);
                 let node = resolve_type(
@@ -359,7 +365,7 @@ fn nodal_displacement_rotation(
                     record_integer(record, base + 1),
                     134,
                     &[0],
-                );
+                )?;
                 let mut translations = Vec::with_capacity(case_count);
                 let mut rotations = Vec::with_capacity(case_count);
                 for case in 0..case_count {
@@ -375,15 +381,15 @@ fn nodal_displacement_rotation(
                         record_number(record, values + 5),
                     ]);
                 }
-                NativeFemNodeSample {
+                Ok(NativeFemNodeSample {
                     identifier,
                     node,
                     translations,
                     rotations,
                     values: Vec::new(),
-                }
+                })
             })
-            .collect()
+            .collect::<Result<Vec<_>, CodecError>>()?
     } else {
         Vec::new()
     };
@@ -412,7 +418,7 @@ fn result_value_count(form: i64) -> Option<i64> {
 fn nodal_results(
     entry: &DirectoryEntry,
     record: Option<&ParameterRecord>,
-    resolver: &ParameterResolver<'_>,
+    resolver: &ParameterResolver<'_, '_>,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<NativeFemEntity, CodecError> {
     let sequence = entry.sequence;
@@ -441,9 +447,9 @@ fn nodal_results(
             "iges_fem_nodal_result_values",
         )?;
         (0..node_count)
-            .map(|offset| {
+            .map(|offset| -> Result<NativeFemNodeSample, CodecError> {
                 let base = start + offset * stride;
-                NativeFemNodeSample {
+                Ok(NativeFemNodeSample {
                     identifier: record_integer(record, base),
                     node: resolve_type(
                         resolver,
@@ -452,15 +458,15 @@ fn nodal_results(
                         record_integer(record, base + 1),
                         134,
                         &[0],
-                    ),
+                    )?,
                     translations: Vec::new(),
                     rotations: Vec::new(),
                     values: (0..value_count)
                         .map(|value| record_number(record, base + 2 + value))
                         .collect(),
-                }
+                })
             })
-            .collect()
+            .collect::<Result<Vec<_>, CodecError>>()?
     } else {
         Vec::new()
     };
@@ -469,7 +475,7 @@ fn nodal_results(
         source_entity: source_entity(sequence),
         form: entry.form,
         analysis_case_number: entry.subscript,
-        analysis_note: resolve_note(resolver, sequence, 1, record_integer(record, 1)),
+        analysis_note: resolve_note(resolver, sequence, 1, record_integer(record, 1))?,
         subcase_number: record_integer(record, 2),
         time: record_number(record, 3),
         declared_value_count,
@@ -515,7 +521,7 @@ fn element_result_item_layout(
 fn element_results(
     entry: &DirectoryEntry,
     record: Option<&ParameterRecord>,
-    resolver: &ParameterResolver<'_>,
+    resolver: &ParameterResolver<'_, '_>,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<NativeFemEntity, CodecError> {
     let sequence = entry.sequence;
@@ -552,7 +558,7 @@ fn element_results(
                     record_integer(record, cursor + 1),
                     136,
                     &[0],
-                ),
+                )?,
                 topology_type: record_integer(record, cursor + 2),
                 layers: record_integer(record, cursor + 3),
                 data_layer_flag: record_integer(record, cursor + 4),
@@ -571,7 +577,7 @@ fn element_results(
         source_entity: source_entity(sequence),
         form: entry.form,
         analysis_case_number: entry.subscript,
-        analysis_note: resolve_note(resolver, sequence, 1, record_integer(record, 1)),
+        analysis_note: resolve_note(resolver, sequence, 1, record_integer(record, 1))?,
         subcase_number: record_integer(record, 2),
         time: record_number(record, 3),
         declared_value_count,
@@ -585,7 +591,7 @@ fn element_results(
 fn nodal_load_constraint(
     entry: &DirectoryEntry,
     record: Option<&ParameterRecord>,
-    resolver: &ParameterResolver<'_>,
+    resolver: &ParameterResolver<'_, '_>,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<NativeFemEntity, CodecError> {
     let sequence = entry.sequence;
@@ -593,13 +599,16 @@ fn nodal_load_constraint(
     let case_references = if let Some(count) = complete_count(record, 1, 4, 1) {
         charge_items(ctx, count, "iges_fem_load_constraint_cases")?;
         (0..count)
-            .map(|offset| {
+            .map(|offset| -> Result<Option<String>, CodecError> {
                 let index = 4 + offset;
-                resolver
+                let Some(raw_pointer) = record_integer(record, index) else {
+                    return Ok(None);
+                };
+                Ok(resolver
                     .resolve(
                         sequence,
                         index,
-                        record_integer(record, index)?,
+                        raw_pointer,
                         ReferenceExpectation::Named(
                             ExpectationLabel::Type406Form11OrType212GeneralNote,
                         ),
@@ -608,10 +617,10 @@ fn nodal_load_constraint(
                                 || (target.entity_type == 212
                                     && FEM_NOTE_FORMS.contains(&target.form))
                         },
-                    )
-                    .map(resolved_id)
+                    )?
+                    .map(resolved_id))
             })
-            .collect()
+            .collect::<Result<Vec<_>, CodecError>>()?
     } else {
         Vec::new()
     };
@@ -621,7 +630,7 @@ fn nodal_load_constraint(
         form: entry.form,
         declared_case_count,
         load_constraint_type: record_integer(record, 2),
-        node: resolve_type(resolver, sequence, 3, record_integer(record, 3), 134, &[0]),
+        node: resolve_type(resolver, sequence, 3, record_integer(record, 3), 134, &[0])?,
         case_references,
     })
 }
