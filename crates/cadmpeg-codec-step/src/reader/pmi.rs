@@ -84,6 +84,23 @@ fn claim_pmi_typed_many(
     Ok(())
 }
 
+fn push_pmi_vec<T>(
+    values: &mut Vec<T>,
+    value: T,
+    ctx: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, operation)?;
+    }
+    values.try_reserve(1).map_err(|_| match ctx {
+        Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
+        None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
+    })?;
+    values.push(value);
+    Ok(())
+}
+
 pub(super) fn decode(
     exchange: &Exchange,
     geometry: &GeometryData,
@@ -667,13 +684,16 @@ pub(super) fn decode(
         };
         if annotations.get(definition).is_some() {
             if let Some(items) = named_parameter(record, "DRAUGHTING_MODEL_ITEM_ASSOCIATION", 4) {
-                visit_references(items, &mut |item| {
-                    presentation_semantics
-                        .entry(item)
-                        .or_default()
-                        .push(definition);
-                    false
-                });
+                for item in references(items) {
+                    push_source_id(
+                        &mut presentation_semantics,
+                        item,
+                        &definition,
+                        ctx,
+                        "step_pmi_presentation_semantic_groups",
+                        "step_pmi_presentation_semantic_members",
+                    )?;
+                }
             }
             claim_pmi_typed(&mut typed, id, ctx)?;
         }
@@ -727,21 +747,25 @@ pub(super) fn decode(
         };
         let mut semantics = Vec::new();
         for parameter in record_values(record) {
-            visit_references(parameter, &mut |reference| {
+            for reference in references(parameter) {
                 if annotations.get(reference).is_some() {
-                    semantics.push(pmi_id(reference));
+                    push_pmi_vec(
+                        &mut semantics,
+                        pmi_id(reference),
+                        ctx,
+                        "step_pmi_presentation_semantics",
+                    )?;
                 }
-                false
-            });
+            }
         }
-        semantics.extend(
-            presentation_semantics
-                .get(&id)
-                .into_iter()
-                .flatten()
-                .copied()
-                .map(pmi_id),
-        );
+        for semantic in presentation_semantics.get(&id).into_iter().flatten() {
+            push_pmi_vec(
+                &mut semantics,
+                pmi_id(*semantic),
+                ctx,
+                "step_pmi_presentation_semantics",
+            )?;
+        }
         annotations.push(
             ctx,
             ir,

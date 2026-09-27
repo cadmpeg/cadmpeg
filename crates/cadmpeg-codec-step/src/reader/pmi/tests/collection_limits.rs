@@ -153,6 +153,54 @@ fn pmi_curve_source_items_refuse_collection_limit() {
 }
 
 #[test]
+fn pmi_presentation_semantic_groups_refuse_collection_limit() {
+    assert!(matches!(
+        source_index_refusal(
+            0,
+            "step_pmi_presentation_semantic_groups",
+            "step_pmi_presentation_semantic_members",
+        ),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_pmi_presentation_semantic_groups"
+    ));
+}
+
+#[test]
+fn pmi_presentation_semantic_members_refuse_collection_limit() {
+    assert!(matches!(
+        source_index_refusal(
+            1,
+            "step_pmi_presentation_semantic_groups",
+            "step_pmi_presentation_semantic_members",
+        ),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_pmi_presentation_semantic_members"
+    ));
+}
+
+#[test]
+fn pmi_presentation_semantics_refuse_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits collection policy");
+    assert!(matches!(
+        super::super::push_pmi_vec(
+            &mut Vec::new(),
+            1u64,
+            Some(&ctx),
+            "step_pmi_presentation_semantics",
+        ),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_pmi_presentation_semantics"
+    ));
+}
+
+#[test]
 fn pmi_other_datum_target_form_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
