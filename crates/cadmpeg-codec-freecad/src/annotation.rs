@@ -78,7 +78,7 @@ pub(crate) fn transfer(
                 }
             }
             records.push(SemanticAnnotationRecord {
-                id: crate::native::native_id("annotation", &object.name),
+                id: crate::native::native_id_charged(ctx, "annotation", &object.name)?,
                 object: retained_string(ctx, &object.id, "fcstd annotation object")?,
                 kind,
                 text,
@@ -102,7 +102,7 @@ pub(crate) fn transfer_neutral(
     ctx.charge_collection_items(drawings.len() as u64, "fcstd annotation drawing index")?;
     drawing_ids.try_reserve(drawings.len()).map_err(|_| collection_allocation_failed(ctx, drawings.len() as u64, "fcstd annotation drawing index"))?;
     for drawing in drawings {
-        drawing_ids.insert(drawing.object.as_str(), crate::native::model_id("drawing", &drawing.object, "entity"));
+        drawing_ids.insert(drawing.object.as_str(), crate::native::model_id_charged(ctx, "drawing", &drawing.object, "entity")?);
     }
     for (order, record) in records.iter().enumerate() {
         let schema = annotation_schema(record.kind);
@@ -150,7 +150,7 @@ pub(crate) fn transfer_neutral(
         }
         let mut assets = collection_vec(ctx, record.side_entries.len(), "fcstd annotation assets")?;
         for name in &record.side_entries {
-            assets.push(crate::native::native_id("entry", name));
+            assets.push(crate::native::native_id_charged(ctx, "entry", name)?);
         }
         model.semantic_annotations.push(SemanticAnnotation {
             id: SemanticAnnotationId::compose(
@@ -705,6 +705,30 @@ pub(crate) mod tests {
         assert!(matches!(super::transfer(&ctx, &[object], &[]),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.operation == "fcstd annotation records"));
+    }
+
+    #[test]
+    fn annotation_identity_refuses_at_retained_limit() {
+        let object = crate::native::ObjectRecord {
+            id: "fcstd:native:object#Note".into(),
+            name: "Note".into(),
+            type_name: "App::Annotation".into(),
+            persistent_id: None,
+            view_type: None,
+            attributes: Default::default(),
+            dependencies: Vec::new(),
+            dependency_allow_partial: None,
+            order: 0,
+            data: None,
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes = crate::native::native_id("annotation", &object.name).len() as u64 - 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        assert!(matches!(super::transfer(&ctx, &[object], &[]),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "FreeCAD native identity"));
     }
 
     #[test]

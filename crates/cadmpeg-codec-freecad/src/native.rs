@@ -31,15 +31,7 @@ pub(crate) fn native_id_charged(
     key: &str,
 ) -> Result<String, CodecError> {
     const OPERATION: &str = "FreeCAD native identity";
-    const HEX: &[u8; 16] = b"0123456789ABCDEF";
-    let encoded_len = if key.is_empty() {
-        6
-    } else {
-        key.bytes().try_fold(0_usize, |len, byte| {
-            len.checked_add(if byte.is_ascii_alphanumeric()
-                || matches!(byte, b'.' | b'_' | b'-' | b'/') { 1 } else { 3 })
-        }).ok_or_else(|| crate::resource::retained_allocation_failed(ctx, u64::MAX, OPERATION))?
-    };
+    let encoded_len = encoded_segment_len(ctx, key, OPERATION)?;
     let len = "fcstd:native:".len()
         .checked_add(kind.len())
         .and_then(|len| len.checked_add(1))
@@ -52,20 +44,99 @@ pub(crate) fn native_id_charged(
     id.push_str("fcstd:native:");
     id.push_str(kind);
     id.push('#');
-    if key.is_empty() {
-        id.push_str("%EMPTY");
-    } else {
-        for byte in key.bytes() {
-            if byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/') {
-                id.push(char::from(byte));
-            } else {
-                id.push('%');
-                id.push(char::from(HEX[usize::from(byte >> 4)]));
-                id.push(char::from(HEX[usize::from(byte & 0x0f)]));
-            }
-        }
+    push_encoded_segment(&mut id, key);
+    Ok(id)
+}
+
+pub(crate) fn native_child_id_charged(
+    ctx: &DecodeContext<'_>,
+    kind: &str,
+    parent: &str,
+    child: &str,
+) -> Result<String, CodecError> {
+    const OPERATION: &str = "FreeCAD native child identity";
+    let parent_key = id_key(parent);
+    let child_len = encoded_segment_len(ctx, child, OPERATION)?;
+    let len = "fcstd:native:".len()
+        .checked_add(kind.len())
+        .and_then(|len| len.checked_add(1))
+        .and_then(|len| len.checked_add(parent_key.len()))
+        .and_then(|len| len.checked_add(1))
+        .and_then(|len| len.checked_add(child_len))
+        .ok_or_else(|| crate::resource::retained_allocation_failed(ctx, u64::MAX, OPERATION))?;
+    ctx.charge_retained(len as u64, OPERATION)?;
+    let mut id = String::new();
+    id.try_reserve_exact(len)
+        .map_err(|_| crate::resource::retained_allocation_failed(ctx, len as u64, OPERATION))?;
+    id.push_str("fcstd:native:");
+    id.push_str(kind);
+    id.push('#');
+    id.push_str(parent_key);
+    id.push(':');
+    push_encoded_segment(&mut id, child);
+    Ok(id)
+}
+
+pub(crate) fn model_id_charged(
+    ctx: &DecodeContext<'_>,
+    kind: &str,
+    parent: &str,
+    child: &str,
+) -> Result<String, CodecError> {
+    const OPERATION: &str = "FreeCAD model identity";
+    let parent_key = id_key(parent);
+    let child_len = if child.is_empty() { 0 } else { encoded_segment_len(ctx, child, OPERATION)? };
+    let len = "fcstd:model:".len()
+        .checked_add(kind.len())
+        .and_then(|len| len.checked_add(1))
+        .and_then(|len| len.checked_add(parent_key.len()))
+        .and_then(|len| len.checked_add(1))
+        .and_then(|len| len.checked_add(child_len))
+        .ok_or_else(|| crate::resource::retained_allocation_failed(ctx, u64::MAX, OPERATION))?;
+    ctx.charge_retained(len as u64, OPERATION)?;
+    let mut id = String::new();
+    id.try_reserve_exact(len)
+        .map_err(|_| crate::resource::retained_allocation_failed(ctx, len as u64, OPERATION))?;
+    id.push_str("fcstd:model:");
+    id.push_str(kind);
+    id.push('#');
+    id.push_str(parent_key);
+    id.push(':');
+    if !child.is_empty() {
+        push_encoded_segment(&mut id, child);
     }
     Ok(id)
+}
+
+fn encoded_segment_len(
+    ctx: &DecodeContext<'_>,
+    key: &str,
+    operation: &'static str,
+) -> Result<usize, CodecError> {
+    if key.is_empty() {
+        return Ok(6);
+    }
+    key.bytes().try_fold(0_usize, |len, byte| {
+        len.checked_add(if byte.is_ascii_alphanumeric()
+            || matches!(byte, b'.' | b'_' | b'-' | b'/') { 1 } else { 3 })
+    }).ok_or_else(|| crate::resource::retained_allocation_failed(ctx, u64::MAX, operation))
+}
+
+fn push_encoded_segment(output: &mut String, key: &str) {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    if key.is_empty() {
+        output.push_str("%EMPTY");
+        return;
+    }
+    for byte in key.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/') {
+            output.push(char::from(byte));
+        } else {
+            output.push('%');
+            output.push(char::from(HEX[usize::from(byte >> 4)]));
+            output.push(char::from(HEX[usize::from(byte & 0x0f)]));
+        }
+    }
 }
 
 pub(crate) fn native_id_from_key(kind: &str, key: &IdentityKey) -> String {
@@ -133,6 +204,46 @@ mod tests {
         assert!(matches!(super::native_id_charged(&ctx, "entry", "A B#%"),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.operation == "FreeCAD native identity"));
+    }
+
+    #[test]
+    fn charged_native_child_identity_refuses_at_retained_limit() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let parent = native_id("object", "A B");
+        let expected = native_child_id("property", &parent, "S # Å");
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes = expected.len() as u64 - 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        assert!(matches!(super::native_child_id_charged(&ctx, "property", &parent, "S # Å"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "FreeCAD native child identity"));
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        assert_eq!(super::native_child_id_charged(&ctx, "property", &parent, "S # Å")
+            .expect("ID fits policy"), expected);
+    }
+
+    #[test]
+    fn charged_model_identity_refuses_at_retained_limit() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let parent = native_id("object", "A B");
+        for child in ["", "S # Å"] {
+            let expected = model_id("body", &parent, child);
+            let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+            policy.limits.max_retained_bytes = expected.len() as u64 - 1;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root is within policy");
+            assert!(matches!(super::model_id_charged(&ctx, "body", &parent, child),
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                    if limit.operation == "FreeCAD model identity"));
+            let policy = cadmpeg_core::decode::DecodePolicy::default();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root is within policy");
+            assert_eq!(super::model_id_charged(&ctx, "body", &parent, child)
+                .expect("ID fits policy"), expected);
+        }
     }
 
     #[test]
