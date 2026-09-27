@@ -719,9 +719,15 @@ fn mesh_texture_table_checks_permutations_and_preserves_wire_row_order() {
         )
     };
     let table = parse(rows.clone()).unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap()
+        .0;
     assert_eq!(
         table
-            .resources_in_flags_order()
+            .resources_in_flags_order(&ctx)
+            .unwrap()
             .iter()
             .map(|resource| resource.resource_guid.as_str())
             .collect::<Vec<_>>(),
@@ -777,7 +783,7 @@ fn mesh_texture_table_checks_permutations_and_preserves_wire_row_order() {
 }
 
 #[test]
-fn mesh_texture_table_indexes_refuse_collection_limit() {
+fn mesh_texture_table_indexes_and_order_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let record = crate::records::mesh::DesignMeshRecordIdentity::new(
@@ -827,6 +833,21 @@ fn mesh_texture_table_indexes_refuse_collection_limit() {
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
             if refusal.operation == operation));
     }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap().0;
+    let error = table.resources_in_flags_order(&ctx).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+        if refusal.operation == "order F3D mesh texture resources"));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap().0;
+    let error = table.resources_in_flags_order(&ctx).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+        if refusal.operation == "order F3D mesh texture resources"));
 }
 
 #[test]

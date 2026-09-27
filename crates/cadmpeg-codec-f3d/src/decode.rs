@@ -3404,7 +3404,7 @@ fn project_mesh_bodies(
     for feature in &native.design_mesh_features {
         let texture_table = feature
             .texture_table
-            .resources_in_flags_order()
+            .resources_in_flags_order(ctx)?
             .into_iter()
             .map(|texture| {
                 (
