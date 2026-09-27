@@ -31,6 +31,17 @@ pub(crate) fn retained_format(
     Ok(output)
 }
 
+pub(crate) fn malformed_charged(
+    ctx: &DecodeContext<'_>,
+    arguments: fmt::Arguments<'_>,
+    operation: &'static str,
+) -> CodecError {
+    match retained_format(ctx, arguments, operation) {
+        Ok(message) => CodecError::Malformed(message),
+        Err(refusal) => refusal,
+    }
+}
+
 pub(crate) fn named_entries_charged<V>(
     ctx: &DecodeContext<'_>,
     record: &str,
