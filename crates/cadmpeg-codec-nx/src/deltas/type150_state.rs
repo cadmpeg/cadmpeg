@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::packet_marker::Type150Marker;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "StateWire", into = "StateWire")]
 pub(crate) struct Type150State {
     references: [u32; 4],

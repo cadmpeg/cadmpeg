@@ -9,7 +9,7 @@ use super::{
     FeatureDatumCsysDescriptor, FeatureInputBlockIdentityGroup, FeatureInputColumnTarget,
     FeatureInputColumnTargetRow, FeatureOperationObjectReference, FeatureParameterUse,
 };
-use crate::native::iter_wire::IterWire;
+use crate::iter_wire::IterWire;
 
 impl Serialize for FeatureOperationObjectReference {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
