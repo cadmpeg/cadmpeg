@@ -150,6 +150,35 @@ fn ensure_drawing_relationship_group(
     Ok(())
 }
 
+fn clone_drawing_text(
+    value: &str,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    ctx.charge_retained(u64_from_index(value.len()), operation)?;
+    let mut copy = String::new();
+    copy.try_reserve_exact(value.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    copy.push_str(value);
+    Ok(copy)
+}
+
+fn clone_drawing_identities(
+    source: &BTreeSet<String>,
+    ctx: &DecodeContext<'_>,
+) -> Result<BTreeSet<String>, CodecError> {
+    let mut copy = BTreeSet::new();
+    for identity in source {
+        ctx.charge_collection_items(1, "step_drawing_ambiguous_identity_copy")?;
+        copy.insert(clone_drawing_text(
+            identity,
+            ctx,
+            "step_drawing_ambiguous_identity_text",
+        )?);
+    }
+    Ok(copy)
+}
+
 fn push_drawing_relationship(
     relationships: &mut BTreeMap<NonBlankString, Vec<ReferenceSelection>>,
     role: NonBlankString,
@@ -512,7 +541,7 @@ fn add_source_typed_targets(
         let Some(record) = exchange.records().get(&id) else {
             continue;
         };
-        if wrapper_target_resolution(id, target_identities, exchange).is_some() {
+        if wrapper_target_resolution(id, target_identities, exchange, ctx)?.is_some() {
             continue;
         }
         let identity = opaque_record_id(id, record, ctx)?;
@@ -1034,20 +1063,24 @@ fn target_resolution(
         .and_then(|identities| identities.first())
     {
         return Ok(TargetResolution::Resolved(ReferenceSelection::new(
-            ReferenceTarget::Local(identity.clone()),
+            ReferenceTarget::Local(clone_drawing_text(
+                identity,
+                ctx,
+                "step_drawing_local_target_text",
+            )?),
             Vec::new(),
         )));
     }
     if let Some(uri) = external_documents.get(&id) {
         return Ok(TargetResolution::Resolved(ReferenceSelection::new(
             ReferenceTarget::External {
-                document: (*uri).into(),
+                document: clone_drawing_text(uri, ctx, "step_drawing_external_target_text")?,
                 object: format!("#{id}"),
             },
             Vec::new(),
         )));
     }
-    let wrapper_ambiguity = match wrapper_target_resolution(id, target_identities, exchange) {
+    let wrapper_ambiguity = match wrapper_target_resolution(id, target_identities, exchange, ctx)? {
         Some(WrapperTargetResolution::Singleton(identity)) => {
             return Ok(TargetResolution::Resolved(ReferenceSelection::new(
                 ReferenceTarget::Local(identity),
@@ -1065,12 +1098,13 @@ fn target_resolution(
             )));
         }
     }
-    Ok(target_identities
+    let ambiguity = target_identities
         .get(&id)
         .filter(|identities| identities.len() > 1)
-        .cloned()
-        .or(wrapper_ambiguity)
-        .map_or(TargetResolution::Unresolved, TargetResolution::Ambiguous))
+        .map(|identities| clone_drawing_identities(identities, ctx))
+        .transpose()?
+        .or(wrapper_ambiguity);
+    Ok(ambiguity.map_or(TargetResolution::Unresolved, TargetResolution::Ambiguous))
 }
 
 enum WrapperTargetResolution {
@@ -1082,29 +1116,41 @@ fn wrapper_target_resolution(
     id: u64,
     target_identities: &BTreeMap<u64, BTreeSet<String>>,
     exchange: &Exchange,
-) -> Option<WrapperTargetResolution> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<WrapperTargetResolution>, CodecError> {
     if target_identities.contains_key(&id) {
-        return None;
+        return Ok(None);
     }
     let mut identities = BTreeSet::new();
     let mut active = BTreeSet::new();
     let mut complete = BTreeSet::new();
-    let mut pending = vec![(id, false)];
+    let mut pending = ctx.alloc_filled(1, (id, false), "step_drawing_wrapper_pending")?;
     while let Some((id, leaving)) = pending.pop() {
         if leaving {
             active.remove(&id);
-            complete.insert(id);
+            insert_drawing_set(&mut complete, id, ctx, "step_drawing_wrapper_complete")?;
             continue;
         }
         if complete.contains(&id) {
             continue;
         }
-        if !active.insert(id) {
-            return None;
+        if active.contains(&id) {
+            return Ok(None);
         }
+        insert_drawing_set(&mut active, id, ctx, "step_drawing_wrapper_active")?;
+        reserve_drawing_items(&mut pending, 1, ctx, "step_drawing_wrapper_pending")?;
         pending.push((id, true));
         if let Some(targets) = target_identities.get(&id) {
-            identities.extend(targets.iter().cloned());
+            for target in targets {
+                if !identities.contains(target) {
+                    ctx.charge_collection_items(1, "step_drawing_wrapper_identities")?;
+                    identities.insert(clone_drawing_text(
+                        target,
+                        ctx,
+                        "step_drawing_wrapper_identity_text",
+                    )?);
+                }
+            }
             continue;
         }
         let Some(record) = exchange.records().get(&id) else {
@@ -1117,20 +1163,29 @@ fn wrapper_target_resolution(
             .and_then(|partial| partial.parameters.get(2))
             .and_then(ValueExt::reference)
         {
+            reserve_drawing_items(&mut pending, 1, ctx, "step_drawing_wrapper_pending")?;
             pending.push((plane, false));
         } else if let Some(items) = mapped_representation(record, exchange)
             .and_then(|representation| exchange.records().get(&representation))
             .and_then(representation::items)
         {
-            pending.extend(items.into_iter().rev().map(|item| (item, false)));
+            for item in items.rev() {
+                reserve_drawing_items(&mut pending, 1, ctx, "step_drawing_wrapper_pending")?;
+                pending.push((item, false));
+            }
         }
     }
-    let identity = identities.pop_first()?;
-    if identities.is_empty() {
-        return Some(WrapperTargetResolution::Singleton(identity));
+    if identities.len() == 1 {
+        let Some(identity) = identities.pop_first() else {
+            return Ok(None);
+        };
+        return Ok(Some(WrapperTargetResolution::Singleton(identity)));
     }
-    identities.insert(identity);
-    Some(WrapperTargetResolution::Ambiguous(identities))
+    if identities.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(WrapperTargetResolution::Ambiguous(identities)))
+    }
 }
 
 fn mapped_representation(record: &RawRecord, exchange: &Exchange) -> Option<u64> {
