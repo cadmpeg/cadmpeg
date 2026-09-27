@@ -10,6 +10,8 @@ use std::collections::BTreeSet;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 
 use crate::container::{self};
 use crate::CreoCodec;
@@ -32,9 +34,81 @@ fn row(id: u32, next: u32) -> CurveTopologyRow {
         offset: 0,
     }
 }
+
+fn build_service(rows: &[CurveTopologyRow]) -> (Vec<HalfEdge>, Vec<super::Loop>) {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    build(&ctx, rows).expect("service topology build")
+}
+
+fn build_with_collection_limit(
+    rows: &[CurveTopologyRow],
+    max_collection_items: u64,
+) -> Result<(Vec<HalfEdge>, Vec<super::Loop>), CodecError> {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_collection_items;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    build(&ctx, rows)
+}
+
+fn assert_build_collection_refusal(limit: u64, operation: &'static str) {
+    let error = build_with_collection_limit(&[row(1, 1)], limit)
+        .expect_err("one closed face-side ring exceeds the limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+#[test]
+fn topology_build_refuses_unique_row_count_node() {
+    assert_build_collection_refusal(0, "creo unique-row count nodes");
+}
+
+#[test]
+fn topology_build_refuses_unique_row_projection() {
+    assert_build_collection_refusal(1, "creo unique-row projection");
+}
+
+#[test]
+fn topology_build_refuses_face_side_group_node() {
+    assert_build_collection_refusal(2, "creo face-side group nodes");
+}
+
+#[test]
+fn topology_build_refuses_face_side_group_member() {
+    assert_build_collection_refusal(3, "creo face-side group members");
+}
+
+#[test]
+fn topology_build_refuses_half_edge_vector() {
+    assert_build_collection_refusal(6, "creo topology half-edges");
+}
+
+#[test]
+fn topology_build_refuses_ring_visit_node() {
+    assert_build_collection_refusal(8, "creo topology ring visit nodes");
+}
+
+#[test]
+fn topology_build_refuses_ring_half_edge() {
+    assert_build_collection_refusal(9, "creo topology ring half-edges");
+}
+
+#[test]
+fn topology_build_refuses_consumed_half_edge_node() {
+    assert_build_collection_refusal(10, "creo consumed topology half-edges");
+}
+
+#[test]
+fn topology_build_refuses_loop_vector() {
+    assert_build_collection_refusal(11, "creo topology loops");
+}
+
 #[test]
 fn builds_closed_face_side_rings_without_guessing() {
-    let (half_edges, loops) = build(&[row(1, 2), row(2, 3), row(3, 1)]);
+    let (half_edges, loops) = build_service(&[row(1, 2), row(2, 3), row(3, 1)]);
     assert_eq!(half_edges.len(), 6);
     assert_eq!(loops.len(), 2);
     assert_eq!(loops[0].face_id, std::num::NonZeroU32::new(10));
@@ -61,7 +135,7 @@ fn builds_closed_face_side_rings_without_guessing() {
 fn duplicate_curve_identities_do_not_contribute_derived_topology() {
     let rows = [row(1, 2), row(2, 1), row(2, 1)];
 
-    let (half_edges, loops) = build(&rows);
+    let (half_edges, loops) = build_service(&rows);
     assert_eq!(half_edges.len(), 2);
     assert!(half_edges.iter().all(|edge| edge.id.curve_id == 1));
     assert!(half_edges.iter().all(|edge| edge.next.is_none()));
@@ -74,7 +148,7 @@ fn duplicate_curve_identities_do_not_contribute_derived_topology() {
 }
 #[test]
 fn withholds_ambiguous_successors() {
-    let (half_edges, loops) = build(&[
+    let (half_edges, loops) = build_service(&[
         row(1, 2),
         CurveTopologyRow {
             faces: [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(10)],
