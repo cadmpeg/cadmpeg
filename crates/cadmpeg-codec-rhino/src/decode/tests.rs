@@ -60,6 +60,117 @@ fn with_collection_limit<R>(
     f(&ctx)
 }
 
+fn with_transaction_limits<R>(
+    scan: &crate::container::Scan<'_>,
+    collection_limit: u64,
+    retained_limit: Option<u64>,
+    f: impl FnOnce(crate::mesh::MeshExpand<'_>) -> R,
+) -> R {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    if let Some(retained_limit) = retained_limit {
+        policy.limits.max_retained_bytes = retained_limit;
+    }
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
+            .expect("test scan fits the root limit");
+    f(crate::mesh::MeshExpand::new(&ctx, root))
+}
+
+fn assert_transaction_refusal(
+    scan: &crate::container::Scan<'_>,
+    collection_limit: u64,
+    retained_limit: Option<u64>,
+    operation: &str,
+) {
+    let error = with_transaction_limits(scan, collection_limit, retained_limit, |expand| {
+        DecodeContext::new(scan, expand)
+            .err()
+            .expect("transaction exceeds the configured resource limit")
+    });
+    assert!(
+        matches!(
+            &error,
+            cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == operation
+        ),
+        "unexpected transaction refusal: {error}"
+    );
+}
+
+#[test]
+fn transaction_object_candidate_keys_refuse_collection_limit() {
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
+    assert!(scan.objects[0].identity().is_some());
+    assert_transaction_refusal(&scan, 0, None, "Rhino object candidate keys");
+}
+
+#[test]
+fn transaction_object_candidate_positions_refuse_collection_limit() {
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
+    assert_transaction_refusal(&scan, 1, None, "Rhino object candidate positions");
+}
+
+#[test]
+fn transaction_definition_candidate_keys_refuse_collection_limit() {
+    let archive = ArchiveVersion::V5;
+    let payload =
+        crate::test_support::test_dump::v5_definition_payload(archive, 7, [0x10; 16], &[], false);
+    let record = crate::test_support::test_dump::definition_record(archive, &payload);
+    let scan = crate::container::scan_owned(
+        crate::test_support::test_dump::document_with_definitions("50", archive, &[record], &[]),
+    )
+    .expect("one definition scan");
+    assert_eq!(scan.definitions.definitions().len(), 1);
+    assert_transaction_refusal(&scan, 0, None, "Rhino definition candidate keys");
+}
+
+fn one_degraded_object_scan() -> crate::container::Scan<'static> {
+    let mut scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
+    let range = scan.objects[0].range();
+    scan.objects[0] = ObjectRecord::Degraded {
+        range,
+        warning: "degraded test object".to_string(),
+    };
+    scan
+}
+
+#[test]
+fn transaction_unknown_records_refuse_collection_limit() {
+    let scan = one_degraded_object_scan();
+    assert_transaction_refusal(&scan, 0, None, "Rhino object unknown records");
+}
+
+#[test]
+fn transaction_statuses_refuse_collection_limit() {
+    let scan = one_degraded_object_scan();
+    assert_transaction_refusal(&scan, 1, None, "Rhino object statuses");
+}
+
+#[test]
+fn transaction_opaque_records_refuse_collection_limit() {
+    let mut scan = scan_with_objects(&[]);
+    scan.opaque_records.push(crate::container::OpaqueRecord {
+        table_typecode: 0x1000_0013,
+        record: crate::container::Record::short(0x2000_8070, 0..1, 0),
+    });
+    assert_transaction_refusal(&scan, 0, None, "Rhino opaque source records");
+}
+
+#[test]
+fn transaction_source_record_bytes_refuse_retained_limit() {
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
+    let length = scan.objects[0].range().len();
+    assert!(length > 0);
+    assert_transaction_refusal(
+        &scan,
+        100,
+        Some((length - 1) as u64),
+        "Rhino source record bytes",
+    );
+    assert!(with_expand(&scan, |expand| DecodeContext::new(&scan, expand).is_ok()));
+}
+
 /// Brep staging judges values the model already holds, so a refusal there names
 /// no offset instead of naming byte 0.
 #[test]
@@ -900,7 +1011,7 @@ fn extrusion_cap_admission_error_is_not_reported_as_ir_validation() {
     let object = object_record(ArchiveVersion::V5, 8, [0; 16]);
     let scan = scan_with_objects(&[object]);
     with_expand(&scan, |expand| {
-        let mut context = DecodeContext::new(&scan, expand);
+        let mut context = DecodeContext::new(&scan, expand).expect("test transaction");
         let mut extrusion = cap_extrusion([true, false]);
         assert_eq!(
             cadmpeg_ir::units::UnitVector3::new(Vector3::new(0.0, 0.0, 0.0)),
@@ -926,7 +1037,7 @@ fn extrusion_cap_admission_error_is_not_reported_as_ir_validation() {
 fn candidate_rejections_distinguish_admission_from_validation() {
     let scan = scan_with_objects(&[]);
     with_expand(&scan, |expand| {
-        let mut context = DecodeContext::new(&scan, expand);
+        let mut context = DecodeContext::new(&scan, expand).expect("test transaction");
         let admission =
             context.validate_candidate_fallible::<(), String>(|_, _| Err("admission".into()));
         assert!(
@@ -957,7 +1068,7 @@ fn candidate_rejection_restores_native_records_annotations_and_all_model_arenas(
     let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, [0; 16])]);
     for admission_failure in [true, false] {
         with_expand(&scan, |expand| {
-            let mut context = DecodeContext::new(&scan, expand);
+            let mut context = DecodeContext::new(&scan, expand).expect("test transaction");
             let before_ir = context.ir.clone();
             let before_annotations = context.annotations.clone();
             let before_budget = context.expansion_budget.entities;
@@ -1009,7 +1120,7 @@ fn candidate_rejection_restores_native_records_annotations_and_all_model_arenas(
 fn successful_candidate_leaves_final_unknown_attachment_as_its_single_owner() {
     let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, [0; 16])]);
     with_expand(&scan, |expand| {
-        let mut context = DecodeContext::new(&scan, expand);
+        let mut context = DecodeContext::new(&scan, expand).expect("test transaction");
         context
             .validate_candidate(|_, _| ())
             .expect("empty candidate admitted");
@@ -1024,7 +1135,7 @@ fn successful_candidate_leaves_final_unknown_attachment_as_its_single_owner() {
 fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
     let scan = scan_with_objects(&[]);
     with_expand(&scan, |expand| {
-        let mut context = DecodeContext::new(&scan, expand);
+        let mut context = DecodeContext::new(&scan, expand).expect("test transaction");
         let point = |key| {
             Point::new(
                 format!("rhino:test:point#{key}").try_into().unwrap(),
@@ -1194,7 +1305,8 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
     );
     let scan = crate::container::scan_owned(bytes).expect("required invariant");
     crate::decode::with_expand(&scan, |expand| {
-        let mut context = crate::decode::DecodeContext::new(&scan, expand);
+        let mut context =
+            crate::decode::DecodeContext::new(&scan, expand).expect("test transaction");
         assert!(context.object(0).is_some());
         assert!(context.unknown(0).is_some());
         assert_eq!(
@@ -1252,7 +1364,8 @@ fn rejected_candidate_rolls_back_entities_and_preserves_retained_bytes() {
     );
     let scan = crate::container::scan_owned(bytes).expect("required invariant");
     crate::decode::with_expand(&scan, |expand| {
-        let mut context = crate::decode::DecodeContext::new(&scan, expand);
+        let mut context =
+            crate::decode::DecodeContext::new(&scan, expand).expect("test transaction");
         let original = context
             .unknown(0)
             .expect("required invariant")
@@ -1402,7 +1515,7 @@ fn class_report_counts_terminal_outcomes_once() {
     );
     let scan = crate::container::scan_owned(bytes).expect("object table");
     with_expand(&scan, |expand| {
-        let mut context = DecodeContext::new(&scan, expand);
+        let mut context = DecodeContext::new(&scan, expand).expect("test transaction");
         assert!(context.mark_native_retained(3, RhinoLossCode::HatchFillNotTransferred));
         assert!(context.mark_native_retained(1, RhinoLossCode::HatchFillNotTransferred));
         assert!(!context.mark_native_retained(3, RhinoLossCode::HatchFillNotTransferred));
@@ -1452,7 +1565,7 @@ fn class_report_preserves_nil_class_source_selection() {
             };
         }
         with_expand(&scan, |expand| {
-            let context = DecodeContext::new(&scan, expand);
+            let context = DecodeContext::new(&scan, expand).expect("test transaction");
             let result = seal_for_test(context.commit().expect("test decode commit"), false);
             let loss = result
                 .report()
