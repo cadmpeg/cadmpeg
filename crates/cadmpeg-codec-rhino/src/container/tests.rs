@@ -45,6 +45,26 @@ fn source_metadata_refuses_collection_limit() {
     assert_eq!(meta.attributes.get("archive_version"), Some(&"1".to_string()));
 }
 
+#[test]
+fn container_summary_attributes_refuse_collection_limit() {
+    let scan = crate::test_support::test_dump::scan_with_objects(&[]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
+        .expect("summary input admitted");
+    let refusal = super::summarize(&ctx, &scan)
+        .expect_err("first table attribute exceeds zero collection items");
+    assert!(matches!(
+        refusal,
+        CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino container summary attributes"
+    ));
+    let summary = super::summarize(&cadmpeg_test_support::service_decode_context(), &scan)
+        .expect("service profile admits container summary");
+    assert_eq!(summary.entries.len(), scan.tables.len());
+}
+
 fn checksum_warning(
     data: &[u8],
     typecode: u32,

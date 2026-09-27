@@ -1346,25 +1346,53 @@ fn scan_with_test_record_limit(
     scan_with_record_limit(&ctx, data, record_limit)
 }
 
+fn insert_summary_attribute(
+    ctx: &DecodeContext<'_>,
+    attributes: &mut BTreeMap<String, String>,
+    key: std::fmt::Arguments<'_>,
+    value: std::fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "Rhino container summary attributes")?;
+    let key = crate::wire::admitted_format(ctx, key, "Rhino container summary attribute key")?;
+    let value = crate::wire::admitted_format(ctx, value, "Rhino container summary attribute value")?;
+    attributes.insert(key, value);
+    Ok(())
+}
+
+fn push_container_note(
+    ctx: &DecodeContext<'_>,
+    notes: &mut Vec<String>,
+    value: std::fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    crate::wire::reserve_collection(ctx, notes, 1, "Rhino container summary notes")?;
+    notes.push(crate::wire::admitted_format(
+        ctx,
+        value,
+        "Rhino container summary note text",
+    )?);
+    Ok(())
+}
+
 /// Build the format-neutral container summary.
-fn summarize(scan: &Scan<'_>) -> ContainerSummary {
-    let mut entries = Vec::with_capacity(scan.tables.len());
+fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummary, CodecError> {
+    let mut entries = Vec::new();
     for table in &scan.tables {
         let mut attributes = BTreeMap::new();
-        attributes.insert("offset".to_string(), table.range().start.to_string());
-        attributes.insert("size".to_string(), table.range().len().to_string());
-        attributes.insert("body_offset".to_string(), table.body().start.to_string());
-        attributes.insert("record_count".to_string(), table.record_count.to_string());
+        insert_summary_attribute(ctx, &mut attributes, format_args!("offset"), format_args!("{}", table.range().start))?;
+        insert_summary_attribute(ctx, &mut attributes, format_args!("size"), format_args!("{}", table.range().len()))?;
+        insert_summary_attribute(ctx, &mut attributes, format_args!("body_offset"), format_args!("{}", table.body().start))?;
+        insert_summary_attribute(ctx, &mut attributes, format_args!("record_count"), format_args!("{}", table.record_count))?;
         for (typecode, count) in &table.object_typecodes {
-            attributes.insert(format!("object_typecode_{typecode:#x}"), count.to_string());
+            insert_summary_attribute(ctx, &mut attributes, format_args!("object_typecode_{typecode:#x}"), format_args!("{count}"))?;
         }
         let storage = table
             .body_bytes(scan.data)
             .map_or(EntryStorage::unreported(VerbatimLabel::None), |body| {
                 EntryStorage::framed_by(VerbatimLabel::None, body.into(), table.framing())
             });
+        crate::wire::reserve_collection(ctx, &mut entries, 1, "Rhino container summary entries")?;
         entries.push(ContainerEntry {
-            name: format!("table-{:#x}", table.typecode),
+            name: crate::wire::admitted_format(ctx, format_args!("table-{:#x}", table.typecode), "Rhino container entry name")?,
             role: ContainerRole::Table,
             storage,
             attributes,
@@ -1374,42 +1402,48 @@ fn summarize(scan: &Scan<'_>) -> ContainerSummary {
     for object in &scan.objects {
         // The container report groups degraded records under the nil class UUID.
         let class_uuid = object.class_uuid().unwrap_or_else(Uuid::nil);
+        if !classes.contains_key(&class_uuid) {
+            ctx.charge_collection_items(1, "Rhino container class groups")?;
+        }
         let entry = classes.entry(class_uuid).or_insert((0, 0));
         entry.0 += 1;
         entry.1 += object.range().len();
     }
     for (class_uuid, (count, bytes)) in classes {
         let mut attributes = BTreeMap::new();
-        attributes.insert("class_uuid".to_string(), class_uuid.to_string());
-        attributes.insert("nil_uuid".to_string(), class_uuid.is_nil().to_string());
-        attributes.insert("count".to_string(), count.to_string());
-        attributes.insert("total_record_bytes".to_string(), bytes.to_string());
+        insert_summary_attribute(ctx, &mut attributes, format_args!("class_uuid"), format_args!("{class_uuid}"))?;
+        insert_summary_attribute(ctx, &mut attributes, format_args!("nil_uuid"), format_args!("{}", class_uuid.is_nil()))?;
+        insert_summary_attribute(ctx, &mut attributes, format_args!("count"), format_args!("{count}"))?;
+        insert_summary_attribute(ctx, &mut attributes, format_args!("total_record_bytes"), format_args!("{bytes}"))?;
+        crate::wire::reserve_collection(ctx, &mut entries, 1, "Rhino container summary entries")?;
         entries.push(ContainerEntry {
-            name: format!("class-{class_uuid}"),
+            name: crate::wire::admitted_format(ctx, format_args!("class-{class_uuid}"), "Rhino container entry name")?,
             role: ContainerRole::ObjectClass,
             storage: EntryStorage::verbatim(VerbatimLabel::None, bytes as u64),
             attributes,
         });
     }
-    let mut notes = vec![scan.version_note()];
-    notes.extend(scan.warnings.messages().map(str::to_owned));
-    notes.extend(
-        scan.definitions
-            .diagnostics()
-            .iter()
-            .map(|diagnostic| diagnostic.diagnostic.message.clone()),
-    );
+    let mut notes = Vec::new();
+    push_container_note(ctx, &mut notes, format_args!("archive version {}", scan.archive.value()))?;
+    for warning in scan.warnings.messages() {
+        push_container_note(ctx, &mut notes, format_args!("{warning}"))?;
+    }
+    for diagnostic in scan.definitions.diagnostics() {
+        push_container_note(ctx, &mut notes, format_args!("{}", diagnostic.diagnostic.message))?;
+    }
     let matched = dialect_match(scan);
-    let losses = crate::dialect::admission_loss(&matched)
-        .into_iter()
-        .collect();
-    ContainerSummary::classified(
+    let mut losses = Vec::new();
+    if let Some(loss) = crate::dialect::admission_loss(&matched) {
+        crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino container summary losses")?;
+        losses.push(loss);
+    }
+    Ok(ContainerSummary::classified(
         cadmpeg_core::dialect::DialectLayers::of(matched),
         cadmpeg_ir::ContainerKind::ThreeDmChunks,
         entries,
         losses,
         notes,
-    )
+    ))
 }
 
 /// Classifies a scanned archive.
@@ -1565,7 +1599,7 @@ pub(crate) fn inspect(
             )],
         ));
     }
-    Ok(summarize(&scan(ctx, data)?))
+    summarize(ctx, &scan(ctx, data)?)
 }
 
 /// Decode a Rhino stream according to the supported container depth.
