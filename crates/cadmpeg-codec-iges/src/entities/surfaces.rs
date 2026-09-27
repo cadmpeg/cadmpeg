@@ -379,12 +379,12 @@ fn equal_arc_length_parameterization(
     Ok(constant_speed(first_sequence, first)? && constant_speed(second_sequence, second)?)
 }
 
-fn bounded_evaluable_curve(
-    ir: &CadIr,
+fn bounded_evaluable_curve<'a>(
+    ir: &'a CadIr,
     curve_id: &CurveId,
     tolerance: f64,
     index: &CompositeIndex,
-) -> Result<Option<(CurveGeometry, [f64; 2])>, CodecError> {
+) -> Result<Option<(&'a CurveGeometry, [f64; 2])>, CodecError> {
     let Some(curve) = index.curve_by_id(ir, curve_id) else {
         return Ok(None);
     };
@@ -408,15 +408,12 @@ fn bounded_evaluable_curve(
     {
         return Ok(None);
     }
-    let geometry = geometry.clone();
     for parameter in parameter_interval {
-        if finite_or_refusal(cadmpeg_ir::eval::curve_point(&geometry, parameter))?.is_none() {
+        if finite_or_refusal(cadmpeg_ir::eval::curve_point(geometry, parameter))?.is_none() {
             return Ok(None);
         }
     }
-    Ok(geometry
-        .solved()
-        .map(|solved| (CurveGeometry::Solved(solved.clone()), parameter_interval)))
+    Ok(geometry.solved().map(|_| (geometry, parameter_interval)))
 }
 
 /// `cadmpeg_ir::geometry::PlacedCurve::try_new` bounds the chain, so the walk
@@ -1605,9 +1602,8 @@ pub(super) fn project(
                 super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "tabulated direction is zero or non-finite"))?;
                 continue;
             };
-            let procedural_directrix = if entry.transform == 0 {
-                directrix_id
-            } else {
+            let placed_solved = (entry.transform != 0).then(|| directrix_solved.clone());
+            let procedural_directrix = if let Some(placed_solved) = placed_solved {
                 let placed_id = crate::ids::curve(
                     &crate::ids::Stem::directory(entry.sequence)
                         .tail(crate::ids::Word::PlacedDirectrix),
@@ -1618,7 +1614,7 @@ pub(super) fn project(
                     id: placed_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
                         cadmpeg_ir::geometry::PlacedCurve::try_new(
-                            Box::new(directrix_solved.clone()),
+                            Box::new(placed_solved),
                             transform,
                         )
                         .map_err(CodecError::malformed)?,
@@ -1626,6 +1622,8 @@ pub(super) fn project(
                     source_object: Some(source_object(entry, ctx)?),
                 });
                 placed_id
+            } else {
+                directrix_id
             };
             let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
             let procedural_id =
@@ -1934,7 +1932,8 @@ pub(super) fn project(
             let source_interval = source_parameter_interval(&directrix_geometry, carrier_interval);
             let mut procedural_directrix = generatrix_id.clone();
             let mut procedural_axis = admitted_axis;
-            if entry.transform != 0 {
+            let placed_solved = (entry.transform != 0).then(|| directrix_solved.clone());
+            if let Some(placed_solved) = placed_solved {
                 let Some(orientation) = similarity_orientation(transform) else {
                     super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "placement cannot preserve the exact revolution parameterization"))?;
                     continue;
@@ -1949,7 +1948,7 @@ pub(super) fn project(
                     id: procedural_directrix.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
                         cadmpeg_ir::geometry::PlacedCurve::try_new(
-                            Box::new(directrix_solved.clone()),
+                            Box::new(placed_solved),
                             transform,
                         )
                         .map_err(CodecError::malformed)?,
