@@ -548,11 +548,9 @@ fn bind_historical_entity_versions(
 
 /// Historical topology caches retain normalized records, topology entities,
 /// incidence links, and geometry measurements while Design projection runs.
-/// This conservative per-entry charge bounds that temporary cache against the
-/// caller's materialization policy. Above the resulting budget the binding is
-/// skipped: the states keep
-/// an absent topology cache, the same degrade every
-/// other early return here produces, and historical transitions stay unbound.
+/// This conservative per-entry bound checks that temporary cache against the
+/// caller's materialization policy. A binding that exceeds either limit
+/// refuses through the caller context before the topology cache is built.
 // One live entity can retain its 16-byte version pair, one 8-byte family slot,
 // one 48-byte coedge link (the largest topology link), one 56-byte curve-axis
 // measurement (the largest geometry measurement), one 8-byte ownership member,
@@ -567,6 +565,7 @@ const HISTORY_TOPOLOGY_CACHE_BYTES_PER_ENTRY: u64 = 192;
 /// final cache size.
 const HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY: u64 = 4096;
 
+#[cfg(test)]
 fn complete_table_binding_budget_exceeded(
     table_lengths: impl IntoIterator<Item = usize>,
     limits: &cadmpeg_core::decode::ResourceLimits,
@@ -580,6 +579,7 @@ fn complete_table_binding_budget_exceeded(
         .is_none_or(|bytes| bytes > limits.max_materialized_bytes)
 }
 
+#[cfg(test)]
 fn history_topology_work_budget_exceeded(
     table_lengths: impl IntoIterator<Item = usize>,
     limits: &cadmpeg_core::decode::ResourceLimits,
@@ -591,6 +591,38 @@ fn history_topology_work_budget_exceeded(
         })
         .and_then(|entries| entries.checked_mul(HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY))
         .is_none_or(|work| work > limits.max_work_units)
+}
+
+fn admit_complete_table_binding_budget(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    mut table_lengths: impl ExactSizeIterator<Item = usize>,
+    limits: &cadmpeg_core::decode::ResourceLimits,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let state_count = u64::try_from(table_lengths.len())
+        .map_err(|_| ctx.refuse_codec_limit("check F3D complete history topology", 0, u64::MAX))?;
+    ctx.charge_work(state_count, "check F3D complete history topology")?;
+    let entries = table_lengths.try_fold(0_u64, |total, length| {
+            total.checked_add(u64::try_from(length).ok()?)
+        });
+    let bytes = entries.and_then(|entries| entries.checked_mul(HISTORY_TOPOLOGY_CACHE_BYTES_PER_ENTRY));
+    if bytes.is_none_or(|bytes| bytes > limits.max_materialized_bytes) {
+        let requested = bytes.unwrap_or(u64::MAX);
+        return Err(ctx.refuse_codec_limit(
+            "bind F3D complete history topology bytes",
+            limits.max_materialized_bytes,
+            requested,
+        ));
+    }
+    let work = entries.and_then(|entries| entries.checked_mul(HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY));
+    if work.is_none_or(|work| work > limits.max_work_units) {
+        let requested = work.unwrap_or(u64::MAX);
+        return Err(ctx.refuse_codec_limit(
+            "bind F3D complete history topology work",
+            limits.max_work_units,
+            requested,
+        ));
+    }
+    Ok(())
 }
 
 fn bind_complete_record_tables(
@@ -609,15 +641,11 @@ fn bind_complete_record_tables(
         Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => return Err(error),
         Err(_) => return Ok(false),
     };
-    if complete_table_binding_budget_exceeded(
+    admit_complete_table_binding_budget(
+        ctx,
         states.iter().map(|state| state.entity_versions.len()),
         limits,
-    ) || history_topology_work_budget_exceeded(
-        states.iter().map(|state| state.entity_versions.len()),
-        limits,
-    ) {
-        return Ok(true);
-    }
+    )?;
     let insert_only = insert_only_active_record_count(ctx, states)?;
     let archived_count = archived_active_record_count(ctx, states)?;
     let Some(active_count) = archived_count.or(insert_only) else {

@@ -516,3 +516,39 @@ fn history_binding_work_budget_charges_state_record_cross_product() {
         &service
     ));
 }
+
+#[test]
+fn history_complete_table_binding_refuses_materialized_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = super::super::HISTORY_TOPOLOGY_CACHE_BYTES_PER_ENTRY - 1;
+    let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap().0;
+    let error = super::super::admit_complete_table_binding_budget(
+        &ctx,
+        [1_usize].into_iter(),
+        &policy.limits,
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+        if refusal.operation == "bind F3D complete history topology bytes"));
+}
+
+#[test]
+fn history_complete_table_binding_refuses_work_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY - 1;
+    let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap().0;
+    let error = super::super::admit_complete_table_binding_budget(
+        &ctx,
+        [1_usize].into_iter(),
+        &policy.limits,
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+        if refusal.operation == "bind F3D complete history topology work"));
+}
