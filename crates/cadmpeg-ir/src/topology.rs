@@ -307,6 +307,9 @@ impl Shell {
         wire_edges: Vec<EdgeId>,
         free_vertices: Vec<VertexId>,
     ) -> Result<Self, BodySelectionError> {
+        if faces.is_empty() && wire_edges.is_empty() && free_vertices.is_empty() {
+            return Err(BodySelectionError::Empty);
+        }
         let members = ShellMembers {
             faces,
             wire_edges,
@@ -315,7 +318,7 @@ impl Shell {
         Ok(Self {
             id,
             region,
-            members: NonEmptyMembers::try_from(Vec::<ShellMember>::from(members))?.into(),
+            members,
         })
     }
 
