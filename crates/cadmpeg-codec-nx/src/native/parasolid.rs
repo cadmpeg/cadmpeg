@@ -1776,11 +1776,8 @@ impl ParasolidScanRecords for ParasolidTermUseRecord {
 }
 
 /// Complete typed source record for one Parasolid support-UV values array.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "support_uv_wire::SupportUvWire",
-    into = "support_uv_wire::SupportUvWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "support_uv_wire::SupportUvWire")]
 pub(super) struct ParasolidSupportUvRecord {
     /// Globally unique record identity.
     pub(super) id: String,
@@ -2129,11 +2126,8 @@ pub(super) struct ParasolidFieldNamesRecord {
 }
 
 /// Complete type-80 declaration-to-field-name-list relation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "named_fields::FieldNamesWire",
-    into = "named_fields::FieldNamesWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "named_fields::FieldNamesWire")]
 pub(super) struct ParasolidAttributeFieldNames {
     /// Globally unique relation identity.
     pub(super) id: String,
