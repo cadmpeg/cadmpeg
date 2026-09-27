@@ -133,6 +133,10 @@ impl PresentationDocument {
 
     /// Replace persisted states after checking that their orders are distinct.
     pub fn set_states(&mut self, states: Vec<PresentationState>) -> Result<(), String> {
+        if states.windows(2).all(|pair| pair[0].order < pair[1].order) {
+            self.states = states;
+            return Ok(());
+        }
         let mut orders = std::collections::HashSet::new();
         if states.iter().any(|state| !orders.insert(state.order)) {
             return Err("states must have distinct order values".into());
