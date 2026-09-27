@@ -643,7 +643,7 @@ pub(crate) fn operation_states(
                 RecipeState::Resolved(binding.recipe)
             })
         };
-        let kind = super::entity::copy_lossy_text(ctx, family, "creo operation family name")?;
+        let kind = crate::text::copy_lossy_text(ctx, family, "creo operation family name")?;
         let name_bytes = ctx.copy_retained(
             &payload[state_offset..separator + separator_bytes.len() + end],
             "creo operation stored name bytes",

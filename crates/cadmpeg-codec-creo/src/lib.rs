@@ -84,6 +84,7 @@ mod psb;
 mod reference;
 mod scalar;
 mod surface;
+mod text;
 mod topology;
 mod vecmath;
 
