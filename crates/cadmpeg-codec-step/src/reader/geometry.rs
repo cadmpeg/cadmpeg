@@ -1226,7 +1226,7 @@ pub(super) fn decode(
                 .copied()
                 .unwrap_or(0.0);
             let linear_parameter_scale =
-                line_parameter_scale(exchange, basis_reference_step, record_scale, &mut losses);
+                line_parameter_scale(exchange, basis_reference_step, record_scale, &mut losses, ctx)?;
             let (start, end) = {
                 let mut trim_context = TrimParameterContext {
                     points: &points,
@@ -1238,6 +1238,7 @@ pub(super) fn decode(
                     master_representation,
                     record_id: id,
                     losses: &mut losses,
+                    ctx,
                 };
                 (
                     match parameters.get(2) {
@@ -2951,6 +2952,7 @@ struct TrimParameterContext<'a> {
     master_representation: TrimMasterRepresentation,
     record_id: u64,
     losses: &'a mut Vec<LossNote>,
+    ctx: &'a DecodeContext<'a>,
 }
 
 fn trimmed_curve_attributes(parameters: &[Value]) -> Option<(u64, bool, TrimMasterRepresentation)> {
@@ -3968,13 +3970,11 @@ fn string_value(
 fn trim_parameter(
     value: &Value,
     context: &mut TrimParameterContext<'_>,
-) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Option<f64>, CodecError> {
     let (parameter, cartesian) = match value {
         Value::List(values) => (
             values.iter().find(|value| is_parameter_trim_value(value)),
-            values
-                .iter()
-                .find(|value| matches!(value, Value::Reference(_))),
+            values.iter().find(|value| matches!(value, Value::Reference(_))),
         ),
         value if is_parameter_trim_value(value) => (Some(value), None),
         Value::Reference(_) => (None, Some(value)),
@@ -4030,26 +4030,31 @@ fn is_parameter_trim_value(value: &Value) -> bool {
     }
 }
 
-fn trim_parameter_value(value: &Value, context: &TrimParameterContext<'_>) -> Option<f64> {
+fn trim_parameter_value(
+    value: &Value,
+    context: &TrimParameterContext<'_>,
+) -> Result<Option<f64>, CodecError> {
+    let _depth = context.ctx.enter_nested("step_trim_parameter_value_walk")?;
+    let Some(geometry) = context.geometry.solved() else {
+        return Ok(None);
+    };
     let scale = parameter_scale(
-        context.geometry.solved()?,
-        context.angle_scale,
-        context.linear_parameter_scale,
-    );
+        geometry, context.angle_scale, context.linear_parameter_scale, context.ctx,
+    )?;
     match value {
-        Value::Integer(value) => Some(scale * *value as f64 + context.parameter_offset),
-        Value::Real(value) => Some(scale * *value + context.parameter_offset),
+        Value::Integer(value) => Ok(Some(scale * *value as f64 + context.parameter_offset)),
+        Value::Real(value) => Ok(Some(scale * *value + context.parameter_offset)),
         Value::Typed(name, value) if name == "PARAMETER_VALUE" => {
             trim_parameter_value(value, context)
         }
-        _ => None,
+        _ => Ok(None),
     }
 }
 
 fn trim_cartesian_parameter(
     value: &Value,
     context: &TrimParameterContext<'_>,
-) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Option<f64>, CodecError> {
     let Value::Reference(id) = value else {
         return Ok(None);
     };
@@ -4060,23 +4065,29 @@ fn trim_cartesian_parameter(
         return Ok(None);
     };
     curve_parameter_at_point(geometry, point.get(), context.tolerance)
+        .map_err(CodecError::ResourceLimit)
 }
 
 fn select_trim_parameter(
     parameter: Option<&Value>,
     cartesian: Option<&Value>,
     context: &mut TrimParameterContext<'_>,
-) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Option<f64>, CodecError> {
     match context.master_representation {
         TrimMasterRepresentation::Parameter => {
             if let Some(value) = parameter {
-                Ok(trim_parameter_value(value, context))
+                trim_parameter_value(value, context)
             } else {
                 if cartesian.is_some() {
-                    context.losses.push(StepLossCode::DecodeWarning.note(format!(
-                        "TRIMMED_CURVE #{} fell back to a Cartesian trim selector because master_representation is .PARAMETER.",
-                        context.record_id
-                    )));
+                    push_geometry_vec(
+                        context.losses,
+                        StepLossCode::DecodeWarning.note(format!(
+                            "TRIMMED_CURVE #{} fell back to a Cartesian trim selector because master_representation is .PARAMETER.",
+                            context.record_id
+                        )),
+                        context.ctx,
+                        "step_trim_parameter_fallback_losses",
+                    )?;
                 }
                 match cartesian {
                     Some(value) => trim_cartesian_parameter(value, context),
@@ -4089,17 +4100,25 @@ fn select_trim_parameter(
                 trim_cartesian_parameter(value, context)
             } else {
                 if parameter.is_some() {
-                    context.losses.push(StepLossCode::DecodeWarning.note(format!(
-                        "TRIMMED_CURVE #{} fell back to a parameter trim selector because master_representation is .CARTESIAN.",
-                        context.record_id
-                    )));
+                    push_geometry_vec(
+                        context.losses,
+                        StepLossCode::DecodeWarning.note(format!(
+                            "TRIMMED_CURVE #{} fell back to a parameter trim selector because master_representation is .CARTESIAN.",
+                            context.record_id
+                        )),
+                        context.ctx,
+                        "step_trim_parameter_fallback_losses",
+                    )?;
                 }
-                Ok(parameter.and_then(|value| trim_parameter_value(value, context)))
+                match parameter {
+                    Some(value) => trim_parameter_value(value, context),
+                    None => Ok(None),
+                }
             }
         }
         TrimMasterRepresentation::Unspecified => {
             if let Some(value) = parameter {
-                Ok(trim_parameter_value(value, context))
+                trim_parameter_value(value, context)
             } else {
                 match cartesian {
                     Some(value) => trim_cartesian_parameter(value, context),
@@ -4114,15 +4133,14 @@ fn parameter_scale(
     geometry: &SolvedCurveGeometry,
     angle_scale: f64,
     linear_parameter_scale: f64,
-) -> f64 {
+    ctx: &DecodeContext<'_>,
+) -> Result<f64, CodecError> {
+    let _depth = ctx.enter_nested("step_trim_parameter_scale_walk")?;
     match geometry {
-        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => angle_scale,
-        SolvedCurveGeometry::Line(_) => linear_parameter_scale,
-        // A replica and the constructions that inherit a parent curve's
-        // parameterization keep the parent's parameter units even when their
-        // model-space dimensions change.
+        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => Ok(angle_scale),
+        SolvedCurveGeometry::Line(_) => Ok(linear_parameter_scale),
         SolvedCurveGeometry::Transformed(placed) => {
-            parameter_scale(placed.basis(), angle_scale, linear_parameter_scale)
+            parameter_scale(placed.basis(), angle_scale, linear_parameter_scale, ctx)
         }
         SolvedCurveGeometry::Parabola(_)
         | SolvedCurveGeometry::Hyperbola(_)
@@ -4130,7 +4148,7 @@ fn parameter_scale(
         | SolvedCurveGeometry::Polyline(_)
         | SolvedCurveGeometry::Degenerate(_)
         | SolvedCurveGeometry::Composite { .. }
-        | SolvedCurveGeometry::Unknown { .. } => 1.0,
+        | SolvedCurveGeometry::Unknown { .. } => Ok(1.0),
     }
 }
 
@@ -4139,7 +4157,8 @@ fn line_parameter_scale(
     curve: u64,
     length_scale: PositiveReal,
     losses: &mut Vec<LossNote>,
-) -> PositiveReal {
+    ctx: &DecodeContext<'_>,
+) -> Result<PositiveReal, CodecError> {
     fn inherited_parent(record: &RawRecord) -> Option<u64> {
         if record.partial("CURVE_REPLICA").is_some() {
             return named_parameter(record, "CURVE_REPLICA", 1).and_then(ValueExt::reference);
@@ -4167,16 +4186,19 @@ fn line_parameter_scale(
         length_scale: PositiveReal,
         losses: &mut Vec<LossNote>,
         visiting: &mut BTreeSet<u64>,
-    ) -> PositiveReal {
-        if !visiting.insert(curve) {
-            return length_scale;
+        ctx: &DecodeContext<'_>,
+    ) -> Result<PositiveReal, CodecError> {
+        if visiting.contains(&curve) {
+            return Ok(length_scale);
         }
+        let _depth = ctx.enter_nested("step_line_parameter_scale_walk")?;
+        insert_geometry_set(visiting, curve, ctx, "step_line_parameter_scale_active")?;
         let Some(record) = exchange.records().get(&curve) else {
             visiting.remove(&curve);
-            return length_scale;
+            return Ok(length_scale);
         };
         let result = if record.partial("LINE").is_some() {
-            named_parameter(record, "LINE", 2)
+            if let Some(scale) = named_parameter(record, "LINE", 2)
                 .and_then(ValueExt::reference)
                 .and_then(|vector| exchange.records().get(&vector))
                 .filter(|record| record.partial("VECTOR").is_some())
@@ -4184,22 +4206,29 @@ fn line_parameter_scale(
                 .and_then(ValueExt::number)
                 .and_then(PositiveReal::new)
                 .and_then(|magnitude| PositiveReal::new(magnitude.get() * length_scale.get()))
-                .unwrap_or_else(|| {
-                    losses.push(StepLossCode::LineParameterScaleUnresolved.note(format!(
+            {
+                Ok(scale)
+            } else {
+                push_geometry_vec(
+                    losses,
+                    StepLossCode::LineParameterScaleUnresolved.note(format!(
                         "LINE #{curve} parameter scale did not resolve; the document length scale was used"
-                    )));
-                    length_scale
-                })
+                    )),
+                    ctx,
+                    "step_line_parameter_scale_losses",
+                )?;
+                Ok(length_scale)
+            }
         } else if let Some(parent) = inherited_parent(record) {
-            resolve(exchange, parent, length_scale, losses, visiting)
+            resolve(exchange, parent, length_scale, losses, visiting, ctx)
         } else {
-            length_scale
+            Ok(length_scale)
         };
         visiting.remove(&curve);
         result
     }
 
-    resolve(exchange, curve, length_scale, losses, &mut BTreeSet::new())
+    resolve(exchange, curve, length_scale, losses, &mut BTreeSet::new(), ctx)
 }
 
 fn orthogonal_reference(axis: UnitVector3, reference: UnitVector3) -> Option<UnitVector3> {
