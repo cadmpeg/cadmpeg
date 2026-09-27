@@ -1160,7 +1160,7 @@ fn offset_indicator_parameters(bounds: Option<cadmpeg_ir::geometry::RecordBounds
         .unwrap_or([0.0, 0.0])
 }
 
-fn indicator_normal(ir: &CadIr, surface: &SurfaceId) -> Result<Option<Vector3>, CodecError> {
+fn indicator_normal(ir: &CadIr, surface: &SurfaceId, ctx: Option<&DecodeContext<'_>>) -> Result<Option<Vector3>, CodecError> {
     let procedural = ir
         .model
         .procedural_surfaces
@@ -1171,7 +1171,10 @@ fn indicator_normal(ir: &CadIr, surface: &SurfaceId) -> Result<Option<Vector3>, 
     let parameters = parameters.unwrap_or([0.0, 0.0]);
     let partials = match procedural {
         Some(_) => {
-            let index = cadmpeg_ir::index::ModelIndex::new(ir);
+            let index = match ctx {
+                Some(ctx) => cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?,
+                None => cadmpeg_ir::index::ModelIndex::new_model_only(ir),
+            };
             finite_or_refusal(cadmpeg_ir::eval::model_surface_partials_by_id(
                 &index,
                 surface,
@@ -2645,7 +2648,7 @@ pub(super) fn project(
             continue;
         };
         let distance = distance * factor;
-        let Some(normal) = indicator_normal(ir, &support_id)? else {
+        let Some(normal) = indicator_normal(ir, &support_id, ctx)? else {
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "support normal cannot be evaluated at the offset-indicator parameters"))?;
             continue;
         };

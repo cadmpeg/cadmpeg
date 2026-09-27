@@ -1906,7 +1906,7 @@ fn legacy_single_parent_face(
                 .ok_or("legacy single-parent plane has an invalid boundary pointer")
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let index = ModelIndex::new(ir);
+    let index = ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
     let parent_plane = plane_carrier(&index, parent_sequence)
         .ok_or("legacy single-parent parent plane was not projected")?;
     let resolution = global.minimum_resolution_mm();
@@ -2730,7 +2730,7 @@ pub(super) fn project(
         }
     }
 
-    let index = ModelIndex::new(ir);
+    let index = ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
     for entry in directory
         .iter()
         .filter(|entry| entry.entity_type == 108 && matches!(entry.form, -1 | 1))

@@ -267,7 +267,12 @@ fn resolve_pcurve_uses<'a>(
     if uses.is_empty() {
         return Ok(Some(Vec::new()));
     }
-    let index = model_index.get_or_insert_with(|| cadmpeg_ir::index::ModelIndex::new(source));
+    if model_index.is_none() {
+        *model_index = Some(cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(source, ctx)?);
+    }
+    let Some(index) = model_index.as_ref() else {
+        return Ok(None);
+    };
     let mut resolved = reserve_vec(ctx, uses.len(), "iges B-rep resolved pcurves")?;
     let mut mapped = reserve_vec(ctx, uses.len(), "iges B-rep mapped pcurves")?;
     for (_, sequence) in uses {

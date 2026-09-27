@@ -1804,7 +1804,7 @@ pub(super) fn project(
     let mut boundary_vertex_derivations = Vec::new();
     let mut boundaries = BTreeMap::new();
 
-    let carrier_index = ModelIndex::new(ir);
+    let carrier_index = ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
     let mut composite_index: Option<CompositeIndex> = None;
     let mut edges_by_curve = BTreeMap::<&CurveId, Vec<&Edge>>::new();
     for edge in &ir.model.edges {

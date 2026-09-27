@@ -6,6 +6,9 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::sync::OnceLock;
 
+use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
+
 use crate::appearance::Appearance;
 use crate::document::CadIr;
 use crate::geometry::{pcurve::Pcurve, Curve, ProceduralCurve, ProceduralSurface, Surface};
@@ -28,6 +31,85 @@ enum IdentityEntry {
 }
 
 type IdentityIndex = HashMap<u64, IdentityEntry>;
+
+fn admitted_map<K: Eq + Hash, V>(
+    ctx: &DecodeContext<'_>,
+    count: usize,
+    operation: &'static str,
+) -> Result<HashMap<K, V>, CodecError> {
+    let requested = u64_from_index(count);
+    ctx.charge_collection_items(requested, operation)?;
+    let mut values = HashMap::new();
+    values.try_reserve(count).map_err(|_| refuse_local_limit(operation, requested, requested))?;
+    Ok(values)
+}
+
+fn admitted_vec<T>(
+    ctx: &DecodeContext<'_>,
+    count: usize,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    let requested = u64_from_index(count);
+    ctx.charge_collection_items(requested, operation)?;
+    let mut values = Vec::new();
+    values.try_reserve_exact(count).map_err(|_| refuse_local_limit(operation, requested, requested))?;
+    Ok(values)
+}
+
+fn grow_admitted_vec<T>(
+    ctx: &DecodeContext<'_>,
+    values: &mut Vec<T>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, operation)?;
+    values.try_reserve(1).map_err(|_| refuse_local_limit(operation, 1, 1))
+}
+
+fn build_admitted_identity_index<T: EntitySchema>(
+    entities: &[T],
+    ctx: &DecodeContext<'_>,
+) -> Result<IdentityIndex, CodecError> {
+    let mut index = admitted_map(ctx, entities.len(), "model identity index slots")?;
+    for (slot, entity) in entities.iter().enumerate() {
+        match index.entry(identity_hash(entity.identity())) {
+            Entry::Vacant(entry) => {
+                entry.insert(IdentityEntry::One(slot));
+            }
+            Entry::Occupied(entry) => {
+                let value = entry.into_mut();
+                match value {
+                    IdentityEntry::One(previous) => {
+                        let mut slots = admitted_vec(ctx, 2, "model identity collision slots")?;
+                        slots.extend([*previous, slot]);
+                        *value = IdentityEntry::Many(slots);
+                    }
+                    IdentityEntry::Many(slots) => {
+                        grow_admitted_vec(ctx, slots, "model identity collision slots")?;
+                        slots.push(slot);
+                    }
+                }
+            }
+        }
+    }
+    Ok(index)
+}
+
+fn insert_admitted_identity(
+    identities: &mut HashSet<String>,
+    identity: &str,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    if identities.contains(identity) {
+        return Ok(());
+    }
+    let count = u64_from_index(identity.len());
+    ctx.charge_retained(count, "model identity universe text")?;
+    let mut copied = String::new();
+    copied.try_reserve_exact(identity.len()).map_err(|_| refuse_local_limit("model identity universe text", count, count))?;
+    copied.push_str(identity);
+    identities.insert(copied);
+    Ok(())
+}
 
 pub(crate) fn identity_hash(identity: &str) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -116,6 +198,102 @@ macro_rules! define_model_index {
         }
 
         impl<'a> ModelIndex<'a> {
+            /// Build an index for a decoder, admitting every eager and lazy lookup allocation.
+            pub fn try_new_for_decode(
+                ir: &'a CadIr,
+                ctx: &DecodeContext<'_>,
+            ) -> Result<Self, CodecError> {
+                Self::try_with_context(ir, true, ctx)
+            }
+
+            /// Build model-only lookups for a decoder without native identities.
+            pub fn try_new_model_only_for_decode(
+                ir: &'a CadIr,
+                ctx: &DecodeContext<'_>,
+            ) -> Result<Self, CodecError> {
+                Self::try_with_context(ir, false, ctx)
+            }
+
+            fn try_with_context(
+                ir: &'a CadIr,
+                include_native: bool,
+                ctx: &DecodeContext<'_>,
+            ) -> Result<Self, CodecError> {
+                let mut procedural_surface_by_surface = admitted_map(
+                    ctx, ir.model.surfaces.len(), "model procedural surface carriers",
+                )?;
+                let mut procedural_curves_by_curve = admitted_map::<&str, Vec<&ProceduralCurve>>(
+                    ctx, ir.model.curves.len(), "model procedural curve carriers",
+                )?;
+                let mut procedural_surfaces_by_id = admitted_map(
+                    ctx, ir.model.procedural_surfaces.len(), "model procedural surface IDs",
+                )?;
+                for procedural in &ir.model.procedural_surfaces {
+                    procedural_surfaces_by_id.entry(procedural.id.as_str()).or_insert(procedural);
+                }
+                let mut procedural_curves_by_id = admitted_map(
+                    ctx, ir.model.procedural_curves.len(), "model procedural curve IDs",
+                )?;
+                for procedural in &ir.model.procedural_curves {
+                    procedural_curves_by_id.entry(procedural.id.as_str()).or_insert(procedural);
+                }
+                for carrier in &ir.model.surfaces {
+                    if let Some(procedural) = carrier.geometry.procedural_construction()
+                        .and_then(|construction| procedural_surfaces_by_id.get(construction.as_str()))
+                        .copied()
+                    {
+                        procedural_surface_by_surface.insert(carrier.id.as_str(), procedural);
+                    }
+                }
+                for carrier in &ir.model.curves {
+                    if let Some(procedural) = carrier.geometry.procedural_construction()
+                        .and_then(|construction| procedural_curves_by_id.get(construction.as_str()))
+                        .copied()
+                    {
+                        let group = procedural_curves_by_curve.entry(carrier.id.as_str()).or_default();
+                        grow_admitted_vec(ctx, group, "model procedural curve carrier members")?;
+                        group.push(procedural);
+                    }
+                }
+                let mut procedural_surface_for_carrier = admitted_map(
+                    ctx, procedural_surface_by_surface.len(), "model procedural surface lookup",
+                )?;
+                procedural_surface_for_carrier.extend(
+                    procedural_surface_by_surface.iter().map(|(surface, procedural)| (*surface, *procedural)),
+                );
+
+                let native_count = if include_native {
+                    ir.native.0.values().flat_map(|namespace| namespace.arenas().values().flatten())
+                        .try_fold(0_usize, |count, _| count.checked_add(1).ok_or_else(|| refuse_local_limit("model identity universe slots", u64::MAX, 1)))?
+                } else {
+                    0
+                };
+                let identity_count = ir.model.entity_count().checked_add(native_count)
+                    .ok_or_else(|| refuse_local_limit("model identity universe slots", u64::MAX, 1))?;
+                let requested = u64_from_index(identity_count);
+                ctx.charge_collection_items(requested, "model identity universe slots")?;
+                let mut identities = HashSet::new();
+                identities.try_reserve(identity_count).map_err(|_| refuse_local_limit("model identity universe slots", requested, requested))?;
+                $(for entity in &ir.model.$field {
+                    insert_admitted_identity(&mut identities, entity.identity(), ctx)?;
+                })*
+                if include_native {
+                    for record in ir.native.0.values().flat_map(|namespace| namespace.arenas().values().flatten()) {
+                        insert_admitted_identity(&mut identities, record.id(), ctx)?;
+                    }
+                }
+                Ok(Self {
+                    ir,
+                    $($lookup: OnceLock::from(build_admitted_identity_index(&ir.model.$lookup, ctx)?),)*
+                    procedural_surface_by_surface,
+                    procedural_surface_for_carrier,
+                    procedural_curves_by_curve,
+                    identities: OnceLock::from(identities),
+                    include_native,
+                    additional_native_identities: Vec::new(),
+                })
+            }
+
             /// Builds lazy typed lookups and lazily materializes the identity universe.
             pub fn new(ir: &'a CadIr) -> Self {
                 Self::with_identity_sources(ir, true, std::iter::empty())
@@ -296,11 +474,38 @@ crate::document::arena_registry!(define_model_index);
 #[cfg(test)]
 mod tests {
     use super::ModelIndex;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use crate::document::CadIr;
     use crate::geometry::{ProceduralSurface, Surface};
     use crate::geometry::{ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
     use crate::{NativeNamespace, NativeRecord};
     use serde_json::Map;
+
+    #[test]
+    fn decode_index_admits_identity_slots_and_text_before_building() {
+        let mut ir = CadIr::empty();
+        let point_id = crate::ids::PointId::mint("test:model:point#0").expect("identity grammar");
+        ir.model.points.push(crate::topology::Point::new(
+            point_id.clone(), crate::features::FinitePoint3::ZERO, None,
+        ));
+        for (collection_cap, retained_cap, operation, dimension) in [
+            (0, u64::MAX, "model identity universe slots", ResourceDimension::CollectionItems),
+            (u64::MAX, 0, "model identity universe text", ResourceDimension::RetainedBytes),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = collection_cap;
+            policy.limits.max_retained_bytes = retained_cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = ModelIndex::try_new_model_only_for_decode(&ir, &ctx);
+            assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == dimension && limit.operation == operation));
+        }
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let index = ModelIndex::try_new_model_only_for_decode(&ir, &ctx).unwrap();
+        assert_eq!(index.points(point_id.as_str()).map(|point| &point.id), Some(&point_id));
+    }
 
     macro_rules! procedural_surface {
         (
