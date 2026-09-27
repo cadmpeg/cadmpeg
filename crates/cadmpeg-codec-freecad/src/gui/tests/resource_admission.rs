@@ -226,6 +226,28 @@ fn gui_provider_identity_refuses_at_retained_limit() {
 }
 
 #[test]
+fn gui_provider_record_identity_copy_refuses_at_retained_limit() {
+    let text = r#"<ViewProvider name="Provider With Spaces"><Properties Count="0"/></ViewProvider>"#;
+    let xml = roxmltree::Document::parse(text).expect("GUI provider XML");
+    crate::test_support::assert_retained_refusal_at(text.as_bytes(),
+        "FCStd GUI provider record identity", |ctx| {
+            super::super::append_native_provider(ctx, text, xml.root_element(), 0, None,
+                &mut Vec::new(), &mut Vec::new())
+        });
+}
+
+#[test]
+fn gui_provider_object_identity_refuses_at_retained_limit() {
+    let text = r#"<ViewProvider name="Provider"><Properties Count="0"/></ViewProvider>"#;
+    let xml = roxmltree::Document::parse(text).expect("GUI provider XML");
+    crate::test_support::assert_retained_refusal_at(text.as_bytes(),
+        "FCStd GUI provider object identity", |ctx| {
+            super::super::append_native_provider(ctx, text, xml.root_element(), 0,
+                Some("fcstd:native:object#Owner With Spaces"), &mut Vec::new(), &mut Vec::new())
+        });
+}
+
+#[test]
 fn y4_2_decode_refuses_unadmitted_gui_text_copy() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
     let gui = br#"<Document SchemaVersion="1"><Camera settings=""/></Document>"#;
