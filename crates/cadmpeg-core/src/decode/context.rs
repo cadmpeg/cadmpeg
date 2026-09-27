@@ -301,7 +301,19 @@ impl<'a> DecodeContext<'a> {
         self.charge_collection_items(additional as u64, operation)?;
         values.try_reserve(additional).map_err(|_| {
             self.budget
-                .collection_allocation_failed(additional as u64, operation)
+                .collection_allocation_failed(additional as u64, additional as u64, operation)
+        })
+    }
+
+    /// Reserves space when already admitted decoded items move between vectors.
+    pub fn reserve_precharged_vec<T>(
+        &self,
+        values: &mut Vec<T>,
+        additional: usize,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        values.try_reserve(additional).map_err(|_| {
+            self.budget.collection_allocation_failed(0, additional as u64, operation)
         })
     }
 

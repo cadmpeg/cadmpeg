@@ -223,6 +223,7 @@ impl DecodeBudget {
     pub(super) fn collection_allocation_failed(
         &self,
         charged: u64,
+        requested: u64,
         operation: &'static str,
     ) -> CodecError {
         self.refuse(
@@ -230,7 +231,7 @@ impl DecodeBudget {
             ResourceFailure::AllocationFailed,
             self.policy.limits.max_collection_items,
             self.collection_items.get().saturating_sub(charged),
-            charged,
+            requested,
             operation,
         )
     }

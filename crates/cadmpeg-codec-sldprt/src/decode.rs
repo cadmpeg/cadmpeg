@@ -2133,7 +2133,7 @@ fn try_decode_brep(
         // Keep only the selected source's bridge sequence namespace. Alternate
         // configuration sites are qualified into the model but do not own the
         // active SWIFT CadIdentifier lane.
-        merge_brep(&mut decoded, alternate)?;
+        merge_brep(ctx, &mut decoded, alternate)?;
     }
     let report = build_geometry_report(scan, &decoded, classification);
     Ok(Some((
@@ -2202,30 +2202,38 @@ fn bind_opaque_geometry(
     Ok(())
 }
 
-fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
+fn append_brep_arena<T>(
+    ctx: &DecodeContext<'_>,
+    target: &mut Vec<T>,
+    source: &mut Vec<T>,
+) -> Result<(), CodecError> {
+    ctx.reserve_precharged_vec(target, source.len(), "merge SLDPRT B-rep arena")?;
+    target.append(source);
+    Ok(())
+}
+
+fn merge_brep(ctx: &DecodeContext<'_>, target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     // Sequence links are source-local and belong only to the selected SWIFT
     // source. Alternate configuration sequences must not enter its namespace.
     target.annotations.append(source.annotations)?;
-    target.bodies.append(&mut source.bodies);
-    target.regions.append(&mut source.regions);
-    target.shells.append(&mut source.shells);
-    target.faces.append(&mut source.faces);
-    target.loops.append(&mut source.loops);
-    target.coedges.append(&mut source.coedges);
-    target.edges.append(&mut source.edges);
-    target.vertices.append(&mut source.vertices);
-    target.points.append(&mut source.points);
-    target.surfaces.append(&mut source.surfaces);
-    target
-        .procedural_surfaces
-        .append(&mut source.procedural_surfaces);
-    target.curves.append(&mut source.curves);
-    target.pcurves.append(&mut source.pcurves);
-    target.unknowns.append(&mut source.unknowns);
-    target.face_colors.append(&mut source.face_colors);
-    target.face_atoms.append(&mut source.face_atoms);
-    target.body_modifiers.append(&mut source.body_modifiers);
-    target.losses.append(&mut source.losses);
+    append_brep_arena(ctx, &mut target.bodies, &mut source.bodies)?;
+    append_brep_arena(ctx, &mut target.regions, &mut source.regions)?;
+    append_brep_arena(ctx, &mut target.shells, &mut source.shells)?;
+    append_brep_arena(ctx, &mut target.faces, &mut source.faces)?;
+    append_brep_arena(ctx, &mut target.loops, &mut source.loops)?;
+    append_brep_arena(ctx, &mut target.coedges, &mut source.coedges)?;
+    append_brep_arena(ctx, &mut target.edges, &mut source.edges)?;
+    append_brep_arena(ctx, &mut target.vertices, &mut source.vertices)?;
+    append_brep_arena(ctx, &mut target.points, &mut source.points)?;
+    append_brep_arena(ctx, &mut target.surfaces, &mut source.surfaces)?;
+    append_brep_arena(ctx, &mut target.procedural_surfaces, &mut source.procedural_surfaces)?;
+    append_brep_arena(ctx, &mut target.curves, &mut source.curves)?;
+    append_brep_arena(ctx, &mut target.pcurves, &mut source.pcurves)?;
+    append_brep_arena(ctx, &mut target.unknowns, &mut source.unknowns)?;
+    append_brep_arena(ctx, &mut target.face_colors, &mut source.face_colors)?;
+    append_brep_arena(ctx, &mut target.face_atoms, &mut source.face_atoms)?;
+    append_brep_arena(ctx, &mut target.body_modifiers, &mut source.body_modifiers)?;
+    append_brep_arena(ctx, &mut target.losses, &mut source.losses)?;
     target.stats.unknown_surface_faces += source.stats.unknown_surface_faces;
     target.stats.unknown_procedural_supports += source.stats.unknown_procedural_supports;
     target.stats.unknown_curve_edges += source.stats.unknown_curve_edges;
