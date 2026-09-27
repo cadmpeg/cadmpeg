@@ -19,7 +19,7 @@ use crate::ids;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::decode_text;
+use super::decode_text_charged;
 use super::geometry::GeometryData;
 use super::topology::TopologyData;
 use super::StageOutcome;
@@ -101,16 +101,17 @@ pub(super) fn decode(
         else {
             continue;
         };
-        let Some(description) = parameters.get(1).and_then(|value| {
-            decode_text(
+        let Some(description) = parameters.get(1).map(|value| {
+            decode_text_charged(
                 exchange,
                 value,
                 &mut losses,
                 id,
                 "product definition description",
                 StepLossCode::MetadataStringInvalid,
+                ctx,
             )
-        }) else {
+        }).transpose()?.flatten() else {
             continue;
         };
         if !description.is_empty() {
@@ -137,42 +138,51 @@ pub(super) fn decode(
         };
         let product_id = parameters
             .first()
-            .and_then(|value| {
-                decode_text(
+            .map(|value| {
+                decode_text_charged(
                     exchange,
                     value,
                     &mut losses,
                     step_id,
                     "product identifier",
                     StepLossCode::MetadataStringInvalid,
+                    ctx,
                 )
             })
+            .transpose()?
+            .flatten()
             .unwrap_or_else(|| format!("#{step_id}"));
         let name = parameters
             .get(1)
-            .and_then(|value| {
-                decode_text(
+            .map(|value| {
+                decode_text_charged(
                     exchange,
                     value,
                     &mut losses,
                     step_id,
                     "product name",
                     StepLossCode::MetadataStringInvalid,
+                    ctx,
                 )
             })
+            .transpose()?
+            .flatten()
             .filter(|name| !name.is_empty());
         let product_description = parameters
             .get(2)
-            .and_then(|value| {
-                decode_text(
+            .map(|value| {
+                decode_text_charged(
                     exchange,
                     value,
                     &mut losses,
                     step_id,
                     "product description",
                     StepLossCode::MetadataStringInvalid,
+                    ctx,
                 )
             })
+            .transpose()?
+            .flatten()
             .filter(|description| !description.is_empty());
         let product_definitions = definitions_by_product_in_source_order
             .get(&step_id)
@@ -269,32 +279,41 @@ pub(super) fn decode(
     typed.extend(formations.keys().copied());
     typed.extend(definitions.keys().copied());
 
-    let usages = exchange
-        .entities("NEXT_ASSEMBLY_USAGE_OCCURRENCE")
-        .filter_map(|(id, record)| {
-            let name =
-                named_parameter(record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 1).and_then(|value| {
-                    decode_text(
-                        exchange,
-                        value,
-                        &mut losses,
-                        id,
-                        "assembly occurrence name",
-                        StepLossCode::MetadataStringInvalid,
-                    )
-                });
-            Some((
-                id,
-                Usage {
-                    parent_definition: named_parameter(record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 3)
-                        .and_then(ValueExt::reference)?,
-                    child_definition: named_parameter(record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 4)
-                        .and_then(ValueExt::reference)?,
-                    name: name.filter(|name| !name.is_empty()),
-                },
-            ))
-        })
-        .collect::<BTreeMap<_, _>>();
+    let mut usages = BTreeMap::new();
+    for (id, record) in exchange.entities("NEXT_ASSEMBLY_USAGE_OCCURRENCE") {
+        let name = named_parameter(record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 1)
+            .map(|value| {
+                decode_text_charged(
+                    exchange,
+                    value,
+                    &mut losses,
+                    id,
+                    "assembly occurrence name",
+                    StepLossCode::MetadataStringInvalid,
+                    ctx,
+                )
+            })
+            .transpose()?
+            .flatten();
+        let Some(parent_definition) = named_parameter(record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 3)
+            .and_then(ValueExt::reference)
+        else {
+            continue;
+        };
+        let Some(child_definition) = named_parameter(record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 4)
+            .and_then(ValueExt::reference)
+        else {
+            continue;
+        };
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "step_product_usage_entries")?;
+        }
+        usages.insert(id, Usage {
+            parent_definition,
+            child_definition,
+            name: name.filter(|name| !name.is_empty()),
+        });
+    }
     let child_definitions = usages
         .values()
         .map(|usage| usage.child_definition)

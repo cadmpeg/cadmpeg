@@ -39,6 +39,66 @@ fn pending_occurrence_refuses_caller_collection_limit() {
     assert!(pending.is_empty());
 }
 
+const PRODUCT_STRING_LIMIT_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=APPLICATION_CONTEXT('mechanical design');#2=PRODUCT_CONTEXT('',#1,'mechanical');#3=PRODUCT('P','Part name','',(#2));#4=PRODUCT_DEFINITION_FORMATION('','',#3);#5=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');#6=PRODUCT_DEFINITION('part','Description',#4,#5);#7=PRODUCT('C','Child name','',(#2));#8=PRODUCT_DEFINITION_FORMATION('','',#7);#9=PRODUCT_DEFINITION('child','',#8,#5);#10=NEXT_ASSEMBLY_USAGE_OCCURRENCE('u','Child instance','',#6,#9,$);ENDSEC;END-ISO-10303-21;";
+
+#[test]
+fn product_string_text_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (exchange, diagnostics) = crate::parse::parse(PRODUCT_STRING_LIMIT_SOURCE)
+        .expect("valid product exchange");
+    let arena = DecodeArena::new();
+    let refused = (0..512).any(|limit| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(PRODUCT_STRING_LIMIT_SOURCE, &arena, &policy)
+            .expect("root fits retained policy");
+        matches!(
+            crate::reader::decode_exchange(
+                PRODUCT_STRING_LIMIT_SOURCE,
+                exchange.clone(),
+                &diagnostics,
+                &ctx,
+                crate::reader::Packaging::Bare,
+            ),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::RetainedBytes
+                    && refusal.operation == "step_string_text"
+        )
+    });
+    assert!(refused, "no retained limit refused a product string");
+}
+
+#[test]
+fn product_usage_entries_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (exchange, diagnostics) = crate::parse::parse(PRODUCT_STRING_LIMIT_SOURCE)
+        .expect("valid product exchange");
+    let arena = DecodeArena::new();
+    let refused = (0..512).any(|limit| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(PRODUCT_STRING_LIMIT_SOURCE, &arena, &policy)
+            .expect("root fits collection policy");
+        matches!(
+            crate::reader::decode_exchange(
+                PRODUCT_STRING_LIMIT_SOURCE,
+                exchange.clone(),
+                &diagnostics,
+                &ctx,
+                crate::reader::Packaging::Bare,
+            ),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == "step_product_usage_entries"
+        )
+    });
+    assert!(refused, "no collection limit refused product usage entries");
+}
+
 #[test]
 fn product_descriptions_transfer_from_product_and_definition() {
     let decoded = decode_inline(
