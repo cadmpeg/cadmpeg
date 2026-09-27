@@ -134,3 +134,31 @@ fn validation_sketch_owner_finding_id_refuses_retained_limit() {
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D sketch owner finding ID"));
 }
+
+#[test]
+fn validation_profile_face_group_index_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = limited_context(&arena);
+    let error = super::super::collect_index_set(
+        Some(&ctx),
+        [("Design/BulkStream.dat", 1)],
+        "index F3D decoded profile face groups",
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D decoded profile face groups"));
+}
+
+#[test]
+fn validation_face_group_member_index_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = limited_context(&arena);
+    let error = super::super::collect_index_set(
+        Some(&ctx),
+        [("Design/BulkStream.dat", 1, 2)],
+        "index F3D face group members",
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D face group members"));
+}
