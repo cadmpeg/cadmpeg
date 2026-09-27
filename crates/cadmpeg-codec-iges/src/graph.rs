@@ -122,13 +122,28 @@ pub(crate) struct ReferenceEdge {
     resolution: Resolution,
     expected: ReferenceExpectation,
 }
+
+struct TargetId(u32);
+
+impl std::fmt::Display for TargetId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "iges:entity:directory#{}", self.0)
+    }
+}
+
+impl Serialize for TargetId {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
 impl Serialize for ReferenceEdge {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
         struct Wire<'a> {
             kind: ReferenceOrigin,
             raw_pointer: i64,
-            target: Option<String>,
+            target: Option<TargetId>,
             resolution: Resolution,
             expected: &'a ReferenceExpectation,
             #[serde(skip_serializing_if = "Option::is_none")]
@@ -137,10 +152,7 @@ impl Serialize for ReferenceEdge {
         Wire {
             kind: self.origin,
             raw_pointer: self.raw_pointer,
-            target: self
-                .resolution
-                .target_sequence()
-                .map(|sequence| format!("iges:entity:directory#{sequence}")),
+            target: self.resolution.target_sequence().map(TargetId),
             resolution: self.resolution,
             expected: &self.expected,
             parameter_index: self.origin.parameter_index(),

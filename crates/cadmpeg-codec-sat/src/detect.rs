@@ -160,7 +160,10 @@ pub(crate) fn inspect(
             let text = match &parsed {
                 Ok((kernel, stream)) => {
                     header_attributes(kernel, stream.terminator.into(), &mut attributes);
-                    attributes.insert("scale".to_string(), format!("{}", stream.header.scale));
+                    attributes.insert(
+                        "scale".to_string(),
+                        format!("{}", stream.header.scale().get()),
+                    );
                     attributes.insert("records".to_string(), stream.records.len().to_string());
                     attributes.insert(
                         "terminator".to_string(),

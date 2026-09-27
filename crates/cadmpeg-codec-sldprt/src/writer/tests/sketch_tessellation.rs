@@ -398,8 +398,7 @@ fn semantic_writer_applies_ellipse_sketch_edits() {
                 let SketchGeometryDefinition::Ellipse {
                     center,
                     major_angle,
-                    major_radius,
-                    minor_radius,
+                    radii,
                     ..
                 } = definition
                 else {
@@ -407,8 +406,8 @@ fn semantic_writer_applies_ellipse_sketch_edits() {
                 };
                 center.v = 125.0;
                 *major_angle = Angle::new(0.25).unwrap();
-                *major_radius = Length::new(1500.0).unwrap();
-                *minor_radius = Length::new(500.0).unwrap();
+                radii.major_radius = Length::new(1500.0).unwrap();
+                radii.minor_radius = Length::new(500.0).unwrap();
             };
             definition.try_into()
         })
@@ -430,11 +429,10 @@ fn semantic_writer_applies_ellipse_sketch_edits() {
         SketchGeometryDefinition::Ellipse {
             center,
             major_angle: angle,
-            major_radius: actual_major_radius,
-            minor_radius: actual_minor_radius,
+            radii,
             bounds: None,
         } if *center == cadmpeg_ir::math::Point2 { u: 0.0, v: 125.0 }
-            && ((angle.get() - 0.25).abs() < EPS_SKETCH_ANGLE) && actual_major_radius.get() == 1500.0 && actual_minor_radius.get() == 500.0
+            && ((angle.get() - 0.25).abs() < EPS_SKETCH_ANGLE) && radii.major().get() == 1500.0 && radii.minor().get() == 500.0
     ));
 }
 

@@ -323,8 +323,8 @@ macro_rules! design_feature_kinds {
      required { $($required:ident => $required_lit:literal : $required_payload:ty),+ $(,)? }
      names { $($unit:ident => $unit_lit:literal),+ $(,)? }) => {
         /// Source feature-family name stored on a parameter scope.
-        #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-        #[serde(try_from = "String", into = "String")]
+        #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize)]
+        #[serde(try_from = "String")]
         pub(crate) enum DesignFeatureKind {
             $($variant,)+
             $($fixed,)+
@@ -436,6 +436,11 @@ macro_rules! design_feature_kinds {
         }
     };
 }
+impl Serialize for DesignFeatureKind {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
 
 design_feature_kinds! {
     data {
@@ -539,13 +544,29 @@ impl std::error::Error for DesignParameterScopePayloadError {}
 /// parameter scope.
 const HISTORY_STATE_ID_BACK_OFFSET: u64 = 8;
 
+#[cfg(test)]
+std::thread_local! {
+    static SCOPE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+#[derive(Debug, PartialEq)]
+struct ScopeCloneProbe;
+
+#[cfg(test)]
+impl Clone for ScopeCloneProbe {
+    fn clone(&self) -> Self {
+        SCOPE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self
+    }
+}
+
 /// Indexed sketch or construction-operation record that scopes parameters.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignParameterScopeSerde",
-    into = "DesignParameterScopeSerde"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "DesignParameterScopeSerde")]
 pub(crate) struct DesignParameterScope {
+    #[cfg(test)]
+    clone_probe: ScopeCloneProbe,
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
     /// Byte offset of the primary indexed record header.
@@ -2101,6 +2122,8 @@ impl DesignParameterScope {
             return Err(fail("reference_member_offsets/kind_offset"));
         }
         Ok(Self {
+            #[cfg(test)]
+            clone_probe: ScopeCloneProbe,
             id: draft.id,
             byte_offset: draft.byte_offset,
             class_tag: draft.class_tag,
@@ -2787,3 +2810,5 @@ impl DesignParameterScope {
 
 #[cfg(test)]
 mod tests;
+
+mod serialize;

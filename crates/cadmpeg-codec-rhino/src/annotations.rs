@@ -4,7 +4,7 @@
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
@@ -12,7 +12,7 @@ use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::Scan;
 use crate::loss::RhinoLossCode;
 use crate::objects::{ClassUserdata, UserdataDescriptor};
-use crate::settings::{utf16, MillimeterScale, Plane, UnitBinding};
+use crate::settings::{utf16, CoordinateLane, MillimeterScale, Plane, UnitBinding};
 use crate::wire::{scaled_coordinate, uuid, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
@@ -83,25 +83,25 @@ struct AnnotationRecord {
     source_uuid: String,
     kind: AnnotationKind,
     rich_text: String,
-    plane_origin: [f64; 3],
-    plane_x_axis: [f64; 3],
-    plane_y_axis: [f64; 3],
-    plane_z_axis: [f64; 3],
-    plane_equation: [f64; 4],
+    plane_origin: crate::settings::CoordinateLane<3>,
+    plane_x_axis: cadmpeg_ir::units::FiniteVector<3>,
+    plane_y_axis: cadmpeg_ir::units::FiniteVector<3>,
+    plane_z_axis: cadmpeg_ir::units::FiniteVector<3>,
+    plane_equation: crate::settings::CoordinateLane<4>,
     dimstyle_uuid: Option<String>,
     annotation_type: i32,
-    text_rectangle_width: f64,
-    text_rotation_radians: f64,
+    text_rectangle_width: FiniteReal,
+    text_rotation_radians: FiniteReal,
     horizontal_alignment: i32,
     vertical_alignment: i32,
     wrapped: bool,
-    horizontal_direction: [f64; 2],
+    horizontal_direction: CoordinateLane<2>,
     allow_text_scaling: bool,
     legacy_text_display_mode: Option<i32>,
     legacy_user_text: Option<String>,
     legacy_user_positioned_text: Option<bool>,
     legacy_style_index: Option<i32>,
-    legacy_text_height: Option<FiniteReal>,
+    legacy_text_height: Option<NonNegativeReal>,
     legacy_justification: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     v2_default_text: Option<String>,
@@ -109,7 +109,7 @@ struct AnnotationRecord {
     v2_text: Option<V2Text>,
     #[serde(skip_serializing_if = "Option::is_none")]
     v5_text_extra: Option<V5TextExtraRecord>,
-    leader_points: Vec<[f64; 2]>,
+    leader_points: Vec<[FiniteReal; 2]>,
     links: Vec<String>,
 }
 
@@ -119,7 +119,7 @@ struct V5TextExtraRecord {
     draw_mask: bool,
     mask_color_source: i32,
     mask_color: [u8; 4],
-    border_offset_factor: f64,
+    border_offset_factor: FiniteReal,
 }
 
 #[derive(Debug, Serialize)]
@@ -292,13 +292,12 @@ fn parse_v5_text_extra(
     let draw_mask = reader.bool()?;
     let mask_color_source = reader.i32()?;
     let mask_color = reader.array()?;
-    let border_offset_factor = reader.f64()?;
-    if !border_offset_factor.is_finite() {
-        return Err(FramingError::structural(
+    let border_offset_factor = FiniteReal::new(reader.f64()?).ok_or_else(|| {
+        FramingError::structural(
             reader.position() - 8,
             "V5 text mask border offset is not finite",
-        ));
-    }
+        )
+    })?;
     reader.skip_remaining()?;
     Ok(V5TextExtraRecord {
         parent_text_uuid: (!parent_text_uuid.is_nil()).then(|| parent_text_uuid.to_string()),
@@ -314,15 +313,24 @@ fn scaled_plane(
     scale: MillimeterScale,
     offset: usize,
 ) -> Result<Plane, FramingError> {
-    for coordinate in &mut plane.origin {
-        *coordinate = scaled_coordinate(*coordinate, scale)
-            .ok_or_else(|| FramingError::structural(offset, "scaled annotation plane is invalid"))?
-            .get();
+    let origin = plane.origin.get();
+    let mut scaled = [cadmpeg_ir::scalar::FiniteReal::ZERO; 3];
+    for index in 0..3 {
+        scaled[index] = scaled_coordinate(origin[index], scale).ok_or_else(|| {
+            FramingError::structural(offset, "scaled annotation plane is invalid")
+        })?;
     }
-    plane.equation[3] = scaled_coordinate(plane.equation[3], scale)
-        .ok_or_else(|| FramingError::structural(offset, "scaled annotation equation is invalid"))?
-        .get();
+    plane.origin = crate::settings::CoordinateLane::Admitted(scaled.into());
+    let constant = scaled_coordinate(plane.equation[3], scale)
+        .ok_or_else(|| FramingError::structural(offset, "scaled annotation equation is invalid"))?;
+    plane.equation = plane.equation.with_fourth(constant);
     Ok(plane)
+}
+
+fn plane_horizontal_direction(plane: Plane) -> CoordinateLane<2> {
+    let x = plane.xaxis.finite_components();
+    let y = plane.yaxis.finite_components();
+    CoordinateLane::Admitted([x[0], y[0]].into())
 }
 
 fn decode_annotation(
@@ -331,15 +339,14 @@ fn decode_annotation(
     archive: ArchiveVersion,
     scale: MillimeterScale,
     leader: bool,
-) -> Result<(crate::dimensions::Annotation, Vec<[f64; 2]>), FramingError> {
+) -> Result<(crate::dimensions::Annotation, Vec<[FiniteReal; 2]>), FramingError> {
     let mut outer = anonymous(data, range.clone(), archive, i32::from(leader))?;
     let mut annotation = crate::dimensions::annotation(data, &mut outer, archive)?;
     annotation.plane = scaled_plane(annotation.plane, scale, range.start)?;
-    annotation.text_rectangle_width = scaled_coordinate(annotation.text_rectangle_width, scale)
-        .ok_or_else(|| {
+    annotation.text_rectangle_width =
+        scaled_coordinate(annotation.text_rectangle_width.get(), scale).ok_or_else(|| {
             FramingError::structural(range.start, "scaled text rectangle width is invalid")
-        })?
-        .get();
+        })?;
     let mut points = Vec::new();
     if leader {
         let count = outer.i32()?;
@@ -352,29 +359,19 @@ fn decode_annotation(
         )?;
         for _ in 0..bytes / 16 {
             let point = [outer.f64()?, outer.f64()?];
-            if !point.iter().all(|value| value.is_finite()) {
-                return Err(FramingError::structural(
-                    outer.position() - 16,
-                    "leader point is not finite",
-                ));
-            }
+            let point = cadmpeg_ir::units::FiniteVector::new(point).ok_or_else(|| {
+                FramingError::structural(outer.position() - 16, "leader point is not finite")
+            })?;
             points.push([
-                scaled_coordinate(point[0], scale)
-                    .ok_or_else(|| {
-                        FramingError::structural(
-                            outer.position() - 16,
-                            "scaled leader point is invalid",
-                        )
-                    })?
-                    .get(),
-                scaled_coordinate(point[1], scale)
-                    .ok_or_else(|| {
-                        FramingError::structural(
-                            outer.position() - 8,
-                            "scaled leader point is invalid",
-                        )
-                    })?
-                    .get(),
+                scaled_coordinate(point[0], scale).ok_or_else(|| {
+                    FramingError::structural(
+                        outer.position() - 16,
+                        "scaled leader point is invalid",
+                    )
+                })?,
+                scaled_coordinate(point[1], scale).ok_or_else(|| {
+                    FramingError::structural(outer.position() - 8, "scaled leader point is invalid")
+                })?,
             ]);
         }
     }
@@ -764,12 +761,12 @@ pub(crate) fn install(
                     plane_equation: value.plane.equation,
                     dimstyle_uuid: None,
                     annotation_type: value.kind,
-                    text_rectangle_width: 0.0,
-                    text_rotation_radians: 0.0,
+                    text_rectangle_width: FiniteReal::ZERO,
+                    text_rotation_radians: FiniteReal::ZERO,
                     horizontal_alignment: 0,
                     vertical_alignment: 0,
                     wrapped: false,
-                    horizontal_direction: [value.plane.xaxis[0], value.plane.yaxis[0]],
+                    horizontal_direction: plane_horizontal_direction(value.plane),
                     allow_text_scaling: value.allow_text_scaling,
                     legacy_text_display_mode: Some(value.text_display_mode),
                     legacy_user_text: Some(value.user_text),
@@ -780,7 +777,11 @@ pub(crate) fn install(
                     v2_default_text: None,
                     v2_text: None,
                     v5_text_extra,
-                    leader_points: value.points,
+                    leader_points: value
+                        .points
+                        .into_iter()
+                        .map(cadmpeg_ir::units::FiniteVector::finite_components)
+                        .collect(),
                     links: vec![link],
                 });
             }
@@ -818,7 +819,12 @@ pub(crate) fn install(
                 };
                 let rich_text = crate::dimensions::v2_effective_text(&value.base);
                 let leader_points = if is_leader {
-                    value.base.points
+                    value
+                        .base
+                        .points
+                        .into_iter()
+                        .map(cadmpeg_ir::units::FiniteVector::finite_components)
+                        .collect()
                 } else {
                     Vec::new()
                 };
@@ -835,12 +841,12 @@ pub(crate) fn install(
                     plane_equation: value.base.plane.equation,
                     dimstyle_uuid: None,
                     annotation_type: value.base.kind,
-                    text_rectangle_width: 0.0,
-                    text_rotation_radians: 0.0,
+                    text_rectangle_width: FiniteReal::ZERO,
+                    text_rotation_radians: FiniteReal::ZERO,
                     horizontal_alignment: 0,
                     vertical_alignment: 0,
                     wrapped: false,
-                    horizontal_direction: [value.base.plane.xaxis[0], value.base.plane.yaxis[0]],
+                    horizontal_direction: plane_horizontal_direction(value.base.plane),
                     allow_text_scaling: false,
                     legacy_text_display_mode: None,
                     legacy_user_text: Some(value.base.user_text),
@@ -935,6 +941,7 @@ mod tests {
     };
     use crate::wire::Uuid;
     use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::scalar::FiniteReal;
     use cadmpeg_test_support::{wire, EditableDecodeResult};
 
     fn anonymous(minor: i32, suffix: &[u8]) -> Vec<u8> {
@@ -1236,7 +1243,7 @@ mod tests {
         assert_eq!(text.face_name, "Witness Sans");
         assert_eq!(text.font_weight, 700);
         assert_eq!(text.text_height, crate::test_support::finite(125.0));
-        assert_eq!(value.base.plane.origin, [10.0, 20.0, 30.0]);
+        assert_eq!(value.base.plane.origin.get(), [10.0, 20.0, 30.0]);
 
         let mut leader = v2_annotation_payload(
             6,
@@ -1622,6 +1629,8 @@ mod tests {
         )
         .expect("modern text class-data suffix is bounded");
         assert_eq!(text.rich_text, "rich");
+        assert_eq!(text.text_rectangle_width.get(), 1.0);
+        assert_eq!(text.text_rotation_radians.get(), 0.25);
         assert!(points.is_empty());
 
         let leader = modern_annotation(true);
@@ -1634,7 +1643,36 @@ mod tests {
         )
         .expect("modern leader class-data suffix is bounded");
         assert_eq!(leader.rich_text, "rich");
-        assert_eq!(points, [[1.0, 2.0], [3.0, 4.0]]);
+        assert_eq!(
+            points
+                .into_iter()
+                .map(|point| point.map(FiniteReal::get))
+                .collect::<Vec<_>>(),
+            [[1.0, 2.0], [3.0, 4.0]]
+        );
+    }
+
+    #[test]
+    fn modern_text_layout_refuses_nonfinite_rotation_at_source() {
+        let mut text = modern_annotation(false);
+        let rotation = 0.25_f64.to_le_bytes();
+        let offset = text
+            .windows(rotation.len())
+            .position(|window| window == rotation)
+            .expect("text rotation in source bytes");
+        text[offset..offset + 8].copy_from_slice(&f64::NAN.to_le_bytes());
+        let result = decode_annotation(
+            &text,
+            0..text.len(),
+            ArchiveVersion::V8,
+            crate::settings::MillimeterScale::IDENTITY,
+            false,
+        );
+        assert!(matches!(
+            result,
+            Err(crate::chunks::FramingError::Structural { offset: failed, message })
+                if failed == offset - 8 && message == "text layout contains a nonfinite value"
+        ));
     }
 
     #[test]
@@ -1666,9 +1704,9 @@ mod tests {
         .expect("valid legacy leader");
         assert_eq!(value.rich_text, "leader");
         assert_eq!(value.user_text, "formula");
-        assert_eq!(value.plane.origin, [10.0, 35.0, 30.0]);
+        assert_eq!(value.plane.origin.get(), [10.0, 35.0, 30.0]);
         assert_eq!(value.points, [[10.0, 20.0], [40.0, 80.0]]);
-        assert_eq!(value.text_height, crate::test_support::finite(15.0));
+        assert_eq!(value.text_height.get(), 15.0);
         assert_eq!(value.dimstyle_index, 12);
         assert_eq!(value.justification, (1 << 18) | 1);
     }
@@ -1696,9 +1734,9 @@ mod tests {
         .expect("valid direct legacy text");
         assert_eq!(value.rich_text, "legacy");
         assert_eq!(value.user_text, "legacy");
-        assert_eq!(value.plane.origin, [10.0, 35.0, 30.0]);
+        assert_eq!(value.plane.origin.get(), [10.0, 35.0, 30.0]);
         assert_eq!(value.points, [[10.0, 20.0], [40.0, 80.0]]);
-        assert_eq!(value.text_height, crate::test_support::finite(15.0));
+        assert_eq!(value.text_height.get(), 15.0);
         assert_eq!(value.dimstyle_index, -1);
         assert_eq!(value.justification, (1 << 18) | 1);
         assert!(!value.allow_text_scaling);
@@ -1734,6 +1772,6 @@ mod tests {
         assert!(value.draw_mask);
         assert_eq!(value.mask_color_source, 1);
         assert_eq!(value.mask_color, [0x11, 0x22, 0x33, 0x44]);
-        assert_eq!(value.border_offset_factor, 0.375);
+        assert_eq!(value.border_offset_factor.get(), 0.375);
     }
 }

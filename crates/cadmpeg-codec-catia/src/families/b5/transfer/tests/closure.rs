@@ -1125,16 +1125,19 @@ fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
         false,
     )
     .expect("valid revolution profile");
-    assert!(revolve_nurbs(
-        &profile,
-        [0.0; 3],
-        [0.0, 0.0, 1.0],
-        [0.0, 1.0e300],
-        [0.0, 1.0],
-        &"test record",
-        &mut crate::nurbs::LaneRefusals::new(),
-    )
-    .is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| revolve_nurbs(
+            ctx,
+            &profile,
+            [0.0; 3],
+            [0.0, 0.0, 1.0],
+            [[0.0, 1.0e300], [0.0, 1.0]],
+            &"test record",
+            &mut crate::nurbs::LaneRefusals::new(),
+        ))
+        .expect("service resource budget")
+        .is_none()
+    );
     let mut wide_knots = vec![0.0; 123];
     wide_knots.extend([1.0, 1.0]);
     let wide_profile = NurbsCurve::from_lanes(
@@ -1145,20 +1148,27 @@ fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
         false,
     )
     .expect("valid wide revolution profile");
-    assert!(revolve_nurbs(
-        &wide_profile,
-        [0.0; 3],
-        [0.0, 0.0, 1.0],
-        [0.0, 4096.0 * std::f64::consts::FRAC_PI_2],
-        [0.0, 1.0],
-        &"test record",
-        &mut crate::nurbs::LaneRefusals::new(),
-    )
-    .is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| revolve_nurbs(
+            ctx,
+            &wide_profile,
+            [0.0; 3],
+            [0.0, 0.0, 1.0],
+            [[0.0, 4096.0 * std::f64::consts::FRAC_PI_2], [0.0, 1.0]],
+            &"test record",
+            &mut crate::nurbs::LaneRefusals::new(),
+        ))
+        .expect("service resource budget")
+        .is_none()
+    );
 }
 
 #[test]
 fn body_kind_requires_unique_complete_loop_ownership() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("service decode context");
     let mut graph = B5Graph {
         complete: true,
         faces: vec![B5Face {
@@ -1203,13 +1213,16 @@ fn body_kind_requires_unique_complete_loop_ownership() {
     };
 
     assert_eq!(
-        ownership_plan(&graph)
+        ownership_plan(&ctx, &graph)
+            .expect("service decode")
             .expect("required invariant")
             .body_kind,
         BodyKind::Sheet
     );
     graph.faces[0].loops.push(2);
-    assert!(ownership_plan(&graph).is_none());
+    assert!(ownership_plan(&ctx, &graph)
+        .expect("service decode")
+        .is_none());
     graph.faces[0].loops.pop();
     graph.faces.push(B5Face {
         object_id: 5,
@@ -1217,7 +1230,9 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         loops: vec![2],
         terminal_control: None,
     });
-    assert!(ownership_plan(&graph).is_none());
+    assert!(ownership_plan(&ctx, &graph)
+        .expect("service decode")
+        .is_none());
     graph.faces.pop();
 
     graph.faces.push(B5Face {
@@ -1239,7 +1254,9 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         .vertices
         .insert_edge(7, [B5VertexRef::Raw(0), B5VertexRef::Raw(1)])
         .expect("edge references select existing rows");
-    let ownership = ownership_plan(&graph).expect("required invariant");
+    let ownership = ownership_plan(&ctx, &graph)
+        .expect("service decode")
+        .expect("required invariant");
     assert_eq!(ownership.face_components, vec![0, 1]);
     assert_eq!(ownership.components().len(), 2);
     assert_eq!(ownership.body_kind, BodyKind::Sheet);
@@ -1257,7 +1274,8 @@ fn body_kind_requires_unique_complete_loop_ownership() {
             controls: [1, 1, 1],
         });
     assert_eq!(
-        ownership_plan(&graph)
+        ownership_plan(&ctx, &graph)
+            .expect("service decode")
             .expect("required invariant")
             .body_kind,
         BodyKind::General
@@ -1270,7 +1288,9 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         .pop();
 
     graph.loops.get_mut(&6).expect("required invariant").members[0].edge = 3;
-    let ownership = ownership_plan(&graph).expect("required invariant");
+    let ownership = ownership_plan(&ctx, &graph)
+        .expect("service decode")
+        .expect("required invariant");
     assert_eq!(ownership.face_components, vec![0, 0]);
     assert_eq!(ownership.components().len(), 1);
     assert_eq!(ownership.body_kind, BodyKind::Solid);
@@ -1286,6 +1306,10 @@ fn body_kind_requires_unique_complete_loop_ownership() {
 
 #[test]
 fn loop_orientation_reverses_member_order_and_rejects_frustrated_parity() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("service decode context");
     let loop_ = |object_id: u32, edges: Vec<u32>| B5Loop {
         object_id,
         members: test_loop_members(&vec![0; edges.len()], &edges),
@@ -1320,9 +1344,11 @@ fn loop_orientation_reverses_member_order_and_rejects_frustrated_parity() {
     };
     graph.loops.get_mut(&2).expect("required loop").members[1].controls[2] = -1;
     let orientation = orient_loop_members(
+        &ctx,
         &graph,
         BTreeMap::from([(1, vec![false]), (2, vec![false; 3])]),
     )
+    .expect("service decode")
     .expect("required invariant");
     assert_eq!(orientation[&1].member_order().collect::<Vec<_>>(), vec![0]);
     assert_eq!(
@@ -1368,6 +1394,7 @@ fn loop_orientation_reverses_member_order_and_rejects_frustrated_parity() {
         (3, loop_(3, vec![2, 3])),
     ]);
     assert!(orient_loop_members(
+        &ctx,
         &graph,
         BTreeMap::from([
             (1, vec![false; 2]),
@@ -1375,6 +1402,7 @@ fn loop_orientation_reverses_member_order_and_rejects_frustrated_parity() {
             (3, vec![false; 2]),
         ]),
     )
+    .expect("service decode")
     .is_none());
 }
 

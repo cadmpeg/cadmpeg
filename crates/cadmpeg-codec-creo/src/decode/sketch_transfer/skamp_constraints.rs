@@ -803,8 +803,10 @@ mod tests {
         let ellipse = |bounds| SketchGeometryDefinition::Ellipse {
             center: Point2::new(0.0, 0.0),
             major_angle: Angle::ZERO,
-            major_radius: Length::new(2.0).expect("valid test fixture"),
-            minor_radius: Length::new(1.0).expect("valid test fixture"),
+            radii: cadmpeg_ir::sketches::EllipseRadii {
+                major_radius: Length::new(2.0).expect("valid test fixture"),
+                minor_radius: Length::new(1.0).expect("valid test fixture"),
+            },
             bounds,
         };
         let point_target = with_target(SketchGeometryDefinition::Point {

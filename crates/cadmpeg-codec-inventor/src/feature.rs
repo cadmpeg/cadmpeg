@@ -234,9 +234,24 @@ pub(crate) struct PmDcLinkedHeader {
     pub(crate) next: crate::pmdc::PmDcReference,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "String")]
 pub(crate) struct ClassId([u8; 16]);
+
+impl std::fmt::Display for ClassId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for byte in self.0 {
+            formatter.write_fmt(format_args!("{byte:02x}"))?;
+        }
+        Ok(())
+    }
+}
+
+impl Serialize for ClassId {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
 
 impl TryFrom<String> for ClassId {
     type Error = String;
@@ -267,11 +282,8 @@ impl From<ClassId> for String {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "PmDcFeatureLabelPayloadWire",
-    into = "PmDcFeatureLabelPayloadWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "PmDcFeatureLabelPayloadWire")]
 pub(crate) struct PmDcFeatureLabelPayload {
     save_version_major: u8,
     pub(crate) header: PmDcLinkedHeader,
@@ -279,6 +291,30 @@ pub(crate) struct PmDcFeatureLabelPayload {
     pub(crate) participants: PmDcReferenceList,
     name: NonBlankString,
     class_id: ClassId,
+}
+
+#[derive(Serialize)]
+struct PmDcFeatureLabelPayloadRef<'a> {
+    save_version_major: u8,
+    header: &'a PmDcLinkedHeader,
+    index: u32,
+    participants: &'a PmDcReferenceList,
+    name: &'a str,
+    class_id: &'a ClassId,
+}
+
+impl Serialize for PmDcFeatureLabelPayload {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        PmDcFeatureLabelPayloadRef {
+            save_version_major: self.save_version_major,
+            header: &self.header,
+            index: self.index,
+            participants: &self.participants,
+            name: self.name.as_str(),
+            class_id: &self.class_id,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -3712,5 +3748,77 @@ mod tests {
             lower
         );
         assert!(ClassId::try_from("AB".repeat(16)).is_err());
+    }
+
+    #[test]
+    fn class_id_native_writer_streams_the_existing_hex_bytes() {
+        #[derive(serde::Serialize)]
+        struct Record<'a> {
+            id: &'static str,
+            value: &'a ClassId,
+        }
+        let class_id = ClassId([0xab; 16]);
+        let owned = String::from(class_id);
+        assert_eq!(
+            serde_json::to_vec(&class_id).expect("borrowed class id"),
+            serde_json::to_vec(&owned).expect("owned class id")
+        );
+        let record = Record {
+            id: "inventor:pmdc:class-id#1",
+            value: &class_id,
+        };
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::json!({"id": record.id, "value": owned}),
+        );
+    }
+
+    #[test]
+    fn feature_label_native_writer_refuses_retained_limit_before_clone() {
+        #[derive(serde::Serialize)]
+        struct Record<'a> {
+            id: &'static str,
+            value: &'a PmDcFeatureLabelPayload,
+        }
+        let reference = crate::pmdc::PmDcReference {
+            index: 1,
+            qualified: false,
+        };
+        let label = PmDcFeatureLabelPayload::try_from(PmDcFeatureLabelPayloadWire {
+            save_version_major: 16,
+            header: PmDcLinkedHeader {
+                header_value: 0,
+                header_id: 18,
+                values: [0, 0],
+                owner: reference,
+                parent: reference,
+                next: reference,
+            },
+            index: 3,
+            participants: crate::pmdc::PmDcReferenceList::new(
+                8,
+                Some(crate::pmdc::PmDcListMetadata::U16([1, 2])),
+                vec![reference],
+            )
+            .expect("paired participants"),
+            name: "Extrude1".to_owned(),
+            class_id: "ab".repeat(16),
+        })
+        .expect("feature label");
+        let owned = PmDcFeatureLabelPayloadWire::from(label.clone());
+        assert_eq!(
+            serde_json::to_vec(&label).expect("borrowed feature label"),
+            serde_json::to_vec(&owned).expect("owned feature label")
+        );
+        let record = Record {
+            id: "inventor:pmdc:feature-label#1",
+            value: &label,
+        };
+        crate::pmdc::PMDC_LIST_CLONE_COUNT.with(|count| count.set(0));
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::json!({"id": record.id, "value": owned}),
+        );
+        crate::pmdc::PMDC_LIST_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }
 }

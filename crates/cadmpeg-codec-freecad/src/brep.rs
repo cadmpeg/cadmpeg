@@ -3956,9 +3956,9 @@ impl<'a> BinaryCursor<'a> {
 
     fn finite_vector3_f32(&mut self, label: &str) -> Result<FiniteVector3, CodecError> {
         Ok(FiniteVector3::from_components(
-            FiniteReal::from_finite_binary32(self.f32(label)?),
-            FiniteReal::from_finite_binary32(self.f32(label)?),
-            FiniteReal::from_finite_binary32(self.f32(label)?),
+            self.f32(label)?.into(),
+            self.f32(label)?.into(),
+            self.f32(label)?.into(),
         ))
     }
 

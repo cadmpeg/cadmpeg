@@ -296,8 +296,10 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
         SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
             center: Point2::new(30.0, 30.0),
             major_angle: Angle::new(0.0).unwrap(),
-            major_radius: Length::new(2.0).unwrap(),
-            minor_radius: Length::new(1.0).unwrap(),
+            radii: cadmpeg_ir::sketches::EllipseRadii {
+                major_radius: Length::new(2.0).unwrap(),
+                minor_radius: Length::new(1.0).unwrap(),
+            },
             bounds: None,
         })
         .unwrap(),
@@ -1054,8 +1056,10 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
             center: Point2::new(1.0, -1.0),
             major_angle: cadmpeg_ir::scalar::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
-            major_radius: Length::new(4.0).unwrap(),
-            minor_radius: Length::new(2.0).unwrap(),
+            radii: cadmpeg_ir::sketches::EllipseRadii {
+                major_radius: Length::new(4.0).unwrap(),
+                minor_radius: Length::new(2.0).unwrap(),
+            },
             bounds: Some([
                 cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
                 cadmpeg_ir::scalar::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
@@ -1371,29 +1375,28 @@ fn numerical_followup_profile_speed_bound_retains_common_weights() {
 }
 
 #[test]
-fn nurbs_speed_bound_refuses_unit_weight_allocation_limit() {
-    let curve = PcurveNurbs::from_lanes(
+fn implicit_profile_unit_weights_match_explicit_units() {
+    let points = vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)];
+    let implicit = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
-        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+        points.clone(),
         None,
         false,
     )
-    .unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 3;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::nurbs_speed_bound(&curve, Some(&ctx))
-        .expect_err("two unit weights exceed three admitted items after two points");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "f3d_nurbs_weights"
-                && limit.used == 2
-                && limit.additional == 2
-    ));
+    .expect("polynomial pcurve");
+    let explicit = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        points,
+        Some(vec![1.0, 1.0]),
+        false,
+    )
+    .expect("unit-weight pcurve");
+    assert_eq!(
+        super::nurbs_speed_bound(&implicit, None).expect("no session"),
+        super::nurbs_speed_bound(&explicit, None).expect("no session")
+    );
 }
 
 #[test]

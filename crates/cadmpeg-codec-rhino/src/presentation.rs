@@ -3,12 +3,13 @@
 
 use crate::loss::Diagnostics;
 use std::collections::BTreeMap;
+use std::fmt::Display;
 use std::ops::Range;
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteBinary32, FiniteReal};
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
@@ -211,10 +212,10 @@ fn serialize_material_textures<S: serde::Serializer>(
 struct PhysicallyBasedMaterialRecord {
     #[serde(flatten)]
     revision: PhysicallyBasedMaterialRevision,
-    base_color: [f32; 4],
+    base_color: [FiniteBinary32; 4],
     brdf: i32,
     subsurface: FiniteReal,
-    subsurface_scattering_color: [f32; 4],
+    subsurface_scattering_color: [FiniteBinary32; 4],
     subsurface_scattering_radius: FiniteReal,
     metallic: FiniteReal,
     specular: FiniteReal,
@@ -229,7 +230,7 @@ struct PhysicallyBasedMaterialRecord {
     opacity_ior: FiniteReal,
     opacity: FiniteReal,
     opacity_roughness: FiniteReal,
-    emission: [f32; 4],
+    emission: [FiniteBinary32; 4],
 }
 
 #[derive(Debug)]
@@ -513,24 +514,56 @@ impl Serialize for DimensionStyleDetails {
             Self::V5 { extra, .. } => extra.as_ref(),
             Self::Modern { .. } => None,
         };
-        let mut controls = self.controls().clone();
-        if let Some(extra) = extra {
-            controls.insert(
-                "v5_extra_dimension_scale".to_string(),
-                serde_json::json!(extra.dimension_scale),
-            );
-            controls.insert(
-                "v5_extra_dimension_scale_source".to_string(),
-                serde_json::json!(extra.dimension_scale_source),
-            );
-        }
         let mut map = serializer.serialize_map(None)?;
         map.serialize_entry("parent_style_uuid", &self.parent_style_uuid())?;
-        map.serialize_entry("controls", &controls)?;
+        map.serialize_entry(
+            "controls",
+            &DimensionStyleControls {
+                controls: self.controls(),
+                extra,
+            },
+        )?;
         if let Some(extra) = extra {
             map.serialize_entry("v5_extra", extra)?;
         }
         map.end()
+    }
+}
+
+struct DimensionStyleControls<'a> {
+    controls: &'a BTreeMap<String, serde_json::Value>,
+    extra: Option<&'a V5DimensionStyleExtraRecord>,
+}
+
+impl Serialize for DimensionStyleControls<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+
+        let mut map = serializer.serialize_map(None)?;
+        for (key, value) in self.controls {
+            if self.extra.is_some()
+                && (key == "v5_extra_dimension_scale" || key == "v5_extra_dimension_scale_source")
+            {
+                continue;
+            }
+            map.serialize_entry(key, value)?;
+        }
+        if let Some(extra) = self.extra {
+            map.serialize_entry("v5_extra_dimension_scale", &extra.dimension_scale)?;
+            map.serialize_entry(
+                "v5_extra_dimension_scale_source",
+                &extra.dimension_scale_source,
+            )?;
+        }
+        map.end()
+    }
+}
+
+struct DisplayRef<'a, T: Display>(&'a T);
+
+impl<T: Display> Serialize for DisplayRef<'_, T> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self.0)
     }
 }
 
@@ -960,7 +993,7 @@ impl Serialize for settings::LayerPerViewportSettings {
         use serde::ser::SerializeStruct;
 
         let mut record = serializer.serialize_struct("LayerPerViewportPresentationRecord", 7)?;
-        record.serialize_field("viewport_uuid", &self.viewport_id.to_string())?;
+        record.serialize_field("viewport_uuid", &DisplayRef(&self.viewport_id))?;
         record.serialize_field("settings_mask", &self.settings_mask())?;
         record.serialize_field("color", &self.color)?;
         record.serialize_field("plot_color", &self.plot_color)?;
@@ -1276,16 +1309,19 @@ fn object_attributes_presentation(
     }
 }
 
-fn read_color_f32(reader: &mut BoundedReader<'_>, label: &str) -> Result<[f32; 4], FramingError> {
+fn read_color_f32(
+    reader: &mut BoundedReader<'_>,
+    label: &str,
+) -> Result<[FiniteBinary32; 4], FramingError> {
     let offset = reader.position();
     let color = [reader.f32()?, reader.f32()?, reader.f32()?, reader.f32()?];
-    color
-        .iter()
-        .all(|value| value.is_finite())
-        .then_some(color)
-        .ok_or_else(|| {
-            FramingError::structural(offset, format!("{label} contains a non-finite component"))
-        })
+    let [Some(red), Some(green), Some(blue), Some(alpha)] = color.map(FiniteBinary32::new) else {
+        return Err(FramingError::structural(
+            offset,
+            format!("{label} contains a non-finite component"),
+        ));
+    };
+    Ok([red, green, blue, alpha])
 }
 
 fn finite3(reader: &mut BoundedReader<'_>, label: &str) -> Result<[FiniteReal; 3], FramingError> {

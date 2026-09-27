@@ -300,6 +300,11 @@ checked_scalar!(
     /// A finite dimensionless scalar.
     FiniteReal, value, true, "FiniteReal must be finite"
 );
+
+impl FiniteReal {
+    /// Negative one in a finite scalar lane.
+    pub const NEG_ONE: Self = Self(-1.0);
+}
 checked_scalar!(
     /// A positive finite dimensionless scalar.
     PositiveReal, value, value > 0.0, "PositiveReal must be positive and finite"
@@ -417,6 +422,18 @@ impl NonNegativeReal {
     /// Zero dimensionless scalar.
     pub const ZERO: Self = Self(0.0);
 
+    /// Narrow an admitted nonnegative value to a positive value.
+    ///
+    /// Finiteness is already admitted; only zero can refuse.
+    #[must_use]
+    pub const fn positive(self) -> Option<PositiveReal> {
+        if self.0 > 0.0 {
+            Some(PositiveReal(self.0))
+        } else {
+            None
+        }
+    }
+
     /// Admit a finite scalar as nonnegative. Only its sign remains to check.
     #[must_use]
     pub const fn from_finite(value: FiniteReal) -> Option<Self> {
@@ -458,6 +475,17 @@ impl PositiveAngle {
     pub const HALF_TURN: Self = Self(std::f64::consts::PI);
     /// Three quarter turns in radians.
     pub const THREE_QUARTER_TURN: Self = Self(3.0 * std::f64::consts::FRAC_PI_2);
+
+    /// Assign a finite scalar as an angle and require it to be positive.
+    /// Only the sign remains to check.
+    #[must_use]
+    pub const fn from_assigned_real(value: FiniteReal) -> Option<Self> {
+        if value.get() > 0.0 {
+            Some(Self(value.get()))
+        } else {
+            None
+        }
+    }
 }
 
 impl NonZeroAngle {
@@ -666,12 +694,6 @@ impl FiniteReal {
     pub const HALF: Self = Self(0.5);
     /// Two.
     pub(crate) const TWO: Self = Self(2.0);
-
-    /// Widen a finite binary32 scalar exactly to binary64.
-    #[must_use]
-    pub fn from_finite_binary32(value: FiniteBinary32) -> Self {
-        Self(f64::from(value.get()))
-    }
 
     /// Reverse the sign.
     #[must_use]

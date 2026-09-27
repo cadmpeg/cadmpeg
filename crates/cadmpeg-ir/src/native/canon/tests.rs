@@ -6,6 +6,99 @@ use serde::{Serialize, Serializer};
 use super::CanonValue;
 use crate::native::NativeNamespace;
 
+#[test]
+fn display_value_charges_escaped_chunks_and_formats_once() {
+    use std::cell::{Cell, RefCell};
+    use std::fmt::Write as _;
+
+    struct DisplayText<'a>(&'a Cell<usize>);
+
+    impl std::fmt::Display for DisplayText<'_> {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            self.0.set(self.0.get() + 1);
+            formatter.write_str("line\n")?;
+            formatter.write_str("quote\"")?;
+            formatter.write_char('\u{1}')
+        }
+    }
+
+    impl Serialize for DisplayText<'_> {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            serializer.collect_str(self)
+        }
+    }
+
+    #[derive(Serialize)]
+    struct Record<'a> {
+        id: &'static str,
+        value: DisplayText<'a>,
+    }
+
+    let calls = Cell::new(0);
+    let captured = RefCell::new(Vec::new());
+    let sink = |bytes: &[u8]| {
+        captured.borrow_mut().extend_from_slice(bytes);
+        Ok(())
+    };
+    let record = super::super::NativeRecord::from_typed_with_sink(
+        &Record {
+            id: "test:native:record#display",
+            value: DisplayText(&calls),
+        },
+        Some(&sink),
+    )
+    .expect("valid display record");
+    assert_eq!(calls.get(), 1);
+    assert_eq!(
+        record.field("value"),
+        Some(serde_json::json!("line\nquote\"\u{1}"))
+    );
+    assert_eq!(*captured.borrow(), serde_json::to_vec(&record).unwrap());
+}
+
+#[test]
+fn display_map_key_charges_escaped_chunks_and_formats_once() {
+    use std::cell::{Cell, RefCell};
+
+    struct Key<'a>(&'a Cell<usize>);
+
+    impl std::fmt::Display for Key<'_> {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            self.0.set(self.0.get() + 1);
+            formatter.write_str("key\n")
+        }
+    }
+
+    impl Serialize for Key<'_> {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            serializer.collect_str(self)
+        }
+    }
+
+    struct Record<'a>(&'a Cell<usize>);
+
+    impl Serialize for Record<'_> {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            let mut map = serializer.serialize_map(Some(2))?;
+            map.serialize_entry("id", "test:native:record#key")?;
+            map.serialize_entry(&Key(self.0), &7)?;
+            map.end()
+        }
+    }
+
+    let calls = Cell::new(0);
+    let captured = RefCell::new(Vec::new());
+    let sink = |bytes: &[u8]| {
+        captured.borrow_mut().extend_from_slice(bytes);
+        Ok(())
+    };
+    let record = super::super::NativeRecord::from_typed_with_sink(&Record(&calls), Some(&sink))
+        .expect("valid key record");
+    assert_eq!(calls.get(), 1);
+    assert_eq!(record.field("key\n"), Some(serde_json::json!(7)));
+    assert_eq!(*captured.borrow(), serde_json::to_vec(&record).unwrap());
+}
+
 enum ObjectShape {
     Map,
     Struct,
@@ -98,6 +191,39 @@ fn a_rejected_sequence_element_does_not_corrupt_rendered_json() {
     assert!(sequence.serialize_element(&Refused).is_err());
     sequence.serialize_element(&2).expect("second element");
     assert_eq!(sequence.end().expect("sequence").render(), "[1,2]");
+}
+
+#[test]
+fn raw_value_streams_unescaped_json_before_materialization() {
+    use serde_json::value::RawValue;
+    use std::cell::RefCell;
+
+    #[derive(Serialize)]
+    struct Record {
+        id: &'static str,
+        raw: Box<RawValue>,
+    }
+
+    let typed = Record {
+        id: "test:native:record#raw-stream",
+        raw: RawValue::from_string(r#"{ "text": "quoted \"value\"" }"#.to_owned())
+            .expect("valid raw JSON"),
+    };
+    let captured = RefCell::new(Vec::new());
+    let sink = |bytes: &[u8]| {
+        captured.borrow_mut().extend_from_slice(bytes);
+        Ok(())
+    };
+    let stored = super::super::NativeRecord::from_typed_with_sink(&typed, Some(&sink))
+        .expect("valid raw record");
+    assert_eq!(
+        *captured.borrow(),
+        serde_json::to_vec(&typed).expect("reference raw JSON bytes")
+    );
+    assert_eq!(
+        stored.field("raw"),
+        Some(serde_json::json!({"text": "quoted \"value\""}))
+    );
 }
 
 #[test]

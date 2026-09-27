@@ -119,6 +119,55 @@ fn numerical_followup_rational_search_retains_common_weight_scaling() {
 }
 
 #[test]
+fn implicit_unit_weights_match_explicit_unit_weights_in_curve_search() {
+    let poles = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
+    let implicit = NurbsCurve::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0], poles.clone(), None, false)
+        .expect("polynomial curve");
+    let explicit = NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        poles,
+        Some(vec![1.0, 1.0]),
+        false,
+    )
+    .expect("unit-weight rational curve");
+    assert_eq!(
+        nurbs_curve_speed_bound(&implicit),
+        nurbs_curve_speed_bound(&explicit)
+    );
+    assert_eq!(
+        nurbs_curve_parameter_near_point(&implicit, Point3::new(0.25, 0.0, 0.0), 0.0, 0.5),
+        nurbs_curve_parameter_near_point(&explicit, Point3::new(0.25, 0.0, 0.0), 0.0, 0.5)
+    );
+    let controls = [Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)];
+    assert_eq!(
+        nurbs_pcurve_contains_point(1, &[0.0, 0.0, 1.0, 1.0], &controls, None, controls[0], 0.0),
+        nurbs_pcurve_contains_point(
+            1,
+            &[0.0, 0.0, 1.0, 1.0],
+            &controls,
+            Some(&[1.0, 1.0]),
+            controls[0],
+            0.0
+        )
+    );
+}
+
+#[test]
+fn low_degree_second_derivative_basis_borrows_zeros() {
+    use std::borrow::Cow;
+
+    let constant = super::super::bspline_basis_second_derivative(&[], 0, 0, 0.0)
+        .expect("degree-zero second derivative");
+    let linear = super::super::bspline_basis_second_derivative(&[], 1, 0, 0.0)
+        .expect("degree-one second derivative");
+    assert!(matches!(constant, Cow::Borrowed(_)));
+    assert!(matches!(linear, Cow::Borrowed(_)));
+    assert_eq!(constant.as_ref(), &[0.0]);
+    assert_eq!(linear.as_ref(), &[0.0, 0.0]);
+}
+
+#[test]
 fn numerical_followup_periodic_mapping_stays_finite_and_canonical() {
     let curve = NurbsCurve::from_lanes(
         1,

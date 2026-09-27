@@ -51,11 +51,46 @@ struct NativeCard<'a> {
     line: &'a ScannedLine,
 }
 
+struct CardId(usize);
+
+impl std::fmt::Display for CardId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "iges:physical:card#{}", self.0)
+    }
+}
+
+impl Serialize for CardId {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+struct QuarantinedId {
+    section: &'static str,
+    sequence: u32,
+}
+
+impl std::fmt::Display for QuarantinedId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "iges:quarantine:{}#{}",
+            self.section, self.sequence
+        )
+    }
+}
+
+impl Serialize for QuarantinedId {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
 impl Serialize for NativeCard<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
         struct Wire<'a> {
-            id: String,
+            id: CardId,
             offset: u64,
             payload: &'a [u8],
             line_ending: &'a [u8],
@@ -70,7 +105,11 @@ impl Serialize for NativeCard<'_> {
         };
         let line = self.line.physical();
         Wire {
-            id: format!("iges:physical:card#{}", self.index + 1),
+            id: CardId(
+                self.index
+                    .checked_add(1)
+                    .ok_or_else(|| serde::ser::Error::custom("IGES card index exceeds usize"))?,
+            ),
             offset: line.offset,
             payload: &line.payload,
             line_ending: line.line_ending(),
@@ -90,7 +129,7 @@ impl Serialize for NativeQuarantinedRecord<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
         struct Wire<'a, D: Serialize> {
-            id: String,
+            id: QuarantinedId,
             section: &'static str,
             sequence: u32,
             source_offset: u64,
@@ -100,7 +139,10 @@ impl Serialize for NativeQuarantinedRecord<'_> {
         }
         match self {
             Self::Directory(record) => Wire {
-                id: record.identity(),
+                id: QuarantinedId {
+                    section: "directory",
+                    sequence: record.sequence,
+                },
                 section: "directory-entry",
                 sequence: record.sequence,
                 source_offset: record.source_offset,
@@ -110,7 +152,10 @@ impl Serialize for NativeQuarantinedRecord<'_> {
             }
             .serialize(serializer),
             Self::Parameter(record) => Wire {
-                id: record.identity(),
+                id: QuarantinedId {
+                    section: "parameter",
+                    sequence: record.sequence,
+                },
                 section: "parameter-data",
                 sequence: record.sequence,
                 source_offset: record.source_offset(),

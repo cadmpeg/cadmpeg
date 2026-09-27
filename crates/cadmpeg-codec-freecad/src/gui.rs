@@ -15,7 +15,7 @@ use cadmpeg_ir::presentation::{
     ViewPresentation,
 };
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::{FiniteBinary32, FiniteReal};
+use cadmpeg_ir::scalar::FiniteBinary32;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::SourceProvenance;
 
@@ -3994,11 +3994,11 @@ fn material_appearance(
             ),
             (
                 cadmpeg_core::nonblank_literal!("shininess"),
-                FiniteReal::from_finite_binary32(material.shininess),
+                material.shininess.into(),
             ),
             (
                 cadmpeg_core::nonblank_literal!("transparency"),
-                FiniteReal::from_finite_binary32(material.transparency),
+                material.transparency.into(),
             ),
         ]
         .into(),

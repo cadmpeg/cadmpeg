@@ -60,6 +60,19 @@ impl<const N: usize> FiniteVector<N> {
         &self.0
     }
 
+    /// Replace one coordinate with an admitted finite scalar.
+    ///
+    /// Only an out-of-range index can refuse; the resulting vector remains finite.
+    #[must_use]
+    pub fn with_component(
+        mut self,
+        index: usize,
+        value: crate::scalar::FiniteReal,
+    ) -> Option<Self> {
+        *self.0.get_mut(index)? = value.get();
+        Some(self)
+    }
+
     /// Return three consecutive admitted coordinates. Only the index range
     /// can refuse; the selected values retain their finite admission.
     pub fn three_at(self, start: usize) -> Option<FiniteVector<3>> {
@@ -68,6 +81,15 @@ impl<const N: usize> FiniteVector<N> {
             return None;
         };
         Some(FiniteVector([*first, *second, *third]))
+    }
+}
+
+impl FiniteVector<4> {
+    /// Replace the fourth admitted coordinate with an admitted scalar.
+    #[must_use]
+    pub fn with_fourth(mut self, value: crate::scalar::FiniteReal) -> Self {
+        self.0[3] = value.get();
+        self
     }
 }
 
@@ -379,12 +401,20 @@ impl UnitVector3 {
     #[must_use]
     pub fn normalized_with_length(value: Vector3) -> Option<(Self, PositiveReal)> {
         let length = PositiveReal::new(value.norm())?;
-        let direction = Self::new(Vector3::new(
+        let direction = Self::normalized_with_admitted_length(value, length)?;
+        Some((direction, length))
+    }
+
+    /// Normalize with a finite positive length already measured from `value`.
+    /// Component division and unit admission use the same arithmetic as
+    /// [`Self::normalized_with_length`].
+    #[must_use]
+    pub fn normalized_with_admitted_length(value: Vector3, length: PositiveReal) -> Option<Self> {
+        Self::new(Vector3::new(
             value.x / length.get(),
             value.y / length.get(),
             value.z / length.get(),
-        ))?;
-        Some((direction, length))
+        ))
     }
     /// Normalize by multiplying each component by the reciprocal of the
     /// Euclidean length. The length must be finite and nonzero, and the
@@ -437,6 +467,15 @@ impl UnitVector3 {
         let value = self.0;
         let largest = value.x.abs().max(value.y.abs()).max(value.z.abs());
         Self(divided_by_largest_component(value, largest))
+    }
+    /// Apply the largest-component chart with reciprocal multiplication to an
+    /// admitted unit direction. The chart keeps the unit admission.
+    #[must_use]
+    pub fn recharted_by_reciprocal(self) -> Self {
+        let value = self.0;
+        let largest = value.x.abs().max(value.y.abs()).max(value.z.abs());
+        let scaled = Vector3::new(value.x / largest, value.y / largest, value.z / largest);
+        Self(scaled.scale(1.0 / scaled.norm()))
     }
     /// Normalize a finite nonzero displacement with the binade chart used by
     /// [`crate::features::FiniteVector3::unit_nonzero`].
@@ -677,6 +716,11 @@ impl UnitVector2 {
 pub struct HypotDirection2(FiniteVector<2>);
 
 impl HypotDirection2 {
+    /// Positive first parameter axis.
+    pub const X_AXIS: Self = Self(FiniteVector([1.0, 0.0]));
+    /// Positive second parameter axis.
+    pub const Y_AXIS: Self = Self(FiniteVector([0.0, 1.0]));
+
     /// Divide by the finite nonzero length, preserving the quotient bits.
     #[must_use]
     pub fn normalized_with_length(value: [f64; 2]) -> Option<(Self, PositiveReal)> {
@@ -688,6 +732,29 @@ impl HypotDirection2 {
     /// Return the stored quotient.
     pub const fn get(self) -> [f64; 2] {
         self.0.get()
+    }
+
+    /// Apply the same `hypot` quotient to an admitted direction again.
+    /// The quotient is finite and nonzero, so it keeps this admission.
+    #[must_use]
+    pub fn recharted_by_hypot(self) -> Self {
+        let value = self.get();
+        let length = value[0].hypot(value[1]);
+        Self(FiniteVector([value[0] / length, value[1] / length]))
+    }
+
+    /// Rotate the admitted direction by a quarter turn.
+    #[must_use]
+    pub const fn quarter_turn(self) -> Self {
+        let [u, v] = self.get();
+        Self(FiniteVector([-v, u]))
+    }
+
+    /// Rotate the admitted direction by a reverse quarter turn.
+    #[must_use]
+    pub const fn reverse_quarter_turn(self) -> Self {
+        let [u, v] = self.get();
+        Self(FiniteVector([v, -u]))
     }
 }
 
@@ -1028,6 +1095,13 @@ impl From<FinitePoint2> for Point2 {
         value.0
     }
 }
+impl From<HypotDirection2> for FinitePoint2 {
+    /// Keep the finite coordinates of an admitted planar direction.
+    fn from(value: HypotDirection2) -> Self {
+        let [u, v] = value.get();
+        Self(Point2::new(u, v))
+    }
+}
 impl From<FinitePoint2> for FiniteVector<2> {
     /// Carry a finite point's coordinates. Every coordinate is finite, so
     /// nothing is checked.
@@ -1330,6 +1404,10 @@ mod tests {
         let input = Vector3::new(3.0, -4.0, 12.0);
         let (direction, length) = UnitVector3::normalized_with_length(input).unwrap();
         assert_eq!(length.get(), input.norm());
+        assert_eq!(
+            UnitVector3::normalized_with_admitted_length(input, length),
+            Some(direction)
+        );
         assert_eq!(
             [
                 direction.as_raw().x,
@@ -1802,6 +1880,17 @@ mod tests {
         ] {
             assert_eq!(UnitVector3::normalized_by_reciprocal(value), None);
         }
+    }
+
+    #[test]
+    fn reciprocal_rechart_keeps_component_bits_without_new_admission() {
+        let source = Vector3::new(3.0, 4.0, 5.0);
+        let admitted = UnitVector3::normalized_by_reciprocal(source).unwrap();
+        let raw = *admitted.as_raw();
+        let largest = raw.x.abs().max(raw.y.abs()).max(raw.z.abs());
+        let scaled = Vector3::new(raw.x / largest, raw.y / largest, raw.z / largest);
+        let expected = scaled.scale(1.0 / scaled.norm());
+        assert_eq!(*admitted.recharted_by_reciprocal().as_raw(), expected);
     }
 
     #[test]

@@ -3,7 +3,7 @@
 
 use crate::records::identity::Located;
 use cadmpeg_ir::scalar::PositiveReal;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
 use std::num::NonZeroU32;
 
 cadmpeg_core::named_optional_field!(
@@ -116,9 +116,37 @@ impl DesignThreadNominalSize {
 
 impl Serialize for DesignThreadConstruction {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        DesignThreadConstructionWire::try_from(self.clone())
-            .map_err(serde::ser::Error::custom)?
-            .serialize(serializer)
+        let nominal_size = self.nominal_size.value().map_err(|error| {
+            serde::ser::Error::custom(format_args!("nominal_size_text: {error}"))
+        })?;
+        let (form, trailing_reference) = match &self.form {
+            DesignThreadForm::Standard => (DesignThreadFormWire::Standard, None),
+            DesignThreadForm::Compact(reference) => {
+                (DesignThreadFormWire::Compact, reference.as_ref())
+            }
+            DesignThreadForm::StandardLegacy => (DesignThreadFormWire::StandardLegacy, None),
+            DesignThreadForm::CompactLegacy => (DesignThreadFormWire::CompactLegacy, None),
+        };
+        let mut fields = serializer.serialize_struct(
+            "DesignThreadConstructionWire",
+            if trailing_reference.is_some() { 13 } else { 11 },
+        )?;
+        fields.serialize_field("form", &form)?;
+        fields.serialize_field("designation_offset", &self.designation_offset)?;
+        fields.serialize_field("designation", self.designation.as_str())?;
+        fields.serialize_field("nominal_size_text", &self.nominal_size.0)?;
+        fields.serialize_field("nominal_size", &nominal_size)?;
+        fields.serialize_field("profile", self.profile.as_str())?;
+        fields.serialize_field("major_diameter", &self.diameters.major())?;
+        fields.serialize_field("minor_diameter", &self.diameters.minor())?;
+        fields.serialize_field("pitch", &self.pitch.get())?;
+        fields.serialize_field("pitch_diameter", &self.diameters.pitch())?;
+        if let Some(reference) = trailing_reference {
+            fields.serialize_field("trailing_reference_record_index", &reference.value.get())?;
+            fields.serialize_field("trailing_reference_offset", &reference.offset)?;
+        }
+        fields.serialize_field("face_group_record_indices", &self.face_group_record_indices)?;
+        fields.end()
     }
 }
 
@@ -173,37 +201,6 @@ struct DesignThreadConstructionWire {
     trailing_reference_offset: Option<u64>,
     /// Ordered counted face-selection groups referenced by the scope.
     face_group_record_indices: Vec<u32>,
-}
-
-impl TryFrom<DesignThreadConstruction> for DesignThreadConstructionWire {
-    type Error = String;
-    fn try_from(value: DesignThreadConstruction) -> Result<Self, Self::Error> {
-        let nominal_size = value
-            .nominal_size
-            .value()
-            .map_err(|error| format!("nominal_size_text: {error}"))?;
-        let (form, trailing_reference) = match value.form {
-            DesignThreadForm::Standard => (DesignThreadFormWire::Standard, None),
-            DesignThreadForm::Compact(reference) => (DesignThreadFormWire::Compact, reference),
-            DesignThreadForm::StandardLegacy => (DesignThreadFormWire::StandardLegacy, None),
-            DesignThreadForm::CompactLegacy => (DesignThreadFormWire::CompactLegacy, None),
-        };
-        Ok(Self {
-            form,
-            designation_offset: value.designation_offset,
-            designation: value.designation.as_str().to_owned(),
-            nominal_size_text: value.nominal_size.0,
-            nominal_size,
-            profile: value.profile.as_str().to_owned(),
-            major_diameter: value.diameters.major(),
-            minor_diameter: value.diameters.minor(),
-            pitch: value.pitch.get(),
-            pitch_diameter: value.diameters.pitch(),
-            trailing_reference_record_index: trailing_reference.map(|located| located.value.get()),
-            trailing_reference_offset: trailing_reference.map(|located| located.offset),
-            face_group_record_indices: value.face_group_record_indices,
-        })
-    }
 }
 
 impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {

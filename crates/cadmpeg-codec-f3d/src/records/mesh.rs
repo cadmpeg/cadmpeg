@@ -36,7 +36,7 @@ cadmpeg_core::named_optional_field!(
 cadmpeg_core::named_optional_field!(deserialize_tessellation_id, String, "tessellation_id");
 /// A hyphenated hexadecimal GUID with its original letter case.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
+#[serde(try_from = "String")]
 pub(crate) struct DesignGuidText(String);
 
 impl DesignGuidText {
@@ -62,9 +62,15 @@ impl From<DesignGuidText> for String {
 }
 
 /// A relaxed GUID with its original text.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
+#[serde(try_from = "String")]
 pub(crate) struct DesignRelaxedGuidText(cadmpeg_ir::ids::IdentityKey);
+
+impl Serialize for DesignRelaxedGuidText {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
 
 impl DesignRelaxedGuidText {
     /// The original GUID text.
@@ -584,7 +590,7 @@ impl DesignMeshSceneNode {
 
 /// A lowercase RFC 4122 version-4 UUID from the mesh registry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
+#[serde(try_from = "String")]
 pub(crate) struct DesignMeshUuid(DesignGuidText);
 
 impl DesignMeshUuid {

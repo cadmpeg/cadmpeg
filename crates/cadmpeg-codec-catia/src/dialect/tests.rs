@@ -85,7 +85,10 @@ fn every_registry_row_is_witnessed_by_the_fixture_it_cites() {
     let mut seen = BTreeSet::new();
     for witness in WITNESSES {
         let bytes = fixture_bytes(witness.fixture);
-        let scan = container::scan_bytes(bytes.as_slice());
+        let scan = crate::test_support::with_service_context(|ctx| {
+            container::scan_bytes(ctx, bytes.as_slice())
+        })
+        .expect("service resource budget");
         let matched = classify(&scan);
 
         assert_eq!(matched.format(), FORMAT, "{}", witness.fixture);
@@ -108,7 +111,10 @@ fn every_registry_row_is_witnessed_by_the_fixture_it_cites() {
 fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
     for witness in WITNESSES {
         let bytes = fixture_bytes(witness.fixture);
-        let scan = container::scan_bytes(bytes.as_slice());
+        let scan = crate::test_support::with_service_context(|ctx| {
+            container::scan_bytes(ctx, bytes.as_slice())
+        })
+        .expect("service resource budget");
         let matched = classify(&scan);
         let charged = dialect_loss(&matched).is_some();
 
@@ -164,7 +170,10 @@ fn the_totality_row_is_residual_without_a_substituted_grammar() {
 #[test]
 fn the_last_save_declaration_is_recorded_as_the_source_wrote_it() {
     let bytes = outer_body_catpart(&summary_preview_segment());
-    let scan = container::scan_bytes(bytes.as_slice());
+    let scan = crate::test_support::with_service_context(|ctx| {
+        container::scan_bytes(ctx, bytes.as_slice())
+    })
+    .expect("service resource budget");
     let matched = classify(&scan);
 
     assert_eq!(matched.declared()[DECLARED_VERSION], "5");
@@ -183,7 +192,10 @@ fn the_last_save_declaration_is_recorded_as_the_source_wrote_it() {
 fn an_absent_declaration_leaves_the_identity_intact() {
     for witness in WITNESSES {
         let bytes = fixture_bytes(witness.fixture);
-        let scan = container::scan_bytes(bytes.as_slice());
+        let scan = crate::test_support::with_service_context(|ctx| {
+            container::scan_bytes(ctx, bytes.as_slice())
+        })
+        .expect("service resource budget");
         let matched = classify(&scan);
         assert_eq!(
             matched.declared().is_empty(),

@@ -6555,11 +6555,11 @@ impl DirectedParameterRange {
 
     /// Construct an interval. Either ascending or descending direction is valid.
     pub fn new(values: [f64; 2]) -> Result<Self, ParameterRangeError> {
-        if values.iter().all(|value| value.is_finite()) && values[0] != values[1] {
-            Ok(Self(values))
-        } else {
-            Err(ParameterRangeError)
-        }
+        let [first, second] = values.map(FiniteReal::new);
+        let [Some(first), Some(second)] = [first, second] else {
+            return Err(ParameterRangeError);
+        };
+        Self::from_finite_endpoints([first, second])
     }
 
     /// Return the directed endpoints.

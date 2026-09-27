@@ -113,7 +113,7 @@ pub(super) fn decode(
             let Some(item) = exchange.records().get(&item_id) else {
                 continue;
             };
-            let scale = geometry.units.length([item_id, representation_id]);
+            let scale = geometry.units.length([item_id, representation_id]).get();
             let expected = expected_value(item_id, item, exchange, scale, &mut losses);
             let Some(expected) = expected else {
                 losses.push(StepLossCode::DecodeWarning.note(format!(
@@ -242,7 +242,7 @@ fn measure_scale(
                 let exponent = element.parameters.get(1)?.number()?;
                 let base =
                     super::geometry::unit_scale_mm(base, exchange, &mut BTreeSet::new())?;
-                Some(scale * base.powf(exponent))
+                Some(scale * base.get().powf(exponent))
             })
         })
         .unwrap_or_else(|| {

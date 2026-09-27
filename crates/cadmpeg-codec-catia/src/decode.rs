@@ -73,7 +73,7 @@ fn decode_over_routes(
     routes: &[families::Route],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Decoded, CodecError> {
-    let scan = container::scan_bytes(root.window());
+    let scan = container::scan_bytes(ctx, root.window())?;
     let matched = crate::dialect::classify(&scan);
 
     if ctx.container_only() {

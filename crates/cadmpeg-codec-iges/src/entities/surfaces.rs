@@ -382,20 +382,19 @@ fn homogeneous_bezier_spans(
     let Ok(degree) = usize::try_from(curve.degree()) else {
         return Ok(None);
     };
-    let count = curve.pole_count();
-    let weights = match curve.weights() {
+    let weights: Option<Vec<f64>> = match curve.weights() {
         Some(weights) => {
             if weights.iter().any(|weight| weight.get() <= 0.0) {
                 return Ok(None);
             }
-            weights.into_iter().map(NonZeroReal::get).collect()
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(weights.len() as u64, "iges_surface_closure_weights")?;
+            }
+            Some(weights.into_iter().map(NonZeroReal::get).collect())
         }
-        None => match ctx {
-            Some(ctx) => ctx.alloc_filled(count, 1.0, "iges_surface_closure_weights")?,
-            None => cadmpeg_core::decode::alloc_filled(count, 1.0, "iges_surface_closure_weights")?,
-        },
+        None => None,
     };
-    let Some(controls) = positive_controls(&curve.control_points(), &weights) else {
+    let Some(controls) = positive_controls(&curve.control_points(), weights.as_deref()) else {
         return Ok(None);
     };
     Ok(homogeneous_spans(degree, curve.knots(), controls))

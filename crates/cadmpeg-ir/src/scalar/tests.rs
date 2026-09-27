@@ -682,3 +682,14 @@ fn finite_binary32_preserves_source_precision_and_rejects_nonfinite_values() {
         .is_err());
     }
 }
+
+#[test]
+fn finite_binary32_widens_exactly_to_finite_real() {
+    use crate::scalar::{FiniteBinary32, FiniteReal};
+
+    for source in [0.1_f32, -0.0_f32, f32::MIN_POSITIVE, f32::MAX] {
+        let admitted = FiniteBinary32::new(source).unwrap();
+        let widened: FiniteReal = admitted.into();
+        assert_eq!(widened.get().to_bits(), f64::from(source).to_bits());
+    }
+}
