@@ -104,6 +104,11 @@ parser_vector_limit_test!(
     "step_parse_reference_entries"
 );
 parser_vector_limit_test!(
+    external_reference_id_set_refuses_collection_limit,
+    ANCHOR_VECTOR_SOURCE,
+    "step_parse_external_reference_ids"
+);
+parser_vector_limit_test!(
     reference_pending_vector_refuses_collection_limit,
     VECTOR_SOURCE,
     "step_parse_reference_pending"
