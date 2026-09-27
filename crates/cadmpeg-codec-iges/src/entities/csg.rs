@@ -410,7 +410,7 @@ pub(super) fn project(
             &mut BTreeSet::new(),
             &mut boolean_validity,
         );
-        let cyclic = super::directed_cycle(*sequence, &mut visited, |sequence| {
+        let cyclic = super::directed_cycle(*sequence, &mut visited, ctx, |sequence| {
             boolean_definitions
                 .get(&sequence)
                 .into_iter()
@@ -421,8 +421,7 @@ pub(super) fn project(
                     }
                     BooleanTerm::Operand(_) | BooleanTerm::Operation => None,
                 })
-                .collect()
-        });
+        })?;
         if !operands_valid || cyclic {
             losses.push(entity_loss(
                 entry,

@@ -2409,7 +2409,7 @@ pub(crate) fn project_geometry(
         global,
         Some(ctx),
         &sequences,
-    )
+    )?
     .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(
         ctx,

@@ -8,6 +8,7 @@ use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TokenValue, TrailingPointerAnalysis};
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::ids::AppearanceId;
 use cadmpeg_ir::topology::Color;
@@ -205,9 +206,9 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     global: &ProjectedGlobal,
-    _ctx: Option<&DecodeContext<'_>>,
+    ctx: Option<&DecodeContext<'_>>,
     sequences: &super::geometry::SourceSequences,
-) -> ProjectionOutcome {
+) -> Result<ProjectionOutcome, CodecError> {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -235,13 +236,12 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 310 && entry.form == 0)
     {
-        let cyclic = super::directed_cycle(entry.sequence, &mut visited_fonts, |sequence| {
+        let cyclic = super::directed_cycle(entry.sequence, &mut visited_fonts, ctx, |sequence| {
             text_fonts
                 .get(&sequence)
                 .and_then(|font| font.supersedes)
                 .into_iter()
-                .collect()
-        });
+        })?;
         let target_valid = text_fonts.get(&entry.sequence).is_some_and(|font| {
             font.supersedes
                 .is_none_or(|target| text_fonts.contains_key(&target))
@@ -648,7 +648,7 @@ pub(super) fn project(
         });
     }
 
-    ProjectionOutcome { decoded, losses }
+    Ok(ProjectionOutcome { decoded, losses })
 }
 
 #[cfg(test)]

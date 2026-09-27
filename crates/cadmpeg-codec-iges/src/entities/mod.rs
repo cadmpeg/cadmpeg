@@ -2,6 +2,10 @@
 //! Typed IGES entity accessors and neutral projection.
 
 use std::collections::BTreeSet;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+
+use crate::decode_resource::{insert_optional_btree_set, reserve_optional_vec_growth};
 
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::ids::CurveId;
@@ -12,39 +16,50 @@ use crate::directory::DirectoryEntry;
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 
-fn directed_cycle(
+fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
     sequence: u32,
     visited: &mut BTreeSet<u32>,
-    successors: impl Fn(u32) -> Vec<u32>,
-) -> bool {
+    ctx: Option<&DecodeContext<'_>>,
+    successors: impl Fn(u32) -> I,
+) -> Result<bool, CodecError> {
     if visited.contains(&sequence) {
-        return false;
+        return Ok(false);
     }
     let mut active = BTreeSet::new();
-    let mut stack = vec![(sequence, false)];
+    let mut stack = Vec::new();
+    reserve_optional_vec_growth(ctx, &mut stack, 1, "iges cycle stack")?;
+    stack.push((sequence, false));
     while let Some((current, expanded)) = stack.pop() {
+        if let Some(ctx) = ctx {
+            ctx.charge_work(1, "iges cycle work")?;
+        }
         if expanded {
             active.remove(&current);
-            visited.insert(current);
+            insert_optional_btree_set(ctx, visited, current, "iges cycle visited")?;
             continue;
         }
         if visited.contains(&current) {
             continue;
         }
-        if !active.insert(current) {
-            return true;
+        if !insert_optional_btree_set(ctx, &mut active, current, "iges cycle active")? {
+            return Ok(true);
         }
+        reserve_optional_vec_growth(ctx, &mut stack, 1, "iges cycle stack")?;
         stack.push((current, true));
-        for target in successors(current).into_iter().rev() {
+        for target in successors(current).rev() {
+            if let Some(ctx) = ctx {
+                ctx.charge_work(1, "iges cycle work")?;
+            }
             if active.contains(&target) {
-                return true;
+                return Ok(true);
             }
             if !visited.contains(&target) {
+                reserve_optional_vec_growth(ctx, &mut stack, 1, "iges cycle stack")?;
                 stack.push((target, false));
             }
         }
     }
-    false
+    Ok(false)
 }
 
 fn pointer(record: &ParameterRecord, index: usize) -> Option<u32> {
