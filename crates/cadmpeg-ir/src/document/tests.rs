@@ -736,3 +736,35 @@ fn a_stated_null_is_refused_on_every_feature_key_written_by_omission() {
     let error = CadIr::from_json(&json).unwrap_err().to_string();
     assert!(error.contains("missing field `suppressed`"), "{error}");
 }
+
+#[test]
+fn geometry_snapshot_matches_filtered_model_wire_without_intermediate_tree() {
+    let model = super::Model::default();
+    let mut baseline = serde_json::to_value(&model).expect("model serializes");
+    let object = baseline.as_object_mut().expect("model is an object");
+    object.retain(|key, _| {
+        matches!(
+            key.as_str(),
+            "bodies"
+                | "regions"
+                | "shells"
+                | "faces"
+                | "loops"
+                | "coedges"
+                | "edges"
+                | "vertices"
+                | "points"
+                | "surfaces"
+                | "curves"
+                | "procedural_curves"
+                | "procedural_surfaces"
+                | "pcurves"
+                | "tessellations"
+        )
+    });
+    object.insert("kind".into(), serde_json::json!("brep"));
+    assert_eq!(
+        serde_json::to_string(&model.geometry_snapshot("brep")).expect("snapshot serializes"),
+        serde_json::to_string(&baseline).expect("baseline serializes"),
+    );
+}
