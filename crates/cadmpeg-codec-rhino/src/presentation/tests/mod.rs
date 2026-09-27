@@ -1744,6 +1744,7 @@ fn rendering_attributes_transfer_mapping_channels_and_flags() {
     let bytes = anonymous(3, &rendering_body);
 
     let value = rendering_attributes(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         Some(0..bytes.len()),
         ArchiveVersion::V8,
@@ -1803,6 +1804,50 @@ fn object_rendering_with_negative_minor(
     anonymous(outer_minor, &body)
 }
 
+fn projected_rendering_collection_refusal(limit: u64) -> FramingError {
+    let bytes = object_rendering_with_negative_minor(3, 0, Some(0), Some(1));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("root bytes admitted");
+    rendering_attributes(
+        &ctx,
+        &bytes,
+        Some(0..bytes.len()),
+        ArchiveVersion::V8,
+        settings::RenderingAttributesKind::Object,
+    )
+    .expect_err("rendering projection exceeds collection limit")
+}
+
+#[test]
+fn projected_rendering_materials_refuse_collection_limit() {
+    assert!(matches!(
+        projected_rendering_collection_refusal(0),
+        FramingError::Resource(refusal)
+            if refusal.operation == "Rhino projected rendering materials"
+    ));
+}
+
+#[test]
+fn projected_rendering_mappings_refuse_collection_limit() {
+    assert!(matches!(
+        projected_rendering_collection_refusal(1),
+        FramingError::Resource(refusal)
+            if refusal.operation == "Rhino projected rendering mappings"
+    ));
+}
+
+#[test]
+fn projected_rendering_channels_refuse_collection_limit() {
+    assert!(matches!(
+        projected_rendering_collection_refusal(2),
+        FramingError::Resource(refusal)
+            if refusal.operation == "Rhino projected rendering channels"
+    ));
+}
+
 #[test]
 fn rendering_attributes_reject_negative_nested_version_minors() {
     for (label, bytes) in [
@@ -1824,6 +1869,7 @@ fn rendering_attributes_reject_negative_nested_version_minors() {
         ),
     ] {
         let result = rendering_attributes(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             Some(0..bytes.len()),
             ArchiveVersion::V8,
@@ -1856,6 +1902,7 @@ fn rendering_material_reference_consumes_obsolete_mapping_channels() {
     let bytes = anonymous(3, &rendering_body);
 
     let value = rendering_attributes(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         Some(0..bytes.len()),
         ArchiveVersion::V8,

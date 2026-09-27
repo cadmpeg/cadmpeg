@@ -1259,18 +1259,22 @@ fn object_attributes_presentation(
     source_uuid: String,
     losses: &mut Vec<LossNote>,
 ) -> Result<ObjectAttributesPresentation, CodecError> {
-    let rendering = rendering_attributes(
+    let rendering = match rendering_attributes(
+        ctx,
         data,
         attributes.rendering_range.clone(),
         archive,
         settings::RenderingAttributesKind::Object,
-    )
-    .unwrap_or_else(|error| {
-        losses.push(RhinoLossCode::PresentationRecordDropped.note(format!(
-            "object rendering attributes at offset {source_offset} could not be transferred: {error}"
-        )));
-        RenderingAttributesPresentation::default()
-    });
+    ) {
+        Ok(rendering) => rendering,
+        Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
+        Err(error) => {
+            losses.push(RhinoLossCode::PresentationRecordDropped.note(format!(
+                "object rendering attributes at offset {source_offset} could not be transferred: {error}"
+            )));
+            RenderingAttributesPresentation::default()
+        }
+    };
     let (user_strings, attribute_user_strings) = first_user_string_records(
         ctx,
         data,
@@ -3980,6 +3984,7 @@ fn parse_rendering_mapping_channel(
 }
 
 fn rendering_attributes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     range: Option<Range<usize>>,
     archive: ArchiveVersion,
@@ -4006,7 +4011,14 @@ fn rendering_attributes(
             1 << 16,
             reader.position() - 4,
         )?;
-        let mut presentation = RenderingAttributesPresentation::default();
+        let mut presentation = RenderingAttributesPresentation {
+            materials: crate::chunks::admitted_vec(
+                ctx,
+                material_count,
+                "Rhino projected rendering materials",
+            )?,
+            ..RenderingAttributesPresentation::default()
+        };
         for _ in 0..material_count {
             let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
             let parsed = (|| {
@@ -4071,6 +4083,11 @@ fn rendering_attributes(
                 1 << 16,
                 reader.position() - 4,
             )?;
+            presentation.mappings = crate::chunks::admitted_vec(
+                ctx,
+                mapping_count,
+                "Rhino projected rendering mappings",
+            )?;
             for _ in 0..mapping_count {
                 let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
                 let mut value = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
@@ -4095,7 +4112,11 @@ fn rendering_attributes(
                     1 << 16,
                     value.position() - 4,
                 )?;
-                let mut channels = Vec::with_capacity(channel_count);
+                let mut channels = crate::chunks::admitted_vec(
+                    ctx,
+                    channel_count,
+                    "Rhino projected rendering channels",
+                )?;
                 for _ in 0..channel_count {
                     let (channel, next_offset) = parse_rendering_mapping_channel(
                         data,
@@ -4814,19 +4835,23 @@ pub(crate) fn install(
                 || format!("index-{}-offset-{}", layer.index, layer.source.range.start),
                 |id| id.to_string(),
             );
-        let rendering = rendering_attributes(
+        let rendering = match rendering_attributes(
+            ctx,
             scan.data,
             layer.rendering_range.clone(),
             scan.archive,
             settings::RenderingAttributesKind::Layer,
-        )
-        .unwrap_or_else(|error| {
-            losses.push(RhinoLossCode::PresentationRecordDropped.note(format!(
-                "layer rendering attributes at offset {} could not be transferred: {error}",
-                layer.source.range.start
-            )));
-            RenderingAttributesPresentation::default()
-        });
+        ) {
+            Ok(rendering) => rendering,
+            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
+            Err(error) => {
+                losses.push(RhinoLossCode::PresentationRecordDropped.note(format!(
+                    "layer rendering attributes at offset {} could not be transferred: {error}",
+                    layer.source.range.start
+                )));
+                RenderingAttributesPresentation::default()
+            }
+        };
         layers.push(LayerPresentationRecord {
             id: format!("rhino:presentation:layer#{key}"),
             source_offset: layer.source.range.start as u64,
