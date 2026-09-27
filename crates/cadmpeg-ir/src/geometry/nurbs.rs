@@ -1467,6 +1467,28 @@ impl NurbsCurve {
         Ok(())
     }
 
+    /// Map admitted curve poles in place without allocating another pole lane.
+    /// A refusal leaves earlier poles changed. Use this when the caller discards
+    /// the curve after a refusal.
+    pub fn map_control_points_in_place<E>(
+        &mut self,
+        mut map: impl FnMut(FinitePoint3) -> Result<FinitePoint3, E>,
+    ) -> Result<(), E> {
+        match &mut self.poles {
+            NurbsPoles3::Polynomial { points } => {
+                for point in points {
+                    *point = map(*point)?;
+                }
+            }
+            NurbsPoles3::Rational { points } => {
+                for pole in points {
+                    pole.point = map(pole.point)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Rational weights in pole order.
     pub fn weights(&self) -> Option<Vec<NonZeroReal>> {
         match &self.poles {
