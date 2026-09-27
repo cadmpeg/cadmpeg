@@ -107,6 +107,27 @@ fn with_entity_limit<R>(
 }
 
 #[test]
+fn full_source_attributes_refuse_collection_limit() {
+    let mut scan = scan_with_objects(&[]);
+    scan.metadata.settings.current_layer = Some(7);
+    let refusal = with_collection_limit(0, |ctx| {
+        super::full_source_attributes(ctx, &scan)
+            .expect_err("one source attribute exceeds zero collection items")
+    });
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino full source attributes"
+    ));
+    let attributes = super::full_source_attributes(
+        &cadmpeg_test_support::service_decode_context(),
+        &scan,
+    )
+    .expect("source attributes admitted by service profile");
+    assert_eq!(attributes.get("current_layer"), Some(&"7".to_string()));
+}
+
+#[test]
 fn point_commit_propagates_entity_limit() {
     let object = object_record_with_payload(
         ArchiveVersion::V5,
