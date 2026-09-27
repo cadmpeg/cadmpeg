@@ -299,6 +299,63 @@ fn record_retained_transfer(
     Ok(())
 }
 
+fn annotate_representation(
+    ctx: &DecodeContext<'_>,
+    summary: &mut ContainerSummary,
+    representation: Representation,
+    source_size: usize,
+) -> Result<(), CodecError> {
+    if representation == Representation::FixedAscii {
+        return Ok(());
+    }
+    summary.container_kind = representation.container_kind();
+    if let Some(note) = summary
+        .notes
+        .iter_mut()
+        .find(|note| note.starts_with("source_bytes="))
+    {
+        *note = format_retained(
+            ctx,
+            format_args!("source_bytes={source_size}"),
+            "iges normalized source byte note",
+        )?;
+    }
+    reserve_vec_growth(
+        ctx,
+        &mut summary.notes,
+        1,
+        "iges normalized representation notes",
+    )?;
+    summary.notes.push(format_retained(
+        ctx,
+        format_args!("normalized_representation={}", representation.as_str()),
+        "iges normalized representation note",
+    )?);
+    Ok(())
+}
+
+fn mark_quarantined_placements(
+    ctx: &DecodeContext<'_>,
+    projection: &mut entities::geometry::Projection,
+    directory: &[directory::DirectoryEntry],
+    quarantined: &BTreeSet<u32>,
+) -> Result<(), CodecError> {
+    for entry in directory.iter().filter(|entry| {
+        matches!(entry.entity_type, 408 | 420)
+            && entry.form == 0
+            && quarantined.contains(&entry.sequence)
+    }) {
+        insert_optional_btree_map(
+            Some(ctx),
+            &mut projection.placement_rejections,
+            entry.sequence,
+            entities::structure::PlacementRejection::MissingRecord,
+            "iges quarantined placement rejections",
+        )?;
+    }
+    Ok(())
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ParseMode {
     Decode,
@@ -476,20 +533,7 @@ pub(crate) fn inspect(
         graph::summary_notes(&parse.references, ctx)?,
     )?;
     summary.losses = losses;
-    if representation != Representation::FixedAscii {
-        summary.container_kind = representation.container_kind();
-        if let Some(note) = summary
-            .notes
-            .iter_mut()
-            .find(|note| note.starts_with("source_bytes="))
-        {
-            *note = format!("source_bytes={source_size}");
-        }
-        summary.notes.push(format!(
-            "normalized_representation={}",
-            representation.as_str()
-        ));
-    }
+    annotate_representation(ctx, &mut summary, representation, source_size)?;
     Ok(summary)
 }
 
@@ -560,16 +604,12 @@ fn decode_with_occurrence_limits(
         }
         None => entities::geometry::Projection::default(),
     };
-    for entry in parse.directory.iter().filter(|entry| {
-        matches!(entry.entity_type, 408 | 420)
-            && entry.form == 0
-            && quarantined_parameter_sequences.contains(&entry.sequence)
-    }) {
-        projection.placement_rejections.insert(
-            entry.sequence,
-            entities::structure::PlacementRejection::MissingRecord,
-        );
-    }
+    mark_quarantined_placements(
+        ctx,
+        &mut projection,
+        &parse.directory,
+        &quarantined_parameter_sequences,
+    )?;
     let semantic_structure_admitted = (!ctx.container_only()).then_some(&projection);
     charge_work(ctx, parameter_tokens, "iges_native_projection")?;
     let native::NativeStoreResult {
