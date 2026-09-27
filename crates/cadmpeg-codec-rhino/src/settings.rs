@@ -2048,6 +2048,7 @@ fn read_segments(payload: &mut BoundedReader<'_>) -> Result<(), FramingError> {
 
 /// Parses one direct embedded linetype object.
 pub(crate) fn parse_direct_linetype<'a>(
+    ctx: &DecodeContext<'_>,
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
@@ -2072,6 +2073,12 @@ pub(crate) fn parse_direct_linetype<'a>(
             uuid(&mut payload)?;
         }
     } else {
+        crate::chunks::reserve_admitted_vec(
+            ctx,
+            &mut children,
+            1,
+            "Rhino embedded linetype checksum children",
+        )?;
         children.push(skip_model_attributes(
             data,
             &mut payload,
@@ -2141,6 +2148,7 @@ pub(crate) fn parse_direct_linetype<'a>(
 
 /// Parses one direct embedded section-style object.
 pub(crate) fn parse_direct_section_style<'a>(
+    ctx: &DecodeContext<'_>,
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
@@ -2154,12 +2162,19 @@ pub(crate) fn parse_direct_section_style<'a>(
             "unsupported embedded section-style version",
         ));
     }
-    let mut children = vec![skip_model_attributes(
+    let mut children = Vec::new();
+    crate::chunks::reserve_admitted_vec(
+        ctx,
+        &mut children,
+        1,
+        "Rhino embedded section-style checksum children",
+    )?;
+    children.push(skip_model_attributes(
         data,
         &mut payload,
         archive,
         warnings,
-    )?];
+    )?);
     // ON_SectionStyle::Read() is an ordered cascade, not a general item
     // loop. Each recognized item reads the next item ID and only the later
     // IDs in the cascade can consume it. A duplicate or out-of-order ID has
@@ -2224,8 +2239,14 @@ pub(crate) fn parse_direct_section_style<'a>(
         item = payload.u8()?;
     }
     if item == 11 {
+        crate::chunks::reserve_admitted_vec(
+            ctx,
+            &mut children,
+            1,
+            "Rhino embedded section-style checksum children",
+        )?;
         children.push(
-            parse_direct_linetype(data, &mut payload, archive, warnings)?
+            parse_direct_linetype(ctx, data, &mut payload, archive, warnings)?
                 .source
                 .range,
         );
@@ -2484,8 +2505,13 @@ fn parse_layer(
         }
         if version.1 > 12 && item == 33 {
             push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
-            layer.embedded_linetype =
-                Some(parse_direct_linetype(data, &mut reader, archive, warnings)?);
+            layer.embedded_linetype = Some(parse_direct_linetype(
+                ctx,
+                data,
+                &mut reader,
+                archive,
+                warnings,
+            )?);
             // The direct linetype has no neutral CADIR owner. Preserve the
             // complete layer record so its segment tags and other fields
             // remain available through source fidelity.
@@ -2501,6 +2527,7 @@ fn parse_layer(
             if item == 35 {
                 push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
                 layer.embedded_section_style = Some(parse_direct_section_style(
+                    ctx,
                     data,
                     &mut reader,
                     archive,
