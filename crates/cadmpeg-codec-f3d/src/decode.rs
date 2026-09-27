@@ -2205,10 +2205,11 @@ impl<'a> F3dDecodeSession<'a> {
             report_scope,
         } = session_state;
         let mut report = crate::report::build_decode_report(
+            ctx,
             scan,
             cadmpeg_ir::report::decode::DecodeTransfer::full(true),
             geometry_losses(&brep),
-        );
+        )?;
         if undecoded_candidates != 0 {
             report
                 .losses
@@ -2289,10 +2290,11 @@ impl<'a> F3dDecodeSession<'a> {
                 ir,
                 source_attributes,
                 report: crate::report::build_decode_report(
+                    ctx,
                     scan,
                     cadmpeg_ir::report::decode::DecodeTransfer::full(false),
                     container_losses(scan),
-                ),
+                )?,
                 report_scope,
                 unknowns,
                 admitted_entities,
@@ -3079,10 +3081,11 @@ fn decode_scanned_document<'a>(
         let annotations = populate_annotations(&ir, scan, &F3dNative::default(), None, &unknowns)?;
         let source_image = preserve_source_image(scan);
         let mut report = crate::report::build_decode_report(
+            ctx,
             scan,
             cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
             container_losses(scan),
-        );
+        )?;
         match crate::xref::decode(ctx, scan) {
             Ok(Some(table)) => apply_assembly_classification(&mut report, scan, &table),
             Ok(None) => {}
