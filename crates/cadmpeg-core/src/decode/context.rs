@@ -13,7 +13,7 @@ use super::policy::{
     DecodePolicy, DECOMPRESSED_PER_EXPAND_BASE, DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE,
 };
 use super::space::{ByteRange, SpaceId};
-use super::view::View;
+use super::view::{u64_from_index, View};
 
 #[derive(Clone, Copy)]
 enum LimitScope {
@@ -289,6 +289,20 @@ impl<'a> DecodeContext<'a> {
         operation: &'static str,
     ) -> Result<(), CodecError> {
         self.budget.charge_collection_items(count, operation)
+    }
+
+    /// Charges new vector items before fallibly reserving their capacity.
+    pub fn try_reserve_items<T>(
+        &self,
+        values: &mut Vec<T>,
+        additional: usize,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        let count = u64_from_index(additional);
+        self.charge_collection_items(count, operation)?;
+        values
+            .try_reserve(additional)
+            .map_err(|_| self.budget.collection_allocation_failed(count, operation))
     }
 
     /// Enters one recursive nesting level until the returned guard is dropped.
@@ -610,7 +624,8 @@ impl<'a> ExpandWriter<'_, 'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ByteRange, DecodeArena, DecodeContext, DecodePolicy};
+    use super::{u64_from_index, ByteRange, DecodeArena, DecodeContext, DecodePolicy};
+    use crate::decode::{ResourceDimension, ResourceFailure};
     use std::io::{self, Cursor, Read, Seek, SeekFrom};
 
     struct RewindFails(Cursor<Vec<u8>>);
@@ -665,6 +680,29 @@ mod tests {
         assert_eq!(limit.used, usize::MAX as u64);
         assert_eq!(limit.additional, 1);
         assert!(ctx.register_slice(root, range).is_err());
+        assert!(ctx.finish_session().is_err());
+    }
+
+    #[test]
+    fn collection_reservation_reports_allocator_refusal_after_charge() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"x", &arena, &policy)
+            .expect("test input fits the policy");
+        let mut values = Vec::<u8>::new();
+        let error = ctx
+            .try_reserve_items(&mut values, usize::MAX, "test collection reservation")
+            .expect_err("a vector cannot reserve more than isize::MAX bytes");
+        assert!(matches!(
+            error,
+            crate::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.reason == ResourceFailure::AllocationFailed
+                    && limit.used == 0
+                    && limit.additional == u64_from_index(usize::MAX)
+                    && limit.operation == "test collection reservation"
+        ));
         assert!(ctx.finish_session().is_err());
     }
 }
