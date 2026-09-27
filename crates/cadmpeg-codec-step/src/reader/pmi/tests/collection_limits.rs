@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Collection admissions in the STEP PMI reader.
 
+use std::collections::BTreeMap;
+
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
@@ -84,5 +86,63 @@ fn pmi_target_items_refuse_collection_limit() {
         CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_pmi_target_items"
+    ));
+}
+
+fn source_index_refusal(limit: u64, group_operation: &'static str, item_operation: &'static str) -> CodecError {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits collection policy");
+    let mut groups = BTreeMap::new();
+    super::super::push_source_id(
+        &mut groups,
+        1,
+        &1u64,
+        Some(&ctx),
+        group_operation,
+        item_operation,
+    )
+    .expect_err("source group exceeds the limit")
+}
+
+#[test]
+fn pmi_point_source_groups_refuse_collection_limit() {
+    assert!(matches!(
+        source_index_refusal(0, "step_pmi_point_source_groups", "step_pmi_point_source_items"),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_pmi_point_source_groups"
+    ));
+}
+
+#[test]
+fn pmi_point_source_items_refuse_collection_limit() {
+    assert!(matches!(
+        source_index_refusal(1, "step_pmi_point_source_groups", "step_pmi_point_source_items"),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_pmi_point_source_items"
+    ));
+}
+
+#[test]
+fn pmi_curve_source_groups_refuse_collection_limit() {
+    assert!(matches!(
+        source_index_refusal(0, "step_pmi_curve_source_groups", "step_pmi_curve_source_items"),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_pmi_curve_source_groups"
+    ));
+}
+
+#[test]
+fn pmi_curve_source_items_refuse_collection_limit() {
+    assert!(matches!(
+        source_index_refusal(1, "step_pmi_curve_source_groups", "step_pmi_curve_source_items"),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_pmi_curve_source_items"
     ));
 }
