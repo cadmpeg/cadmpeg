@@ -329,7 +329,7 @@ pub(crate) fn project_sketch_design(
                 let poles = geometry.poles();
                 SketchGeometry::nurbs(cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                     geometry.degree(),
-                    geometry.knots(),
+                    geometry.knots_copy(ctx)?,
                     poles
                         .points()
                         .map(|point| Point2::new(point.x, point.y))
@@ -403,6 +403,7 @@ pub(crate) fn project_sketch_design(
 
 /// Project non-planar Design sketch curves into model-space spatial sketches.
 pub(crate) fn project_spatial_sketch_design(
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     placements: &[DesignSketchPlacement],
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
@@ -630,7 +631,7 @@ pub(crate) fn project_spatial_sketch_design(
                         let poles = geometry.poles();
                         let curve3d = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                             geometry.degree(),
-                            geometry.knots(),
+                            geometry.knots_copy(ctx)?,
                             poles
                                 .points()
                                 .map(|point| transform_point(placement, point))

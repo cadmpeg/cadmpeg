@@ -213,7 +213,7 @@ fn generated_f3d_rewrites_native_sketch_nurbs_values() {
                     geometry.degree(),
                     0.125,
                     8,
-                    geometry.knots(),
+                    geometry.knots().to_vec(),
                     poles,
                 )
                 .expect("edited NURBS"),

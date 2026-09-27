@@ -1894,7 +1894,7 @@ impl Serialize for SketchCurveGeometry {
                 degree: u32,
                 fit_tolerance: f64,
                 scalar_width: u32,
-                knots: SliceColumn<'a, FiniteReal, f64>,
+                knots: &'a [f64],
                 weights: NurbsWeights<'a>,
                 control_points: NurbsPoints<'a>,
             },
@@ -1938,7 +1938,7 @@ impl Serialize for SketchCurveGeometry {
                 degree: geometry.degree,
                 fit_tolerance: geometry.fit_tolerance.get(),
                 scalar_width: 8,
-                knots: SliceColumn::new(&geometry.knots, |knot| knot.get()),
+                knots: &geometry.knots,
                 weights: NurbsWeights(&geometry.poles),
                 control_points: NurbsPoints(&geometry.poles),
             },
@@ -2074,7 +2074,7 @@ impl SketchCurveGeometry {
 pub(crate) struct SketchNurbsGeometry {
     degree: u32,
     fit_tolerance: NonNegativeLength,
-    knots: Vec<FiniteReal>,
+    knots: Vec<f64>,
     poles: SketchNurbsPoles,
 }
 
@@ -2115,10 +2115,9 @@ impl SketchNurbsGeometry {
         if !knots_nondecreasing(&knots) {
             return Err("sketch NURBS knots must be nondecreasing".into());
         }
-        let knots = knots
-            .into_iter()
-            .map(|knot| FiniteReal::new(knot).ok_or("sketch NURBS knot is not finite".into()))
-            .collect::<Result<Vec<_>, String>>()?;
+        if knots.iter().any(|knot| !knot.is_finite()) {
+            return Err("sketch NURBS knot is not finite".into());
+        }
         Ok(Self {
             degree,
             fit_tolerance,
@@ -2135,8 +2134,26 @@ impl SketchNurbsGeometry {
         self.fit_tolerance
     }
 
-    pub(crate) fn knots(&self) -> Vec<f64> {
-        self.knots.iter().map(|knot| knot.get()).collect()
+    pub(crate) fn knots(&self) -> &[f64] {
+        &self.knots
+    }
+
+    pub(crate) fn knots_copy(
+        &self,
+        ctx: Option<&DecodeContext<'_>>,
+    ) -> Result<Vec<f64>, CodecError> {
+        let mut knots = Vec::new();
+        if let Some(ctx) = ctx {
+            let operation = "copy F3D sketch NURBS knots";
+            let count = u64::try_from(self.knots.len())
+                .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+            ctx.charge_collection_items(count, operation)?;
+            knots
+                .try_reserve(self.knots.len())
+                .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
+        }
+        knots.extend_from_slice(&self.knots);
+        Ok(knots)
     }
 
     pub(crate) fn knot_count(&self) -> usize {
@@ -2311,7 +2328,7 @@ impl From<SketchCurveGeometry> for SketchCurveGeometryWire {
                     degree: geometry.degree,
                     fit_tolerance: geometry.fit_tolerance.get(),
                     scalar_width: 8,
-                    knots: geometry.knots.into_iter().map(FiniteReal::get).collect(),
+                    knots: geometry.knots,
                     weights,
                     control_points,
                 }
@@ -2608,6 +2625,24 @@ mod tests {
                 serde_json::to_vec(&owned).unwrap()
             );
         }
+    }
+
+    #[test]
+    fn sketch_nurbs_knot_copy_refuses_collection_limit() {
+        let geometry: SketchCurveGeometry =
+            serde_json::from_value(native_nurbs_wire(&[])).unwrap();
+        let SketchCurveGeometry::Nurbs { geometry, .. } = geometry else {
+            panic!("fixture must contain a NURBS curve");
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 3;
+        let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .unwrap()
+            .0;
+        let error = geometry.knots_copy(Some(&ctx)).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+            if refusal.operation == "copy F3D sketch NURBS knots"));
     }
 
     #[test]
