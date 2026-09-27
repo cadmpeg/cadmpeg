@@ -46,6 +46,179 @@ fn parameter_resolver_directory_index_refuses_collection_limit_before_insert() {
 }
 
 #[test]
+fn parameter_resolver_edges_refuse_each_collection_limit_before_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let directory = [directory_target(1, 116)];
+    for (cap, operation) in [
+        (1, "iges parameter resolver edge groups"),
+        (2, "iges parameter resolver edges"),
+        (3, "iges parameter resolver graph groups"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
+        let resolution = resolver.resolve(
+            1,
+            0,
+            3,
+            ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
+            |_| true,
+        );
+        let result = if cap == 3 {
+            assert_eq!(resolution.unwrap(), None);
+            resolver.append_to(&mut BTreeMap::new())
+        } else {
+            resolution.map(|_| ())
+        };
+        assert!(matches!(
+            result,
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.used == cap
+                    && limit.additional == 1
+                    && limit.operation == operation
+        ));
+    }
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
+    assert_eq!(
+        resolver
+            .resolve(
+                1,
+                0,
+                3,
+                ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
+                |_| true,
+            )
+            .unwrap(),
+        None
+    );
+    let mut graph = BTreeMap::new();
+    resolver.append_to(&mut graph).unwrap();
+    assert_eq!(graph[&1].len(), 1);
+}
+
+#[test]
+fn parameter_resolver_expected_forms_refuse_collection_limit_before_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let directory = [directory_target(1, 116)];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
+    let result = resolver.resolve_type(1, 0, 1, 116, &[0]);
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 1
+                && limit.additional == 1
+                && limit.operation == "iges parameter resolver expected forms"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
+    assert_eq!(resolver.resolve_type(1, 0, 1, 116, &[0]).unwrap(), Some(1));
+}
+
+#[test]
+fn parameter_resolver_append_refuses_existing_graph_edge_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let directory = [directory_target(1, 116)];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
+    assert_eq!(
+        resolver
+            .resolve(
+                1,
+                0,
+                3,
+                ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
+                |_| true,
+            )
+            .unwrap(),
+        None
+    );
+    let mut graph = BTreeMap::from([(1, Vec::new())]);
+    let result = resolver.append_to(&mut graph);
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 3
+                && limit.additional == 1
+                && limit.operation == "iges appended parameter reference edges"
+    ));
+    assert!(graph[&1].is_empty());
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
+    assert_eq!(
+        resolver
+            .resolve(
+                1,
+                0,
+                3,
+                ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
+                |_| true,
+            )
+            .unwrap(),
+        None
+    );
+    let mut graph = BTreeMap::from([(1, Vec::new())]);
+    resolver.append_to(&mut graph).unwrap();
+    assert_eq!(graph[&1].len(), 1);
+}
+
+#[test]
+fn parameter_resolver_expected_types_refuse_collection_limit_before_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let directory = [directory_target(1, 116)];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
+    let result = resolver.resolve_any_of(1, 0, 1, (212, 312, &[402]), |_| false);
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 1
+                && limit.additional == 1
+                && limit.operation == "iges parameter resolver expected types"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
+    assert_eq!(
+        resolver
+            .resolve_any_of(1, 0, 1, (212, 312, &[402]), |_| false)
+            .unwrap(),
+        None
+    );
+}
+
+#[test]
 fn parameter_pointers_enforce_the_seven_digit_sequence_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
@@ -59,48 +232,56 @@ fn parameter_pointers_enforce_the_seven_digit_sequence_limit() {
     let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
 
     assert_eq!(
-        resolver.resolve(
-            1,
-            0,
-            i64::from(maximum),
-            ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
-            |_| true
-        ),
+        resolver
+            .resolve(
+                1,
+                0,
+                i64::from(maximum),
+                ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
+                |_| true
+            )
+            .unwrap(),
         Some(maximum)
     );
     assert_eq!(
-        resolver.resolve(
-            1,
-            1,
-            i64::from(maximum) + 1,
-            ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
-            |_| true
-        ),
+        resolver
+            .resolve(
+                1,
+                1,
+                i64::from(maximum) + 1,
+                ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
+                |_| true
+            )
+            .unwrap(),
         None
     );
     assert_eq!(
-        resolver.resolve_negative(
-            2,
-            0,
-            -i64::from(maximum),
-            ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
-            |_| true
-        ),
+        resolver
+            .resolve_negative(
+                2,
+                0,
+                -i64::from(maximum),
+                ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
+                |_| true
+            )
+            .unwrap(),
         Some(maximum)
     );
     assert_eq!(
-        resolver.resolve_negative(
-            2,
-            1,
-            -i64::from(maximum) - 1,
-            ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
-            |_| true
-        ),
+        resolver
+            .resolve_negative(
+                2,
+                1,
+                -i64::from(maximum) - 1,
+                ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
+                |_| true
+            )
+            .unwrap(),
         None
     );
 
     let mut graph = BTreeMap::new();
-    resolver.append_to(&mut graph);
+    resolver.append_to(&mut graph).unwrap();
     assert_eq!(
         graph[&1]
             .iter()
@@ -129,27 +310,31 @@ fn semantic_expectation_labels_are_preserved_in_pointer_losses() {
     let directory = [directory_target(1, 116)];
     let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
     assert_eq!(
-        resolver.resolve(
-            1,
-            1,
-            3,
-            ReferenceExpectation::Named(ExpectationLabel::Type124Transformation),
-            |target| target.entity_type == 124,
-        ),
+        resolver
+            .resolve(
+                1,
+                1,
+                3,
+                ReferenceExpectation::Named(ExpectationLabel::Type124Transformation),
+                |target| target.entity_type == 124,
+            )
+            .unwrap(),
         None
     );
     assert_eq!(
-        resolver.resolve_negative(
-            1,
-            2,
-            -3,
-            ReferenceExpectation::Named(ExpectationLabel::Type310Form0FontDefinition),
-            |target| target.entity_type == 310 && target.form == 0,
-        ),
+        resolver
+            .resolve_negative(
+                1,
+                2,
+                -3,
+                ReferenceExpectation::Named(ExpectationLabel::Type310Form0FontDefinition),
+                |target| target.entity_type == 310 && target.form == 0,
+            )
+            .unwrap(),
         None
     );
     let mut graph = BTreeMap::new();
-    resolver.append_to(&mut graph);
+    resolver.append_to(&mut graph).unwrap();
     let source = point_file();
     let scan = crate::card::scan(&source).unwrap();
     let messages = super::losses(&graph, &scan, &[])
@@ -332,14 +517,18 @@ fn zero_pointer_absence_creates_no_reference_edge() {
     let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
     let expectation = ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry);
     assert_eq!(
-        resolver.resolve(1, 1, 0, expectation.clone(), |_| panic!("absent target")),
+        resolver
+            .resolve(1, 1, 0, expectation.clone(), |_| panic!("absent target"))
+            .unwrap(),
         None
     );
     assert_eq!(
-        resolver.resolve_negative(1, 2, 0, expectation, |_| panic!("absent target")),
+        resolver
+            .resolve_negative(1, 2, 0, expectation, |_| panic!("absent target"))
+            .unwrap(),
         None
     );
-    resolver.append_to(&mut graph);
+    resolver.append_to(&mut graph).unwrap();
     assert!(graph[&1].is_empty());
     assert!(super::summary_notes(&graph).is_empty());
 }

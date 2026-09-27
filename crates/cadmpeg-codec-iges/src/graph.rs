@@ -17,7 +17,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 
 /// The largest sequence address representable by an IGES pointer constant.
 const MAX_POINTER_SEQUENCE: i64 = 9_999_999;
@@ -190,15 +190,16 @@ struct Candidate {
     target_sequence: Option<u32>,
 }
 
-pub(crate) struct ParameterResolver<'a> {
+pub(crate) struct ParameterResolver<'a, 'ctx> {
+    ctx: &'a DecodeContext<'ctx>,
     directory: BTreeMap<u32, &'a DirectoryEntry>,
     edges: RefCell<BTreeMap<u32, Vec<ReferenceEdge>>>,
 }
 
-impl<'a> ParameterResolver<'a> {
+impl<'a, 'ctx> ParameterResolver<'a, 'ctx> {
     pub(crate) fn new(
         directory: &'a [DirectoryEntry],
-        ctx: &DecodeContext<'_>,
+        ctx: &'a DecodeContext<'ctx>,
     ) -> Result<Self, CodecError> {
         let mut index = BTreeMap::new();
         for entry in directory {
@@ -211,6 +212,7 @@ impl<'a> ParameterResolver<'a> {
             )?;
         }
         Ok(Self {
+            ctx,
             directory: index,
             edges: RefCell::new(BTreeMap::new()),
         })
@@ -227,9 +229,9 @@ impl<'a> ParameterResolver<'a> {
         raw_pointer: i64,
         expected: ReferenceExpectation,
         accepts: impl FnOnce(&DirectoryEntry) -> bool,
-    ) -> Option<u32> {
+    ) -> Result<Option<u32>, CodecError> {
         if raw_pointer == 0 {
-            return None;
+            return Ok(None);
         }
         let target_sequence = positive_pointer_sequence(raw_pointer);
         self.resolve_sequence(
@@ -249,9 +251,9 @@ impl<'a> ParameterResolver<'a> {
         raw_pointer: i64,
         expected: ReferenceExpectation,
         accepts: impl FnOnce(&DirectoryEntry) -> bool,
-    ) -> Option<u32> {
+    ) -> Result<Option<u32>, CodecError> {
         if raw_pointer == 0 {
-            return None;
+            return Ok(None);
         }
         let target_sequence = negative_pointer_sequence(raw_pointer);
         self.resolve_sequence(
@@ -272,25 +274,31 @@ impl<'a> ParameterResolver<'a> {
         target_sequence: Option<u32>,
         expected: ReferenceExpectation,
         accepts: impl FnOnce(&DirectoryEntry) -> bool,
-    ) -> Option<u32> {
+    ) -> Result<Option<u32>, CodecError> {
         let target = target_sequence.and_then(|sequence| self.directory.get(&sequence).copied());
         let resolution = classify(target_sequence, target, accepts);
-        self.edges
-            .borrow_mut()
-            .entry(source)
-            .or_default()
-            .push(ReferenceEdge {
-                origin: ReferenceOrigin::Parameter {
-                    index: parameter_index,
-                },
-                raw_pointer,
-                resolution,
-                expected,
-            });
-        match resolution {
+        let mut graph = self.edges.borrow_mut();
+        let edges = match graph.entry(source) {
+            Entry::Vacant(slot) => {
+                self.ctx
+                    .charge_collection_items(1, "iges parameter resolver edge groups")?;
+                slot.insert(Vec::new())
+            }
+            Entry::Occupied(slot) => slot.into_mut(),
+        };
+        reserve_vec_growth(self.ctx, edges, 1, "iges parameter resolver edges")?;
+        edges.push(ReferenceEdge {
+            origin: ReferenceOrigin::Parameter {
+                index: parameter_index,
+            },
+            raw_pointer,
+            resolution,
+            expected,
+        });
+        Ok(match resolution {
             Resolution::Resolved(sequence) => Some(sequence),
             _ => None,
-        }
+        })
     }
 
     pub(crate) fn resolve_type(
@@ -300,14 +308,80 @@ impl<'a> ParameterResolver<'a> {
         raw_pointer: i64,
         entity_type: i64,
         forms: &[i64],
-    ) -> Option<u32> {
+    ) -> Result<Option<u32>, CodecError> {
+        if raw_pointer == 0 {
+            return Ok(None);
+        }
+        let mut expected_forms = reserve_vec(
+            self.ctx,
+            forms.len(),
+            "iges parameter resolver expected forms",
+        )?;
+        expected_forms.extend_from_slice(forms);
         let expected = ReferenceExpectation::Type {
             entity_type,
-            forms: forms.to_vec(),
+            forms: expected_forms,
         };
         self.resolve(source, parameter_index, raw_pointer, expected, |target| {
             target.entity_type == entity_type && (forms.is_empty() || forms.contains(&target.form))
         })
+    }
+
+    pub(crate) fn resolve_negative_type(
+        &self,
+        source: u32,
+        parameter_index: usize,
+        raw_pointer: i64,
+        entity_type: i64,
+        forms: &[i64],
+    ) -> Result<Option<u32>, CodecError> {
+        if raw_pointer == 0 {
+            return Ok(None);
+        }
+        let mut expected_forms = reserve_vec(
+            self.ctx,
+            forms.len(),
+            "iges parameter resolver expected forms",
+        )?;
+        expected_forms.extend_from_slice(forms);
+        let expected = ReferenceExpectation::Type {
+            entity_type,
+            forms: expected_forms,
+        };
+        self.resolve_negative(source, parameter_index, raw_pointer, expected, |target| {
+            target.entity_type == entity_type && (forms.is_empty() || forms.contains(&target.form))
+        })
+    }
+
+    pub(crate) fn resolve_any_of(
+        &self,
+        source: u32,
+        parameter_index: usize,
+        raw_pointer: i64,
+        types: (i64, i64, &[i64]),
+        accepts: impl FnOnce(&DirectoryEntry) -> bool,
+    ) -> Result<Option<u32>, CodecError> {
+        if raw_pointer == 0 {
+            return Ok(None);
+        }
+        let (first, second, rest) = types;
+        let mut expected_rest = reserve_vec(
+            self.ctx,
+            rest.len(),
+            "iges parameter resolver expected types",
+        )?;
+        expected_rest.extend_from_slice(rest);
+        self.resolve(
+            source,
+            parameter_index,
+            raw_pointer,
+            ReferenceExpectation::AnyOf {
+                first,
+                second,
+                rest: expected_rest,
+            },
+            accepts,
+        )
     }
 
     pub(crate) fn resolve_any(
@@ -315,7 +389,7 @@ impl<'a> ParameterResolver<'a> {
         source: u32,
         parameter_index: usize,
         raw_pointer: i64,
-    ) -> Option<u32> {
+    ) -> Result<Option<u32>, CodecError> {
         self.resolve(
             source,
             parameter_index,
@@ -325,10 +399,29 @@ impl<'a> ParameterResolver<'a> {
         )
     }
 
-    pub(crate) fn append_to(self, graph: &mut BTreeMap<u32, Vec<ReferenceEdge>>) {
+    pub(crate) fn append_to(
+        self,
+        graph: &mut BTreeMap<u32, Vec<ReferenceEdge>>,
+    ) -> Result<(), CodecError> {
         for (source, mut edges) in self.edges.into_inner() {
-            graph.entry(source).or_default().append(&mut edges);
+            match graph.entry(source) {
+                Entry::Vacant(slot) => {
+                    self.ctx
+                        .charge_collection_items(1, "iges parameter resolver graph groups")?;
+                    slot.insert(edges);
+                }
+                Entry::Occupied(mut slot) => {
+                    reserve_vec_growth(
+                        self.ctx,
+                        slot.get_mut(),
+                        edges.len(),
+                        "iges appended parameter reference edges",
+                    )?;
+                    slot.get_mut().append(&mut edges);
+                }
+            }
         }
+        Ok(())
     }
 }
 
