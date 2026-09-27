@@ -1316,6 +1316,7 @@ fn surface_prototype_records(
     refusals: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Vec<SurfacePrototypeRecord>, CodecError> {
     collect_section_records_result(
+        ctx,
         sections.iter(),
         |bytes| surface::named_prototype_records(ctx, bytes, refusals),
         |record, base| {
@@ -1334,6 +1335,7 @@ fn surface_parameters(
     sections: &[ScannedSection<'_>],
 ) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
     collect_section_records_result(
+        ctx,
         sections.iter(),
         |bytes| surface::parameter_records(ctx, bytes),
         |record, base| {
@@ -1349,6 +1351,7 @@ fn cross_section_surface_parameters(
     sections: &[ScannedSection<'_>],
 ) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
     collect_section_records_result(
+        ctx,
         cross_sections(sections),
         |bytes| surface::cross_section_parameter_records(ctx, bytes),
         |record, base| {
@@ -1364,6 +1367,7 @@ fn surface_contours(
     sections: &[ScannedSection<'_>],
 ) -> Result<Vec<SurfaceContourRecord>, CodecError> {
     collect_section_records_result(
+        ctx,
         sections.iter(),
         |bytes| surface::contour_records(ctx, bytes),
         |record, base| {
@@ -1380,6 +1384,7 @@ fn cross_section_surface_contours(
     sections: &[ScannedSection<'_>],
 ) -> Result<Vec<SurfaceContourRecord>, CodecError> {
     collect_section_records_result(
+        ctx,
         cross_sections(sections),
         |bytes| surface::cross_section_contour_records(ctx, bytes),
         |record, base| {
@@ -1434,6 +1439,7 @@ fn plane_local_systems(
     sections: &[ScannedSection<'_>],
 ) -> Result<Vec<PlaneLocalSystem>, CodecError> {
     collect_section_records_result(
+        ctx,
         sections.iter(),
         |bytes| surface::plane_local_systems(ctx, bytes),
         |record, base| {
@@ -1449,6 +1455,7 @@ fn cross_section_plane_local_systems(
     sections: &[ScannedSection<'_>],
 ) -> Result<Vec<PlaneLocalSystem>, CodecError> {
     collect_section_records_result(
+        ctx,
         cross_sections(sections),
         |bytes| surface::cross_section_plane_local_systems(ctx, bytes),
         |record, base| {
@@ -1485,6 +1492,7 @@ fn curve_prototypes(
     sections: &[ScannedSection<'_>],
 ) -> Result<Vec<CurvePrototype>, CodecError> {
     collect_section_records_result(
+        ctx,
         sections.iter(),
         |bytes| curve::prototypes(ctx, bytes),
         |prototype, base| prototype.offset += base,
@@ -1498,6 +1506,7 @@ fn curve_expressions(
     model_name: Option<&str>,
 ) -> Result<Vec<CurveExpressionRecord>, CodecError> {
     collect_section_records_result(
+        ctx,
         sections.iter(),
         |bytes| curve::expression_records_with_model_name(ctx, bytes, model_name),
         |record, base| {
@@ -1530,6 +1539,7 @@ fn curve_parameters(
     face_ids: &BTreeSet<u32>,
 ) -> Result<Vec<CurveParameterRecord>, CodecError> {
     collect_section_records_result(
+        ctx,
         sections.iter(),
         |bytes| curve::parameter_records_with_face_ids(ctx, bytes, Some(face_ids)),
         |record, base| {
@@ -1594,6 +1604,7 @@ fn cross_section_curve_rows(
     sections: &[ScannedSection<'_>],
 ) -> Result<Vec<DepdbCurveRow>, CodecError> {
     collect_section_records_result(
+        ctx,
         cross_sections(sections),
         |bytes| curve::depdb_cross_section_rows(ctx, bytes),
         |record, base| record.offset += base,
@@ -1606,6 +1617,7 @@ fn cross_section_curve_prototypes(
     sections: &[ScannedSection<'_>],
 ) -> Result<Vec<CurvePrototype>, CodecError> {
     collect_section_records_result(
+        ctx,
         cross_sections(sections),
         |bytes| curve::prototypes(ctx, bytes),
         |record, base| record.offset += base,
@@ -1633,6 +1645,7 @@ fn datum_cylinders(
     sections: &[ScannedSection<'_>],
 ) -> Result<Vec<DatumCylinder>, CodecError> {
     collect_section_records_result(
+        ctx,
         sections
             .iter()
             .filter(|section| section.section.name() == "ActDatums"),
@@ -2704,6 +2717,7 @@ fn collect_section_records<'a, 'data: 'a, T>(
 }
 
 fn collect_section_records_result<'a, 'data: 'a, T>(
+    ctx: &DecodeContext<'_>,
     sections: impl Iterator<Item = &'a ScannedSection<'data>>,
     mut decode: impl FnMut(&[u8]) -> Result<Vec<T>, CodecError>,
     relocate: impl Fn(&mut T, usize),
@@ -2711,7 +2725,13 @@ fn collect_section_records_result<'a, 'data: 'a, T>(
 ) -> Result<Vec<T>, CodecError> {
     let mut records = Vec::new();
     for section in sections {
-        records.extend(decode(section.region)?.into_iter().map(|mut record| {
+        let decoded = decode(section.region)?;
+        ctx.try_reserve_items(
+            &mut records,
+            decoded.len(),
+            "creo section record aggregation",
+        )?;
+        records.extend(decoded.into_iter().map(|mut record| {
             relocate(&mut record, section.section.offset());
             record
         }));
