@@ -119,8 +119,12 @@ mod tests {
 
     #[test]
     fn slot_lane_native_limit_refuses_before_string_copy() {
-        let json = r#"{"id":"nx:om:state-slot-lane#0","section_link":"section","ordinal":0,"slots":[],"source_entry":"om","source_offset":10,"end_offset":15}"#;
+        let json = r#"{"id":"nx:om:state-slot-lane#0","section_link":"section","ordinal":0,"slots":[{"ordinal":0,"object_index":5,"raw_object_index":[5]}],"source_entry":"om","source_offset":10,"end_offset":16}"#;
         let lane: OmOperationStateSlotLane = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            serde_json::to_vec(&lane).unwrap(),
+            serde_json::to_vec(&super::Wire::from(lane.clone())).unwrap()
+        );
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &lane,
             serde_json::from_str::<serde_json::Value>(json).unwrap(),
