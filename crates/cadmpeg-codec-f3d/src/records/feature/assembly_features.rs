@@ -234,11 +234,9 @@ pub(crate) struct DesignDerivedInstanceConstruction {
 }
 
 /// One exact local component-occurrence carrier.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignComponentOccurrenceWire",
-    into = "DesignComponentOccurrenceWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "DesignComponentOccurrenceWire")]
 pub(crate) struct DesignComponentOccurrence {
     /// Stable native record identity.
     pub(crate) id: String,
@@ -256,6 +254,28 @@ pub(crate) struct DesignComponentOccurrence {
     pub(crate) occurrence_guid: DesignRelaxedGuidText,
     /// Base occurrence or a placed occurrence with its ordinal and matrix.
     placement: DesignComponentOccurrencePlacement,
+}
+
+#[cfg(test)]
+thread_local! {
+    static COMPONENT_OCCURRENCE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for DesignComponentOccurrence {
+    fn clone(&self) -> Self {
+        COMPONENT_OCCURRENCE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            class_tag: self.class_tag.clone(),
+            record_index: self.record_index,
+            byte_offset: self.byte_offset,
+            component_record_index: self.component_record_index,
+            component_guid: self.component_guid.clone(),
+            occurrence_guid: self.occurrence_guid.clone(),
+            placement: self.placement,
+        }
+    }
 }
 
 /// Local occurrence payload before checked frame admission.
@@ -392,6 +412,45 @@ struct DesignComponentOccurrenceWire {
     transform_offset: Option<u64>,
 }
 
+impl Serialize for DesignComponentOccurrence {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            id: &'a str,
+            class_tag: &'a str,
+            record_index: u32,
+            byte_offset: u64,
+            component_record_index: u64,
+            component_guid: &'a DesignRelaxedGuidText,
+            component_guid_offset: u64,
+            occurrence_guid: &'a DesignRelaxedGuidText,
+            occurrence_guid_offset: u64,
+            occurrence_ordinal: u32,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            transform: Option<SketchPlacementMatrix>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            transform_offset: Option<u64>,
+        }
+        let transform = self.transform();
+        WireRef {
+            id: &self.id,
+            class_tag: self.class_tag.as_str(),
+            record_index: self.record_index,
+            byte_offset: self.byte_offset,
+            component_record_index: self.component_record_index,
+            component_guid: &self.component_guid,
+            component_guid_offset: self.component_guid_offset(),
+            occurrence_guid: &self.occurrence_guid,
+            occurrence_guid_offset: self.occurrence_guid_offset(),
+            occurrence_ordinal: self.occurrence_ordinal(),
+            transform: transform.map(|frame| frame.value),
+            transform_offset: transform.map(|frame| frame.offset),
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 impl From<DesignComponentOccurrence> for DesignComponentOccurrenceWire {
     fn from(value: DesignComponentOccurrence) -> Self {
         let occurrence_ordinal = value.occurrence_ordinal();
