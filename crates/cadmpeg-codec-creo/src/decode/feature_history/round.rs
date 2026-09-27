@@ -125,7 +125,7 @@ pub(in super::super) fn slot_fillet_cylinder(
             ));
         }
     }
-    let mut candidates = Vec::<CylinderEquation>::new();
+    let mut first_candidate: Option<CylinderEquation> = None;
     for first in 0..midplanes.len() {
         for second in first + 1..midplanes.len() {
             let radius = midplanes[first].1;
@@ -153,32 +153,44 @@ pub(in super::super) fn slot_fillet_cylinder(
                 (distance - radius).abs() <= EPS_CYLINDER_FIT * scale
             });
             if tangent_to_all {
-                candidates.push(CylinderEquation {
+                let candidate = CylinderEquation {
                     origin,
                     axis,
                     ref_direction: midplanes[first].0.normal,
                     radius,
-                });
+                };
+                if let Some(first) = first_candidate {
+                    let scale = first.radius;
+                    let origin_delta: [f64; 3] = std::array::from_fn(|index| {
+                        candidate.origin[index] - first.origin[index]
+                    });
+                    if !((candidate.radius - first.radius).abs()
+                        <= EPS_GEOMETRY_AGREEMENT * scale
+                        && (dot(candidate.axis, first.axis).abs() - 1.0).abs()
+                            <= EPS_NORMAL_ALIGNMENT
+                        && dot(
+                            cross(origin_delta, first.axis),
+                            cross(origin_delta, first.axis),
+                        )
+                        .sqrt()
+                            <= EPS_CYLINDER_FIT * scale)
+                    {
+                        return None;
+                    }
+                } else {
+                    first_candidate = Some(candidate);
+                }
             }
         }
     }
-    let first = *candidates.first()?;
-    let scale = first.radius;
-    candidates
-        .iter()
-        .all(|candidate| {
-            let origin_delta: [f64; 3] =
-                std::array::from_fn(|index| candidate.origin[index] - first.origin[index]);
-            (candidate.radius - first.radius).abs() <= EPS_GEOMETRY_AGREEMENT * scale
-                && (dot(candidate.axis, first.axis).abs() - 1.0).abs() <= EPS_NORMAL_ALIGNMENT
-                && dot(
-                    cross(origin_delta, first.axis),
-                    cross(origin_delta, first.axis),
-                )
-                .sqrt()
-                    <= EPS_CYLINDER_FIT * scale
-        })
-        .then_some(first)
+    let first = first_candidate?;
+    let self_delta: [f64; 3] =
+        std::array::from_fn(|index| first.origin[index] - first.origin[index]);
+    ((first.radius - first.radius).abs() <= EPS_GEOMETRY_AGREEMENT * first.radius
+        && (dot(first.axis, first.axis).abs() - 1.0).abs() <= EPS_NORMAL_ALIGNMENT
+        && dot(cross(self_delta, first.axis), cross(self_delta, first.axis)).sqrt()
+            <= EPS_CYLINDER_FIT * first.radius)
+    .then_some(first)
 }
 
 pub(in super::super) fn outline_has_unique_radius_delta(
@@ -257,17 +269,13 @@ pub(in super::super) fn paired_five_coordinate_sphere_center(
     };
     (close(first_radial[0], second_radial[0]) && close(first_radial[1], second_radial[1]))
         .then_some(())?;
-    let shared = [first_axial[0], first_axial[1]]
+    let center_z = exactly_one([first_axial[0], first_axial[1]]
         .into_iter()
         .filter(|candidate| {
             [second_axial[0], second_axial[1]]
                 .into_iter()
                 .any(|other| close(*candidate, other))
-        })
-        .collect::<Vec<_>>();
-    let [center_z] = shared.as_slice() else {
-        return None;
-    };
+        }))?;
     let axial_min = first_axial
         .into_iter()
         .chain(second_axial)
@@ -277,12 +285,12 @@ pub(in super::super) fn paired_five_coordinate_sphere_center(
         .chain(second_axial)
         .fold(f64::NEG_INFINITY, f64::max);
     (close(axial_max - axial_min, 2.0 * radius)
-        && close(*center_z - axial_min, radius)
-        && close(axial_max - *center_z, radius))
+        && close(center_z - axial_min, radius)
+        && close(axial_max - center_z, radius))
     .then_some([
         0.5 * (first_radial[0] + first_radial[1]),
         0.5 * (first_radial[0] + first_radial[1]),
-        *center_z,
+        center_z,
     ])
 }
 
@@ -436,12 +444,11 @@ pub(in super::super) fn round_constant_radius(
     if differing_positive_lengths(&round_observed_radii(scan, feature_id)) {
         return Ok(None);
     }
-    let cylinder_rows = generated_rows
+    let cylinder_count = generated_rows
         .iter()
         .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
-        .copied()
-        .collect::<Vec<_>>();
-    if cylinder_rows.is_empty() {
+        .count();
+    if cylinder_count == 0 {
         if generated_rows
             .iter()
             .any(|row| row.kind != crate::surface::SurfaceKind::TorusOrSphere)
@@ -450,7 +457,7 @@ pub(in super::super) fn round_constant_radius(
         }
         return prototype_round_radius(ctx, scan, &generated_rows);
     }
-    if cylinder_rows.len() != generated_rows.len()
+    if cylinder_count != generated_rows.len()
         && generated_rows.iter().all(|row| {
             matches!(
                 row.kind,
@@ -481,7 +488,7 @@ pub(in super::super) fn round_constant_radius(
             crate::surface::SurfaceKind::Cylinder | crate::surface::SurfaceKind::Plane
         )
     });
-    if cylinder_radii.len() == cylinder_rows.len() && non_radius_rows_are_planes {
+    if cylinder_radii.len() == cylinder_count && non_radius_rows_are_planes {
         return Ok(unique_positive_length(&cylinder_radii).map(PositiveLength::get));
     }
     Ok(round_support_radius(scan, ir, source_carriers, feature_id))
@@ -551,38 +558,35 @@ fn complete_direct_placed_cylinder_radius_agreement(
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
 ) -> Option<bool> {
-    let cylinder_rows = scan
+    let cylinder_rows = || scan
         .surfaces
         .rows
         .iter()
         .filter(|row| {
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
-        })
-        .collect::<Vec<_>>();
-    let direct_radii = cylinder_rows
-        .iter()
-        .map(|row| {
+        });
+    cylinder_rows().all(|row| {
             unique_surface_parameter_record(scan, row)
                 .and_then(SurfaceParameterRecord::type24_generated_round_radius)
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let placed_radii = cylinder_rows
-        .iter()
-        .map(|row| round_placed_cylinder_radius(ir, row, source_carriers))
-        .collect::<Option<Vec<_>>>()?;
-    Some(
-        direct_radii
-            .iter()
-            .zip(placed_radii)
-            .all(|(direct, placed)| {
+                .is_some()
+        }).then_some(())?;
+    cylinder_rows().all(|row| round_placed_cylinder_radius(ir, row, source_carriers).is_some())
+        .then_some(())?;
+    Some(cylinder_rows().all(|row| {
+                let Some(direct) = unique_surface_parameter_record(scan, row)
+                    .and_then(SurfaceParameterRecord::type24_generated_round_radius) else {
+                    return false;
+                };
+                let Some(placed) = round_placed_cylinder_radius(ir, row, source_carriers) else {
+                    return false;
+                };
                 let scale = direct.abs().max(placed.abs()).max(1.0);
                 direct.is_finite()
-                    && *direct > 0.0
+                    && direct > 0.0
                     && placed.is_finite()
                     && placed > 0.0
                     && (direct - placed).abs() <= EPS_ROUND_RADIUS_RECONCILIATION * scale
-            }),
-    )
+            }))
 }
 
 fn mixed_round_radius_samples(
@@ -747,7 +751,7 @@ pub(in super::super) fn round_support_envelope_cylinder(
         return None;
     }
 
-    let mut support_pairs = Vec::new();
+    let mut agreed_pair: Option<([f64; 3], f64, f64)> = None;
     for first in 0..support_planes.len() {
         let first_normal = normalize(support_planes[first].normal)?;
         for second in first + 1..support_planes.len() {
@@ -770,24 +774,34 @@ pub(in super::super) fn round_support_envelope_cylinder(
             }
             let first_offset = dot(first_normal, support_planes[first].origin);
             let second_offset = dot(first_normal, support_planes[second].origin);
-            support_pairs.push((
+            let pair = (
                 first_normal,
                 0.5 * gap,
                 0.5 * (first_offset + second_offset),
-            ));
+            );
+            if let Some((support_normal, radius, support_midpoint)) = agreed_pair {
+                let scale = radius.max(cap_gap).max(1.0);
+                if !((pair.1 - radius).abs() <= EPS_ROUND_RADIUS_RECONCILIATION * scale
+                    && (dot(pair.0, support_normal).abs() - 1.0).abs()
+                        <= EPS_ROUND_CAP_PARALLEL
+                    && (pair.2 - support_midpoint).abs()
+                        <= EPS_ROUND_RADIUS_RECONCILIATION * scale)
+                {
+                    return None;
+                }
+            } else {
+                agreed_pair = Some(pair);
+            }
         }
     }
-    let (support_normal, radius, support_midpoint) = *support_pairs.first()?;
+    let (support_normal, radius, support_midpoint) = agreed_pair?;
     let scale = radius.max(cap_gap).max(1.0);
-    support_pairs
-        .iter()
-        .all(|(normal, candidate_radius, candidate_midpoint)| {
-            (candidate_radius - radius).abs() <= EPS_ROUND_RADIUS_RECONCILIATION * scale
-                && (dot(*normal, support_normal).abs() - 1.0).abs() <= EPS_ROUND_CAP_PARALLEL
-                && (candidate_midpoint - support_midpoint).abs()
-                    <= EPS_ROUND_RADIUS_RECONCILIATION * scale
-        })
-        .then_some(())?;
+    ((radius - radius).abs() <= EPS_ROUND_RADIUS_RECONCILIATION * scale
+        && (dot(support_normal, support_normal).abs() - 1.0).abs()
+            <= EPS_ROUND_CAP_PARALLEL
+        && (support_midpoint - support_midpoint).abs()
+            <= EPS_ROUND_RADIUS_RECONCILIATION * scale)
+    .then_some(())?;
 
     let [first_extent, second_extent] = envelope.extent_endpoints;
     let extent_delta =
@@ -917,15 +931,15 @@ fn round_placed_cylinder_radius(
 }
 
 fn round_direct_radii(scan: &ContainerScan, feature_id: u32) -> Option<Vec<f64>> {
-    let generated_rows = scan
+    let generated_count = scan
         .surfaces
         .rows
         .iter()
         .filter(|row| row.feature_id == feature_id)
-        .collect::<Vec<_>>();
-    (!generated_rows.is_empty()).then_some(())?;
+        .count();
+    (generated_count != 0).then_some(())?;
     let radii = round_observed_radii(scan, feature_id);
-    (radii.len() == generated_rows.len()).then_some(radii)
+    (radii.len() == generated_count).then_some(radii)
 }
 
 pub(in super::super) fn round_observed_radii(scan: &ContainerScan, feature_id: u32) -> Vec<f64> {
@@ -1024,18 +1038,16 @@ fn chamfer_cone_equation(
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     row: &crate::surface::SurfaceRow,
 ) -> Option<ConeEquation> {
-    let parameter_records = scan
+    let mut parameter_records = scan
         .surfaces
         .parameters
         .iter()
-        .filter(|record| record.offset == row.offset)
-        .collect::<Vec<_>>();
-    if parameter_records.len() > 1 {
+        .filter(|record| record.offset == row.offset);
+    let parameter_record = parameter_records.next();
+    if parameter_records.next().is_some() {
         return None;
     }
-    if let Some(frame) = parameter_records
-        .first()
-        .and_then(|record| record.positional_cone_frame())
+    if let Some(frame) = parameter_record.and_then(|record| record.positional_cone_frame())
     {
         return ConeEquation::new(
             frame.frame().origin(),
@@ -1075,19 +1087,17 @@ pub(in super::super) fn chamfer_constant_distance(
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
 ) -> Option<f64> {
-    let rows = scan
+    let rows = || scan
         .surfaces
         .rows
         .iter()
-        .filter(|row| row.feature_id == feature_id)
-        .collect::<Vec<_>>();
-    (!rows.is_empty()
-        && rows
-            .iter()
-            .all(|row| row.kind == crate::surface::SurfaceKind::Cone))
-    .then_some(())?;
-    let cones = rows
-        .iter()
+        .filter(|row| row.feature_id == feature_id);
+    let mut candidates = rows();
+    let first = candidates.next()?;
+    (first.kind == crate::surface::SurfaceKind::Cone
+        && candidates.all(|row| row.kind == crate::surface::SurfaceKind::Cone))
+        .then_some(())?;
+    let cones = rows()
         .map(|row| chamfer_cone_equation(scan, ir, source_carriers, row))
         .collect::<Option<Vec<_>>>()?;
     let affected_ids = agreed_feature_geometry_ids(
@@ -1099,34 +1109,37 @@ pub(in super::super) fn chamfer_constant_distance(
     let mut support_planes = Vec::new();
     let mut support_plane_ids = BTreeSet::new();
     for id in affected_ids {
-        let rows = scan
+        let mut rows = scan
             .surfaces
             .rows
             .iter()
-            .filter(|row| row.id == *id)
-            .collect::<Vec<_>>();
-        let is_support_plane = match rows.as_slice() {
-            [] => {
+            .filter(|row| row.id == *id);
+        let first_row = rows.next();
+        let second_row = rows.next();
+        let is_support_plane = match (first_row, second_row) {
+            (None, None) => {
                 let model_id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, id);
-                let model_surfaces = ir
+                let mut model_surfaces = ir
                     .model
                     .surfaces
                     .iter()
-                    .filter(|surface| surface.id == model_id)
-                    .collect::<Vec<_>>();
-                match model_surfaces.as_slice() {
-                    [] => false,
-                    [surface] => matches!(
+                    .filter(|surface| surface.id == model_id);
+                let first = model_surfaces.next();
+                let second = model_surfaces.next();
+                match (first, second) {
+                    (None, None) => false,
+                    (Some(surface), None) => matches!(
                         source_carriers.surface_geometry(surface).solved(),
                         Some(SolvedSurfaceGeometry::Plane(_))
                     ),
                     _ => return None,
                 }
             }
-            [row] => row.kind == crate::surface::SurfaceKind::Plane,
-            _ if rows
-                .iter()
-                .any(|row| row.kind == crate::surface::SurfaceKind::Plane) =>
+            (Some(row), None) => row.kind == crate::surface::SurfaceKind::Plane,
+            (Some(first), Some(second))
+                if first.kind == crate::surface::SurfaceKind::Plane
+                    || second.kind == crate::surface::SurfaceKind::Plane
+                    || rows.any(|row| row.kind == crate::surface::SurfaceKind::Plane) =>
             {
                 return None;
             }
