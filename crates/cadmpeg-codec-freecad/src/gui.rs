@@ -60,7 +60,7 @@ enum Assignment<T> {
 }
 
 impl AppearancePlan {
-    fn apply(self, ir: &mut CadIr) {
+    fn apply(self, ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
         for update in self.body_updates {
             if let Some(body) = ir.model.bodies.iter_mut().find(|body| body.id == update.id) {
                 if let Assignment::Set(visible) = update.visible {
@@ -75,12 +75,17 @@ impl AppearancePlan {
         ir.model
             .appearances
             .retain(|appearance| !self.remove_appearances.contains(&appearance.id));
+        reserve_vec_items(ctx, &mut ir.model.appearances, self.appearances.len(), "FCStd neutral appearances")?;
         ir.model.appearances.extend(self.appearances);
+        reserve_vec_items(ctx, &mut ir.model.appearance_bindings, self.bindings.len(), "FCStd neutral appearance bindings")?;
         ir.model.appearance_bindings.extend(self.bindings);
+        reserve_vec_items(ctx, &mut ir.model.presentation_documents, self.presentation_documents.len(), "FCStd neutral presentation documents")?;
         ir.model
             .presentation_documents
             .extend(self.presentation_documents);
+        reserve_vec_items(ctx, &mut ir.model.view_presentations, self.view_presentations.len(), "FCStd neutral view presentations")?;
         ir.model.view_presentations.extend(self.view_presentations);
+        Ok(())
     }
 }
 
@@ -219,12 +224,12 @@ pub(crate) fn transfer(
     match (admission, transferred) {
         (GuiSchemaAdmission::Schema1, result) => {
             let (graph, plan) = result?;
-            plan.apply(ir);
+            plan.apply(ctx, ir)?;
             Ok(graph)
         }
         (GuiSchemaAdmission::Unverified { declaration }, Ok((mut graph, plan))) => {
             let declaration = declaration.as_deref().unwrap_or("missing");
-            plan.apply(ir);
+            plan.apply(ctx, ir)?;
             graph.losses.push(FreecadLossCode::SourceGuiSchemaUnverified.note(format!(
                 "GuiDocument.xml declares schema {declaration}; decoded with the schema-1 vocabulary"
             )));

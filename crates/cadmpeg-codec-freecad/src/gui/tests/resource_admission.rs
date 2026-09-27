@@ -6,6 +6,93 @@ use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+fn populated_appearance_plan() -> super::super::AppearancePlan {
+    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId, BodyId};
+    use cadmpeg_ir::presentation::{PresentationDocument, PresentationId, ViewPresentation};
+
+    let appearance_id = AppearanceId::mint("fcstd:appearance:object#sample")
+        .expect("valid appearance identity");
+    let mut plan = super::super::AppearancePlan::default();
+    plan.appearances.push(Appearance {
+        id: appearance_id.clone(),
+        name: None,
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: None,
+        textures: Vec::new(),
+        properties: std::collections::BTreeMap::new(),
+    });
+    plan.bindings.push(AppearanceBinding {
+        id: AppearanceBindingId::mint("fcstd:appearance:binding#sample")
+            .expect("valid binding identity"),
+        target: AppearanceTarget::Body(BodyId::mint("fcstd:model:body#sample")
+            .expect("valid body identity")),
+        appearance: appearance_id,
+        source_entity_id: None,
+        object_type: None,
+        visible: None,
+        channels: std::collections::BTreeMap::new(),
+    });
+    plan.presentation_documents.push(PresentationDocument::new(
+        PresentationId::mint("fcstd:model:presentation-document#sample")
+            .expect("valid presentation identity"),
+    ));
+    plan.view_presentations.push(ViewPresentation {
+        id: PresentationId::mint("fcstd:model:presentation-view#sample")
+            .expect("valid view identity"),
+        object: None,
+        order: 0,
+        expanded: None,
+        visible: None,
+        display_mode: None,
+        selection_style: None,
+        line_width: None,
+        point_size: None,
+        properties: std::collections::BTreeMap::new(),
+        native_ref: None,
+    });
+    plan
+}
+
+fn assert_plan_application_refusal(limit: u64, operation: &str) {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    let error = populated_appearance_plan()
+        .apply(&ctx, &mut cadmpeg_ir::CadIr::empty())
+        .expect_err("plan application must charge its target collection");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+        if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && failure.operation == operation), "{error:?}");
+}
+
+#[test]
+fn neutral_appearances_refuse_at_caller_limit() {
+    assert_plan_application_refusal(0, "FCStd neutral appearances");
+}
+
+#[test]
+fn neutral_appearance_bindings_refuse_at_caller_limit() {
+    assert_plan_application_refusal(1, "FCStd neutral appearance bindings");
+}
+
+#[test]
+fn neutral_presentation_documents_refuse_at_caller_limit() {
+    assert_plan_application_refusal(2, "FCStd neutral presentation documents");
+}
+
+#[test]
+fn neutral_view_presentations_refuse_at_caller_limit() {
+    assert_plan_application_refusal(3, "FCStd neutral view presentations");
+}
+
 #[test]
 fn gui_property_identity_refuses_at_retained_limit() {
     let text = r#"<ViewProvider name="Model"><Properties Count="1"><Property name="Visible" type="App::PropertyBool"><Bool value="true"/></Property></Properties></ViewProvider>"#;
