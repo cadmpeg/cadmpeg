@@ -1373,11 +1373,8 @@ pub(super) struct FeatureDatumCsysPayloadFixedPair {
 }
 
 /// One exactly framed scalar field in a reconstructed feature payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeaturePayloadScalarWire",
-    into = "FeaturePayloadScalarWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "FeaturePayloadScalarWire")]
 pub(super) struct FeaturePayloadScalar {
     /// Globally unique scalar-field identity.
     pub(super) id: String,
@@ -1421,6 +1418,7 @@ struct FeaturePayloadScalarWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeaturePayloadScalar> for FeaturePayloadScalarWire {
     fn from(value: FeaturePayloadScalar) -> Self {
         Self {
@@ -1879,11 +1877,8 @@ struct FeatureConstructionMember {
 }
 
 /// Completely resolved counted-reference field of one sketch construction.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureSketchConstructionInputsWire",
-    into = "FeatureSketchConstructionInputsWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureSketchConstructionInputsWire")]
 pub(super) struct FeatureSketchConstructionInputs {
     /// Globally unique construction-input identity.
     pub(super) id: String,
@@ -1910,6 +1905,7 @@ struct FeatureSketchConstructionInputsWire {
     terminal_data_block: String,
 }
 
+#[cfg(test)]
 impl From<FeatureSketchConstructionInputs> for FeatureSketchConstructionInputsWire {
     fn from(value: FeatureSketchConstructionInputs) -> Self {
         let (member_references, member_data_blocks) = value
@@ -2070,11 +2066,8 @@ pub(super) struct FeatureSketchPayloadMixedPair {
 }
 
 /// Exact scalar-vector frame retained from one reconstructed sketch payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureSketchPayloadScalarLaneWire",
-    into = "FeatureSketchPayloadScalarLaneWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "FeatureSketchPayloadScalarLaneWire")]
 pub(super) struct FeatureSketchPayloadScalarLane {
     /// Globally unique scalar-lane identity.
     pub(super) id: String,
@@ -2120,6 +2113,7 @@ struct FeatureSketchPayloadScalarLaneWire {
     terminator_source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureSketchPayloadScalarLane> for FeatureSketchPayloadScalarLaneWire {
     fn from(record: FeatureSketchPayloadScalarLane) -> Self {
         Self {
