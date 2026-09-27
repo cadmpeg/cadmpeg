@@ -22,10 +22,11 @@ fn pending_occurrence_refuses_caller_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"occurrence", &arena, &policy)
-        .expect("root fits selected policy");
-    let id = cadmpeg_ir::ids::OccurrenceId::mint("step:data:occurrence#1")
-        .expect("valid occurrence id");
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(b"occurrence", &arena, &policy)
+            .expect("root fits selected policy");
+    let id =
+        cadmpeg_ir::ids::OccurrenceId::mint("step:data:occurrence#1").expect("valid occurrence id");
     let mut pending = std::collections::VecDeque::new();
     let error = super::enqueue_occurrence(&mut pending, 1, id, Some(&ctx))
         .expect_err("one pending occurrence exceeds zero collection items");
@@ -143,7 +144,8 @@ fn product_definition_views_keep_distinct_prototypes_and_metadata() {
     assert!(prototypes
         .iter()
         .all(|id| id.as_str().contains("-definition-")));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -169,7 +171,8 @@ pub(crate) fn decode_builds_product_occurrences_with_relative_placement() {
     assert_eq!(child.transform.rows()[0][3], 25.0);
     assert_eq!(child.transform.rows()[1][3], 0.0);
     assert_eq!(child.transform.rows()[2][3], 0.0);
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut output = Vec::new();
@@ -420,7 +423,8 @@ fn ps07_duplicate_context_placements_remain_opaque_in_any_order() {
                 )
             );
         }
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -485,7 +489,8 @@ fn ps08_mixed_placement_mechanisms_remain_opaque_in_any_order() {
                 )
             );
         }
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -506,7 +511,8 @@ pub(crate) fn decode_builds_occurrence_placement_from_mapped_item() {
         .unwrap();
     assert_eq!(child.transform.rows()[0][3], 40.0);
     assert_eq!(child.transform.rows()[1][3], 5.0);
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -757,7 +763,8 @@ fn decode_builds_mapped_item_placement_from_canonical_cartesian_operator() {
         .losses
         .iter()
         .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -788,7 +795,8 @@ fn decode_builds_repeated_occurrence_placements_from_their_shape_representations
         .losses
         .iter()
         .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -853,7 +861,8 @@ fn decode_infers_unlinked_occurrence_placements_from_parent_shape_items() {
         .losses
         .iter()
         .any(|loss| { loss.code == StepLossCode::NauoPlacementUnresolved.kind() }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -889,7 +898,8 @@ fn ps09_parent_mapped_items_bind_by_child_definition_not_set_order() {
             .losses
             .iter()
             .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -1371,7 +1381,8 @@ fn shape_representation_relationship_reaches_its_product_body() {
         loss.message
             .contains("has a shape representation with no committed topology body")
     }));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1395,7 +1406,8 @@ fn complex_shape_representation_relationship_inherits_references() {
         loss.message
             .contains("has a shape representation with no committed topology body")
     }));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
