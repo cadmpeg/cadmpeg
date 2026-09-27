@@ -23,6 +23,7 @@ use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap};
+use std::fmt::Write;
 
 /// Keys one source element's attributes, charging every key the reader cannot
 /// key.
@@ -30,19 +31,80 @@ use std::collections::{BTreeMap, HashMap};
 /// The element is still transferred. A key holding no non-whitespace character
 /// cannot be asked for, and a key the element states twice is already taken, so
 /// the charge names the element and, for a restated key, the key itself.
-fn keyed_attributes(
+fn keyed_attributes<'name, 'value>(
+    ctx: &DecodeContext<'_>,
     losses: &mut Vec<LossNote>,
     record: &str,
-    entries: impl IntoIterator<Item = (String, String)>,
-) -> BTreeMap<cadmpeg_core::text::NonBlankString, String> {
-    let (kept, refused) = cadmpeg_core::text::named_entries_reporting(record, entries);
-    for key in refused {
-        losses.push(
-            crate::loss::SldprtLossCode::SourcePropertyKeyBlank
-                .note(format!("{key}; the property is not transferred")),
-        );
+    entries: impl IntoIterator<Item = (&'name str, &'value str)>,
+) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, String>, CodecError> {
+    let mut kept = BTreeMap::new();
+    for (name, value) in entries {
+        if name.chars().all(char::is_whitespace) {
+            report_unkeyed_property(ctx, losses, record, None)?;
+            continue;
+        }
+        if kept.contains_key(name) {
+            report_unkeyed_property(ctx, losses, record, Some(name))?;
+            continue;
+        }
+        let name = copy_history_text(ctx, name, "retain SLDPRT history property name")?;
+        let value = copy_history_text(ctx, value, "retain SLDPRT history property value")?;
+        if let Some(name) = cadmpeg_core::text::NonBlankString::new(name) {
+            ctx.charge_collection_items(1, "index SLDPRT history properties")?;
+            kept.insert(name, value);
+        }
     }
-    kept
+    Ok(kept)
+}
+
+fn copy_history_text(
+    ctx: &DecodeContext<'_>,
+    source: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let mut copy = String::new();
+    ctx.reserve_retained_string(&mut copy, source.len(), operation)?;
+    copy.push_str(source);
+    Ok(copy)
+}
+
+fn report_unkeyed_property(
+    ctx: &DecodeContext<'_>,
+    losses: &mut Vec<LossNote>,
+    record: &str,
+    duplicate: Option<&str>,
+) -> Result<(), CodecError> {
+    const BLANK: &str = " states a property with a blank key; the property is not transferred";
+    const RESTATED_BEFORE: &str = " states the property ";
+    const RESTATED_AFTER: &str = " a second time; the property is not transferred";
+    let extra = match duplicate {
+        Some(key) => [RESTATED_BEFORE.len(), key.len(), RESTATED_AFTER.len()]
+            .into_iter()
+            .try_fold(0_usize, usize::checked_add)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("retain SLDPRT history property loss", u64::MAX - 1, u64::MAX)
+            })?,
+        None => BLANK.len(),
+    };
+    let needed = record.len().checked_add(extra).ok_or_else(|| {
+        ctx.refuse_codec_limit("retain SLDPRT history property loss", u64::MAX - 1, u64::MAX)
+    })?;
+    let mut message = String::new();
+    ctx.reserve_retained_string(
+        &mut message,
+        needed,
+        "retain SLDPRT history property loss",
+    )?;
+    match duplicate {
+        Some(key) => write!(message, "{record}{RESTATED_BEFORE}{key}{RESTATED_AFTER}"),
+        None => write!(message, "{record}{BLANK}"),
+    }
+    .map_err(|_| {
+        ctx.refuse_codec_limit("retain SLDPRT history property loss", u64::MAX - 1, u64::MAX)
+    })?;
+    ctx.reserve_collection_vec(losses, 1, "collect SLDPRT history property losses")?;
+    losses.push(crate::loss::SldprtLossCode::SourcePropertyKeyBlank.note(message));
+    Ok(())
 }
 
 /// The key a history record id carries: the ordinal of the section it was read
@@ -97,16 +159,15 @@ pub(crate) fn histories(
                         Exactness::ByteExact,
                     );
                     let properties = keyed_attributes(
+                        ctx,
                         losses,
                         &id,
                         node.attributes()
                             .filter(|attribute| {
                                 !matches!(attribute.name(), "Name" | "Material" | "SourceIndex")
                             })
-                            .map(|attribute| {
-                                (attribute.name().to_string(), attribute.value().to_string())
-                            }),
-                    );
+                            .map(|attribute| (attribute.name(), attribute.value())),
+                    )?;
                     ctx.reserve_collection_vec(
                         &mut configurations,
                         1,
@@ -166,16 +227,15 @@ pub(crate) fn histories(
                         Exactness::ByteExact,
                     );
                     let properties = keyed_attributes(
+                        ctx,
                         losses,
                         &id,
                         node.attributes()
                             .filter(|attribute| {
                                 !matches!(attribute.name(), "id" | "Name" | "Type" | "Suppressed")
                             })
-                            .map(|attribute| {
-                                (attribute.name().to_string(), attribute.value().to_string())
-                            }),
-                    );
+                            .map(|attribute| (attribute.name(), attribute.value())),
+                    )?;
                     ctx.reserve_collection_vec(
                         &mut features,
                         1,
@@ -211,6 +271,40 @@ pub(crate) fn histories(
                             content.push(item);
                             Ok::<_, CodecError>(content)
                         })?;
+                    let mut dimension_properties = BTreeMap::new();
+                    for dimension in node.children().filter(|child| {
+                        child.is_element() && child.tag_name().name() == "Dimension"
+                    }) {
+                        let Some(name) = dimension.attribute("Name") else {
+                            continue;
+                        };
+                        let properties = keyed_attributes(
+                            ctx,
+                            losses,
+                            name,
+                            dimension
+                                .attributes()
+                                .filter(|attribute| attribute.name() != "Name")
+                                .map(|attribute| (attribute.name(), attribute.value())),
+                        )?;
+                        if properties.is_empty() {
+                            continue;
+                        }
+                        if let Some(previous) = dimension_properties.get_mut(name) {
+                            *previous = properties;
+                        } else {
+                            let name = copy_history_text(
+                                ctx,
+                                name,
+                                "retain SLDPRT dimension property name",
+                            )?;
+                            ctx.charge_collection_items(
+                                1,
+                                "index SLDPRT dimension properties",
+                            )?;
+                            dimension_properties.insert(name, properties);
+                        }
+                    }
                     features.push(Feature {
                         id,
                         parent: parent.clone(),
@@ -251,27 +345,7 @@ pub(crate) fn histories(
                                 ))
                             })
                             .collect::<BTreeMap<_, _>>(),
-                        dimension_properties: node
-                            .children()
-                            .filter(|child| {
-                                child.is_element() && child.tag_name().name() == "Dimension"
-                            })
-                            .filter_map(|dimension| {
-                                let name = dimension.attribute("Name")?;
-                                let properties = dimension
-                                    .attributes()
-                                    .filter(|attribute| attribute.name() != "Name")
-                                    .map(|attribute| {
-                                        (
-                                            attribute.name().to_string(),
-                                            attribute.value().to_string(),
-                                        )
-                                    })
-                                    .collect::<Vec<_>>();
-                                let properties = keyed_attributes(losses, name, properties);
-                                (!properties.is_empty()).then(|| (name.into(), properties))
-                            })
-                            .collect(),
+                        dimension_properties,
                         properties,
                         text: (!node.children().any(|child| child.is_element()))
                             .then(|| node.text().map(str::trim).unwrap_or_default().to_string())
@@ -326,12 +400,13 @@ pub(crate) fn histories(
                 Exactness::ByteExact,
             );
             let properties = keyed_attributes(
+                ctx,
                 losses,
                 &id,
                 root.attributes()
                     .filter(|attribute| attribute.name() != "Name")
-                    .map(|attribute| (attribute.name().to_string(), attribute.value().to_string())),
-            );
+                    .map(|attribute| (attribute.name(), attribute.value())),
+            )?;
             ctx.reserve_collection_vec(&mut histories, 1, "collect SLDPRT feature histories")?;
             histories.push(FeatureHistory {
                 id,
