@@ -147,6 +147,15 @@ pub(crate) enum FramingError {
     Resource(cadmpeg_core::decode::ResourceLimit),
 }
 
+impl From<cadmpeg_core::CodecError> for FramingError {
+    fn from(error: cadmpeg_core::CodecError) -> Self {
+        match error {
+            cadmpeg_core::CodecError::ResourceLimit(limit) => Self::Resource(limit),
+            other => Self::unpositioned(other.to_string()),
+        }
+    }
+}
+
 /// Allocates a count-driven decode vector after charging the active session.
 pub(crate) fn admitted_vec<T>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,

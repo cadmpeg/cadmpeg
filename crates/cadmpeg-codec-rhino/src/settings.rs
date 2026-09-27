@@ -910,7 +910,7 @@ fn utf8(reader: &mut BoundedReader<'_>) -> Result<String, FramingError> {
         .map_err(|_| FramingError::structural(reader.position(), "invalid UTF-8 string"))
 }
 
-pub(crate) fn utf16(reader: &mut BoundedReader<'_>) -> Result<String, FramingError> {
+fn utf16_payload<'a>(reader: &mut BoundedReader<'a>) -> Result<&'a [u8], FramingError> {
     let count_offset = reader.position();
     let count = usize::try_from(reader.u32()?)
         .map_err(|_| FramingError::structural(reader.position(), "UTF-16 count overflow"))?;
@@ -921,7 +921,7 @@ pub(crate) fn utf16(reader: &mut BoundedReader<'_>) -> Result<String, FramingErr
         ));
     }
     if count == 0 {
-        return Ok(String::new());
+        return Ok(&[]);
     }
     let bytes = reader.take(count.saturating_mul(2))?;
     if View::u16_le_at(bytes, count.saturating_sub(1).saturating_mul(2)) != Some(0) {
@@ -930,11 +930,71 @@ pub(crate) fn utf16(reader: &mut BoundedReader<'_>) -> Result<String, FramingErr
             "UTF-16 string is missing NUL terminator",
         ));
     }
-    View::utf16le_at(bytes, 0, count.saturating_sub(1))
+    Ok(&bytes[..bytes.len() - 2])
+}
+
+pub(crate) fn utf16(reader: &mut BoundedReader<'_>) -> Result<String, FramingError> {
+    let bytes = utf16_payload(reader)?;
+    if bytes.is_empty() {
+        return Ok(String::new());
+    }
+    View::utf16le_at(bytes, 0, bytes.len() / 2)
         .map(|(value, _)| value)
         .ok_or_else(|| {
             FramingError::structural(reader.position(), "invalid UTF-16 surrogate sequence")
         })
+}
+
+fn visit_utf16(
+    bytes: &[u8],
+    error_offset: usize,
+    mut visit: impl FnMut(char) -> Result<(), FramingError>,
+) -> Result<(), FramingError> {
+    let invalid = || FramingError::structural(error_offset, "invalid UTF-16 surrogate sequence");
+    let mut offset = 0;
+    while offset < bytes.len() {
+        let unit = View::u16_le_at(bytes, offset).ok_or_else(invalid)?;
+        offset += 2;
+        let scalar = if (0xd800..=0xdbff).contains(&unit) {
+            let low = View::u16_le_at(bytes, offset).ok_or_else(invalid)?;
+            if !(0xdc00..=0xdfff).contains(&low) {
+                return Err(invalid());
+            }
+            offset += 2;
+            0x10000 + ((u32::from(unit - 0xd800) << 10) | u32::from(low - 0xdc00))
+        } else if (0xdc00..=0xdfff).contains(&unit) {
+            return Err(invalid());
+        } else {
+            u32::from(unit)
+        };
+        visit(char::from_u32(scalar).ok_or_else(invalid)?)?;
+    }
+    Ok(())
+}
+
+/// Decodes a retained UTF-16 string after charging its exact UTF-8 byte count.
+pub(crate) fn utf16_retained(
+    ctx: &DecodeContext<'_>,
+    reader: &mut BoundedReader<'_>,
+    operation: &'static str,
+) -> Result<String, FramingError> {
+    let bytes = utf16_payload(reader)?;
+    let error_offset = reader.position();
+    let mut length = 0_usize;
+    visit_utf16(bytes, error_offset, |character| {
+        length = length
+            .checked_add(character.len_utf8())
+            .ok_or(FramingError::Overflow {
+                offset: error_offset,
+            })?;
+        Ok(())
+    })?;
+    let mut value = crate::wire::admitted_retained_string(ctx, length, operation)?;
+    visit_utf16(bytes, error_offset, |character| {
+        value.push(character);
+        Ok(())
+    })?;
+    Ok(value)
 }
 
 fn color(reader: &mut BoundedReader<'_>) -> Result<[u8; 4], FramingError> {

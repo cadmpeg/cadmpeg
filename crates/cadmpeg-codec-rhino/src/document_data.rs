@@ -11,7 +11,7 @@ use std::ops::Range;
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::{NativeInstall, OpaqueRecord, Record, Scan};
 use crate::objects::{parse_userdata, UserdataDescriptor};
-use crate::settings::{utf16, MillimeterScale, UnitBinding};
+use crate::settings::{utf16_retained, MillimeterScale, UnitBinding};
 use crate::wire::{flag_i32, scaled_coordinate, Uuid};
 
 const SETTINGS_TABLE: u32 = 0x1000_0015;
@@ -201,6 +201,7 @@ fn annotation_scale(reader: &mut BoundedReader<'_>) -> Result<FiniteReal, Framin
 }
 
 fn annotation_settings(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     body: std::ops::Range<usize>,
     source_offset: usize,
@@ -217,7 +218,11 @@ fn annotation_settings(
     }
     let dimension_scale = annotation_scale(&mut reader)?;
     let value = AnnotationSettingsRecord {
-        id: "rhino:document:annotation_settings#current".to_string(),
+        id: crate::wire::copy_retained_string(
+            ctx,
+            "rhino:document:annotation_settings#current",
+            "Rhino annotation settings ID",
+        )?,
         source_offset: source_offset as u64,
         dimension_scale,
         text_height_mm: length(&mut reader, scale)?,
@@ -233,7 +238,7 @@ fn annotation_settings(
         angle_format: reader.i32()?,
         obsolete_text_alignment: reader.u32()?,
         resolution: reader.i32()?,
-        font_face: utf16(&mut reader)?,
+        font_face: utf16_retained(ctx, &mut reader, "Rhino annotation font face")?,
         world_view_text_scale: (minor >= 1)
             .then(|| annotation_scale(&mut reader))
             .transpose()?,
@@ -247,7 +252,15 @@ fn annotation_settings(
         use_dimension_layer: (minor >= 4).then(|| reader.bool()).transpose()?,
         dimension_layer_uuid: if minor >= 4 {
             let id = Uuid::from_wire(reader.array()?);
-            (!id.is_nil()).then(|| id.to_string())
+            if id.is_nil() {
+                None
+            } else {
+                Some(crate::wire::admitted_format(
+                    ctx,
+                    format_args!("{id}"),
+                    "Rhino annotation dimension layer UUID",
+                )?)
+            }
         } else {
             None
         },
@@ -257,6 +270,7 @@ fn annotation_settings(
 }
 
 fn grid_defaults(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     body: std::ops::Range<usize>,
     source_offset: usize,
@@ -270,7 +284,11 @@ fn grid_defaults(
         ));
     }
     let value = GridDefaultsRecord {
-        id: "rhino:document:grid_defaults#current".to_string(),
+        id: crate::wire::copy_retained_string(
+            ctx,
+            "rhino:document:grid_defaults#current",
+            "Rhino grid defaults ID",
+        )?,
         source_offset: source_offset as u64,
         grid_spacing_mm: length(&mut reader, scale)?,
         snap_spacing_mm: length(&mut reader, scale)?,
@@ -285,6 +303,7 @@ fn grid_defaults(
 }
 
 fn render_settings(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     body: std::ops::Range<usize>,
     source_offset: usize,
@@ -336,7 +355,8 @@ fn render_settings(
     let background_style = reader.i32()?;
     let background_color = reader.array()?;
     let background_bottom_color = modern.then(|| reader.array()).transpose()?;
-    let background_bitmap_path = utf16(&mut reader)?;
+    let background_bitmap_path =
+        utf16_retained(ctx, &mut reader, "Rhino render background bitmap path")?;
     let read_flag = |reader: &mut BoundedReader<'_>| {
         if modern {
             reader.bool()
@@ -377,9 +397,9 @@ fn render_settings(
         if minor.is_some_and(|minor| minor >= 2) {
             (
                 Some(reader.i32()?),
-                utf16(&mut reader)?,
-                utf16(&mut reader)?,
-                utf16(&mut reader)?,
+                utf16_retained(ctx, &mut reader, "Rhino render specific viewport")?,
+                utf16_retained(ctx, &mut reader, "Rhino render named view")?,
+                utf16_retained(ctx, &mut reader, "Rhino render snapshot")?,
             )
         } else {
             (None, String::new(), String::new(), String::new())
@@ -416,7 +436,11 @@ fn render_settings(
     };
     reader.skip_remaining()?;
     Ok(RenderSettingsRecord {
-        id: "rhino:document:render_settings#current".to_string(),
+        id: crate::wire::copy_retained_string(
+            ctx,
+            "rhino:document:render_settings#current",
+            "Rhino render settings ID",
+        )?,
         source_offset: source_offset as u64,
         custom_image_size,
         image_width_pixels,
@@ -775,7 +799,8 @@ pub(crate) fn install(
                 let Some(scale) = binding.neutral_scale() else {
                     continue;
                 };
-                match annotation_settings(scan.data, record.body(), record.range.start, scale) {
+                match annotation_settings(ctx, scan.data, record.body(), record.range.start, scale)
+                {
                     Ok(value) => {
                         crate::wire::reserve_collection(
                             ctx,
@@ -792,7 +817,7 @@ pub(crate) fn install(
                 let Some(scale) = binding.neutral_scale() else {
                     continue;
                 };
-                match grid_defaults(scan.data, record.body(), record.range.start, scale) {
+                match grid_defaults(ctx, scan.data, record.body(), record.range.start, scale) {
                     Ok(value) => {
                         crate::wire::reserve_collection(ctx, &mut grids, 1, "Rhino grid defaults")?;
                         grids.push(value);
@@ -805,6 +830,7 @@ pub(crate) fn install(
                     continue;
                 };
                 match render_settings(
+                    ctx,
                     scan.data,
                     record.body(),
                     record.range.start,
@@ -862,6 +888,9 @@ pub(crate) fn install(
                 continue;
             };
             if let Err(error) = result {
+                if let FramingError::Resource(limit) = &error {
+                    return Err(CodecError::ResourceLimit(*limit));
+                }
                 crate::wire::reserve_collection(
                     ctx,
                     &mut opaque_records,
