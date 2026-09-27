@@ -76,6 +76,44 @@ pub(crate) fn copy_slice<T: Clone>(
     Ok(copy)
 }
 
+pub(crate) fn copy_retained_slice<T: Clone>(
+    ctx: &DecodeContext<'_>,
+    values: &[T],
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    let Some(bytes) = values
+        .len()
+        .checked_mul(std::mem::size_of::<T>().max(1))
+        .and_then(|bytes| u64::try_from(bytes).ok())
+    else {
+        return Err(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX));
+    };
+    ctx.charge_retained(bytes, operation)?;
+    copy_slice(ctx, values, operation)
+}
+
+pub(crate) fn copy_retained_rows<T: Clone>(
+    ctx: &DecodeContext<'_>,
+    rows: &[Vec<T>],
+    row_operation: &'static str,
+    item_operation: &'static str,
+) -> Result<Vec<Vec<T>>, CodecError> {
+    let Some(bytes) = rows
+        .len()
+        .checked_mul(std::mem::size_of::<Vec<T>>())
+        .and_then(|bytes| u64::try_from(bytes).ok())
+    else {
+        return Err(ctx.refuse_codec_limit(row_operation, u64::MAX, u64::MAX));
+    };
+    ctx.charge_retained(bytes, row_operation)?;
+    let mut copy = Vec::new();
+    reserve_vec(ctx, &mut copy, rows.len(), row_operation)?;
+    for row in rows {
+        copy.push(copy_retained_slice(ctx, row, item_operation)?);
+    }
+    Ok(copy)
+}
+
 pub(crate) fn copy_knot_vector(
     ctx: &DecodeContext<'_>,
     knots: &cadmpeg_ir::geometry::nurbs::KnotVector,

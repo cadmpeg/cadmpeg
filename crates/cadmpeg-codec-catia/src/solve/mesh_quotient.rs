@@ -666,6 +666,26 @@ pub(super) enum MeshEndpointCandidates<'a> {
 }
 
 impl MeshCoordinateRootDomains {
+    fn clone_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        Ok(Self {
+            domains: crate::resource::copy_retained_rows(
+                ctx,
+                &self.domains,
+                "catia_coordinate_root_clone_domains",
+                "catia_coordinate_root_clone_points",
+            )?,
+            edges: Arc::clone(&self.edges),
+            root_edges: Arc::clone(&self.root_edges),
+            edge_candidates: Arc::clone(&self.edge_candidates),
+            coverage_matching: crate::resource::copy_retained_slice(
+                ctx,
+                &self.coverage_matching,
+                "catia_coordinate_root_clone_matching",
+            )?,
+            point_count: self.point_count,
+        })
+    }
+
     pub(super) fn edge_candidates(&self) -> &[Vec<[usize; 2]>] {
         &self.edge_candidates
     }
@@ -1092,7 +1112,7 @@ impl MeshCoordinateRootDomains {
             return Ok(None);
         };
         if candidates.as_slice() == [pair] {
-            return Ok(Some(self.clone()));
+            return Ok(Some(self.clone_charged(ctx)?));
         }
         if !candidates.is_empty() && !candidates.contains(&pair) {
             return Ok(None);
@@ -1100,14 +1120,28 @@ impl MeshCoordinateRootDomains {
         if candidates.is_empty() && !self.supports_edge_candidate(edge, pair) {
             return Ok(None);
         }
-        let mut edge_candidates = self.edge_candidates.as_ref().clone();
-        edge_candidates[edge] = vec![pair];
+        let mut edge_candidates = crate::resource::copy_retained_rows(
+            ctx,
+            self.edge_candidates.as_ref(),
+            "catia_coordinate_refine_candidate_rows",
+            "catia_coordinate_refine_candidate_pairs",
+        )?;
+        edge_candidates[edge] = crate::resource::copy_retained_slice(
+            ctx,
+            &[pair],
+            "catia_coordinate_refine_selected_pair",
+        )?;
         let Some(RefinedCoordinateDomains {
             domains,
             coverage_matching,
         }) = self.refine_domains(
             ctx,
-            self.domains.clone(),
+            crate::resource::copy_retained_rows(
+                ctx,
+                &self.domains,
+                "catia_coordinate_refine_domain_rows",
+                "catia_coordinate_refine_domain_points",
+            )?,
             &edge_candidates,
             &[edge],
             false,
@@ -1135,21 +1169,35 @@ impl MeshCoordinateRootDomains {
         if edge_candidates.len() != self.edge_candidates.len() {
             return Ok(None);
         }
-        let changed = edge_candidates
+        let mut changed = Vec::new();
+        for (edge, (current, base)) in edge_candidates
             .iter()
             .zip(self.edge_candidates.iter())
             .enumerate()
-            .filter_map(|(edge, (current, base))| (current != base).then_some(edge))
-            .collect::<Vec<_>>();
+        {
+            if current != base {
+                crate::resource::push(
+                    ctx,
+                    &mut changed,
+                    edge,
+                    "catia_coordinate_refine_changed_edges",
+                )?;
+            }
+        }
         if changed.is_empty() {
-            return Ok(Some(self.clone()));
+            return Ok(Some(self.clone_charged(ctx)?));
         }
         let Some(RefinedCoordinateDomains {
             domains,
             coverage_matching,
         }) = self.refine_domains(
             ctx,
-            self.domains.clone(),
+            crate::resource::copy_retained_rows(
+                ctx,
+                &self.domains,
+                "catia_coordinate_refine_domain_rows",
+                "catia_coordinate_refine_domain_points",
+            )?,
             edge_candidates,
             &changed,
             false,
@@ -1162,7 +1210,12 @@ impl MeshCoordinateRootDomains {
             domains,
             edges: Arc::clone(&self.edges),
             root_edges: Arc::clone(&self.root_edges),
-            edge_candidates: Arc::new(edge_candidates.to_vec()),
+            edge_candidates: Arc::new(crate::resource::copy_retained_rows(
+                ctx,
+                edge_candidates,
+                "catia_coordinate_refine_candidate_rows",
+                "catia_coordinate_refine_candidate_pairs",
+            )?),
             coverage_matching,
             point_count: self.point_count,
         }))
@@ -13680,6 +13733,102 @@ fn coordinate_refinement_charges_hall_changed_roots_and_edges() {
     ] {
         assert!(refused.contains(operation), "no refusal at {operation}");
     }
+}
+
+#[test]
+fn coordinate_root_copies_charge_retained_and_nested_collections() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+
+    let domains = MeshCoordinateRootDomains {
+        domains: vec![vec![0], vec![1]],
+        edges: Arc::new(vec![[0, 1]]),
+        root_edges: Arc::new(vec![vec![0], vec![0]]),
+        edge_candidates: Arc::new(vec![vec![[0, 1], [1, 0]]]),
+        coverage_matching: vec![0, 1],
+        point_count: 2,
+    };
+    let unchanged = |ctx: &DecodeContext<'_>| {
+        domains.refine_candidates(ctx, domains.edge_candidates.as_ref(), None)
+    };
+    assert!(crate::test_support::with_service_context(unchanged)
+        .expect("service resource budget")
+        .is_some());
+    let mut clone_refusals = HashSet::new();
+    for cap in 0..64 {
+        match crate::test_support::with_collection_limit(cap, unchanged) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                clone_refusals.insert(limit.operation);
+            }
+            Ok(Some(_)) => break,
+            _ => panic!("unexpected unchanged coordinate domains"),
+        }
+    }
+    for operation in [
+        "catia_coordinate_root_clone_domains",
+        "catia_coordinate_root_clone_points",
+        "catia_coordinate_root_clone_matching",
+    ] {
+        assert!(
+            clone_refusals.contains(operation),
+            "no refusal at {operation}"
+        );
+    }
+
+    let selected =
+        |ctx: &DecodeContext<'_>| domains.refine_edge_candidate_arc(ctx, 0, [0, 1], None);
+    assert!(crate::test_support::with_service_context(selected)
+        .expect("service resource budget")
+        .is_some());
+    let mut selected_refusals = HashSet::new();
+    for cap in 0..256 {
+        match crate::test_support::with_collection_limit(cap, selected) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                selected_refusals.insert(limit.operation);
+            }
+            Ok(Some(_)) => break,
+            _ => panic!("unexpected selected coordinate domains"),
+        }
+    }
+    for operation in [
+        "catia_coordinate_refine_candidate_rows",
+        "catia_coordinate_refine_candidate_pairs",
+        "catia_coordinate_refine_selected_pair",
+        "catia_coordinate_refine_domain_rows",
+        "catia_coordinate_refine_domain_points",
+    ] {
+        assert!(
+            selected_refusals.contains(operation),
+            "no refusal at {operation}"
+        );
+    }
+
+    let changed = |ctx: &DecodeContext<'_>| domains.refine_candidates(ctx, &[vec![[0, 1]]], None);
+    assert!(crate::test_support::with_service_context(changed)
+        .expect("service resource budget")
+        .is_some());
+    let mut changed_refusals = HashSet::new();
+    for cap in 0..256 {
+        match crate::test_support::with_collection_limit(cap, changed) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                changed_refusals.insert(limit.operation);
+            }
+            Ok(Some(_)) => break,
+            _ => panic!("unexpected changed coordinate domains"),
+        }
+    }
+    assert!(changed_refusals.contains("catia_coordinate_refine_changed_edges"));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root fits the input limit");
+    assert!(matches!(
+        unchanged(&ctx),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "catia_coordinate_root_clone_domains"
+    ));
 }
 
 #[test]
