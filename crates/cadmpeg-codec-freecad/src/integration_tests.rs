@@ -58,6 +58,81 @@ fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
         .expect("synthesized FCStd archive should decode")
 }
 
+#[test]
+fn feature_semantic_loss_refuses_at_retained_limit() {
+    semantic_loss_message_refuses(
+        crate::loss::FreecadLossCode::FeatureNativeKindRetained,
+        &["FCStd design operation ", "Part::Feature", " is retained natively but has no neutral semantics"],
+        "FCStd feature semantic loss",
+    );
+}
+
+#[test]
+fn sketch_geometry_semantic_loss_refuses_at_retained_limit() {
+    semantic_loss_message_refuses(
+        crate::loss::FreecadLossCode::SketchNativeGeometry,
+        &["FCStd sketch geometry ", "Spline", " is retained natively but is not neutralized"],
+        "FCStd sketch geometry semantic loss",
+    );
+}
+
+#[test]
+fn sketch_constraint_semantic_loss_refuses_at_retained_limit() {
+    semantic_loss_message_refuses(
+        crate::loss::FreecadLossCode::SketchNativeConstraint,
+        &["FCStd sketch constraint ", "Custom", " is retained natively but is not neutralized"],
+        "FCStd sketch constraint semantic loss",
+    );
+}
+
+fn semantic_loss_message_refuses(
+    code: crate::loss::FreecadLossCode,
+    parts: &[&str],
+    operation: &'static str,
+) {
+    let length: usize = parts.iter().map(|part| part.len()).sum();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = length as u64 - 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::push_semantic_loss(&ctx, &mut Vec::new(), code, parts, None, operation),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == operation));
+}
+
+#[test]
+fn semantic_loss_vector_refuses_at_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::push_semantic_loss(
+        &ctx, &mut Vec::new(), crate::loss::FreecadLossCode::SketchNativeGeometry,
+        &["FCStd sketch geometry ", "Spline", " is retained natively but is not neutralized"],
+        None, "FCStd sketch geometry semantic loss",
+    ), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "FCStd semantic loss output"));
+}
+
+#[test]
+fn semantic_loss_source_tag_refuses_at_retained_limit() {
+    let parts = ["FCStd sketch geometry ", "Spline", " is retained natively but is not neutralized"];
+    let message_len: usize = parts.iter().map(|part| part.len()).sum();
+    let tag = "fcstd:native:object#Sketch";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = (message_len + tag.len()) as u64 - 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::push_semantic_loss(&ctx, &mut Vec::new(),
+        crate::loss::FreecadLossCode::SketchNativeGeometry, &parts,
+        Some(tag), "FCStd sketch geometry semantic loss"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FCStd sketch geometry semantic loss"));
+}
+
 fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
     assert_valid_document(result.ir());
     let findings = crate::test_support::validate_native(result.ir());
