@@ -25,6 +25,49 @@ pub(crate) fn native_id(kind: &str, key: impl AsRef<str>) -> String {
     )
 }
 
+pub(crate) fn native_id_charged(
+    ctx: &DecodeContext<'_>,
+    kind: &str,
+    key: &str,
+) -> Result<String, CodecError> {
+    const OPERATION: &str = "FreeCAD native identity";
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let encoded_len = if key.is_empty() {
+        6
+    } else {
+        key.bytes().try_fold(0_usize, |len, byte| {
+            len.checked_add(if byte.is_ascii_alphanumeric()
+                || matches!(byte, b'.' | b'_' | b'-' | b'/') { 1 } else { 3 })
+        }).ok_or_else(|| crate::resource::retained_allocation_failed(ctx, u64::MAX, OPERATION))?
+    };
+    let len = "fcstd:native:".len()
+        .checked_add(kind.len())
+        .and_then(|len| len.checked_add(1))
+        .and_then(|len| len.checked_add(encoded_len))
+        .ok_or_else(|| crate::resource::retained_allocation_failed(ctx, u64::MAX, OPERATION))?;
+    ctx.charge_retained(len as u64, OPERATION)?;
+    let mut id = String::new();
+    id.try_reserve_exact(len)
+        .map_err(|_| crate::resource::retained_allocation_failed(ctx, len as u64, OPERATION))?;
+    id.push_str("fcstd:native:");
+    id.push_str(kind);
+    id.push('#');
+    if key.is_empty() {
+        id.push_str("%EMPTY");
+    } else {
+        for byte in key.bytes() {
+            if byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/') {
+                id.push(char::from(byte));
+            } else {
+                id.push('%');
+                id.push(char::from(HEX[usize::from(byte >> 4)]));
+                id.push(char::from(HEX[usize::from(byte & 0x0f)]));
+            }
+        }
+    }
+    Ok(id)
+}
+
 pub(crate) fn native_id_from_key(kind: &str, key: &IdentityKey) -> String {
     format!("fcstd:native:{kind}#{key}")
 }
@@ -72,6 +115,25 @@ pub(crate) fn model_key(
 mod tests {
 
     use super::{model_id, native_child_id, native_id};
+
+    #[test]
+    fn charged_native_identity_preserves_encoding_and_refuses_at_retained_limit() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        for key in ["", "Body", "A B#%", "Å"] {
+            assert_eq!(super::native_id_charged(&ctx, "entry", key).expect("ID fits policy"),
+                native_id("entry", key));
+        }
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes = native_id("entry", "A B#%").len() as u64 - 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        assert!(matches!(super::native_id_charged(&ctx, "entry", "A B#%"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "FreeCAD native identity"));
+    }
 
     #[test]
     fn link_targets_reject_absence_on_every_admission_route() {

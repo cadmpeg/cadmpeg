@@ -742,7 +742,9 @@ fn transfer_neutral_presentation(
                 PresentationStateKind::Native(retained_string(ctx, &state.kind, "FCStd presentation state kind")?)
             };
             let mut assets = collection_vec(ctx, state.side_entries.len(), "FCStd presentation assets")?;
-            assets.extend(state.side_entries.iter().map(|entry| crate::native::native_id("entry", entry)));
+            for entry in &state.side_entries {
+                assets.push(crate::native::native_id_charged(ctx, "entry", entry)?);
+            }
             states.push(PresentationState {
                 kind,
                 order: u32::try_from(order)
@@ -1184,10 +1186,8 @@ fn gui_state(
         reserve_vec_items(ctx, &mut side_entries, 1, "FCStd GUI side entry references")?;
         side_entries.push(copy_xml_text(Some(ctx), value, "FCStd GUI side entry name")?);
     }
-    Ok(GuiStateRecord {
-        id: crate::native::native_id("gui-state", format!("{}:{order}", node.tag_name().name())),
-        kind: copy_xml_text(Some(ctx), node.tag_name().name(), "FCStd GUI state kind")?,
-        attributes: node
+    let kind = copy_xml_text(Some(ctx), node.tag_name().name(), "FCStd GUI state kind")?;
+    let attributes = node
             .attributes()
             .map(|attribute| {
                 ctx.charge_collection_items(1, "FCStd GUI state attributes")?;
@@ -1200,15 +1200,22 @@ fn gui_state(
                     copy_xml_text(Some(ctx), attribute.value(), "FCStd GUI state attribute")?,
                 ))
             })
-            .collect::<Result<_, CodecError>>()?,
-        values,
-        side_entries,
-        xml: crate::native::RetainedXml::from_source(
+            .collect::<Result<_, CodecError>>()?;
+    let xml = crate::native::RetainedXml::from_source(
             Some(ctx),
             &text[node.range()],
             node.range().start as u64,
             "FCStd GUI state XML",
-        )?,
+        )?;
+    let order = order.to_string();
+    let key = retained_join(ctx, &[kind.as_str(), order.as_str()], ":", "FCStd GUI state identity key")?;
+    Ok(GuiStateRecord {
+        id: crate::native::native_id_charged(ctx, "gui-state", &key)?,
+        kind,
+        attributes,
+        values,
+        side_entries,
+        xml,
     })
 }
 

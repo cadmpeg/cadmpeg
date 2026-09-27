@@ -204,7 +204,7 @@ pub(crate) fn materialized_bytes<'a>(
     Ok((bytes, reservation))
 }
 
-fn retained_allocation_failed(
+pub(crate) fn retained_allocation_failed(
     ctx: &DecodeContext<'_>,
     count: u64,
     operation: &'static str,
