@@ -351,7 +351,7 @@ fn decode_annotation(
     leader: bool,
 ) -> Result<(crate::dimensions::Annotation, Vec<[FiniteReal; 2]>), FramingError> {
     let mut outer = anonymous(data, range.clone(), archive, i32::from(leader))?;
-    let mut annotation = crate::dimensions::annotation(data, &mut outer, archive)?;
+    let mut annotation = crate::dimensions::annotation(ctx, data, &mut outer, archive)?;
     annotation.plane = scaled_plane(annotation.plane, scale, range.start)?;
     annotation.text_rectangle_width =
         scaled_coordinate(annotation.text_rectangle_width.get(), scale).ok_or_else(|| {
@@ -619,10 +619,14 @@ fn record_identity(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     identity: &crate::objects::SourceIdentity,
     source_order: usize,
+    admitted_key: Option<String>,
 ) -> Result<(Vec<String>, String, String), CodecError> {
     let mut links = Vec::new();
     reserve_record_slot(ctx, &mut links, "Rhino annotation links")?;
-    let key = source_key(ctx, identity, source_order)?;
+    let key = match admitted_key {
+        Some(key) => key,
+        None => source_key(ctx, identity, source_order)?,
+    };
     links.push(admitted_format(
         ctx,
         format_args!("rhino:object:record#{source_order:06}"),
@@ -723,6 +727,11 @@ pub(crate) fn install(
             )?;
             continue;
         };
+        let mut v2_key = if matches!(&class, AnnotationClass::V2) {
+            Some(source_key(ctx, identity, source_order)?)
+        } else {
+            None
+        };
         let mut v5_text_extra = None;
         if matches!(
             class,
@@ -782,7 +791,8 @@ pub(crate) fn install(
                     }
                 };
                 reserve_record_slot(ctx, &mut annotations, "Rhino native annotations")?;
-                let (links, key, source_uuid) = record_identity(ctx, identity, source_order)?;
+                let (links, key, source_uuid) =
+                    record_identity(ctx, identity, source_order, v2_key.take())?;
                 annotations.push(AnnotationRecord {
                     id: admitted_format(
                         ctx,
@@ -870,7 +880,8 @@ pub(crate) fn install(
                         .map(cadmpeg_ir::units::FiniteVector::finite_components),
                 );
                 reserve_record_slot(ctx, &mut annotations, "Rhino native annotations")?;
-                let (links, key, source_uuid) = record_identity(ctx, identity, source_order)?;
+                let (links, key, source_uuid) =
+                    record_identity(ctx, identity, source_order, v2_key.take())?;
                 annotations.push(AnnotationRecord {
                     id: admitted_format(
                         ctx,
@@ -949,7 +960,7 @@ pub(crate) fn install(
                 } else {
                     AnnotationKind::Annotation
                 };
-                let rich_text = crate::dimensions::v2_effective_text(&value.base);
+                let rich_text = crate::dimensions::v2_effective_text(ctx, &value.base)?;
                 let leader_points = if is_leader {
                     let mut points = Vec::new();
                     reserve_record_count(
@@ -970,7 +981,8 @@ pub(crate) fn install(
                     Vec::new()
                 };
                 reserve_record_slot(ctx, &mut annotations, "Rhino native annotations")?;
-                let (links, key, source_uuid) = record_identity(ctx, identity, source_order)?;
+                let (links, key, source_uuid) =
+                    record_identity(ctx, identity, source_order, v2_key.take())?;
                 annotations.push(AnnotationRecord {
                     id: admitted_format(
                         ctx,
@@ -1032,7 +1044,8 @@ pub(crate) fn install(
                     }
                 };
                 reserve_record_slot(ctx, &mut dots, "Rhino native text dots")?;
-                let (links, key, source_uuid) = record_identity(ctx, identity, source_order)?;
+                let (links, key, source_uuid) =
+                    record_identity(ctx, identity, source_order, v2_key.take())?;
                 dots.push(TextDotRecord {
                     id: admitted_format(
                         ctx,
@@ -1065,7 +1078,8 @@ pub(crate) fn install(
                     }
                 };
                 reserve_record_slot(ctx, &mut arrows, "Rhino native annotation arrows")?;
-                let (links, key, source_uuid) = record_identity(ctx, identity, source_order)?;
+                let (links, key, source_uuid) =
+                    record_identity(ctx, identity, source_order, v2_key.take())?;
                 arrows.push(AnnotationArrowRecord {
                     id: admitted_format(
                         ctx,

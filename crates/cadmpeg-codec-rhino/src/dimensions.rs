@@ -8,7 +8,7 @@ use crate::chunks::{
     admitted_vec, checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError,
 };
 use crate::objects::{parse_class_wrapper, UserdataDescriptor};
-use crate::settings::{plane, utf16, CoordinateLane, MillimeterScale, Plane};
+use crate::settings::{plane, utf16_retained, CoordinateLane, MillimeterScale, Plane};
 use crate::wire::{scaled_coordinate, uuid, Uuid};
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, PositiveAngle, PositiveReal};
 use cadmpeg_ir::units::FiniteVector;
@@ -252,12 +252,13 @@ fn point2(reader: &mut BoundedReader<'_>) -> Result<FiniteVector<2>, FramingErro
 }
 
 fn text_content(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
 ) -> Result<TextContent, FramingError> {
     let (mut text, next, _version) = anonymous(data, reader.position(), reader.end(), archive)?;
-    let rich_text = utf16(&mut text)?;
+    let rich_text = utf16_retained(ctx, &mut text, "Rhino dimension rich text")?;
     plane(&mut text)?;
     let rectangle_width = text.f64()?;
     let rotation_radians = text.f64()?;
@@ -292,13 +293,14 @@ fn text_content(
 }
 
 pub(crate) fn annotation(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
 ) -> Result<Annotation, FramingError> {
     let (mut annotation, next, version) =
         anonymous(data, reader.position(), reader.end(), archive)?;
-    let text = text_content(data, &mut annotation, archive)?;
+    let text = text_content(ctx, data, &mut annotation, archive)?;
     let dimstyle_id = uuid(&mut annotation)?;
     let plane = plane(&mut annotation)?;
     let annotation_type = if version >= 1 { annotation.i32()? } else { 0 };
@@ -436,7 +438,7 @@ fn legacy_annotation_fields(
         let offset = annotation.position();
         points.push(scaled_point(point2(annotation)?, scale, offset)?);
     }
-    let rich_text = utf16(annotation)?;
+    let rich_text = utf16_retained(ctx, annotation, "Rhino legacy annotation rich text")?;
     let user_positioned_text = match annotation.i32()? {
         0 => false,
         1 => true,
@@ -463,9 +465,9 @@ fn legacy_annotation_fields(
         .transpose()?;
     let allow_text_scaling = legacy_text_scaling(stored_text_scaling);
     let user_text = if !direct_legacy && minor >= 2 {
-        utf16(annotation)?
+        utf16_retained(ctx, annotation, "Rhino legacy annotation user text")?
     } else {
-        rich_text.clone()
+        crate::wire::copy_retained_string(ctx, &rich_text, "Rhino legacy annotation user text")?
     };
     let dimstyle_index = if !direct_legacy && minor >= 3 {
         let text_style_index = annotation.i32()?;
@@ -628,8 +630,8 @@ pub(crate) fn v2_annotation_direct(
         }
         points.push(scaled_point(raw_point, scale, point_offset)?);
     }
-    let user_text = utf16(reader)?;
-    let default_text = utf16(reader)?;
+    let user_text = utf16_retained(ctx, reader, "Rhino V2 annotation user text")?;
+    let default_text = utf16_retained(ctx, reader, "Rhino V2 annotation default text")?;
     let user_positioned_text = reader.i32()? != 0;
     Ok(V2Annotation {
         kind,
@@ -642,14 +644,20 @@ pub(crate) fn v2_annotation_direct(
 }
 
 /// Applies the source conversion's user-text selection and trimming rule.
-pub(crate) fn v2_effective_text(annotation: &V2Annotation) -> String {
+pub(crate) fn v2_effective_text(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    annotation: &V2Annotation,
+) -> Result<String, cadmpeg_core::CodecError> {
     let text = if annotation.user_text.is_empty() {
         &annotation.default_text
     } else {
         &annotation.user_text
     };
-    text.trim_matches(|character: char| character.is_whitespace() || character.is_control())
-        .to_owned()
+    crate::wire::copy_retained_string(
+        ctx,
+        text.trim_matches(|character: char| character.is_whitespace() || character.is_control()),
+        "Rhino V2 effective text",
+    )
 }
 
 enum LegacyDimensionFields {
@@ -1040,7 +1048,7 @@ fn decode_v2(
     Ok(Dimension {
         source_range: range,
         annotation_type: modern_annotation_type(kind),
-        rich_text: v2_effective_text(&annotation),
+        rich_text: v2_effective_text(ctx, &annotation)?,
         user_text: annotation.user_text,
         family: DimensionFamily::V2 {
             default_text: annotation.default_text,
@@ -1110,9 +1118,9 @@ pub(crate) fn decode(
         anonymous(data, range.start, range.end, archive)?;
     let (mut common, common_next, common_version) =
         anonymous(data, outer.position(), outer.end(), archive)?;
-    let mut annotation = annotation(data, &mut common, archive)?;
+    let mut annotation = annotation(ctx, data, &mut common, archive)?;
     annotation.plane = scale_plane(annotation.plane, scale, range.start)?;
-    let user_text = utf16(&mut common)?;
+    let user_text = utf16_retained(ctx, &mut common, "Rhino dimension user text")?;
     if !common.f64()?.is_finite() {
         return Err(FramingError::structural(
             common.position() - 8,
@@ -1888,6 +1896,167 @@ pub(crate) mod tests {
         apply(&ctx)
     }
 
+    fn with_retained_limit<R>(
+        data: &[u8],
+        limit: u64,
+        apply: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
+    ) -> R {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+            .expect("dimension fixture fits root limit");
+        apply(&ctx)
+    }
+
+    fn assert_resource(error: &crate::chunks::FramingError, operation: &str) {
+        assert!(
+            matches!(error, crate::chunks::FramingError::Resource(limit) if limit.operation == operation),
+            "expected {operation}, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn v2_user_text_refuses_retained_limit() {
+        let bytes = v2_payload(7, &[], "user", "default", false, None);
+        let error = with_retained_limit(&bytes, 0, |ctx| {
+            let mut reader =
+                BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded V2 payload");
+            v2_annotation_direct(ctx, &mut reader, MillimeterScale::IDENTITY)
+                .err()
+                .expect("user text exceeds retained limit")
+        });
+        assert_resource(&error, "Rhino V2 annotation user text");
+    }
+
+    #[test]
+    fn v2_default_text_refuses_retained_limit() {
+        let bytes = v2_payload(7, &[], "user", "default", false, None);
+        let error = with_retained_limit(&bytes, 4, |ctx| {
+            let mut reader =
+                BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded V2 payload");
+            v2_annotation_direct(ctx, &mut reader, MillimeterScale::IDENTITY)
+                .err()
+                .expect("default text exceeds retained limit")
+        });
+        assert_resource(&error, "Rhino V2 annotation default text");
+    }
+
+    #[test]
+    fn v2_effective_text_refuses_retained_limit() {
+        let bytes = v2_payload(7, &[], "  user  ", "default", false, None);
+        let annotation = with_test_context(&bytes, |ctx| {
+            let mut reader =
+                BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded V2 payload");
+            v2_annotation_direct(ctx, &mut reader, MillimeterScale::IDENTITY)
+        })
+        .expect("V2 annotation admitted");
+        let error = with_retained_limit(&bytes, 0, |ctx| {
+            v2_effective_text(ctx, &annotation).expect_err("effective copy exceeds retained limit")
+        });
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "Rhino V2 effective text"
+        ));
+    }
+
+    #[test]
+    fn legacy_rich_text_refuses_retained_limit() {
+        let bytes = direct_legacy_payload(7, &[], &[]);
+        let error = with_retained_limit(&bytes, 0, |ctx| {
+            let mut reader =
+                BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded legacy payload");
+            super::legacy_annotation_direct(ctx, &mut reader, MillimeterScale::IDENTITY)
+                .err()
+                .expect("rich text exceeds retained limit")
+        });
+        assert_resource(&error, "Rhino legacy annotation rich text");
+    }
+
+    #[test]
+    fn legacy_user_text_copy_refuses_retained_limit() {
+        let bytes = direct_legacy_payload(7, &[], &[]);
+        let error = with_retained_limit(&bytes, 2, |ctx| {
+            let mut reader =
+                BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded legacy payload");
+            super::legacy_annotation_direct(ctx, &mut reader, MillimeterScale::IDENTITY)
+                .err()
+                .expect("user text copy exceeds retained limit")
+        });
+        assert_resource(&error, "Rhino legacy annotation user text");
+    }
+
+    #[test]
+    fn legacy_user_text_field_refuses_retained_limit() {
+        let bytes = legacy_annotation_payload(7, &[]);
+        let error = with_retained_limit(&bytes, 2, |ctx| {
+            let mut reader =
+                BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded legacy payload");
+            super::legacy_annotation(
+                ctx,
+                &bytes,
+                &mut reader,
+                MillimeterScale::IDENTITY,
+                ArchiveVersion::V8,
+            )
+            .err()
+            .expect("user text field exceeds retained limit")
+        });
+        assert_resource(&error, "Rhino legacy annotation user text");
+    }
+
+    #[test]
+    fn modern_dimension_rich_text_refuses_retained_limit() {
+        let family = [3.0_f64, 4.0, 8.0, 9.0]
+            .into_iter()
+            .flat_map(f64::to_le_bytes)
+            .collect::<Vec<_>>();
+        let bytes = payload(1, &family);
+        let error = with_retained_limit(&bytes, 0, |ctx| {
+            super::decode(
+                ctx,
+                &bytes,
+                LINEAR,
+                0..bytes.len(),
+                MillimeterScale::IDENTITY,
+                ArchiveVersion::V8,
+            )
+            .expect_err("rich text exceeds retained limit")
+        });
+        assert_resource(&error, "Rhino dimension rich text");
+    }
+
+    #[test]
+    fn modern_dimension_user_text_refuses_retained_limit() {
+        let family = [3.0_f64, 4.0, 8.0, 9.0]
+            .into_iter()
+            .flat_map(f64::to_le_bytes)
+            .collect::<Vec<_>>();
+        let bytes =
+            dimension_payload_with_arrow_fit(1, &family, [0; 16], &plane(), None, 0, "user");
+        let error = with_retained_limit(&bytes, 3, |ctx| {
+            super::decode(
+                ctx,
+                &bytes,
+                LINEAR,
+                0..bytes.len(),
+                MillimeterScale::IDENTITY,
+                ArchiveVersion::V8,
+            )
+            .expect_err("user text exceeds retained limit")
+        });
+        assert_resource(&error, "Rhino dimension user text");
+        assert!(test_decode(
+            &bytes,
+            LINEAR,
+            0..bytes.len(),
+            MillimeterScale::IDENTITY,
+            ArchiveVersion::V8,
+        )
+        .is_ok());
+    }
+
     #[test]
     fn legacy_annotation_points_refuse_collection_limit() {
         let bytes = direct_legacy_payload(7, &[[1.0, 2.0], [3.0, 4.0]], &[]);
@@ -2077,7 +2246,11 @@ pub(crate) mod tests {
         assert_eq!(annotation.default_text, "default");
         assert!(!annotation.user_positioned_text);
         assert_eq!(reader.remaining(), 2);
-        assert_eq!(v2_effective_text(&annotation), "user <>");
+        assert_eq!(
+            v2_effective_text(&cadmpeg_test_support::service_decode_context(), &annotation)
+                .expect("effective V2 text"),
+            "user <>"
+        );
     }
 
     #[test]
@@ -2247,6 +2420,7 @@ pub(crate) mod tests {
             plane,
             text_point,
             0,
+            "",
         )
     }
 
@@ -2257,6 +2431,7 @@ pub(crate) mod tests {
         plane: &[u8],
         text_point: Option<[f64; 2]>,
         arrow_fit: i32,
+        user_text: &str,
     ) -> Vec<u8> {
         let mut text = utf16_bytes("<>\n");
         text.extend(self::plane());
@@ -2277,7 +2452,7 @@ pub(crate) mod tests {
         annotation.push(1);
 
         let mut common = anonymous(4, &annotation);
-        common.extend(utf16_bytes(""));
+        common.extend(utf16_bytes(user_text));
         common.extend(0.0_f64.to_le_bytes());
         common.push(u8::from(text_point.is_none()));
         for value in text_point.unwrap_or([0.0, 0.0]) {
@@ -2417,7 +2592,7 @@ pub(crate) mod tests {
         .expect("required invariant");
         assert_eq!(radial.measurement, 20.0);
         let outside_bytes =
-            dimension_payload_with_arrow_fit(3, &radial_family, [0; 16], &plane(), None, 2);
+            dimension_payload_with_arrow_fit(3, &radial_family, [0; 16], &plane(), None, 2, "");
         let outside = test_decode(
             &outside_bytes,
             RADIAL,
@@ -2487,7 +2662,8 @@ pub(crate) mod tests {
             .flat_map(f64::to_le_bytes)
             .collect::<Vec<_>>();
         for (wire, expected) in [(0, 0), (1, 1), (2, -1)] {
-            let bytes = dimension_payload_with_arrow_fit(3, &family, [0; 16], &plane(), None, wire);
+            let bytes =
+                dimension_payload_with_arrow_fit(3, &family, [0; 16], &plane(), None, wire, "");
             let dimension = test_decode(
                 &bytes,
                 RADIAL,
@@ -2498,7 +2674,7 @@ pub(crate) mod tests {
             .expect("admitted arrow fit");
             assert_eq!(dimension.arrow_position, expected);
         }
-        let bytes = dimension_payload_with_arrow_fit(3, &family, [0; 16], &plane(), None, 3);
+        let bytes = dimension_payload_with_arrow_fit(3, &family, [0; 16], &plane(), None, 3, "");
         let error = test_decode(
             &bytes,
             RADIAL,
