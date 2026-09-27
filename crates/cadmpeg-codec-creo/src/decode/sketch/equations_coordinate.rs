@@ -699,6 +699,38 @@ impl SectionCoordinateEquation {
     }
 }
 
+fn admitted_coordinate_variables(
+    ctx: &DecodeContext<'_>,
+    candidates: impl IntoIterator<Item = SectionCoordinateVariable>,
+) -> Result<
+    (
+        Vec<SectionCoordinateVariable>,
+        BTreeMap<SectionCoordinateVariable, usize>,
+    ),
+    CodecError,
+> {
+    let mut unique = BTreeSet::new();
+    for variable in candidates {
+        if !unique.contains(&variable) {
+            ctx.charge_collection_items(1, "creo section unique variables")?;
+            unique.insert(variable);
+        }
+    }
+    let mut variables = Vec::new();
+    ctx.try_reserve_items(
+        &mut variables,
+        unique.len(),
+        "creo section ordered variables",
+    )?;
+    variables.extend(unique);
+    let mut indices = BTreeMap::new();
+    for (index, variable) in variables.iter().enumerate() {
+        ctx.charge_collection_items(1, "creo section variable indices")?;
+        indices.insert(*variable, index);
+    }
+    Ok((variables, indices))
+}
+
 pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
     ctx: &DecodeContext<'_>,
     equations: &[SectionCoordinateEquation],
@@ -710,24 +742,19 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
         return Ok(BTreeMap::new());
     }
 
-    let variables = equations
-        .iter()
-        .flat_map(|equation| equation.terms.keys().copied())
-        .chain(
-            distances
-                .iter()
-                .flat_map(|&(first, second, coordinate, _)| {
-                    [(first, coordinate), (second, coordinate)]
-                }),
-        )
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
-    let indices = variables
-        .iter()
-        .enumerate()
-        .map(|(index, variable)| (*variable, index))
-        .collect::<BTreeMap<_, _>>();
+    let (variables, indices) = admitted_coordinate_variables(
+        ctx,
+        equations
+            .iter()
+            .flat_map(|equation| equation.terms.keys().copied())
+            .chain(
+                distances
+                    .iter()
+                    .flat_map(|&(first, second, coordinate, _)| {
+                        [(first, coordinate), (second, coordinate)]
+                    }),
+            ),
+    )?;
     let mut adjacency = ctx.alloc_filled(
         variables.len(),
         BTreeSet::new(),
@@ -1041,17 +1068,12 @@ pub(in crate::decode) fn solve_section_coordinate_equations(
     equations: &[SectionCoordinateEquation],
     stored_coordinates: &BTreeMap<SectionCoordinateVariable, f64>,
 ) -> Result<BTreeMap<u32, [Option<f64>; 2]>, CodecError> {
-    let variables = equations
-        .iter()
-        .flat_map(|equation| equation.terms.keys().copied())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
-    let indices = variables
-        .iter()
-        .enumerate()
-        .map(|(index, variable)| (*variable, index))
-        .collect::<BTreeMap<_, _>>();
+    let (variables, indices) = admitted_coordinate_variables(
+        ctx,
+        equations
+            .iter()
+            .flat_map(|equation| equation.terms.keys().copied()),
+    )?;
     let mut adjacency = ctx.alloc_filled(
         variables.len(),
         BTreeSet::new(),
@@ -1259,13 +1281,85 @@ mod tests {
     }
 
     #[test]
-    fn section_coordinate_adjacency_reports_collection_limit() {
+    fn section_coordinate_unique_variables_refuse_before_tree_insert() {
         let equations = [SectionCoordinateEquation::point_value(
             1,
             SectionAxis::U,
             1.0,
         )];
         let error = with_collection_limit(0, |ctx| {
+            super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
+        })
+        .expect_err("one unique variable exceeds zero collection items");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section unique variables")
+        );
+    }
+
+    #[test]
+    fn section_coordinate_ordered_variables_refuse_before_vector_reserve() {
+        let equations = [SectionCoordinateEquation::point_value(
+            1,
+            SectionAxis::U,
+            1.0,
+        )];
+        let error = with_collection_limit(1, |ctx| {
+            super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
+        })
+        .expect_err("the ordered copy follows one admitted unique variable");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section ordered variables")
+        );
+    }
+
+    #[test]
+    fn section_coordinate_variable_indices_refuse_before_tree_insert() {
+        let equations = [SectionCoordinateEquation::point_value(
+            1,
+            SectionAxis::U,
+            1.0,
+        )];
+        let error = with_collection_limit(2, |ctx| {
+            super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
+        })
+        .expect_err("the index node follows the unique and ordered copies");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section variable indices")
+        );
+    }
+
+    #[test]
+    fn unsigned_dimension_unique_variables_refuse_before_tree_insert() {
+        let error = with_collection_limit(0, |ctx| {
+            super::solve_unsigned_dimension_coordinates(
+                ctx,
+                &[],
+                &BTreeMap::new(),
+                &[(1, 2, SectionAxis::U, 1.0)],
+            )
+        })
+        .expect_err("the first distance endpoint needs a variable node");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section unique variables")
+        );
+    }
+
+    #[test]
+    fn section_coordinate_adjacency_reports_collection_limit() {
+        let equations = [SectionCoordinateEquation::point_value(
+            1,
+            SectionAxis::U,
+            1.0,
+        )];
+        let error = with_collection_limit(3, |ctx| {
             super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
         })
         .expect_err("one adjacency row exceeds the collection limit");
@@ -1283,7 +1377,7 @@ mod tests {
             SectionAxis::U,
             1.0,
         )];
-        let error = with_collection_limit(1, |ctx| {
+        let error = with_collection_limit(4, |ctx| {
             super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
         })
         .expect_err("membership row exceeds the remaining collection limit");
@@ -1296,7 +1390,7 @@ mod tests {
 
     #[test]
     fn unsigned_dimension_adjacency_reports_collection_limit() {
-        let error = with_collection_limit(1, |ctx| {
+        let error = with_collection_limit(7, |ctx| {
             super::solve_unsigned_dimension_coordinates(
                 ctx,
                 &[],
@@ -1330,7 +1424,7 @@ mod tests {
             )
         })
         .is_ok());
-        let error = with_collection_limit(2, |ctx| {
+        let error = with_collection_limit(8, |ctx| {
             super::solve_unsigned_dimension_coordinates(
                 ctx,
                 &equations,
@@ -1348,7 +1442,7 @@ mod tests {
 
     #[test]
     fn unsigned_dimension_adjacency_links_refuse_before_tree_insert() {
-        let error = with_collection_limit(2, |ctx| {
+        let error = with_collection_limit(8, |ctx| {
             super::solve_unsigned_dimension_coordinates(
                 ctx,
                 &[],
@@ -1375,7 +1469,7 @@ mod tests {
             super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
         })
         .is_ok());
-        let error = with_collection_limit(2, |ctx| {
+        let error = with_collection_limit(5, |ctx| {
             super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
         })
         .expect_err("the first equation member follows two outer rows");
@@ -1394,7 +1488,7 @@ mod tests {
             SectionAxis::U,
             1.0,
         )];
-        let error = with_collection_limit(6, |ctx| {
+        let error = with_collection_limit(12, |ctx| {
             super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
         })
         .expect_err("the first adjacency link follows outer and member slots");
@@ -1412,7 +1506,7 @@ mod tests {
             SectionAxis::U,
             1.0,
         )];
-        let error = with_collection_limit(3, |ctx| {
+        let error = with_collection_limit(6, |ctx| {
             super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
         })
         .expect_err("the first membership link follows two outer rows and one member");
