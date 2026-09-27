@@ -4342,7 +4342,9 @@ pub(super) fn emit_edges(
                     edge: EdgeId::from(id(format, i)),
                     record_index: r.index as u32,
                     sense: sense_at(r, 9),
-                    continuity: continuity.clone(),
+                    continuity: crate::decode_alloc::copy_string(
+                        ctx, continuity, "ASM edge continuity text",
+                    )?,
                 });
             }
         }

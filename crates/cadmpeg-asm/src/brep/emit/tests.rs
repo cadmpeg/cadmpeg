@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{emit_carrier_curve, emit_coedges, emit_containers, emit_faces, emit_vertices, into_support_sides};
+use super::{emit_carrier_curve, emit_coedges, emit_containers, emit_edges, emit_faces, emit_vertices, into_support_sides};
 use crate::brep::records::{FaceSidedness, TolerantCoedgeExtension};
 use crate::brep::{AsmBrep, Carriers, Reachable, WireShellTopology};
 use crate::nurbs;
@@ -44,6 +44,34 @@ fn body_source_stream_copy_refuses_retained_limit() {
     };
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
     assert_eq!(limit.operation, "ASM body source stream");
+}
+
+#[test]
+fn edge_continuity_copy_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::HashMap;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut tokens = vec![Token::Long(0); 11];
+    tokens[3] = Token::Ref(1);
+    tokens[5] = Token::Ref(2);
+    tokens[10] = Token::Str("G1".into());
+    let records = [Record { index: 4, name: "edge".into(), tokens: tokens.into(), offset: 0, len: 0 }];
+    let by_index = HashMap::from([(4, &records[0])]);
+    let reach = Reachable { edges: HashSet::from([4]), vertices: HashSet::from([1, 2]), ..Reachable::default() };
+    let error = emit_edges(
+        &ctx, &mut AsmBrep::default(), &records, &by_index, &reach,
+        &HashSet::new(), &HashSet::new(), crate::asm_format!("f3d"),
+    ).expect_err("edge continuity exceeds zero retained bytes");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected resource refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, "ASM edge continuity text");
 }
 
 fn subtype_table(records: &[Record]) -> nurbs::toks::SubtypeTable {
