@@ -8,6 +8,8 @@ mod document_admission_tests;
 mod index_admission_tests;
 mod packet_role;
 #[cfg(test)]
+mod scene_admission_tests;
+#[cfg(test)]
 mod segment_admission_tests;
 mod version;
 
@@ -25,7 +27,7 @@ use version::JtVersionField;
 
 use cadmpeg_container::compression::{inflate_zlib_exact, inflate_zlib_probe};
 use cadmpeg_core::bytes::{assemble_f32_le, assemble_u32_le, assemble_u64_le};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteBinary32, UnitBinary32};
@@ -104,6 +106,29 @@ fn display_jt_text_size(
         let len = u64::try_from(part.len()).map_err(|_| invalid())?;
         sum.checked_add(len).ok_or_else(invalid)
     })
+}
+
+fn admit_display_jt_pair<T>(
+    ctx: Option<&DecodeContext<'_>>,
+    records: &mut Vec<T>,
+    segment_id: &str,
+    first_suffix: &str,
+    second_suffix: &str,
+    ordinal: usize,
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    let digits = decimal_digits(ordinal)
+        .checked_mul(2)
+        .ok_or_else(|| match ctx {
+            Some(ctx) => ctx.refuse_codec_limit(operation, 0, u64::MAX),
+            None => display_jt_framing_error("DisplayJT ordinal length exceeds u64"),
+        })?;
+    let text_bytes = display_jt_text_size(
+        ctx,
+        &[segment_id, first_suffix, segment_id, second_suffix],
+        digits,
+    )?;
+    admit_display_jt_record(ctx, records, text_bytes, operation)
 }
 
 fn digest_display_jt(
@@ -2532,6 +2557,161 @@ fn parse_jt_base_node_body(body: &[u8], format_major: u16) -> Option<(u16, u32, 
     ))
 }
 
+fn admit_jt_counted_u32<'a, 'ctx>(
+    ctx: Option<&'ctx DecodeContext<'_>>,
+    bytes: &'a [u8],
+    count_offset: usize,
+    values_offset: usize,
+    operation: &'static str,
+    retained: bool,
+) -> Result<Option<(&'a [u8], Option<ScopedReservation<'ctx>>)>, CodecError> {
+    let Some(count) = View::u32_le_at(bytes, count_offset) else {
+        return Ok(None);
+    };
+    let Some(byte_len) = usize::try_from(count)
+        .ok()
+        .and_then(|count| count.checked_mul(4))
+    else {
+        return Ok(None);
+    };
+    let Some(end) = values_offset.checked_add(byte_len) else {
+        return Ok(None);
+    };
+    let Some(tail) = bytes.get(end..) else {
+        return Ok(None);
+    };
+    let reservation = if let Some(ctx) = ctx {
+        ctx.charge_collection_items(u64::from(count), operation)?;
+        if retained {
+            ctx.charge_retained(u64::from(count) * 4, operation)?;
+            None
+        } else {
+            Some(ctx.reserve_scoped(u64::from(count) * 4, operation)?)
+        }
+    } else {
+        None
+    };
+    Ok(Some((tail, reservation)))
+}
+
+fn admit_jt_base_body<'a, 'ctx>(
+    ctx: Option<&'ctx DecodeContext<'_>>,
+    body: &'a [u8],
+    major: u16,
+    retained: bool,
+) -> Result<Option<(&'a [u8], Option<ScopedReservation<'ctx>>)>, CodecError> {
+    let (count_offset, values_offset) = if major < 10 { (6, 10) } else { (5, 9) };
+    admit_jt_counted_u32(
+        ctx,
+        body,
+        count_offset,
+        values_offset,
+        "decode DisplayJT base node attributes",
+        retained,
+    )
+}
+
+fn admit_jt_group_body<'a, 'ctx>(
+    ctx: Option<&'ctx DecodeContext<'_>>,
+    body: &'a [u8],
+) -> Result<Option<(&'a [u8], Option<ScopedReservation<'ctx>>)>, CodecError> {
+    let Some((family, base_reservation)) = admit_jt_base_body(ctx, body, 9, false)? else {
+        return Ok(None);
+    };
+    let Some((family, _)) =
+        admit_jt_counted_u32(ctx, family, 2, 6, "decode DisplayJT group children", true)?
+    else {
+        return Ok(None);
+    };
+    Ok(Some((family, base_reservation)))
+}
+
+fn admit_jt_partition_name<'a>(
+    ctx: Option<&'a DecodeContext<'_>>,
+    family: &[u8],
+) -> Result<Option<Option<ScopedReservation<'a>>>, CodecError> {
+    let Some(count) = View::u32_le_at(family, 4) else {
+        return Ok(None);
+    };
+    let Some(byte_len) = usize::try_from(count)
+        .ok()
+        .and_then(|count| count.checked_mul(2))
+    else {
+        return Ok(None);
+    };
+    let Some(end) = 8usize.checked_add(byte_len) else {
+        return Ok(None);
+    };
+    let Some(raw) = family.get(8..end) else {
+        return Ok(None);
+    };
+    let Some(utf8_len) = utf16_utf8_len(raw) else {
+        return Ok(None);
+    };
+    let Some(ctx) = ctx else {
+        return Ok(Some(None));
+    };
+    ctx.charge_work(u64::from(count), "decode DisplayJT partition name")?;
+    ctx.charge_collection_items(u64::from(count), "decode DisplayJT partition name")?;
+    ctx.charge_retained(
+        u64::try_from(utf8_len)
+            .map_err(|_| ctx.refuse_codec_limit("retain DisplayJT partition name", 0, u64::MAX))?,
+        "retain DisplayJT partition name",
+    )?;
+    let reservation =
+        ctx.reserve_scoped(u64::from(count) * 2, "decode DisplayJT partition name")?;
+    Ok(Some(Some(reservation)))
+}
+
+fn jt_f32_vector_tail(bytes: &[u8]) -> Option<(&[u8], u64)> {
+    let count = View::u32_le_at(bytes, 0)?;
+    let byte_len = usize::try_from(count).ok()?.checked_mul(4)?;
+    let end = 4usize.checked_add(byte_len)?;
+    Some((bytes.get(end..)?, u64::from(count)))
+}
+
+fn admit_jt_range_vectors<'a>(
+    ctx: Option<&'a DecodeContext<'_>>,
+    family: &[u8],
+) -> Result<Option<Option<ScopedReservation<'a>>>, CodecError> {
+    let Some(first) = family.get(2..) else {
+        return Ok(None);
+    };
+    let Some((after_first, first_count)) = jt_f32_vector_tail(first) else {
+        return Ok(None);
+    };
+    let Some(second) = after_first.get(6..) else {
+        return Ok(None);
+    };
+    let Some((_, second_count)) = jt_f32_vector_tail(second) else {
+        return Ok(None);
+    };
+    let Some(ctx) = ctx else {
+        return Ok(Some(None));
+    };
+    let total = first_count
+        .checked_add(second_count)
+        .ok_or_else(|| ctx.refuse_codec_limit("decode DisplayJT range values", 0, u64::MAX))?;
+    ctx.charge_work(total, "decode DisplayJT range values")?;
+    ctx.charge_collection_items(
+        total
+            .checked_mul(2)
+            .ok_or_else(|| ctx.refuse_codec_limit("decode DisplayJT range values", 0, u64::MAX))?,
+        "decode DisplayJT range values",
+    )?;
+    ctx.charge_retained(
+        total
+            .checked_mul(4)
+            .ok_or_else(|| ctx.refuse_codec_limit("retain DisplayJT range values", 0, u64::MAX))?,
+        "retain DisplayJT range values",
+    )?;
+    let reservation = ctx.reserve_scoped(
+        first_count.max(second_count) * 4,
+        "decode DisplayJT range values",
+    )?;
+    Ok(Some(Some(reservation)))
+}
+
 fn parse_jt9_instance_node_body(body: &[u8]) -> Option<(u16, u32)> {
     let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
     let version = View::u16_le_at(family, 0)?;
@@ -4430,6 +4610,17 @@ pub(super) fn display_jt_string_property_atoms(
             else {
                 return Ok(Vec::new());
             };
+            if !admit_display_jt_pair(
+                budget.map(|(ctx, _)| ctx),
+                &mut atoms,
+                &segment.id,
+                "-string-property-atom-",
+                "-inflated-element-",
+                ordinal,
+                "store DisplayJT string property atom",
+            )? {
+                return Ok(Vec::new());
+            }
             atoms.push(DisplayJtStringPropertyAtom {
                 id: format!("{}-string-property-atom-{ordinal}", segment.id),
                 element: format!("{}-inflated-element-{ordinal}", segment.id),
@@ -4480,6 +4671,26 @@ pub(super) fn display_jt_shape_lod_bindings(
             parse_jt_element_sequence(budget.map(|(ctx, _)| ctx), tail)?
         else {
             return Ok(Vec::new());
+        };
+        let _map_reservation = if let Some((ctx, _)) = budget {
+            let count = property_atoms
+                .iter()
+                .filter(|atom| {
+                    (atom.object_type_id == STRING_PROPERTY_ATOM_TYPE && atom.object_base_type == 5)
+                        || (atom.object_type_id == LATE_LOADED_PROPERTY_ATOM_TYPE
+                            && atom.object_base_type == 8)
+                })
+                .count();
+            let count = u64::try_from(count).map_err(|_| {
+                ctx.refuse_codec_limit("store DisplayJT property atoms", 0, u64::MAX)
+            })?;
+            ctx.charge_collection_items(count, "store DisplayJT property atoms")?;
+            let bytes = count.checked_mul(128).ok_or_else(|| {
+                ctx.refuse_codec_limit("store DisplayJT property atoms", 0, u64::MAX)
+            })?;
+            Some(ctx.reserve_scoped(bytes, "store DisplayJT property atoms")?)
+        } else {
+            None
         };
         let mut strings = BTreeMap::new();
         let mut late_loaded = BTreeMap::new();
@@ -4577,6 +4788,27 @@ pub(super) fn display_jt_shape_lod_bindings(
                     if targets.next().is_some() || target.segment_type != 7 {
                         return Ok(Vec::new());
                     }
+                    let ctx = budget.map(|(ctx, _)| ctx);
+                    let text_bytes = display_jt_text_size(
+                        ctx,
+                        &[
+                            &scene_segment.id,
+                            "-shape-lod-binding--",
+                            &scene_segment.id,
+                            SHAPE_IMPLEMENTATION_KEY,
+                            &target.id,
+                        ],
+                        decimal_digits(table_ordinal as usize)
+                            + decimal_digits(pair_ordinal as usize),
+                    )?;
+                    if !admit_display_jt_record(
+                        ctx,
+                        &mut bindings,
+                        text_bytes,
+                        "store DisplayJT shape LOD binding",
+                    )? {
+                        return Ok(Vec::new());
+                    }
                     bindings.push(DisplayJtShapeLodBinding {
                         id: format!(
                             "{}-shape-lod-binding-{table_ordinal}-{pair_ordinal}",
@@ -4642,11 +4874,31 @@ pub(super) fn display_jt_base_node_data(
             if element.object_base_type > 2 {
                 continue;
             }
+            let Some((_, _base_reservation)) = admit_jt_base_body(
+                budget.map(|(ctx, _)| ctx),
+                element.body,
+                document.version.major(),
+                true,
+            )?
+            else {
+                return Ok(Vec::new());
+            };
             let Some((version, flags, attribute_object_ids, family_data)) =
                 parse_jt_base_node_body(element.body, document.version.major())
             else {
                 return Ok(Vec::new());
             };
+            if !admit_display_jt_pair(
+                budget.map(|(ctx, _)| ctx),
+                &mut nodes,
+                &segment.id,
+                "-base-node-",
+                "-inflated-element-",
+                ordinal,
+                "store DisplayJT base node",
+            )? {
+                return Ok(Vec::new());
+            }
             nodes.push(DisplayJtBaseNodeData {
                 id: format!("{}-base-node-{ordinal}", segment.id),
                 element: format!("{}-inflated-element-{ordinal}", segment.id),
@@ -4656,7 +4908,7 @@ pub(super) fn display_jt_base_node_data(
                 flags,
                 attribute_object_ids,
                 family_data_byte_len: family_data.len() as u32,
-                family_data_sha256: Sha256Hex::digest(family_data),
+                family_data_sha256: digest_display_jt(budget.map(|(ctx, _)| ctx), family_data)?,
                 source_offset: segment.source_offset + 24,
             });
         }
@@ -4700,12 +4952,28 @@ pub(super) fn display_jt_group_node_data(
             if element.object_base_type != 1 {
                 continue;
             }
+            let Some((_, _base_reservation)) =
+                admit_jt_group_body(budget.map(|(ctx, _)| ctx), element.body)?
+            else {
+                return Ok(Vec::new());
+            };
             let Some((version, child_object_ids, family_data)) =
                 parse_jt9_group_node_body(element.body)
             else {
                 return Ok(Vec::new());
             };
             if version != 1 {
+                return Ok(Vec::new());
+            }
+            if !admit_display_jt_pair(
+                budget.map(|(ctx, _)| ctx),
+                &mut nodes,
+                &segment.id,
+                "-group-node-data-",
+                "-base-node-",
+                ordinal,
+                "store DisplayJT group node",
+            )? {
                 return Ok(Vec::new());
             }
             nodes.push(DisplayJtGroupNodeData {
@@ -4715,7 +4983,7 @@ pub(super) fn display_jt_group_node_data(
                 version,
                 child_object_ids,
                 family_data_byte_len: family_data.len() as u32,
-                family_data_sha256: Sha256Hex::digest(family_data),
+                family_data_sha256: digest_display_jt(budget.map(|(ctx, _)| ctx), family_data)?,
                 source_offset: segment.source_offset + 24,
             });
         }
@@ -4766,10 +5034,26 @@ pub(super) fn display_jt_instance_nodes(
             if element.object_base_type != 0 {
                 return Ok(Vec::new());
             }
+            let Some((_, _base_reservation)) =
+                admit_jt_base_body(budget.map(|(ctx, _)| ctx), element.body, 9, false)?
+            else {
+                return Ok(Vec::new());
+            };
             let Some((version, child_object_id)) = parse_jt9_instance_node_body(element.body)
             else {
                 return Ok(Vec::new());
             };
+            if !admit_display_jt_pair(
+                budget.map(|(ctx, _)| ctx),
+                &mut nodes,
+                &segment.id,
+                "-instance-node-",
+                "-base-node-",
+                ordinal,
+                "store DisplayJT instance node",
+            )? {
+                return Ok(Vec::new());
+            }
             nodes.push(DisplayJtInstanceNode {
                 id: format!("{}-instance-node-{ordinal}", segment.id),
                 base_node: format!("{}-base-node-{ordinal}", segment.id),
@@ -4831,6 +5115,17 @@ pub(super) fn display_jt_geometric_transform_attributes(
             else {
                 return Ok(Vec::new());
             };
+            if !admit_display_jt_pair(
+                budget.map(|(ctx, _)| ctx),
+                &mut attributes,
+                &segment.id,
+                "-geometric-transform-",
+                "-inflated-element-",
+                ordinal,
+                "store DisplayJT geometric transform",
+            )? {
+                return Ok(Vec::new());
+            }
             attributes.push(DisplayJtGeometricTransformAttribute {
                 id: format!("{}-geometric-transform-{ordinal}", segment.id),
                 element: format!("{}-inflated-element-{ordinal}", segment.id),
@@ -4894,6 +5189,17 @@ pub(super) fn display_jt_material_attributes(
             else {
                 return Ok(Vec::new());
             };
+            if !admit_display_jt_pair(
+                budget.map(|(ctx, _)| ctx),
+                &mut attributes,
+                &segment.id,
+                "-material-attribute-",
+                "-inflated-element-",
+                ordinal,
+                "store DisplayJT material attribute",
+            )? {
+                return Ok(Vec::new());
+            }
             attributes.push(DisplayJtMaterialAttribute {
                 id: format!("{}-material-attribute-{ordinal}", segment.id),
                 element: format!("{}-inflated-element-{ordinal}", segment.id),
@@ -4955,9 +5261,27 @@ pub(super) fn display_jt_partition_nodes(
             if element.object_type_id != PARTITION_NODE_TYPE {
                 continue;
             }
+            let ctx = budget.map(|(ctx, _)| ctx);
+            let Some((family, _base_reservation)) = admit_jt_group_body(ctx, element.body)? else {
+                return Ok(Vec::new());
+            };
+            let Some(_name_reservation) = admit_jt_partition_name(ctx, family)? else {
+                return Ok(Vec::new());
+            };
             let Some(node) = parse_jt9_partition_node_body(element.body) else {
                 return Ok(Vec::new());
             };
+            if !admit_display_jt_pair(
+                budget.map(|(ctx, _)| ctx),
+                &mut nodes,
+                &segment.id,
+                "-partition-node-",
+                "-base-node-",
+                ordinal,
+                "store DisplayJT partition node",
+            )? {
+                return Ok(Vec::new());
+            }
             nodes.push(DisplayJtPartitionNode {
                 id: format!("{}-partition-node-{ordinal}", segment.id),
                 base_node: format!("{}-base-node-{ordinal}", segment.id),
@@ -5018,9 +5342,27 @@ pub(super) fn display_jt_range_lod_nodes(
             if element.object_type_id != RANGE_LOD_NODE_TYPE {
                 continue;
             }
+            let ctx = budget.map(|(ctx, _)| ctx);
+            let Some((family, _base_reservation)) = admit_jt_group_body(ctx, element.body)? else {
+                return Ok(Vec::new());
+            };
+            let Some(_vector_reservation) = admit_jt_range_vectors(ctx, family)? else {
+                return Ok(Vec::new());
+            };
             let Some(node) = parse_jt9_range_lod_node_body(element.body) else {
                 return Ok(Vec::new());
             };
+            if !admit_display_jt_pair(
+                budget.map(|(ctx, _)| ctx),
+                &mut nodes,
+                &segment.id,
+                "-range-lod-node-",
+                "-base-node-",
+                ordinal,
+                "store DisplayJT range LOD node",
+            )? {
+                return Ok(Vec::new());
+            }
             nodes.push(DisplayJtRangeLodNode {
                 id: format!("{}-range-lod-node-{ordinal}", segment.id),
                 base_node: format!("{}-base-node-{ordinal}", segment.id),
@@ -5083,9 +5425,25 @@ pub(super) fn display_jt_tri_strip_shape_nodes(
             if element.object_base_type != 2 {
                 return Ok(Vec::new());
             }
+            let Some((_, _base_reservation)) =
+                admit_jt_base_body(budget.map(|(ctx, _)| ctx), element.body, 9, false)?
+            else {
+                return Ok(Vec::new());
+            };
             let Some(node) = parse_jt9_tri_strip_shape_node_body(element.body) else {
                 return Ok(Vec::new());
             };
+            if !admit_display_jt_pair(
+                budget.map(|(ctx, _)| ctx),
+                &mut nodes,
+                &segment.id,
+                "-tri-strip-shape-node-",
+                "-base-node-",
+                ordinal,
+                "store DisplayJT tri strip shape node",
+            )? {
+                return Ok(Vec::new());
+            }
             nodes.push(DisplayJtTriStripShapeNode {
                 id: format!("{}-tri-strip-shape-node-{ordinal}", segment.id),
                 base_node: format!("{}-base-node-{ordinal}", segment.id),
