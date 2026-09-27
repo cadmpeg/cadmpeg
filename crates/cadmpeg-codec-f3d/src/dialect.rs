@@ -240,8 +240,7 @@ fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
 
 /// Kernel dialect layers from the binary and text B-rep streams.
 fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Vec<DialectMatch> {
-    let text_names = crate::container::text_brep_names(scan);
-    let instance = if scan.breps.len() + text_names.len() > 1 {
+    let instance = if scan.breps.len() + crate::container::text_brep_names(scan).count() > 1 {
         LayerInstance::Tagged
     } else {
         LayerInstance::Sole
@@ -256,7 +255,7 @@ fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Vec<DialectMatch
             header, &brep.name, instance,
         ));
     }
-    for name in text_names {
+    for name in crate::container::text_brep_names(scan) {
         let matched = match scan.text_breps.get(name) {
             Some(crate::container::TextBrepFraming::Parsed(stream)) => {
                 let header = stream.header.as_kernel_header();

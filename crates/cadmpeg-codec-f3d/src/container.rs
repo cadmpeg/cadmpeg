@@ -840,14 +840,15 @@ pub(crate) fn design_breps<'s>(
 /// header. A caller that reports on geometry must still count them: a document
 /// whose only carrier is text has a carrier that is present and not read, which
 /// is a different finding from a document that declares no carrier.
-pub(crate) fn text_brep_names<'s>(scan: &'s ContainerScan<'_>) -> Vec<&'s str> {
+pub(crate) fn text_brep_names<'s>(
+    scan: &'s ContainerScan<'_>,
+) -> impl Iterator<Item = &'s str> + 's {
     scan.entries
         .iter()
         .filter(|entry| {
             entry.role == ContainerRole::BrepText && scan.belongs_to_design_asset(&entry.name)
         })
         .map(|entry| entry.name.as_str())
-        .collect()
 }
 
 fn asm_magic_label(bytes: &[u8]) -> String {

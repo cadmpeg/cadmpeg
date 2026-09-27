@@ -6,6 +6,56 @@ fn context<'a>(arena: &'a DecodeArena, max_collection_items: u64) -> DecodeConte
     DecodeContext::from_root_bytes(&[], arena, &policy).unwrap().0
 }
 
+#[test]
+fn text_brep_fact_name_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::super::copy_decode_string(
+        &ctx,
+        "Breps.BlobParts/BREP0.sat",
+        "retain F3D text B-rep fact name",
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D text B-rep fact name"));
+}
+
+#[test]
+fn text_brep_loss_text_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::super::format_decode_string(
+        &ctx,
+        "report F3D text geometry loss",
+        format_args!("text carrier {}", "BREP0.sat"),
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "report F3D text geometry loss"));
+}
+
+#[test]
+fn joined_text_brep_names_refuse_retained_limit() {
+    let bytes = crate::test_support::assembly_test::f3d_with_text_brep(&[
+        "FusionAssetName[Active]/Breps.BlobParts/BREP0.sat",
+    ]);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    let mut limited_policy = DecodePolicy::service();
+    limited_policy.limits.max_retained_bytes = 0;
+    let (limited, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
+    let error = super::super::join_text_brep_names(&limited, &scan).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "join F3D text B-rep names"));
+}
+
 fn dimension_native() -> crate::native::F3dNative {
     use crate::records::parameters::{
         DesignCompanionPayload, DesignParameter, DesignParameterDraft, DesignParameterOwner,
