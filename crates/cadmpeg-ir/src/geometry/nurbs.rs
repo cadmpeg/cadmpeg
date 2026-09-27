@@ -998,7 +998,43 @@ impl<P, W> NurbsSurfaceLanes<P, W> {
 }
 
 impl NurbsSurface {
+    /// Build a surface from admitted finite poles and raw knot lanes without copying them.
+    ///
+    /// # Errors
+    ///
+    /// Refuses inconsistent pole rows, degrees, or knot lanes.
+    pub fn from_admitted(
+        u: NurbsSurfaceAxis<Vec<f64>>,
+        v: NurbsSurfaceAxis<Vec<f64>>,
+        poles: NurbsPoleGrid<FinitePoint3>,
+        normal_reversed: bool,
+    ) -> Result<Self, NurbsError> {
+        let NurbsSurfaceAxis { degree: u_degree, knots: u_knots, periodic: u_periodic } = u;
+        let NurbsSurfaceAxis { degree: v_degree, knots: v_knots, periodic: v_periodic } = v;
+        let u_count = poles.u_count();
+        let v_count = poles.v_count();
+        if u_count <= usize::try_from(u_degree).map_err(|_| NurbsError::Structure("u degree exceeds platform width".into()))? {
+            return Err(NurbsError::Structure(format!("u_count must exceed u_degree {u_degree}, found {u_count}")));
+        }
+        if v_count <= usize::try_from(v_degree).map_err(|_| NurbsError::Structure("v degree exceeds platform width".into()))? {
+            return Err(NurbsError::Structure(format!("v_count must exceed v_degree {v_degree}, found {v_count}")));
+        }
+        require_length("u_knots", u_knots.len(), checked_knot_count("u", u_count, u_degree)?)?;
+        require_length("v_knots", v_knots.len(), checked_knot_count("v", v_count, v_degree)?)?;
+        match &poles {
+            NurbsPoleGrid::Polynomial { rows } => require_rectangular_grid("control_points", rows)?,
+            NurbsPoleGrid::Rational { rows } => require_rectangular_grid("control_points", rows)?,
+        }
+        let u_knots = KnotVector::new(u_knots)?;
+        let v_knots = KnotVector::new(v_knots)?;
+        Ok(Self { u_degree, v_degree, u_knots, v_knots, poles, normal_reversed, u_periodic, v_periodic })
+    }
+
     /// Copy the admitted surface with fallible reservations for each owned lane.
+    ///
+    /// # Errors
+    ///
+    /// Returns an allocation error if a lane cannot reserve its storage.
     pub fn try_clone(&self) -> Result<Self, std::collections::TryReserveError> {
         fn copy_rows<T: Clone>(rows: &[Vec<T>]) -> Result<Vec<Vec<T>>, std::collections::TryReserveError> {
             let mut copied = Vec::new();

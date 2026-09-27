@@ -1326,7 +1326,7 @@ fn associate_standard_freeform_e5_surfaces(
     let carrier_ids = standard_freeform_e5_carrier_ids(ctx, data)?;
 
     let mut surfaces = HashMap::<u32, Option<SurfaceGeometry>>::new();
-    for surface in crate::families::e5::records::e5_surfaces(data, refusal) {
+    for surface in crate::families::e5::records::e5_surfaces(ctx, data, refusal)? {
         if let Some(stored) = surfaces.get_mut(&surface.record_id) {
             if stored.as_ref().is_some_and(|geometry| geometry != &surface.geometry) {
                 *stored = None;

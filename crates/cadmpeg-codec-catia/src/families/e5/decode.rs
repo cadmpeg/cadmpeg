@@ -85,7 +85,7 @@ pub(in crate::families) fn try_decode_e5(
     };
     let stream = &scan.data[stream_range];
     let circles = crate::families::e5::records::e5_circles(ctx, stream)?;
-    let mut surfaces = crate::families::e5::records::e5_surfaces(stream, refusal);
+    let mut surfaces = crate::families::e5::records::e5_surfaces(ctx, stream, refusal)?;
     let rolling_ball_jets = crate::families::e5::records::e5_rolling_ball_jets(ctx, stream)?;
     (|| -> Option<Result<FamilyOutput, cadmpeg_core::CodecError>> {
         let topology = match crate::families::e5::graph::parse_topology(ctx, stream) {
