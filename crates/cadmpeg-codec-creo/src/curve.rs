@@ -908,7 +908,7 @@ pub(crate) fn expression_records_with_model_name(
     }
     labels.sort_unstable_by_key(|(offset, _, _)| *offset);
 
-    let cache = scalar::ScalarCache::from_section(payload);
+    let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let mut records = Vec::new();
     for (index, &(offset, label_len, backup)) in labels.iter().enumerate() {
         let end = labels
