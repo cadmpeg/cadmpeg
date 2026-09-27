@@ -3263,33 +3263,80 @@ fn common_supported_corner_equations(
                 if boundary.is_empty() {
                     return None;
                 }
-                let directions = boundary
-                    .iter()
-                    .map(|use_| {
-                        use_.reversed
-                            .map_or_else(|| vec![false, true], |reversed| vec![reversed])
-                    })
-                    .collect::<Vec<_>>();
-                let mut supported = match (0..boundary.len())
-                    .map(|index| {
+                let directions = match (|| -> Result<Vec<Vec<bool>>, CodecError> {
+                    let mut directions = Vec::new();
+                    for use_ in boundary {
+                        let mut options = Vec::new();
+                        if let Some(reversed) = use_.reversed {
+                            crate::resource::push(
+                                ctx,
+                                &mut options,
+                                reversed,
+                                "catia_boundary_direction_options",
+                            )?;
+                        } else {
+                            crate::resource::push(
+                                ctx,
+                                &mut options,
+                                false,
+                                "catia_boundary_direction_options",
+                            )?;
+                            crate::resource::push(
+                                ctx,
+                                &mut options,
+                                true,
+                                "catia_boundary_direction_options",
+                            )?;
+                        }
+                        crate::resource::push(
+                            ctx,
+                            &mut directions,
+                            options,
+                            "catia_boundary_directions",
+                        )?;
+                    }
+                    Ok(directions)
+                })() {
+                    Ok(directions) => directions,
+                    Err(error) => return Some(Err(error)),
+                };
+                let mut supported = match (|| -> Result<Vec<Vec<Vec<bool>>>, CodecError> {
+                    let mut supported = Vec::new();
+                    for index in 0..boundary.len() {
                         let width = directions[(index + 1) % boundary.len()].len();
                         let height = directions[index].len();
-                        let row = ctx.alloc_filled(width, false, "catia_boundary_dir_row")?;
-                        ctx.alloc_filled(height, row, "catia_boundary_dir_grid")
-                    })
-                    .collect::<Result<Vec<_>, CodecError>>()
-                {
+                        let mut grid = Vec::new();
+                        for _ in 0..height {
+                            let row = ctx.alloc_filled(width, false, "catia_boundary_dir_row")?;
+                            crate::resource::push(ctx, &mut grid, row, "catia_boundary_dir_grid")?;
+                        }
+                        crate::resource::push(
+                            ctx,
+                            &mut supported,
+                            grid,
+                            "catia_boundary_supported_grids",
+                        )?;
+                    }
+                    Ok(supported)
+                })() {
                     Ok(supported) => supported,
                     Err(error) => return Some(Err(error)),
                 };
                 for first in 0..directions[0].len() {
-                    let mut forward = match directions
-                        .iter()
-                        .map(|states| {
-                            ctx.alloc_filled(states.len(), false, "catia_boundary_forward")
-                        })
-                        .collect::<Result<Vec<_>, CodecError>>()
-                    {
+                    let mut forward = match (|| -> Result<Vec<Vec<bool>>, CodecError> {
+                        let mut forward = Vec::new();
+                        for states in &directions {
+                            let row =
+                                ctx.alloc_filled(states.len(), false, "catia_boundary_forward")?;
+                            crate::resource::push(
+                                ctx,
+                                &mut forward,
+                                row,
+                                "catia_boundary_forward_rows",
+                            )?;
+                        }
+                        Ok(forward)
+                    })() {
                         Ok(forward) => forward,
                         Err(error) => return Some(Err(error)),
                     };
@@ -3311,13 +3358,20 @@ fn common_supported_corner_equations(
                         }
                     }
                     let last = boundary.len() - 1;
-                    let mut backward = match directions
-                        .iter()
-                        .map(|states| {
-                            ctx.alloc_filled(states.len(), false, "catia_boundary_backward")
-                        })
-                        .collect::<Result<Vec<_>, CodecError>>()
-                    {
+                    let mut backward = match (|| -> Result<Vec<Vec<bool>>, CodecError> {
+                        let mut backward = Vec::new();
+                        for states in &directions {
+                            let row =
+                                ctx.alloc_filled(states.len(), false, "catia_boundary_backward")?;
+                            crate::resource::push(
+                                ctx,
+                                &mut backward,
+                                row,
+                                "catia_boundary_backward_rows",
+                            )?;
+                        }
+                        Ok(backward)
+                    })() {
                         Ok(backward) => backward,
                         Err(error) => return Some(Err(error)),
                     };
@@ -3402,17 +3456,32 @@ fn common_supported_corner_equations(
                                     directions[next][right],
                                     false,
                                 )?);
-                                equations.insert(if left <= right {
+                                let equation = if left <= right {
                                     [left, right]
                                 } else {
                                     [right, left]
-                                });
+                                };
+                                if let Err(error) = crate::resource::insert_set(
+                                    ctx,
+                                    &mut equations,
+                                    equation,
+                                    "catia_boundary_corner_equations",
+                                ) {
+                                    return Some(Err(error));
+                                }
                             }
                         }
                     }
                     if equations.len() == 1 {
                         if let Some(equation) = equations.into_iter().next() {
-                            forced.insert(equation);
+                            if let Err(error) = crate::resource::insert_set(
+                                ctx,
+                                &mut forced,
+                                equation,
+                                "catia_boundary_forced_corners",
+                            ) {
+                                return Some(Err(error));
+                            }
                         }
                     }
                 }
