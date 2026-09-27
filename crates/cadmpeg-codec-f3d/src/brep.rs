@@ -118,6 +118,7 @@ impl Brep {
     /// for one BREP blob.
     pub(crate) fn retain_body_keys(
         &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         selected_keys: &HashSet<u64>,
     ) -> Result<(), cadmpeg_core::CodecError> {
         let annotations = std::mem::take(&mut self.asm.annotation_records);
@@ -129,7 +130,7 @@ impl Brep {
             cadmpeg_core::CodecError::malformed(format_args!("BREP serialization failed: {error}"))
         })?;
         let mut owned = HashSet::new();
-        collect_owned_ids(&value, &mut owned);
+        collect_owned_ids(ctx, &value, &mut owned)?;
         let native_body_ids = self
             .asm
             .body_native_keys
@@ -152,7 +153,7 @@ impl Brep {
                 .map(|body| body.id.as_str().to_owned()),
         );
         let mut adjacency = HashMap::<String, HashSet<String>>::new();
-        collect_entity_adjacency(&value, &owned, &mut adjacency);
+        collect_entity_adjacency(ctx, &value, &owned, &mut adjacency)?;
         let mut reachable = roots;
         let mut pending = reachable.iter().cloned().collect::<Vec<_>>();
         while let Some(id) = pending.pop() {
@@ -196,6 +197,7 @@ impl Brep {
     /// coexist in one document model without record-index collisions.
     pub(crate) fn qualify_ids(
         &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         format: IdFormat,
         namespace: &str,
     ) -> Result<(), cadmpeg_core::CodecError> {
@@ -204,7 +206,7 @@ impl Brep {
             cadmpeg_core::CodecError::malformed(format_args!("BREP serialization failed: {error}"))
         })?;
         let mut owned = HashSet::new();
-        collect_owned_ids(&value, &mut owned);
+        collect_owned_ids(ctx, &value, &mut owned)?;
         let scheme_prefix = format!("{format}:");
         let replacements = owned
             .into_iter()
@@ -216,7 +218,7 @@ impl Brep {
                 (id, replacement)
             })
             .collect::<HashMap<_, _>>();
-        remap_owned_ids(&mut value, &replacements);
+        remap_owned_ids(ctx, &mut value, &replacements)?;
         let mut qualified: Self = crate::value_tree::from_value(value).map_err(|error| {
             cadmpeg_core::CodecError::malformed(format_args!("qualified BREP is invalid: {error}"))
         })?;
@@ -234,8 +236,12 @@ impl Brep {
     }
 
     /// Append a disjoint, already-qualified BREP graph.
-    pub(crate) fn append(&mut self, mut other: Self) {
-        self.asm.append(other.asm);
+    pub(crate) fn append(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        mut other: Self,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        self.asm.append(ctx, other.asm)?;
         macro_rules! append_vecs {
             ($($field:ident),+ $(,)?) => {
                 $(self.$field.append(&mut other.$field);)+
@@ -247,6 +253,7 @@ impl Brep {
             persistent_subentity_tags,
             creation_timestamps,
         );
+        Ok(())
     }
 }
 
@@ -288,7 +295,7 @@ pub(crate) fn decode_text(
         ctx,
         &stream.records,
         bytes,
-        Some(stream.header.as_kernel_header()),
+        Some(stream.header.as_kernel_header(ctx)?),
         entry,
         format,
         DecodePurpose::Model,
@@ -629,6 +636,18 @@ mod tests {
     use cadmpeg_ir::topology::{Body, BodyKind, Region};
     use std::collections::{HashMap, HashSet};
 
+    fn test_context(
+        arena: &cadmpeg_core::decode::DecodeArena,
+    ) -> cadmpeg_core::decode::DecodeContext<'_> {
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("test decode context")
+        .0
+    }
+
     fn generic_tag_attribute(
         target: AttributeTarget,
         versions: (i64, i64),
@@ -792,7 +811,9 @@ mod tests {
             ..Brep::default()
         };
 
-        brep.qualify_ids(crate::ids::ID_FORMAT, "source")
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let ctx = test_context(&arena);
+        brep.qualify_ids(&ctx, crate::ids::ID_FORMAT, "source")
             .expect("qualify BREP");
 
         let qualified = BodyId::mint("f3d:brep/source/brep:entity#1").expect("identity grammar");
@@ -859,7 +880,9 @@ mod tests {
             ..Brep::default()
         };
 
-        brep.retain_body_keys(&HashSet::from([20]))
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let ctx = test_context(&arena);
+        brep.retain_body_keys(&ctx, &HashSet::from([20]))
             .expect("retain body graph");
 
         assert_eq!(brep.asm.bodies.len(), 1);
@@ -982,7 +1005,9 @@ mod tests {
             ],
         };
 
-        brep.retain_body_keys(&HashSet::from([10]))
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let ctx = test_context(&arena);
+        brep.retain_body_keys(&ctx, &HashSet::from([10]))
             .expect("retain body graph");
 
         assert_eq!(brep.sketch_curve_links.len(), 1);
@@ -1035,7 +1060,9 @@ mod tests {
             ..Brep::default()
         };
 
-        brep.retain_body_keys(&HashSet::from([10]))
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let ctx = test_context(&arena);
+        brep.retain_body_keys(&ctx, &HashSet::from([10]))
             .expect("retain body graph");
 
         assert_eq!(brep.asm.bodies.len(), 2);

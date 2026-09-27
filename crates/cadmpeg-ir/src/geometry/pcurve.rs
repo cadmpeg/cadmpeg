@@ -118,7 +118,9 @@ impl PcurveNurbsPoles<FinitePoint2> {
 
     /// Copy rational evaluator weights with scratch bounded by the admitted pole count.
     pub fn try_weights(&self) -> Result<Option<Vec<f64>>, ResourceLimit> {
-        let Self::Rational { points } = self else { return Ok(None); };
+        let Self::Rational { points } = self else {
+            return Ok(None);
+        };
         let mut output = Vec::new();
         super::nurbs::scratch::reserve_exact(&mut output, points.len(), "IR pcurve weight copy")?;
         output.extend(points.iter().map(|pole| pole.weight.get()));
@@ -1844,6 +1846,74 @@ pub struct PcurveNurbs {
 }
 
 impl PcurveNurbs {
+    /// Copy admitted knots and poles under a decode caller's resource policy.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        fn copy_lane<T: Copy>(
+            ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+            values: &[T],
+            operation: &'static str,
+        ) -> Result<Vec<T>, cadmpeg_core::CodecError> {
+            let count = cadmpeg_core::decode::u64_from_index(values.len());
+            let bytes = count
+                .checked_mul(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<T>(),
+                ))
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, count))?;
+            ctx.charge_collection_items(count, operation)?;
+            ctx.charge_retained(bytes, operation)?;
+            let mut copy = Vec::new();
+            copy.try_reserve_exact(values.len())
+                .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
+            copy.extend_from_slice(values);
+            Ok(copy)
+        }
+
+        let knots = copy_lane(ctx, self.knots.as_slice(), operation)?;
+        let poles = match &self.poles {
+            PcurveNurbsPoles::Polynomial { points } => PcurveNurbsPoles::Polynomial {
+                points: copy_lane(ctx, points, operation)?,
+            },
+            PcurveNurbsPoles::Rational { points } => PcurveNurbsPoles::Rational {
+                points: copy_lane(ctx, points, operation)?,
+            },
+        };
+        Ok(Self {
+            degree: self.degree,
+            knots: KnotVector::new(knots).map_err(cadmpeg_core::CodecError::malformed)?,
+            poles,
+            periodic: self.periodic,
+        })
+    }
+
+    /// Build from admitted knot and pole rows without copying either lane.
+    ///
+    /// # Errors
+    ///
+    /// Refuses inconsistent cardinalities or a zero degree.
+    pub fn from_admitted_rows(
+        degree: u32,
+        knots: KnotVector,
+        poles: PcurveNurbsPoles<FinitePoint2>,
+        periodic: bool,
+    ) -> Result<Self, NurbsError> {
+        require_curve_cardinality(degree, knots.len(), poles.count(), "control_points")?;
+        if degree == 0 {
+            return Err(NurbsError::Structure(
+                "pcurve NURBS degree must be positive".into(),
+            ));
+        }
+        Ok(Self {
+            degree,
+            knots,
+            poles,
+            periodic,
+        })
+    }
+
     /// Build a parameter-space NURBS with consistent cardinalities.
     ///
     /// Raw pole positions are admitted; admitted positions are kept, so a

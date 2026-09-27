@@ -218,6 +218,45 @@ fn native_arena_json_copy_refuses_retained_limit_before_materialization() {
 }
 
 #[test]
+fn native_arena_typed_load_refuses_retained_limit_before_value_clone() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let record = serde_json::json!({
+        "id": "test:native:record#first",
+        "payload": {"labels": ["one", "two"]}
+    });
+    let arena = DecodeArena::new();
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut namespace = crate::native::NativeNamespace::default();
+    namespace
+        .set_arena(&service, "records", std::slice::from_ref(&record))
+        .unwrap();
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        u64::try_from(serde_json::to_vec(&record).unwrap().len()).unwrap() - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    super::TYPED_RECORD_CLONE_COUNT.with(|count| count.set(0));
+    let error = namespace
+        .arena_as_charged::<serde_json::Value>(&limited, "records")
+        .unwrap_err();
+    super::TYPED_RECORD_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "load typed native record"
+    ));
+    assert_eq!(
+        namespace
+            .arena_as_charged::<serde_json::Value>(&service, "records")
+            .unwrap(),
+        vec![record]
+    );
+}
+
+#[test]
 fn native_arena_name_refuses_retained_limit_before_copy() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
@@ -727,7 +766,8 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
         .unwrap()[0] = NativeRecord::new("f3d:test:act-guid#0", serde_json::Map::new())
         .expect("valid native identity");
     right.native.finalize();
-    assert!(validate_neutral(&right, Vec::new()).expect("resource allocation did not fail")
+    assert!(validate_neutral(&right, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.message == "entity id is not globally unique"));

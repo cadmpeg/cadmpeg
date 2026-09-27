@@ -179,8 +179,8 @@ pub(crate) enum DesignCoilSelection {
 }
 
 /// Exact placement construction carried by a compact Coil scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "DesignCoilPlacementWire", into = "DesignCoilPlacementWire")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignCoilPlacementWire")]
 pub(crate) struct DesignCoilPlacement {
     /// First ordered placement-construction reference.
     pub(crate) selection_record_index: u32,
@@ -198,6 +198,59 @@ pub(crate) struct DesignCoilPlacement {
     pub(crate) transform_class_tag: DesignClassTag,
     /// Explicit matrix and its byte offset; absent for the encoded identity form.
     pub(crate) explicit_transform: Option<Located<SketchPlacementMatrix>>,
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(super) static COIL_PLACEMENT_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignCoilPlacement {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        COIL_PLACEMENT_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            selection_record_index: self.selection_record_index,
+            selection_record_byte_offset: self.selection_record_byte_offset,
+            selection_class_tag: self.selection_class_tag.clone(),
+            selection: self.selection.clone(),
+            transform_record_index: self.transform_record_index,
+            transform_record_byte_offset: self.transform_record_byte_offset,
+            transform_class_tag: self.transform_class_tag.clone(),
+            explicit_transform: self.explicit_transform,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct DesignCoilPlacementRef<'a> {
+    selection_record_index: u32,
+    selection_record_byte_offset: u64,
+    selection_class_tag: &'a str,
+    selection: &'a DesignCoilSelection,
+    transform_record_index: u32,
+    transform_record_byte_offset: u64,
+    transform_class_tag: &'a str,
+    transform: &'a SketchPlacementMatrix,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    transform_offset: Option<u64>,
+}
+
+impl Serialize for DesignCoilPlacement {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DesignCoilPlacementRef {
+            selection_record_index: self.selection_record_index,
+            selection_record_byte_offset: self.selection_record_byte_offset,
+            selection_class_tag: self.selection_class_tag.as_str(),
+            selection: &self.selection,
+            transform_record_index: self.transform_record_index,
+            transform_record_byte_offset: self.transform_record_byte_offset,
+            transform_class_tag: self.transform_class_tag.as_str(),
+            transform: self.transform(),
+            transform_offset: self.explicit_transform.map(|matrix| matrix.offset),
+        }
+        .serialize(serializer)
+    }
 }
 
 impl DesignCoilPlacement {
@@ -273,6 +326,7 @@ impl TryFrom<DesignCoilPlacementWire> for DesignCoilPlacement {
     }
 }
 
+#[cfg(test)]
 impl From<DesignCoilPlacement> for DesignCoilPlacementWire {
     fn from(record: DesignCoilPlacement) -> Self {
         let transform = *record.transform();
@@ -301,8 +355,8 @@ pub(crate) struct DesignCoilTransform {
 }
 
 /// Coil-specific records carried by a Coil parameter scope.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-#[serde(try_from = "DesignCoilScopeWire", into = "DesignCoilScopeWire")]
+#[derive(Debug, PartialEq, Default, Deserialize)]
+#[serde(try_from = "DesignCoilScopeWire")]
 // Field names are the native record serialized keys.
 #[allow(clippy::struct_field_names)]
 pub(crate) struct DesignCoilScope {
@@ -313,6 +367,87 @@ pub(crate) struct DesignCoilScope {
     pub(crate) coil_clockwise: Option<MaybeRecordedValue<bool>>,
     pub(crate) coil_placement: Option<DesignCoilPlacement>,
     pub(crate) coil_transform: Option<DesignCoilTransform>,
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(super) static COIL_SCOPE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignCoilScope {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        COIL_SCOPE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            coil_operation: self.coil_operation,
+            coil_extent: self.coil_extent,
+            coil_section: self.coil_section,
+            coil_section_placement: self.coil_section_placement,
+            coil_clockwise: self.coil_clockwise,
+            coil_placement: self.coil_placement.clone(),
+            coil_transform: self.coil_transform.clone(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct DesignCoilScopeRef<'a> {
+    #[serde(rename = "coil_operation")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    operation: Option<DesignExtrudeOperation>,
+    #[serde(rename = "coil_operation_offset")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    operation_offset: Option<u64>,
+    #[serde(rename = "coil_extent")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    extent: Option<DesignCoilExtent>,
+    #[serde(rename = "coil_extent_offset")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    extent_offset: Option<u64>,
+    #[serde(rename = "coil_section")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    section: Option<DesignCoilSection>,
+    #[serde(rename = "coil_section_offset")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    section_offset: Option<u64>,
+    #[serde(rename = "coil_section_placement")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    section_placement: Option<DesignCoilSectionPlacement>,
+    #[serde(rename = "coil_section_placement_offset")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    section_placement_offset: Option<u64>,
+    #[serde(rename = "coil_clockwise")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    clockwise: Option<bool>,
+    #[serde(rename = "coil_clockwise_offset")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    clockwise_offset: Option<u64>,
+    #[serde(rename = "coil_placement")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    placement: Option<&'a DesignCoilPlacement>,
+    #[serde(rename = "coil_transform")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    transform: Option<&'a DesignCoilTransform>,
+}
+
+impl Serialize for DesignCoilScope {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DesignCoilScopeRef {
+            operation: self.coil_operation.map(|field| field.value),
+            operation_offset: self.coil_operation.map(|field| field.offset),
+            extent: self.coil_extent.map(|field| field.value()),
+            extent_offset: self.coil_extent.and_then(|field| field.offset()),
+            section: self.coil_section.map(|field| field.value()),
+            section_offset: self.coil_section.and_then(|field| field.offset()),
+            section_placement: self.coil_section_placement.map(|field| field.value()),
+            section_placement_offset: self.coil_section_placement.and_then(|field| field.offset()),
+            clockwise: self.coil_clockwise.map(|field| field.value()),
+            clockwise_offset: self.coil_clockwise.and_then(|field| field.offset()),
+            placement: self.coil_placement.as_ref(),
+            transform: self.coil_transform.as_ref(),
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Coil-specific records carried by a Coil parameter scope.
@@ -441,6 +576,7 @@ impl TryFrom<DesignCoilScopeWire> for DesignCoilScope {
     }
 }
 
+#[cfg(test)]
 impl From<DesignCoilScope> for DesignCoilScopeWire {
     fn from(value: DesignCoilScope) -> Self {
         Self {

@@ -559,7 +559,7 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
                 model
                     .design_dimension_null_locus_pairs
                     .iter()
-                    .map(crate::records::dimension_null_locus_wire::Wire::from),
+                    .map(crate::records::dimension_null_locus_wire::BorrowedWire::from),
             )
         },
         len: |model| model.design_dimension_null_locus_pairs.len(),
@@ -824,6 +824,23 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |ctx, model, row, namespace| {
+            for configuration in &model.design_configurations {
+                let count = u64::try_from(configuration.variants().len()).map_err(|_| {
+                    ctx.refuse_codec_limit(
+                        "sort F3D configuration variants",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?;
+                let work = count.checked_mul(count).ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "sort F3D configuration variants",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?;
+                ctx.charge_work(work, "sort F3D configuration variants")?;
+            }
             namespace.set_arena(ctx, row.arena, &model.design_configurations)
         },
         len: |model| model.design_configurations.len(),

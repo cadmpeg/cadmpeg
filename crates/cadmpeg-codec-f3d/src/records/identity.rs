@@ -250,6 +250,7 @@ impl<T> NonEmptyVec<T> {
     }
 
     /// Take the elements in order.
+    #[cfg(test)]
     pub(super) fn into_vec(self) -> Vec<T> {
         self.0
     }

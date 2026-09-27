@@ -24,6 +24,39 @@ fn with_test_context<R>(f: impl FnOnce(&DecodeContext<'_>) -> R) -> R {
     f(&ctx)
 }
 
+fn with_collection_limit<R>(
+    max_collection_items: u64,
+    f: impl FnOnce(&DecodeContext<'_>) -> R,
+) -> R {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_collection_items;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context input fits service profile");
+    f(&ctx)
+}
+
+fn simple_extrusion_curves() -> (NurbsCurve, NurbsCurve) {
+    let knots = vec![0.0, 0.0, 1.0, 1.0];
+    let start = NurbsCurve::from_lanes(
+        1,
+        knots.clone(),
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .expect("valid start profile");
+    let end = NurbsCurve::from_lanes(
+        1,
+        knots,
+        vec![Point3::new(0.0, 0.0, 1.0), Point3::new(1.0, 0.0, 1.0)],
+        None,
+        false,
+    )
+    .expect("valid end profile");
+    (start, end)
+}
+
 fn decode(
     data: &[u8],
     class: Uuid,
@@ -1223,6 +1256,7 @@ fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
     })
     .expect("valid test curve edit");
     let plain = super::extrusion_nurbs(
+        &cadmpeg_test_support::service_decode_context(),
         &start,
         &end,
         cadmpeg_ir::units::FiniteVector::new([10.0, 20.0]).expect("finite path domain"),
@@ -1242,6 +1276,7 @@ fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
         end.control_points()[1]
     );
     let transposed = super::extrusion_nurbs(
+        &cadmpeg_test_support::service_decode_context(),
         &start,
         &end,
         cadmpeg_ir::units::FiniteVector::new([10.0, 20.0]).expect("finite path domain"),
@@ -1263,6 +1298,48 @@ fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
         transposed.poles().into_iter().nth(3).unwrap(),
         end.control_points()[0]
     );
+}
+
+#[test]
+fn extrusion_surface_rows_refuse_collection_limit() {
+    let (start, end) = simple_extrusion_curves();
+    let refusal = with_collection_limit(5, |ctx| {
+        super::extrusion_nurbs(
+            ctx,
+            &start,
+            &end,
+            cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite path domain"),
+            false,
+            0,
+        )
+    })
+    .expect_err("two rows and four poles exceed five collection items");
+    assert!(matches!(
+        refusal,
+        GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino extrusion surface rows"
+    ));
+}
+
+#[test]
+fn extrusion_surface_knots_refuse_collection_limit() {
+    let (start, end) = simple_extrusion_curves();
+    let refusal = with_collection_limit(9, |ctx| {
+        super::extrusion_nurbs(
+            ctx,
+            &start,
+            &end,
+            cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite path domain"),
+            false,
+            0,
+        )
+    })
+    .expect_err("surface knots exceed remaining collection items");
+    assert!(matches!(
+        refusal,
+        GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino extrusion surface knots"
+    ));
 }
 
 #[test]

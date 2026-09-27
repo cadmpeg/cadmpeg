@@ -2,6 +2,56 @@
 //! Face operands, source groups and the face-recipe postlude.
 
 #[test]
+fn face_source_group_borrowed_wire_matches_owned_wire_bytes() {
+    let prefix = r#"{"id":"face-source","scope_record_index":1,"carrier_reference_ordinal":0,"carrier_record_index":2,"carrier_byte_offset":0,"carrier_class_tag":"302","carrier_frame_length":80,"paired_record_index":3,"paired_byte_offset":80,"paired_class_tag":"303""#;
+    let member = r#"{"record_index":100,"byte_offset":1000,"class_tag":"304","persistent_identity":{"local_id":1,"local_id_offset":1021,"asset_id":"AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE","asset_id_offset":1033,"context_id":"11111111-2222-4333-8444-555555555555","context_id_offset":1109,"tail_slot_present":false,"tail_slot_offset":1185,"next_record_index":101,"next_byte_offset":1190}}"#;
+    for (members, offsets) in [
+        ("[]".to_owned(), "[]"),
+        (format!("[{member}]"), "[25]"),
+        (format!("[{member},{member}]"), "[25,36]"),
+    ] {
+        let group: super::DesignFaceSourceGroup = serde_json::from_str(&format!(
+            "{prefix},\"source_reference_offsets\":{offsets},\"source_members\":{members}}}"
+        ))
+        .unwrap();
+        let owned = super::DesignFaceSourceGroupWire::from(group.clone());
+        assert_eq!(
+            serde_json::to_vec(&group).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+}
+
+#[test]
+fn face_source_group_native_retained_limit_refuses_before_clone() {
+    #[derive(serde::Serialize)]
+    struct NestedRecord<'a> {
+        id: &'static str,
+        value: &'a super::DesignFaceSourceGroup,
+    }
+    let wire = r#"{"id":"face-source","scope_record_index":1,"carrier_reference_ordinal":0,"carrier_record_index":2,"carrier_byte_offset":0,"carrier_class_tag":"302","carrier_frame_length":80,"paired_record_index":3,"paired_byte_offset":80,"paired_class_tag":"303","source_reference_offsets":[25],"source_members":[{"record_index":100,"byte_offset":1000,"class_tag":"304","persistent_identity":{"local_id":1,"local_id_offset":1021,"asset_id":"AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE","asset_id_offset":1033,"context_id":"11111111-2222-4333-8444-555555555555","context_id_offset":1109,"tail_slot_present":false,"tail_slot_offset":1185,"next_record_index":101,"next_byte_offset":1190}}]}"#;
+    let group: super::DesignFaceSourceGroup = serde_json::from_str(wire).unwrap();
+    let record = NestedRecord {
+        id: "f3d:native:face-source#0",
+        value: &group,
+    };
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_parameter_scopes",
+        || {
+            super::FACE_SOURCE_GROUP_CLONE_COUNT.with(|count| count.set(0));
+            crate::records::topology::construction::PERSISTENT_IDENTITY_CLONE_COUNT
+                .with(|count| count.set(0));
+        },
+        || {
+            super::FACE_SOURCE_GROUP_CLONE_COUNT.with(std::cell::Cell::get)
+                + crate::records::topology::construction::PERSISTENT_IDENTITY_CLONE_COUNT
+                    .with(std::cell::Cell::get)
+        },
+    );
+}
+
+#[test]
 fn face_source_rows_preserve_wire_and_reject_unequal_offsets() {
     let prefix = r#"{"id":"face-source","scope_record_index":1,"carrier_reference_ordinal":0,"carrier_record_index":2,"carrier_byte_offset":0,"carrier_class_tag":"302","carrier_frame_length":80,"paired_record_index":3,"paired_byte_offset":80,"paired_class_tag":"303""#;
     let member = r#"{"record_index":100,"byte_offset":1000,"class_tag":"304","persistent_identity":{"local_id":1,"local_id_offset":1021,"asset_id":"AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE","asset_id_offset":1033,"context_id":"11111111-2222-4333-8444-555555555555","context_id_offset":1109,"tail_slot_present":false,"tail_slot_offset":1185,"next_record_index":101,"next_byte_offset":1190}}"#;
@@ -122,6 +172,51 @@ fn face_operand_wire_derives_node_offsets() {
             }
         }
     }
+}
+
+fn face_operand_for_borrowed(grouped: bool) -> super::DesignFaceOperand {
+    let mut wire = serde_json::json!({
+        "id": "f3d:native:face-operand#0", "scope_record_index": 1,
+        "scope_reference_ordinal": 0, "record_index": 2, "byte_offset": 10,
+        "class_tag": "346", "paired_byte_offset": 20, "paired_class_tag": "262",
+        "recipe_record_index": 5, "recipe_record_byte_offset": 30,
+        "recipe_id": "recipe", "recipe_prefix_offset": 41,
+        "recipe_prefix_bytes": "", "recipe_references": [],
+        "recipe_kind": "bounded_face", "recipe_program_offset": 50,
+        "recipe_program": [0, -1, 1], "recipe_node_offsets": [100],
+        "recipe_nodes": [{"byte_offset": 100, "end_byte_offset": 116,
+            "program": [-1, -1, 2, 7], "recipe_structure": null}],
+        "candidate_faces": [], "resolved_face_slots": [],
+        "next_record_index": 4, "next_byte_offset": 200
+    });
+    if grouped {
+        wire["group_record_index"] = serde_json::json!(5);
+        wire["group_member_ordinal"] = serde_json::json!(0);
+    }
+    serde_json::from_value(wire).unwrap()
+}
+
+#[test]
+fn face_operand_borrowed_wire_matches_owned_wire_bytes() {
+    for grouped in [false, true] {
+        let operand = face_operand_for_borrowed(grouped);
+        let owned = super::DesignFaceOperandWire::from(operand.clone());
+        assert_eq!(
+            serde_json::to_vec(&operand).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+}
+
+#[test]
+fn face_operand_native_retained_limit_refuses_before_clone() {
+    let operand = face_operand_for_borrowed(true);
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &operand,
+        "design_face_operands",
+        || super::FACE_OPERAND_CLONE_COUNT.with(|count| count.set(0)),
+        || super::FACE_OPERAND_CLONE_COUNT.with(std::cell::Cell::get),
+    );
 }
 
 #[test]

@@ -3,6 +3,60 @@
 
 use serde_json::json;
 
+fn sketch_profile_operand() -> super::DesignSketchProfileOperand {
+    serde_json::from_value(json!({
+        "scope_reference_ordinal": 0, "record_index": 7, "byte_offset": 0,
+        "class_tag": "300", "paired_class_tag": "301", "paired_byte_offset": 160,
+        "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "asset_id_offset": 32,
+        "entity_id": "Sketch_1", "entity_suffix": 1, "entity_reference_offset": 80
+    }))
+    .unwrap()
+}
+
+#[test]
+fn sketch_profile_operand_borrowed_wire_matches_owned_wire_bytes() {
+    let mut operand = sketch_profile_operand();
+    for selection in [
+        None,
+        Some(super::DesignSketchProfileRegionSelection {
+            record_index: 8,
+            byte_offset: 90,
+            class_tag: "302".to_owned().try_into().unwrap(),
+            region_count_offset: 100,
+            regions: Vec::new(),
+            companion_class_tag: "303".to_owned().try_into().unwrap(),
+            companion_byte_offset: 140,
+        }),
+    ] {
+        operand.region_selection = selection;
+        let owned = super::DesignSketchProfileOperandWire::from(operand.clone());
+        assert_eq!(
+            serde_json::to_vec(&operand).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+}
+
+#[test]
+fn sketch_profile_operand_native_retained_limit_refuses_before_clone() {
+    #[derive(serde::Serialize)]
+    struct NestedRecord<'a> {
+        id: &'static str,
+        value: &'a super::DesignSketchProfileOperand,
+    }
+    let operand = sketch_profile_operand();
+    let record = NestedRecord {
+        id: "f3d:native:sketch-profile#0",
+        value: &operand,
+    };
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_parameter_scopes",
+        || super::SKETCH_PROFILE_OPERAND_CLONE_COUNT.with(|count| count.set(0)),
+        || super::SKETCH_PROFILE_OPERAND_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+
 #[test]
 fn profile_region_member_preserves_fixed_words_and_closed_incidence_values() {
     let wire = |kind: u32, identity: u64, words: [u32; 8]| {
