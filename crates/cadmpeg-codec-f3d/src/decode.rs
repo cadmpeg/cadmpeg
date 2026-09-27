@@ -2838,7 +2838,7 @@ impl<'a> F3dDecodeSession<'a> {
                     Ok(Some(table)) => {
                         report_xref_placement_failures(&mut self.report, &table);
                         report_xref_placement_overrides(&mut self.report, &table);
-                        self.ir.model.occurrences = crate::xref::project_occurrences(&table)?;
+                        self.ir.model.occurrences = crate::xref::project_occurrences(self.ctx, &table)?;
                         crate::xref::bind_component_insert_features(
                             &mut self.ir.model.features,
                             &self.native.design_parameter_scopes,
@@ -2874,7 +2874,7 @@ impl<'a> F3dDecodeSession<'a> {
                 if let Ok(Some(table)) = &xref_table {
                     report_xref_placement_failures(&mut self.report, table);
                     report_xref_placement_overrides(&mut self.report, table);
-                    self.ir.model.occurrences = crate::xref::project_occurrences(table)?;
+                    self.ir.model.occurrences = crate::xref::project_occurrences(self.ctx, table)?;
                     crate::xref::bind_component_insert_features(
                         &mut self.ir.model.features,
                         &self.native.design_parameter_scopes,
