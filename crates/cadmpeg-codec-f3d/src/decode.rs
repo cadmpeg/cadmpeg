@@ -2296,7 +2296,7 @@ impl<'a> F3dDecodeSession<'a> {
         self.native.lost_edge_references =
             crate::design::decode::sketch::decode_lost_edge_references(scan)?;
         self.native.design_material_assignments =
-            crate::materials::decode_design_assignments(scan)?;
+            crate::materials::decode_design_assignments(ctx, scan)?;
         self.native.design_types = crate::design::decode::meta::decode_types(scan)?;
         self.native.design_parameters = crate::design::decode::parameters::decode_parameters(scan)?;
         self.native.design_entity_headers =
@@ -2310,10 +2310,10 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.design_record_headers,
         )?;
         extend_related_design_records(self.ctx, scan, &mut self.native)?;
-        self.native.sketch_points = crate::design::decode::sketch::decode_sketch_points(scan)?;
-        self.native.sketch_texts = crate::design::decode::sketch::decode_sketch_texts(scan)?;
+        self.native.sketch_points = crate::design::decode::sketch::decode_sketch_points(ctx, scan)?;
+        self.native.sketch_texts = crate::design::decode::sketch::decode_sketch_texts(ctx, scan)?;
         self.native.sketch_curve_identities =
-            crate::design::decode::sketch::decode_sketch_curve_identities(scan)?;
+            crate::design::decode::sketch::decode_sketch_curve_identities(ctx, scan)?;
         self.native.sketch_surfaces = crate::design::decode::sketch::decode_sketch_surfaces(scan)?;
         crate::design::decode::sketch::bind_sketch_graph(
             &self.native.design_entity_headers,
@@ -3081,7 +3081,7 @@ fn decode_scanned_document<'a>(
         let mut brep = Brep::default();
         let mut body_visibilities = Vec::new();
         let mut decoded_brep_count = 0usize;
-        let all_body_visibility = crate::design::decode::body::decode_all_body_visibility(scan)?;
+        let all_body_visibility = crate::design::decode::body::decode_all_body_visibility(ctx, scan)?;
         let mut selected_body_keys =
             std::collections::HashMap::<String, std::collections::HashSet<u64>>::new();
         for binding in &unbound_body_bindings {

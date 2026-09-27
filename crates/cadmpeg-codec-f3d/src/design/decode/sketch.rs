@@ -238,7 +238,7 @@ pub(crate) fn decode_sketch_placements(
         let Some(metadata) = metadata_for_bulk_stream(scan, &entry.name)? else {
             continue;
         };
-        for (entity_suffix, visibility) in decode_sketch_visibilities_in_stream(bytes, &metadata)? {
+        for (entity_suffix, visibility) in decode_sketch_visibilities_in_stream(ctx, bytes, &metadata)? {
             if visibilities
                 .insert((ids::native_scope(&entry.name), entity_suffix), visibility)
                 .is_some()
@@ -385,11 +385,13 @@ const SKETCH_CONTAINER_MEMBER_VERSION: u32 = 4;
 /// Geometry member. Other sketch-container versions do not expose this member
 /// layout and therefore leave neutral visibility unknown.
 fn decode_sketch_visibilities_in_stream(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     metadata: &crate::metastream::MetaStream,
 ) -> Result<Vec<(u64, DesignSketchVisibility)>, CodecError> {
     let mut out = Vec::new();
     for frame in super::meta::typed_primary_frames(
+        ctx,
         bytes,
         metadata,
         SKETCH_CONTAINER_TYPE_GUID,
@@ -1509,11 +1511,12 @@ fn trailing_sketch_owner_reference(record: &[u8]) -> Option<u32> {
 }
 
 fn decode_sketch_points_from_stream(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     stream: &str,
 ) -> Result<Vec<SketchPoint>, CodecError> {
-    let frames = design_primary_frames(bytes, meta)?;
+    let frames = design_primary_frames(ctx, bytes, meta)?;
     let frames_by_entity = frames
         .iter()
         .filter_map(|frame| Some((u32::try_from(frame.entity_id).ok()?, frame)))
@@ -1613,8 +1616,8 @@ fn decode_sketch_points_from_stream(
 /// persistent identity; later forms supply `(u,v,w)` and `pt_tag`. A known
 /// point record with a malformed or non-finite member sequence makes the
 /// stream malformed.
-pub(crate) fn decode_sketch_points(scan: &ContainerScan) -> Result<Vec<SketchPoint>, CodecError> {
-    decode_sketch_streams(scan, decode_sketch_points_from_stream)
+pub(crate) fn decode_sketch_points(ctx: &DecodeContext<'_>, scan: &ContainerScan) -> Result<Vec<SketchPoint>, CodecError> {
+    decode_sketch_streams(ctx, scan, decode_sketch_points_from_stream)
 }
 
 /// Read a class property block: a presence byte, and when it is `01`, a u32
@@ -1659,12 +1662,13 @@ const SKETCH_TEXT_TYPE_GUIDS: [&str; 2] = [
 /// Decode sketch-text records carrying persistent identities, font metrics,
 /// UTF-16 content, and an owning-sketch reference.
 fn decode_sketch_texts_from_stream(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     stream: &str,
 ) -> Result<Vec<SketchText>, CodecError> {
     let mut out = Vec::new();
-    for frame in design_primary_frames(bytes, meta)? {
+    for frame in design_primary_frames(ctx, bytes, meta)? {
         if !SKETCH_TEXT_TYPE_GUIDS.iter().any(|type_guid| {
             frame
                 .design_type
@@ -1694,8 +1698,8 @@ fn decode_sketch_texts_from_stream(
 
 /// Decode sketch-text records carrying persistent identities, font metrics,
 /// UTF-16 content, and an owning-sketch reference.
-pub(crate) fn decode_sketch_texts(scan: &ContainerScan) -> Result<Vec<SketchText>, CodecError> {
-    decode_sketch_streams(scan, decode_sketch_texts_from_stream)
+pub(crate) fn decode_sketch_texts(ctx: &DecodeContext<'_>, scan: &ContainerScan) -> Result<Vec<SketchText>, CodecError> {
+    decode_sketch_streams(ctx, scan, decode_sketch_texts_from_stream)
 }
 
 /// Whether a sketch-text record carries one of the two parameter-reference
@@ -2728,12 +2732,13 @@ impl SketchCurveClass {
 /// curve's persistent primary and secondary identities plus its NURBS, circular
 /// arc, line, or referenced analytic geometry.
 fn decode_sketch_curve_identities_from_stream(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     stream: &str,
 ) -> Result<Vec<SketchCurveIdentity>, CodecError> {
     let mut out = Vec::new();
-    for frame in design_primary_frames(bytes, meta)? {
+    for frame in design_primary_frames(ctx, bytes, meta)? {
         let payload = &bytes[frame.start..frame.end];
         let Some((primary_id, secondary_id, geometry_shift, entity_genesis)) =
             decode_sketch_curve_identity(payload)
@@ -2786,6 +2791,7 @@ fn decode_sketch_curve_identities_from_stream(
 /// curve's persistent primary and secondary identities plus its NURBS, circular
 /// arc, line, or referenced analytic geometry.
 pub(crate) fn decode_sketch_curve_identities(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<SketchCurveIdentity>, CodecError> {
     let mut out = Vec::new();
@@ -2799,6 +2805,7 @@ pub(crate) fn decode_sketch_curve_identities(
             continue;
         };
         out.extend(decode_sketch_curve_identities_from_stream(
+            ctx,
             bytes,
             &meta,
             &entry.name,
@@ -4259,8 +4266,9 @@ fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenc
 }
 
 fn decode_sketch_streams<T>(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
-    decode: impl Fn(&[u8], &crate::metastream::MetaStream, &str) -> Result<Vec<T>, CodecError>,
+    decode: impl Fn(&DecodeContext<'_>, &[u8], &crate::metastream::MetaStream, &str) -> Result<Vec<T>, CodecError>,
 ) -> Result<Vec<T>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
@@ -4272,7 +4280,7 @@ fn decode_sketch_streams<T>(
         let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
             continue;
         };
-        out.extend(decode(bytes, &meta, &entry.name)?);
+        out.extend(decode(ctx, bytes, &meta, &entry.name)?);
     }
     Ok(out)
 }

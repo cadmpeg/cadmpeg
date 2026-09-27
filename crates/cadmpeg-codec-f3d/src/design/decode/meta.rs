@@ -289,23 +289,32 @@ fn record_header_class_tag(
 /// primary class-member sequence and must point to a nested header for the same
 /// entity.
 pub(super) fn design_primary_frames<'a>(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
 ) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
     let indexed = crate::metastream::primary_record_frames(meta, bytes.len())?;
-    let registered_entities = meta
-        .types
-        .iter()
-        .enumerate()
-        .flat_map(|(ordinal, design_type)| {
-            design_type
-                .entities
-                .values()
-                .copied()
-                .map(move |entity_id| (ordinal, entity_id))
-        })
-        .collect::<HashSet<_>>();
-    let mut frames = Vec::with_capacity(indexed.len());
+    let mut registered_entities = HashSet::new();
+    for (ordinal, design_type) in meta.types.iter().enumerate() {
+        for &entity_id in design_type.entities.values() {
+            if registered_entities.contains(&(ordinal, entity_id)) {
+                continue;
+            }
+            ctx.charge_collection_items(1, "f3d registered primary entities")?;
+            registered_entities.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d registered primary entities allocation", 0, 1)
+            })?;
+            registered_entities.insert((ordinal, entity_id));
+        }
+    }
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(indexed.len()),
+        "f3d design primary frames",
+    )?;
+    let mut frames = Vec::new();
+    frames.try_reserve(indexed.len()).map_err(|_| {
+        ctx.refuse_codec_limit("f3d design primary frames allocation", 0, 1)
+    })?;
     for frame in indexed {
         let entity_id = frame.entity_id;
         let Some(class_tag) = record_header_class_tag(bytes, frame.start, frame.end, entity_id)
@@ -361,6 +370,7 @@ pub(super) struct TypedPrimaryFrame<'a> {
 /// Resolve every entity registered to `type_guid` through the sibling
 /// `MetaStream` primary index and verify its dynamic class tag.
 pub(super) fn typed_primary_frames<'a>(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
     type_guid: &str,
@@ -376,17 +386,22 @@ pub(super) fn typed_primary_frames<'a>(
             continue;
         }
         for &entity_id in design_type.entities.values() {
-            if !typed_entities.insert(entity_id) {
+            if typed_entities.contains(&entity_id) {
                 return Err(CodecError::malformed(format_args!(
                     "F3D Design {record_kind} entity {entity_id} is registered more than once"
                 )));
             }
+            ctx.charge_collection_items(1, "f3d typed primary entities")?;
+            typed_entities.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d typed primary entities allocation", 0, 1)
+            })?;
+            typed_entities.insert(entity_id);
         }
     }
 
     let mut resolved_entities = HashSet::new();
     let mut frames = Vec::new();
-    for primary_frame in design_primary_frames(bytes, meta)? {
+    for primary_frame in design_primary_frames(ctx, bytes, meta)? {
         if !primary_frame
             .design_type
             .type_guid
@@ -395,7 +410,17 @@ pub(super) fn typed_primary_frames<'a>(
         {
             continue;
         }
-        resolved_entities.insert(primary_frame.entity_id);
+        if !resolved_entities.contains(&primary_frame.entity_id) {
+            ctx.charge_collection_items(1, "f3d resolved primary entities")?;
+            resolved_entities.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d resolved primary entities allocation", 0, 1)
+            })?;
+            resolved_entities.insert(primary_frame.entity_id);
+        }
+        ctx.charge_collection_items(1, "f3d typed primary frames")?;
+        frames.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d typed primary frames allocation", 0, 1)
+        })?;
         frames.push(TypedPrimaryFrame {
             entity_id: primary_frame.entity_id,
             start: primary_frame.start,

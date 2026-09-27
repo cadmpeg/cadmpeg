@@ -602,7 +602,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
         )));
     }
     out.dedup_by(|a, b| a.id == b.id);
-    let assignments = decode_design_assignments(scan)?;
+    let assignments = decode_design_assignments(ctx, scan)?;
     let act_channels = decode_act_channels(scan)?;
     let object_types = decode_design_object_types(scan)?;
     for assignment in &assignments {
@@ -648,7 +648,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
         &object_types,
         body_bindings,
     )?;
-    let body_overrides = decode_body_appearance_overrides(scan, body_bindings)?;
+    let body_overrides = decode_body_appearance_overrides(ctx, scan, body_bindings)?;
     for over in &body_overrides {
         if bindings
             .iter()
@@ -851,6 +851,7 @@ fn decoded_color(values: [f64; 4]) -> Option<Color> {
 }
 
 pub(crate) fn decode_design_assignments(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<DesignMaterialAssignment>, CodecError> {
     let mut out = Vec::new();
@@ -867,7 +868,7 @@ pub(crate) fn decode_design_assignments(
         };
         let body_map = crate::design::decode::body::body_bindings(bytes, &metadata)?;
         for presentation in
-            crate::design::decode::presentation::body_presentations(bytes, &metadata)?
+            crate::design::decode::presentation::body_presentations(ctx, bytes, &metadata)?
         {
             let Some(material) = presentation.material else {
                 continue;
@@ -928,6 +929,7 @@ struct BodyAppearanceOverride {
 /// Design `BulkStream` and join them through the exact BREP body-map pair
 /// ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)).
 fn decode_body_appearance_overrides(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     body_bindings: &[DesignBodyBinding],
 ) -> Result<Vec<BodyAppearanceOverride>, CodecError> {
@@ -946,7 +948,7 @@ fn decode_body_appearance_overrides(
         let body_map = crate::design::decode::body::body_bindings(bytes, &metadata)?;
         let mut appearances = browser_body_appearances(bytes);
         appearances.extend(
-            crate::design::decode::presentation::body_presentations(bytes, &metadata)?
+            crate::design::decode::presentation::body_presentations(ctx, bytes, &metadata)?
                 .into_iter()
                 .filter_map(|presentation| {
                     if presentation.owner
