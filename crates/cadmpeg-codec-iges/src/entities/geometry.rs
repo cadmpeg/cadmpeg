@@ -2414,7 +2414,7 @@ pub(crate) fn project_geometry(
         parameters,
         trailing_pointer_analysis,
         global,
-        Some(ctx),
+        ctx,
         &sequences,
     )?
     .merge_into(&mut decoded, &mut losses);
