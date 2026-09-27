@@ -6,14 +6,40 @@ use crate::om::state_slot_lane::StateSlotLane;
 use crate::om::state_slots::StateSlots;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "Wire", into = "Wire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "Wire")]
 pub(in crate::native) struct OmOperationStateSlotLane {
     pub(in crate::native) id: String,
     pub(super) section_link: String,
     pub(super) ordinal: u32,
     pub(in crate::native) frame: StateSlotLane<u64>,
     pub(super) source_entry: String,
+}
+
+#[derive(Serialize)]
+struct SlotLaneRef<'a> {
+    id: &'a str,
+    section_link: &'a str,
+    ordinal: u32,
+    slots: &'a StateSlots<Option<StateIndexToken>>,
+    source_entry: &'a str,
+    source_offset: u64,
+    end_offset: u64,
+}
+
+impl Serialize for OmOperationStateSlotLane {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        SlotLaneRef {
+            id: &self.id,
+            section_link: &self.section_link,
+            ordinal: self.ordinal,
+            slots: self.frame.slots(),
+            source_entry: &self.source_entry,
+            source_offset: self.frame.offset(),
+            end_offset: self.frame.end_offset(),
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -27,6 +53,7 @@ struct Wire {
     end_offset: u64,
 }
 
+#[cfg(test)]
 impl From<OmOperationStateSlotLane> for Wire {
     fn from(value: OmOperationStateSlotLane) -> Self {
         Self {
@@ -67,6 +94,10 @@ mod tests {
         let json = r#"{"id":"lane","section_link":"section","ordinal":0,"slots":[],"source_entry":"om","source_offset":10,"end_offset":15}"#;
         let lane: OmOperationStateSlotLane = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&lane).unwrap(), json);
+        assert_eq!(
+            serde_json::to_vec(&lane).unwrap(),
+            serde_json::to_vec(&super::Wire::from(lane.clone())).unwrap()
+        );
         let wire: serde_json::Value = serde_json::from_str(json).unwrap();
         let mut mismatch = wire.clone();
         mismatch["end_offset"] = 16.into();
@@ -84,5 +115,15 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("source_offset"));
+    }
+
+    #[test]
+    fn slot_lane_native_limit_refuses_before_string_copy() {
+        let json = r#"{"id":"nx:om:state-slot-lane#0","section_link":"section","ordinal":0,"slots":[],"source_entry":"om","source_offset":10,"end_offset":15}"#;
+        let lane: OmOperationStateSlotLane = serde_json::from_str(json).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &lane,
+            serde_json::from_str::<serde_json::Value>(json).unwrap(),
+        );
     }
 }
