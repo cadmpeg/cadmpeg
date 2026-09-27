@@ -1533,6 +1533,54 @@ fn standard_topology_entity_limit_propagates_before_fallback() {
 }
 
 #[test]
+fn standard_topology_charges_deferred_and_ordered_endpoint_arrays() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let bytes = crate::test_support::test_container::tetrahedron_topology_catpart();
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, bytes.clone())
+    })
+    .expect("service resource budget");
+    let mut operations = BTreeSet::new();
+    let mut limit = 0;
+    let mut completed = false;
+    for _ in 0..4096 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("topology fixture fits the input-byte limit");
+        match crate::families::standard::decode::try_decode_standard(
+            &ctx,
+            &scan,
+            &mut crate::nurbs::LaneRefusals::new(),
+        ) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                operations.insert(error.operation);
+                let next = error.used + error.additional;
+                assert!(next > limit, "a refusal must advance the collection cap");
+                limit = next;
+            }
+            Ok(Some(_)) => {
+                completed = true;
+                break;
+            }
+            Ok(None) => panic!("tetrahedron fixture must decode as standard topology"),
+            Err(error) => panic!("unexpected topology refusal: {error}"),
+        }
+    }
+    assert!(
+        completed,
+        "adaptive caps must admit the tetrahedron fixture"
+    );
+    assert!(operations.contains("catia_deferred_port_edges"));
+    assert!(operations.contains("catia_ordered_endpoint_pairs"));
+}
+
+#[test]
 fn standard_free_vertex_owner_limit_refuses_before_shell_creation() {
     let mut ir = CadIr::empty();
     ir.model.vertices.push(Vertex {
