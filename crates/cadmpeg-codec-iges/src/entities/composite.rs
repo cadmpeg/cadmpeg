@@ -13,7 +13,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::NurbsCurve, CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
+    nurbs::{NurbsCurve, NurbsPoles3}, CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
     ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
@@ -1380,43 +1380,37 @@ fn concatenate_nurbs<T>(
      -> Result<_, CompositeCurveError> {
         let child_start = interval[0];
         let child_end = interval[1];
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(
-                curve.knots().len() as u64,
-                "iges composite shifted child knots",
-            )?;
-            ctx.charge_collection_items(
-                curve.pole_count() as u64,
-                "iges composite child control points",
-            )?;
-            if curve.weights().is_some() {
-                ctx.charge_collection_items(
-                    curve.pole_count() as u64,
-                    "iges composite child weight copy",
-                )?;
-            }
+        let control_count = curve.pole_count();
+        let (_, admitted_knots, poles, _) = curve.into_parts();
+        let mut shifted_knots = admitted_knots.into_values();
+        for knot in &mut shifted_knots {
+            *knot = (*knot - child_start) + cursor;
         }
-        let shifted_knots = curve
-            .knots()
-            .iter()
-            .map(|knot| (knot - child_start) + cursor)
-            .collect::<Vec<_>>();
-        let child_control_points = curve.pole_rows().raw_points();
-        let child_weights = match curve.pole_rows().weights() {
-            Some(weights) => weights,
-            None => match ctx {
+        let mut child_control_points = reserve_optional_vec(ctx, control_count, "iges composite child control points")?;
+        let child_weights = match poles {
+            NurbsPoles3::Polynomial { points } => {
+                child_control_points.extend(points.into_iter().map(FinitePoint3::get));
+                match ctx {
                 Some(ctx) => ctx.alloc_filled(
-                    child_control_points.len(),
+                    control_count,
                     1.0,
                     "iges composite child weights",
                 ),
                 None => alloc_filled(
-                    child_control_points.len(),
+                    control_count,
                     1.0,
                     "iges composite child weights",
                 ),
+                }.map_err(CompositeCurveError::ChildWeightAllocation)?
             }
-            .map_err(CompositeCurveError::ChildWeightAllocation)?,
+            NurbsPoles3::Rational { points } => {
+                let mut weights = reserve_optional_vec(ctx, control_count, "iges composite child weight copy")?;
+                for pole in points {
+                    child_control_points.push(pole.point.get());
+                    weights.push(pole.weight.get());
+                }
+                weights
+            }
         };
         if let Some(weight) = child_weights.iter().copied().find(|weight| *weight <= 0.0) {
             return Err(CompositeCurveError::ChildWeight { weight });
@@ -1437,11 +1431,8 @@ fn concatenate_nurbs<T>(
         ))
     };
     let (mut knots, mut control_points, mut weights, last) = prepare_child(first, 0.0)?;
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(children.len() as u64, "iges composite segment slots")?;
-    }
     let mut segments = ConcatenatedSegments {
-        preceding: reserve_admitted_vec(children.len(), "iges composite segment slots")?,
+        preceding: reserve_optional_vec(ctx, children.len(), "iges composite segment slots")?,
         last,
     };
     for child in children {
@@ -1474,11 +1465,17 @@ fn concatenate_nurbs<T>(
             };
         }
         if degree_usize == 0 {
+            reserve_optional_vec_growth(ctx, &mut knots, shifted_knots.len() - 1, "iges composite joined knots")?;
+            reserve_optional_vec_growth(ctx, &mut control_points, child_control_points.len(), "iges composite joined controls")?;
+            reserve_optional_vec_growth(ctx, &mut weights, child_weights.len(), "iges composite joined weights")?;
             knots.extend_from_slice(&shifted_knots[1..]);
             control_points.extend_from_slice(&child_control_points);
             weights.extend_from_slice(&child_weights);
         } else {
             knots.pop();
+            reserve_optional_vec_growth(ctx, &mut knots, shifted_knots.len() - degree_usize - 1, "iges composite joined knots")?;
+            reserve_optional_vec_growth(ctx, &mut control_points, child_control_points.len() - 1, "iges composite joined controls")?;
+            reserve_optional_vec_growth(ctx, &mut weights, child_weights.len() - 1, "iges composite joined weights")?;
             knots.extend_from_slice(&shifted_knots[degree_usize + 1..]);
             control_points.extend_from_slice(&child_control_points[1..]);
             weights.extend_from_slice(&child_weights[1..]);

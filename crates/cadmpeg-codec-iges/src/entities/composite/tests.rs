@@ -1469,7 +1469,7 @@ fn composite_child_weights_refuse_collection_limit() {
     );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 7;
+    policy.limits.max_collection_items = 3;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = concatenate_nurbs(Some(&ctx), vec![(curve, [0.0, 1.0], ())], None)
         .unwrap_err()
@@ -1479,9 +1479,52 @@ fn composite_child_weights_refuse_collection_limit() {
         error,
         CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.used == 6
+                && limit.used == 2
                 && limit.additional == 2
     ));
+}
+
+#[test]
+fn composite_join_refuses_child_and_joined_lane_storage() {
+    let children = |rational: bool| {
+        let weights = rational.then(|| vec![1.0, 1.0]);
+        vec![
+            (test_nurbs(1, vec![0.0, 0.0, 1.0, 1.0], vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)], weights.clone()), [0.0, 1.0], ()),
+            (test_nurbs(1, vec![0.0, 0.0, 1.0, 1.0], vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)], weights), [0.0, 1.0], ()),
+        ]
+    };
+    for (rational, operation) in [
+        (false, "iges composite child control points"),
+        (true, "iges composite child weight copy"),
+        (false, "iges composite segment slots"),
+        (false, "iges composite joined knots"),
+        (false, "iges composite joined controls"),
+        (false, "iges composite joined weights"),
+    ] {
+        let mut cap = 0_u64;
+        let mut found = false;
+        for _ in 0..128 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            match concatenate_nurbs(Some(&ctx), children(rational), Some(0.0)) {
+                Err(error) => match error.non_resource() {
+                    Err(CodecError::ResourceLimit(limit)) => {
+                        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                        if limit.operation == operation { found = true; break; }
+                        cap = limit.used.checked_add(limit.additional).unwrap();
+                    }
+                    other => panic!("unexpected composite join refusal at {operation}: {other:?}"),
+                },
+                Ok(_) => panic!("composite join succeeded before {operation}"),
+            }
+        }
+        assert!(found, "composite join boundary was not reached: {operation}");
+    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert!(concatenate_nurbs(Some(&ctx), children(true), Some(0.0)).unwrap().is_some());
 }
 
 #[test]
