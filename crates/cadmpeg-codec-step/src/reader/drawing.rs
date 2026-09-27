@@ -546,6 +546,11 @@ fn add_source_typed_targets(
             continue;
         }
         let identity = opaque_record_id(id, record, ctx)?;
+        let copied_identity = clone_drawing_text(
+            identity.as_str(),
+            ctx,
+            "step_drawing_native_target_identity_copy",
+        )?;
         let source_type = crate::decode_alloc::charged_join(
             ctx,
             "step_drawing_source_type_text",
@@ -559,7 +564,7 @@ fn add_source_typed_targets(
             "step_drawing_native_target_items",
         )?;
         native_targets.push(NativeRecord::from_identity(
-            identity.clone(),
+            identity,
             [
                 ("source_id".to_owned(), NativeField::Text(format!("#{id}"))),
                 ("source_type".to_owned(), NativeField::Text(source_type)),
@@ -572,7 +577,7 @@ fn add_source_typed_targets(
             "step_drawing_native_target_groups",
         )?;
         ctx.charge_collection_items(1, "step_drawing_native_target_members")?;
-        target_identities.insert(id, BTreeSet::from([identity.into_string()]));
+        target_identities.insert(id, BTreeSet::from([copied_identity]));
     }
     if native_targets.is_empty() {
         return Ok(());
