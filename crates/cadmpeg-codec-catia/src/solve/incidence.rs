@@ -1789,8 +1789,15 @@ pub(super) fn compact_boundary_domain_viable(
     let edges = match domain {
         MeshFaceBoundaryDomain::Ordered(_) => return Ok(true),
         MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
-            charge_collection_items(ctx, edges.len(), "catia compact viable edges")?;
-            edges.clone()
+            let mut collected = Vec::new();
+            crate::resource::reserve_vec(
+                ctx,
+                &mut collected,
+                edges.len(),
+                "catia compact viable edges",
+            )?;
+            collected.extend_from_slice(edges);
+            collected
         }
         MeshFaceBoundaryDomain::DeferredValidation(domain) => {
             let edge_count = domain
@@ -1802,8 +1809,14 @@ pub(super) fn compact_boundary_domain_viable(
                 .ok_or_else(|| {
                     ctx.refuse_codec_limit("catia compact viable edges", u64::MAX, u64::MAX)
                 })?;
-            charge_collection_items(ctx, edge_count, "catia compact viable edges")?;
-            let mut edges = domain.missing_edges.clone();
+            let mut edges = Vec::new();
+            crate::resource::reserve_vec(
+                ctx,
+                &mut edges,
+                edge_count,
+                "catia compact viable edges",
+            )?;
+            edges.extend_from_slice(&domain.missing_edges);
             edges.extend(
                 domain
                     .cycles
@@ -1813,30 +1826,43 @@ pub(super) fn compact_boundary_domain_viable(
             edges
         }
     };
-    charge_collection_items(ctx, edges.len(), "catia compact viable selected pairs")?;
-    let selected_pairs = edges
-        .iter()
-        .copied()
-        .map(|edge| {
-            selected
-                .filter(|(selected_edge, _)| *selected_edge == edge)
-                .map(|(_, pair)| pair)
-                .or(assignment[edge])
-                .map(|pair| (edge, pair))
-        })
-        .collect::<Vec<_>>();
+    let mut selected_pairs = Vec::new();
+    crate::resource::reserve_vec(
+        ctx,
+        &mut selected_pairs,
+        edges.len(),
+        "catia compact viable selected pairs",
+    )?;
+    selected_pairs.extend(edges.iter().copied().map(|edge| {
+        selected
+            .filter(|(selected_edge, _)| *selected_edge == edge)
+            .map(|(_, pair)| pair)
+            .or(assignment[edge])
+            .map(|pair| (edge, pair))
+    }));
     let complete = selected_pairs.iter().all(Option::is_some);
     if matches!(domain, MeshFaceBoundaryDomain::UnorderedFullCycle(_)) && !complete {
         let mut point_nodes = HashMap::new();
         let mut degrees = Vec::<u8>::new();
-        let mut components = UnionFind::new(0);
+        let mut components = UnionFind::charged(ctx, 0, "catia_compact_boundary_union")?;
         for (_, pair) in selected_pairs.iter().flatten().copied() {
-            let nodes = pair.map(|point| {
-                *point_nodes.entry(point).or_insert_with(|| {
-                    degrees.push(0);
-                    components.push()
-                })
-            });
+            let mut nodes = [0; 2];
+            for (slot, point) in pair.into_iter().enumerate() {
+                nodes[slot] = if let Some(&node) = point_nodes.get(&point) {
+                    node
+                } else {
+                    let node = components.push_charged(ctx, "catia_compact_boundary_nodes")?;
+                    crate::resource::push(ctx, &mut degrees, 0, "catia_compact_boundary_degrees")?;
+                    crate::resource::insert_map(
+                        ctx,
+                        &mut point_nodes,
+                        point,
+                        node,
+                        "catia_compact_boundary_points",
+                    )?;
+                    node
+                };
+            }
             for &node in &nodes {
                 if degrees[node] >= 2 {
                     return Ok(false);
@@ -1850,19 +1876,33 @@ pub(super) fn compact_boundary_domain_viable(
         let mut open_components = HashSet::new();
         for (node, degree) in degrees.into_iter().enumerate() {
             if degree < 2 {
-                open_components.insert(components.find(node));
+                crate::resource::insert_set(
+                    ctx,
+                    &mut open_components,
+                    components.find(node),
+                    "catia_compact_boundary_open_components",
+                )?;
             }
         }
         return Ok(
             (0..components.len()).all(|node| open_components.contains(&components.find(node)))
         );
     }
-    let Some(selected_pairs) = selected_pairs.into_iter().collect::<Option<Vec<_>>>() else {
-        return Ok(true);
-    };
+    let mut complete_pairs = Vec::new();
+    for pair in selected_pairs {
+        let Some(pair) = pair else {
+            return Ok(true);
+        };
+        crate::resource::push(
+            ctx,
+            &mut complete_pairs,
+            pair,
+            "catia_compact_boundary_complete_pairs",
+        )?;
+    }
     let mut edge_points =
         ctx.alloc_filled(assignment.len(), [0; 2], "catia labeled edge points")?;
-    for (edge, pair) in selected_pairs {
+    for (edge, pair) in complete_pairs {
         edge_points[edge] = pair;
     }
     Ok(match domain {
