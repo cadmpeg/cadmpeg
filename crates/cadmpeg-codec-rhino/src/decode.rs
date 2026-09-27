@@ -857,6 +857,7 @@ impl<'a> DecodeContext<'a> {
                                 key.clone(),
                             );
                             match crate::subd::decode_mesh_proxy(
+                                self.expand.ctx(),
                                 self.scan.data,
                                 &extra,
                                 self.archive(),
@@ -2316,6 +2317,7 @@ impl<'a> DecodeContext<'a> {
             key,
         );
         match crate::subd::decode(
+            self.expand.ctx(),
             self.scan.data,
             object.class_data_range.clone(),
             self.archive(),
