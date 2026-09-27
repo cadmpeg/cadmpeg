@@ -559,7 +559,7 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
                 model
                     .design_dimension_null_locus_pairs
                     .iter()
-                    .map(crate::records::dimension_null_locus_wire::Wire::from),
+                    .map(crate::records::dimension_null_locus_wire::BorrowedWire::from),
             )
         },
         len: |model| model.design_dimension_null_locus_pairs.len(),
