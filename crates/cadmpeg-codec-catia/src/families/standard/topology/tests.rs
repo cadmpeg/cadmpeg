@@ -234,6 +234,71 @@ fn standard_vertex_point_domains_propagate_collection_refusal() {
 }
 
 #[test]
+fn standard_vertex_point_domain_entries_refuse_collection_limit() {
+    use super::{Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopology};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let topology = StandardTopology {
+        faces: vec![FaceTopology {
+            boundaries: vec![Boundary::new(vec![
+                CoedgeUse {
+                    edge_row: 0,
+                    reversed: false,
+                    start_vertex: 0,
+                    end_vertex: 1,
+                },
+                CoedgeUse {
+                    edge_row: 1,
+                    reversed: false,
+                    start_vertex: 1,
+                    end_vertex: 2,
+                },
+            ])
+            .expect("nonempty boundary")],
+        }],
+        edge_rows: vec![
+            EdgeRow {
+                kind: 1,
+                handles: vec![10],
+                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+            },
+            EdgeRow {
+                kind: 1,
+                handles: vec![11],
+                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+            },
+        ],
+        vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+        logical_vertex_count: 3,
+    };
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    assert_eq!(
+        topology
+            .bind_vertex_points(&ctx, &[[0, 1], [1, 2]])
+            .expect("service resource budget"),
+        Some(vec![0, 1, 2])
+    );
+    assert!(topology
+        .bind_vertex_points(&ctx, &[[3, 1], [1, 2]])
+        .expect("service resource budget")
+        .is_none());
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 5;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let result = topology.bind_vertex_points(&ctx, &[[3, 1], [1, 2]]);
+    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia standard vertex point domain entries"));
+}
+
+#[test]
 fn body_kinds_rejects_an_overflowing_face_group_sum() {
     let topology = StandardTopology {
         faces: Vec::new(),
