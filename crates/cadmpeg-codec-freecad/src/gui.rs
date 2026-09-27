@@ -3499,10 +3499,10 @@ fn validate_gui_list_payloads(
                 parse_color_list(ctx, view, entry_name, requires_alpha_conversion)?;
             }
             "App::PropertyFloatList" => {
-                parse_float_list(view, entry_name)?;
+                parse_float_list(ctx, view, entry_name)?;
             }
             "Part::PropertyFilletEdges" => {
-                parse_fillet_edges(view, entry_name)?;
+                parse_fillet_edges(ctx, view, entry_name)?;
             }
             "App::PropertyMaterialList" => {
                 let version = property
@@ -3522,14 +3522,14 @@ fn validate_gui_list_payloads(
                     .unwrap_or(0);
                 material_lists.insert(
                     property.id.clone(),
-                    parse_material_list(view, version, &property.id, requires_alpha_conversion)?,
+                    parse_material_list(ctx, view, version, &property.id, requires_alpha_conversion)?,
                 );
             }
             "App::PropertyPlacementList" => {
-                parse_placement_list(view, entry_name)?;
+                parse_placement_list(ctx, view, entry_name)?;
             }
             "App::PropertyVectorList" => {
-                parse_vector_list(view, entry_name)?;
+                parse_vector_list(ctx, view, entry_name)?;
             }
             _ => {}
         }
@@ -3561,10 +3561,30 @@ fn parse_color_list(
     Ok(colors)
 }
 
-fn parse_float_list(mut view: View<'_>, entry_name: &str) -> Result<(), CodecError> {
+fn read_gui_counted<T>(
+    ctx: &DecodeContext<'_>,
+    view: &mut View<'_>,
+    count: u32,
+    element_size: usize,
+    mut read: impl FnMut(&mut View<'_>) -> Option<T>,
+    operation: &'static str,
+) -> Result<Option<Vec<T>>, CodecError> {
+    let Some(count) = view.counted(count.into(), element_size) else {
+        return Ok(None);
+    };
+    let mut values = collection_vec(ctx, count.get(), operation)?;
+    for _ in 0..count.get() {
+        let Some(value) = read(view) else {
+            return Ok(None);
+        };
+        values.push(value);
+    }
+    Ok(Some(values))
+}
+
+fn parse_float_list(ctx: &DecodeContext<'_>, mut view: View<'_>, entry_name: &str) -> Result<(), CodecError> {
     let count = view.req_u32_le()?;
-    let values = view
-        .read_counted(count.into(), 8, View::f64_le)
+    let values = read_gui_counted(ctx, &mut view, count, 8, |view| view.f64_le(), "FCStd GUI float-list entries")?
         .ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "float-list entry {entry_name} count exceeds its payload"
@@ -3583,12 +3603,11 @@ fn parse_float_list(mut view: View<'_>, entry_name: &str) -> Result<(), CodecErr
     Ok(())
 }
 
-fn parse_vector_list(mut view: View<'_>, entry_name: &str) -> Result<(), CodecError> {
+fn parse_vector_list(ctx: &DecodeContext<'_>, mut view: View<'_>, entry_name: &str) -> Result<(), CodecError> {
     let count = view.req_u32_le()?;
-    let values = view
-        .read_counted(count.into(), 24, |view| {
+    let values = read_gui_counted(ctx, &mut view, count, 24, |view| {
             Some((view.f64_le()?, view.f64_le()?, view.f64_le()?))
-        })
+        }, "FCStd GUI vector-list entries")?
         .ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "vector-list entry {entry_name} count exceeds its payload"
@@ -3611,10 +3630,9 @@ fn parse_vector_list(mut view: View<'_>, entry_name: &str) -> Result<(), CodecEr
     Ok(())
 }
 
-fn parse_placement_list(mut view: View<'_>, entry_name: &str) -> Result<(), CodecError> {
+fn parse_placement_list(ctx: &DecodeContext<'_>, mut view: View<'_>, entry_name: &str) -> Result<(), CodecError> {
     let count = view.req_u32_le()?;
-    let values = view
-        .read_counted(count.into(), 56, |view| {
+    let values = read_gui_counted(ctx, &mut view, count, 56, |view| {
             Some([
                 view.f64_le()?,
                 view.f64_le()?,
@@ -3624,7 +3642,7 @@ fn parse_placement_list(mut view: View<'_>, entry_name: &str) -> Result<(), Code
                 view.f64_le()?,
                 view.f64_le()?,
             ])
-        })
+        }, "FCStd GUI placement-list entries")?
         .ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "placement-list entry {entry_name} count exceeds its payload"
@@ -3643,12 +3661,11 @@ fn parse_placement_list(mut view: View<'_>, entry_name: &str) -> Result<(), Code
     Ok(())
 }
 
-fn parse_fillet_edges(mut view: View<'_>, entry_name: &str) -> Result<(), CodecError> {
+fn parse_fillet_edges(ctx: &DecodeContext<'_>, mut view: View<'_>, entry_name: &str) -> Result<(), CodecError> {
     let count = view.req_u32_le()?;
-    let values = view
-        .read_counted(count.into(), 20, |view| {
+    let values = read_gui_counted(ctx, &mut view, count, 20, |view| {
             Some((view.i32_le()?, view.f64_le()?, view.f64_le()?))
-        })
+        }, "FCStd GUI fillet-edge entries")?
         .ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "fillet-edges entry {entry_name} count exceeds its payload"
@@ -3671,6 +3688,7 @@ fn parse_fillet_edges(mut view: View<'_>, entry_name: &str) -> Result<(), CodecE
 }
 
 fn parse_material_list(
+    ctx: &DecodeContext<'_>,
     mut view: View<'_>,
     version: u32,
     property_id: &str,
@@ -3710,8 +3728,7 @@ fn parse_material_list(
             )));
         }
     };
-    let raw_materials = view
-        .read_counted(count.into(), 24, |view| {
+    let raw_materials = read_gui_counted(ctx, &mut view, count, 24, |view| {
             Some((
                 [
                     view.u32_le()?,
@@ -3721,22 +3738,20 @@ fn parse_material_list(
                 ],
                 [view.f32_le()?, view.f32_le()?],
             ))
-        })
+        }, "FCStd GUI raw material entries")?
         .ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "GUI material list {property_id} count exceeds its payload"
             ))
         })?;
-    let mut materials = raw_materials
-        .into_iter()
-        .map(
-            |([ambient, diffuse, specular, emissive], [shininess, transparency])| {
+    let mut materials = collection_vec(ctx, raw_materials.len(), "FCStd GUI material entries")?;
+    for ([ambient, diffuse, specular, emissive], [shininess, transparency]) in raw_materials {
                 let invalid = || {
                     CodecError::malformed(format_args!(
                         "GUI material list {property_id} has non-finite scalars"
                     ))
                 };
-                Ok(GuiMaterial {
+                materials.push(GuiMaterial {
                     ambient,
                     diffuse,
                     specular,
@@ -3746,10 +3761,8 @@ fn parse_material_list(
                     image: String::new(),
                     image_path: String::new(),
                     uuid: String::new(),
-                })
-            },
-        )
-        .collect::<Result<Vec<_>, CodecError>>()?;
+                });
+    }
     if requires_alpha_conversion {
         for material in &mut materials {
             material.ambient = convert_packed_alpha(material.ambient, true);
@@ -3760,9 +3773,9 @@ fn parse_material_list(
     }
     if has_strings {
         for material in &mut materials {
-            material.image = read_material_string(&mut view, property_id)?;
-            material.image_path = read_material_string(&mut view, property_id)?;
-            material.uuid = read_material_string(&mut view, property_id)?;
+            material.image = read_material_string(ctx, &mut view, property_id)?;
+            material.image_path = read_material_string(ctx, &mut view, property_id)?;
+            material.uuid = read_material_string(ctx, &mut view, property_id)?;
         }
     }
     if !view.is_empty() {
@@ -3773,7 +3786,7 @@ fn parse_material_list(
     Ok(materials)
 }
 
-fn read_material_string(view: &mut View<'_>, property_id: &str) -> Result<String, CodecError> {
+fn read_material_string(ctx: &DecodeContext<'_>, view: &mut View<'_>, property_id: &str) -> Result<String, CodecError> {
     let length = view.u32_le().ok_or_else(|| {
         CodecError::malformed(format_args!(
             "GUI material list {property_id} string is truncated"
@@ -3792,7 +3805,7 @@ fn read_material_string(view: &mut View<'_>, property_id: &str) -> Result<String
             "GUI material list {property_id} string exceeds its payload"
         ))
     })?;
-    String::from_utf8(bytes.to_vec()).map_err(|_| {
+    String::from_utf8(ctx.copy_retained(bytes, "FCStd GUI material string")?).map_err(|_| {
         CodecError::malformed(format_args!(
             "GUI material list {property_id} string is not UTF-8"
         ))
@@ -4315,6 +4328,14 @@ fn convert_packed_alpha(value: u32, required: bool) -> u32 {
 mod color_tests {
     use super::{decode_color, parse_material_list, requires_alpha_conversion};
 
+    fn with_context<T>(bytes: &[u8], f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+            .expect("material bytes are within service policy");
+        f(&ctx)
+    }
+
     #[test]
     fn packed_alpha_is_used_without_a_transparency_property() {
         let color = decode_color(0x1122_3340, None).expect("valid color");
@@ -4347,12 +4368,9 @@ mod color_tests {
         bytes.extend_from_slice(&0.5_f32.to_le_bytes());
         bytes.extend_from_slice(&0.25_f32.to_le_bytes());
 
-        let materials = parse_material_list(
-            cadmpeg_core::decode::View::over_retained(&bytes),
-            0,
-            "property",
-            true,
-        )
+        let materials = with_context(&bytes, |ctx| parse_material_list(
+            ctx, cadmpeg_core::decode::View::over_retained(&bytes), 0, "property", true,
+        ))
         .expect("material list");
         assert_eq!(materials.len(), 1);
         assert_eq!(materials[0].ambient, 0x1122_33ff);
@@ -4370,12 +4388,9 @@ mod color_tests {
             }
             bytes.extend_from_slice(&shininess.to_le_bytes());
             bytes.extend_from_slice(&transparency.to_le_bytes());
-            let error = parse_material_list(
-                cadmpeg_core::decode::View::over_retained(&bytes),
-                0,
-                "property",
-                false,
-            )
+            let error = with_context(&bytes, |ctx| parse_material_list(
+                ctx, cadmpeg_core::decode::View::over_retained(&bytes), 0, "property", false,
+            ))
             .err()
             .expect("nonfinite material scalar");
             assert!(error.to_string().contains("has non-finite scalars"));

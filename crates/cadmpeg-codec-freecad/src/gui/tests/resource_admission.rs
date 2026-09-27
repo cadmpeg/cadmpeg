@@ -113,6 +113,88 @@ fn gui_color_list_refuses_at_caller_limit() {
             && failure.operation == "FCStd GUI color-list entries"), "{error:?}");
 }
 
+fn assert_gui_binary_list_refusal(
+    payload_len: usize,
+    limit: u64,
+    operation: &str,
+    parse: impl FnOnce(
+        &cadmpeg_core::decode::DecodeContext<'_>,
+        cadmpeg_core::decode::View<'_>,
+    ) -> Result<(), cadmpeg_core::CodecError>,
+) {
+    let mut bytes = 1_u32.to_le_bytes().to_vec();
+    bytes.extend(std::iter::repeat_n(0_u8, payload_len));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    let error = parse(&ctx, cadmpeg_core::decode::View::over_retained(&bytes))
+        .expect_err("binary list must charge before retaining its records");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+        if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && failure.operation == operation), "{error:?}");
+}
+
+#[test]
+fn gui_float_list_refuses_at_caller_limit() {
+    assert_gui_binary_list_refusal(8, 0, "FCStd GUI float-list entries",
+        |ctx, view| super::super::parse_float_list(ctx, view, "floats"));
+}
+
+#[test]
+fn gui_vector_list_refuses_at_caller_limit() {
+    assert_gui_binary_list_refusal(24, 0, "FCStd GUI vector-list entries",
+        |ctx, view| super::super::parse_vector_list(ctx, view, "vectors"));
+}
+
+#[test]
+fn gui_placement_list_refuses_at_caller_limit() {
+    assert_gui_binary_list_refusal(56, 0, "FCStd GUI placement-list entries",
+        |ctx, view| super::super::parse_placement_list(ctx, view, "placements"));
+}
+
+#[test]
+fn gui_fillet_edge_list_refuses_at_caller_limit() {
+    assert_gui_binary_list_refusal(20, 0, "FCStd GUI fillet-edge entries",
+        |ctx, view| super::super::parse_fillet_edges(ctx, view, "fillets"));
+}
+
+#[test]
+fn gui_raw_material_list_refuses_at_caller_limit() {
+    assert_gui_binary_list_refusal(24, 0, "FCStd GUI raw material entries",
+        |ctx, view| super::super::parse_material_list(ctx, view, 2, "material", false).map(|_| ()));
+}
+
+#[test]
+fn gui_material_list_refuses_at_caller_limit() {
+    assert_gui_binary_list_refusal(24, 1, "FCStd GUI material entries",
+        |ctx, view| super::super::parse_material_list(ctx, view, 2, "material", false).map(|_| ()));
+}
+
+#[test]
+fn gui_material_string_refuses_at_caller_limit() {
+    let mut bytes = 1_u32.to_le_bytes().to_vec();
+    bytes.extend_from_slice(&[0_u8; 24]);
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.push(b'x');
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    let error = super::super::parse_material_list(
+        &ctx, cadmpeg_core::decode::View::over_retained(&bytes), 3, "material", false,
+    )
+    .err()
+    .expect("material string must charge before retaining its bytes");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+        if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && failure.operation == "FCStd GUI material string"), "{error:?}");
+}
+
 #[test]
 fn gui_property_identity_refuses_at_retained_limit() {
     let text = r#"<ViewProvider name="Model"><Properties Count="1"><Property name="Visible" type="App::PropertyBool"><Bool value="true"/></Property></Properties></ViewProvider>"#;
