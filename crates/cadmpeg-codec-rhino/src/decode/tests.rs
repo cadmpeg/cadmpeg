@@ -4,11 +4,11 @@
 use super::{
     append_link_to_record, append_record_links, brep_free_vertex_indices, c2_curve_to_nurbs_join,
     coedge_sense, commit_curve_tree, copy_retained_link, edge_param_range, edge_vertices,
-    face_components, face_sense, hatch_plane_transform, region_shell_groups,
-    region_shell_groups_without_records, scaled_tolerance, seal_for_test, set_exactness,
-    snapshot_instance_links, snapshot_instance_statuses, stage_brep, stage_curve_tree,
-    stage_extrusion_caps, transform_decoded_curve, transform_surface, with_expand,
-    with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
+    face_components, face_sense, hatch_loop_ids, hatch_plane_transform, hatch_source_links,
+    region_shell_groups, region_shell_groups_without_records, scaled_tolerance, seal_for_test,
+    set_exactness, snapshot_instance_links, snapshot_instance_statuses, stage_brep,
+    stage_curve_tree, stage_extrusion_caps, transform_decoded_curve, transform_surface,
+    with_expand, with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
     CommittedExtrusionBoundary, CurveCommitSource, DecodeContext, GeometryOutcome,
     ReferenceFailure, ReportBuckets,
 };
@@ -136,6 +136,86 @@ fn with_collection_limit<R>(
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is admitted");
     f(&ctx)
+}
+
+#[test]
+fn hatch_loop_ids_refuse_collection_limit() {
+    let error = with_collection_limit(0, |ctx| {
+        hatch_loop_ids(
+            ctx,
+            "fixture",
+            std::iter::once(crate::hatch::LoopKind::Outer),
+        )
+        .expect_err("one loop exceeds zero collection items")
+    });
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino hatch loop IDs"
+    ));
+}
+
+#[test]
+fn hatch_loop_id_text_refuses_retained_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    let expected_len = "rhino:object:curve#fixture.hatch-loop-0".len();
+    policy.limits.max_retained_bytes = u64::try_from(expected_len - 1).expect("bounded fixture");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = hatch_loop_ids(
+        &ctx,
+        "fixture",
+        std::iter::once(crate::hatch::LoopKind::Outer),
+    )
+    .expect_err("the loop ID exceeds the retained-byte limit");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino hatch loop ID text"
+    ));
+}
+
+#[test]
+fn hatch_source_links_refuse_collection_limit() {
+    let feature_id = cadmpeg_ir::features::FeatureId::compose(
+        &cadmpeg_ir::identity_namespace!("rhino", "hatch", "feature"),
+        cadmpeg_ir::identity_key!("fixture"),
+    );
+    let error = with_collection_limit(1, |ctx| {
+        hatch_source_links(
+            ctx,
+            vec![(crate::hatch::LoopKind::Outer, "loop".to_string())],
+            &feature_id,
+        )
+        .expect_err("two links exceed one collection item")
+    });
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino hatch source links"
+    ));
+}
+
+#[test]
+fn hatch_feature_link_text_refuses_retained_limit() {
+    let feature_id = cadmpeg_ir::features::FeatureId::compose(
+        &cadmpeg_ir::identity_namespace!("rhino", "hatch", "feature"),
+        cadmpeg_ir::identity_key!("fixture"),
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        u64::try_from(feature_id.as_str().len() - 1).expect("bounded fixture");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = hatch_source_links(&ctx, Vec::new(), &feature_id)
+        .expect_err("feature link exceeds retained-byte limit");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino hatch feature link text"
+    ));
 }
 
 fn with_transaction_limits<R>(

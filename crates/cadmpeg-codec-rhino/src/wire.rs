@@ -24,6 +24,68 @@ pub(crate) struct ExactVec<T> {
     capacity: usize,
 }
 
+/// Charges and reserves a decoded collection before it grows.
+pub(crate) fn reserve_collection<T>(
+    ctx: &DecodeContext<'_>,
+    values: &mut Vec<T>,
+    additional: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(u64_from_index(additional), operation)?;
+    values.try_reserve(additional).map_err(|_| {
+        CodecError::ResourceLimit(ResourceLimit {
+            dimension: ResourceDimension::CollectionItems,
+            reason: ResourceFailure::AllocationFailed,
+            limit: u64::MAX,
+            used: 0,
+            additional: u64_from_index(additional),
+            operation,
+        })
+    })
+}
+
+/// Creates a count-driven vector through the active decode session.
+pub(crate) fn admitted_collection<T>(
+    ctx: &DecodeContext<'_>,
+    count: usize,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    let mut values = Vec::new();
+    reserve_collection(ctx, &mut values, count, operation)?;
+    Ok(values)
+}
+
+/// Reserves a retained string after charging its known byte length.
+pub(crate) fn admitted_retained_string(
+    ctx: &DecodeContext<'_>,
+    length: usize,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    ctx.charge_retained(u64_from_index(length), operation)?;
+    let mut value = String::new();
+    value.try_reserve_exact(length).map_err(|_| {
+        CodecError::ResourceLimit(ResourceLimit {
+            dimension: ResourceDimension::RetainedBytes,
+            reason: ResourceFailure::AllocationFailed,
+            limit: u64::MAX,
+            used: 0,
+            additional: u64_from_index(length),
+            operation,
+        })
+    })?;
+    Ok(value)
+}
+
+/// Copies UTF-8 text into session-retained storage.
+pub(crate) fn copy_retained_string(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    String::from_utf8(ctx.copy_retained(value.as_bytes(), operation)?)
+        .map_err(|error| CodecError::malformed(error.to_string()))
+}
+
 impl<T> ExactVec<T> {
     /// Charges and allocates storage for a count bounded by the input window.
     pub(crate) fn new(
