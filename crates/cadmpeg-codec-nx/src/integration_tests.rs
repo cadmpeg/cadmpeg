@@ -73,6 +73,42 @@ fn assert_valid(result: &EditableDecodeResult) {
 }
 
 #[test]
+fn inspect_summary_refuses_entry_slots_at_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let scan = crate::decode::Scan {
+        container: crate::container::Container {
+            data: Vec::new().into(),
+            physical_size: 0,
+            layout: crate::container::test_modern_layout(0x06),
+            entries: Vec::new(),
+            fastload_table: None,
+            indexed_section_layouts: std::sync::OnceLock::new(),
+            om_section_cache: std::sync::OnceLock::new(),
+        },
+        streams: vec![crate::parasolid::Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: Vec::new(),
+            body: crate::parasolid::StreamBody::Preview,
+        }],
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+    let error = super::summarize(&ctx, &scan)
+        .expect_err("one summary entry exceeds zero collection items");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "nx summary entries"
+    ));
+}
+
+#[test]
 fn legacy_cfb_nx_detection_uses_ug_part_directory_evidence() {
     let bytes = legacy_cfb_with_ug_part();
     assert_eq!(NxCodec.detect(&bytes), Confidence::High);
