@@ -6740,10 +6740,11 @@ where
 /// Collect one face's endpoint relation choices. A missing configuration list
 /// is an unknown result from bounded enumeration, not an empty domain.
 fn collect_endpoint_relation_face_choices(
+    ctx: &DecodeContext<'_>,
     face_assignments: &[MeshFaceBoundaryAssignment],
     face_configurations: &[Option<MeshFaceEndpointConfigurations>],
     covered: &mut [bool],
-) -> Option<Vec<MeshEndpointRelationChoice>> {
+) -> Result<Option<Vec<MeshEndpointRelationChoice>>, CodecError> {
     let mut choices_by_configuration = HashMap::<MeshFaceEndpointConfiguration, Vec<usize>>::new();
     let mut unknown = false;
     for (assignment, configurations) in face_configurations.iter().enumerate() {
@@ -6753,40 +6754,59 @@ fn collect_endpoint_relation_face_choices(
         };
         for configuration in configurations {
             for &(edge, _) in configuration {
-                *covered.get_mut(edge)? = true;
+                let Some(covered) = covered.get_mut(edge) else {
+                    return Ok(None);
+                };
+                *covered = true;
             }
-            if endpoint_configuration_cycles_viable(
-                face_assignments.get(assignment)?,
-                configuration,
-            ) != Some(true)
-            {
+            let Some(face_assignment) = face_assignments.get(assignment) else {
+                return Ok(None);
+            };
+            if endpoint_configuration_cycles_viable(face_assignment, configuration) != Some(true) {
                 continue;
             }
-            let mut relation_configuration = configuration.clone();
+            let mut relation_configuration = crate::resource::copy_slice(
+                ctx,
+                configuration,
+                "catia_endpoint_relation_config_pairs",
+            )?;
             for (_, pair) in &mut relation_configuration {
                 pair.sort_unstable();
             }
             relation_configuration.sort_unstable();
-            choices_by_configuration
-                .entry(relation_configuration)
-                .or_default()
-                .push(assignment);
+            crate::resource::admit_map_entry(
+                ctx,
+                &mut choices_by_configuration,
+                &relation_configuration,
+                "catia_endpoint_relation_configuration_keys",
+            )?;
+            crate::resource::push(
+                ctx,
+                choices_by_configuration
+                    .entry(relation_configuration)
+                    .or_default(),
+                assignment,
+                "catia_endpoint_relation_configuration_assignments",
+            )?;
         }
     }
-    let mut choices = choices_by_configuration
-        .into_iter()
-        .map(|(edge_pairs, mut assignments)| {
-            assignments.sort_unstable();
-            assignments.dedup();
+    let mut choices = Vec::new();
+    for (edge_pairs, mut assignments) in choices_by_configuration {
+        assignments.sort_unstable();
+        assignments.dedup();
+        crate::resource::push(
+            ctx,
+            &mut choices,
             MeshEndpointRelationChoice {
                 id: 0,
                 selection: MeshEndpointRelationSelection::Enumerated {
                     assignments,
                     edge_pairs,
                 },
-            }
-        })
-        .collect::<Vec<_>>();
+            },
+            "catia_endpoint_relation_face_choices",
+        )?;
+    }
     choices.sort_unstable_by(|left, right| {
         (left.selection.edge_pairs(), &left.selection)
             .cmp(&(right.selection.edge_pairs(), &right.selection))
@@ -6795,15 +6815,20 @@ fn collect_endpoint_relation_face_choices(
         // A stopped enumeration is not evidence that the assignment has no
         // configuration. The wildcard lets the relation walker defer that
         // assignment to the complete endpoint search.
-        choices.push(MeshEndpointRelationChoice {
-            id: 0,
-            selection: MeshEndpointRelationSelection::Deferred,
-        });
+        crate::resource::push(
+            ctx,
+            &mut choices,
+            MeshEndpointRelationChoice {
+                id: 0,
+                selection: MeshEndpointRelationSelection::Deferred,
+            },
+            "catia_endpoint_relation_face_choices",
+        )?;
     }
     for (id, choice) in choices.iter_mut().enumerate() {
         choice.id = id;
     }
-    Some(choices)
+    Ok(Some(choices))
 }
 
 /// Solve the unordered endpoint-configuration relation before selecting
@@ -6833,7 +6858,7 @@ fn resolve_endpoint_configuration_relation_streaming(
     {
         return Ok(None);
     }
-    let mut domains = Vec::with_capacity(assignments.len());
+    let mut domains = Vec::new();
     let mut covered = ctx.alloc_filled(
         edge_candidates.len(),
         false,
@@ -6844,10 +6869,11 @@ fn resolve_endpoint_configuration_relation_streaming(
             return Ok(None);
         }
         let choices = collect_endpoint_relation_face_choices(
+            ctx,
             face_assignments,
             face_configurations,
             &mut covered,
-        );
+        )?;
         let Some(choices) = choices else {
             return Ok(None);
         };
@@ -6857,7 +6883,12 @@ fn resolve_endpoint_configuration_relation_streaming(
         if !budget.charge_by(choices.len()) {
             return Ok(Some(MeshSolve::Failed(MeshCandidateFailure::Exhausted(()))));
         }
-        domains.push(choices);
+        crate::resource::push(
+            ctx,
+            &mut domains,
+            choices,
+            "catia_endpoint_relation_face_domains",
+        )?;
     }
     if covered.iter().any(|covered| !covered) {
         return Ok(None);
@@ -11461,11 +11492,15 @@ fn endpoint_relation_keeps_stopped_face_assignments() {
     let face_configurations = vec![Some(vec![vec![(0, [0, 0])]]), None];
     let mut covered = vec![false];
 
-    let choices = collect_endpoint_relation_face_choices(
-        &face_assignments,
-        &face_configurations,
-        &mut covered,
-    )
+    let choices = crate::test_support::with_service_context(|ctx| {
+        collect_endpoint_relation_face_choices(
+            ctx,
+            &face_assignments,
+            &face_configurations,
+            &mut covered,
+        )
+    })
+    .expect("service resource budget")
     .expect("well-formed endpoint relation choices");
 
     assert!(covered[0]);
@@ -11475,6 +11510,60 @@ fn endpoint_relation_keeps_stopped_face_assignments() {
     assert!(choices
         .iter()
         .any(|choice| matches!(&choice.selection, MeshEndpointRelationSelection::Enumerated { assignments, edge_pairs } if assignments == &[0] && edge_pairs == &[(0, [0, 0])])));
+
+    let mut refused = HashSet::new();
+    for cap in 0..32 {
+        let mut cap_covered = [false];
+        let result = crate::test_support::with_collection_limit(cap, |ctx| {
+            collect_endpoint_relation_face_choices(
+                ctx,
+                &face_assignments,
+                &face_configurations,
+                &mut cap_covered,
+            )
+        });
+        match result {
+            Err(CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
+            Ok(Some(_)) => break,
+            _ => panic!("unexpected face-choice result"),
+        }
+    }
+    for operation in [
+        "catia_endpoint_relation_config_pairs",
+        "catia_endpoint_relation_configuration_keys",
+        "catia_endpoint_relation_configuration_assignments",
+        "catia_endpoint_relation_face_choices",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
+fn endpoint_relation_face_choices_refuse_before_invalid_edge_result() {
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0,
+            start: 0,
+            end: 0,
+            reversed: None,
+        }]],
+    };
+    let assignments = [assignment.clone(), assignment];
+    let configurations = [Some(vec![vec![(0, [0, 0])]]), Some(vec![vec![(1, [0, 0])]])];
+    let run = |ctx: &DecodeContext<'_>| {
+        let mut covered = [false];
+        collect_endpoint_relation_face_choices(ctx, &assignments, &configurations, &mut covered)
+    };
+    assert!(crate::test_support::with_service_context(run)
+        .expect("service resource budget")
+        .is_none());
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, run),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_endpoint_relation_config_pairs"
+    ));
 }
 
 #[test]
