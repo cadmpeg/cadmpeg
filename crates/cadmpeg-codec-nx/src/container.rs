@@ -728,11 +728,12 @@ pub(crate) struct ExtrefIndexedRecord {
     pub(crate) byte_len: usize,
 }
 
-fn parse_extref_string_table(
+fn locate_extref_string_table(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
-) -> Result<Option<(usize, Vec<(usize, String)>)>, CodecError> {
+) -> Result<Option<(usize, usize, usize)>, CodecError> {
     for marker in (0..payload.len().saturating_sub(4)).rev() {
+        ctx.charge_work(1, "nx external reference string table scan")?;
         if payload[marker] != 1 {
             continue;
         }
@@ -747,6 +748,10 @@ fn parse_extref_string_table(
         else {
             continue;
         };
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(count),
+            "nx external reference string table entries",
+        )?;
         let mut pos = start;
         let valid = (0..count).all(|_| {
             let Some(length) = View::u16_le_at(payload, pos).map(usize::from) else {
@@ -773,6 +778,18 @@ fn parse_extref_string_table(
         if !valid || pos != payload.len() {
             continue;
         }
+        return Ok(Some((marker, count, start)));
+    }
+    Ok(None)
+}
+
+fn parse_extref_string_table(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Option<(usize, Vec<(usize, String)>)>, CodecError> {
+        let Some((marker, count, start)) = locate_extref_string_table(ctx, payload)? else {
+            return Ok(None);
+        };
         let count_u64 = cadmpeg_core::decode::u64_from_index(count);
         ctx.charge_collection_items(count_u64, "nx external reference string table")?;
         let bytes = count
@@ -786,7 +803,7 @@ fn parse_extref_string_table(
         out.try_reserve_exact(count).map_err(|_| {
             ctx.refuse_codec_limit("nx external reference string table", 0, count_u64)
         })?;
-        pos = start;
+        let mut pos = start;
         for _ in 0..count {
             let Some(length) = View::u16_le_at(payload, pos).map(usize::from) else {
                 return Ok(None);
@@ -812,9 +829,7 @@ fn parse_extref_string_table(
             out.push((string_offset, copy));
             pos = end;
         }
-        return Ok(Some((marker, out)));
-    }
-    Ok(None)
+        Ok(Some((marker, out)))
 }
 
 fn parse_extref_records(
@@ -925,7 +940,7 @@ fn parse_extref_record_index(
     if !payload.starts_with(b"EXTREFSTREAM") || payload.get(24) != Some(&0) {
         return Ok(None);
     }
-    let Some((string_table, _)) = parse_extref_string_table(ctx, payload)? else {
+    let Some((string_table, _, _)) = locate_extref_string_table(ctx, payload)? else {
         return Ok(None);
     };
     let mut directory = Vec::new();
