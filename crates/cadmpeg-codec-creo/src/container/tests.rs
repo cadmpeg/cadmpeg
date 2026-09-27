@@ -869,10 +869,65 @@ fn an_in_scan_reader_reads_the_region_its_section_was_admitted_against() {
         .expect("section extent");
     assert_eq!(scanned.region, data.as_slice());
 
-    let selected = super::model_geometry_sections(std::slice::from_ref(&scanned));
+    let selected = crate::decode::with_test_decode_ctx(|ctx| {
+        super::model_geometry_sections(ctx, std::slice::from_ref(&scanned))
+    })
+    .expect("one model geometry section is admitted");
     assert_eq!(selected.len(), 1);
     assert_eq!(selected[0].section.name(), "VisibGeom");
     assert_eq!(selected[0].region, data.as_slice());
+}
+
+fn model_geometry_section_with_limits(
+    collection_items: u64,
+    retained_bytes: u64,
+) -> Result<usize, cadmpeg_core::CodecError> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let data = b"#VisibGeom\nsrf_array\0";
+    let scanned = container::Section::scan("VisibGeom".to_string(), 0, data.len(), None, data)
+        .expect("section extent");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_items;
+    policy.limits.max_retained_bytes = retained_bytes;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(data, &arena, &policy).expect("root input is admitted");
+    Ok(super::model_geometry_sections(&ctx, &[scanned])?.len())
+}
+
+#[test]
+fn model_geometry_section_vec_refuses_before_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    assert_eq!(
+        model_geometry_section_with_limits(1, 32).expect("one section admitted"),
+        1
+    );
+    let error = model_geometry_section_with_limits(0, 32)
+        .expect_err("one selected section requires a vector item");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo model geometry sections"
+    ));
+}
+
+#[test]
+fn copied_section_name_refuses_before_retained_text_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    let error =
+        model_geometry_section_with_limits(1, 0).expect_err("section name needs retained bytes");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "creo copied section names"
+    ));
 }
 
 #[test]
