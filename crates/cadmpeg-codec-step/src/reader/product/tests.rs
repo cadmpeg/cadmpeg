@@ -4,6 +4,8 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+mod occurrence_limits;
+
 use cadmpeg_test_support::EditableDecodeResult;
 
 use std::io::Cursor;
