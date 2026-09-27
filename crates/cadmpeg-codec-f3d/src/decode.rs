@@ -41,6 +41,78 @@ use crate::loss::F3dLossCode;
 use crate::materials;
 use cadmpeg_asm::{asm_header, sab};
 
+fn copy_decode_string(
+    ctx: &DecodeContext<'_>,
+    source: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let bytes = u64::try_from(source.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    ctx.charge_retained(bytes, operation)?;
+    let mut copy = String::new();
+    copy.try_reserve(source.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
+    copy.push_str(source);
+    Ok(copy)
+}
+
+fn format_decode_string(
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+    args: std::fmt::Arguments<'_>,
+) -> Result<String, CodecError> {
+    struct Length(usize);
+
+    impl std::fmt::Write for Length {
+        fn write_str(&mut self, value: &str) -> std::fmt::Result {
+            self.0 = self.0.checked_add(value.len()).ok_or(std::fmt::Error)?;
+            Ok(())
+        }
+    }
+
+    let mut length = Length(0);
+    std::fmt::write(&mut length, args)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    let bytes = u64::try_from(length.0)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    ctx.charge_retained(bytes, operation)?;
+    let mut output = String::new();
+    output
+        .try_reserve(length.0)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
+    std::fmt::write(&mut output, args)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
+    Ok(output)
+}
+
+fn join_text_brep_names(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+) -> Result<String, CodecError> {
+    let count = container::text_brep_names(scan).count();
+    let length = container::text_brep_names(scan).try_fold(0usize, |length, name| {
+        length.checked_add(name.len())
+    }).and_then(|length| {
+        count.checked_sub(1).unwrap_or(0)
+            .checked_mul("`, `".len())
+            .and_then(|separators| length.checked_add(separators))
+    }).ok_or_else(|| ctx.refuse_codec_limit("join F3D text B-rep names", 0, u64::MAX))?;
+    let bytes = u64::try_from(length)
+        .map_err(|_| ctx.refuse_codec_limit("join F3D text B-rep names", 0, u64::MAX))?;
+    ctx.charge_retained(bytes, "join F3D text B-rep names")?;
+    let mut joined = String::new();
+    joined
+        .try_reserve(length)
+        .map_err(|_| ctx.refuse_codec_limit("join F3D text B-rep names", 0, bytes))?;
+    for (index, name) in container::text_brep_names(scan).enumerate() {
+        if index != 0 {
+            joined.push_str("`, `");
+        }
+        joined.push_str(name);
+    }
+    Ok(joined)
+}
+
 fn container_only_dimension_parameters(
     native: &F3dNative,
 ) -> std::collections::HashSet<cadmpeg_ir::features::ParameterId> {
@@ -2044,12 +2116,8 @@ fn try_decode_text_model(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
 ) -> Result<Option<(BrepFacts, Brep)>, CodecError> {
-    let names: Vec<String> = container::text_brep_names(scan)
-        .into_iter()
-        .map(str::to_owned)
-        .collect();
     let mut parts: Vec<(BrepFacts, Brep)> = Vec::new();
-    for name in &names {
+    for name in container::text_brep_names(scan) {
         let bytes = scan.entry_bytes(name)?;
         let stream = match scan.text_breps.get(name) {
             Some(crate::container::TextBrepFraming::Parsed(stream)) => stream,
@@ -2082,9 +2150,13 @@ fn try_decode_text_model(
         // centimetre convention.
         let mut header = stream.header.as_kernel_header();
         header.scale = Some(stream.header.scale().get());
+        ctx.charge_collection_items(1, "collect F3D text B-rep parts")?;
+        parts
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("collect F3D text B-rep parts", 0, 1))?;
         parts.push((
             BrepFacts {
-                name: name.clone(),
+                name: copy_decode_string(ctx, name, "retain F3D text B-rep fact name")?,
                 uncompressed_len: bytes.len() as u64,
                 kernel: Some(crate::container::KernelFraming::Text {
                     header,
@@ -2293,7 +2365,7 @@ impl<'a> F3dDecodeSession<'a> {
                     ctx,
                     scan,
                     cadmpeg_ir::report::decode::DecodeTransfer::full(false),
-                    container_losses(scan),
+                    container_losses(ctx, scan)?,
                 )?,
                 report_scope,
                 unknowns,
@@ -2958,7 +3030,7 @@ impl<'a> F3dDecodeSession<'a> {
                     apply_bodyless_design_classification(
                         &mut self.report,
                         container::design_breps(scan).count(),
-                        container::text_brep_names(scan).len(),
+                        container::text_brep_names(scan).count(),
                         self.native.design_body_bindings.len()
                             + self.native.design_body_members.len(),
                         self.ir.model.sketch_entities.len()
@@ -3084,7 +3156,7 @@ fn decode_scanned_document<'a>(
             ctx,
             scan,
             cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
-            container_losses(scan),
+            container_losses(ctx, scan)?,
         )?;
         match crate::xref::decode(ctx, scan) {
             Ok(Some(table)) => apply_assembly_classification(&mut report, scan, &table),
@@ -5207,26 +5279,32 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
 ///
 /// The report names the BREP carrier state. A failed binary decode gets a
 /// decode-failure note. Each remaining state gets its own loss description.
-fn container_losses(scan: &ContainerScan) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+fn container_losses(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
     let brep_count = container::design_breps(scan).count();
     let selected = container::select_fallback_brep(scan);
-    let text_breps = container::text_brep_names(scan);
+    let text_count = container::text_brep_names(scan).count();
 
     let (geometry, topology) = match (brep_count, selected) {
         // The text carrier is present but its decode produced no geometry.
-        (0, _) if !text_breps.is_empty() => (
-            format!(
+        (0, _) if text_count != 0 => {
+            let text_names = join_text_brep_names(ctx, scan)?;
+            (
+            format_decode_string(ctx, "report F3D text geometry loss", format_args!(
                 "ASM BREP geometry was not transferred: the document's only geometry carrier is \
                  the text-encoded ASM stream(s) `{}`, and their decode produced no surfaces, \
                  curves, or points.",
-                text_breps.join("`, `")
-            ),
-            format!(
+                text_names
+            ))?,
+            format_decode_string(ctx, "report F3D text topology loss", format_args!(
                 "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not \
                  built from the text-encoded carrier(s) `{}`.",
-                text_breps.join("`, `")
-            ),
-        ),
+                text_names
+            ))?,
+            )
+        },
         (0, _) => (
             "ASM BREP geometry was not transferred: the container declares no ASM BREP stream, so \
              no surfaces, curves, or points were produced."
@@ -5236,17 +5314,17 @@ fn container_losses(scan: &ContainerScan) -> Vec<cadmpeg_ir::report::loss::LossN
                 .to_string(),
         ),
         (_, Some(brep)) => (
-            format!(
+            format_decode_string(ctx, "report F3D selected geometry loss", format_args!(
                 "ASM BREP geometry was not transferred: the selected stream `{}` is not a \
                  decodable BinaryFile4/BinaryFile8 SAB (or its framing failed). {brep_count} BREP \
                  stream(s) were located, but no surfaces, curves, or points were produced.",
                 brep.name
-            ),
-            format!(
+            ))?,
+            format_decode_string(ctx, "report F3D selected topology loss", format_args!(
                 "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not \
                  built for the selected stream `{}`.",
                 brep.name
-            ),
+            ))?,
         ),
         (_, None) => (
             format!(
@@ -5273,11 +5351,11 @@ fn container_losses(scan: &ContainerScan) -> Vec<cadmpeg_ir::report::loss::LossN
     // Full decode rejects an ambiguous selection before it builds this report.
     if selected.is_none() {
         losses.push(F3dLossCode::MissingGeometryStream.note(
-            if brep_count == 0 && !text_breps.is_empty() {
+            if brep_count == 0 && text_count != 0 {
                 format!(
                     "{} ASM BREP stream(s) are present in the text encoding (.sat/.smt) and \
                      produced no geometry; no binary stream (.smb/.smbh) was found",
-                    text_breps.len()
+                    text_count
                 )
             } else if brep_count == 0 {
                 "no ASM BREP stream (.smb/.smbh) was found in the container".to_string()
@@ -5290,7 +5368,7 @@ fn container_losses(scan: &ContainerScan) -> Vec<cadmpeg_ir::report::loss::LossN
         ));
     }
 
-    losses
+    Ok(losses)
 }
 
 /// Resolve the appearance loss note against the appearances in the IR.

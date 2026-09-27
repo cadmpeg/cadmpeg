@@ -433,6 +433,54 @@ fn decoded_text_brep_facts_keep_text_dialects_and_exclude_binary_routes() {
 }
 
 #[test]
+fn text_brep_parts_refuse_the_last_collection_item() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let stream = concat!(
+        "21800 0 2 3\n",
+        "16 Autodesk Neutron 23 ASM 218.0.1.400 Unknown 9 Synthetic\n",
+        "1 0.000001 0.0000000001\n",
+        "asmheader $-1 -1 @11 218.0.1.400 #\n",
+        "body $-1 -1 $-1 $2 $-1 $-1 #\n",
+        "lump $-1 -1 $-1 $-1 $3 $1 #\n",
+        "shell $-1 -1 $-1 $-1 $-1 $4 $-1 $2 #\n",
+        "face $-1 -1 $-1 $-1 $-1 $3 $-1 $5 forward single #\n",
+        "sphere-surface $-1 -1 $-1 0 0 0 25 1 0 0 0 0 1 forward_v I I I I #\n",
+        "End-of-ASM-data\n",
+    );
+    let bytes = f3d_with_text_brep_stream(
+        &["FusionAssetName[Active]/Breps.BlobParts/BREP0.sat"],
+        stream.as_bytes(),
+    );
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    let decode_with_limit = |limit| {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (limited, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        crate::decode::try_decode_text_model(&limited, &scan)
+    };
+    let mut admitted = 10_000;
+    assert!(decode_with_limit(admitted).unwrap().is_some());
+    let mut refused = 0;
+    while admitted - refused > 1 {
+        let candidate = refused + (admitted - refused) / 2;
+        match decode_with_limit(candidate) {
+            Ok(Some(_)) => admitted = candidate,
+            Err(cadmpeg_core::CodecError::ResourceLimit(_)) => refused = candidate,
+            _ => panic!("unexpected text B-rep limit result"),
+        }
+    }
+    let Err(error) = decode_with_limit(refused) else {
+        panic!("the item below the admission boundary must be refused");
+    };
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D text B-rep parts"));
+}
+
+#[test]
 fn text_brep_framing_propagates_sat_collection_limit() {
     use cadmpeg_core::decode::ResourceDimension;
 
