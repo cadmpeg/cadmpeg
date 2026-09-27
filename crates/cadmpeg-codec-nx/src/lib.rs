@@ -83,6 +83,7 @@ mod evaluation;
 mod framing;
 mod geometry;
 mod intersection;
+mod iter_wire;
 mod jt;
 mod jt_topology;
 /// Byte-offset constants generated from `docs/layouts/nx.toml`.

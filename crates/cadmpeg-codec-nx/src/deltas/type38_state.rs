@@ -3,6 +3,7 @@
 
 use crate::framing::xmt_reference::NonNullXmt;
 use cadmpeg_ir::units::FiniteVector;
+use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -60,14 +61,65 @@ enum Lanes {
         start: NonNullXmt,
     },
 }
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "StateWire", into = "StateWire")]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "StateWire")]
 pub(crate) struct Type38State {
     xmt: NonNullXmt,
     node_id: u32,
     leading_references: [u32; 5],
     marker: IntersectionMarker,
     lanes: Lanes,
+}
+impl Serialize for Type38State {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let linked = match self.lanes {
+            Lanes::Descending { linked, .. }
+            | Lanes::Prior { linked }
+            | Lanes::Anchor { linked } => [u32::from(linked[0]), u32::from(linked[1])],
+            Lanes::One { linked, .. } => [u32::from(linked), 0],
+        };
+        let linked_count = if matches!(self.lanes, Lanes::One { .. }) {
+            1
+        } else {
+            2
+        };
+        let (state, state_count) = match &self.lanes {
+            Lanes::Descending { .. } => {
+                let xmt = u32::from(self.xmt);
+                ([xmt + 3, xmt + 2, xmt + 1, 0], 3)
+            }
+            Lanes::Anchor { .. } => {
+                let anchor = self.leading_references[4];
+                ([anchor + 1, anchor + 2, anchor + 3, 0], 3)
+            }
+            Lanes::Prior { linked } => {
+                let anchor = self
+                    .leading_references
+                    .into_iter()
+                    .chain(linked.iter().copied().map(u32::from))
+                    .fold(0, u32::max);
+                ([anchor + 1, anchor + 2, anchor + 3, 0], 3)
+            }
+            Lanes::One { first, start, .. } => {
+                let anchor = u32::from(*start);
+                ([u32::from(*first), anchor, anchor + 1, anchor + 2], 4)
+            }
+        };
+        let statuses = self.leading_statuses();
+        let mut wire =
+            serializer.serialize_struct("StateWire", 7 + usize::from(statuses != [1; 5]))?;
+        wire.serialize_field("xmt", &u32::from(self.xmt))?;
+        wire.serialize_field("node_id", &self.node_id)?;
+        wire.serialize_field("leading_references", &self.leading_references)?;
+        if statuses != [1; 5] {
+            wire.serialize_field("leading_statuses", &statuses)?;
+        }
+        wire.serialize_field("marker", &u8::from(self.marker))?;
+        wire.serialize_field("linked_references", &linked[..linked_count])?;
+        wire.serialize_field("state_references", &state[..state_count])?;
+        wire.serialize_field("numeric_values", &self.numeric_values())?;
+        wire.end()
+    }
 }
 impl Type38State {
     // This conversion consumes the input carrier at the typed construction boundary.
@@ -185,6 +237,7 @@ impl Type38State {
             _ => [1; 5],
         }
     }
+    #[cfg(test)]
     pub(super) fn linked_references(&self) -> Vec<u32> {
         match self.lanes {
             Lanes::Descending { linked, .. }
@@ -193,6 +246,7 @@ impl Type38State {
             Lanes::One { linked, .. } => vec![linked.into()],
         }
     }
+    #[cfg(test)]
     pub(super) fn state_references(&self) -> Vec<u32> {
         match &self.lanes {
             Lanes::Descending { .. } => {
@@ -276,6 +330,7 @@ impl TryFrom<StateWire> for Type38State {
         )
     }
 }
+#[cfg(test)]
 impl From<Type38State> for StateWire {
     fn from(state: Type38State) -> Self {
         Self {
@@ -293,7 +348,7 @@ impl From<Type38State> for StateWire {
 
 #[cfg(test)]
 mod tests {
-    use super::Type38State;
+    use super::{StateWire, Type38State};
     #[test]
     fn wire_preserves_all_reference_orders_and_rejects_inconsistent_forms() {
         for json in [
@@ -305,6 +360,10 @@ mod tests {
         ] {
             let state: Type38State = serde_json::from_str(json).unwrap();
             assert_eq!(serde_json::to_string(&state).unwrap(), json);
+            assert_eq!(
+                serde_json::to_vec(&state).unwrap(),
+                serde_json::to_vec(&StateWire::from(state.clone())).unwrap()
+            );
             for (field, value) in [
                 ("xmt", serde_json::json!(1)),
                 ("marker", serde_json::json!(4)),
@@ -325,5 +384,24 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("numeric_values"));
+    }
+
+    #[test]
+    fn type38_retained_limit_refuses_before_reference_collection() {
+        let json = r#"{"xmt":80,"node_id":17,"leading_references":[1,7,8,9,1],"marker":45,"linked_references":[87,12],"state_references":[83,82,81],"numeric_values":null}"#;
+        let state: Type38State = serde_json::from_str(json).unwrap();
+        #[derive(serde::Serialize)]
+        struct Record<'a> {
+            id: &'a str,
+            state: &'a Type38State,
+        }
+        let record = Record {
+            id: "nx:deltas:type38#0",
+            state: &state,
+        };
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::json!({"id":"nx:deltas:type38#0","state":serde_json::from_str::<serde_json::Value>(json).unwrap()}),
+        );
     }
 }

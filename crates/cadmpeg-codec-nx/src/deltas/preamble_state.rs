@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked schema-reference preamble payload.
 
+use crate::iter_wire::IterWire;
+use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU16;
 
@@ -16,8 +18,8 @@ enum EntryKind {
     Type82,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "PreambleWire", into = "PreambleWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "PreambleWire")]
 pub(crate) struct PreambleState {
     identity: u16,
     first_reference: u32,
@@ -27,6 +29,35 @@ pub(crate) struct PreambleState {
     count: NonZeroU16,
     entries: Vec<(EntryKind, u32)>,
     terminal_value: u16,
+}
+
+impl Serialize for PreambleState {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let state_reference = self.state_reference();
+        let mut wire = serializer
+            .serialize_struct("PreambleWire", 6 + usize::from(state_reference.is_some()))?;
+        wire.serialize_field("identity", &self.identity())?;
+        wire.serialize_field("references", &self.references())?;
+        if let Some(reference) = state_reference {
+            wire.serialize_field("state_reference", &reference)?;
+        }
+        wire.serialize_field("state_words", &self.state_words())?;
+        wire.serialize_field("count", &self.count())?;
+        wire.serialize_field(
+            "entries",
+            &IterWire(self.entries.iter().map(|(kind, reference)| {
+                (
+                    match kind {
+                        EntryKind::Type81 => 81_u16,
+                        EntryKind::Type82 => 82_u16,
+                    },
+                    *reference,
+                )
+            })),
+        )?;
+        wire.serialize_field("terminal_value", &self.terminal_value())?;
+        wire.end()
+    }
 }
 
 impl PreambleState {
@@ -120,6 +151,7 @@ impl PreambleState {
     pub(crate) fn count(&self) -> u16 {
         self.count.get()
     }
+    #[cfg(test)]
     pub(crate) fn entries(&self) -> Vec<(u16, u32)> {
         self.entries
             .iter()
@@ -155,6 +187,7 @@ struct PreambleWire {
     terminal_value: u16,
 }
 
+#[cfg(test)]
 impl From<PreambleState> for PreambleWire {
     fn from(state: PreambleState) -> Self {
         Self {
@@ -189,7 +222,7 @@ impl TryFrom<PreambleWire> for PreambleState {
 
 #[cfg(test)]
 mod tests {
-    use super::PreambleState;
+    use super::{PreambleState, PreambleWire};
 
     #[test]
     // Keep the source-word spelling in this wire fixture.
@@ -230,6 +263,36 @@ mod tests {
         let state: PreambleState = serde_json::from_str(&linked).unwrap();
         assert_eq!(state.state_references(), [1, 40002, 1]);
         assert_eq!(serde_json::to_string(&state).unwrap(), linked);
+    }
+
+    #[test]
+    fn preamble_borrowed_wire_matches_owned_bytes() {
+        let json = r#"{"identity":300,"references":[40000,40001],"state_words":[2,0,1,55],"count":7,"entries":[[81,4],[82,40000],[81,5]],"terminal_value":9}"#;
+        let state: PreambleState = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_vec(&state).unwrap(), json.as_bytes());
+        assert_eq!(
+            serde_json::to_vec(&state).unwrap(),
+            serde_json::to_vec(&PreambleWire::from(state.clone())).unwrap()
+        );
+    }
+
+    #[test]
+    fn preamble_retained_limit_refuses_before_entry_collection() {
+        let json = r#"{"identity":300,"references":[40000,40001],"state_words":[2,0,1,55],"count":7,"entries":[[81,4],[82,40000],[81,5]],"terminal_value":9}"#;
+        let state: PreambleState = serde_json::from_str(json).unwrap();
+        #[derive(serde::Serialize)]
+        struct Record<'a> {
+            id: &'a str,
+            state: &'a PreambleState,
+        }
+        let record = Record {
+            id: "nx:deltas:preamble#0",
+            state: &state,
+        };
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::json!({"id":"nx:deltas:preamble#0","state":serde_json::from_str::<serde_json::Value>(json).unwrap()}),
+        );
     }
 }
 

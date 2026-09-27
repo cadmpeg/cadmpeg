@@ -2,13 +2,26 @@
 //! `ATTDEF_LIST` active references followed by null slots.
 
 use crate::framing::xmt_reference::NonNullXmt;
+use crate::iter_wire::IterWire;
+use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "StateWire", into = "StateWire")]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "StateWire")]
 pub(crate) struct AttdefState {
     xmt: NonNullXmt,
     slots: AttdefSlots,
+}
+
+impl Serialize for AttdefState {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut wire = serializer.serialize_struct("StateWire", 4)?;
+        wire.serialize_field("xmt", &self.xmt())?;
+        wire.serialize_field("slot_count", &self.slot_count())?;
+        wire.serialize_field("active_count", &self.active_count())?;
+        wire.serialize_field("references", &IterWire(self.references()))?;
+        wire.end()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -37,7 +50,7 @@ impl AttdefState {
     pub(super) fn slot_count(&self) -> u32 {
         self.slots.slot_count()
     }
-    pub(super) fn references(&self) -> impl Iterator<Item = u32> + '_ {
+    pub(super) fn references(&self) -> impl Iterator<Item = u32> + Clone + '_ {
         self.slots.references()
     }
     pub(super) fn into_slots(self) -> AttdefSlots {
@@ -93,7 +106,7 @@ impl AttdefSlots {
     }
     // This iterator emits null references lazily; it performs no count-sized allocation.
     #[allow(clippy::disallowed_methods)]
-    pub(super) fn references(&self) -> impl Iterator<Item = u32> + '_ {
+    pub(super) fn references(&self) -> impl Iterator<Item = u32> + Clone + '_ {
         self.active
             .iter()
             .copied()
@@ -108,6 +121,7 @@ struct StateWire {
     active_count: u32,
     references: Vec<u32>,
 }
+#[cfg(test)]
 impl From<AttdefState> for StateWire {
     fn from(state: AttdefState) -> Self {
         Self {
@@ -131,7 +145,7 @@ impl TryFrom<StateWire> for AttdefState {
 }
 #[cfg(test)]
 mod tests {
-    use super::AttdefState;
+    use super::{AttdefState, StateWire};
     #[test]
     fn wire_derives_counts_and_rejects_invalid_slot_partitions() {
         for json in [
@@ -153,5 +167,35 @@ mod tests {
                 .unwrap_err()
                 .contains(field));
         }
+    }
+
+    #[test]
+    fn attdef_borrowed_wire_matches_owned_bytes() {
+        let json = r#"{"xmt":43,"slot_count":4,"active_count":2,"references":[143,155,1,1]}"#;
+        let state: AttdefState = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_vec(&state).unwrap(), json.as_bytes());
+        assert_eq!(
+            serde_json::to_vec(&state).unwrap(),
+            serde_json::to_vec(&StateWire::from(state.clone())).unwrap()
+        );
+    }
+
+    #[test]
+    fn attdef_retained_limit_refuses_before_reference_collection() {
+        let json = r#"{"xmt":43,"slot_count":4,"active_count":2,"references":[143,155,1,1]}"#;
+        let state: AttdefState = serde_json::from_str(json).unwrap();
+        #[derive(serde::Serialize)]
+        struct Record<'a> {
+            id: &'a str,
+            state: &'a AttdefState,
+        }
+        let record = Record {
+            id: "nx:deltas:attdef#0",
+            state: &state,
+        };
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::json!({"id":"nx:deltas:attdef#0","state":serde_json::from_str::<serde_json::Value>(json).unwrap()}),
+        );
     }
 }

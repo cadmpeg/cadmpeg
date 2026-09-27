@@ -2,7 +2,7 @@
 //! Resolved extrusion construction from a structured branch.
 
 use super::FeatureConstructionMember;
-use crate::native::iter_wire::IterWire;
+use crate::iter_wire::IterWire;
 use crate::om::branch_items::BranchItems;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};

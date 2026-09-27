@@ -16,7 +16,6 @@ pub(crate) mod display_jt;
 mod features;
 pub(crate) mod hex;
 pub(crate) mod history;
-mod iter_wire;
 pub(crate) mod model;
 pub(crate) mod om;
 mod parasolid;
