@@ -1136,7 +1136,7 @@ fn limit_curve_point_binding_rejects_separated_occurrences_with_unequal_residual
     .expect("valid degree-5 NURBS");
 
     assert_eq!(
-        standard_limit_curve_point_parameter(&curve, Point3::new(0.0, 0.0, 0.0), 2e-3),
+        crate::test_support::with_service_context(|ctx| standard_limit_curve_point_parameter(ctx, &curve, Point3::new(0.0, 0.0, 0.0), 2e-3)).expect("service budget"),
         None
     );
 }
@@ -1191,13 +1191,39 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
     let bindings = [(surface_id.clone(), false, 0)];
     let surface_indices = HashMap::from([(surface_id, 0)]);
 
-    let limit_bindings = standard_limit_curve_bindings(
+    let limit_bindings = crate::test_support::with_service_context(|ctx| standard_limit_curve_bindings(
+        ctx,
         &ir,
         &bindings,
         &surface_indices,
         std::slice::from_ref(&support),
         std::slice::from_ref(&limit_curve),
-    );
+    )).expect("service budget");
+    let mut refusal_operations = std::collections::HashSet::new();
+    let mut admitted = false;
+    for limit in 0..=256 {
+        match crate::test_support::with_collection_limit(limit, |ctx| {
+            standard_limit_curve_bindings(ctx, &ir, &bindings, &surface_indices,
+                std::slice::from_ref(&support), std::slice::from_ref(&limit_curve))
+        }) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
+                refusal_operations.insert(error.operation);
+            }
+            Ok(result) if result == limit_bindings => { admitted = true; break; }
+            outcome => panic!("unexpected limit curve binding outcome: {outcome:?}"),
+        }
+    }
+    assert!(admitted, "collection limit 256 must admit limit curve binding");
+    for operation in [
+        "catia_limit_curve_point_rows",
+        "catia_limit_curve_point_parameters",
+        "catia_limit_curve_edge_rows",
+        "catia_limit_curve_candidates",
+        "catia_limit_curve_geometry_copy",
+        "catia_limit_curve_edge_bindings",
+    ] {
+        assert!(refusal_operations.contains(operation), "no refusal at {operation}");
+    }
     let [limit_candidates] = limit_bindings.as_slice() else {
         panic!("one edge limit-curve domain");
     };
@@ -1231,13 +1257,14 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
             .map(|curve| &curve.geometry),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))) if curve == &limit_curve
     ));
-    let duplicated = standard_limit_curve_bindings(
+    let duplicated = crate::test_support::with_service_context(|ctx| standard_limit_curve_bindings(
+        ctx,
         &ir,
         &bindings,
         &surface_indices,
         &[support.clone(), support],
         &[limit_curve],
-    );
+    )).expect("service budget");
     assert_eq!(duplicated, vec![vec![*binding], vec![*binding]]);
     let reversed = resolve_standard_limit_curve_binding(limit_candidates, [1, 0])
         .expect("the solved endpoint pair selects the limit curve");
