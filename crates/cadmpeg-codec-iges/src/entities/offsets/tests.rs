@@ -271,6 +271,7 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
             source.geometry.solved().expect("solved carrier"),
             EPS_OFFSET_ENDPOINT_MATCH,
         )
+        .expect("source parameter selection")
         .map(FiniteVector::get),
         Some([0.0, 2.0])
     );
