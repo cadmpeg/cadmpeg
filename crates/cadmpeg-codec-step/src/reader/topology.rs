@@ -59,6 +59,16 @@ fn push_topology_vec<T>(
     Ok(())
 }
 
+fn one_topology_vec<T>(
+    value: T,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    let mut values = Vec::new();
+    push_topology_vec(&mut values, value, ctx, operation)?;
+    Ok(values)
+}
+
 fn append_topology_vec<T>(
     target: &mut Vec<T>,
     source: &mut Vec<T>,
@@ -1284,9 +1294,11 @@ fn build_wire(
             point_positions,
             scoped,
             losses,
+            ctx,
         ) {
-            Some(value) => outcome.push(value, ctx)?,
-            None => outcome.fail(None),
+            Ok(Some(value)) => outcome.push(value, ctx)?,
+            Ok(None) => outcome.fail(None),
+            Err(error) => return Err(error),
         }
     }
     Ok(outcome)
@@ -1302,18 +1314,28 @@ fn build_wire_set(
     point_positions: &CarrierIndex,
     scoped: bool,
     losses: &mut Vec<LossNote>,
-) -> Option<Built> {
-    let set = exchange.records().get(&set_id)?;
-    let set_type = most_specific(set, &["CONNECTED_EDGE_SUB_SET", "CONNECTED_EDGE_SET"])?;
-    let used_edges = connected_set_members(set, set_type)?;
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Built>, CodecError> {
+    let Some(set) = exchange.records().get(&set_id) else {
+        return Ok(None);
+    };
+    let Some(set_type) = most_specific(set, &["CONNECTED_EDGE_SUB_SET", "CONNECTED_EDGE_SET"])
+    else {
+        return Ok(None);
+    };
+    let Some(used_edges) = connected_set_members(set, set_type) else {
+        return Ok(None);
+    };
     let suffix = if scoped {
         IdentityKeyTail::empty().dash(key_word!("set")).dash(set_id)
     } else {
         IdentityKeyTail::empty()
     };
-    let mut typed = HashSet::from([id, set_id]);
+    let mut typed = HashSet::new();
+    insert_topology_hash_set(&mut typed, id, ctx, "step_wire_typed")?;
+    insert_topology_hash_set(&mut typed, set_id, ctx, "step_wire_typed")?;
     if set_type == "CONNECTED_EDGE_SUB_SET"
-        && !validate_subset_parent(set_id, set, set_type, exchange, losses)
+        && !validate_subset_parent(set_id, set, set_type, exchange, losses, ctx)?
     {
         typed.remove(&set_id);
     }
@@ -1321,7 +1343,9 @@ fn build_wire_set(
     let mut wire_edges = Vec::new();
     let mut built_edges = Vec::new();
     for edge_id in used_edges.iter().filter_map(Value::reference) {
-        let edge = edefs.get(&edge_id)?;
+        let Some(edge) = edefs.get(&edge_id) else {
+            return Ok(None);
+        };
         let (start, end) = edge.curve_vertices();
         let edge_suffix = IdentityKeyTail::empty()
             .dash(key_word!("wire"))
@@ -1337,12 +1361,17 @@ fn build_wire_set(
             .dash(id)
             .dash(key_word!("set"))
             .dash(set_id);
-        wire_edges.push(ir_id.clone());
-        built_edges.push(Edge {
+        push_topology_vec(
+            &mut wire_edges,
+            copy_topology_id(ir_id.as_str(), ctx, "step_wire_edge_ids")?,
+            ctx,
+            "step_wire_edge_ids",
+        )?;
+        push_topology_vec(&mut built_edges, Edge {
             id: ir_id,
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(edge_curve_id_reported(
-                edge_id, edge, exchange, losses,
-            )),
+                edge_id, edge, exchange, losses, ctx,
+            )?),
             start: VertexId::from(ids::data(
                 kind!("vertex"),
                 IdentityKey::from(start).with_tail(&vertex_suffix),
@@ -1352,11 +1381,12 @@ fn build_wire_set(
                 IdentityKey::from(end).with_tail(&vertex_suffix),
             )),
             tolerance: None,
-        });
-        used_vertices.extend([start, end]);
-        typed.insert(edge_id);
+        }, ctx, "step_wire_edges")?;
+        insert_topology_set(&mut used_vertices, start, ctx, "step_wire_used_vertices")?;
+        insert_topology_set(&mut used_vertices, end, ctx, "step_wire_used_vertices")?;
+        insert_topology_hash_set(&mut typed, edge_id, ctx, "step_wire_typed")?;
         if let Some(parent) = edge.parent() {
-            typed.insert(parent);
+            insert_topology_hash_set(&mut typed, parent, ctx, "step_wire_typed")?;
         }
     }
     let vertex_suffix = IdentityKeyTail::empty()
@@ -1366,17 +1396,21 @@ fn build_wire_set(
         .dash(set_id);
     let mut built_vertices = Vec::new();
     for vertex_id in used_vertices {
-        let vertex = vdefs.get(&vertex_id)?;
-        point_positions.get(vertex.point)?;
-        built_vertices.push(Vertex {
+        let Some(vertex) = vdefs.get(&vertex_id) else {
+            return Ok(None);
+        };
+        if point_positions.get(vertex.point).is_none() {
+            return Ok(None);
+        }
+        push_topology_vec(&mut built_vertices, Vertex {
             id: VertexId::from(ids::data(
                 kind!("vertex"),
                 IdentityKey::from(vertex_id).with_tail(&vertex_suffix),
             )),
             point: PointId::from(ids::data(kind!("point"), vertex.point)),
             tolerance: None,
-        });
-        typed.insert(vertex_id);
+        }, ctx, "step_wire_vertices")?;
+        insert_topology_hash_set(&mut typed, vertex_id, ctx, "step_wire_typed")?;
     }
     let body = BodyId::from(ids::data(
         kind!("body"),
@@ -1390,7 +1424,23 @@ fn build_wire_set(
         kind!("shell"),
         IdentityKey::from(id).with_tail(&suffix),
     ));
-    let mut built = staged_topology(
+    let shell_value = match Shell::new(
+        copy_topology_id(shell.as_str(), ctx, "step_wire_shell_id_copy")?,
+        copy_topology_id(region.as_str(), ctx, "step_wire_region_id_copy")?,
+        Vec::new(),
+        wire_edges,
+        Vec::new(),
+    ) {
+        Ok(shell) => shell,
+        Err(error) => {
+            push_topology_vec(losses,
+                StepLossCode::DecodeWarning
+                    .note(format!("CONNECTED_EDGE_SET #{set_id}: {error}")),
+                ctx, "step_topology_losses")?;
+            return Ok(None);
+        }
+    };
+    let staged = staged_topology(
         typed,
         built_vertices,
         built_edges,
@@ -1398,45 +1448,33 @@ fn build_wire_set(
         Vec::new(),
         Vec::new(),
         Vec::new(),
-        vec![match Shell::new(
-            shell.clone(),
-            region.clone(),
-            Vec::new(),
-            wire_edges,
-            Vec::new(),
-        ) {
-            Ok(shell) => shell,
-            Err(error) => {
-                losses.push(
-                    StepLossCode::DecodeWarning
-                        .note(format!("CONNECTED_EDGE_SET #{set_id}: {error}")),
-                );
-                return None;
-            }
-        }],
+        one_topology_vec(shell_value, ctx, "step_wire_shells")?,
         Region {
-            id: region.clone(),
-            body: body.clone(),
-            shells: vec![shell],
+            id: copy_topology_id(region.as_str(), ctx, "step_wire_region_id_copy")?,
+            body: copy_topology_body_id(&body, ctx, "step_wire_body_id_copy")?,
+            shells: one_topology_vec(shell, ctx, "step_wire_region_shells")?,
         },
         Body {
-            id: body.clone(),
+            id: copy_topology_body_id(&body, ctx, "step_wire_body_id_copy")?,
             kind: BodyKind::Wire,
-            regions: vec![region],
+            regions: one_topology_vec(region, ctx, "step_wire_body_regions")?,
             transform: None,
             name: None,
             color: None,
             visible: None,
         },
-    )
-    .map_err(|error| {
-        losses.push(
-            StepLossCode::DecodeWarning.note(format!("CONNECTED_EDGE_SET #{set_id}: {error}")),
-        );
-    })
-    .ok()?;
-    built.shell_sources.insert(set_id);
-    Some(built)
+    );
+    let mut built = match staged {
+        Ok(built) => built,
+        Err(error) => {
+            push_topology_vec(losses,
+                StepLossCode::DecodeWarning.note(format!("CONNECTED_EDGE_SET #{set_id}: {error}")),
+                ctx, "step_topology_losses")?;
+            return Ok(None);
+        }
+    };
+    insert_topology_set(&mut built.shell_sources, set_id, ctx, "step_wire_shell_sources")?;
+    Ok(Some(built))
 }
 
 fn build_shell_wire(
@@ -1480,9 +1518,11 @@ fn build_shell_wire(
             scoped,
             scope_root,
             losses,
+            ctx,
         ) {
-            Some(value) => outcome.push(value, ctx)?,
-            None => outcome.fail(None),
+            Ok(Some(value)) => outcome.push(value, ctx)?,
+            Ok(None) => outcome.fail(None),
+            Err(error) => return Err(error),
         }
     }
     Ok(outcome)
@@ -1499,47 +1539,85 @@ fn build_shell_wire_set(
     scoped: bool,
     scope_root: bool,
     losses: &mut Vec<LossNote>,
-) -> Option<Built> {
-    let shell_record = exchange.records().get(&shell_id)?;
-    let mut typed = HashSet::from([id, shell_id]);
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Built>, CodecError> {
+    let Some(shell_record) = exchange.records().get(&shell_id) else {
+        return Ok(None);
+    };
+    let mut typed = HashSet::new();
+    insert_topology_hash_set(&mut typed, id, ctx, "step_wire_typed")?;
+    insert_topology_hash_set(&mut typed, shell_id, ctx, "step_wire_typed")?;
     let mut edge_uses = Vec::new();
     let mut used_vertices = BTreeSet::new();
     let mut free_vertices = BTreeSet::new();
     if shell_record.partial("WIRE_SHELL").is_some() {
-        for loop_id in named_refs(shell_record, "WIRE_SHELL", 1)? {
-            let loop_record = exchange.records().get(&loop_id)?;
+        let Some(loop_ids) = named_reference_values(shell_record, "WIRE_SHELL", 1) else {
+            return Ok(None);
+        };
+        for loop_id in loop_ids.iter().filter_map(Value::reference) {
+            let Some(loop_record) = exchange.records().get(&loop_id) else {
+                return Ok(None);
+            };
             if loop_record.partial("EDGE_LOOP").is_some() {
-                for oriented_id in named_refs(loop_record, "EDGE_LOOP", 1)? {
-                    let oriented = exchange.records().get(&oriented_id)?;
-                    let edge_id = oriented_edge_reference(oriented)?;
-                    let edge = edefs.get(&edge_id)?;
-                    let forward = oriented_edge_forward(oriented)?;
-                    edge_uses.push((edge_id, oriented_id, forward));
-                    used_vertices.extend([edge.vertices().0, edge.vertices().1]);
-                    typed.extend([loop_id, oriented_id, edge_id]);
+                let Some(oriented_ids) = named_reference_values(loop_record, "EDGE_LOOP", 1) else {
+                    return Ok(None);
+                };
+                for oriented_id in oriented_ids.iter().filter_map(Value::reference) {
+                    let Some(oriented) = exchange.records().get(&oriented_id) else {
+                        return Ok(None);
+                    };
+                    let Some(edge_id) = oriented_edge_reference(oriented) else {
+                        return Ok(None);
+                    };
+                    let Some(edge) = edefs.get(&edge_id) else {
+                        return Ok(None);
+                    };
+                    let Some(forward) = oriented_edge_forward(oriented) else {
+                        return Ok(None);
+                    };
+                    push_topology_vec(&mut edge_uses, (edge_id, oriented_id, forward), ctx, "step_wire_edge_uses")?;
+                    insert_topology_set(&mut used_vertices, edge.vertices().0, ctx, "step_wire_used_vertices")?;
+                    insert_topology_set(&mut used_vertices, edge.vertices().1, ctx, "step_wire_used_vertices")?;
+                    for claim in [loop_id, oriented_id, edge_id] {
+                        insert_topology_hash_set(&mut typed, claim, ctx, "step_wire_typed")?;
+                    }
                     if let Some(parent) = edge.parent() {
-                        typed.insert(parent);
+                        insert_topology_hash_set(&mut typed, parent, ctx, "step_wire_typed")?;
                     }
                 }
             } else if loop_record.partial("VERTEX_LOOP").is_some() {
-                let vertex = named_reference(loop_record, "VERTEX_LOOP", 1, 0)?;
-                used_vertices.insert(vertex);
-                free_vertices.insert(vertex);
-                typed.extend([loop_id, vertex]);
+                let Some(vertex) = named_reference(loop_record, "VERTEX_LOOP", 1, 0) else {
+                    return Ok(None);
+                };
+                insert_topology_set(&mut used_vertices, vertex, ctx, "step_wire_used_vertices")?;
+                insert_topology_set(&mut free_vertices, vertex, ctx, "step_wire_free_vertices")?;
+                for claim in [loop_id, vertex] {
+                    insert_topology_hash_set(&mut typed, claim, ctx, "step_wire_typed")?;
+                }
             } else {
-                return None;
+                return Ok(None);
             }
         }
     } else if shell_record.partial("VERTEX_SHELL").is_some() {
-        let loop_id = named_reference(shell_record, "VERTEX_SHELL", 1, 0)?;
-        let loop_record = exchange.records().get(&loop_id)?;
-        loop_record.partial("VERTEX_LOOP")?;
-        let vertex = named_reference(loop_record, "VERTEX_LOOP", 1, 0)?;
-        used_vertices.insert(vertex);
-        free_vertices.insert(vertex);
-        typed.extend([loop_id, vertex]);
+        let Some(loop_id) = named_reference(shell_record, "VERTEX_SHELL", 1, 0) else {
+            return Ok(None);
+        };
+        let Some(loop_record) = exchange.records().get(&loop_id) else {
+            return Ok(None);
+        };
+        if loop_record.partial("VERTEX_LOOP").is_none() {
+            return Ok(None);
+        }
+        let Some(vertex) = named_reference(loop_record, "VERTEX_LOOP", 1, 0) else {
+            return Ok(None);
+        };
+        insert_topology_set(&mut used_vertices, vertex, ctx, "step_wire_used_vertices")?;
+        insert_topology_set(&mut free_vertices, vertex, ctx, "step_wire_free_vertices")?;
+        for claim in [loop_id, vertex] {
+            insert_topology_hash_set(&mut typed, claim, ctx, "step_wire_typed")?;
+        }
     } else {
-        return None;
+        return Ok(None);
     }
     let suffix = if scoped {
         IdentityKeyTail::empty()
@@ -1556,7 +1634,9 @@ fn build_shell_wire_set(
     let mut edges = Vec::new();
     let mut wire_edges = Vec::new();
     for (index, (edge_id, oriented_id, forward)) in edge_uses.into_iter().enumerate() {
-        let edge = edefs.get(&edge_id)?;
+        let Some(edge) = edefs.get(&edge_id) else {
+            return Ok(None);
+        };
         let (curve_start, curve_end) = edge.curve_vertices();
         let (start, end) = if forward {
             (curve_start, curve_end)
@@ -1572,12 +1652,17 @@ fn build_shell_wire_set(
                 .dash(oriented_id)
                 .dash(index),
         ));
-        wire_edges.push(ir_id.clone());
-        edges.push(Edge {
+        push_topology_vec(
+            &mut wire_edges,
+            copy_topology_id(ir_id.as_str(), ctx, "step_wire_edge_ids")?,
+            ctx,
+            "step_wire_edge_ids",
+        )?;
+        push_topology_vec(&mut edges, Edge {
             id: ir_id,
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(edge_curve_id_reported(
-                edge_id, edge, exchange, losses,
-            )),
+                edge_id, edge, exchange, losses, ctx,
+            )?),
             start: VertexId::from(ids::data(
                 kind!("vertex"),
                 IdentityKey::from(start).with_tail(&vertex_suffix),
@@ -1587,23 +1672,25 @@ fn build_shell_wire_set(
                 IdentityKey::from(end).with_tail(&vertex_suffix),
             )),
             tolerance: None,
-        });
+        }, ctx, "step_wire_edges")?;
     }
-    let vertices = used_vertices
-        .into_iter()
-        .map(|vertex_id| {
-            let vertex = vdefs.get(&vertex_id)?;
-            point_positions.get(vertex.point)?;
-            Some(Vertex {
+    let mut vertices = Vec::new();
+    for vertex_id in used_vertices {
+        let Some(vertex) = vdefs.get(&vertex_id) else {
+            return Ok(None);
+        };
+        if point_positions.get(vertex.point).is_none() {
+            return Ok(None);
+        }
+        push_topology_vec(&mut vertices, Vertex {
                 id: VertexId::from(ids::data(
                     kind!("vertex"),
                     IdentityKey::from(vertex_id).with_tail(&vertex_suffix),
                 )),
                 point: PointId::from(ids::data(kind!("point"), vertex.point)),
                 tolerance: None,
-            })
-        })
-        .collect::<Option<Vec<_>>>()?;
+        }, ctx, "step_wire_vertices")?;
+    }
     let body = BodyId::from(ids::data(
         kind!("body"),
         IdentityKey::from(id).with_tail(&suffix),
@@ -1613,16 +1700,34 @@ fn build_shell_wire_set(
         IdentityKey::from(id).with_tail(&suffix),
     ));
     let shell = shell_identity(id, shell_id, scope_root);
-    let free_vertices = free_vertices
-        .into_iter()
-        .map(|vertex| {
+    let mut free_vertex_ids = Vec::new();
+    for vertex in free_vertices {
+        push_topology_vec(
+            &mut free_vertex_ids,
             VertexId::from(ids::data(
                 kind!("vertex"),
                 IdentityKey::from(vertex).with_tail(&vertex_suffix),
-            ))
-        })
-        .collect();
-    let mut built = staged_topology(
+            )),
+            ctx,
+            "step_wire_free_vertex_ids",
+        )?;
+    }
+    let shell_value = match Shell::new(
+        copy_topology_id(shell.as_str(), ctx, "step_wire_shell_id_copy")?,
+        copy_topology_id(region.as_str(), ctx, "step_wire_region_id_copy")?,
+        Vec::new(),
+        wire_edges,
+        free_vertex_ids,
+    ) {
+        Ok(shell) => shell,
+        Err(error) => {
+            push_topology_vec(losses,
+                StepLossCode::DecodeWarning.note(format!("wire shell #{shell_id}: {error}")),
+                ctx, "step_topology_losses")?;
+            return Ok(None);
+        }
+    };
+    let staged = staged_topology(
         typed,
         vertices,
         edges,
@@ -1630,42 +1735,33 @@ fn build_shell_wire_set(
         Vec::new(),
         Vec::new(),
         Vec::new(),
-        vec![match Shell::new(
-            shell.clone(),
-            region.clone(),
-            Vec::new(),
-            wire_edges,
-            free_vertices,
-        ) {
-            Ok(shell) => shell,
-            Err(error) => {
-                losses.push(
-                    StepLossCode::DecodeWarning.note(format!("wire shell #{shell_id}: {error}")),
-                );
-                return None;
-            }
-        }],
+        one_topology_vec(shell_value, ctx, "step_wire_shells")?,
         Region {
-            id: region.clone(),
-            body: body.clone(),
-            shells: vec![shell],
+            id: copy_topology_id(region.as_str(), ctx, "step_wire_region_id_copy")?,
+            body: copy_topology_body_id(&body, ctx, "step_wire_body_id_copy")?,
+            shells: one_topology_vec(shell, ctx, "step_wire_region_shells")?,
         },
         Body {
-            id: body.clone(),
+            id: copy_topology_body_id(&body, ctx, "step_wire_body_id_copy")?,
             kind: BodyKind::Wire,
-            regions: vec![region],
+            regions: one_topology_vec(region, ctx, "step_wire_body_regions")?,
             transform: None,
             name: None,
             color: None,
             visible: None,
         },
-    )
-    .map_err(|error| {
-        losses.push(StepLossCode::DecodeWarning.note(format!("wire shell #{shell_id}: {error}")));
-    })
-    .ok()?;
-    built.shell_sources.insert(shell_id);
-    Some(built)
+    );
+    let mut built = match staged {
+        Ok(built) => built,
+        Err(error) => {
+            push_topology_vec(losses,
+                StepLossCode::DecodeWarning.note(format!("wire shell #{shell_id}: {error}")),
+                ctx, "step_topology_losses")?;
+            return Ok(None);
+        }
+    };
+    insert_topology_set(&mut built.shell_sources, shell_id, ctx, "step_wire_shell_sources")?;
+    Ok(Some(built))
 }
 
 fn mark_standalone_geometric_set(
@@ -2021,12 +2117,13 @@ fn edge_curve_id_reported(
     edge: &EdgeDef,
     exchange: &Exchange,
     losses: &mut Vec<LossNote>,
-) -> Option<CurveId> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<CurveId>, CodecError> {
     let Some(curve_step) = edge.curve() else {
-        losses.push(StepLossCode::DecodeWarning.note(format!(
+        push_topology_vec(losses, StepLossCode::DecodeWarning.note(format!(
             "STEP edge #{edge_id} has no 3D curve carrier; edge committed without a curve"
-        )));
-        return None;
+        )), ctx, "step_topology_losses")?;
+        return Ok(None);
     };
     let curve = exchange.records().get(&curve_step);
     let carrier = curve_carrier_record(curve_step, exchange);
@@ -2040,11 +2137,11 @@ fn edge_curve_id_reported(
             })
         })
     {
-        losses.push(StepLossCode::DecodeWarning.note(format!(
+        push_topology_vec(losses, StepLossCode::DecodeWarning.note(format!(
             "STEP edge curve #{edge_id}: surface-curve #{curve_step} has no resolvable basis; edge committed without a curve"
-        )));
+        )), ctx, "step_topology_losses")?;
     }
-    carrier.map(|curve| CurveId::from(ids::data(kind!("curve"), curve)))
+    Ok(carrier.map(|curve| CurveId::from(ids::data(kind!("curve"), curve))))
 }
 fn oriented_defs(exchange: &Exchange) -> BTreeMap<u64, OrientedDef> {
     exchange
@@ -2639,7 +2736,7 @@ fn build_one(
             )
             .ok_or(BuildError::Absent)?;
             if set_type == "CONNECTED_FACE_SUB_SET"
-                && !validate_subset_parent(shell_step, sr, set_type, exchange, losses)
+                && !validate_subset_parent(shell_step, sr, set_type, exchange, losses, ctx)?
             {
                 typed.remove(&shell_step);
             }
@@ -3305,8 +3402,8 @@ fn build_one(
         edges.push(Edge {
             id: scoped_edge_id(edge_id, id, shell_step, scope_edges, scope_root),
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(edge_curve_id_reported(
-                edge_id, e, exchange, losses,
-            )),
+                edge_id, e, exchange, losses, ctx,
+            )?),
             start: scoped_vertex_id(start, id, shell_step, scope_edges, scope_root),
             end: scoped_vertex_id(end, id, shell_step, scope_edges, scope_root),
             tolerance: None,
@@ -5205,11 +5302,12 @@ fn validate_subset_parent(
     subset_type: &str,
     exchange: &Exchange,
     losses: &mut Vec<LossNote>,
-) -> bool {
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
     let base_type = match subset_type {
         "CONNECTED_EDGE_SUB_SET" => "CONNECTED_EDGE_SET",
         "CONNECTED_FACE_SUB_SET" => "CONNECTED_FACE_SET",
-        _ => return true,
+        _ => return Ok(true),
     };
     let parent = if record.partials.len() == 1 {
         entity_parameter(record, subset_type, 2).and_then(ValueExt::reference)
@@ -5219,22 +5317,22 @@ fn validate_subset_parent(
             .and_then(|partial| partial.parameters.iter().find_map(ValueExt::reference))
     };
     let Some(parent) = parent else {
-        losses.push(StepLossCode::DecodeWarning.note(format!(
+        push_topology_vec(losses, StepLossCode::DecodeWarning.note(format!(
             "{subset_type} #{id} has no resolvable parent {base_type}"
-        )));
-        return false;
+        )), ctx, "step_topology_losses")?;
+        return Ok(false);
     };
     if exchange
         .records()
         .get(&parent)
         .is_some_and(|parent_record| most_specific(parent_record, &[base_type]) == Some(base_type))
     {
-        true
+        Ok(true)
     } else {
-        losses.push(StepLossCode::DecodeWarning.note(format!(
+        push_topology_vec(losses, StepLossCode::DecodeWarning.note(format!(
             "{subset_type} #{id} parent #{parent} does not resolve to {base_type}"
-        )));
-        false
+        )), ctx, "step_topology_losses")?;
+        Ok(false)
     }
 }
 
