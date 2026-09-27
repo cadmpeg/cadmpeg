@@ -2693,15 +2693,16 @@ impl MeshQuotient {
 
     fn assignment_options_for_directions(
         &self,
+        ctx: &DecodeContext<'_>,
         assignment: &MeshFaceBoundaryAssignment,
         direction_options: &MeshFaceDirectionOptions,
         limit: usize,
         budget: Option<&WorkBudget<'_>>,
-    ) -> Vec<(Vec<Vec<bool>>, Self)> {
+    ) -> Result<Vec<MeshOrientationOption>, CodecError> {
         if limit == 0
             || assignment.boundaries.len() != direction_options.first().map_or(0, Vec::len)
         {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let work = work_units(assignment.boundaries.iter().map(Vec::len).sum::<usize>());
         let mut output = Vec::new();
@@ -2718,126 +2719,163 @@ impl MeshQuotient {
             if budget.is_some_and(|budget| !budget.charge_by(work)) {
                 break;
             }
-            let mut quotient = self.clone();
-            let merged = assignment.boundaries.iter().zip(directions).all(
-                |(boundary, boundary_directions)| {
-                    if boundary.is_empty()
-                        || boundary
-                            .iter()
-                            .zip(boundary_directions)
-                            .any(|(use_, direction)| {
-                                use_.reversed.is_some_and(|required| required != *direction)
-                            })
+            let mut quotient = self.clone_charged(ctx)?;
+            let mut merged = true;
+            'boundaries: for (boundary, boundary_directions) in
+                assignment.boundaries.iter().zip(directions)
+            {
+                if boundary.is_empty()
+                    || boundary
+                        .iter()
+                        .zip(boundary_directions)
+                        .any(|(use_, direction)| {
+                            use_.reversed.is_some_and(|required| required != *direction)
+                        })
+                {
+                    merged = false;
+                    break;
+                }
+                for index in 0..boundary.len() {
+                    let next = (index + 1) % boundary.len();
+                    let Some(left_end) = edge_end(boundary[index], boundary_directions[index])
+                    else {
+                        merged = false;
+                        break 'boundaries;
+                    };
+                    let Some(right_start) = edge_start(boundary[next], boundary_directions[next])
+                    else {
+                        merged = false;
+                        break 'boundaries;
+                    };
+                    if quotient
+                        .merge_charged(ctx, left_end, right_start)?
+                        .is_none()
                     {
-                        return false;
+                        merged = false;
+                        break 'boundaries;
                     }
-                    (0..boundary.len()).all(|index| {
-                        let next = (index + 1) % boundary.len();
-                        let Some(left_end) = edge_end(boundary[index], boundary_directions[index])
-                        else {
-                            return false;
-                        };
-                        let Some(right_start) =
-                            edge_start(boundary[next], boundary_directions[next])
-                        else {
-                            return false;
-                        };
-                        quotient.merge(left_end, right_start).is_some()
-                    })
-                },
-            );
+                }
+            }
             if !merged {
                 continue;
             }
-            let mut signature_quotient = quotient.clone();
-            if seen.insert((signature_quotient.signature(), directions.clone())) {
-                output.push((directions.clone(), quotient));
+            let mut signature_quotient = quotient.clone_charged(ctx)?;
+            let signature = (
+                signature_quotient.signature_charged(ctx)?,
+                copy_mesh_boundary_directions(ctx, directions)?,
+            );
+            if crate::resource::insert_set(
+                ctx,
+                &mut seen,
+                signature,
+                "catia_fixed_direction_signatures",
+            )? {
+                crate::resource::push(
+                    ctx,
+                    &mut output,
+                    (copy_mesh_boundary_directions(ctx, directions)?, quotient),
+                    "catia_fixed_direction_options",
+                )?;
             }
         }
-        output
+        Ok(output)
     }
 
     fn merge_label_directions_in_place(
         &mut self,
+        ctx: &DecodeContext<'_>,
         assignment: &MeshFaceBoundaryAssignment,
         label_directions: &[Vec<bool>],
         edge_orientations: &[Option<bool>],
         budget: Option<&WorkBudget<'_>>,
-    ) -> Option<Vec<Vec<bool>>> {
+    ) -> Result<Option<Vec<Vec<bool>>>, CodecError> {
         if assignment.boundaries.len() != label_directions.len()
             || label_directions
                 .iter()
                 .zip(&assignment.boundaries)
                 .any(|(directions, boundary)| directions.len() != boundary.len())
         {
-            return None;
+            return Ok(None);
         }
         let work = work_units(assignment.boundaries.iter().map(Vec::len).sum::<usize>());
         if budget.is_some_and(|budget| !budget.charge_by(work)) {
-            return None;
+            return Ok(None);
         }
-        let directions = assignment
-            .boundaries
-            .iter()
-            .zip(label_directions)
-            .map(|(boundary, labels)| {
-                boundary
-                    .iter()
-                    .zip(labels)
-                    .map(|(use_, &label_direction)| {
-                        let orientation = edge_orientations.get(use_.edge)?.as_ref().copied()?;
-                        let direction = orientation ^ label_direction;
-                        use_.reversed
-                            .is_none_or(|required| required == direction)
-                            .then_some(direction)
-                    })
-                    .collect::<Option<Vec<_>>>()
-            })
-            .collect::<Option<Vec<_>>>()?;
-        let merged =
-            assignment
-                .boundaries
-                .iter()
-                .zip(&directions)
-                .all(|(boundary, boundary_directions)| {
-                    if boundary.is_empty() {
-                        return false;
-                    }
-                    (0..boundary.len()).all(|index| {
-                        let next = (index + 1) % boundary.len();
-                        let Some(left_end) = edge_end(boundary[index], boundary_directions[index])
-                        else {
-                            return false;
-                        };
-                        let Some(right_start) =
-                            edge_start(boundary[next], boundary_directions[next])
-                        else {
-                            return false;
-                        };
-                        self.merge(left_end, right_start).is_some()
-                    })
-                });
+        let mut directions = Vec::new();
+        crate::resource::reserve_vec(
+            ctx,
+            &mut directions,
+            assignment.boundaries.len(),
+            "catia_label_direction_rows",
+        )?;
+        for (boundary, labels) in assignment.boundaries.iter().zip(label_directions) {
+            let mut row = Vec::new();
+            crate::resource::reserve_vec(
+                ctx,
+                &mut row,
+                boundary.len(),
+                "catia_label_direction_values",
+            )?;
+            for (use_, &label_direction) in boundary.iter().zip(labels) {
+                let Some(orientation) = edge_orientations.get(use_.edge).copied().flatten() else {
+                    return Ok(None);
+                };
+                let direction = orientation ^ label_direction;
+                if use_.reversed.is_some_and(|required| required != direction) {
+                    return Ok(None);
+                }
+                row.push(direction);
+            }
+            directions.push(row);
+        }
+        let mut merged = true;
+        'boundaries: for (boundary, boundary_directions) in
+            assignment.boundaries.iter().zip(&directions)
+        {
+            if boundary.is_empty() {
+                merged = false;
+                break;
+            }
+            for index in 0..boundary.len() {
+                let next = (index + 1) % boundary.len();
+                let Some(left_end) = edge_end(boundary[index], boundary_directions[index]) else {
+                    merged = false;
+                    break 'boundaries;
+                };
+                let Some(right_start) = edge_start(boundary[next], boundary_directions[next])
+                else {
+                    merged = false;
+                    break 'boundaries;
+                };
+                if self.merge_charged(ctx, left_end, right_start)?.is_none() {
+                    merged = false;
+                    break 'boundaries;
+                }
+            }
+        }
         if !merged {
-            return None;
+            return Ok(None);
         }
-        Some(directions)
+        Ok(Some(directions))
     }
 
     fn assignment_option_for_label_directions(
         &self,
+        ctx: &DecodeContext<'_>,
         assignment: &MeshFaceBoundaryAssignment,
         label_directions: &[Vec<bool>],
         edge_orientations: &[Option<bool>],
         budget: Option<&WorkBudget<'_>>,
-    ) -> Option<(Vec<Vec<bool>>, Self)> {
-        let mut quotient = self.clone();
+    ) -> Result<Option<MeshOrientationOption>, CodecError> {
+        let mut quotient = self.clone_charged(ctx)?;
         let directions = quotient.merge_label_directions_in_place(
+            ctx,
             assignment,
             label_directions,
             edge_orientations,
             budget,
         )?;
-        Some((directions, quotient))
+        Ok(directions.map(|directions| (directions, quotient)))
     }
 
     pub(crate) fn point_assignment(
@@ -5970,21 +6008,51 @@ struct MeshEndpointRelationConstraints {
     choice_counts: Vec<usize>,
 }
 
-fn canonical_mesh_boundary_directions(directions: &[Vec<bool>]) -> Vec<Vec<bool>> {
-    directions
-        .iter()
-        .map(|boundary| {
-            let complement = boundary
-                .iter()
-                .map(|direction| !direction)
-                .collect::<Vec<_>>();
-            if complement < *boundary {
-                complement
-            } else {
-                boundary.clone()
-            }
-        })
-        .collect()
+fn copy_mesh_boundary_directions(
+    ctx: &DecodeContext<'_>,
+    directions: &[Vec<bool>],
+) -> Result<Vec<Vec<bool>>, CodecError> {
+    let mut copy = Vec::new();
+    crate::resource::reserve_vec(
+        ctx,
+        &mut copy,
+        directions.len(),
+        "catia_direction_copy_rows",
+    )?;
+    for row in directions {
+        copy.push(crate::resource::copy_slice(
+            ctx,
+            row,
+            "catia_direction_copy_values",
+        )?);
+    }
+    Ok(copy)
+}
+
+fn canonical_mesh_boundary_directions(
+    ctx: &DecodeContext<'_>,
+    directions: &[Vec<bool>],
+) -> Result<Vec<Vec<bool>>, CodecError> {
+    let mut canonical = Vec::new();
+    crate::resource::reserve_vec(
+        ctx,
+        &mut canonical,
+        directions.len(),
+        "catia_canonical_mesh_direction_rows",
+    )?;
+    for row in directions {
+        let mut complement =
+            crate::resource::copy_slice(ctx, row, "catia_canonical_mesh_direction_values")?;
+        for direction in &mut complement {
+            *direction = !*direction;
+        }
+        canonical.push(if complement < *row {
+            complement
+        } else {
+            crate::resource::copy_slice(ctx, row, "catia_canonical_mesh_direction_values")?
+        });
+    }
+    Ok(canonical)
 }
 
 type EndpointRelationKey = Vec<Option<[usize; 2]>>;
@@ -7367,11 +7435,13 @@ fn resolve_fixed_mesh_endpoint_pairs(
             break;
         }
         let Some(directions) = direct_quotient.merge_label_directions_in_place(
+            ctx,
             assignment,
             label_directions,
             &next_orientations,
             Some(budget),
-        ) else {
+        )?
+        else {
             direct_possible = false;
             break;
         };
@@ -8245,21 +8315,25 @@ impl MeshSelectionSearch<'_, '_> {
         measured: &MeshQuotient,
         face: usize,
         budget: Option<&WorkBudget<'_>>,
-    ) -> Vec<MeshFixedDirectionOption> {
+    ) -> Result<Vec<MeshFixedDirectionOption>, CodecError> {
         let Some(direction_options) = self
             .fixed_face_directions
             .get(face)
             .and_then(Option::as_ref)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let [assignment] = self.assignments[face].as_slice() else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let mut seen = HashSet::<(Vec<Vec<bool>>, Vec<Option<bool>>)>::new();
         let mut output = Vec::new();
         for label_directions in direction_options {
-            let mut next_orientations = self.fixed_edge_orientations.clone();
+            let mut next_orientations = crate::resource::copy_slice(
+                self.ctx,
+                &self.fixed_edge_orientations,
+                "catia_fixed_next_orientations",
+            )?;
             let constrained = assignment
                 .boundaries
                 .iter()
@@ -8285,23 +8359,38 @@ impl MeshSelectionSearch<'_, '_> {
                 continue;
             }
             let option = measured.assignment_option_for_label_directions(
+                self.ctx,
                 assignment,
                 label_directions,
                 &next_orientations,
                 budget,
-            );
+            )?;
             let Some((directions, quotient)) = option else {
                 continue;
             };
             let signature = (
-                canonical_mesh_boundary_directions(&directions),
-                next_orientations.clone(),
+                canonical_mesh_boundary_directions(self.ctx, &directions)?,
+                crate::resource::copy_slice(
+                    self.ctx,
+                    &next_orientations,
+                    "catia_fixed_orientation_signature",
+                )?,
             );
-            if seen.insert(signature) {
-                output.push((directions, quotient, next_orientations));
+            if crate::resource::insert_set(
+                self.ctx,
+                &mut seen,
+                signature,
+                "catia_fixed_direction_signatures",
+            )? {
+                crate::resource::push(
+                    self.ctx,
+                    &mut output,
+                    (directions, quotient, next_orientations),
+                    "catia_fixed_direction_options",
+                )?;
             }
         }
-        output
+        Ok(output)
     }
 
     fn search_fixed_direction_with_budget(
@@ -8489,7 +8578,7 @@ impl MeshSelectionSearch<'_, '_> {
             return Ok(());
         };
         let previous_orientations = self.fixed_edge_orientations.clone();
-        let options = self.fixed_direction_options(&measured, face, Some(budget));
+        let options = self.fixed_direction_options(&measured, face, Some(budget))?;
         if budget.exhausted() {
             self.outcome.exhaust();
             return Ok(());
@@ -8910,12 +8999,13 @@ impl MeshSelectionSearch<'_, '_> {
                 if assignment_index != 0 {
                     continue;
                 }
-                Ok(measured.assignment_options_for_directions(
+                measured.assignment_options_for_directions(
+                    self.ctx,
                     assignment,
                     direction_options,
                     remaining,
                     Some(budget),
-                ))
+                )
             } else {
                 measured.assignment_options_limited(
                     self.ctx,
