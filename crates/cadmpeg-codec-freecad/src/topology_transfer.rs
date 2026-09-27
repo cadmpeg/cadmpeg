@@ -2157,6 +2157,7 @@ fn source_topology_indices(
             let mut stack = collection_vec(ctx, 1, "FreeCAD source topology stack")?;
             stack.push((root.clone(), Transform::identity()));
             while let Some((shape_use, parent)) = stack.pop() {
+                ctx.charge_work(1, "FreeCAD source topology scan")?;
                 let transform = parent
                     .compose(tables.location(shape_use.location)?)
                     .map_err(location_transform_error)?;
