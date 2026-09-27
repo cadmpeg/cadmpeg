@@ -5523,7 +5523,7 @@ pub(crate) fn store(
         &mut overdeclared_counts,
         global.global_table(),
     )?;
-    let fem_entities = fem::build(directory, &by_directory, &parameter_resolver, Some(ctx))?;
+    let fem_entities = fem::build(directory, &by_directory, &parameter_resolver, ctx)?;
     // Scan every definition for root-inference diagnostics, then restrict the
     // map consumed by expansion to definitions admitted by structure.
     let occurrence_length_factor = global

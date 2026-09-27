@@ -124,6 +124,19 @@ pub(crate) fn reserve_vec_growth<T>(
         .map_err(|_| refuse_local_limit(operation, requested, requested))
 }
 
+pub(crate) fn collect_result_vec<T>(
+    ctx: &DecodeContext<'_>,
+    count: usize,
+    operation: &'static str,
+    mut value_at: impl FnMut(usize) -> Result<T, CodecError>,
+) -> Result<Vec<T>, CodecError> {
+    let mut values = reserve_vec(ctx, count, operation)?;
+    for index in 0..count {
+        values.push(value_at(index)?);
+    }
+    Ok(values)
+}
+
 pub(crate) fn reserve_optional_vec_growth<T>(
     ctx: Option<&DecodeContext<'_>>,
     values: &mut Vec<T>,
