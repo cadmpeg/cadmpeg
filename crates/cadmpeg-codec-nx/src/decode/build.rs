@@ -138,6 +138,44 @@ type GeometryDecode = (
     Vec<UnknownRecord>,
 );
 
+fn reserve_unknown_pair(
+    ctx: &DecodeContext<'_>,
+    unknowns: &mut Vec<UnknownRecord>,
+    stream_unknowns: &mut Vec<(usize, usize)>,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "nx geometry unknown streams")?;
+    unknowns
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("nx geometry unknown streams", 0, 1))?;
+    ctx.charge_collection_items(1, "nx geometry unknown indices")?;
+    stream_unknowns
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("nx geometry unknown indices", 0, 1))?;
+    Ok(())
+}
+
+fn push_unknown_link(
+    ctx: &DecodeContext<'_>,
+    unknown: &mut UnknownRecord,
+    id: &str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "nx unknown entity links")?;
+    ctx.charge_retained(
+        u64::try_from(id.len()).unwrap_or(u64::MAX),
+        "nx unknown entity link text",
+    )?;
+    let links = unknown.links_mut();
+    links
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("nx unknown entity links", 0, 1))?;
+    let mut link = String::new();
+    link.try_reserve_exact(id.len())
+        .map_err(|_| ctx.refuse_codec_limit("nx unknown entity link text", 0, 1))?;
+    link.push_str(id);
+    links.push(link);
+    Ok(())
+}
+
 pub(super) fn try_decode_geometry(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
@@ -274,6 +312,7 @@ pub(super) fn try_decode_geometry(
             .is_some_and(|(_, selected, _)| !selected.contains(&si))
         {
             let unknown_index = unknowns.len();
+            reserve_unknown_pair(ctx, &mut unknowns, &mut stream_unknowns)?;
             let unknown = unknown_stream_metadata(si, stream);
             let container_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
             annotations
@@ -1139,17 +1178,14 @@ pub(super) fn try_decode_geometry(
         )?;
         // Preserve the whole inflated stream verbatim so nothing is dropped.
         let unknown_index = unknowns.len();
+        reserve_unknown_pair(ctx, &mut unknowns, &mut stream_unknowns)?;
         let mut unknown = unknown_stream_metadata(si, stream);
-        unknown.links_mut().extend(
-            ir.model.surfaces[first_surface..]
-                .iter()
-                .map(|surface| surface.id.as_str().to_owned()),
-        );
-        unknown.links_mut().extend(
-            ir.model.curves[first_curve..]
-                .iter()
-                .map(|curve| curve.id.as_str().to_owned()),
-        );
+        for surface in &ir.model.surfaces[first_surface..] {
+            push_unknown_link(ctx, &mut unknown, surface.id.as_str())?;
+        }
+        for curve in &ir.model.curves[first_curve..] {
+            push_unknown_link(ctx, &mut unknown, curve.id.as_str())?;
+        }
         let container_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
         annotations
             .note(unknown.id(), &container_stream, stream.file_offset as u64)
@@ -2021,3 +2057,6 @@ fn classify_body_kinds(ir: &mut CadIr) {
         };
     }
 }
+
+#[cfg(test)]
+mod tests;
