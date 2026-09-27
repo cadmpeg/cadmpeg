@@ -31,6 +31,13 @@ use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use crate::records::topology::edge_identity::DesignEdgeIdentityOperand;
 use std::collections::{HashMap, HashSet};
 
+fn with_history_decode_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    f(&ctx)
+}
+
 #[test]
 fn entity_selection_face_proofs_preserve_history_namespaces() {
     let state = |parent: &str, state_id, topology| AsmDeltaState {
@@ -826,10 +833,7 @@ fn snapshot_ordinals_bind_the_sorted_revision_interval() {
         transition: None,
     };
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    bind_snapshot_revision_ids(&ctx, std::slice::from_mut(&mut state)).unwrap();
+    with_history_decode_context(|ctx| bind_snapshot_revision_ids(ctx, std::slice::from_mut(&mut state)).unwrap());
 
     assert_eq!(
         state
@@ -898,8 +902,10 @@ fn insert_only_history_uses_the_active_record_table_as_revisions() {
         state(2, None, &[3]),
     ];
 
-    assert_eq!(insert_only_active_record_count(&states), Some(4));
-    bind_historical_entity_versions(&mut states);
+    with_history_decode_context(|ctx| {
+        assert_eq!(insert_only_active_record_count(ctx, &states).unwrap(), Some(4));
+        bind_historical_entity_versions(ctx, &mut states).unwrap();
+    });
 
     assert_eq!(
         states
@@ -980,9 +986,9 @@ fn insert_only_history_rejects_gaps_and_updates() {
         ],
     };
     state.bulletin_boards.push(board);
-    assert_eq!(insert_only_active_record_count(&[state.clone()]), None);
+    with_history_decode_context(|ctx| assert_eq!(insert_only_active_record_count(ctx, &[state.clone()]).unwrap(), None));
     state.bulletin_boards[0].changes[1].kind = AsmEntityChangeKind::Update { old: 2, new: 3 };
-    assert_eq!(insert_only_active_record_count(&[state]), None);
+    with_history_decode_context(|ctx| assert_eq!(insert_only_active_record_count(ctx, &[state]).unwrap(), None));
 }
 
 #[test]
@@ -1241,7 +1247,7 @@ fn reverse_history_builds_complete_entity_version_maps() {
         })
         .into();
 
-    bind_historical_entity_versions(&mut states);
+    with_history_decode_context(|ctx| bind_historical_entity_versions(ctx, &mut states).unwrap());
 
     assert_eq!(
         states

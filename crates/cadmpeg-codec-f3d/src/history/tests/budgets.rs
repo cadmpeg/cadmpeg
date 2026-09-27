@@ -93,6 +93,131 @@ fn one_state_history() -> crate::history_records::AsmHistory {
     }
 }
 
+fn one_archived_state() -> crate::history_records::AsmHistory {
+    use crate::history_records::{AsmHistoryRecord, AsmHistoryRecordFraming};
+
+    let mut history = one_state_history();
+    history.states[0].records.push(AsmHistoryRecord {
+        id: "record".into(),
+        parent: "state".into(),
+        revision_id: Some(1),
+        byte_offset: 0,
+        framing: AsmHistoryRecordFraming::Framed {
+            index: 0,
+            name: "edge".into(),
+            entity_references: Vec::new(),
+        },
+        raw_bytes: vec![0x11],
+    });
+    history
+}
+
+fn one_insert_only_state() -> crate::history_records::AsmHistory {
+    use crate::history_records::{AsmBulletinBoard, AsmEntityChange, AsmEntityChangeKind, AsmHistoryRecord, AsmHistoryRecordFraming};
+
+    let mut history = one_state_history();
+    history.states[0].records.push(AsmHistoryRecord {
+        id: "boundary".into(),
+        parent: "state".into(),
+        revision_id: None,
+        byte_offset: 0,
+        framing: AsmHistoryRecordFraming::Framed {
+            index: 0,
+            name: "End-of-ASM-data".into(),
+            entity_references: Vec::new(),
+        },
+        raw_bytes: vec![0x11],
+    });
+    history.states[0].bulletin_boards.push(AsmBulletinBoard {
+        id: "board".into(),
+        parent: "state".into(),
+        byte_offset: 0,
+        owner_ref: 0,
+        number: 1,
+        changes: vec![AsmEntityChange {
+            id: "change".into(),
+            parent: "board".into(),
+            byte_offset: 0,
+            kind: AsmEntityChangeKind::Insert { new: 1 },
+        }],
+    });
+    history
+}
+
+#[test]
+fn history_archived_count_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let history = one_archived_state();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::super::archived_active_record_count(&ctx, &history.states).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D archived revisions"));
+}
+
+#[test]
+fn history_insert_only_count_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let history = one_insert_only_state();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::super::insert_only_active_record_count(&ctx, &history.states).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D insert-only revisions"));
+}
+
+fn historical_versions_error(max_items: u64, deletion: bool) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use crate::history_records::{AsmBulletinBoard, AsmEntityChange, AsmEntityChangeKind};
+
+    let mut history = one_archived_state();
+    if deletion {
+        history.states[0].bulletin_boards.push(AsmBulletinBoard {
+            id: "board".into(),
+            parent: "state".into(),
+            byte_offset: 0,
+            owner_ref: 0,
+            number: 1,
+            changes: vec![AsmEntityChange {
+                id: "change".into(),
+                parent: "board".into(),
+                byte_offset: 0,
+                kind: AsmEntityChangeKind::Delete { old: 1 },
+            }],
+        });
+    }
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_items;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    super::super::bind_historical_entity_versions(&ctx, &mut history.states).unwrap_err()
+}
+
+macro_rules! historical_versions_limit_test {
+    ($name:ident, $limit:expr, $deletion:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            let error = historical_versions_error($limit, $deletion);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == $operation));
+        }
+    };
+}
+
+historical_versions_limit_test!(history_version_archive_index_refuses_limit, 0, false, "index F3D archived revision IDs");
+historical_versions_limit_test!(history_version_node_index_refuses_limit, 2, false, "index F3D history node ordinals");
+historical_versions_limit_test!(history_version_seed_refuses_limit, 3, false, "seed F3D history versions");
+historical_versions_limit_test!(history_version_visit_refuses_limit, 4, false, "visit F3D history version state");
+historical_versions_limit_test!(history_version_state_vector_refuses_limit, 5, false, "materialize F3D state versions");
+historical_versions_limit_test!(history_version_projection_index_refuses_limit, 6, false, "index F3D state version projections");
+historical_versions_limit_test!(history_version_restore_refuses_limit, 7, true, "restore F3D historical version");
+
 #[test]
 fn history_snapshot_old_references_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
