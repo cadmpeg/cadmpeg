@@ -363,7 +363,7 @@ pub(crate) fn face_components(rows: &[CurveTopologyRow]) -> Vec<FaceComponent> {
     }
     let mut seen = BTreeSet::new();
     let mut components = Vec::new();
-    for start in adjacency.keys().copied().collect::<Vec<_>>() {
+    for start in adjacency.keys().copied() {
         if !seen.insert(start) {
             continue;
         }
@@ -428,22 +428,23 @@ pub(crate) fn build(rows: &[CurveTopologyRow]) -> (Vec<HalfEdge>, Vec<Loop>) {
     for row in rows {
         for side in [Side::Zero, Side::One] {
             let face_id = row.faces[side.index()];
-            let candidates = face_sides
+            let mut candidates = face_sides
                 .get(&face_id)
                 .into_iter()
                 .flatten()
                 .filter(|id| id.curve_id == row.next_edges[side.index()])
-                .copied()
-                .collect::<Vec<_>>();
+                .copied();
+            let next = match (candidates.next(), candidates.next()) {
+                (Some(candidate), None) => Some(candidate),
+                _ => None,
+            };
             edges.push(HalfEdge {
                 id: HalfEdgeId {
                     curve_id: row.id,
                     side,
                 },
                 face_id,
-                next: (candidates.len() == 1)
-                    .then(|| candidates.first().copied())
-                    .flatten(),
+                next,
             });
         }
     }
@@ -464,11 +465,11 @@ pub(crate) fn build(rows: &[CurveTopologyRow]) -> (Vec<HalfEdge>, Vec<Loop>) {
         loop {
             if !seen.insert(current) {
                 if current == edge.id {
+                    consumed.extend(ring.iter().copied());
                     loops.push(Loop {
                         face_id: edge.face_id,
-                        half_edges: ring.clone(),
+                        half_edges: ring,
                     });
-                    consumed.extend(ring);
                 }
                 break;
             }
