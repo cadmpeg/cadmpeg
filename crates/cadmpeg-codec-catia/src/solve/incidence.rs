@@ -185,10 +185,7 @@ fn prune_incidence_choices_with_explicit_support(
     ) -> Result<HashSet<usize>, CodecError> {
         let mut points = HashSet::new();
         for point in choices.iter().flatten().copied() {
-            if !points.contains(&point) {
-                charge_collection_items(ctx, 1, "catia incidence choice points")?;
-                points.insert(point);
-            }
+            crate::resource::insert_set(ctx, &mut points, point, "catia incidence choice points")?;
         }
         Ok(points)
     }
@@ -231,10 +228,11 @@ fn prune_incidence_choices_with_explicit_support(
         "catia_incidence_degrees",
     )?;
     charge_collection_items(ctx, choices.len(), "catia incidence edge supports")?;
-    let mut edge_supports = choices
-        .iter()
-        .map(|pairs| choice_points(ctx, pairs))
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut edge_supports = Vec::new();
+    crate::resource::reserve_admitted_vec(&mut edge_supports, choices.len(), "catia incidence edge supports")?;
+    for pairs in choices.iter() {
+        edge_supports.push(choice_points(ctx, pairs)?);
+    }
     let mut supports = ctx.alloc_filled(
         face_count,
         BTreeMap::<usize, u32>::new(),
@@ -274,8 +272,7 @@ fn prune_incidence_choices_with_explicit_support(
                             pair,
                         ))
                 {
-                    charge_collection_items(ctx, 1, "catia incidence retained choices")?;
-                    retained.push(pair);
+                    crate::resource::push(ctx, &mut retained, pair, "catia incidence retained choices")?;
                 }
             }
             choices[edge] = retained;
@@ -707,11 +704,13 @@ fn order_incidence_components_by_constraints(
         edge_entry_count,
         "catia incidence component edge indices",
     )?;
-    let component_by_edge = components
-        .iter()
-        .enumerate()
-        .flat_map(|(component, edges)| edges.iter().copied().map(move |edge| (edge, component)))
-        .collect::<HashMap<_, _>>();
+    let mut component_by_edge = HashMap::new();
+    crate::resource::reserve_admitted_map(&mut component_by_edge, edge_entry_count, "catia incidence component edge indices")?;
+    for (component, edges) in components.iter().enumerate() {
+        for edge in edges.iter().copied() {
+            component_by_edge.insert(edge, component);
+        }
+    }
     if component_by_edge.len() != edge_entry_count {
         return Ok(None);
     }
@@ -738,15 +737,13 @@ fn order_incidence_components_by_constraints(
             };
             if target_component == prerequisite_component {
                 if !local_outgoing[prerequisite_edge].contains(&target_edge) {
-                    charge_collection_items(ctx, 1, "catia incidence local dependents")?;
-                    local_outgoing[prerequisite_edge].push(target_edge);
+                    crate::resource::push(ctx, &mut local_outgoing[prerequisite_edge], target_edge, "catia incidence local dependents")?;
                     local_incoming[target_edge] += 1;
                 }
                 return Ok(());
             }
             if !outgoing[prerequisite_component].contains(&target_component) {
-                charge_collection_items(ctx, 1, "catia incidence component dependents")?;
-                outgoing[prerequisite_component].push(target_component);
+                crate::resource::push(ctx, &mut outgoing[prerequisite_component], target_component, "catia incidence component dependents")?;
                 incoming[target_component] += 1;
             }
             Ok(())
@@ -765,27 +762,25 @@ fn order_incidence_components_by_constraints(
             }
         }
     }
+    let local_ready_count = component_by_edge
+        .keys()
+        .filter(|edge| local_incoming[**edge] == 0)
+        .count();
     charge_collection_items(
         ctx,
-        component_by_edge
-            .keys()
-            .filter(|edge| local_incoming[**edge] == 0)
-            .count(),
+        local_ready_count,
         "catia incidence local ready edges",
     )?;
-    let mut local_ready = component_by_edge
-        .keys()
-        .copied()
-        .filter(|edge| local_incoming[*edge] == 0)
-        .collect::<Vec<_>>();
+    let mut local_ready = Vec::new();
+    crate::resource::reserve_admitted_vec(&mut local_ready, local_ready_count, "catia incidence local ready edges")?;
+    local_ready.extend(component_by_edge.keys().copied().filter(|edge| local_incoming[*edge] == 0));
     let mut local_ordered = 0usize;
     while let Some(edge) = local_ready.pop() {
         local_ordered += 1;
         for dependent in local_outgoing[edge].iter().copied() {
             local_incoming[dependent] -= 1;
             if local_incoming[dependent] == 0 {
-                charge_collection_items(ctx, 1, "catia incidence local ready edges")?;
-                local_ready.push(dependent);
+                crate::resource::push(ctx, &mut local_ready, dependent, "catia incidence local ready edges")?;
             }
         }
     }
@@ -798,18 +793,20 @@ fn order_incidence_components_by_constraints(
             width.saturating_mul(choices[*edge].len())
         })
     };
+    let ready_count = (0..components.len())
+        .filter(|component| incoming[*component] == 0)
+        .count();
     charge_collection_items(
         ctx,
-        (0..components.len())
-            .filter(|component| incoming[*component] == 0)
-            .count(),
+        ready_count,
         "catia incidence ready components",
     )?;
-    let mut ready = (0..components.len())
-        .filter(|component| incoming[*component] == 0)
-        .collect::<Vec<_>>();
+    let mut ready = Vec::new();
+    crate::resource::reserve_admitted_vec(&mut ready, ready_count, "catia incidence ready components")?;
+    ready.extend((0..components.len()).filter(|component| incoming[*component] == 0));
     charge_collection_items(ctx, components.len(), "catia incidence ordered components")?;
-    let mut ordered = Vec::with_capacity(components.len());
+    let mut ordered = Vec::new();
+    crate::resource::reserve_admitted_vec(&mut ordered, components.len(), "catia incidence ordered components")?;
     while let Some((position, &component)) =
         ready.iter().enumerate().min_by_key(|(_, component)| {
             (
@@ -824,8 +821,7 @@ fn order_incidence_components_by_constraints(
         for dependent in outgoing[component].iter().copied() {
             incoming[dependent] -= 1;
             if incoming[dependent] == 0 {
-                charge_collection_items(ctx, 1, "catia incidence ready components")?;
-                ready.push(dependent);
+                crate::resource::push(ctx, &mut ready, dependent, "catia incidence ready components")?;
             }
         }
     }
@@ -968,16 +964,12 @@ fn set_mask_bit<K: Eq + std::hash::Hash>(
     word_count: usize,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    match map.entry(key) {
-        std::collections::hash_map::Entry::Occupied(mut occupied) => {
-            occupied.get_mut()[word] |= bit;
-        }
-        std::collections::hash_map::Entry::Vacant(vacant) => {
-            let mut mask = ctx.alloc_filled(word_count, 0u64, operation)?;
-            mask[word] |= bit;
-            charge_collection_items(ctx, 1, "catia face configuration mask keys")?;
-            vacant.insert(mask);
-        }
+    if let Some(mask) = map.get_mut(&key) {
+        mask[word] |= bit;
+    } else {
+        let mut mask = ctx.alloc_filled(word_count, 0u64, operation)?;
+        mask[word] |= bit;
+        crate::resource::insert_map(ctx, map, key, mask, "catia face configuration mask keys")?;
     }
     Ok(())
 }
@@ -995,18 +987,17 @@ impl FaceFactorGraph {
     ) -> Result<Option<Self>, CodecError> {
         charge_collection_items(ctx, domains.len(), "catia face factor edge sets")?;
         let mut edge_sets = Vec::new();
+        crate::resource::reserve_admitted_vec(&mut edge_sets, domains.len(), "catia face factor edge sets")?;
         for domain in domains {
             let mut edges = HashSet::new();
             for &(edge, _) in domain.iter().flatten() {
-                if !edges.contains(&edge) {
-                    charge_collection_items(ctx, 1, "catia face factor edges")?;
-                    edges.insert(edge);
-                }
+                crate::resource::insert_set(ctx, &mut edges, edge, "catia face factor edges")?;
             }
             edge_sets.push(edges);
         }
         charge_collection_items(ctx, domains.len(), "catia face factor right indexes")?;
-        let mut right_indexes = Vec::with_capacity(domains.len());
+        let mut right_indexes = Vec::new();
+        crate::resource::reserve_admitted_vec(&mut right_indexes, domains.len(), "catia face factor right indexes")?;
         for domain in domains {
             let word_count = domain.len().div_ceil(u64::BITS as usize);
             let mut present = HashMap::<usize, Vec<u64>>::new();
@@ -1293,13 +1284,11 @@ fn prune_face_configuration_support(
 ) -> Result<bool, CodecError> {
     charge_collection_items(ctx, domains.len(), "catia face configuration edge sets")?;
     let mut edge_sets = Vec::new();
+    crate::resource::reserve_admitted_vec(&mut edge_sets, domains.len(), "catia face configuration edge sets")?;
     for domain in domains.iter() {
         let mut edges = HashSet::new();
         for &(edge, _) in domain.iter().flatten() {
-            if !edges.contains(&edge) {
-                charge_collection_items(ctx, 1, "catia face configuration edges")?;
-                edges.insert(edge);
-            }
+            crate::resource::insert_set(ctx, &mut edges, edge, "catia face configuration edges")?;
         }
         edge_sets.push(edges);
     }
@@ -1360,7 +1349,8 @@ fn prune_face_configuration_support(
             domains[left].len(),
             "catia face configuration keep marks",
         )?;
-        let mut keep = Vec::with_capacity(domains[left].len());
+        let mut keep = Vec::new();
+        crate::resource::reserve_admitted_vec(&mut keep, domains[left].len(), "catia face configuration keep marks")?;
         for candidate in &domains[left] {
             if !budget.charge_by(work_units(candidate.len().saturating_add(word_count))) {
                 return Ok(true);
@@ -1399,8 +1389,7 @@ fn prune_face_configuration_support(
             });
             for &neighbor in &neighbors[left] {
                 if neighbor != right {
-                    charge_collection_items(ctx, 1, "catia face configuration queue")?;
-                    queue.push_back((neighbor, left));
+                    crate::resource::push_back(ctx, &mut queue, (neighbor, left), "catia face configuration queue")?;
                 }
             }
         }
@@ -1430,7 +1419,9 @@ fn prune_face_configuration_singleton_support(
             domains.len(),
             "catia face configuration singleton order",
         )?;
-        let mut order = (0..domains.len()).collect::<Vec<_>>();
+        let mut order = Vec::new();
+        crate::resource::reserve_admitted_vec(&mut order, domains.len(), "catia face configuration singleton order")?;
+        order.extend(0..domains.len());
         order.sort_unstable_by_key(|domain| {
             active[*domain]
                 .iter()
@@ -1454,15 +1445,11 @@ fn prune_face_configuration_singleton_support(
                     retain_configuration_masks(domains, &active);
                     return Ok(true);
                 }
-                charge_collection_items(ctx, active.len(), "catia face configuration trial rows")?;
+                let mut trial = Vec::new();
+                crate::resource::reserve_vec(ctx, &mut trial, active.len(), "catia face configuration trial rows")?;
                 for mask in &active {
-                    charge_collection_items(
-                        ctx,
-                        mask.len(),
-                        "catia face configuration trial masks",
-                    )?;
+                    trial.push(crate::resource::copy_slice(ctx, mask, "catia face configuration trial masks")?);
                 }
-                let mut trial = active.clone();
                 trial[domain].fill(0);
                 trial[domain][configuration / u64::BITS as usize] =
                     1 << (configuration % u64::BITS as usize);
@@ -1521,11 +1508,12 @@ fn prune_ordered_face_endpoint_support(
                     ctx.refuse_codec_limit("catia ordered face edges", u64::MAX, u64::MAX)
                 })?;
             charge_collection_items(ctx, use_count, "catia ordered face edges")?;
-            let mut edges = assignments
+            let mut edges = Vec::new();
+            crate::resource::reserve_admitted_vec(&mut edges, use_count, "catia ordered face edges")?;
+            edges.extend(assignments
                 .iter()
                 .flat_map(|assignment| assignment.boundaries.iter().flatten())
-                .map(|use_| use_.edge)
-                .collect::<Vec<_>>();
+                .map(|use_| use_.edge));
             edges.sort_unstable();
             edges.dedup();
             if edges
@@ -1552,14 +1540,9 @@ fn prune_ordered_face_endpoint_support(
                     if !budget.charge() {
                         return Ok(true);
                     }
-                    if !supported.contains_key(&edge) {
-                        charge_collection_items(ctx, 1, "catia ordered face support edges")?;
-                    }
+                    crate::resource::admit_map_entry(ctx, &mut supported, &edge, "catia ordered face support edges")?;
                     let pairs = supported.entry(edge).or_default();
-                    if !pairs.contains(&pair) {
-                        charge_collection_items(ctx, 1, "catia ordered face support pairs")?;
-                        pairs.insert(pair);
-                    }
+                    crate::resource::insert_set(ctx, pairs, pair, "catia ordered face support pairs")?;
                 }
             }
             for edge in edges {
@@ -1574,8 +1557,7 @@ fn prune_ordered_face_endpoint_support(
                     let mut canonical = pair;
                     canonical.sort_unstable();
                     if edge_supported.contains(&canonical) {
-                        charge_collection_items(ctx, 1, "catia ordered face retained pairs")?;
-                        retained.push(pair);
+                        crate::resource::push(ctx, &mut retained, pair, "catia ordered face retained pairs")?;
                     }
                 }
                 if retained.is_empty() {
@@ -1634,7 +1616,11 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
                 }
                 assignment_found = true;
                 for (edge, pairs) in support.by_edge {
-                    face_support.entry(edge).or_default().extend(pairs);
+                    crate::resource::admit_map_entry(ctx, &mut face_support, &edge, "catia implicit face support edges")?;
+                    let retained = face_support.entry(edge).or_default();
+                    for pair in pairs {
+                        crate::resource::insert_set(ctx, retained, pair, "catia implicit face support pairs")?;
+                    }
                 }
             }
             if !assignment_found {
@@ -1649,9 +1635,13 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
                     else {
                         return Ok(false);
                     };
-                    values.collect::<Vec<_>>()
+                    let mut collected = Vec::new();
+                    for value in values {
+                        crate::resource::push(ctx, &mut collected, value, "catia implicit face candidate pairs")?;
+                    }
+                    collected
                 } else {
-                    current.clone()
+                    crate::resource::copy_slice(ctx, current, "catia implicit face current pairs")?
                 };
                 let mut retained = Vec::new();
                 for mut pair in values {
@@ -1660,7 +1650,7 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
                     }
                     pair.sort_unstable();
                     if supported.contains(&pair) {
-                        retained.push(pair);
+                        crate::resource::push(ctx, &mut retained, pair, "catia implicit face retained pairs")?;
                     }
                 }
                 retained.sort_unstable();
@@ -1701,12 +1691,13 @@ fn prepare_face_configuration_domains(
             .try_fold(0usize, |count, boundary| count.checked_add(boundary.len()))
             .ok_or_else(|| ctx.refuse_codec_limit("catia face factor edges", u64::MAX, u64::MAX))?;
         charge_collection_items(ctx, use_count, "catia face factor edges")?;
-        let mut edges = assignments
+        let mut edges = Vec::new();
+        crate::resource::reserve_admitted_vec(&mut edges, use_count, "catia face factor edges")?;
+        edges.extend(assignments
             .iter()
             .flat_map(|assignment| assignment.boundaries.iter().flatten())
             .map(|use_| use_.edge)
-            .filter(|edge| active.get(*edge) == Some(&true))
-            .collect::<Vec<_>>();
+            .filter(|edge| active.get(*edge) == Some(&true)));
         edges.sort_unstable();
         edges.dedup();
         if edges.is_empty()
@@ -1726,25 +1717,22 @@ fn prepare_face_configuration_domains(
         domains[face] = Some(configurations);
     }
     charge_collection_items(ctx, domains.len(), "catia face factor retained faces")?;
-    let retained_faces = domains
+    let mut retained_faces = Vec::new();
+    crate::resource::reserve_admitted_vec(&mut retained_faces, domains.len(), "catia face factor retained faces")?;
+    retained_faces.extend(domains
         .iter()
         .enumerate()
-        .filter_map(|(face, domain)| domain.as_ref().map(|_| face))
-        .collect::<Vec<_>>();
+        .filter_map(|(face, domain)| domain.as_ref().map(|_| face)));
     charge_collection_items(
         ctx,
         retained_faces.len(),
         "catia face factor configurations",
     )?;
-    let mut configurations = retained_faces
-        .iter()
-        .map(|face| {
-            domains[*face]
-                .as_mut()
-                .map(std::mem::take)
-                .unwrap_or_default()
-        })
-        .collect::<Vec<_>>();
+    let mut configurations = Vec::new();
+    crate::resource::reserve_admitted_vec(&mut configurations, retained_faces.len(), "catia face factor configurations")?;
+    for face in &retained_faces {
+        configurations.push(domains[*face].as_mut().map(std::mem::take).unwrap_or_default());
+    }
     let arc_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let viable = prune_face_configuration_support(ctx, &mut configurations, &arc_budget)?;
     let singleton_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
@@ -2024,7 +2012,7 @@ fn advance_compact_boundary_domains<'a>(
     const MAX_QUOTIENT_STATES: usize = 4_096;
 
     let mut ordered = Vec::<Vec<MeshFaceBoundaryAssignment>>::new();
-    for domain in domains {
+    'domains: for domain in domains {
         let edge_count = match domain {
             MeshFaceBoundaryDomain::Ordered(assignments) => assignments
                 .iter()
@@ -2042,38 +2030,38 @@ fn advance_compact_boundary_domains<'a>(
             ctx.refuse_codec_limit("catia compact boundary edges", u64::MAX, u64::MAX)
         })?;
         charge_collection_items(ctx, edge_count, "catia compact boundary edges")?;
-        let edges = match domain {
-            MeshFaceBoundaryDomain::Ordered(assignments) => assignments
-                .iter()
-                .flat_map(|assignment| assignment.boundaries.iter().flatten())
-                .map(|use_| use_.edge)
-                .collect::<Vec<_>>(),
-            MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => edges.clone(),
+        let mut edges = Vec::new();
+        crate::resource::reserve_admitted_vec(&mut edges, edge_count, "catia compact boundary edges")?;
+        match domain {
+            MeshFaceBoundaryDomain::Ordered(assignments) => edges.extend(
+                assignments
+                    .iter()
+                    .flat_map(|assignment| assignment.boundaries.iter().flatten())
+                    .map(|use_| use_.edge),
+            ),
+            MeshFaceBoundaryDomain::UnorderedFullCycle(domain_edges) => edges.extend_from_slice(domain_edges),
             MeshFaceBoundaryDomain::DeferredValidation(domain) => {
-                let mut edges = domain.missing_edges.clone();
+                edges.extend_from_slice(&domain.missing_edges);
                 edges.extend(
                     domain
                         .cycles
                         .iter()
                         .flat_map(|cycle| cycle.exact_uses.iter().map(|(use_, _)| use_.edge)),
                 );
-                edges
             }
-        };
+        }
         charge_collection_items(ctx, edges.len(), "catia compact boundary selected edges")?;
-        let Some(edge_points) = edges
-            .iter()
-            .map(|edge| {
-                selected
-                    .filter(|(selected_edge, _)| selected_edge == edge)
-                    .map(|(_, pair)| pair)
-                    .or(assignment[*edge])
-                    .map(|pair| (*edge, pair))
-            })
-            .collect::<Option<Vec<_>>>()
-        else {
-            continue;
-        };
+        let mut edge_points = Vec::new();
+        crate::resource::reserve_admitted_vec(&mut edge_points, edges.len(), "catia compact boundary selected edges")?;
+        for edge in edges {
+            let Some(pair) = selected
+                .filter(|(selected_edge, _)| *selected_edge == edge)
+                .map(|(_, pair)| pair)
+                .or(assignment[edge]) else {
+                    continue 'domains;
+                };
+            edge_points.push((edge, pair));
+        }
         let mut points = ctx.alloc_filled(
             assignment.len(),
             [0; 2],
@@ -2089,7 +2077,17 @@ fn advance_compact_boundary_domains<'a>(
                     assignments.len(),
                     "catia compact boundary alternatives",
                 )?;
-                assignments.clone()
+                let mut copied = Vec::new();
+                crate::resource::reserve_admitted_vec(&mut copied, assignments.len(), "catia compact boundary alternatives")?;
+                for alternative in assignments {
+                    let mut boundaries = Vec::new();
+                    crate::resource::reserve_vec(ctx, &mut boundaries, alternative.boundaries.len(), "catia compact boundary alternative cycles")?;
+                    for cycle in &alternative.boundaries {
+                        boundaries.push(crate::resource::copy_slice(ctx, cycle, "catia compact boundary alternative uses")?);
+                    }
+                    copied.push(MeshFaceBoundaryAssignment { boundaries });
+                }
+                copied
             }
             MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
                 let Some(cycles) = incidence_cycles(ctx, edges, &points)? else {
@@ -2098,29 +2096,32 @@ fn advance_compact_boundary_domains<'a>(
                 let [cycle] = cycles.as_slice() else {
                     return Ok(CompactBoundaryAdvanceOutcome::Rejected);
                 };
-                charge_collection_items(ctx, cycle.len(), "catia compact unordered boundary uses")?;
-                vec![MeshFaceBoundaryAssignment {
-                    boundaries: vec![cycle
-                        .into_iter()
-                        .map(|(edge, _)| MeshBoundaryEdgeCandidate {
+                let mut uses = Vec::new();
+                crate::resource::reserve_vec(ctx, &mut uses, cycle.len(), "catia compact unordered boundary uses")?;
+                for (edge, _) in cycle {
+                    uses.push(MeshBoundaryEdgeCandidate {
                             edge: *edge,
                             start: 0,
                             end: 0,
                             reversed: None,
-                        })
-                        .collect()],
-                }]
+                    });
+                }
+                let mut boundaries = Vec::new();
+                crate::resource::push(ctx, &mut boundaries, uses, "catia compact unordered boundary cycles")?;
+                let mut alternatives = Vec::new();
+                crate::resource::push(ctx, &mut alternatives, MeshFaceBoundaryAssignment { boundaries }, "catia compact unordered boundary alternatives")?;
+                alternatives
             }
             MeshFaceBoundaryDomain::DeferredValidation(domain) => {
                 let Some(materialized) = deferred_boundary_assignment(ctx, domain, &points)? else {
                     return Ok(CompactBoundaryAdvanceOutcome::Rejected);
                 };
-                charge_collection_items(ctx, 1, "catia compact deferred alternative")?;
-                vec![materialized]
+                let mut alternatives = Vec::new();
+                crate::resource::push(ctx, &mut alternatives, materialized, "catia compact deferred alternative")?;
+                alternatives
             }
         };
-        charge_collection_items(ctx, 1, "catia compact boundary domain rows")?;
-        ordered.push(alternatives);
+        crate::resource::push(ctx, &mut ordered, alternatives, "catia compact boundary domain rows")?;
     }
     if ordered.is_empty() {
         return Ok(CompactBoundaryAdvanceOutcome::Complete(states));
@@ -3161,12 +3162,11 @@ impl IncidenceComponentSearch<'_, '_> {
                 continue;
             }
             let forced = projected.len() == 1;
-            charge_collection_items(self.ctx, 1, "catia face option domains")?;
-            domains.push(FaceConfigurationDomain {
+            crate::resource::push(self.ctx, &mut domains, FaceConfigurationDomain {
                 width,
                 face,
                 configurations: projected,
-            });
+            }, "catia face option domains")?;
             if forced {
                 break;
             }
@@ -3730,7 +3730,9 @@ pub(super) fn deferred_boundary_assignment(
             ctx.refuse_codec_limit("catia deferred incident edges", u64::MAX, u64::MAX)
         })?;
     charge_collection_items(ctx, incident_count, "catia deferred incident edges")?;
-    let mut incident = domain.missing_edges.clone();
+    let mut incident = Vec::new();
+    crate::resource::reserve_admitted_vec(&mut incident, incident_count, "catia deferred incident edges")?;
+    incident.extend_from_slice(&domain.missing_edges);
     incident.extend(
         domain
             .cycles
@@ -3750,7 +3752,9 @@ pub(super) fn deferred_boundary_assignment(
         domain.missing_edges.len(),
         "catia deferred missing edges",
     )?;
-    let missing = domain.missing_edges.iter().copied().collect::<HashSet<_>>();
+    let mut missing = HashSet::new();
+    crate::resource::reserve_admitted_set(&mut missing, domain.missing_edges.len(), "catia deferred missing edges")?;
+    missing.extend(domain.missing_edges.iter().copied());
     let compatibility_count = domain
         .cycles
         .len()
@@ -3825,7 +3829,9 @@ fn deferred_boundary_closes(
             ctx.refuse_codec_limit("catia deferred close incident edges", u64::MAX, u64::MAX)
         })?;
     charge_collection_items(ctx, incident_count, "catia deferred close incident edges")?;
-    let mut incident = domain.missing_edges.clone();
+    let mut incident = Vec::new();
+    crate::resource::reserve_admitted_vec(&mut incident, incident_count, "catia deferred close incident edges")?;
+    incident.extend_from_slice(&domain.missing_edges);
     incident.extend(
         domain
             .cycles
@@ -3845,7 +3851,9 @@ fn deferred_boundary_closes(
         domain.missing_edges.len(),
         "catia deferred close missing edges",
     )?;
-    let missing = domain.missing_edges.iter().copied().collect::<HashSet<_>>();
+    let mut missing = HashSet::new();
+    crate::resource::reserve_admitted_set(&mut missing, domain.missing_edges.len(), "catia deferred close missing edges")?;
+    missing.extend(domain.missing_edges.iter().copied());
     let cells = domain
         .cycles
         .len()
