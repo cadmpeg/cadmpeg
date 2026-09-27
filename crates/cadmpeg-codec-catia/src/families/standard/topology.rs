@@ -1135,7 +1135,7 @@ pub(crate) fn parse_fbb(
     let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
         return Ok(None);
     };
-    if classify_fbb_edge_layouts(&mut edge_rows, &trims).is_none() {
+    if classify_fbb_edge_layouts(ctx, &mut edge_rows, &trims)?.is_none() {
         return Ok(None);
     }
     reconstruct(ctx, edge_rows, vertex_points, &trims)
@@ -1165,7 +1165,7 @@ pub(super) fn reconstruct(
     let mut union = UnionFind::charged(ctx, node_count, "catia_reconstruct_union")?;
     let mut faces = Vec::new();
     for trim in trims {
-        let Some(cycles) = boundary_cycles(trim.packet.triangles()) else {
+        let Some(cycles) = boundary_cycles(ctx, trim.packet.triangles())? else {
             return Ok(None);
         };
         let mut boundaries = Vec::new();

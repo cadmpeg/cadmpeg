@@ -717,11 +717,18 @@ pub(super) fn parse_fbb_edge_tables_width(
 /// complete sequence has no occurrence and the interior sequence has at most
 /// one occurrence per cycle. Rows with no boundary match remain complete so
 /// their fixed unmatched span is preserved for the later placement solver.
-pub(super) fn classify_fbb_edge_layouts(rows: &mut [EdgeRow], trims: &[TrimRecord]) -> Option<()> {
-    let cycles = trims
-        .iter()
-        .map(|trim| boundary_cycles(trim.packet.triangles()))
-        .collect::<Option<Vec<_>>>()?;
+pub(super) fn classify_fbb_edge_layouts(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    rows: &mut [EdgeRow],
+    trims: &[TrimRecord],
+) -> Result<Option<()>, cadmpeg_core::CodecError> {
+    let mut cycles = Vec::new();
+    for trim in trims {
+        let Some(face) = boundary_cycles(ctx, trim.packet.triangles())? else {
+            return Ok(None);
+        };
+        crate::resource::push(ctx, &mut cycles, face, "catia_fbb_layout_face_cycles")?;
+    }
     for row in rows {
         let complete_matches = cycles
             .iter()
@@ -731,24 +738,27 @@ pub(super) fn classify_fbb_edge_layouts(rows: &mut [EdgeRow], trims: &[TrimRecor
         if complete_matches != 0 {
             continue;
         }
-        let Some(interior) = row.handles.get(1..row.handles.len().checked_sub(1)?) else {
+        let Some(end) = row.handles.len().checked_sub(1) else {
+            return Ok(None);
+        };
+        let Some(interior) = row.handles.get(1..end) else {
             continue;
         };
         if interior.is_empty() {
             continue;
         }
-        let interior_counts = cycles
-            .iter()
-            .flat_map(|face| face.iter())
-            .map(|cycle| pattern_match_count(cycle, interior))
-            .collect::<Vec<_>>();
-        if interior_counts.iter().sum::<usize>() != 0
-            && interior_counts.iter().all(|count| *count <= 1)
-        {
+        let mut matched = false;
+        let mut unique_per_cycle = true;
+        for cycle in cycles.iter().flat_map(|face| face.iter()) {
+            let count = pattern_match_count(cycle, interior);
+            matched |= count != 0;
+            unique_per_cycle &= count <= 1;
+        }
+        if matched && unique_per_cycle {
             row.boundary_layout = EdgeBoundaryLayout::InteriorWithFlankingCorners;
         }
     }
-    Some(())
+    Ok(Some(()))
 }
 
 fn pattern_match_count(cycle: &[u32], pattern: &[u32]) -> usize {
@@ -1627,23 +1637,35 @@ fn parse_trim_record_with_length_encoding(
     })
 }
 
-pub(crate) fn boundary_cycles(triangles: &[[u32; 3]]) -> Option<Vec<Vec<u32>>> {
+pub(crate) fn boundary_cycles(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    triangles: &[[u32; 3]],
+) -> Result<Option<Vec<Vec<u32>>>, cadmpeg_core::CodecError> {
     let mut edge_directions = HashMap::<(u32, u32), u8>::new();
     for &[a, b, c] in triangles {
         for (start, end) in [(a, b), (b, c), (c, a)] {
             if start == end {
-                return None;
+                return Ok(None);
             }
             let (edge, direction) = if start < end {
                 ((start, end), 1)
             } else {
                 ((end, start), 2)
             };
-            let directions = edge_directions.entry(edge).or_default();
-            if *directions & direction != 0 {
-                return None;
+            if let Some(directions) = edge_directions.get_mut(&edge) {
+                if *directions & direction != 0 {
+                    return Ok(None);
+                }
+                *directions |= direction;
+            } else {
+                crate::resource::insert_map(
+                    ctx,
+                    &mut edge_directions,
+                    edge,
+                    direction,
+                    "catia_boundary_edge_directions",
+                )?;
             }
-            *directions |= direction;
         }
     }
     let mut successors = HashMap::new();
@@ -1652,10 +1674,19 @@ pub(crate) fn boundary_cycles(triangles: &[[u32; 3]]) -> Option<Vec<Vec<u32>>> {
             1 => Some((low, high)),
             2 => Some((high, low)),
             3 => None,
-            _ => return None,
+            _ => return Ok(None),
         };
-        if boundary.is_some_and(|(start, end)| successors.insert(start, end).is_some()) {
-            return None;
+        if let Some((start, end)) = boundary {
+            if successors.contains_key(&start) {
+                return Ok(None);
+            }
+            crate::resource::insert_map(
+                ctx,
+                &mut successors,
+                start,
+                end,
+                "catia_boundary_successors",
+            )?;
         }
     }
     let mut seen = HashSet::new();
@@ -1664,26 +1695,36 @@ pub(crate) fn boundary_cycles(triangles: &[[u32; 3]]) -> Option<Vec<Vec<u32>>> {
         if seen.contains(&start) {
             continue;
         }
-        let mut cycle = vec![start];
-        seen.insert(start);
-        let mut current = *successors.get(&start)?;
+        let mut cycle = Vec::new();
+        crate::resource::push(ctx, &mut cycle, start, "catia_boundary_cycle_handles")?;
+        crate::resource::insert_set(ctx, &mut seen, start, "catia_boundary_seen")?;
+        let Some(&mut_current) = successors.get(&start) else {
+            return Ok(None);
+        };
+        let mut current = mut_current;
         while current != start {
-            if !seen.insert(current) {
-                return None;
+            if !crate::resource::insert_set(ctx, &mut seen, current, "catia_boundary_seen")? {
+                return Ok(None);
             }
-            cycle.push(current);
-            current = *successors.get(&current)?;
+            crate::resource::push(ctx, &mut cycle, current, "catia_boundary_cycle_handles")?;
+            let Some(&next) = successors.get(&current) else {
+                return Ok(None);
+            };
+            current = next;
         }
         let minimum = cycle
             .iter()
             .enumerate()
             .min_by_key(|(_, handle)| *handle)
-            .map(|(index, _)| index)?;
+            .map(|(index, _)| index);
+        let Some(minimum) = minimum else {
+            return Ok(None);
+        };
         cycle.rotate_left(minimum);
-        cycles.push(cycle);
+        crate::resource::push(ctx, &mut cycles, cycle, "catia_boundary_cycles")?;
     }
     cycles.sort();
-    (!cycles.is_empty()).then_some(cycles)
+    Ok((!cycles.is_empty()).then_some(cycles))
 }
 
 pub(super) fn cover_cycle(
@@ -1847,6 +1888,7 @@ mod endpoint_tests {
 #[cfg(test)]
 mod tests {
     use super::{boundary_cycles, fbb_row, FbbFaceRun};
+    use std::collections::HashSet;
 
     #[test]
     fn face_run_admission_checks_byte_bounds() {
@@ -1864,12 +1906,54 @@ mod tests {
     #[test]
     fn boundary_cycles_cancel_opposite_triangle_edges() {
         let triangles = [[0, 1, 2], [0, 2, 3]];
-        assert_eq!(boundary_cycles(&triangles), Some(vec![vec![0, 1, 2, 3]]));
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| boundary_cycles(ctx, &triangles))
+                .expect("service resource budget"),
+            Some(vec![vec![0, 1, 2, 3]])
+        );
     }
 
     #[test]
     fn boundary_cycles_reject_duplicate_directed_edges() {
         let triangles = [[0, 1, 2], [0, 1, 3]];
-        assert_eq!(boundary_cycles(&triangles), None);
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| boundary_cycles(ctx, &triangles))
+                .expect("service resource budget"),
+            None
+        );
+    }
+
+    #[test]
+    fn boundary_cycles_refuse_each_counted_collection() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let triangles = [[0, 1, 2], [0, 2, 3]];
+        let mut operations = HashSet::new();
+        for cap in 0..=48 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+                .expect("fixture fits the input limit");
+            match boundary_cycles(&ctx, &triangles) {
+                Err(CodecError::ResourceLimit(limit)) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    operations.insert(limit.operation);
+                }
+                Ok(Some(cycles)) => assert_eq!(cycles, vec![vec![0, 1, 2, 3]]),
+                Ok(None) => panic!("two adjacent triangles must form a boundary"),
+                Err(error) => panic!("unexpected boundary refusal: {error}"),
+            }
+        }
+        for operation in [
+            "catia_boundary_edge_directions",
+            "catia_boundary_successors",
+            "catia_boundary_cycle_handles",
+            "catia_boundary_seen",
+            "catia_boundary_cycles",
+        ] {
+            assert!(operations.contains(operation), "no refusal at {operation}");
+        }
     }
 }

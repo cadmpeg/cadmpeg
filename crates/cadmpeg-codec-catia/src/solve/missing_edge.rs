@@ -588,76 +588,177 @@ impl MeshEdgeRun {
 }
 
 fn mesh_edge_occurrences(
+    ctx: &DecodeContext<'_>,
     edge_rows: &[EdgeRow],
     cycles: &[Vec<Vec<u32>>],
-) -> Option<Vec<Vec<MeshEdgeRun>>> {
+) -> Result<Option<Vec<Vec<MeshEdgeRun>>>, CodecError> {
     let mut locations = HashMap::<u32, Vec<(usize, usize, usize)>>::new();
     for (face, face_cycles) in cycles.iter().enumerate() {
         for (cycle, handles) in face_cycles.iter().enumerate() {
             for (position, handle) in handles.iter().copied().enumerate() {
-                locations
-                    .entry(handle)
-                    .or_default()
-                    .push((face, cycle, position));
+                if let Some(entries) = locations.get_mut(&handle) {
+                    crate::resource::push(
+                        ctx,
+                        entries,
+                        (face, cycle, position),
+                        "catia_mesh_occurrence_locations",
+                    )?;
+                } else {
+                    let mut entries = Vec::new();
+                    crate::resource::push(
+                        ctx,
+                        &mut entries,
+                        (face, cycle, position),
+                        "catia_mesh_occurrence_locations",
+                    )?;
+                    crate::resource::insert_map(
+                        ctx,
+                        &mut locations,
+                        handle,
+                        entries,
+                        "catia_mesh_occurrence_handles",
+                    )?;
+                }
             }
         }
     }
-    edge_rows
-        .iter()
-        .enumerate()
-        .map(|(edge, row)| {
-            let Some(pattern) = row.boundary_pattern() else {
-                return Some(Vec::new());
+    let mut rows = Vec::new();
+    for (edge, row) in edge_rows.iter().enumerate() {
+        let Some(pattern) = row.boundary_pattern() else {
+            crate::resource::push(ctx, &mut rows, Vec::new(), "catia_mesh_occurrence_rows")?;
+            continue;
+        };
+        let Some(&first) = pattern.first() else {
+            return Ok(None);
+        };
+        let Some(&last) = pattern.last() else {
+            return Ok(None);
+        };
+        let mut matches = HashMap::<(usize, usize, usize), bool>::new();
+        for &(face, cycle, start) in locations.get(&first).into_iter().flatten() {
+            let handles = &cycles[face][cycle];
+            if pattern
+                .iter()
+                .enumerate()
+                .all(|(offset, handle)| handles[(start + offset) % handles.len()] == *handle)
+            {
+                crate::resource::insert_map(
+                    ctx,
+                    &mut matches,
+                    (face, cycle, start),
+                    false,
+                    "catia_mesh_occurrence_matches",
+                )?;
+            }
+        }
+        for &(face, cycle, start) in locations.get(&last).into_iter().flatten() {
+            let handles = &cycles[face][cycle];
+            if pattern
+                .iter()
+                .rev()
+                .enumerate()
+                .all(|(offset, handle)| handles[(start + offset) % handles.len()] == *handle)
+                && !matches.contains_key(&(face, cycle, start))
+            {
+                crate::resource::insert_map(
+                    ctx,
+                    &mut matches,
+                    (face, cycle, start),
+                    true,
+                    "catia_mesh_occurrence_matches",
+                )?;
+            }
+        }
+        let mut cycle_counts = HashMap::new();
+        for &(face, cycle, _) in matches.keys() {
+            if let Some(count) = cycle_counts.get_mut(&(face, cycle)) {
+                *count += 1;
+            } else {
+                crate::resource::insert_map(
+                    ctx,
+                    &mut cycle_counts,
+                    (face, cycle),
+                    1usize,
+                    "catia_mesh_occurrence_cycle_counts",
+                )?;
+            }
+        }
+        if cycle_counts.values().any(|count| *count > 1) {
+            return Ok(None);
+        }
+        let mut occurrences = Vec::new();
+        for ((face, cycle, start), reversed) in matches {
+            let cycle_len = cycles[face][cycle].len();
+            let Some((start, segment_count)) = row.boundary_span(start, cycle_len) else {
+                return Ok(None);
             };
-            let mut matches = HashMap::<(usize, usize, usize), bool>::new();
-            for &(face, cycle, start) in locations.get(&pattern[0]).into_iter().flatten() {
-                let handles = &cycles[face][cycle];
-                if pattern
-                    .iter()
-                    .enumerate()
-                    .all(|(offset, handle)| handles[(start + offset) % handles.len()] == *handle)
-                {
-                    matches.insert((face, cycle, start), false);
-                }
+            crate::resource::push(
+                ctx,
+                &mut occurrences,
+                MeshEdgeRun {
+                    edge,
+                    face,
+                    cycle,
+                    start,
+                    segment_count,
+                    reversed,
+                },
+                "catia_mesh_occurrence_runs",
+            )?;
+        }
+        occurrences.sort_by_key(|occurrence| (occurrence.face, occurrence.cycle, occurrence.start));
+        crate::resource::push(ctx, &mut rows, occurrences, "catia_mesh_occurrence_rows")?;
+    }
+    Ok(Some(rows))
+}
+
+#[cfg(test)]
+#[test]
+fn mesh_edge_occurrences_refuse_nested_collection_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+
+    let rows = [EdgeRow {
+        kind: 0,
+        handles: vec![0],
+        boundary_layout:
+            crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun,
+    }];
+    let cycles = [vec![vec![0, 1]]];
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    assert!(mesh_edge_occurrences(&ctx, &rows, &cycles)
+        .expect("service resource budget")
+        .is_some());
+
+    let mut operations = HashSet::new();
+    for cap in 0..=32 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match mesh_edge_occurrences(&ctx, &rows, &cycles) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                operations.insert(limit.operation);
             }
-            for &(face, cycle, start) in locations.get(pattern.last()?).into_iter().flatten() {
-                let handles = &cycles[face][cycle];
-                if pattern
-                    .iter()
-                    .rev()
-                    .enumerate()
-                    .all(|(offset, handle)| handles[(start + offset) % handles.len()] == *handle)
-                {
-                    matches.entry((face, cycle, start)).or_insert(true);
-                }
-            }
-            let mut cycle_counts = HashMap::new();
-            for &(face, cycle, _) in matches.keys() {
-                *cycle_counts.entry((face, cycle)).or_insert(0usize) += 1;
-            }
-            if cycle_counts.values().any(|count| *count > 1) {
-                return None;
-            }
-            let mut occurrences = matches
-                .into_iter()
-                .map(|((face, cycle, start), reversed)| {
-                    let cycle_len = cycles[face][cycle].len();
-                    let (start, segment_count) = row.boundary_span(start, cycle_len)?;
-                    Some(MeshEdgeRun {
-                        edge,
-                        face,
-                        cycle,
-                        start,
-                        segment_count,
-                        reversed,
-                    })
-                })
-                .collect::<Option<Vec<_>>>()?;
-            occurrences
-                .sort_by_key(|occurrence| (occurrence.face, occurrence.cycle, occurrence.start));
-            Some(occurrences)
-        })
-        .collect()
+            Ok(Some(_)) => {}
+            Ok(None) => panic!("matching boundary handle must admit a run"),
+            Err(error) => panic!("unexpected occurrence refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_mesh_occurrence_handles",
+        "catia_mesh_occurrence_locations",
+        "catia_mesh_occurrence_matches",
+        "catia_mesh_occurrence_cycle_counts",
+        "catia_mesh_occurrence_runs",
+        "catia_mesh_occurrence_rows",
+    ] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
 }
 
 #[derive(Debug)]
@@ -691,14 +792,14 @@ fn standard_mesh_analysis(
     let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
         return Ok(None);
     };
-    let Some(cycles) = trims
-        .iter()
-        .map(|trim| boundary_cycles(trim.packet.triangles()))
-        .collect::<Option<Vec<_>>>()
-    else {
-        return Ok(None);
-    };
-    let Some(occurrences) = mesh_edge_occurrences(&edge_rows, &cycles) else {
+    let mut cycles = Vec::new();
+    for trim in &trims {
+        let Some(face) = boundary_cycles(ctx, trim.packet.triangles())? else {
+            return Ok(None);
+        };
+        crate::resource::push(ctx, &mut cycles, face, "catia_mesh_analysis_cycles")?;
+    }
+    let Some(occurrences) = mesh_edge_occurrences(ctx, &edge_rows, &cycles)? else {
         return Ok(None);
     };
     Ok(Some(StandardMeshAnalysis {
