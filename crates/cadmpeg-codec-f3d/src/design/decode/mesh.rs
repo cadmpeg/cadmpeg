@@ -1363,8 +1363,11 @@ where
                 ids::native_design_mesh_feature_id(source_entry_name, scope_offset),
                 scope.scope,
                 collection.collection,
-                DesignMeshTextureTable::new(texture_table.identity, textures)
-                    .map_err(|message| malformed_mesh_graph(&stream, &message))?,
+                DesignMeshTextureTable::new_charged(ctx, texture_table.identity, textures)
+                    .map_err(|error| match error {
+                        CodecError::Malformed(message) => malformed_mesh_graph(&stream, &message),
+                        other => other,
+                    })?,
                 collection_owner.owner.clone(),
                 feature_bodies,
             )
