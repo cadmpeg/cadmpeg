@@ -161,3 +161,31 @@ fn configuration_id_binds_the_escaped_entry_name() {
         &["id", "f3d:configuration:entry#Design/Config #1.dsgcfg"],
     );
 }
+
+#[test]
+fn configuration_parameter_map_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let payload = serde_json::json!({
+        "configurations": {
+            "variant": {"parameters": {"length": 1, "width": 2}}
+        }
+    });
+    let error = DesignConfiguration::try_new_charged(
+        &ctx,
+        "table.dsgcfg".into(),
+        DesignConfigurationKind::Table,
+        vec!["variant".into()],
+        payload.as_object().unwrap().clone(),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "admit configuration parameter"
+    ));
+}

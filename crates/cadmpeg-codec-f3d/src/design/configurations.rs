@@ -3,6 +3,7 @@
 //! Decode and project Design configuration records.
 
 use cadmpeg_core::container::ContainerRole;
+use cadmpeg_core::decode::DecodeContext;
 
 use crate::container::ContainerScan;
 use crate::ids::neutral_configuration_id;
@@ -74,6 +75,7 @@ fn parse_configuration_variant_order(
 
 /// Decode every JSON design-configuration table and rule entry.
 pub(crate) fn decode_configurations(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<DesignConfiguration>, CodecError> {
     let configurations = scan
@@ -104,7 +106,7 @@ pub(crate) fn decode_configurations(
             } else {
                 Vec::new()
             };
-            DesignConfiguration::try_new(entry.name.clone(), kind, variant_order, payload)
+            DesignConfiguration::try_new_charged(ctx, entry.name.clone(), kind, variant_order, payload)
         })
         .collect::<Result<Vec<_>, _>>()?;
     let mut names = HashSet::new();

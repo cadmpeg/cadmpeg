@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admitted configuration documents and their authored variant order.
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize, Serializer};
@@ -91,7 +92,12 @@ impl ConfigurationScalar {
 }
 
 impl ConfigurationVariant {
-    fn admit(entry_name: &str, name: &str, value: Value) -> Result<Self, CodecError> {
+    fn admit(
+        ctx: Option<&DecodeContext<'_>>,
+        entry_name: &str,
+        name: &str,
+        value: Value,
+    ) -> Result<Self, CodecError> {
         let Value::Object(mut fields) = value else {
             return Err(CodecError::malformed(format_args!(
                 "F3D configuration variant `{name}` must be an object: {entry_name}"
@@ -112,6 +118,9 @@ impl ConfigurationVariant {
                             )));
                         }
                     };
+                    if let Some(ctx) = ctx {
+                        ctx.charge_collection_items(1, "admit configuration parameter")?;
+                    }
                     admitted.insert(key, value);
                 }
                 Some(admitted)
@@ -417,6 +426,26 @@ impl DesignConfiguration {
         entry_name: String,
         kind: DesignConfigurationKind,
         variant_order: Vec<String>,
+        payload: Map<String, Value>,
+    ) -> Result<Self, CodecError> {
+        Self::try_new_with_context(None, entry_name, kind, variant_order, payload)
+    }
+
+    pub(crate) fn try_new_charged(
+        ctx: &DecodeContext<'_>,
+        entry_name: String,
+        kind: DesignConfigurationKind,
+        variant_order: Vec<String>,
+        payload: Map<String, Value>,
+    ) -> Result<Self, CodecError> {
+        Self::try_new_with_context(Some(ctx), entry_name, kind, variant_order, payload)
+    }
+
+    fn try_new_with_context(
+        ctx: Option<&DecodeContext<'_>>,
+        entry_name: String,
+        kind: DesignConfigurationKind,
+        variant_order: Vec<String>,
         mut payload: Map<String, Value>,
     ) -> Result<Self, CodecError> {
         let extension = match kind {
@@ -478,7 +507,7 @@ impl DesignConfiguration {
                 let mut variants = variants
                     .into_iter()
                     .map(|(name, value)| {
-                        ConfigurationVariant::admit(&entry_name, &name, value)
+                        ConfigurationVariant::admit(ctx, &entry_name, &name, value)
                             .map(|value| (name, value))
                     })
                     .collect::<Result<BTreeMap<_, _>, _>>()?;

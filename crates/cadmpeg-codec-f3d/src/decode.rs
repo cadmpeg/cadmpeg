@@ -2411,7 +2411,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.design_body_bindings,
         );
         self.native.design_configurations =
-            crate::design::configurations::decode_configurations(scan)?;
+            crate::design::configurations::decode_configurations(self.ctx, scan)?;
         self.ir.model.configurations = crate::design::configurations::project_configurations(
             &self.native.design_configurations,
         )?;
