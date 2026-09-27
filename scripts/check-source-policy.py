@@ -31,6 +31,10 @@ class Finding:
 
 FROM_ENDIAN = re.compile(r"\bfrom_(?:le|be)_bytes\b")
 MALFORMED_FORMAT = re.compile(r"CodecError::Malformed\s*\(\s*format!", re.MULTILINE)
+INTEGER_CLAMP = re.compile(
+    r"\bunwrap_or(?:_else\s*\(\s*\|_\|\s*|\s*\(\s*)"
+    r"[ui](?:8|16|32|64|128|size)::(?:MAX|MIN)\s*\)"
+)
 LOSS_NOTE_LIT = re.compile(r"\bLossNote\s*\{")
 LOSS_NOTE_PATH = r"(?:::\s*)?(?:(?:r#)?[^\W\d]\w*\s*::\s*)*(?:r#)?(?P<name>LossNote)"
 LOSS_NOTE_RETURN = re.compile(r"->\s*" + LOSS_NOTE_PATH + r"\s*\{")
@@ -501,6 +505,9 @@ def scan_patterns(path: Path, source: str) -> list[Finding]:
     for match in MALFORMED_FORMAT.finditer(code):
         report("formatted_malformed_error", code.count("\n", 0, match.start()) + 1,
                "Use a structured codec error instead of Malformed(format!(...)).")
+    for match in INTEGER_CLAMP.finditer(code):
+        report("integer_clamp", code.count("\n", 0, match.start()) + 1,
+               "Do not clamp to an integer bound. Widen a usize with cadmpeg_core::decode::u64_from_index, or return the refusal.")
     declarations = {match.end() for match in NAMED_TOLERANCE_DECL.finditer(code)}
     for match in BARE_TOLERANCE.finditer(code):
         if match.start() not in declarations:
