@@ -2327,30 +2327,30 @@ fn decode_tessellated_curve_sets(
         let Some(coordinates_id) =
             tessellated_curve_parameter(record, 0).and_then(ValueExt::reference)
         else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
+            push_geometry_vec(losses, StepLossCode::DecodeWarning.note(format!(
                 "TESSELLATED_CURVE_SET #{id} has no COORDINATES_LIST reference"
-            )));
+            )), ctx, "step_geometry_losses")?;
             continue;
         };
         let Some(coordinates_record) = exchange.records().get(&coordinates_id) else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
+            push_geometry_vec(losses, StepLossCode::DecodeWarning.note(format!(
                 "TESSELLATED_CURVE_SET #{id} references missing COORDINATES_LIST #{coordinates_id}"
-            )));
+            )), ctx, "step_geometry_losses")?;
             continue;
         };
         let scale = unit_scales.length([coordinates_id]).get();
-        let Some(vertices) = coordinate_rows(coordinates_record, scale) else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
+        let Some(vertices) = coordinate_rows(coordinates_record, scale, ctx)? else {
+            push_geometry_vec(losses, StepLossCode::DecodeWarning.note(format!(
                 "TESSELLATED_CURVE_SET #{id} has invalid COORDINATES_LIST #{coordinates_id}"
-            )));
+            )), ctx, "step_geometry_losses")?;
             continue;
         };
         let Some(strips) =
-            tessellated_line_strips(tessellated_curve_parameter(record, 1), vertices.len())
+            tessellated_line_strips(tessellated_curve_parameter(record, 1), vertices.len(), ctx)?
         else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
+            push_geometry_vec(losses, StepLossCode::DecodeWarning.note(format!(
                 "TESSELLATED_CURVE_SET #{id} has invalid line strips"
-            )));
+            )), ctx, "step_geometry_losses")?;
             continue;
         };
         let source_name = representation_item_name(record)
@@ -2376,7 +2376,10 @@ fn decode_tessellated_curve_sets(
                     .dash(key_word!("strip"))
                     .dash(strip_index)
             };
-            let points: Vec<_> = indices.into_iter().map(|index| vertices[index]).collect();
+            let mut points = Vec::new();
+            for index in indices {
+                push_geometry_vec(&mut points, vertices[index], ctx, "step_curve_strip_points")?;
+            }
             let Ok(points) = points.try_into() else {
                 continue;
             };
@@ -2387,10 +2390,13 @@ fn decode_tessellated_curve_sets(
             .ok() else {
                 continue;
             };
+            let source_name = source_name.as_ref()
+                .map(|name| crate::decode_alloc::charged_format(ctx, "step_curve_strip_source_name", format_args!("{name}")))
+                .transpose()?;
             push_geometry_vec(&mut ir.model.curves, Curve {
                 id: CurveId::from(ids::data(kind!("curve"), curve_key)),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)),
-                source_object: Some(super::step_source_association(id, source_name.clone())),
+                source_object: Some(super::step_source_association(id, source_name)),
             }, ctx, "step_geometry_ir_curves")?;
         }
         for source_id in [id, coordinates_id] {
@@ -2406,28 +2412,40 @@ fn tessellated_curve_parameter(record: &RawRecord, index: usize) -> Option<&Valu
     partial.parameters.get(index + offset)
 }
 
-fn tessellated_line_strips(value: Option<&Value>, point_count: usize) -> Option<Vec<Vec<usize>>> {
-    let strips = value?.list()?;
+fn tessellated_line_strips(
+    value: Option<&Value>,
+    point_count: usize,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<Vec<usize>>>, CodecError> {
+    let Some(strips) = value.and_then(Value::list) else {
+        return Ok(None);
+    };
     if strips.is_empty() {
-        return None;
+        return Ok(None);
     }
-    let mut decoded = Vec::with_capacity(strips.len());
+    let mut decoded = Vec::new();
     for strip in strips {
-        let values = strip.list()?;
+        let Some(values) = strip.list() else {
+            return Ok(None);
+        };
         if values.len() < 2 {
-            return None;
+            return Ok(None);
         }
-        let mut indices = Vec::with_capacity(values.len());
+        let mut indices = Vec::new();
         for value in values {
-            let index = usize::try_from(value.integer()?).ok()?.checked_sub(1)?;
+            let Some(index) = value.integer()
+                .and_then(|value| usize::try_from(value).ok())
+                .and_then(|value| value.checked_sub(1)) else {
+                    return Ok(None);
+                };
             if index >= point_count {
-                return None;
+                return Ok(None);
             }
-            indices.push(index);
+            push_geometry_vec(&mut indices, index, ctx, "step_curve_strip_indices")?;
         }
-        decoded.push(indices);
+        push_geometry_vec(&mut decoded, indices, ctx, "step_curve_strips")?;
     }
-    Some(decoded)
+    Ok(Some(decoded))
 }
 
 fn face_surface_reference(record: &RawRecord) -> Option<u64> {
@@ -4381,29 +4399,42 @@ fn periodic_value(
     }
 }
 
-pub(super) fn coordinate_rows(record: &RawRecord, scale: f64) -> Option<Vec<FinitePoint3>> {
-    record
+fn coordinate_rows(
+    record: &RawRecord,
+    scale: f64,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<FinitePoint3>>, CodecError> {
+    for rows in record
         .partials
         .iter()
         .flat_map(|partial| partial.parameters.iter())
         .filter_map(ValueExt::list)
-        .find_map(|rows| {
-            rows.iter()
-                .map(|row| {
-                    let values = row.list()?;
-                    if values.len() != 3 {
-                        return None;
-                    }
-                    let point = Point3::new(
-                        values[0].number()? * scale,
-                        values[1].number()? * scale,
-                        values[2].number()? * scale,
-                    );
-                    FinitePoint3::new(point)
-                })
-                .collect::<Option<Vec<_>>>()
-                .filter(|vertices| !vertices.is_empty())
-        })
+    {
+        let mut vertices = Vec::new();
+        let mut valid = true;
+        for row in rows {
+            let point = (|| {
+                let values = row.list()?;
+                if values.len() != 3 {
+                    return None;
+                }
+                FinitePoint3::new(Point3::new(
+                    values[0].number()? * scale,
+                    values[1].number()? * scale,
+                    values[2].number()? * scale,
+                ))
+            })();
+            let Some(point) = point else {
+                valid = false;
+                break;
+            };
+            push_geometry_vec(&mut vertices, point, ctx, "step_curve_coordinate_rows")?;
+        }
+        if valid && !vertices.is_empty() {
+            return Ok(Some(vertices));
+        }
+    }
+    Ok(None)
 }
 
 fn named_coordinates(
