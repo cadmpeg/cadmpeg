@@ -59,7 +59,11 @@ fn discard_projection_caches_retains_compact_mirror_plane_topology() {
         }],
     }];
 
-    discard_projection_caches(&mut histories);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("decode context");
+    discard_projection_caches(&ctx, &mut histories).expect("projection cache budget");
 
     let retained = histories[0].states[0]
         .topology()

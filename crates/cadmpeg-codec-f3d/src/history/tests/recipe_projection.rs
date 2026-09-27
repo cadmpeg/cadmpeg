@@ -52,7 +52,11 @@ fn projection_caches_end_after_history_consumers() {
         states: vec![state],
     }];
 
-    discard_projection_caches(&mut histories);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("decode context");
+    discard_projection_caches(&ctx, &mut histories).expect("projection cache budget");
 
     let state = &histories[0].states[0];
     assert!(histories[0].projection_finalized());

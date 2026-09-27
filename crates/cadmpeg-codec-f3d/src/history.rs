@@ -729,7 +729,7 @@ fn bind_complete_record_tables(
         // feature selection and need not survive projection finalization.
         for state in states {
             if let Some(topology) = state.topology() {
-                let slots = topology_entity_slots(topology);
+                let slots = topology_entity_slots(ctx, topology)?;
                 state
                     .entity_versions
                     .retain(|version| slots.contains(&version.entity_ref));
@@ -745,8 +745,11 @@ fn bind_complete_record_tables(
     Ok(false)
 }
 
-fn topology_entity_slots(topology: &AsmHistoricalTopology) -> HashSet<i64> {
-    [
+fn topology_entity_slots(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    topology: &AsmHistoricalTopology,
+) -> Result<HashSet<i64>, cadmpeg_core::CodecError> {
+    let families = [
         &topology.bodies,
         &topology.regions,
         &topology.shells,
@@ -759,11 +762,21 @@ fn topology_entity_slots(topology: &AsmHistoricalTopology) -> HashSet<i64> {
         &topology.surfaces,
         &topology.curves,
         &topology.pcurves,
-    ]
-    .into_iter()
-    .flatten()
-    .copied()
-    .collect()
+    ];
+    let count = families.iter().try_fold(0_usize, |total, family| total.checked_add(family.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("index F3D historical topology slots", 0, u64::MAX))?;
+    let count_u64 = u64::try_from(count)
+        .map_err(|_| ctx.refuse_codec_limit("index F3D historical topology slots", 0, u64::MAX))?;
+    ctx.charge_collection_items(count_u64, "index F3D historical topology slots")?;
+    ctx.charge_work(count_u64, "index F3D historical topology slots")?;
+    let mut slots = HashSet::new();
+    slots.try_reserve(count).map_err(|_| {
+        ctx.refuse_codec_limit("index F3D historical topology slots", 0, count_u64)
+    })?;
+    for slot in families.into_iter().flatten() {
+        slots.insert(*slot);
+    }
+    Ok(slots)
 }
 
 type HistoricalRecordArchive = HashMap<i64, cadmpeg_asm::sab::Record>;
@@ -934,7 +947,10 @@ fn retain_mirror_plane_topology(
 /// Release complete historical snapshots after every projection consumer has
 /// finished. Raw history records, sparse transitions, and the compact
 /// plane-selection topology remain retained.
-pub(crate) fn discard_projection_caches(histories: &mut [AsmHistory]) {
+pub(crate) fn discard_projection_caches(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    histories: &mut [AsmHistory],
+) -> Result<(), cadmpeg_core::CodecError> {
     for history in histories {
         for state in &mut history.states {
             let topology = match std::mem::take(&mut state.topology_cache) {
@@ -946,7 +962,7 @@ pub(crate) fn discard_projection_caches(histories: &mut [AsmHistory]) {
                 }
             };
             if let Some(topology) = topology {
-                let slots = topology_entity_slots(&topology);
+                let slots = topology_entity_slots(ctx, &topology)?;
                 state
                     .entity_versions
                     .retain(|version| slots.contains(&version.entity_ref));
@@ -957,6 +973,7 @@ pub(crate) fn discard_projection_caches(histories: &mut [AsmHistory]) {
             }
         }
     }
+    Ok(())
 }
 
 pub(crate) fn projection_was_finalized(histories: &[AsmHistory]) -> bool {
