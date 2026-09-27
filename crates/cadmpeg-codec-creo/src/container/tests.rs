@@ -194,6 +194,33 @@ fn current_feature_operation_order_refuses_before_vec_growth() {
 }
 
 #[test]
+fn feature_reference_aggregation_refuses_before_vec_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let payload = b"\xf7\x71\x01\x05\x02N\xff\0\x01\x01";
+    let section = super::Section::scan("MdlRefInfo".to_string(), 0, payload.len(), None, payload)
+        .expect("one bounded reference section");
+    let sections = [section];
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+            .expect("root input is admitted");
+        super::feature_reference_names(&ctx, &sections)
+    };
+    assert_eq!(run(1).expect("one reference admitted").len(), 1);
+    let error = run(0).expect_err("one reference needs an aggregate Vec item");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo feature reference names"
+    ));
+}
+
+#[test]
 fn detect_matches_ugc_magic_only() {
     let codec = CreoCodec;
     assert_eq!(codec.detect(b"#UGC:2 P foo"), Confidence::High);
