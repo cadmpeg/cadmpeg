@@ -76,71 +76,95 @@ fn container_only_dimension_parameters(
         .collect()
 }
 
-fn unresolved_dimension_companion_count(native: &F3dNative, ir: &CadIr) -> usize {
+fn unresolved_dimension_companion_count(
+    ctx: &DecodeContext<'_>,
+    native: &F3dNative,
+    ir: &CadIr,
+) -> Result<usize, CodecError> {
     use std::collections::{HashMap, HashSet};
 
-    let parameters = native
-        .design_parameters
-        .iter()
-        .map(|parameter| {
+    ctx.charge_collection_items(
+        u64::try_from(native.design_parameters.len()).map_err(|_| {
+            ctx.refuse_codec_limit("index F3D dimension parameters", 0, u64::MAX)
+        })?,
+        "index F3D dimension parameters",
+    )?;
+    let mut parameters = HashMap::new();
+    parameters
+        .try_reserve(native.design_parameters.len())
+        .map_err(|_| ctx.refuse_codec_limit("index F3D dimension parameters", 0, 1))?;
+    for parameter in &native.design_parameters {
+        parameters.insert(
             (
-                (
-                    crate::ids::native_stream(&parameter.id).unwrap_or(crate::ids::DEFAULT_STREAM),
-                    parameter.record_index,
-                ),
-                parameter.kind(),
-            )
-        })
-        .collect::<HashMap<_, _>>();
-    let dimension_owners = native
-        .design_parameter_owners
-        .iter()
-        .filter_map(|owner| {
+                crate::ids::native_stream(&parameter.id).unwrap_or(crate::ids::DEFAULT_STREAM),
+                parameter.record_index,
+            ),
+            parameter.kind(),
+        );
+    }
+    let mut dimension_owners = HashSet::new();
+    for owner in &native.design_parameter_owners {
             let stream =
                 crate::ids::native_stream(owner.id()).unwrap_or(crate::ids::DEFAULT_STREAM);
-            (parameters.get(&(stream, owner.parameter_record_index()))
-                == Some(&crate::records::parameters::DesignParameterKind::Dimension))
-            .then_some((stream, owner.record_index()))
-        })
-        .collect::<HashSet<_>>();
+            if parameters.get(&(stream, owner.parameter_record_index()))
+                == Some(&crate::records::parameters::DesignParameterKind::Dimension)
+                && !dimension_owners.contains(&(stream, owner.record_index()))
+            {
+                ctx.charge_collection_items(1, "index F3D dimension owners")?;
+                dimension_owners
+                    .try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("index F3D dimension owners", 0, 1))?;
+                dimension_owners.insert((stream, owner.record_index()));
+            }
+    }
     let mut typed = HashSet::new();
+    let mut insert_typed = |key| -> Result<(), CodecError> {
+        if !typed.contains(&key) {
+            ctx.charge_collection_items(1, "index F3D typed dimension companions")?;
+            typed.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index F3D typed dimension companions", 0, 1)
+            })?;
+            typed.insert(key);
+        }
+        Ok(())
+    };
     for pair in &native.design_dimension_locus_pairs {
-        typed.insert((
+        insert_typed((
             crate::ids::native_stream(&pair.id).unwrap_or(crate::ids::DEFAULT_STREAM),
             pair.companion_record_index,
-        ));
-        typed.insert((
+        ))?;
+        insert_typed((
             crate::ids::native_stream(&pair.id).unwrap_or(crate::ids::DEFAULT_STREAM),
             pair.governing_companion_record_index,
-        ));
+        ))?;
     }
     for frame in &native.design_dimension_annotation_frames {
-        typed.insert((
+        insert_typed((
             crate::ids::native_stream(&frame.id).unwrap_or(crate::ids::DEFAULT_STREAM),
             frame.governing_companion_record_index,
-        ));
+        ))?;
     }
     for group in &native.design_dimension_locus_groups {
-        typed.insert((
+        insert_typed((
             crate::ids::native_stream(&group.id).unwrap_or(crate::ids::DEFAULT_STREAM),
             group.companion_record_index,
-        ));
+        ))?;
     }
     for pair in &native.design_dimension_null_locus_pairs {
-        typed.insert((
+        insert_typed((
             crate::ids::native_stream(&pair.id).unwrap_or(crate::ids::DEFAULT_STREAM),
             pair.companion_record_index,
-        ));
-        typed.insert((
+        ))?;
+        insert_typed((
             crate::ids::native_stream(&pair.id).unwrap_or(crate::ids::DEFAULT_STREAM),
             pair.governing_companion_record_index,
-        ));
+        ))?;
     }
     for record in &native.design_dimension_recipe_records {
-        typed.insert((
+        insert_typed((
             crate::ids::native_stream(&record.id).unwrap_or(crate::ids::DEFAULT_STREAM),
             record.companion_record_index,
-        ));
+        ))?;
     }
     for constraint in &ir.model.sketch_constraints {
         if !matches!(
@@ -153,15 +177,15 @@ fn unresolved_dimension_companion_count(native: &F3dNative, ir: &CadIr) -> usize
                     .iter()
                     .find(|companion| companion.id() == *native_ref)
                 {
-                    typed.insert((
+                    insert_typed((
                         crate::ids::native_stream(native_ref).unwrap_or(crate::ids::DEFAULT_STREAM),
                         companion.record_index(),
-                    ));
+                    ))?;
                 }
             }
         }
     }
-    native
+    Ok(native
         .design_parameter_companions
         .iter()
         .filter(|companion| {
@@ -173,16 +197,27 @@ fn unresolved_dimension_companion_count(native: &F3dNative, ir: &CadIr) -> usize
                 && dimension_owners.contains(&(stream, companion.owner_record_index()))
                 && !typed.contains(&(stream, companion.record_index()))
         })
-        .count()
+        .count())
 }
 
-fn report_unresolved_dimension_companions(report: &mut DecodeBody, native: &F3dNative, ir: &CadIr) {
-    let count = unresolved_dimension_companion_count(native, ir);
+fn report_unresolved_dimension_companions(
+    ctx: &DecodeContext<'_>,
+    report: &mut DecodeBody,
+    native: &F3dNative,
+    ir: &CadIr,
+) -> Result<(), CodecError> {
+    let count = unresolved_dimension_companion_count(ctx, native, ir)?;
     if count != 0 {
+        ctx.charge_collection_items(1, "report unresolved F3D dimensions")?;
+        report
+            .losses
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("report unresolved F3D dimensions", 0, 1))?;
         report.losses.push(F3dLossCode::DimensionCompanionUntyped.note(format!(
             "{count} payload-bearing Design dimension companion(s) were retained without a typed locus frame."
         )));
     }
+    Ok(())
 }
 
 fn report_unresolved_configuration_rules(report: &mut DecodeBody, native: &F3dNative, ir: &CadIr) {
@@ -2778,7 +2813,7 @@ impl<'a> F3dDecodeSession<'a> {
                     &mut self.report,
                     non_root_act_component_links,
                 );
-                report_unresolved_dimension_companions(&mut self.report, &self.native, &self.ir);
+                report_unresolved_dimension_companions(self.ctx, &mut self.report, &self.native, &self.ir)?;
                 report_unresolved_configuration_rules(&mut self.report, &self.native, &self.ir);
                 report_untyped_material_distances(
                     &mut self.report,
@@ -2922,7 +2957,7 @@ impl<'a> F3dDecodeSession<'a> {
                         self.native.design_canvas_images.len(),
                     );
                 }
-                report_unresolved_dimension_companions(&mut self.report, &self.native, &self.ir);
+                report_unresolved_dimension_companions(self.ctx, &mut self.report, &self.native, &self.ir)?;
                 match inputs.xref {
                     Ok(Some(table)) => {
                         apply_assembly_classification(&mut self.report, scan, &table);
