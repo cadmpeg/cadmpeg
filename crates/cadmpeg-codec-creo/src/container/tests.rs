@@ -18,6 +18,108 @@ use cadmpeg_ir::Exactness;
 use crate::container::{self, Layout, UnknownLayout};
 use crate::CreoCodec;
 
+fn scan_primitives_with_limits(
+    name: &str,
+    bytes: &[u8],
+    items: u64,
+    retained: u64,
+) -> Result<super::PrimitiveScan, cadmpeg_core::CodecError> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = items;
+    policy.limits.max_retained_bytes = retained;
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
+        .expect("the primitive fixture fits the root limit");
+    let section = super::ExpandedSection {
+        name: name.to_string(),
+        source_offset: 0,
+        compressed_length: bytes.len(),
+        data: bytes.to_vec(),
+    };
+    super::scan_primitives(&ctx, &[section])
+}
+
+#[test]
+fn model_double_xar_tables_refuse_before_aggregate_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let bytes = b"double_xar\0\xf8\x02\x10\xe0";
+    assert_eq!(
+        scan_primitives_with_limits("Body", bytes, 4, 4)
+            .expect("model dictionary admitted")
+            .double_xar_tables
+            .len(),
+        1
+    );
+    let error = scan_primitives_with_limits("Body", bytes, 3, 4)
+        .err()
+        .expect("model dictionary aggregate needs admission");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo model double_xar tables")
+    );
+}
+
+#[test]
+fn model_double_xar_section_name_refuses_before_copy() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let bytes = b"double_xar\0\xf8\x02\x10\xe0";
+    let error = scan_primitives_with_limits("Body", bytes, 4, 3)
+        .err()
+        .expect("model dictionary name needs admission");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo model double_xar section names")
+    );
+}
+
+#[test]
+fn model_primitive_scalar_arrays_refuse_before_aggregate_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let bytes = b"\xe0\x06p1\0\xf8\x01\0";
+    assert_eq!(
+        scan_primitives_with_limits("SolidPrimdata", bytes, 3, u64::MAX)
+            .expect("scalar array admitted")
+            .scalar_arrays
+            .len(),
+        1
+    );
+    let error = scan_primitives_with_limits("SolidPrimdata", bytes, 2, u64::MAX)
+        .err()
+        .expect("scalar aggregate needs admission");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo model primitive scalar arrays")
+    );
+}
+
+#[test]
+fn model_triangle_strips_refuse_before_aggregate_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let mut bytes =
+        b"value(prim_tristripsetwithatt)\0\xe0\x01p_accum_set_size\0\xf8\x01\x03".to_vec();
+    bytes.extend_from_slice(b"\xe0\x06mv_p_xyz\0\xf8\x09");
+    bytes.extend_from_slice(&[0; 9]);
+    assert_eq!(
+        scan_primitives_with_limits("SolidPrimdata", &bytes, 28, u64::MAX)
+            .expect("triangle strip admitted")
+            .triangle_strips
+            .len(),
+        1
+    );
+    let error = scan_primitives_with_limits("SolidPrimdata", &bytes, 27, u64::MAX)
+        .err()
+        .expect("strip aggregate needs admission");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo model triangle strips")
+    );
+}
+
 fn feature_row_for_aggregate(body: &[u8]) -> crate::feature::rows::FeatureRow {
     crate::feature::rows::FeatureRow {
         feature_id: 7,

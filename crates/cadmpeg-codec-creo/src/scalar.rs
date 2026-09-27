@@ -4,7 +4,8 @@
 use std::collections::{BTreeMap, HashSet};
 
 use cadmpeg_core::bytes::{assemble_f32_be, assemble_f64_be, find_from};
-use cadmpeg_core::decode::{index_from_u32, View};
+use cadmpeg_core::decode::{index_from_u32, DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::units::FiniteVector;
 
 use crate::decode::axis::Axis;
@@ -148,7 +149,10 @@ impl DoubleXarSlot {
 
 /// Decode every complete counted `double_xar` dictionary in one expanded section.
 #[must_use]
-pub(crate) fn double_xar_tables(data: &[u8]) -> Vec<DoubleXarTable> {
+pub(crate) fn double_xar_tables(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+) -> Result<Vec<DoubleXarTable>, CodecError> {
     const LABEL: &[u8] = b"double_xar\0";
     let mut tables = Vec::new();
     let mut search = 0;
@@ -188,7 +192,7 @@ pub(crate) fn double_xar_tables(data: &[u8]) -> Vec<DoubleXarTable> {
                         (
                             DoubleXarSlot::Literal {
                                 value,
-                                raw: raw.to_vec(),
+                                raw: ctx.copy_retained(raw, "creo double_xar literal bytes")?,
                             },
                             end,
                         )
@@ -199,6 +203,7 @@ pub(crate) fn double_xar_tables(data: &[u8]) -> Vec<DoubleXarTable> {
                     }
                 },
             };
+            ctx.try_reserve_items(&mut entries, 1, "creo double_xar slots")?;
             entries.push(slot);
             cursor = end;
         }
@@ -207,11 +212,12 @@ pub(crate) fn double_xar_tables(data: &[u8]) -> Vec<DoubleXarTable> {
                 .last()
                 .is_some_and(|entry| matches!(entry, DoubleXarSlot::TerminalNull))
         {
+            ctx.try_reserve_items(&mut tables, 1, "creo double_xar tables")?;
             tables.push(DoubleXarTable { offset, entries });
         }
         search = count_offset + 1;
     }
-    tables
+    Ok(tables)
 }
 
 /// Section-local dictionary formed by distinct raw `0x46` token images.
@@ -2212,6 +2218,82 @@ mod tests {
         ScalarCache::from_section_checked(&ctx, &bytes)
     }
 
+    fn with_context<T>(
+        bytes: &[u8],
+        f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+    ) -> T {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
+            .expect("the scalar fixture fits the root limit");
+        f(&ctx)
+    }
+
+    fn double_xar_with_limits(
+        bytes: &[u8],
+        items: u64,
+        retained: u64,
+    ) -> Result<Vec<super::DoubleXarTable>, cadmpeg_core::CodecError> {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = items;
+        policy.limits.max_retained_bytes = retained;
+        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
+            .expect("the dictionary fixture fits the root limit");
+        double_xar_tables(&ctx, bytes)
+    }
+
+    #[test]
+    fn double_xar_slots_refuse_before_counted_growth() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let bytes = b"double_xar\0\xf8\x02\x10\xe0";
+        assert_eq!(
+            double_xar_with_limits(bytes, 3, u64::MAX)
+                .expect("table admitted")
+                .len(),
+            1
+        );
+        let error =
+            double_xar_with_limits(bytes, 1, u64::MAX).expect_err("second slot needs admission");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo double_xar slots")
+        );
+    }
+
+    #[test]
+    fn double_xar_table_refuses_before_result_growth() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let bytes = b"double_xar\0\xf8\x02\x10\xe0";
+        let error = double_xar_with_limits(bytes, 2, u64::MAX).expect_err("table needs admission");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo double_xar tables")
+        );
+    }
+
+    #[test]
+    fn double_xar_literal_refuses_before_retained_copy() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let bytes = b"double_xar\0\xf8\x02\x46\x08\x00\x00\x00\x00\x00\x00\xe0";
+        assert_eq!(
+            double_xar_with_limits(bytes, 3, 8)
+                .expect("literal admitted")
+                .len(),
+            1
+        );
+        let error = double_xar_with_limits(bytes, 3, 7).expect_err("literal bytes need admission");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "creo double_xar literal bytes")
+        );
+    }
+
     #[test]
     fn scalar_cache_unique_image_refuses_before_hash_growth() {
         let cache = checked_cache_with_collection_limit(3)
@@ -3109,7 +3191,8 @@ mod tests {
             0xf8, 0x07, 0x10, 0xe5, 0x07, 0x23, 0x11, 0x2e, 0x0b, 0xe8, 0x26, 0xd6, 0x95, 0x46,
             0x08, 0, 0, 0, 0, 0, 0, 0x0b, 0xe0,
         ]);
-        let tables = double_xar_tables(&data);
+        let tables = with_context(&data, |ctx| double_xar_tables(ctx, &data))
+            .expect("the scalar fixture fits the service limits");
         let [table] = tables.as_slice() else {
             panic!("complete dictionary");
         };
@@ -3134,8 +3217,14 @@ mod tests {
 
     #[test]
     fn withholds_incomplete_double_xar_dictionary() {
-        assert!(double_xar_tables(b"double_xar\0\xf8\x02\x10").is_empty());
-        assert!(double_xar_tables(b"double_xar\0\xf8\x02\x10\x0b").is_empty());
+        let first = b"double_xar\0\xf8\x02\x10";
+        assert!(with_context(first, |ctx| double_xar_tables(ctx, first))
+            .expect("the scalar fixture fits the service limits")
+            .is_empty());
+        let second = b"double_xar\0\xf8\x02\x10\x0b";
+        assert!(with_context(second, |ctx| double_xar_tables(ctx, second))
+            .expect("the scalar fixture fits the service limits")
+            .is_empty());
     }
 
     #[test]
