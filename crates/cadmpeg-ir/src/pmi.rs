@@ -382,7 +382,20 @@ impl PmiDimension {
         nominal: Option<PmiValue>,
         tolerance: Option<DimensionTolerance>,
     ) -> Result<Self, String> {
-        let expected = match &kind {
+        Self::validate(&kind, nominal, tolerance.as_ref())?;
+        Ok(Self {
+            kind,
+            nominal,
+            tolerance,
+        })
+    }
+
+    fn validate(
+        kind: &DimensionKind,
+        nominal: Option<PmiValue>,
+        tolerance: Option<&DimensionTolerance>,
+    ) -> Result<(), String> {
+        let expected = match kind {
             DimensionKind::Angular => Some(PmiQuantity::Angle),
             DimensionKind::Size
             | DimensionKind::Location
@@ -396,7 +409,7 @@ impl PmiDimension {
         if let Some(
             DimensionTolerance::PlusMinus { lower, upper }
             | DimensionTolerance::PlusMinusFit { lower, upper, .. },
-        ) = &tolerance
+        ) = tolerance
         {
             if lower.quantity != upper.quantity {
                 return Err("dimension tolerance quantities disagree".into());
@@ -407,11 +420,7 @@ impl PmiDimension {
                 );
             }
         }
-        Ok(Self {
-            kind,
-            nominal,
-            tolerance,
-        })
+        Ok(())
     }
 
     /// Dimensional characteristic.
@@ -434,16 +443,47 @@ impl PmiDimension {
 
     /// Replace the dimensional kind if its quantities remain compatible.
     pub fn set_kind(&mut self, kind: DimensionKind) -> Result<(), String> {
-        let candidate = Self::new(kind, self.nominal, self.tolerance.clone())?;
-        *self = candidate;
+        Self::validate(&kind, self.nominal, self.tolerance.as_ref())?;
+        self.kind = kind;
         Ok(())
     }
 
     /// Replace the tolerance if its quantities remain compatible.
     pub fn set_tolerance(&mut self, tolerance: Option<DimensionTolerance>) -> Result<(), String> {
-        let candidate = Self::new(self.kind.clone(), self.nominal, tolerance)?;
-        *self = candidate;
+        Self::validate(&self.kind, self.nominal, tolerance.as_ref())?;
+        self.tolerance = tolerance;
         Ok(())
+    }
+
+    /// Add a tolerance or combine a fit with plus/minus deviations.
+    pub fn merge_tolerance(&mut self, tolerance: DimensionTolerance) -> Result<bool, String> {
+        let compatible = matches!(
+            (self.tolerance.as_ref(), &tolerance),
+            (None, _)
+                | (Some(DimensionTolerance::PlusMinus { .. }), DimensionTolerance::Fit { .. })
+                | (Some(DimensionTolerance::Fit { .. }), DimensionTolerance::PlusMinus { .. })
+        );
+        if !compatible {
+            return Ok(false);
+        }
+        Self::validate(&self.kind, self.nominal, Some(&tolerance))?;
+        let merged = match (self.tolerance.take(), tolerance) {
+            (None, value) => value,
+            (
+                Some(DimensionTolerance::PlusMinus { lower, upper }),
+                DimensionTolerance::Fit { fit },
+            )
+            | (
+                Some(DimensionTolerance::Fit { fit }),
+                DimensionTolerance::PlusMinus { lower, upper },
+            ) => DimensionTolerance::PlusMinusFit { lower, upper, fit },
+            (old, _) => {
+                self.tolerance = old;
+                return Ok(false);
+            }
+        };
+        self.tolerance = Some(merged);
+        Ok(true)
     }
 }
 
@@ -604,6 +644,7 @@ mod tests {
 
     use super::{
         DatumReference, DatumReferences, DimensionKind, DimensionTolerance, GeometricToleranceKind,
+        LimitsAndFits,
         PmiAnnotation, PmiDefinition, PmiDimension, PmiMagnitude, PmiQuantity, PmiTarget, PmiValue,
     };
     use crate::document::CadIr;
@@ -804,6 +845,37 @@ mod tests {
             .expect_err("angular dimension needs angle tolerance")
             .to_string();
         assert!(error.contains("quantity disagrees"), "{error}");
+    }
+
+    #[test]
+    fn dimension_tolerance_merge_moves_fit_and_preserves_rejection() {
+        let lower = PmiValue::new(-0.1, PmiQuantity::Length).expect("finite value");
+        let upper = PmiValue::new(0.2, PmiQuantity::Length).expect("finite value");
+        let fit = LimitsAndFits {
+            form_variance: "H".into(),
+            zone_variance: "7".into(),
+            grade: "IT7".into(),
+            source: "ISO 286".into(),
+        };
+        let mut dimension = PmiDimension::new(DimensionKind::Size, None, None)
+            .expect("dimension");
+        assert!(dimension
+            .merge_tolerance(DimensionTolerance::Fit { fit: fit.clone() })
+            .expect("fit"));
+        assert!(dimension
+            .merge_tolerance(DimensionTolerance::PlusMinus { lower, upper })
+            .expect("compatible deviations"));
+        assert!(matches!(
+            dimension.tolerance(),
+            Some(DimensionTolerance::PlusMinusFit { fit: merged, .. }) if merged == &fit
+        ));
+        assert!(!dimension
+            .merge_tolerance(DimensionTolerance::Fit { fit: fit.clone() })
+            .expect("additional fit refused"));
+        assert!(matches!(
+            dimension.tolerance(),
+            Some(DimensionTolerance::PlusMinusFit { fit: merged, .. }) if merged == &fit
+        ));
     }
 
     #[test]
