@@ -2,7 +2,7 @@
 //! Bounded Rhino document properties, settings, units, and layer metadata.
 
 use crate::loss::Diagnostics;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -2554,9 +2554,9 @@ pub(crate) fn parse_metadata(
     warnings: &mut Diagnostics,
 ) -> Result<DocumentMetadata, CodecError> {
     let mut metadata = DocumentMetadata::default();
-    let mut ids = HashMap::<Uuid, ()>::new();
-    let mut property_singletons = HashMap::<u32, ()>::new();
-    let mut setting_singletons = HashMap::<u32, ()>::new();
+    let mut ids = HashSet::<Uuid>::new();
+    let mut property_singletons = HashSet::<u32>::new();
+    let mut setting_singletons = HashSet::<u32>::new();
     let mut id_workspace = ctx.reserve_scoped(0, "Rhino layer UUID workspace")?;
     let mut property_workspace = ctx.reserve_scoped(0, "Rhino property singleton workspace")?;
     let mut setting_workspace = ctx.reserve_scoped(0, "Rhino setting singleton workspace")?;
@@ -2588,8 +2588,8 @@ pub(crate) fn parse_metadata(
             };
             let duplicate_singleton = singleton
                 && match table_type {
-                    PROPERTIES => property_singletons.contains_key(&record.typecode),
-                    SETTINGS => setting_singletons.contains_key(&record.typecode),
+                    PROPERTIES => property_singletons.contains(&record.typecode),
+                    SETTINGS => setting_singletons.contains(&record.typecode),
                     _ => false,
                 };
             let result = if table_type == PROPERTIES {
@@ -2640,7 +2640,7 @@ pub(crate) fn parse_metadata(
                 ) {
                     Ok((layer, source_requires_opaque)) => {
                         if let Some(id) = layer.id {
-                            if ids.contains_key(&id) {
+                            if ids.contains(&id) {
                                 warnings.push_coded(
                                     crate::loss::RhinoLossCode::DuplicateRecordResolved,
                                     format!(
@@ -2649,15 +2649,15 @@ pub(crate) fn parse_metadata(
                                 );
                             } else {
                                 id_workspace.grow(cadmpeg_core::decode::u64_from_index(
-                                    std::mem::size_of::<(Uuid, ())>(),
+                                    std::mem::size_of::<Uuid>(),
                                 ))?;
-                                crate::wire::reserve_hash_map(
+                                crate::wire::reserve_hash_set(
                                     ctx,
                                     &mut ids,
                                     1,
                                     "Rhino layer UUID keys",
                                 )?;
-                                ids.insert(id, ());
+                                ids.insert(id);
                             }
                         }
                         crate::wire::reserve_collection(
@@ -2688,33 +2688,29 @@ pub(crate) fn parse_metadata(
             };
             if result.is_ok() && singleton {
                 match table_type {
-                    PROPERTIES => {
-                        if !property_singletons.contains_key(&record.typecode) {
-                            property_workspace.grow(cadmpeg_core::decode::u64_from_index(
-                                std::mem::size_of::<(u32, ())>(),
-                            ))?;
-                            crate::wire::reserve_hash_map(
-                                ctx,
-                                &mut property_singletons,
-                                1,
-                                "Rhino property singleton keys",
-                            )?;
-                            property_singletons.insert(record.typecode, ());
-                        }
+                    PROPERTIES if !property_singletons.contains(&record.typecode) => {
+                        property_workspace.grow(cadmpeg_core::decode::u64_from_index(
+                            std::mem::size_of::<u32>(),
+                        ))?;
+                        crate::wire::reserve_hash_set(
+                            ctx,
+                            &mut property_singletons,
+                            1,
+                            "Rhino property singleton keys",
+                        )?;
+                        property_singletons.insert(record.typecode);
                     }
-                    SETTINGS => {
-                        if !setting_singletons.contains_key(&record.typecode) {
-                            setting_workspace.grow(cadmpeg_core::decode::u64_from_index(
-                                std::mem::size_of::<(u32, ())>(),
-                            ))?;
-                            crate::wire::reserve_hash_map(
-                                ctx,
-                                &mut setting_singletons,
-                                1,
-                                "Rhino setting singleton keys",
-                            )?;
-                            setting_singletons.insert(record.typecode, ());
-                        }
+                    SETTINGS if !setting_singletons.contains(&record.typecode) => {
+                        setting_workspace.grow(cadmpeg_core::decode::u64_from_index(
+                            std::mem::size_of::<u32>(),
+                        ))?;
+                        crate::wire::reserve_hash_set(
+                            ctx,
+                            &mut setting_singletons,
+                            1,
+                            "Rhino setting singleton keys",
+                        )?;
+                        setting_singletons.insert(record.typecode);
                     }
                     _ => {}
                 }
