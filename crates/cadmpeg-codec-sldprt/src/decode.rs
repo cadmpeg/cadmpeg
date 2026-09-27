@@ -2347,7 +2347,7 @@ fn build_geometry_ir(
     )?);
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut pmi_losses = Vec::new();
-    let mut histories = crate::history::histories(scan, &mut annotations, &mut pmi_losses);
+    let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let mut lanes = crate::resolved_features::assembly::lanes(scan, &mut annotations)?;
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(scan, &mut annotations)?;
@@ -3473,7 +3473,7 @@ fn build_metadata_ir(
     let mut unknowns = Vec::new();
     let mut annotations = Annotations::default();
     let mut pmi_losses = Vec::new();
-    let mut histories = crate::history::histories(scan, &mut annotations, &mut pmi_losses);
+    let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let mut lanes = crate::resolved_features::assembly::lanes(scan, &mut annotations)?;
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(scan, &mut annotations)?;
