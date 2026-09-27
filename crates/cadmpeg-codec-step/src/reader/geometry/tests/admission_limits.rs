@@ -221,6 +221,58 @@ deferred_ids_refusal_test!(composite_curve_segments_refuse_collection_limit, "st
 deferred_ids_refusal_test!(composite_curve_model_segments_refuse_collection_limit, "step_composite_curve_model_segments");
 deferred_ids_refusal_test!(curve_bounded_boundaries_refuse_collection_limit, "step_curve_bounded_boundaries");
 deferred_ids_refusal_test!(curve_bounded_pcurves_refuse_collection_limit, "step_curve_bounded_pcurves");
+deferred_ids_refusal_test!(nurbs_control_point_ids_refuse_collection_limit, "step_nurbs_control_point_ids");
+deferred_ids_refusal_test!(default_nurbs_knots_refuse_collection_limit, "step_default_nurbs_knots");
+deferred_ids_refusal_test!(expanded_nurbs_knots_refuse_collection_limit, "step_expanded_nurbs_knots");
+deferred_ids_refusal_test!(nurbs_weight_values_refuse_collection_limit, "step_nurbs_weight_values");
+deferred_ids_refusal_test!(nurbs_curve_control_points_refuse_collection_limit, "step_nurbs_curve_control_points");
+deferred_ids_refusal_test!(nurbs_pcurve_control_points_refuse_collection_limit, "step_nurbs_pcurve_control_points");
+deferred_ids_refusal_test!(polyline_points_refuse_collection_limit, "step_polyline_points");
+deferred_ids_refusal_test!(polyline_knots_refuse_collection_limit, "step_polyline_knots");
+deferred_ids_refusal_test!(polyline_pcurve_points_refuse_collection_limit, "step_polyline_pcurve_points");
+deferred_ids_refusal_test!(polyline_pcurve_knots_refuse_collection_limit, "step_polyline_pcurve_knots");
+deferred_ids_refusal_test!(nurbs_surface_control_points_refuse_collection_limit, "step_nurbs_surface_control_points");
+deferred_ids_refusal_test!(nurbs_surface_rows_refuse_collection_limit, "step_nurbs_surface_rows");
+deferred_ids_refusal_test!(nurbs_surface_weight_values_refuse_collection_limit, "step_nurbs_surface_weight_values");
+deferred_ids_refusal_test!(nurbs_surface_weight_rows_refuse_collection_limit, "step_nurbs_surface_weight_rows");
+deferred_ids_refusal_test!(pcurve_nested_geometry_refuses_collection_limit, "step_pcurve_nested_geometry");
+
+fn pcurve_geometry_refusal(collection_limit: u64, depth_limit: u64) -> CodecError {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=UNKNOWN_CURVE();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid curve record");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_recursion_depth = depth_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("source fits policy");
+    super::super::decode_pcurve_geometry(
+        1, &exchange, &BTreeMap::new(), &BTreeMap::new(),
+        &BTreeMap::new(), &BTreeMap::new(), 1.0,
+        &mut Vec::new(), &mut BTreeSet::new(), 0, &ctx,
+    ).expect_err("pcurve geometry exceeds the limit")
+}
+
+#[test]
+fn pcurve_geometry_active_refuses_collection_limit() {
+    assert!(matches!(pcurve_geometry_refusal(0, 128), CodecError::ResourceLimit(refusal)
+        if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == "step_pcurve_geometry_active"));
+}
+
+#[test]
+fn pcurve_source_records_refuse_collection_limit() {
+    assert!(matches!(pcurve_geometry_refusal(1, 128), CodecError::ResourceLimit(refusal)
+        if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == "step_pcurve_source_records"));
+}
+
+#[test]
+fn pcurve_geometry_walk_refuses_depth_limit() {
+    assert!(matches!(pcurve_geometry_refusal(2, 0), CodecError::ResourceLimit(refusal)
+        if refusal.dimension == ResourceDimension::RecursionDepth
+            && refusal.operation == "step_pcurve_geometry_walk"));
+}
 
 #[test]
 fn curve_bounded_pcurve_set_refuses_collection_limit() {

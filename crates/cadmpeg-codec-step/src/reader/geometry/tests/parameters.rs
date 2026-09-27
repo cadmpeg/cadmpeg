@@ -933,6 +933,11 @@ ENDSEC;END-ISO-10303-21;",
     assert!(unit_scale_radians(1, &exchange, &mut active, None).expect("unit scale evaluation").is_none());
     assert!(active.is_empty());
 
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
     let mut losses = Vec::new();
     assert!(decode_pcurve_geometry(
         3,
@@ -945,7 +950,9 @@ ENDSEC;END-ISO-10303-21;",
         &mut losses,
         &mut active,
         0,
+        &ctx,
     )
+    .expect("no resource refusal")
     .is_none());
     assert!(active.is_empty());
     assert!(decode_pcurve_geometry(
@@ -959,7 +966,9 @@ ENDSEC;END-ISO-10303-21;",
         &mut losses,
         &mut active,
         0,
+        &ctx,
     )
+    .expect("no resource refusal")
     .is_none());
     assert!(active.is_empty());
 }
