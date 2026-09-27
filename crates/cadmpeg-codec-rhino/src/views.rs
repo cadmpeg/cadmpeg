@@ -1571,26 +1571,36 @@ fn parse_named_cplanes(
 }
 
 fn retain_unbound_view_record(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     losses: &mut Vec<LossNote>,
     opaque_records: &mut Vec<OpaqueRecord>,
     table_typecode: u32,
     record: &Record,
     binding: UnitBinding,
     kind: &str,
-) {
-    losses.push(located_presentation_loss(
-        record.range.start,
-        format!("VIEW/{kind}"),
-        format!(
+) -> Result<(), CodecError> {
+    crate::wire::reserve_collection(ctx, losses, 1, "Rhino unbound view losses")?;
+    let tag = crate::wire::admitted_format(
+        ctx,
+        format_args!("VIEW/{kind}"),
+        "Rhino unbound view loss tag",
+    )?;
+    let message = crate::wire::admitted_format(
+        ctx,
+        format_args!(
             "{kind} record at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
             record.range.start,
             binding.label()
         ),
-    ));
+        "Rhino unbound view loss message",
+    )?;
+    losses.push(located_presentation_loss(record.range.start, tag, message));
+    crate::wire::reserve_collection(ctx, opaque_records, 1, "Rhino opaque view records")?;
     opaque_records.push(OpaqueRecord {
         table_typecode,
         record: record.clone(),
     });
+    Ok(())
 }
 
 /// Result of installing saved and active view records.
@@ -1613,13 +1623,14 @@ pub(crate) fn install(
             if record.typecode == NAMED_CPLANES {
                 let Some(scale) = binding.neutral_scale() else {
                     retain_unbound_view_record(
+                        ctx,
                         &mut losses,
                         &mut opaque_records,
                         table.typecode,
                         record,
                         binding,
                         "named construction-plane",
-                    );
+                    )?;
                     continue;
                 };
                 match parse_named_cplanes(ctx, scan.data, record, scan.archive, scale) {
@@ -1637,6 +1648,12 @@ pub(crate) fn install(
                         return Err(CodecError::ResourceLimit(limit));
                     }
                     Err(error) => {
+                        crate::wire::reserve_collection(
+                            ctx,
+                            &mut losses,
+                            1,
+                            "Rhino view setting losses",
+                        )?;
                         losses.push(located_presentation_loss(
                             record.range.start,
                             "VIEW/NAMED_CPLANES",
@@ -1645,6 +1662,12 @@ pub(crate) fn install(
                                 record.range.start
                             ),
                         ));
+                        crate::wire::reserve_collection(
+                            ctx,
+                            &mut opaque_records,
+                            1,
+                            "Rhino opaque view records",
+                        )?;
                         opaque_records.push(OpaqueRecord {
                             table_typecode: table.typecode,
                             record: record.clone(),
@@ -1655,13 +1678,14 @@ pub(crate) fn install(
             if record.typecode == NAMED_VIEWS {
                 let Some(scale) = binding.neutral_scale() else {
                     retain_unbound_view_record(
+                        ctx,
                         &mut losses,
                         &mut opaque_records,
                         table.typecode,
                         record,
                         binding,
                         "named-view list",
-                    );
+                    )?;
                     continue;
                 };
                 let (parsed, mut parse_losses) = parse_list(
@@ -1673,6 +1697,12 @@ pub(crate) fn install(
                     ViewListKind::Named,
                 )?;
                 if !parse_losses.is_empty() {
+                    crate::wire::reserve_collection(
+                        ctx,
+                        &mut opaque_records,
+                        1,
+                        "Rhino opaque view records",
+                    )?;
                     opaque_records.push(OpaqueRecord {
                         table_typecode: table.typecode,
                         record: record.clone(),
@@ -1681,18 +1711,25 @@ pub(crate) fn install(
                 reserve_admitted_vec(ctx, &mut views, parsed.len(), "Rhino document views")
                     .map_err(codec_error)?;
                 views.extend(parsed);
+                crate::wire::reserve_collection(
+                    ctx,
+                    &mut losses,
+                    parse_losses.len(),
+                    "Rhino view setting losses",
+                )?;
                 losses.append(&mut parse_losses);
             }
             if record.typecode == ACTIVE_VIEWS {
                 let Some(scale) = binding.neutral_scale() else {
                     retain_unbound_view_record(
+                        ctx,
                         &mut losses,
                         &mut opaque_records,
                         table.typecode,
                         record,
                         binding,
                         "active-view list",
-                    );
+                    )?;
                     continue;
                 };
                 let (parsed, mut parse_losses) = parse_list(
@@ -1704,6 +1741,12 @@ pub(crate) fn install(
                     ViewListKind::Active,
                 )?;
                 if !parse_losses.is_empty() {
+                    crate::wire::reserve_collection(
+                        ctx,
+                        &mut opaque_records,
+                        1,
+                        "Rhino opaque view records",
+                    )?;
                     opaque_records.push(OpaqueRecord {
                         table_typecode: table.typecode,
                         record: record.clone(),
@@ -1712,6 +1755,12 @@ pub(crate) fn install(
                 reserve_admitted_vec(ctx, &mut views, parsed.len(), "Rhino document views")
                     .map_err(codec_error)?;
                 views.extend(parsed);
+                crate::wire::reserve_collection(
+                    ctx,
+                    &mut losses,
+                    parse_losses.len(),
+                    "Rhino view setting losses",
+                )?;
                 losses.append(&mut parse_losses);
             }
         }
@@ -1923,6 +1972,203 @@ mod tests {
         )
         .expect("service profile admits the construction plane ID");
         assert_eq!(values.len(), 1);
+    }
+
+    #[test]
+    fn unbound_view_loss_refuses_collection_limit() {
+        let record = Record::short(super::NAMED_VIEWS, 0..0, 0);
+        let binding = crate::settings::UnitBinding::from_units(None);
+        let error = with_collection_limit(&[], 0, |ctx| {
+            super::retain_unbound_view_record(
+                ctx,
+                &mut Vec::new(),
+                &mut Vec::new(),
+                super::SETTINGS,
+                &record,
+                binding,
+                "named-view list",
+            )
+            .expect_err("one unbound view loss exceeds the collection limit")
+        });
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino unbound view losses")
+        );
+    }
+
+    #[test]
+    fn unbound_view_loss_tag_refuses_retained_limit() {
+        let record = Record::short(super::NAMED_VIEWS, 0..0, 0);
+        let binding = crate::settings::UnitBinding::from_units(None);
+        let error = with_retained_limit(&[], 0, |ctx| {
+            super::retain_unbound_view_record(
+                ctx,
+                &mut Vec::new(),
+                &mut Vec::new(),
+                super::SETTINGS,
+                &record,
+                binding,
+                "named-view list",
+            )
+            .expect_err("unbound view loss tag exceeds the retained limit")
+        });
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino unbound view loss tag")
+        );
+    }
+
+    #[test]
+    fn unbound_view_loss_message_refuses_retained_limit() {
+        let record = Record::short(super::NAMED_VIEWS, 0..0, 0);
+        let binding = crate::settings::UnitBinding::from_units(None);
+        let error = with_retained_limit(&[], "VIEW/named-view list".len() as u64, |ctx| {
+            super::retain_unbound_view_record(
+                ctx,
+                &mut Vec::new(),
+                &mut Vec::new(),
+                super::SETTINGS,
+                &record,
+                binding,
+                "named-view list",
+            )
+            .expect_err("unbound view loss message exceeds the retained limit")
+        });
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino unbound view loss message")
+        );
+    }
+
+    #[test]
+    fn unbound_view_opaque_record_refuses_collection_limit() {
+        let record = Record::short(super::NAMED_VIEWS, 0..0, 0);
+        let binding = crate::settings::UnitBinding::from_units(None);
+        let error = with_collection_limit(&[], 1, |ctx| {
+            super::retain_unbound_view_record(
+                ctx,
+                &mut Vec::new(),
+                &mut Vec::new(),
+                super::SETTINGS,
+                &record,
+                binding,
+                "named-view list",
+            )
+            .expect_err("opaque view record exceeds the collection limit")
+        });
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino opaque view records")
+        );
+        let mut losses = Vec::new();
+        let mut opaque = Vec::new();
+        super::retain_unbound_view_record(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut losses,
+            &mut opaque,
+            super::SETTINGS,
+            &record,
+            binding,
+            "named-view list",
+        )
+        .expect("service profile admits both records");
+        assert_eq!(losses.len(), 1);
+        assert_eq!(opaque.len(), 1);
+    }
+
+    fn malformed_view_scan(typecode: u32) -> crate::container::Scan<'static> {
+        let archive = ArchiveVersion::V5;
+        let table = crate::test_support::test_dump::table(
+            archive,
+            super::SETTINGS,
+            &[crc_chunk(archive, typecode, &[0])],
+        );
+        let bytes = crate::test_support::test_dump::minimal_document(
+            "50",
+            &[
+                crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
+                table,
+                crate::test_support::test_dump::table(archive, 0x1000_0013, &[]),
+            ],
+        );
+        let mut scan = crate::container::scan_owned(bytes).expect("framed view fixture");
+        crate::test_support::test_dump::set_test_units(&mut scan, 1.0);
+        scan
+    }
+
+    #[test]
+    fn malformed_named_view_list_install_refuses_loss_collection_limit() {
+        let scan = malformed_view_scan(super::NAMED_VIEWS);
+        let error = with_collection_limit(scan.data, 1, |ctx| {
+            super::install(ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty())
+                .expect_err("installed view loss exceeds one collection item")
+        });
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino view setting losses")
+        );
+        let installed = super::install(
+            &cadmpeg_test_support::service_decode_context(),
+            &scan,
+            &mut cadmpeg_ir::document::CadIr::empty(),
+        )
+        .expect("service profile admits the retained list");
+        assert_eq!(installed.losses.len(), 1);
+        assert_eq!(installed.opaque_records.len(), 1);
+    }
+
+    #[test]
+    fn malformed_named_cplane_install_refuses_loss_collection_limit() {
+        let scan = malformed_view_scan(super::NAMED_CPLANES);
+        let error = with_collection_limit(scan.data, 0, |ctx| {
+            super::install(ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty())
+                .expect_err("construction-plane loss exceeds the collection limit")
+        });
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino view setting losses")
+        );
+        let installed = super::install(
+            &cadmpeg_test_support::service_decode_context(),
+            &scan,
+            &mut cadmpeg_ir::document::CadIr::empty(),
+        )
+        .expect("service profile retains the malformed construction plane");
+        assert_eq!(installed.losses.len(), 1);
+        assert_eq!(installed.opaque_records.len(), 1);
+    }
+
+    #[test]
+    fn malformed_named_view_install_refuses_opaque_collection_limit() {
+        let scan = malformed_view_scan(super::NAMED_VIEWS);
+        let error = with_collection_limit(scan.data, 0, |ctx| {
+            super::install(ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty())
+                .expect_err("opaque named-view list exceeds the collection limit")
+        });
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino opaque view records")
+        );
+    }
+
+    #[test]
+    fn malformed_active_view_install_refuses_opaque_collection_limit() {
+        let scan = malformed_view_scan(super::ACTIVE_VIEWS);
+        let error = with_collection_limit(scan.data, 0, |ctx| {
+            super::install(ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty())
+                .expect_err("opaque active-view list exceeds the collection limit")
+        });
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino opaque view records")
+        );
+        let installed = super::install(
+            &cadmpeg_test_support::service_decode_context(),
+            &scan,
+            &mut cadmpeg_ir::document::CadIr::empty(),
+        )
+        .expect("service profile retains the malformed active-view list");
+        assert_eq!(installed.opaque_records.len(), 1);
     }
 
     fn one_end_marker_view(archive: ArchiveVersion) -> (Vec<u8>, Record) {
