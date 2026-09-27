@@ -392,21 +392,39 @@ impl StandardTopology {
     /// Native identities are global within the parsed topology. Equal values
     /// collapse face-local corners even when adjacent faces use different trim
     /// handles. The pair order is the physical edge-row direction.
-    #[must_use]
-    fn with_native_edge_vertices(&self, edge_ports: &[[u32; 2]]) -> Option<Self> {
+    fn with_native_edge_vertices(
+        &self,
+        ctx: &DecodeContext<'_>,
+        edge_ports: &[[u32; 2]],
+    ) -> Result<Option<Self>, CodecError> {
         if edge_ports.len() != self.edge_rows.len() {
-            return None;
+            return Ok(None);
         }
         let mut identities = HashMap::new();
-        let mut edge_vertices = Vec::with_capacity(edge_ports.len());
+        let mut edge_vertices = Vec::new();
         for ports in edge_ports {
-            let pair = ports.map(|identity| {
-                let next = identities.len();
-                *identities.entry(identity).or_insert(next)
-            });
-            edge_vertices.push(pair);
+            let mut pair = [0; 2];
+            for (port, identity) in ports.iter().copied().enumerate() {
+                if !identities.contains_key(&identity) {
+                    let next = identities.len();
+                    crate::resource::insert_map(
+                        ctx,
+                        &mut identities,
+                        identity,
+                        next,
+                        "catia_standard_native_vertex_identities",
+                    )?;
+                }
+                pair[port] = identities[&identity];
+            }
+            crate::resource::push(
+                ctx,
+                &mut edge_vertices,
+                pair,
+                "catia_standard_native_edge_vertices",
+            )?;
         }
-        let mut topology = self.clone();
+        let mut topology = self.clone_charged(ctx)?;
         for face in &mut topology.faces {
             for boundary in &mut face.boundaries {
                 for coedge in &mut boundary.coedges {
@@ -420,7 +438,7 @@ impl StandardTopology {
             }
         }
         topology.logical_vertex_count = identities.len();
-        Some(topology)
+        Ok(Some(topology))
     }
 }
 
@@ -1207,7 +1225,10 @@ pub(super) fn parse_fbb_with_native_vertices(
     bytes: &[u8],
     edge_ports: &[[u32; 2]],
 ) -> Result<Option<StandardTopology>, CodecError> {
-    Ok(parse_fbb(ctx, bytes)?.and_then(|topology| topology.with_native_edge_vertices(edge_ports)))
+    let Some(topology) = parse_fbb(ctx, bytes)? else {
+        return Ok(None);
+    };
+    topology.with_native_edge_vertices(ctx, edge_ports)
 }
 
 pub(super) fn reconstruct(
