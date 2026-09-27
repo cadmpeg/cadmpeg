@@ -972,10 +972,13 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
 fn edge_parameter_range(
     carrier: &CurveCarrier,
     endpoints: Option<[cadmpeg_ir::math::Point3; 2]>,
-) -> Option<([f64; 2], bool)> {
+) -> Result<Option<([f64; 2], bool)>, cadmpeg_core::CodecError> {
     const TOLERANCE_MM: f64 = 1.0e-7;
 
-    let range = carrier.parameter_range?.get();
+    let Some(range) = carrier.parameter_range else {
+        return Ok(None);
+    };
+    let range = range.get();
     let range = match &carrier.geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_)) => {
             range.map(|parameter| parameter * LEN_TO_MM)
@@ -988,12 +991,17 @@ fn edge_parameter_range(
         [range[1], range[0]]
     };
     let Some(endpoints) = endpoints else {
-        return Some((range, false));
+        return Ok(Some((range, false)));
     };
     let geometry = &carrier.geometry;
-    let evaluated = range.map(|parameter| cadmpeg_ir::eval::curve_point(geometry, parameter).ok());
-    let [Some(first), Some(second)] = evaluated else {
-        return None;
+    let first = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::curve_point(
+        geometry, range[0],
+    ))?;
+    let second = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::curve_point(
+        geometry, range[1],
+    ))?;
+    let (Some(first), Some(second)) = (first, second) else {
+        return Ok(None);
     };
     let distance = |left: cadmpeg_ir::math::Point3, right: cadmpeg_ir::math::Point3| {
         (left.x - right.x)
@@ -1002,13 +1010,13 @@ fn edge_parameter_range(
     };
     if distance(first.get(), endpoints[0]).max(distance(second.get(), endpoints[1])) <= TOLERANCE_MM
     {
-        Some((range, false))
+        Ok(Some((range, false)))
     } else if distance(first.get(), endpoints[1]).max(distance(second.get(), endpoints[0]))
         <= TOLERANCE_MM
     {
-        Some((range, true))
+        Ok(Some((range, true)))
     } else {
-        None
+        Ok(None)
     }
 }
 
@@ -1701,9 +1709,13 @@ fn decode_graph(
                 edge_endpoint_positions.insert(e, [start, end]);
             }
         }
-        let parameter_range = carriers.curve(curve_attr).and_then(|carrier| {
-            edge_parameter_range(carrier.carrier(), edge_endpoint_positions.get(&e).copied())
-        });
+        let parameter_range = carriers
+            .curve(curve_attr)
+            .map(|carrier| {
+                edge_parameter_range(carrier.carrier(), edge_endpoint_positions.get(&e).copied())
+            })
+            .transpose()?
+            .flatten();
         if parameter_range.is_some_and(|(_, reversed)| reversed) {
             std::mem::swap(&mut start_id, &mut end_id);
             if let Some(endpoints) = edge_endpoint_positions.get_mut(&e) {
@@ -6298,7 +6310,7 @@ mod tests {
             cadmpeg_ir::math::Point3::new(0.0, 31.5, 0.0),
         ];
         assert_eq!(
-            super::edge_parameter_range(&carrier, Some(endpoints)),
+            super::edge_parameter_range(&carrier, Some(endpoints)).unwrap(),
             Some(([-14.0, 16.5], true))
         );
     }
