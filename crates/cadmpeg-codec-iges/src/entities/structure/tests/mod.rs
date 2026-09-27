@@ -276,6 +276,38 @@ fn array_and_solid_instance_indexes_refuse_unadmitted_nodes() {
 }
 
 #[test]
+fn flow_associativity_refuses_pointer_lanes_and_index_node() {
+    let bytes = flow_associativity_forms_file();
+    for operation in [
+        "iges flow connection pointers",
+        "iges flow join pointers",
+        "iges flow display pointers",
+        "iges flow continuation pointers",
+        "iges flow index nodes",
+    ] {
+        let mut cap = 0_u64;
+        let mut reached = false;
+        for _ in 0..4096 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            match IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+                Err(cadmpeg_ir::codec::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    if limit.operation == operation {
+                        reached = true;
+                        break;
+                    }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                _ => panic!("expected flow collection refusal at {operation}"),
+            }
+        }
+        assert!(reached, "flow collection refusal was not reached: {operation}");
+    }
+    assert!(IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).is_ok());
+}
+
+#[test]
 fn decode_preserves_solid_definition_and_instance_identities() {
     let result = IgesCodec
         .decode(
