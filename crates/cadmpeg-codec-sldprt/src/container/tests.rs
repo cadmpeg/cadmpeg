@@ -244,6 +244,19 @@ fn compound_detection_distinguishes_solidworks_and_generic_signals() {
 }
 
 #[test]
+fn compound_scan_refuses_collection_limit() {
+    let source = synthetic_compound_with_storage("ISolidWorksInformation");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, root) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let Err(CodecError::ResourceLimit(limit)) = container::scan(&ctx, root) else {
+        panic!("expected a collection-item refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+}
+
+#[test]
 fn scan_classifies_blocks_cells_and_directory() {
     let f = synthetic_sldprt();
     let scan = container::scan_bytes(&f);

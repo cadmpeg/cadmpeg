@@ -291,6 +291,34 @@ impl<'a> DecodeContext<'a> {
         self.budget.charge_collection_items(count, operation)
     }
 
+    /// Charges items and reserves space before a decoded vector grows.
+    pub fn reserve_collection_vec<T>(
+        &self,
+        values: &mut Vec<T>,
+        additional: usize,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.charge_collection_items(additional as u64, operation)?;
+        values.try_reserve(additional).map_err(|_| {
+            self.budget
+                .collection_allocation_failed(additional as u64, operation)
+        })
+    }
+
+    /// Charges retained bytes and reserves space before a decoded string grows.
+    pub fn reserve_retained_string(
+        &self,
+        value: &mut String,
+        additional: usize,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.charge_retained(additional as u64, operation)?;
+        value.try_reserve(additional).map_err(|_| {
+            self.budget
+                .retained_allocation_failed(additional as u64, operation)
+        })
+    }
+
     /// Enters one recursive nesting level until the returned guard is dropped.
     pub fn enter_nested(&self, operation: &'static str) -> Result<DepthGuard<'_>, CodecError> {
         self.budget.enter_nested(operation)
