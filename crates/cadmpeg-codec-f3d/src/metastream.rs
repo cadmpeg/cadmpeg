@@ -41,11 +41,20 @@ pub(crate) struct PrimaryRecordFrame {
 /// Resolve the primary index to nonempty, strictly ordered sibling-BulkStream
 /// extents.
 pub(crate) fn primary_record_frames(
+    ctx: &DecodeContext<'_>,
     meta: &MetaStream,
     bulk_len: usize,
 ) -> Result<Vec<PrimaryRecordFrame>, CodecError> {
-    let mut frames = Vec::with_capacity(meta.records.len());
-    let mut primary_by_entity = std::collections::HashMap::with_capacity(meta.records.len());
+    let primary_count = u64::try_from(meta.records.len())
+        .map_err(|_| ctx.refuse_codec_limit("frame F3D primary records", 0, u64::MAX))?;
+    ctx.charge_collection_items(primary_count, "frame F3D primary records")?;
+    let mut frames = Vec::new();
+    frames.try_reserve(meta.records.len())
+        .map_err(|_| ctx.refuse_codec_limit("frame F3D primary records", 0, primary_count))?;
+    ctx.charge_collection_items(primary_count, "index F3D primary entities")?;
+    let mut primary_by_entity = std::collections::HashMap::new();
+    primary_by_entity.try_reserve(meta.records.len())
+        .map_err(|_| ctx.refuse_codec_limit("index F3D primary entities", 0, primary_count))?;
     for (ordinal, record) in meta.records.iter().enumerate() {
         if primary_by_entity
             .insert(record.entity_id, ordinal)
@@ -80,7 +89,12 @@ pub(crate) fn primary_record_frames(
     }
 
     let mut previous_secondary_offset = None;
+    let secondary_count = u64::try_from(meta.secondary_records.len())
+        .map_err(|_| ctx.refuse_codec_limit("index F3D secondary entities", 0, u64::MAX))?;
+    ctx.charge_collection_items(secondary_count, "index F3D secondary entities")?;
     let mut secondary_entities = std::collections::HashSet::new();
+    secondary_entities.try_reserve(meta.secondary_records.len())
+        .map_err(|_| ctx.refuse_codec_limit("index F3D secondary entities", 0, secondary_count))?;
     for record in &meta.secondary_records {
         let secondary = usize::try_from(record.bulk_offset).map_err(|_| {
             CodecError::Malformed("F3D secondary record offset exceeds usize".into())
@@ -591,9 +605,70 @@ pub(crate) fn parse(
 
 #[cfg(test)]
 mod tests {
-    use super::{primary_record_frames, MetaStream, RecordIndexEntry};
+    use super::{MetaStream, RecordIndexEntry};
     use crate::test_support::streams_test::{design_metastream, design_metastream_with_records};
     use crate::test_support::{lp_ascii, lp_utf16};
+
+    fn primary_record_frames(
+        meta: &MetaStream,
+        bulk_len: usize,
+    ) -> Result<Vec<super::PrimaryRecordFrame>, cadmpeg_core::CodecError> {
+        crate::test_support::with_decode_context(|ctx| {
+            super::primary_record_frames(ctx, meta, bulk_len)
+        })
+    }
+
+    fn limited_primary_frames(
+        meta: &MetaStream,
+        collection_items: u64,
+    ) -> cadmpeg_core::CodecError {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = collection_items;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test decode context");
+        super::primary_record_frames(&ctx, meta, 14)
+            .expect_err("primary frame limit must refuse")
+    }
+
+    fn one_primary_frame(with_secondary: bool) -> MetaStream {
+        MetaStream {
+            types: Vec::new(),
+            records: vec![RecordIndexEntry {
+                entity_id: 7,
+                bulk_offset: 0,
+            }],
+            secondary_records: if with_secondary {
+                vec![RecordIndexEntry {
+                    entity_id: 7,
+                    bulk_offset: 7,
+                }]
+            } else {
+                Vec::new()
+            },
+        }
+    }
+
+    #[test]
+    fn metastream_primary_frames_refuse_collection_limit() {
+        let error = limited_primary_frames(&one_primary_frame(false), 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "frame F3D primary records"));
+    }
+
+    #[test]
+    fn metastream_primary_entity_index_refuses_collection_limit() {
+        let error = limited_primary_frames(&one_primary_frame(false), 1);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "index F3D primary entities"));
+    }
+
+    #[test]
+    fn metastream_secondary_entity_index_refuses_collection_limit() {
+        let error = limited_primary_frames(&one_primary_frame(true), 2);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "index F3D secondary entities"));
+    }
 
     fn parse(bytes: &[u8], stream: &str) -> Result<MetaStream, cadmpeg_core::CodecError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();

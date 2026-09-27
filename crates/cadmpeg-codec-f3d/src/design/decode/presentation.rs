@@ -71,11 +71,12 @@ pub(crate) enum BodyPresentationOwner {
 /// browser-node type. The record body is ten zero bytes, an LP-UTF16 GUID, the
 /// hidden flag, `01 01`, and the owning Design entity suffix.
 pub(super) fn browser_node_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BrowserNodeRecord>, CodecError> {
     let mut out = Vec::new();
-    for frame in typed_primary_frames(bytes, meta, BROWSER_NODE_TYPE_GUID, "browser-node")? {
+    for frame in typed_primary_frames(ctx, bytes, meta, BROWSER_NODE_TYPE_GUID, "browser-node")? {
         if frame.design_type.version != BROWSER_NODE_TYPE_VERSION {
             continue;
         }
@@ -141,14 +142,16 @@ pub(super) fn browser_node_records(
 
 /// Decode every typed body presentation in one Design stream.
 pub(crate) fn body_presentations(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyPresentation>, CodecError> {
-    let nodes = browser_node_records(bytes, meta)?;
+    let nodes = browser_node_records(ctx, bytes, meta)?;
     let entity_types = entity_types(meta)?;
 
     let mut out = Vec::new();
     for frame in typed_primary_frames(
+        ctx,
         bytes,
         meta,
         BODY_PRESENTATION_TYPE_GUID,
@@ -604,7 +607,7 @@ fn preceding_lp_utf16(bytes: &[u8], start: usize, marker_at: usize) -> Option<(u
 #[cfg(test)]
 mod tests {
     use super::{
-        bare_presentation_material, body_presentations, browser_node_records, BodyPresentationOwner,
+        bare_presentation_material, BodyPresentationOwner,
     };
     use crate::bytes::lp_utf16_bytes;
     use crate::design::presentation::{
@@ -618,6 +621,20 @@ mod tests {
     use crate::design::test_support::{design_type, primary_record};
     use crate::records::entity_header::{DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION};
     use crate::test_support::{lp_ascii, lp_utf16, push_reference_u64};
+
+    fn browser_node_records(
+        bytes: &[u8],
+        meta: &crate::metastream::MetaStream,
+    ) -> Result<Vec<super::BrowserNodeRecord>, cadmpeg_core::CodecError> {
+        crate::test_support::with_decode_context(|ctx| super::browser_node_records(ctx, bytes, meta))
+    }
+
+    fn body_presentations(
+        bytes: &[u8],
+        meta: &crate::metastream::MetaStream,
+    ) -> Result<Vec<super::BodyPresentation>, cadmpeg_core::CodecError> {
+        crate::test_support::with_decode_context(|ctx| super::body_presentations(ctx, bytes, meta))
+    }
 
     #[test]
     fn typed_presentation_joins_its_exact_browser_node() {

@@ -5,6 +5,36 @@ use cadmpeg_ir::math::Point2;
 
 const EPS_TEXT_ROTATION: f64 = 1.0e-12;
 
+fn decode_sketch_points_from_stream(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    stream: &str,
+) -> Result<Vec<crate::records::sketch_geometry::SketchPoint>, cadmpeg_core::CodecError> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::sketch::decode_sketch_points_from_stream(ctx, bytes, meta, stream)
+    })
+}
+
+fn decode_sketch_texts_from_stream(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    stream: &str,
+) -> Result<Vec<crate::records::sketch_geometry::SketchText>, cadmpeg_core::CodecError> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::sketch::decode_sketch_texts_from_stream(ctx, bytes, meta, stream)
+    })
+}
+
+fn decode_sketch_curve_identities_from_stream(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    stream: &str,
+) -> Result<Vec<crate::records::sketch_geometry::SketchCurveIdentity>, cadmpeg_core::CodecError> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(ctx, bytes, meta, stream)
+    })
+}
+
 #[test]
 fn native_sketch_text_refuses_zero_height() {
     let text = decode_sketch_text(&sketch_text_record(
@@ -303,7 +333,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
         }],
     };
 
-    let points = crate::design::decode::sketch::decode_sketch_points_from_stream(
+    let points = decode_sketch_points_from_stream(
         &bytes,
         &meta,
         "Design/BulkStream.dat",
@@ -317,7 +347,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
         .try_into()
         .expect("type GUID");
     assert!(
-        crate::design::decode::sketch::decode_sketch_points_from_stream(
+        decode_sketch_points_from_stream(
             &bytes,
             &meta,
             "Design/BulkStream.dat",
@@ -333,7 +363,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
     let mut malformed_point = bytes.clone();
     malformed_point[live_point_at + 70] = 0;
     assert!(matches!(
-        crate::design::decode::sketch::decode_sketch_points_from_stream(
+        decode_sketch_points_from_stream(
             &malformed_point,
             &meta,
             "Design/BulkStream.dat",
@@ -341,7 +371,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 
-    let curves = crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
+    let curves = decode_sketch_curve_identities_from_stream(
         &bytes,
         &meta,
         "Design/BulkStream.dat",
@@ -354,7 +384,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
         Some(SketchCurveGeometry::Line { start, .. }) if start.get() == Point3::new(50.0, 0.0, 0.0)
     ));
 
-    let texts = crate::design::decode::sketch::decode_sketch_texts_from_stream(
+    let texts = decode_sketch_texts_from_stream(
         &bytes,
         &meta,
         "Design/BulkStream.dat",
@@ -368,7 +398,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
     mismatched_primary[live_point_at + 7..live_point_at + 11]
         .copy_from_slice(&999u32.to_le_bytes());
     assert!(matches!(
-        crate::design::decode::sketch::decode_sketch_points_from_stream(
+        decode_sketch_points_from_stream(
             &mismatched_primary,
             &meta,
             "Design/BulkStream.dat",
@@ -379,7 +409,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
     let mut mismatched_secondary = bytes;
     mismatched_secondary[nested_at + 7..nested_at + 11].copy_from_slice(&999u32.to_le_bytes());
     assert!(matches!(
-        crate::design::decode::sketch::decode_sketch_points_from_stream(
+        decode_sketch_points_from_stream(
             &mismatched_secondary,
             &meta,
             "Design/BulkStream.dat",

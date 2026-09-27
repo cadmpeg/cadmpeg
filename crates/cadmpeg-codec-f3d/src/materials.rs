@@ -866,9 +866,9 @@ pub(crate) fn decode_design_assignments(
         else {
             continue;
         };
-        let body_map = crate::design::decode::body::body_bindings(bytes, &metadata)?;
+        let body_map = crate::design::decode::body::body_bindings(ctx, bytes, &metadata)?;
         for presentation in
-            crate::design::decode::presentation::body_presentations(bytes, &metadata)?
+            crate::design::decode::presentation::body_presentations(ctx, bytes, &metadata)?
         {
             let Some(material) = presentation.material else {
                 continue;
@@ -945,10 +945,10 @@ fn decode_body_appearance_overrides(
         else {
             continue;
         };
-        let body_map = crate::design::decode::body::body_bindings(bytes, &metadata)?;
+        let body_map = crate::design::decode::body::body_bindings(ctx, bytes, &metadata)?;
         let mut appearances = browser_body_appearances(bytes);
         appearances.extend(
-            crate::design::decode::presentation::body_presentations(bytes, &metadata)?
+            crate::design::decode::presentation::body_presentations(ctx, bytes, &metadata)?
                 .into_iter()
                 .filter_map(|presentation| {
                     if presentation.owner
@@ -1039,7 +1039,7 @@ fn decode_face_appearance_assignments(
         else {
             continue;
         };
-        for frame in crate::metastream::primary_record_frames(&metadata, bytes.len())? {
+        for frame in crate::metastream::primary_record_frames(ctx, &metadata, bytes.len())? {
             out.extend(face_appearance_assignments_in_frame(
                 &bytes[frame.start..frame.end],
             ));

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::design::decode::sketch::decode_sketch_visibilities_in_stream;
 use crate::design::decode::sketch::decode_sketch_visibility_member;
 use crate::design::decode::sketch::CURRENT_SKETCH_CONTAINER_VERSION;
 use crate::design::decode::sketch::SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID;
@@ -9,6 +8,15 @@ use crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID;
 use crate::records::entity_header::DESIGN_MODULE_SKETCH;
 
 const ENTITY_SUFFIX: u64 = 201;
+
+fn decode_sketch_visibilities_in_stream(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+) -> Result<Vec<(u64, crate::records::sketch_placement::DesignSketchVisibility)>, cadmpeg_core::CodecError> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::sketch::decode_sketch_visibilities_in_stream(ctx, bytes, meta)
+    })
+}
 
 fn member(stream_ordinal: u32, visible: u8) -> Vec<u8> {
     let mut bytes = Vec::new();

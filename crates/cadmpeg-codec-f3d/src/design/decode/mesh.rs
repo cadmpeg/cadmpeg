@@ -1036,6 +1036,7 @@ fn malformed_mesh_graph(stream: &str, invariant: &str) -> CodecError {
 }
 
 fn parse_mesh_design_records<F>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     source_entry_name: &str,
@@ -1047,7 +1048,7 @@ where
     let stream = ids::native_scope(source_entry_name);
     let records = IndexedRecordOffsets::build(bytes);
     let collection_frames =
-        typed_primary_frames(bytes, meta, MESH_COLLECTION_TYPE_GUID, "mesh-collection")?;
+        typed_primary_frames(ctx, bytes, meta, MESH_COLLECTION_TYPE_GUID, "mesh-collection")?;
     if collection_frames.is_empty() {
         return Ok(Vec::new());
     }
@@ -1062,7 +1063,7 @@ where
         return Ok(Vec::new());
     }
     let mut entry_names = unique_record_map(
-        typed_primary_frames(bytes, meta, MESH_ENTRY_NAME_TYPE_GUID, "mesh-entry-name")?
+        typed_primary_frames(ctx, bytes, meta, MESH_ENTRY_NAME_TYPE_GUID, "mesh-entry-name")?
             .into_iter()
             .map(|frame| parse_mesh_entry_name_record(bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
@@ -1070,7 +1071,7 @@ where
         "mesh-entry-name",
     )?;
     let mut guids = unique_record_map(
-        typed_primary_frames(bytes, meta, MESH_GUID_TYPE_GUID, "mesh-GUID")?
+        typed_primary_frames(ctx, bytes, meta, MESH_GUID_TYPE_GUID, "mesh-GUID")?
             .into_iter()
             .map(|frame| parse_mesh_guid_record(bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
@@ -1078,7 +1079,7 @@ where
         "mesh-GUID",
     )?;
     let mut bodies = unique_record_map(
-        typed_primary_frames(bytes, meta, MESH_BODY_TYPE_GUID, "mesh-body")?
+        typed_primary_frames(ctx, bytes, meta, MESH_BODY_TYPE_GUID, "mesh-body")?
             .into_iter()
             .map(|frame| parse_mesh_body_record(bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
@@ -1091,6 +1092,7 @@ where
         .collect::<HashSet<_>>();
     let mut texture_tables = unique_record_map(
         typed_primary_frames(
+            ctx,
             bytes,
             meta,
             MESH_TEXTURE_TABLE_TYPE_GUID,
@@ -1103,7 +1105,7 @@ where
         "mesh-texture-table",
     )?;
     let mut wrappers = unique_record_map(
-        typed_primary_frames(bytes, meta, MESH_WRAPPER_TYPE_GUID, "mesh-wrapper")?
+        typed_primary_frames(ctx, bytes, meta, MESH_WRAPPER_TYPE_GUID, "mesh-wrapper")?
             .into_iter()
             .map(|frame| parse_mesh_wrapper_record(bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
@@ -1112,6 +1114,7 @@ where
     )?;
     let mut scopes = unique_record_map(
         typed_primary_frames(
+            ctx,
             bytes,
             meta,
             MESH_FEATURE_SCOPE_TYPE_GUID,
@@ -1124,7 +1127,7 @@ where
         "mesh-feature-scope",
     )?;
     let mut states = unique_record_map(
-        typed_primary_frames(bytes, meta, MESH_SCENE_STATE_TYPE_GUID, "mesh-scene-state")?
+        typed_primary_frames(ctx, bytes, meta, MESH_SCENE_STATE_TYPE_GUID, "mesh-scene-state")?
             .into_iter()
             .map(|frame| parse_mesh_scene_state_record(bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
@@ -1132,7 +1135,7 @@ where
         "mesh-scene-state",
     )?;
     let mut scene_nodes = unique_record_map(
-        typed_primary_frames(bytes, meta, SCENE_NODE_TYPE_GUID, "mesh-scene-node")?
+        typed_primary_frames(ctx, bytes, meta, SCENE_NODE_TYPE_GUID, "mesh-scene-node")?
             .into_iter()
             .map(|frame| parse_scene_node_record(bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
@@ -1141,6 +1144,7 @@ where
     )?;
     let scene_auxiliary_frames = typed_frame_map(
         typed_primary_frames(
+            ctx,
             bytes,
             meta,
             SCENE_AUXILIARY_TYPE_GUID,
@@ -1150,6 +1154,7 @@ where
     )?;
     let filename_frames = typed_frame_map(
         typed_primary_frames(
+            ctx,
             bytes,
             meta,
             MESH_TEXTURE_FILENAME_TYPE_GUID,
@@ -1159,6 +1164,7 @@ where
     )?;
     let collection_owners = unique_record_map(
         typed_primary_frames(
+            ctx,
             bytes,
             meta,
             MESH_COLLECTION_OWNER_TYPE_GUID,
@@ -1175,7 +1181,7 @@ where
         "mesh-collection-owner",
     )?;
     let body_owner_frames = typed_frame_map(
-        typed_primary_frames(bytes, meta, MESH_BODY_OWNER_TYPE_GUID, "mesh-body-owner")?,
+        typed_primary_frames(ctx, bytes, meta, MESH_BODY_OWNER_TYPE_GUID, "mesh-body-owner")?,
         "mesh-body-owner",
     )?;
 
@@ -1409,6 +1415,7 @@ fn decode_mesh_design_records(
             ))
         };
         let records = parse_mesh_design_records(
+            ctx,
             scan.entry_bytes(&entry.name)?,
             &meta,
             &entry.name,
@@ -1522,7 +1529,7 @@ pub(crate) fn decode_mesh_bodies(
 #[cfg(test)]
 mod tests {
     use super::{
-        mesh_body_transform, parse_mesh_collection_owner_record, parse_mesh_design_records,
+        mesh_body_transform, parse_mesh_collection_owner_record,
         parse_mesh_scene_state_record, parse_mesh_texture_table_record, parse_mesh_wrapper_record,
         parse_scene_node_record, resolve_mesh_body, MeshBody, COMMON_DATA_MODULE,
         DATA_MODEL_MODULE, FUSION_MODULE, MATRIX_BYTES, MESH_BODY_BASE_TYPE_GUID,
@@ -1545,7 +1552,7 @@ mod tests {
         SCENE_AUXILIARY_BASE_TYPE_GUID, SCENE_AUXILIARY_TYPE_GUID, SCENE_AUXILIARY_TYPE_VERSION,
         SCENE_MODULE, SCENE_NODE_BASE_TYPE_GUID, SCENE_NODE_TYPE_GUID, SCENE_NODE_TYPE_VERSION,
     };
-    use crate::design::decode::meta::{typed_primary_frames, TypedPrimaryFrame};
+    use crate::design::decode::meta::TypedPrimaryFrame;
     use crate::design::test_support::{design_type, primary_record};
     use crate::layout::{
         paramesh_collection_owner_backlink_prefix as collection_owner,
@@ -1561,6 +1568,35 @@ mod tests {
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::units::UnitVector3;
+
+    fn typed_primary_frames<'a>(
+        bytes: &[u8],
+        meta: &'a crate::metastream::MetaStream,
+        type_guid: &str,
+        record_kind: &str,
+    ) -> Result<Vec<TypedPrimaryFrame<'a>>, CodecError> {
+        crate::test_support::with_decode_context(|ctx| {
+            crate::design::decode::meta::typed_primary_frames(
+                ctx, bytes, meta, type_guid, record_kind,
+            )
+        })
+    }
+
+    fn parse_mesh_design_records<F>(
+        bytes: &[u8],
+        meta: &crate::metastream::MetaStream,
+        source_entry_name: &str,
+        asset_for_filename: &mut F,
+    ) -> Result<Vec<crate::records::mesh::DesignMeshFeature>, CodecError>
+    where
+        F: FnMut(&str) -> Result<(String, cadmpeg_ir::assets::AssetId), CodecError>,
+    {
+        crate::test_support::with_decode_context(|ctx| {
+            super::parse_mesh_design_records(
+                ctx, bytes, meta, source_entry_name, asset_for_filename,
+            )
+        })
+    }
 
     #[test]
     fn anisotropic_mesh_normal_preserves_orientation_without_cofactor_overflow() {
