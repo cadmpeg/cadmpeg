@@ -15,7 +15,6 @@ use crate::vecmath::normalize;
 use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
-use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::scalar::{PositiveLength, PositiveReal};
 use std::collections::BTreeSet;
 
@@ -913,8 +912,13 @@ fn round_placed_cylinder_radius(
     row: &crate::surface::SurfaceRow,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Option<f64> {
-    let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id);
-    exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id)).and_then(|surface| {
+    exactly_one(ir.model.surfaces.iter().filter(|surface| {
+        crate::identity::matches_numbered_identity(
+            surface.id.as_str(),
+            "creo:visibgeom:surface#",
+            row.id,
+        )
+    })).and_then(|surface| {
         match source_carriers.surface_geometry(surface) {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                 let radius = cylinder_surface.radius().get();
@@ -1065,8 +1069,13 @@ fn chamfer_cone_equation(
             frame.half_angle().get().get(),
         );
     }
-    let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id);
-    let surface = exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id))?;
+    let surface = exactly_one(ir.model.surfaces.iter().filter(|surface| {
+        crate::identity::matches_numbered_identity(
+            surface.id.as_str(),
+            "creo:visibgeom:surface#",
+            row.id,
+        )
+    }))?;
     let Some(SolvedSurfaceGeometry::Cone(cone_surface)) =
         source_carriers.surface_geometry(surface).solved()
     else {
@@ -1125,12 +1134,17 @@ pub(in super::super) fn chamfer_constant_distance(
         let second_row = rows.next();
         let is_support_plane = match (first_row, second_row) {
             (None, None) => {
-                let model_id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, id);
                 let mut model_surfaces = ir
                     .model
                     .surfaces
                     .iter()
-                    .filter(|surface| surface.id == model_id);
+                    .filter(|surface| {
+                        crate::identity::matches_numbered_identity(
+                            surface.id.as_str(),
+                            "creo:visibgeom:surface#",
+                            *id,
+                        )
+                    });
                 let first = model_surfaces.next();
                 let second = model_surfaces.next();
                 match (first, second) {

@@ -60,7 +60,7 @@ use crate::vecmath::normalize;
 use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
-use cadmpeg_ir::ids::{FaceId, SurfaceId};
+use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::{
@@ -996,8 +996,13 @@ fn reconciled_datum_plane_definition(
         .get(&surface_id)
         .map(|(_, u_axis, _)| Vector3::from(*u_axis))
         .or_else(|| {
-            let model_id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, surface_id);
-            let surface = exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == model_id))?;
+            let surface = exactly_one(ir.model.surfaces.iter().filter(|surface| {
+                crate::identity::matches_numbered_identity(
+                    surface.id.as_str(),
+                    "creo:visibgeom:surface#",
+                    surface_id,
+                )
+            }))?;
             match source_carriers.surface_geometry(surface) {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
                     let u_axis = plane_surface.frame().reference().as_raw();

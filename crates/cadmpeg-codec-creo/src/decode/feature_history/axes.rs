@@ -16,7 +16,6 @@ use cadmpeg_ir::features::{
     RevolveExtent,
 };
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
-use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -104,12 +103,17 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
     for row in rows {
         (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
             .then_some(())?;
-        let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id);
         let surfaces = ir
             .model
             .surfaces
             .iter()
-            .filter(|surface| surface.id == id)
+            .filter(|surface| {
+                crate::identity::matches_numbered_identity(
+                    surface.id.as_str(),
+                    "creo:visibgeom:surface#",
+                    row.id,
+                )
+            })
             .collect::<Vec<_>>();
         let [surface] = surfaces.as_slice() else {
             return None;
