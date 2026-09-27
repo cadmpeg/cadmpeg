@@ -19,6 +19,7 @@ use cadmpeg_ir::scalar::FiniteReal;
 pub(super) mod material_texture;
 pub(super) mod object_uuid;
 mod reference_wire;
+mod registry_borrowed_wires;
 mod state_index_wire;
 use journal_group::OmOperationStateJournalGroup;
 use material_texture::MaterialTextureAsset;
@@ -913,8 +914,8 @@ fn expression_parameter_reference_end(bytes: &[u8], at: usize) -> Option<usize> 
 }
 
 /// Length-framed class definition from an NX OM type registry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "ClassDefinitionWire", into = "ClassDefinitionWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "ClassDefinitionWire")]
 pub(super) struct ClassDefinition {
     /// Globally unique native-record identity.
     id: String,
@@ -1065,8 +1066,8 @@ impl TryFrom<ClassDefinitionWire> for ClassDefinition {
 }
 
 /// Member declaration from an NX OM field registry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "FieldDefinitionWire", into = "FieldDefinitionWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FieldDefinitionWire")]
 pub(super) struct FieldDefinition {
     /// Globally unique declaration identity.
     id: String,
