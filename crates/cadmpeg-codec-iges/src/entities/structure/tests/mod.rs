@@ -5,7 +5,7 @@ use crate::directory::{DirectoryEntry, SourceStatus};
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeMode, DecodePolicy, ResourceDimension};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::flow_join_target_valid;
@@ -194,12 +194,15 @@ fn single_target_cycle_detection_handles_long_file_controlled_chains_iteratively
         .map(|sequence| (sequence, sequence + 1))
         .collect::<BTreeMap<_, _>>();
     let mut visited = std::collections::BTreeSet::new();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
 
     assert!(!crate::entities::structure::single_target_cycle(
         1,
         &targets,
-        &mut visited
-    ));
+        &mut visited,
+        &ctx,
+    ).unwrap());
     assert_eq!(visited.len(), 100_000);
 
     let mut cyclic = targets;
@@ -207,8 +210,69 @@ fn single_target_cycle_detection_handles_long_file_controlled_chains_iteratively
     assert!(crate::entities::structure::single_target_cycle(
         1,
         &cyclic,
-        &mut std::collections::BTreeSet::new()
-    ));
+        &mut std::collections::BTreeSet::new(),
+        &ctx,
+    ).unwrap());
+}
+
+#[test]
+fn single_target_cycle_refuses_path_and_tree_nodes_before_storage() {
+    let targets = BTreeMap::from([(1_u32, 2_u32), (2, 3)]);
+    for operation in [
+        "iges structure active cycle nodes",
+        "iges structure cycle path",
+        "iges structure visited cycle nodes",
+    ] {
+        let mut cap = 0_u64;
+        let mut reached = false;
+        for _ in 0..32 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            match crate::entities::structure::single_target_cycle(1, &targets, &mut std::collections::BTreeSet::new(), &ctx) {
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    if limit.operation == operation {
+                        reached = true;
+                        break;
+                    }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                other => panic!("expected cycle storage refusal at {operation}: {other:?}"),
+            }
+        }
+        assert!(reached, "cycle storage refusal was not reached: {operation}");
+    }
+}
+
+#[test]
+fn array_and_solid_instance_indexes_refuse_unadmitted_nodes() {
+    for (bytes, operation) in [
+        (patterned_instance_file(), "iges array target index nodes"),
+        (patterned_instance_file(), "iges array mask positions"),
+        (solid_instance_file(), "iges solid instance index nodes"),
+    ] {
+        let mut cap = 0_u64;
+        let mut reached = false;
+        for _ in 0..4096 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            match IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+                Err(cadmpeg_ir::codec::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    if limit.operation == operation {
+                        reached = true;
+                        break;
+                    }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                _ => panic!("expected structure collection refusal at {operation}"),
+            }
+        }
+        assert!(reached, "structure collection refusal was not reached: {operation}");
+        assert!(IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).is_ok());
+    }
 }
 
 #[test]

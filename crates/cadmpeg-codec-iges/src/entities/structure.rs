@@ -7,7 +7,7 @@ use super::geometry::{
     planar_polyline_has_self_intersection, plane_coordinates, resolve_transform, ProjectionOutcome,
     TransformResolutionError,
 };
-use crate::decode_resource::{collect_optional_vec, reserve_vec};
+use crate::decode_resource::{collect_optional_vec, reserve_vec, reserve_vec_growth};
 use crate::directory::{DirectoryEntry, Hierarchy, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
 use crate::parameter::{
@@ -189,33 +189,40 @@ fn single_target_cycle(
     sequence: u32,
     targets: &BTreeMap<u32, u32>,
     visited: &mut BTreeSet<u32>,
-) -> bool {
-    if visited.contains(&sequence) {
-        return false;
-    }
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+if visited.contains(&sequence) {
+return Ok(false);
+}
 
-    let mut path = Vec::new();
-    let mut visiting = BTreeSet::new();
-    let mut current = sequence;
-    loop {
-        if visited.contains(&current) {
-            visited.extend(path);
-            return false;
-        }
-        if !visiting.insert(current) {
-            return true;
-        }
-        path.push(current);
+let mut path = Vec::new();
+let mut visiting = BTreeSet::new();
+let mut current = sequence;
+loop {
+ctx.charge_work(1, "iges structure cycle traversal")?;
+if visited.contains(&current) {
+for node in path {
+crate::decode_resource::insert_optional_btree_set(Some(ctx), visited, node, "iges structure visited cycle nodes")?;
+}
+return Ok(false);
+}
+if !crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut visiting, current, "iges structure active cycle nodes")? {
+return Ok(true);
+}
+reserve_vec_growth(ctx, &mut path, 1, "iges structure cycle path")?;
+path.push(current);
         let Some(target) = targets
             .get(&current)
             .copied()
             .filter(|target| targets.contains_key(target))
         else {
-            visited.extend(path);
-            return false;
-        };
-        current = target;
-    }
+for node in path {
+crate::decode_resource::insert_optional_btree_set(Some(ctx), visited, node, "iges structure visited cycle nodes")?;
+}
+return Ok(false);
+};
+current = target;
+}
 }
 
 pub(crate) fn array_base_type(entity_type: i64, form: i64) -> bool {
@@ -365,37 +372,41 @@ fn array_mask_valid(
     flag_index: usize,
     first_position_index: usize,
     total: usize,
-) -> bool {
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
     let Some(count) =
         record.count_with_stride_at(count_index, first_position_index, 1, record.parameter_end())
     else {
-        return false;
+        return Ok(false);
     };
     let Some(flag) = record
         .integer(flag_index)
         .filter(|value| matches!(*value, 0..=1))
     else {
-        return false;
+        return Ok(false);
     };
-    let positions = (0..count)
-        .map(|index| {
-            record
+    let mut positions = BTreeSet::new();
+    for index in 0..count {
+        let Some(position) = record
                 .integer(first_position_index + index)
                 .and_then(|value| usize::try_from(value).ok())
                 .filter(|position| *position >= 1 && *position <= total)
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(positions) = positions else {
-        return false;
-    };
-    let unique = positions.iter().copied().collect::<BTreeSet<_>>().len() == positions.len();
+        else {
+            return Ok(false);
+        };
+        if !crate::decode_resource::insert_optional_btree_set(
+            Some(ctx), &mut positions, position, "iges array mask positions",
+        )? {
+            return Ok(false);
+        }
+    }
     let cardinality_valid = count == 0
         || if flag == 0 {
             count <= total / 2
         } else {
             count >= total.div_ceil(2)
         };
-    unique && cardinality_valid
+    Ok(cardinality_valid)
 }
 
 fn has_association_back_pointer(
@@ -914,28 +925,19 @@ fn property_fields_valid(
                         .and_then(|value| usize::try_from(value).ok())
                         .filter(|count| *count > 0)
                 })
-                .collect::<Option<Vec<_>>>();
-            let Some(counts) = counts else {
+                .try_fold((0_usize, 1_usize), |(sum, product), count| {
+                    let count = count?;
+                    Some((sum.checked_add(count)?, product.checked_mul(count)?))
+                });
+            let Some((independent_values, point_count)) = counts else {
                 return false;
             };
-            let independent_values = counts
-                .iter()
-                .try_fold(0_usize, |total, count| total.checked_add(*count));
-            let point_count = counts
-                .iter()
-                .try_fold(1_usize, |total, count| total.checked_mul(*count));
-            let expected_end = independent_values.zip(point_count).and_then(
-                |(independent_values, point_count)| {
-                    dependent_count
-                        .checked_mul(point_count)
-                        .and_then(|dependent_values| {
-                            5_usize
-                                .checked_add(2 * independent_count)?
-                                .checked_add(independent_values)?
-                                .checked_add(dependent_values)
-                        })
-                },
-            );
+            let expected_end = dependent_count.checked_mul(point_count).and_then(|dependent_values| {
+                5_usize
+                    .checked_add(2 * independent_count)?
+                    .checked_add(independent_values)?
+                    .checked_add(dependent_values)
+            });
             record
                 .integer(2)
                 .is_some_and(|value| matches!(value, 1..=9999))
@@ -1177,10 +1179,16 @@ fn predefined_associativity_valid(
                 .then(|| record.count(2))
                 .flatten();
             let view = existing_pointer(record, 3, entries);
-            let visible = visible_count.and_then(|count| {
-                (0..count)
-                    .map(|offset| existing_pointer(record, 4 + offset, entries))
-                    .collect::<Option<Vec<_>>>()
+            let visible_valid = visible_count.is_some_and(|count| {
+                (0..count).all(|offset| {
+                    existing_pointer(record, 4 + offset, entries)
+                        .and_then(|sequence| records.get(&sequence))
+                        .is_some_and(|owner| {
+                            has_association_back_pointer(
+                                owner, entry.sequence, trailing_pointer_analysis,
+                            )
+                        })
+                })
             });
             visible_count.is_some_and(|count| end == 4 + count)
                 && view.is_some_and(|sequence| {
@@ -1195,38 +1203,24 @@ fn predefined_associativity_valid(
                             )
                         })
                 })
-                && visible.is_some_and(|visible| {
-                    visible.iter().all(|sequence| {
-                        records.get(sequence).is_some_and(|record| {
-                            has_association_back_pointer(
-                                record,
-                                entry.sequence,
-                                trailing_pointer_analysis,
-                            )
-                        })
-                    })
-                })
+                && visible_valid
         }
         9 => {
             let child_count = record.count(2).filter(|count| *count > 0);
-            let members = child_count.and_then(|count| {
-                (3..4 + count)
-                    .map(|index| existing_pointer(record, index, entries))
-                    .collect::<Option<Vec<_>>>()
+            let members_valid = child_count.is_some_and(|count| {
+                (3..4 + count).all(|index| {
+                    existing_pointer(record, index, entries)
+                        .and_then(|sequence| records.get(&sequence))
+                        .is_some_and(|member| {
+                            has_association_back_pointer(
+                                member, entry.sequence, trailing_pointer_analysis,
+                            )
+                        })
+                })
             });
             record.integer(1) == Some(1)
                 && child_count.is_some_and(|count| end == 4 + count)
-                && members.is_some_and(|members| {
-                    members.iter().all(|sequence| {
-                        records.get(sequence).is_some_and(|member| {
-                            has_association_back_pointer(
-                                member,
-                                entry.sequence,
-                                trailing_pointer_analysis,
-                            )
-                        })
-                    })
-                })
+                && members_valid
         }
         2 | 12 => {
             let count = record.count(1).filter(|count| *count > 0);
@@ -1327,19 +1321,21 @@ fn predefined_associativity_valid(
                     .unwrap_or_default();
                 arrow_count != 2 || geometry_count == Some(2)
             });
-            let back_pointer_owners = records
+            let mut back_pointer_owners = records
                 .iter()
                 .filter_map(|(sequence, owner)| {
                     has_association_back_pointer(owner, entry.sequence, trailing_pointer_analysis)
                         .then_some(*sequence)
-                })
-                .collect::<Vec<_>>();
+                });
             record.integer(1) == Some(1)
                 && orientation_valid
                 && angle_valid
                 && geometry_valid
                 && arrow_cardinality_valid
-                && dimension.is_some_and(|dimension| back_pointer_owners == [dimension])
+                && dimension.is_some_and(|dimension| {
+                    back_pointer_owners.next() == Some(dimension)
+                        && back_pointer_owners.next().is_none()
+                })
                 && entry.status.is_physically_dependent()
         }
         _ => false,
@@ -2870,17 +2866,17 @@ pub(super) fn project(
         }
     }
 
-    let array_targets = directory
-        .iter()
-        .filter(|entry| matches!(entry.entity_type, 412 | 414) && entry.form == 0)
-        .filter_map(|entry| {
-            records
-                .get(&entry.sequence)
-                .and_then(|record| record.integer(1))
-                .and_then(|value| u32::try_from(value).ok())
-                .map(|target| (entry.sequence, target))
-        })
-        .collect::<BTreeMap<_, _>>();
+    let mut array_targets = BTreeMap::new();
+    for entry in directory.iter().filter(|entry| matches!(entry.entity_type, 412 | 414) && entry.form == 0) {
+        if let Some(target) = records.get(&entry.sequence)
+            .and_then(|record| record.integer(1))
+            .and_then(|value| u32::try_from(value).ok()) {
+            crate::decode_resource::insert_optional_btree_map(
+                Some(ctx), &mut array_targets, entry.sequence, target,
+                "iges array target index nodes",
+            )?;
+        }
+    }
     let mut visited_arrays = BTreeSet::new();
     for entry in directory
         .iter()
@@ -2896,7 +2892,7 @@ pub(super) fn project(
                     .get(target)
                     .is_some_and(|base| array_base_type(base.entity_type, base.form))
         });
-        let cyclic = single_target_cycle(entry.sequence, &array_targets, &mut visited_arrays);
+        let cyclic = single_target_cycle(entry.sequence, &array_targets, &mut visited_arrays, ctx)?;
         let transform_valid =
             subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))?;
         let fields_valid = if entry.entity_type == 412 {
@@ -2918,7 +2914,10 @@ pub(super) fn project(
             scale_valid
                 && coordinates_valid
                 && (8..=10).all(|index| record.number(index).is_some())
-                && dimensions.is_some_and(|total| array_mask_valid(record, 11, 12, 13, total))
+                && match dimensions {
+                    Some(total) => array_mask_valid(record, 11, 12, 13, total, ctx)?,
+                    None => false,
+                }
         } else {
             let locations = record
                 .integer(2)
@@ -2929,7 +2928,10 @@ pub(super) fn project(
                     .number(6)
                     .is_some_and(|value| value.is_finite() && value > 0.0)
                 && (7..=8).all(|index| record.number(index).is_some())
-                && locations.is_some_and(|total| array_mask_valid(record, 9, 10, 11, total))
+                && match locations {
+                    Some(total) => array_mask_valid(record, 9, 10, 11, total, ctx)?,
+                    None => false,
+                }
         };
         if target_valid && !cyclic && transform_valid && fields_valid {
             crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges structure decoded sequences")?;
@@ -3021,7 +3023,10 @@ pub(super) fn project(
             (sequence % 2 == 1).then_some(sequence)
         });
         if let Some(target) = target {
-            solid_instances.insert(entry.sequence, target);
+            crate::decode_resource::insert_optional_btree_map(
+                Some(ctx), &mut solid_instances, entry.sequence, target,
+                "iges solid instance index nodes",
+            )?;
         } else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "solid-instance target pointer is invalid"))?;
         }
@@ -3042,7 +3047,7 @@ pub(super) fn project(
         });
         let transform_valid =
             subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))?;
-        let cyclic = single_target_cycle(*sequence, &solid_instances, &mut visited_instances);
+        let cyclic = single_target_cycle(*sequence, &solid_instances, &mut visited_instances, ctx)?;
         if target_valid && transform_valid && !cyclic {
             crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, *sequence, "iges structure decoded sequences")?;
         } else {
