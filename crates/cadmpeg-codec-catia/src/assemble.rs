@@ -65,15 +65,15 @@ pub(crate) fn annotate(
 pub(crate) fn neutral_model_is_admissible(
     ir: &mut CadIr,
     pending_unknowns: &[UnknownRecord],
-) -> bool {
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     ir.model.finalize();
-    cadmpeg_ir::admit_with_additional_native_identities(
+    Ok(cadmpeg_ir::admit_with_additional_native_identities(
         ir,
         pending_unknowns.iter().map(|record| record.id().as_str()),
         cadmpeg_ir::CATIA_ADMISSION_CHECKS,
         Vec::new(),
-    )
-    .is_ok()
+    )?
+    .is_ok())
 }
 
 /// Identities of the curve and surface carriers the transfer left unresolved.
@@ -991,23 +991,28 @@ mod route_tests {
     #[test]
     fn neutral_model_admissibility_rejects_invalid_topology() {
         let mut valid = CadIr::empty();
-        assert!(neutral_model_is_admissible(&mut valid, &[]));
+        assert!(
+            neutral_model_is_admissible(&mut valid, &[]).expect("resource allocation did not fail")
+        );
 
         let mut invalid =
             cadmpeg_test_support::admissibility::rejected_missing_region("catia:test")
                 .expect("fixture identities are valid");
-        assert!(!neutral_model_is_admissible(&mut invalid, &[]));
+        assert!(!neutral_model_is_admissible(&mut invalid, &[])
+            .expect("resource allocation did not fail"));
     }
 
     /// Phase 5 freeze: shared builders must match the CATIA admission gate.
     #[test]
     fn phase5_freeze_shared_admissibility_fixtures() {
         let mut accepted = cadmpeg_test_support::admissibility::accepted_empty();
-        assert!(neutral_model_is_admissible(&mut accepted, &[]));
+        assert!(neutral_model_is_admissible(&mut accepted, &[])
+            .expect("resource allocation did not fail"));
         let mut rejected =
             cadmpeg_test_support::admissibility::rejected_missing_region("catia:test")
                 .expect("fixture identities are valid");
-        assert!(!neutral_model_is_admissible(&mut rejected, &[]));
+        assert!(!neutral_model_is_admissible(&mut rejected, &[])
+            .expect("resource allocation did not fail"));
     }
 
     /// Decimal object-id keys reach the gate in native traversal order, in which
@@ -1033,13 +1038,14 @@ mod route_tests {
             &ir,
             std::iter::empty(),
             Vec::new(),
-        ).expect("resource allocation did not fail");
+        )
+        .expect("resource allocation did not fail");
         assert!(unsorted
             .findings
             .iter()
             .any(|finding| finding.check == cadmpeg_ir::report::check::Check::ArenaOrder));
 
-        neutral_model_is_admissible(&mut ir, &[]);
+        neutral_model_is_admissible(&mut ir, &[]).expect("resource allocation did not fail");
 
         assert_eq!(
             ir.model
@@ -1053,7 +1059,8 @@ mod route_tests {
             &ir,
             std::iter::empty(),
             Vec::new(),
-        ).expect("resource allocation did not fail");
+        )
+        .expect("resource allocation did not fail");
         assert!(!sorted
             .findings
             .iter()
@@ -1095,7 +1102,8 @@ mod route_tests {
             Vec::new(),
         )];
 
-        assert!(neutral_model_is_admissible(&mut ir, &unknowns));
+        assert!(neutral_model_is_admissible(&mut ir, &unknowns)
+            .expect("resource allocation did not fail"));
     }
 
     #[test]

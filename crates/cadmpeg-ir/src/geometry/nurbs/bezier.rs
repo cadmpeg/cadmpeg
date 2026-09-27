@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Homogeneous Bezier extraction and rational boundary bounds.
 
+use super::scratch;
 use super::PoleValue;
 use crate::features::FinitePoint3;
-use super::scratch;
 use crate::math::sum::ExactSignedSum;
 use cadmpeg_core::decode::ResourceLimit;
 
@@ -41,7 +41,10 @@ pub fn positive_controls<P: PoleValue<FinitePoint3>>(
     });
     let mut output = Vec::new();
     scratch::reserve_exact(&mut output, points.len(), "Bezier positive controls")?;
-    Ok(points.iter().enumerate().try_fold(output, |mut output, (index, point)| {
+    Ok(points
+        .iter()
+        .enumerate()
+        .try_fold(output, |mut output, (index, point)| {
             let weight = weight_at(index) / scale;
             let point = point.admit()?.get();
             if weight == 0.0 {
@@ -68,21 +71,36 @@ fn insert_knot<const DIMENSION: usize>(
     controls: &mut Vec<[f64; DIMENSION]>,
     value: f64,
 ) -> Result<Option<()>, ResourceLimit> {
-    let Some(last) = controls.len().checked_sub(1) else { return Ok(None); };
-    let Some(span) = knots.iter().rposition(|knot| *knot <= value) else { return Ok(None); };
+    let Some(last) = controls.len().checked_sub(1) else {
+        return Ok(None);
+    };
+    let Some(span) = knots.iter().rposition(|knot| *knot <= value) else {
+        return Ok(None);
+    };
     let multiplicity = knots.iter().filter(|knot| **knot == value).count();
-    let Some(first) = span.checked_sub(degree) else { return Ok(None); };
-    let Some(tail) = span.checked_sub(multiplicity) else { return Ok(None); };
+    let Some(first) = span.checked_sub(degree) else {
+        return Ok(None);
+    };
+    let Some(tail) = span.checked_sub(multiplicity) else {
+        return Ok(None);
+    };
     if multiplicity > degree || first > last || tail > last {
         return Ok(None);
     }
-    let Some(_) = controls.len().checked_add(1) else { return Ok(None); };
+    let Some(_) = controls.len().checked_add(1) else {
+        return Ok(None);
+    };
     scratch::reserve_exact(controls, 1, "Bezier knot insertion")?;
     scratch::reserve_exact(knots, 1, "Bezier inserted knot")?;
     controls.push([0.0; DIMENSION]);
     controls.copy_within(tail..=last, tail + 1);
     for index in (first + 1..=tail).rev() {
-        let Some(alpha) = crate::math::parameter_fraction(value, knots[index], knots[index + degree]).map(|v| v.get()) else { return Ok(None); };
+        let Some(alpha) =
+            crate::math::parameter_fraction(value, knots[index], knots[index + degree])
+                .map(crate::scalar::FiniteReal::get)
+        else {
+            return Ok(None);
+        };
         controls[index] = std::array::from_fn(|axis| {
             (1.0 - alpha) * controls[index - 1][axis] + alpha * controls[index][axis]
         });
@@ -102,7 +120,12 @@ pub fn homogeneous_spans<const DIMENSION: usize>(
     mut controls: Vec<[f64; DIMENSION]>,
 ) -> Result<Option<Vec<HomogeneousBezierSpan<DIMENSION>>>, ResourceLimit> {
     let count = controls.len();
-    let Some(expected_knots) = count.checked_add(degree).and_then(|value| value.checked_add(1)) else { return Ok(None); };
+    let Some(expected_knots) = count
+        .checked_add(degree)
+        .and_then(|value| value.checked_add(1))
+    else {
+        return Ok(None);
+    };
     if degree >= count
         || knots.len() != expected_knots
         || knots.iter().any(|value| !value.is_finite())
@@ -120,30 +143,40 @@ pub fn homogeneous_spans<const DIMENSION: usize>(
     let mut knots = knots_copy;
     for endpoint in domain {
         while knots.iter().filter(|knot| **knot == endpoint).count() < degree + 1 {
-            if insert_knot(degree, &mut knots, &mut controls, endpoint)?.is_none() { return Ok(None); }
+            if insert_knot(degree, &mut knots, &mut controls, endpoint)?.is_none() {
+                return Ok(None);
+            }
         }
     }
     let mut internal = Vec::new();
     scratch::reserve_exact(&mut internal, knots.len(), "Bezier internal knots")?;
-    internal.extend(knots.iter().copied().filter(|knot| domain[0] < *knot && *knot < domain[1]));
+    internal.extend(
+        knots
+            .iter()
+            .copied()
+            .filter(|knot| domain[0] < *knot && *knot < domain[1]),
+    );
     internal.dedup();
     for knot in internal {
         while knots.iter().filter(|candidate| **candidate == knot).count() < degree {
-            if insert_knot(degree, &mut knots, &mut controls, knot)?.is_none() { return Ok(None); }
+            if insert_knot(degree, &mut knots, &mut controls, knot)?.is_none() {
+                return Ok(None);
+            }
         }
     }
     let mut spans = Vec::new();
     scratch::reserve_exact(&mut spans, controls.len() - degree, "Bezier spans")?;
     for span in degree..controls.len() {
-            let interval = [knots[span], knots[span + 1]];
-            if interval[0] < interval[1] && interval[0] >= domain[0] && interval[1] <= domain[1] {
-                let mut span_controls = scratch::filled(degree + 1, [0.0; DIMENSION], "Bezier span controls")?;
-                span_controls.copy_from_slice(&controls[span - degree..=span]);
-                spans.push(HomogeneousBezierSpan {
-                    domain: interval,
-                    controls: span_controls,
-                });
-            }
+        let interval = [knots[span], knots[span + 1]];
+        if interval[0] < interval[1] && interval[0] >= domain[0] && interval[1] <= domain[1] {
+            let mut span_controls =
+                scratch::filled(degree + 1, [0.0; DIMENSION], "Bezier span controls")?;
+            span_controls.copy_from_slice(&controls[span - degree..=span]);
+            spans.push(HomogeneousBezierSpan {
+                domain: interval,
+                controls: span_controls,
+            });
+        }
     }
     Ok((!spans.is_empty()).then_some(spans))
 }
@@ -240,7 +273,8 @@ mod tests {
             2,
             &[-1., -1., 0., 1., 2., 2.],
             vec![[0., 0., 0., 1.], [1., 1., 0., 1.], [2., 0., 0., 1.]],
-        ).expect("resource allocation did not fail")
+        )
+        .expect("resource allocation did not fail")
         .unwrap();
         let controls = &spans[0].controls;
         let midpoint = (controls[0][1] + 2.0 * controls[1][1] + controls[2][1]) / 4.0;
@@ -249,14 +283,16 @@ mod tests {
             2,
             &[0., 0., 0., 1., 1., 1., 2., 2., 2.],
             (0..6).map(|i| [f64::from(i), 0., 0., 1.]).collect(),
-        ).expect("resource allocation did not fail")
+        )
+        .expect("resource allocation did not fail")
         .unwrap();
         assert_eq!(
             spans[1].controls.iter().map(|p| p[0]).collect::<Vec<_>>(),
             [3., 4., 5.]
         );
-        let zero =
-            homogeneous_spans(0, &[0., 1., 2.], vec![[0., 0., 0., 1.], [1., 0., 0., 1.]]).expect("resource allocation did not fail").unwrap();
+        let zero = homogeneous_spans(0, &[0., 1., 2.], vec![[0., 0., 0., 1.], [1., 0., 0., 1.]])
+            .expect("resource allocation did not fail")
+            .unwrap();
         assert_eq!(zero.len(), 2);
     }
     #[test]
@@ -277,13 +313,15 @@ mod tests {
             [1., 1., 0., 1.],
             [2., 1., 0., 1.],
         ];
-        let expected =
-            homogeneous_spans(2, &[-1., -1., -1., 0., 1., 1., 1.], controls.clone()).expect("resource allocation did not fail").unwrap();
+        let expected = homogeneous_spans(2, &[-1., -1., -1., 0., 1., 1., 1.], controls.clone())
+            .expect("resource allocation did not fail")
+            .unwrap();
         let actual = homogeneous_spans(
             2,
             &[-1e308, -1e308, -1e308, 0., 1e308, 1e308, 1e308],
             controls,
-        ).expect("resource allocation did not fail")
+        )
+        .expect("resource allocation did not fail")
         .unwrap();
         assert_eq!(actual.len(), expected.len());
         for (actual, expected) in actual.iter().zip(expected) {

@@ -543,7 +543,14 @@ pub(super) fn try_decode_freeform_surfaces(
                 Ok(transferred) => transferred,
                 Err(error) => return Some(Err(error)),
             };
-            transferred && neutral_model_is_admissible(&mut topology_ir, &unknowns)
+            if transferred {
+                match neutral_model_is_admissible(&mut topology_ir, &unknowns) {
+                    Ok(admissible) => admissible,
+                    Err(limit) => return Some(Err(limit.into())),
+                }
+            } else {
+                false
+            }
         } else {
             false
         };
@@ -1270,8 +1277,12 @@ fn standard_carrier_endpoint_loci(
         Ok(point) => Ok(Some(point.get())),
         Err(failure) => failure.non_finite(),
     };
-    let Some(start) = locus(start)? else { return Ok(None); };
-    let Some(end) = locus(end)? else { return Ok(None); };
+    let Some(start) = locus(start)? else {
+        return Ok(None);
+    };
+    let Some(end) = locus(end)? else {
+        return Ok(None);
+    };
     Ok(Some([start, end]))
 }
 
@@ -3394,7 +3405,8 @@ mod tests {
             Point3::new(7.0, 11.0, 13.0)
         );
         ir.finalize();
-        let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+        let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:?}", validation.findings);
     }
 
@@ -3471,7 +3483,8 @@ mod tests {
             assert!((actual.z - expected.z).abs() < 1.0e-12);
         }
         ir.finalize();
-        let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+        let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:?}", validation.findings);
     }
 
@@ -4403,7 +4416,8 @@ mod tests {
                 range,
                 endpoints,
                 cadmpeg_ir::units::COINCIDENCE_TOLERANCE
-            ).expect("evaluator allocation succeeds"),
+            )
+            .expect("evaluator allocation succeeds"),
             "the recharted pcurve lifts onto the edge's vertex positions"
         );
         let naive = line_through(first, last);
@@ -4414,7 +4428,8 @@ mod tests {
                 range,
                 endpoints,
                 cadmpeg_ir::units::COINCIDENCE_TOLERANCE
-            ).expect("evaluator allocation succeeds"),
+            )
+            .expect("evaluator allocation succeeds"),
             "a pcurve stored in a foreign chart has no witness on this carrier"
         );
         // The witness is independent of endpoint order.
@@ -4424,7 +4439,8 @@ mod tests {
             range,
             [endpoints[1], endpoints[0]],
             cadmpeg_ir::units::COINCIDENCE_TOLERANCE
-        ).expect("evaluator allocation succeeds"));
+        )
+        .expect("evaluator allocation succeeds"));
         // A carrier with no geometry has no chart and admits no witness.
         assert!(!pcurve_lift_reaches_endpoints(
             &naive,
@@ -4432,7 +4448,8 @@ mod tests {
             range,
             endpoints,
             cadmpeg_ir::units::COINCIDENCE_TOLERANCE
-        ).expect("evaluator allocation succeeds"));
+        )
+        .expect("evaluator allocation succeeds"));
     }
 
     #[test]
@@ -4693,7 +4710,8 @@ mod tests {
     #[test]
     fn standard_carrier_endpoint_loci_keep_an_overflowing_lift() {
         let (cone, pcurve) = overflowing_cone_lift();
-        let loci = super::standard_carrier_endpoint_loci(&pcurve, &cone, [0.0, 1.0]).expect("evaluator allocation succeeds")
+        let loci = super::standard_carrier_endpoint_loci(&pcurve, &cone, [0.0, 1.0])
+            .expect("evaluator allocation succeeds")
             .expect("both ends lift");
         assert!(!loci[0].is_finite());
         assert_eq!(loci[1], Point3::new(1.0, 0.0, 0.0));
@@ -4708,7 +4726,8 @@ mod tests {
             [0.0, 1.0],
             [Point3::new(5.0, 5.0, 5.0), Point3::new(1.0, 0.0, 0.0)],
             cadmpeg_ir::units::COINCIDENCE_TOLERANCE,
-        ).expect("evaluator allocation succeeds"));
+        )
+        .expect("evaluator allocation succeeds"));
     }
 
     /// The overflowing cone lift with the cone under the identity placement.
@@ -4732,7 +4751,8 @@ mod tests {
     #[test]
     fn standard_carrier_endpoint_loci_keep_an_overflowing_placed_lift() {
         let (cone, pcurve) = placed_overflowing_cone_lift();
-        let loci = super::standard_carrier_endpoint_loci(&pcurve, &cone, [0.0, 1.0]).expect("evaluator allocation succeeds")
+        let loci = super::standard_carrier_endpoint_loci(&pcurve, &cone, [0.0, 1.0])
+            .expect("evaluator allocation succeeds")
             .expect("both ends lift");
         assert!(!loci[0].is_finite());
         assert_eq!(loci[1], Point3::new(1.0, 0.0, 0.0));
@@ -4747,6 +4767,7 @@ mod tests {
             [0.0, 1.0],
             [Point3::new(5.0, 5.0, 5.0), Point3::new(1.0, 0.0, 0.0)],
             cadmpeg_ir::units::COINCIDENCE_TOLERANCE,
-        ).expect("evaluator allocation succeeds"));
+        )
+        .expect("evaluator allocation succeeds"));
     }
 }

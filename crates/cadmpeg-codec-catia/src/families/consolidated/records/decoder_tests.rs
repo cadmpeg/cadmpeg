@@ -125,13 +125,15 @@ fn indexed_resolver_matches_the_one_shot_resolver_identity() {
                 })
                 .collect::<Vec<_>>()
         };
-    let one_shot = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes).expect("evaluator allocation succeeds");
+    let one_shot = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes)
+        .expect("evaluator allocation succeeds");
     let indexed =
         crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
             &bytes,
             &records,
             &mut crate::nurbs::LaneRefusals::new(),
-        ).expect("evaluator allocation succeeds");
+        )
+        .expect("evaluator allocation succeeds");
     assert_eq!(signature(&indexed), signature(&one_shot));
 }
 
@@ -270,7 +272,8 @@ fn a5_edge_binding_resolves_cylinder_by_endpoint_lifts() {
 
     let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
         &a5_cylinder_bound_edge_stream(),
-    ).expect("evaluator allocation succeeds");
+    )
+    .expect("evaluator allocation succeeds");
     assert_eq!(blocks.len(), 1);
     assert!(matches!(
         blocks[0].supports[0],
@@ -298,7 +301,8 @@ fn b2_edge_binding_resolves_direction_bearing_plane_by_endpoint_lifts() {
         }
     }
 
-    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes).expect("evaluator allocation succeeds");
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes)
+        .expect("evaluator allocation succeeds");
     assert_eq!(blocks.len(), 1);
     assert!(matches!(
         blocks[0].supports[0],
@@ -323,7 +327,8 @@ fn a5_edge_binding_resolves_partner_nurbs_carrier() {
 
     let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
         &a5_nurbs_bound_edge_stream(0.0),
-    ).expect("evaluator allocation succeeds");
+    )
+    .expect("evaluator allocation succeeds");
     assert!(matches!(
         blocks[0].supports[0],
         Some(ConsolidatedSupportBinding::Cylinder { .. })
@@ -342,7 +347,8 @@ fn a5_edge_binding_resolves_constant_normal_offset_carrier() {
 
     let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
         &a5_nurbs_bound_edge_stream(1.25),
-    ).expect("evaluator allocation succeeds");
+    )
+    .expect("evaluator allocation succeeds");
     assert!(matches!(
         blocks[0].supports[1],
         Some(ConsolidatedSupportBinding::NurbsCarrier { offset, .. }) if (offset.get().abs() - 1.25).abs() < 1.0e-6
@@ -357,7 +363,8 @@ fn a5_edge_binding_jointly_resolves_two_direct_nurbs_carriers() {
 
     let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
         &a5_nurbs_pair_bound_edge_stream(false),
-    ).expect("evaluator allocation succeeds");
+    )
+    .expect("evaluator allocation succeeds");
     assert_eq!(blocks.len(), 1);
     assert!(
         blocks[0].supports.iter().all(|support| {
@@ -377,7 +384,8 @@ fn a5_edge_binding_jointly_resolves_two_direct_nurbs_carriers() {
 fn a5_edge_binding_rejects_nonunique_direct_nurbs_carrier_pairs() {
     let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
         &a5_nurbs_pair_bound_edge_stream(true),
-    ).expect("evaluator allocation succeeds");
+    )
+    .expect("evaluator allocation succeeds");
     assert_eq!(blocks.len(), 1);
     assert_eq!(blocks[0].supports, [None, None]);
     assert!(blocks[0].shared_loci.is_none());
@@ -390,7 +398,8 @@ fn a5_edge_binding_resolves_circle_by_constant_v_and_arc_range() {
 
     let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
         &a5_circle_bound_edge_stream(),
-    ).expect("evaluator allocation succeeds");
+    )
+    .expect("evaluator allocation succeeds");
     assert!(matches!(
         blocks[0].supports[0],
         Some(ConsolidatedSupportBinding::Circle { .. })
@@ -407,7 +416,8 @@ fn a5_edge_binding_uses_circle_identity_to_break_geometric_ties() {
     duplicate[6..8].copy_from_slice(&0x1235_u16.to_le_bytes());
     bytes.extend_from_slice(&duplicate);
 
-    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes).expect("evaluator allocation succeeds");
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes)
+        .expect("evaluator allocation succeeds");
     assert!(matches!(
         blocks[0].supports[0],
         Some(ConsolidatedSupportBinding::Circle { pos }) if pos == original_circle_offset
@@ -419,7 +429,8 @@ fn a5_edge_binding_rejects_duplicate_circle_identities() {
     let mut bytes = a5_circle_bound_edge_stream();
     bytes.extend_from_slice(&b2_circle_stream());
 
-    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes).expect("evaluator allocation succeeds");
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes)
+        .expect("evaluator allocation succeeds");
     assert!(blocks[0].supports[0].is_none());
 }
 
@@ -433,7 +444,8 @@ fn a5_edge_binding_rejects_an_identity_with_a_conflicting_circle_chart() {
     conflicting[40..48].copy_from_slice(&1.0_f64.to_le_bytes());
     bytes.extend_from_slice(&conflicting);
 
-    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes).expect("evaluator allocation succeeds");
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes)
+        .expect("evaluator allocation succeeds");
     assert!(blocks[0].supports[0].is_none());
 }
 
@@ -443,7 +455,8 @@ fn a5_edge_binding_resolves_cone_by_endpoint_lifts() {
 
     let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
         &a5_cone_bound_edge_stream(),
-    ).expect("evaluator allocation succeeds");
+    )
+    .expect("evaluator allocation succeeds");
     assert!(matches!(
         blocks[0].supports[0],
         Some(ConsolidatedSupportBinding::Cone { .. })
@@ -457,7 +470,8 @@ fn a5_edge_binding_resolves_torus_by_scaled_chart_endpoint_lifts() {
 
     let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
         &a5_torus_bound_edge_stream(),
-    ).expect("evaluator allocation succeeds");
+    )
+    .expect("evaluator allocation succeeds");
     assert!(blocks[0]
         .supports
         .iter()
@@ -474,7 +488,8 @@ fn a5_edge_binding_resolves_sphere_by_endpoint_lifts() {
 
     let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
         &crate::test_support::test_a5_bound::a5_sphere_bound_edge_stream(),
-    ).expect("evaluator allocation succeeds");
+    )
+    .expect("evaluator allocation succeeds");
     assert!(blocks[0]
         .supports
         .iter()
@@ -490,7 +505,8 @@ fn a5_edge_binding_rejects_duplicate_sphere_endpoint_lifts() {
     let mut bytes = crate::test_support::test_a5_bound::a5_sphere_bound_edge_stream();
     bytes.extend_from_slice(&crate::test_support::test_b2::b2_sphere_stream());
 
-    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes).expect("evaluator allocation succeeds");
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes)
+        .expect("evaluator allocation succeeds");
     assert_eq!(blocks[0].supports, [None, None]);
 }
 
@@ -499,7 +515,8 @@ fn a5_edge_binding_rejects_duplicate_torus_endpoint_lifts() {
     let mut bytes = a5_torus_bound_edge_stream();
     bytes.extend_from_slice(&crate::test_support::test_b2::b2_torus_stream());
 
-    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes).expect("evaluator allocation succeeds");
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes)
+        .expect("evaluator allocation succeeds");
     assert_eq!(blocks[0].supports, [None, None]);
 }
 
@@ -561,7 +578,8 @@ fn consolidated_support_resolution_withholds_cross_family_matches() {
         }
     }
 
-    let resolved = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes).expect("evaluator allocation succeeds");
+    let resolved = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes)
+        .expect("evaluator allocation succeeds");
     let [edge] = resolved.as_slice() else {
         panic!("one consolidated edge block");
     };
@@ -574,7 +592,8 @@ fn consolidated_support_identity_mismatch_does_not_fall_back_to_geometry() {
     let mut bytes = a5_cone_bound_edge_stream();
     bytes.extend_from_slice(&b2_embedded_cylinder_stream_with_object_id(0x1234));
 
-    let resolved = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes).expect("evaluator allocation succeeds");
+    let resolved = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes)
+        .expect("evaluator allocation succeeds");
     let [edge] = resolved.as_slice() else {
         panic!("one consolidated edge block");
     };
@@ -1157,7 +1176,9 @@ fn decode_routes_a_line_profile_only_nested_stream_to_a_wire() {
         decoded.ir().model.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Wire
     );
-    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+        .expect("resource allocation did not fail")
+        .is_ok());
 }
 
 #[test]
@@ -1189,7 +1210,9 @@ fn decode_routes_a_resolved_revolution_only_nested_stream_to_freeform() {
         ),
         _ => false,
     });
-    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+        .expect("resource allocation did not fail")
+        .is_ok());
 }
 
 #[test]

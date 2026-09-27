@@ -2490,7 +2490,7 @@ fn try_decode_standard_population(
         &mut admission,
     )
     .and_then(|()| {
-        neutral_model_is_admissible(&mut topology_ir, &unknowns)
+        neutral_model_is_admissible(&mut topology_ir, &unknowns)?
             .then_some(())
             .ok_or(StandardTopologyError::Semantic(
                 StandardTopologyFailure::InadmissibleNeutralModel,
@@ -3182,24 +3182,29 @@ pub(super) fn standard_object_evidence_from_streams(
             };
             if evidence.is_none() {
                 let carrier = match targeted_graph.as_ref() {
-                    Some(graph) => crate::families::b5::transfer::resolved_surface_carrier_in_graph(graph, surface_id, refusal)?,
+                    Some(graph) => {
+                        crate::families::b5::transfer::resolved_surface_carrier_in_graph(
+                            graph, surface_id, refusal,
+                        )?
+                    }
                     None => None,
-                }.or_else(|| crate::families::b5::transfer::resolved_surface_carrier(surface));
+                }
+                .or_else(|| crate::families::b5::transfer::resolved_surface_carrier(surface));
                 evidence = carrier.map(|carrier| match carrier {
-                            crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
-                                geometry,
-                            ) => StandardSurfaceEvidence::Geometry(geometry),
-                            crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall {
-                                carrier_object_id,
-                                definition,
-                            } => StandardSurfaceEvidence::Procedure(
-                                StandardSurfaceProcedure::RollingBall {
-                                    carrier_object_id,
-                                    definition: *definition,
-                                    source: StandardRollingBallSource::ObjectStreamA8,
-                                },
-                            ),
-                        });
+                    crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry) => {
+                        StandardSurfaceEvidence::Geometry(geometry)
+                    }
+                    crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall {
+                        carrier_object_id,
+                        definition,
+                    } => {
+                        StandardSurfaceEvidence::Procedure(StandardSurfaceProcedure::RollingBall {
+                            carrier_object_id,
+                            definition: *definition,
+                            source: StandardRollingBallSource::ObjectStreamA8,
+                        })
+                    }
+                });
             }
             let Some(evidence) = evidence else {
                 continue;
@@ -3257,16 +3262,22 @@ pub(super) fn standard_object_evidence_from_streams(
             refusal,
         );
         for (edge, references) in edge_pcurves {
-            let sides = references.map(|reference| -> Result<_, cadmpeg_core::decode::ResourceLimit> {
-                let Some(pcurve) = pcurves.get(&reference).and_then(Option::as_ref) else { return Ok(None); };
-                let Some(surface) = targeted_surfaces.get(&pcurve.support_id) else { return Ok(None); };
-                crate::families::b5::transfer::resolved_object_stream_pcurve(
-                    pcurve,
-                    surface,
-                    targeted_graph.as_ref(),
-                    refusal,
-                )
-            });
+            let sides = references.map(
+                |reference| -> Result<_, cadmpeg_core::decode::ResourceLimit> {
+                    let Some(pcurve) = pcurves.get(&reference).and_then(Option::as_ref) else {
+                        return Ok(None);
+                    };
+                    let Some(surface) = targeted_surfaces.get(&pcurve.support_id) else {
+                        return Ok(None);
+                    };
+                    crate::families::b5::transfer::resolved_object_stream_pcurve(
+                        pcurve,
+                        surface,
+                        targeted_graph.as_ref(),
+                        refusal,
+                    )
+                },
+            );
             let [first, second] = sides;
             let [Some(first), Some(second)] = [first?, second?] else {
                 continue;
@@ -3396,38 +3407,39 @@ fn standard_surface_evidence(
 ) -> Result<Option<StandardSurfaceEvidence>, cadmpeg_core::decode::ResourceLimit> {
     let geometry =
         crate::families::b5::transfer::resolved_surface_geometry(graph, surface_id, refusal)?;
-    let mut procedure =
-        crate::families::b5::transfer::resolved_offset_surface(graph, surface_id, refusal)?
-            .map(|offset| StandardSurfaceProcedure::Offset {
-                carrier_object_id: offset.carrier_object_id,
-                support_object_id: offset.support_object_id,
-                support: offset.support,
-                distance: offset.distance,
-                parameter_bounds: offset.parameter_bounds,
-            });
+    let mut procedure = crate::families::b5::transfer::resolved_offset_surface(
+        graph, surface_id, refusal,
+    )?
+    .map(|offset| StandardSurfaceProcedure::Offset {
+        carrier_object_id: offset.carrier_object_id,
+        support_object_id: offset.support_object_id,
+        support: offset.support,
+        distance: offset.distance,
+        parameter_bounds: offset.parameter_bounds,
+    });
     if procedure.is_none() {
-        procedure = crate::families::b5::transfer::resolved_extrusion_surface(
-            graph, surface_id, refusal,
-        )?
-        .map(Box::new)
-        .map(StandardSurfaceProcedure::Extrusion);
+        procedure =
+            crate::families::b5::transfer::resolved_extrusion_surface(graph, surface_id, refusal)?
+                .map(Box::new)
+                .map(StandardSurfaceProcedure::Extrusion);
     }
     if procedure.is_none() {
         procedure = crate::families::b5::transfer::resolved_surface_procedural_definition(
             graph, surface_id, refusal,
         )?
-        .map(|(carrier_object_id, definition)| StandardSurfaceProcedure::RollingBall {
-            carrier_object_id,
-            definition,
-            source: StandardRollingBallSource::ObjectStreamA8,
-        });
+        .map(
+            |(carrier_object_id, definition)| StandardSurfaceProcedure::RollingBall {
+                carrier_object_id,
+                definition,
+                source: StandardRollingBallSource::ObjectStreamA8,
+            },
+        );
     }
     if procedure.is_none() {
-        procedure = crate::families::b5::transfer::resolved_revolution_surface(
-            graph, surface_id, refusal,
-        )?
-        .map(Box::new)
-        .map(StandardSurfaceProcedure::Revolution);
+        procedure =
+            crate::families::b5::transfer::resolved_revolution_surface(graph, surface_id, refusal)?
+                .map(Box::new)
+                .map(StandardSurfaceProcedure::Revolution);
     }
     Ok(StandardSurfaceEvidence::from_parts(geometry, procedure))
 }
@@ -4430,13 +4442,13 @@ fn attach_standard_topology(
     for edge in 0..supports.len() {
         let native_pair = match native_supports_by_row.get(edge).and_then(Option::as_ref) {
             Some(native) => standard_native_support_endpoint_pair(
-                    native,
-                    &ir.model.points,
-                    &endpoint_candidates[edge],
-                    native_endpoint_evidence
-                        .as_ref()
-                        .and_then(|pairs| pairs[edge]),
-                )?,
+                native,
+                &ir.model.points,
+                &endpoint_candidates[edge],
+                native_endpoint_evidence
+                    .as_ref()
+                    .and_then(|pairs| pairs[edge]),
+            )?,
             None => None,
         };
         let Some(pair) = native_pair else { continue };
@@ -5040,7 +5052,9 @@ fn attach_standard_topology(
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
     } else if let Some(bound) = (|| -> Result<Option<_>, cadmpeg_core::decode::ResourceLimit> {
-        let Some(options) = constrained_endpoint_options.as_ref() else { return Ok(None); };
+        let Some(options) = constrained_endpoint_options.as_ref() else {
+            return Ok(None);
+        };
         let edge_identity_evidence = supports
             .iter()
             .enumerate()
@@ -5564,13 +5578,21 @@ fn emit_standard_topology(
     {
         let start_point = point_assignment[logical_vertices[0]];
         let end_point = point_assignment[logical_vertices[1]];
-        let native_support = match native_edge_supports.get(edge_index).and_then(Option::as_ref) {
-            Some(native) if standard_native_support_endpoint_pair(
+        let native_support = match native_edge_supports
+            .get(edge_index)
+            .and_then(Option::as_ref)
+        {
+            Some(native)
+                if standard_native_support_endpoint_pair(
                     native,
                     &ir.model.points,
                     &[start_point, end_point],
                     Some([start_point, end_point]),
-                )?.is_some() => Some(native),
+                )?
+                .is_some() =>
+            {
+                Some(native)
+            }
             _ => None,
         };
         let (curve, param_range) = build_standard_edge_curve(
@@ -5835,7 +5857,9 @@ fn lifted_standard_support_parameters<const N: usize>(
 ) -> Result<[Option<Point3>; N], cadmpeg_core::decode::ResourceLimit> {
     let mut points = [None; N];
     for (index, parameter) in parameters.into_iter().enumerate() {
-        let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::pcurve_uv(pcurve, parameter))? else {
+        let Some(uv) =
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::pcurve_uv(pcurve, parameter))?
+        else {
             continue;
         };
         points[index] = match cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v) {
@@ -5853,66 +5877,75 @@ fn standard_native_support_endpoint_pair(
     required_pair: Option<[usize; 2]>,
 ) -> Result<Option<[usize; 2]>, cadmpeg_core::decode::ResourceLimit> {
     (|| -> Option<Result<[usize; 2], cadmpeg_core::decode::ResourceLimit>> {
-    const VERTEX_MATCH_TOLERANCE: f64 = 2e-3;
+        const VERTEX_MATCH_TOLERANCE: f64 = 2e-3;
 
-    let lifted = support
-        .carriers
-        .iter()
-        .zip(&support.pcurves)
-        .map(|(carrier, pcurve)| -> Result<_, cadmpeg_core::decode::ResourceLimit> {
-            let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(surface) = carrier
-            else {
-                return Ok(None);
-            };
-            // A non-finite lift is measured as a finite one is.
-            Ok(Some(lifted_standard_support_parameters(surface, pcurve, support.parameter_range)?))
-        })
-        .collect::<Result<Option<Vec<_>>, _>>();
-    let lifted = match lifted {
-        Ok(Some(lifted)) => lifted,
-        Ok(None) => return None,
-        Err(limit) => return Some(Err(limit)),
-    };
-    let [first, second] = <[[Option<Point3>; 2]; 2]>::try_from(lifted).ok()?;
-    let first = first.into_iter().collect::<Option<Vec<_>>>()?;
-    let second = second.into_iter().collect::<Option<Vec<_>>>()?;
-    let direct = first
-        .iter()
-        .zip(&second)
-        .map(|(left, right)| left.distance_squared(*right).sqrt())
-        .fold(0.0, f64::max);
-    let reversed = first
-        .iter()
-        .zip(second.iter().rev())
-        .map(|(left, right)| left.distance_squared(*right).sqrt())
-        .fold(0.0, f64::max);
-    if direct.min(reversed) > SUPPORT_AGREEMENT_TOLERANCE {
-        return None;
-    }
-    let pair = first
-        .into_iter()
-        .map(|expected| {
-            let matches = candidates
-                .iter()
-                .copied()
-                .filter(|point| {
-                    points.get(*point).is_some_and(|point| {
-                        point.position().get().distance_squared(expected).sqrt()
-                            <= VERTEX_MATCH_TOLERANCE
+        let lifted = support
+            .carriers
+            .iter()
+            .zip(&support.pcurves)
+            .map(
+                |(carrier, pcurve)| -> Result<_, cadmpeg_core::decode::ResourceLimit> {
+                    let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(surface) =
+                        carrier
+                    else {
+                        return Ok(None);
+                    };
+                    // A non-finite lift is measured as a finite one is.
+                    Ok(Some(lifted_standard_support_parameters(
+                        surface,
+                        pcurve,
+                        support.parameter_range,
+                    )?))
+                },
+            )
+            .collect::<Result<Option<Vec<_>>, _>>();
+        let lifted = match lifted {
+            Ok(Some(lifted)) => lifted,
+            Ok(None) => return None,
+            Err(limit) => return Some(Err(limit)),
+        };
+        let [first, second] = <[[Option<Point3>; 2]; 2]>::try_from(lifted).ok()?;
+        let first = first.into_iter().collect::<Option<Vec<_>>>()?;
+        let second = second.into_iter().collect::<Option<Vec<_>>>()?;
+        let direct = first
+            .iter()
+            .zip(&second)
+            .map(|(left, right)| left.distance_squared(*right).sqrt())
+            .fold(0.0, f64::max);
+        let reversed = first
+            .iter()
+            .zip(second.iter().rev())
+            .map(|(left, right)| left.distance_squared(*right).sqrt())
+            .fold(0.0, f64::max);
+        if direct.min(reversed) > SUPPORT_AGREEMENT_TOLERANCE {
+            return None;
+        }
+        let pair = first
+            .into_iter()
+            .map(|expected| {
+                let matches = candidates
+                    .iter()
+                    .copied()
+                    .filter(|point| {
+                        points.get(*point).is_some_and(|point| {
+                            point.position().get().distance_squared(expected).sqrt()
+                                <= VERTEX_MATCH_TOLERANCE
+                        })
                     })
-                })
-                .collect::<Vec<_>>();
-            <[usize; 1]>::try_from(matches).ok().map(|[point]| point)
-        })
-        .collect::<Option<Vec<_>>>()?;
-    <[usize; 2]>::try_from(pair)
-        .ok()
-        .filter(|pair| pair[0] != pair[1])
-        .filter(|pair| {
-            required_pair.is_none_or(|required| missing_edge::same_unordered_pair(*pair, required))
-        })
-        .map(Ok)
-    })().transpose()
+                    .collect::<Vec<_>>();
+                <[usize; 1]>::try_from(matches).ok().map(|[point]| point)
+            })
+            .collect::<Option<Vec<_>>>()?;
+        <[usize; 2]>::try_from(pair)
+            .ok()
+            .filter(|pair| pair[0] != pair[1])
+            .filter(|pair| {
+                required_pair
+                    .is_none_or(|required| missing_edge::same_unordered_pair(*pair, required))
+            })
+            .map(Ok)
+    })()
+    .transpose()
 }
 
 fn resolve_standard_endpoint_pairs(
@@ -6912,31 +6945,66 @@ fn nurbs_shared_boundary_curves_match(left: &NurbsCurve, right: &NurbsCurve) -> 
             .is_some_and(|reversed| same_payload(left, &reversed))
 }
 
-fn nurbs_surface_boundary_curves(surface: &NurbsSurface) -> Result<Option<[NurbsCurve; 4]>, cadmpeg_core::decode::ResourceLimit> {
-    let Some([[u_lower, u_upper], [v_lower, v_upper]]) = nurbs_surface_parameter_domain(surface) else { return Ok(None); };
-    let curve = |axis, parameter| cadmpeg_ir::eval::nurbs_surface_isocurve(surface, axis, parameter);
-    let Some(u_lower) = curve(cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U, u_lower)? else { return Ok(None); };
-    let Some(u_upper) = curve(cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U, u_upper)? else { return Ok(None); };
-    let Some(v_lower) = curve(cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V, v_lower)? else { return Ok(None); };
-    let Some(v_upper) = curve(cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V, v_upper)? else { return Ok(None); };
+fn nurbs_surface_boundary_curves(
+    surface: &NurbsSurface,
+) -> Result<Option<[NurbsCurve; 4]>, cadmpeg_core::decode::ResourceLimit> {
+    let Some([[u_lower, u_upper], [v_lower, v_upper]]) = nurbs_surface_parameter_domain(surface)
+    else {
+        return Ok(None);
+    };
+    let curve =
+        |axis, parameter| cadmpeg_ir::eval::nurbs_surface_isocurve(surface, axis, parameter);
+    let Some(u_lower) = curve(
+        cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
+        u_lower,
+    )?
+    else {
+        return Ok(None);
+    };
+    let Some(u_upper) = curve(
+        cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
+        u_upper,
+    )?
+    else {
+        return Ok(None);
+    };
+    let Some(v_lower) = curve(
+        cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V,
+        v_lower,
+    )?
+    else {
+        return Ok(None);
+    };
+    let Some(v_upper) = curve(
+        cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V,
+        v_upper,
+    )?
+    else {
+        return Ok(None);
+    };
     Ok(Some([u_lower, u_upper, v_lower, v_upper]))
 }
 
-fn nurbs_boundary_contains_point(curve: &NurbsCurve, point: Point3) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+fn nurbs_boundary_contains_point(
+    curve: &NurbsCurve,
+    point: Point3,
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     let Some([lower, upper]) = cadmpeg_ir::eval::nurbs_curve_parameter_domain(curve)
         .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
     else {
         return Ok(false);
     };
     for seed in [lower, 0.5 * (lower + upper), upper] {
-            if cadmpeg_ir::eval::nurbs_curve_parameter_near_point(
-                curve,
-                point,
-                NURBS_SURFACE_MEMBERSHIP_TOLERANCE,
-                seed,
-            )?.is_some() {
-                return Ok(true);
-            }
+        if cadmpeg_ir::eval::nurbs_curve_parameter_near_point(
+            curve,
+            point,
+            NURBS_SURFACE_MEMBERSHIP_TOLERANCE,
+            seed,
+        )?
+        .is_some()
+        {
+            return Ok(true);
+        }
     }
     Ok(false)
 }
@@ -6960,8 +7028,12 @@ fn standard_shared_nurbs_boundary_pair_options(
     else {
         return Ok(None);
     };
-    let Some(left_boundaries) = nurbs_surface_boundary_curves(left)? else { return Ok(None); };
-    let Some(right_boundaries) = nurbs_surface_boundary_curves(right)? else { return Ok(None); };
+    let Some(left_boundaries) = nurbs_surface_boundary_curves(left)? else {
+        return Ok(None);
+    };
+    let Some(right_boundaries) = nurbs_surface_boundary_curves(right)? else {
+        return Ok(None);
+    };
     let shared_boundaries = left_boundaries
         .iter()
         .filter(|left| {
@@ -6979,12 +7051,23 @@ fn standard_shared_nurbs_boundary_pair_options(
         for boundary in &shared_boundaries {
             let mut both = true;
             for point_index in pair {
-                let Some(point) = points.get(point_index) else { both = false; break; };
-                if !nurbs_boundary_contains_point(boundary, *point)? { both = false; break; }
+                let Some(point) = points.get(point_index) else {
+                    both = false;
+                    break;
+                };
+                if !nurbs_boundary_contains_point(boundary, *point)? {
+                    both = false;
+                    break;
+                }
             }
-            if both { matches = true; break; }
+            if both {
+                matches = true;
+                break;
+            }
         }
-        if matches { filtered.push(pair); }
+        if matches {
+            filtered.push(pair);
+        }
     }
     Ok(Some(filtered))
 }
@@ -7064,36 +7147,40 @@ fn standard_endpoint_options_for_selected_faces(
     let selections = supports
         .iter()
         .enumerate()
-        .map(|(edge, support)| -> Result<_, cadmpeg_core::decode::ResourceLimit> {
-            let Some(pairs) = options.get(edge) else {
-                return Ok((Vec::new(), false));
-            };
-            if edge_identity_evidence.get(edge).copied().unwrap_or(false)
-                || !matches!(
-                    support.geometry,
-                    crate::families::standard::records::StandardCurveGeometry::Bspline
-                )
-                || support.faces[0] == support.faces[1]
-            {
-                return Ok((pairs.clone(), false));
-            }
-            let Some(left) = face_surface(ir, bindings, surface_indices, support.faces[0]) else {
-                return Ok((pairs.clone(), false));
-            };
-            let Some(right) = face_surface(ir, bindings, surface_indices, support.faces[1]) else {
-                return Ok((pairs.clone(), false));
-            };
-            let filtered = standard_shared_nurbs_boundary_pair_options(
-                &left.geometry,
-                &right.geometry,
-                points,
-                pairs,
-            )?;
-            Ok(match filtered {
-                Some(filtered) if !filtered.is_empty() => (filtered, true),
-                _ => (pairs.clone(), false),
-            })
-        })
+        .map(
+            |(edge, support)| -> Result<_, cadmpeg_core::decode::ResourceLimit> {
+                let Some(pairs) = options.get(edge) else {
+                    return Ok((Vec::new(), false));
+                };
+                if edge_identity_evidence.get(edge).copied().unwrap_or(false)
+                    || !matches!(
+                        support.geometry,
+                        crate::families::standard::records::StandardCurveGeometry::Bspline
+                    )
+                    || support.faces[0] == support.faces[1]
+                {
+                    return Ok((pairs.clone(), false));
+                }
+                let Some(left) = face_surface(ir, bindings, surface_indices, support.faces[0])
+                else {
+                    return Ok((pairs.clone(), false));
+                };
+                let Some(right) = face_surface(ir, bindings, surface_indices, support.faces[1])
+                else {
+                    return Ok((pairs.clone(), false));
+                };
+                let filtered = standard_shared_nurbs_boundary_pair_options(
+                    &left.geometry,
+                    &right.geometry,
+                    points,
+                    pairs,
+                )?;
+                Ok(match filtered {
+                    Some(filtered) if !filtered.is_empty() => (filtered, true),
+                    _ => (pairs.clone(), false),
+                })
+            },
+        )
         .collect::<Result<Vec<_>, _>>()?;
     let (mut filtered_options, boundary_witnesses): (Vec<Vec<[usize; 2]>>, Vec<bool>) =
         selections.into_iter().unzip();
@@ -8436,28 +8523,30 @@ fn standard_oriented_native_support_pcurves(
     if native_pair == endpoint_pair {
         return Ok(Some(native.pcurves.clone()));
     }
-    Ok((|| Some([
-        crate::nurbs::reverse_pcurve_geometry(
-            &native.pcurves[0],
-            native.parameter_range,
-            refusal,
-            &format!(
-                "standard native edge-support pcurve 0 of the edge between points {} and {}, \
+    Ok((|| {
+        Some([
+            crate::nurbs::reverse_pcurve_geometry(
+                &native.pcurves[0],
+                native.parameter_range,
+                refusal,
+                &format!(
+                    "standard native edge-support pcurve 0 of the edge between points {} and {}, \
                  reversed onto its edge",
-                endpoint_pair[0], endpoint_pair[1]
-            ),
-        )?,
-        crate::nurbs::reverse_pcurve_geometry(
-            &native.pcurves[1],
-            native.parameter_range,
-            refusal,
-            &format!(
-                "standard native edge-support pcurve 1 of the edge between points {} and {}, \
+                    endpoint_pair[0], endpoint_pair[1]
+                ),
+            )?,
+            crate::nurbs::reverse_pcurve_geometry(
+                &native.pcurves[1],
+                native.parameter_range,
+                refusal,
+                &format!(
+                    "standard native edge-support pcurve 1 of the edge between points {} and {}, \
                  reversed onto its edge",
-                endpoint_pair[0], endpoint_pair[1]
-            ),
-        )?,
-    ]))())
+                    endpoint_pair[0], endpoint_pair[1]
+                ),
+            )?,
+        ])
+    })())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -8565,33 +8654,34 @@ fn build_standard_edge_curve(
                         let ref_direction =
                             cadmpeg_ir::geometry::derive_reference_direction(*axis.as_raw());
                         let mut range = standard_circle_param_range(
-                                ir,
-                                bindings,
-                                surface_indices,
-                                brep,
-                                support,
-                                center,
-                                radius,
-                                *axis.as_raw(),
-                                ref_direction,
-                                start,
-                                end,
-                                refusal,
-                            );
+                            ir,
+                            bindings,
+                            surface_indices,
+                            brep,
+                            support,
+                            center,
+                            radius,
+                            *axis.as_raw(),
+                            ref_direction,
+                            start,
+                            end,
+                            refusal,
+                        );
                         if range.is_none() {
                             if let Some(native) = native_support {
                                 range = native_support_circle_param_range(
-                                        native,
-                                        center,
-                                        radius,
-                                        *axis.as_raw(),
-                                        ref_direction,
-                                        start,
-                                        end,
-                                    )?;
+                                    native,
+                                    center,
+                                    radius,
+                                    *axis.as_raw(),
+                                    ref_direction,
+                                    start,
+                                    end,
+                                )?;
                             }
                         }
-                        if let Some(range) = range.and_then(crate::nurbs::canonical_periodic_range) {
+                        if let Some(range) = range.and_then(crate::nurbs::canonical_periodic_range)
+                        {
                             candidates.push((axis, ref_direction, range));
                         }
                     }
@@ -9581,66 +9671,79 @@ fn native_support_circle_param_range(
     end: Point3,
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::decode::ResourceLimit> {
     (|| -> Option<Result<[f64; 2], cadmpeg_core::decode::ResourceLimit>> {
-    const GEOMETRY_TOLERANCE: f64 = 2e-3;
+        const GEOMETRY_TOLERANCE: f64 = 2e-3;
 
-    let parameters = [
-        support.parameter_range[0],
-        0.5 * (support.parameter_range[0] + support.parameter_range[1]),
-        support.parameter_range[1],
-    ];
-    let lifted = support
-        .carriers
-        .iter()
-        .zip(&support.pcurves)
-        .map(|(carrier, pcurve)| -> Result<_, cadmpeg_core::decode::ResourceLimit> {
-            let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(surface) = carrier
-            else {
-                return Ok(None);
-            };
-            let Some(carrier_axis) = standard_circle_axis_from_carrier(center, radius, surface) else { return Ok(None); };
-            if carrier_axis.as_raw().dot(axis) < 0.9999 { return Ok(None); }
-            // A non-finite lift is measured as a finite one is.
-            Ok(Some(lifted_standard_support_parameters(surface, pcurve, parameters)?))
-        })
-        .collect::<Result<Option<Vec<_>>, _>>();
-    let lifted = match lifted {
-        Ok(Some(lifted)) => lifted,
-        Ok(None) => return None,
-        Err(limit) => return Some(Err(limit)),
-    };
-    let [first, second] = <[[Option<Point3>; 3]; 2]>::try_from(lifted).ok()?;
-    let first = first.into_iter().collect::<Option<Vec<_>>>()?;
-    let second = second.into_iter().collect::<Option<Vec<_>>>()?;
-    if first
-        .iter()
-        .zip(&second)
-        .any(|(left, right)| left.distance_squared(*right).sqrt() > SUPPORT_AGREEMENT_TOLERANCE)
-    {
-        return None;
-    }
-    let endpoint_error = |left: Point3, right: Point3| left.distance_squared(right).sqrt();
-    let source_forward = endpoint_error(first[0], start) <= GEOMETRY_TOLERANCE
-        && endpoint_error(first[2], end) <= GEOMETRY_TOLERANCE;
-    let source_reversed = endpoint_error(first[0], end) <= GEOMETRY_TOLERANCE
-        && endpoint_error(first[2], start) <= GEOMETRY_TOLERANCE;
-    if source_forward == source_reversed {
-        return None;
-    }
-    let witness = first[1];
-    let transverse = axis.cross(ref_direction);
-    let angle = |point: Point3| {
-        let radial = point.vector_from(center);
-        let axial = radial.dot(axis);
-        let radial_length = radial.norm();
-        (axial.abs() <= GEOMETRY_TOLERANCE && (radial_length - radius).abs() <= GEOMETRY_TOLERANCE)
-            .then(|| radial.dot(transverse).atan2(radial.dot(ref_direction)))
-    };
-    let start_angle = angle(start)?;
-    let end_angle = unwrap_angle(angle(end)?, start_angle);
-    let witness_angle = angle(witness)?;
-    let selected_end = witness_arc_end(start_angle, end_angle, witness_angle)?;
-    Some(Ok([start_angle, selected_end]))
-    })().transpose()
+        let parameters = [
+            support.parameter_range[0],
+            0.5 * (support.parameter_range[0] + support.parameter_range[1]),
+            support.parameter_range[1],
+        ];
+        let lifted = support
+            .carriers
+            .iter()
+            .zip(&support.pcurves)
+            .map(
+                |(carrier, pcurve)| -> Result<_, cadmpeg_core::decode::ResourceLimit> {
+                    let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(surface) =
+                        carrier
+                    else {
+                        return Ok(None);
+                    };
+                    let Some(carrier_axis) =
+                        standard_circle_axis_from_carrier(center, radius, surface)
+                    else {
+                        return Ok(None);
+                    };
+                    if carrier_axis.as_raw().dot(axis) < 0.9999 {
+                        return Ok(None);
+                    }
+                    // A non-finite lift is measured as a finite one is.
+                    Ok(Some(lifted_standard_support_parameters(
+                        surface, pcurve, parameters,
+                    )?))
+                },
+            )
+            .collect::<Result<Option<Vec<_>>, _>>();
+        let lifted = match lifted {
+            Ok(Some(lifted)) => lifted,
+            Ok(None) => return None,
+            Err(limit) => return Some(Err(limit)),
+        };
+        let [first, second] = <[[Option<Point3>; 3]; 2]>::try_from(lifted).ok()?;
+        let first = first.into_iter().collect::<Option<Vec<_>>>()?;
+        let second = second.into_iter().collect::<Option<Vec<_>>>()?;
+        if first
+            .iter()
+            .zip(&second)
+            .any(|(left, right)| left.distance_squared(*right).sqrt() > SUPPORT_AGREEMENT_TOLERANCE)
+        {
+            return None;
+        }
+        let endpoint_error = |left: Point3, right: Point3| left.distance_squared(right).sqrt();
+        let source_forward = endpoint_error(first[0], start) <= GEOMETRY_TOLERANCE
+            && endpoint_error(first[2], end) <= GEOMETRY_TOLERANCE;
+        let source_reversed = endpoint_error(first[0], end) <= GEOMETRY_TOLERANCE
+            && endpoint_error(first[2], start) <= GEOMETRY_TOLERANCE;
+        if source_forward == source_reversed {
+            return None;
+        }
+        let witness = first[1];
+        let transverse = axis.cross(ref_direction);
+        let angle = |point: Point3| {
+            let radial = point.vector_from(center);
+            let axial = radial.dot(axis);
+            let radial_length = radial.norm();
+            (axial.abs() <= GEOMETRY_TOLERANCE
+                && (radial_length - radius).abs() <= GEOMETRY_TOLERANCE)
+                .then(|| radial.dot(transverse).atan2(radial.dot(ref_direction)))
+        };
+        let start_angle = angle(start)?;
+        let end_angle = unwrap_angle(angle(end)?, start_angle);
+        let witness_angle = angle(witness)?;
+        let selected_end = witness_arc_end(start_angle, end_angle, witness_angle)?;
+        Some(Ok([start_angle, selected_end]))
+    })()
+    .transpose()
 }
 
 fn attach_standard_circles(
