@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroU32;
 
 use super::{named_parameter, record_values, source_numeric_id, RecordExt, ValueExt};
-use super::reference::{first_matching as first_matching_reference, references, visit as visit_references};
+use super::reference::{first_matching as first_matching_reference, references};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -79,6 +79,22 @@ fn insert_pmi_map<K: Ord, V>(
     }
     values.insert(key, value);
     Ok(())
+}
+
+fn insert_pmi_nested_set<K: Ord, V: Ord>(
+    groups: &mut BTreeMap<K, BTreeSet<V>>,
+    key: K,
+    value: V,
+    ctx: Option<&DecodeContext<'_>>,
+    group_operation: &'static str,
+    item_operation: &'static str,
+) -> Result<(), CodecError> {
+    if !groups.contains_key(&key) {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, group_operation)?;
+        }
+    }
+    insert_pmi_set(groups.entry(key).or_default(), value, ctx, item_operation)
 }
 
 fn claim_pmi_typed(
@@ -838,7 +854,7 @@ pub(super) fn decode(
         claim_pmi_typed(&mut typed, id, ctx)?;
     }
 
-    resolve_feature_for_datum_target_relationships(exchange, &annotations, ir, &mut typed);
+    resolve_feature_for_datum_target_relationships(exchange, &annotations, ir, &mut typed, ctx)?;
     let points_by_source = point_sources(ir, ctx)?;
     let curves_by_source = curve_sources(ir, ctx)?;
     let geometry_sources = GeometrySources {
@@ -853,7 +869,8 @@ pub(super) fn decode(
         &annotations,
         ir,
         &mut typed,
-    );
+        ctx,
+    )?;
 
     let targeted_aspects = collect_pmi_set(
         ir.model
@@ -874,7 +891,7 @@ pub(super) fn decode(
         shape_aspects.intersection(&targeted_aspects).copied(),
         ctx,
     )?;
-    mark_characteristic_representations(exchange, &annotations, &mut typed);
+    mark_characteristic_representations(exchange, &annotations, &mut typed, ctx)?;
     Ok(StageOutcome {
         value: (),
         claims: typed,
@@ -908,43 +925,43 @@ fn mark_characteristic_representations(
     exchange: &Exchange,
     annotations: &Annotations,
     typed: &mut HashSet<u64>,
-) {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
     for (id, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
         let Some(_) = first_matching_reference(record_values(record), |reference| {
             annotations.get(reference).is_some()
         }) else {
             continue;
         };
-        typed.insert(id);
+        claim_pmi_typed(typed, id, ctx)?;
         for parameter in record_values(record) {
-            visit_references(parameter, &mut |representation_id| {
+            for representation_id in references(parameter) {
                 let Some(representation) = exchange.records().get(&representation_id) else {
-                    return false;
+                    continue;
                 };
                 if !representation
                     .partials
                     .iter()
                     .any(|partial| partial.name == "SHAPE_DIMENSION_REPRESENTATION")
                 {
-                    return false;
+                    continue;
                 }
-                typed.insert(representation_id);
+                claim_pmi_typed(typed, representation_id, ctx)?;
                 for parameter in record_values(representation) {
-                    visit_references(parameter, &mut |reference| {
+                    for reference in references(parameter) {
                         if exchange
                             .records()
                             .get(&reference)
                             .is_some_and(is_measure_record)
                         {
-                            typed.insert(reference);
+                            claim_pmi_typed(typed, reference, ctx)?;
                         }
-                        false
-                    });
+                    }
                 }
-                false
-            });
+            }
         }
     }
+    Ok(())
 }
 
 fn resolve_feature_for_datum_target_relationships(
@@ -952,7 +969,8 @@ fn resolve_feature_for_datum_target_relationships(
     annotations: &Annotations,
     ir: &mut CadIr,
     typed: &mut HashSet<u64>,
-) {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
     for (id, record) in exchange.entities("FEATURE_FOR_DATUM_TARGET_RELATIONSHIP") {
         let Some((relating, related)) = relationship_endpoints(record) else {
             continue;
@@ -969,9 +987,12 @@ fn resolve_feature_for_datum_target_relationships(
             PmiTarget::ShapeAspect {
                 source_id: super::step_source_id(relating),
             },
-        );
-        typed.extend([id, relating]);
+            ctx,
+            "step_pmi_datum_basis_targets",
+        )?;
+        claim_pmi_typed_many(typed, [id, relating], ctx)?;
     }
+    Ok(())
 }
 
 fn resolve_geometric_item_usages(
@@ -982,28 +1003,36 @@ fn resolve_geometric_item_usages(
     annotations: &Annotations,
     ir: &mut CadIr,
     typed: &mut HashSet<u64>,
-) {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
     let mut aspect_annotations = BTreeMap::<u64, BTreeSet<AnnotationIndex>>::new();
     for (&annotation_id, record) in exchange.records() {
         let Some(annotation_index) = annotations.get(annotation_id) else {
             continue;
         };
         if shape_aspects.contains(&annotation_id) {
-            aspect_annotations
-                .entry(annotation_id)
-                .or_default()
-                .insert(annotation_index);
+            insert_pmi_nested_set(
+                &mut aspect_annotations,
+                annotation_id,
+                annotation_index,
+                ctx,
+                "step_pmi_aspect_annotation_groups",
+                "step_pmi_aspect_annotation_members",
+            )?;
         }
         for parameter in record_values(record) {
-            visit_references(parameter, &mut |reference| {
+            for reference in references(parameter) {
                 if shape_aspects.contains(&reference) {
-                    aspect_annotations
-                        .entry(reference)
-                        .or_default()
-                        .insert(annotation_index);
+                    insert_pmi_nested_set(
+                        &mut aspect_annotations,
+                        reference,
+                        annotation_index,
+                        ctx,
+                        "step_pmi_aspect_annotation_groups",
+                        "step_pmi_aspect_annotation_members",
+                    )?;
                 }
-                false
-            });
+            }
         }
     }
 
@@ -1012,14 +1041,22 @@ fn resolve_geometric_item_usages(
         let Some((relating, related)) = relationship_endpoints(record) else {
             continue;
         };
-        relationship_aspects
-            .entry(relating)
-            .or_default()
-            .insert(related);
-        relationship_aspects
-            .entry(related)
-            .or_default()
-            .insert(relating);
+        insert_pmi_nested_set(
+            &mut relationship_aspects,
+            relating,
+            related,
+            ctx,
+            "step_pmi_relationship_aspect_groups",
+            "step_pmi_relationship_aspect_members",
+        )?;
+        insert_pmi_nested_set(
+            &mut relationship_aspects,
+            related,
+            relating,
+            ctx,
+            "step_pmi_relationship_aspect_groups",
+            "step_pmi_relationship_aspect_members",
+        )?;
     }
 
     for (&id, record) in exchange.records() {
@@ -1036,38 +1073,48 @@ fn resolve_geometric_item_usages(
         let Some(identified_item) = partial.parameters.get(4).and_then(first_reference) else {
             continue;
         };
-        let mut annotation_indices = aspect_annotations
-            .get(&definition)
-            .cloned()
-            .unwrap_or_default();
+        let mut annotation_indices = BTreeSet::new();
+        for &index in aspect_annotations.get(&definition).into_iter().flatten() {
+            insert_pmi_set(
+                &mut annotation_indices,
+                index,
+                ctx,
+                "step_pmi_usage_annotation_indices",
+            )?;
+        }
         if let Some(aspects) = relationship_aspects.get(&definition) {
             for aspect in aspects {
-                annotation_indices.extend(
-                    aspect_annotations
-                        .get(aspect)
-                        .into_iter()
-                        .flatten()
-                        .copied(),
-                );
+                for &index in aspect_annotations.get(aspect).into_iter().flatten() {
+                    insert_pmi_set(
+                        &mut annotation_indices,
+                        index,
+                        ctx,
+                        "step_pmi_usage_annotation_indices",
+                    )?;
+                }
             }
         }
         if annotation_indices.is_empty() {
             continue;
         }
-        let targets = topology_targets(identified_item, topology, geometry_sources);
+        let targets = topology_targets(identified_item, topology, geometry_sources, ctx)?;
         if targets.is_empty() {
             continue;
         }
         for annotation_index in annotation_indices {
             let annotation = &mut ir.model.pmi[annotation_index.get()];
             for target in &targets {
-                if !annotation.targets.contains(target) {
-                    annotation.targets.push(target.clone());
-                }
+                push_target(
+                    &mut annotation.targets,
+                    target.clone(),
+                    ctx,
+                    "step_pmi_geometric_usage_targets",
+                )?;
             }
         }
-        typed.insert(id);
+        claim_pmi_typed(typed, id, ctx)?;
     }
+    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -1080,16 +1127,17 @@ fn topology_targets(
     id: u64,
     topology: &TopologyData,
     geometry_sources: GeometrySources<'_>,
-) -> Vec<PmiTarget> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Vec<PmiTarget>, CodecError> {
     let mut targets = Vec::new();
     for body in topology.body_by_root.get(&id).into_iter().flatten() {
-        push_target(&mut targets, PmiTarget::Body { body: body.clone() });
+        push_target(&mut targets, PmiTarget::Body { body: body.clone() }, ctx, "step_pmi_topology_targets")?;
     }
     for face in topology.faces_by_source.get(&id).into_iter().flatten() {
-        push_target(&mut targets, PmiTarget::Face { face: face.clone() });
+        push_target(&mut targets, PmiTarget::Face { face: face.clone() }, ctx, "step_pmi_topology_targets")?;
     }
     for edge in topology.edges_by_source.get(&id).into_iter().flatten() {
-        push_target(&mut targets, PmiTarget::Edge { edge: edge.clone() });
+        push_target(&mut targets, PmiTarget::Edge { edge: edge.clone() }, ctx, "step_pmi_topology_targets")?;
     }
     for vertex in topology.vertices_by_source.get(&id).into_iter().flatten() {
         push_target(
@@ -1097,7 +1145,9 @@ fn topology_targets(
             PmiTarget::Vertex {
                 vertex: vertex.clone(),
             },
-        );
+            ctx,
+            "step_pmi_topology_targets",
+        )?;
     }
     for point in geometry_sources.points.get(&id).into_iter().flatten() {
         push_target(
@@ -1105,7 +1155,9 @@ fn topology_targets(
             PmiTarget::Point {
                 point: point.clone(),
             },
-        );
+            ctx,
+            "step_pmi_topology_targets",
+        )?;
     }
     for curve in geometry_sources.curves.get(&id).into_iter().flatten() {
         push_target(
@@ -1113,15 +1165,23 @@ fn topology_targets(
             PmiTarget::Curve {
                 curve: curve.clone(),
             },
-        );
+            ctx,
+            "step_pmi_topology_targets",
+        )?;
     }
-    targets
+    Ok(targets)
 }
 
-fn push_target(targets: &mut Vec<PmiTarget>, target: PmiTarget) {
+fn push_target(
+    targets: &mut Vec<PmiTarget>,
+    target: PmiTarget,
+    ctx: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
     if !targets.contains(&target) {
-        targets.push(target);
+        push_pmi_vec(targets, target, ctx, operation)?;
     }
+    Ok(())
 }
 
 fn first_reference(value: &Value) -> Option<u64> {

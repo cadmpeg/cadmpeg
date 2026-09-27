@@ -500,3 +500,127 @@ fn pmi_placement_walk_refuses_depth_limit() {
                 && refusal.operation == "step_pmi_placement_walk"
     ));
 }
+
+fn nested_set_refusal(limit: u64, group_operation: &'static str, item_operation: &'static str) -> CodecError {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits collection policy");
+    super::super::insert_pmi_nested_set(
+        &mut BTreeMap::new(),
+        1u64,
+        2u64,
+        Some(&ctx),
+        group_operation,
+        item_operation,
+    )
+    .expect_err("nested set exceeds collection limit")
+}
+
+#[test]
+fn pmi_aspect_annotation_groups_refuse_collection_limit() {
+    assert!(matches!(
+        nested_set_refusal(0, "step_pmi_aspect_annotation_groups", "step_pmi_aspect_annotation_members"),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_pmi_aspect_annotation_groups"
+    ));
+}
+
+#[test]
+fn pmi_aspect_annotation_members_refuse_collection_limit() {
+    assert!(matches!(
+        nested_set_refusal(1, "step_pmi_aspect_annotation_groups", "step_pmi_aspect_annotation_members"),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_pmi_aspect_annotation_members"
+    ));
+}
+
+#[test]
+fn pmi_relationship_aspect_groups_refuse_collection_limit() {
+    assert!(matches!(
+        nested_set_refusal(0, "step_pmi_relationship_aspect_groups", "step_pmi_relationship_aspect_members"),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_pmi_relationship_aspect_groups"
+    ));
+}
+
+#[test]
+fn pmi_relationship_aspect_members_refuse_collection_limit() {
+    assert!(matches!(
+        nested_set_refusal(1, "step_pmi_relationship_aspect_groups", "step_pmi_relationship_aspect_members"),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_pmi_relationship_aspect_members"
+    ));
+}
+
+fn target_slot_refusal(operation: &'static str) -> CodecError {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits collection policy");
+    super::super::push_target(
+        &mut Vec::new(),
+        cadmpeg_ir::pmi::PmiTarget::ShapeAspect {
+            source_id: crate::reader::step_source_id(1),
+        },
+        Some(&ctx),
+        operation,
+    )
+    .expect_err("target slot exceeds collection limit")
+}
+
+#[test]
+fn pmi_datum_basis_targets_refuse_collection_limit() {
+    assert!(matches!(
+        target_slot_refusal("step_pmi_datum_basis_targets"),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_pmi_datum_basis_targets"
+    ));
+}
+
+#[test]
+fn pmi_topology_targets_refuse_collection_limit() {
+    assert!(matches!(
+        target_slot_refusal("step_pmi_topology_targets"),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_pmi_topology_targets"
+    ));
+}
+
+#[test]
+fn pmi_geometric_usage_targets_refuse_collection_limit() {
+    assert!(matches!(
+        target_slot_refusal("step_pmi_geometric_usage_targets"),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_pmi_geometric_usage_targets"
+    ));
+}
+
+#[test]
+fn pmi_usage_annotation_indices_refuse_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits collection policy");
+    assert!(matches!(
+        super::super::insert_pmi_set(
+            &mut std::collections::BTreeSet::new(),
+            1u64,
+            Some(&ctx),
+            "step_pmi_usage_annotation_indices",
+        ),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_pmi_usage_annotation_indices"
+    ));
+}
