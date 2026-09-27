@@ -153,11 +153,9 @@ pub(crate) fn transfer_neutral(
             assets.push(crate::native::native_id_charged(ctx, "entry", name)?);
         }
         model.semantic_annotations.push(SemanticAnnotation {
-            id: SemanticAnnotationId::compose(
-                &cadmpeg_ir::identity_namespace!("fcstd", "model", "semantic-annotation"),
-                crate::native::model_key(&record.object, "content")
-                    .map_err(CodecError::malformed)?,
-            ),
+            id: SemanticAnnotationId::mint(crate::native::model_id_charged(
+                ctx, "semantic-annotation", &record.object, "content",
+            )?).map_err(CodecError::malformed)?,
             object: retained_string(ctx, &record.object, "fcstd neutral annotation object")?,
             kind: schema.kind.clone(),
             runtime_type: retained_string(ctx, record.kind.as_str(), "fcstd annotation runtime type")?,
@@ -770,6 +768,28 @@ pub(crate) mod tests {
         assert!(matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[], &[]),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.operation == "fcstd annotation keyed parameters"));
+    }
+
+    #[test]
+    fn annotation_neutral_identity_refuses_at_retained_limit() {
+        let record = crate::native::SemanticAnnotationRecord {
+            id: "fcstd:native:annotation#Note".into(),
+            object: "fcstd:native:object#Note".into(),
+            kind: crate::native::AnnotationRuntimeType::Annotation,
+            text: Vec::new(),
+            references: Default::default(),
+            parameters: Default::default(),
+            side_entries: Vec::new(),
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes = crate::native::model_id(
+            "semantic-annotation", &record.object, "content").len() as u64 - 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        assert!(matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[], &[]),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "FreeCAD model identity"));
     }
 
     #[test]
