@@ -954,7 +954,7 @@ impl CodecBackend for FcstdCodec {
             namespace.set_arena(ctx, "string_tables", string_tables.as_slice())?;
             let product_nodes = product::transfer(&graph.objects, &graph.properties, &scan.data)?;
             namespace.set_arena(ctx, "product_nodes", &product_nodes)?;
-            let joint_records = joint::transfer(&graph.objects, &graph.properties)?;
+            let joint_records = joint::transfer(ctx, &graph.objects, &graph.properties)?;
             namespace.set_arena(ctx, "joints", &joint_records)?;
             let drawings = drawing::transfer(ctx, &graph.objects, &graph.properties)?;
             drawing::transfer_neutral(ctx, &mut ir.model, &drawings, &graph.properties)?;
