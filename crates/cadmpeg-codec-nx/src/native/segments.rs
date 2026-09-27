@@ -86,7 +86,7 @@ pub(super) fn segment_index_rows(
     };
     let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
     let count = index.rows().count();
-    let count_u64 = u64::try_from(count).unwrap_or(u64::MAX);
+    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
     ctx.charge_collection_items(count_u64, "nx segment index rows")?;
     ctx.charge_entities(count_u64, "nx segment index rows")?;
     let slot_bytes = count
@@ -107,7 +107,7 @@ pub(super) fn segment_index_rows(
             .checked_add(digits)
             .ok_or_else(|| ctx.refuse_codec_limit("nx segment index row identity", 0, count_u64))?;
         ctx.charge_retained(
-            u64::try_from(id_len).unwrap_or(u64::MAX),
+            cadmpeg_core::decode::u64_from_index(id_len),
             "nx segment index row identity",
         )?;
         let mut id = String::new();
@@ -115,19 +115,19 @@ pub(super) fn segment_index_rows(
             ctx.refuse_codec_limit(
                 "nx segment index row identity",
                 0,
-                u64::try_from(id_len).unwrap_or(u64::MAX),
+                cadmpeg_core::decode::u64_from_index(id_len),
             )
         })?;
         write!(&mut id, "{prefix}{ordinal}").map_err(|_| {
             ctx.refuse_codec_limit(
                 "nx segment index row identity",
                 0,
-                u64::try_from(id_len).unwrap_or(u64::MAX),
+                cadmpeg_core::decode::u64_from_index(id_len),
             )
         })?;
         let name_len = entry.name.len();
         ctx.charge_retained(
-            u64::try_from(name_len).unwrap_or(u64::MAX),
+            cadmpeg_core::decode::u64_from_index(name_len),
             "nx segment index source entry",
         )?;
         let mut source_entry = String::new();
@@ -135,7 +135,7 @@ pub(super) fn segment_index_rows(
             ctx.refuse_codec_limit(
                 "nx segment index source entry",
                 0,
-                u64::try_from(name_len).unwrap_or(u64::MAX),
+                cadmpeg_core::decode::u64_from_index(name_len),
             )
         })?;
         source_entry.push_str(&entry.name);
@@ -211,7 +211,7 @@ fn segment_stream_candidates<'a>(
             _ => return Ok(None),
         };
         ctx.charge_work(
-            u64::try_from(streams.len()).unwrap_or(u64::MAX),
+            cadmpeg_core::decode::u64_from_index(streams.len()),
             "nx segment stream matching",
         )?;
         Ok(streams
@@ -739,11 +739,11 @@ pub(super) fn segment_stream_links(
         ctx.charge_collection_items(1, "nx segment stream links")?;
         ctx.charge_entities(1, "nx segment stream links")?;
         ctx.charge_retained(
-            u64::try_from(std::mem::size_of::<SegmentStreamLink>()).unwrap_or(u64::MAX),
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SegmentStreamLink>()),
             "nx segment stream links",
         )?;
         ctx.charge_retained(
-            u64::try_from(id_len).unwrap_or(u64::MAX),
+            cadmpeg_core::decode::u64_from_index(id_len),
             "nx segment stream link identity",
         )?;
         let mut id = String::new();
@@ -751,14 +751,14 @@ pub(super) fn segment_stream_links(
             ctx.refuse_codec_limit(
                 "nx segment stream link identity",
                 0,
-                u64::try_from(id_len).unwrap_or(u64::MAX),
+                cadmpeg_core::decode::u64_from_index(id_len),
             )
         })?;
         write!(&mut id, "{prefix}{ordinal}").map_err(|_| {
             ctx.refuse_codec_limit(
                 "nx segment stream link identity",
                 0,
-                u64::try_from(id_len).unwrap_or(u64::MAX),
+                cadmpeg_core::decode::u64_from_index(id_len),
             )
         })?;
         links
@@ -859,15 +859,15 @@ pub(super) fn segment_body_bindings(
         ctx.charge_collection_items(1, "nx segment body bindings")?;
         ctx.charge_entities(1, "nx segment body bindings")?;
         ctx.charge_retained(
-            u64::try_from(std::mem::size_of::<SegmentBodyBinding>()).unwrap_or(u64::MAX),
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SegmentBodyBinding>()),
             "nx segment body bindings",
         )?;
         ctx.charge_retained(
-            u64::try_from(id_len).unwrap_or(u64::MAX),
+            cadmpeg_core::decode::u64_from_index(id_len),
             "nx segment body binding identity",
         )?;
         ctx.charge_retained(
-            u64::try_from(link_len).unwrap_or(u64::MAX),
+            cadmpeg_core::decode::u64_from_index(link_len),
             "nx segment body stream link identity",
         )?;
         let mut id = String::new();
@@ -875,14 +875,14 @@ pub(super) fn segment_body_bindings(
             ctx.refuse_codec_limit(
                 "nx segment body binding identity",
                 0,
-                u64::try_from(id_len).unwrap_or(u64::MAX),
+                cadmpeg_core::decode::u64_from_index(id_len),
             )
         })?;
         write!(&mut id, "{binding_prefix}{ordinal}").map_err(|_| {
             ctx.refuse_codec_limit(
                 "nx segment body binding identity",
                 0,
-                u64::try_from(id_len).unwrap_or(u64::MAX),
+                cadmpeg_core::decode::u64_from_index(id_len),
             )
         })?;
         let mut stream_link = String::new();
@@ -890,14 +890,14 @@ pub(super) fn segment_body_bindings(
             ctx.refuse_codec_limit(
                 "nx segment body stream link identity",
                 0,
-                u64::try_from(link_len).unwrap_or(u64::MAX),
+                cadmpeg_core::decode::u64_from_index(link_len),
             )
         })?;
         write!(&mut stream_link, "{link_prefix}{ordinal}").map_err(|_| {
             ctx.refuse_codec_limit(
                 "nx segment body stream link identity",
                 0,
-                u64::try_from(link_len).unwrap_or(u64::MAX),
+                cadmpeg_core::decode::u64_from_index(link_len),
             )
         })?;
         bindings

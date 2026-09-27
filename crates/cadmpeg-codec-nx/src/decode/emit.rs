@@ -1464,7 +1464,7 @@ fn unknown_stream_record(
         Some(data) => Ok(UnknownRecord::retained(id, offset, data, Vec::new())),
         None => {
             ctx.charge_work(
-                u64::try_from(stream.inflated.len()).unwrap_or(u64::MAX),
+                cadmpeg_core::decode::u64_from_index(stream.inflated.len()),
                 "hash NX unknown stream",
             )?;
             let digest = render_retained_text(
@@ -1475,7 +1475,7 @@ fn unknown_stream_record(
             Ok(UnknownRecord::unavailable(
                 id,
                 offset,
-                u64::try_from(stream.inflated.len()).unwrap_or(u64::MAX),
+                cadmpeg_core::decode::u64_from_index(stream.inflated.len()),
                 digest,
                 Vec::new(),
             ))
@@ -1557,7 +1557,7 @@ pub(super) fn source_meta(
         insert_source_attribute(ctx, &mut attributes, format_args!("jpeg_preview_{preview_count}_components"), components)?;
         insert_source_attribute(ctx, &mut attributes, format_args!("jpeg_preview_{preview_count}_byte_len"), payload.len())?;
         ctx.charge_work(
-            u64::try_from(payload.len()).unwrap_or(u64::MAX),
+            cadmpeg_core::decode::u64_from_index(payload.len()),
             "hash NX source preview",
         )?;
         insert_source_attribute(ctx, &mut attributes, format_args!("jpeg_preview_{preview_count}_sha256"), HexDigest(sha256(payload)))?;
@@ -1605,7 +1605,7 @@ pub(super) fn source_meta(
         }
     }
     ctx.charge_collection_items(
-        u64::try_from(attributes.len()).unwrap_or(u64::MAX),
+        cadmpeg_core::decode::u64_from_index(attributes.len()),
         "nx source attribute names",
     )?;
     Ok(SourceMeta::classified(
@@ -1642,7 +1642,7 @@ fn render_retained_text(
     let mut count = CountBytes(0);
     write!(&mut count, "{value}")
         .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    ctx.charge_retained(u64::try_from(count.0).unwrap_or(u64::MAX), operation)?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(count.0), operation)?;
     let mut text = String::new();
     text.try_reserve_exact(count.0)
         .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
@@ -1666,7 +1666,7 @@ fn insert_source_attribute(
     let text_len = key_len.0.checked_add(value_len.0)
         .ok_or_else(|| ctx.refuse_codec_limit("nx source attribute text", 0, u64::MAX))?;
     ctx.charge_collection_items(1, "nx source attributes")?;
-    ctx.charge_retained(u64::try_from(text_len).unwrap_or(u64::MAX), "nx source attribute text")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(text_len), "nx source attribute text")?;
     let mut key_text = String::new();
     key_text.try_reserve_exact(key_len.0)
         .map_err(|_| ctx.refuse_codec_limit("nx source attribute text", 0, 1))?;

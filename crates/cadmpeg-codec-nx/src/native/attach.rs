@@ -7794,7 +7794,7 @@ fn counterbore_cylinders(
     }
     if let Some(ctx) = ctx {
         ctx.charge_collection_items(
-            u64::try_from(cylinders.len() / 2).unwrap_or(u64::MAX),
+            cadmpeg_core::decode::u64_from_index(cylinders.len() / 2),
             "nx counterbore cylinder witnesses",
         )?;
     }
@@ -7841,7 +7841,7 @@ fn reserve_attach_vec<T>(
     additional: usize,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let count = u64::try_from(additional).unwrap_or(u64::MAX);
+    let count = cadmpeg_core::decode::u64_from_index(additional);
     values.try_reserve_exact(additional).map_err(|_| match ctx {
         Some(ctx) => ctx.refuse_codec_limit(operation, 0, count),
         None => cadmpeg_core::decode::refuse_local_limit(operation, count, count),
@@ -8122,7 +8122,7 @@ fn simple_hole_chamfers(
             }
             if let Some(ctx) = ctx {
                 ctx.charge_work(
-                    u64::try_from(bores.len()).unwrap_or(u64::MAX),
+                    cadmpeg_core::decode::u64_from_index(bores.len()),
                     "nx chamfer bore matching",
                 )?;
             }

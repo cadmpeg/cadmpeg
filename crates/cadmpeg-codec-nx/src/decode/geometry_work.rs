@@ -107,7 +107,7 @@ impl<'a> GeometryWorkBudget<'a> {
         count: usize,
         operation: &'static str,
     ) -> Result<Option<ScopedReservation<'_>>, ResourceLimit> {
-        let count_u64 = u64::try_from(count).unwrap_or(u64::MAX);
+        let count_u64 = cadmpeg_core::decode::u64_from_index(count);
         let invalid_size = || ResourceLimit {
             dimension: ResourceDimension::Codec(operation),
             reason: ResourceFailure::BudgetExceeded,
@@ -141,7 +141,7 @@ impl<'a> GeometryWorkBudget<'a> {
             return Some(limit);
         }
         if self.work.exhausted() {
-            let limit = u64::try_from(self.work.consumed()).unwrap_or(u64::MAX);
+            let limit = cadmpeg_core::decode::u64_from_index(self.work.consumed());
             charges.fuse_local_work(limit);
         }
         charges.resource_refusal()

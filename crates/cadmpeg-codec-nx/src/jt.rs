@@ -120,7 +120,7 @@ pub(crate) fn unpack_predictor_residuals(
     predictor: Predictor,
 ) -> Result<Vec<i32>, CodecError> {
     ctx.charge_work(
-        u64::try_from(residuals.len()).unwrap_or(u64::MAX),
+        cadmpeg_core::decode::u64_from_index(residuals.len()),
         "unpack JT predictor residuals",
     )?;
     let mut values = try_vec(ctx, residuals.len()).ok_or_else(|| {
@@ -129,7 +129,7 @@ pub(crate) fn unpack_predictor_residuals(
                 ctx.refuse_codec_limit(
                     "nx JT decoded vector",
                     0,
-                    u64::try_from(residuals.len()).unwrap_or(u64::MAX),
+                    cadmpeg_core::decode::u64_from_index(residuals.len()),
                 )
             },
             CodecError::from,

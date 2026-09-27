@@ -116,7 +116,7 @@ fn reserve_jt_scratch_vec<'a, T>(
     count: usize,
     operation: &'static str,
 ) -> Result<ScopedReservation<'a>, CodecError> {
-    let count_u64 = u64::try_from(count).unwrap_or(u64::MAX);
+    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
     ctx.charge_collection_items(count_u64, operation)?;
     let bytes = count
         .checked_mul(std::mem::size_of::<T>())
@@ -135,7 +135,7 @@ fn reserve_jt_retained_vec<T>(
     count: usize,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let count_u64 = u64::try_from(count).unwrap_or(u64::MAX);
+    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
     ctx.charge_collection_items(count_u64, operation)?;
     let bytes = count
         .checked_mul(std::mem::size_of::<T>())
@@ -153,7 +153,7 @@ fn reserve_jt_retained_bytes(
     count: usize,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let count_u64 = u64::try_from(count).unwrap_or(u64::MAX);
+    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
     ctx.charge_collection_items(count_u64, operation)?;
     ctx.charge_retained(count_u64, operation)?;
     values
@@ -170,10 +170,10 @@ fn retain_jt_text_parts(
         .iter()
         .try_fold(0usize, |sum, part| sum.checked_add(part.len()))
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    ctx.charge_retained(u64::try_from(length).unwrap_or(u64::MAX), operation)?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), operation)?;
     let mut text = String::new();
     text.try_reserve_exact(length).map_err(|_| {
-        ctx.refuse_codec_limit(operation, 0, u64::try_from(length).unwrap_or(u64::MAX))
+        ctx.refuse_codec_limit(operation, 0, cadmpeg_core::decode::u64_from_index(length))
     })?;
     for part in parts {
         text.push_str(part);
@@ -205,17 +205,17 @@ fn retain_jt_node_path(ctx: &DecodeContext<'_>, nodes: &[u32]) -> Result<String,
             sum.checked_add(usize::try_from(decimal_digits(index)).ok()?)
         })
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    ctx.charge_retained(u64::try_from(length).unwrap_or(u64::MAX), operation)?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), operation)?;
     let mut text = String::new();
     text.try_reserve_exact(length).map_err(|_| {
-        ctx.refuse_codec_limit(operation, 0, u64::try_from(length).unwrap_or(u64::MAX))
+        ctx.refuse_codec_limit(operation, 0, cadmpeg_core::decode::u64_from_index(length))
     })?;
     for (ordinal, node) in nodes.iter().enumerate() {
         if ordinal != 0 {
             text.push('-');
         }
         std::fmt::Write::write_fmt(&mut text, format_args!("{node}")).map_err(|_| {
-            ctx.refuse_codec_limit(operation, 0, u64::try_from(length).unwrap_or(u64::MAX))
+            ctx.refuse_codec_limit(operation, 0, cadmpeg_core::decode::u64_from_index(length))
         })?;
     }
     Ok(text)
@@ -246,14 +246,14 @@ fn retain_jt_tessellation_id(
         .and_then(|length| length.checked_add(1 + digits(u64::from(object_id))))
         .and_then(|length| length.checked_add(path_length))
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    ctx.charge_retained(u64::try_from(length).unwrap_or(u64::MAX), operation)?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), operation)?;
     let mut id = String::new();
     id.try_reserve_exact(length).map_err(|_| {
-        ctx.refuse_codec_limit(operation, 0, u64::try_from(length).unwrap_or(u64::MAX))
+        ctx.refuse_codec_limit(operation, 0, cadmpeg_core::decode::u64_from_index(length))
     })?;
     id.push_str(prefix);
     std::fmt::Write::write_fmt(&mut id, format_args!("{offset}-{object_id}")).map_err(|_| {
-        ctx.refuse_codec_limit(operation, 0, u64::try_from(length).unwrap_or(u64::MAX))
+        ctx.refuse_codec_limit(operation, 0, cadmpeg_core::decode::u64_from_index(length))
     })?;
     if let Some(path) = path {
         id.push_str("-path-");
@@ -3377,13 +3377,16 @@ pub(super) fn display_jt_indices(
                 previous_header_offset = Some(header_offset);
                 if let Some(ctx) = ctx {
                     ctx.charge_entities(1, "admit DisplayJT index row")?;
-                    ctx.charge_retained(
-                        u64::try_from("nx:display-jt:index#".len()).unwrap_or(u64::MAX)
-                            + decimal_digits(index_ordinal)
-                            + u64::try_from("-row-".len()).unwrap_or(u64::MAX)
-                            + decimal_digits(ordinal),
-                        "retain DisplayJT index row identity",
-                    )?;
+                    let id_len = cadmpeg_core::decode::u64_from_index("nx:display-jt:index#".len())
+                        .checked_add(decimal_digits(index_ordinal))
+                        .and_then(|len| {
+                            len.checked_add(cadmpeg_core::decode::u64_from_index("-row-".len()))
+                        })
+                        .and_then(|len| len.checked_add(decimal_digits(ordinal)))
+                        .ok_or_else(|| {
+                            ctx.refuse_codec_limit("retain DisplayJT index row identity", 0, u64::MAX)
+                        })?;
+                    ctx.charge_retained(id_len, "retain DisplayJT index row identity")?;
                 }
                 rows.push(DisplayJtIndexRow {
                     id: format!("nx:display-jt:index#{index_ordinal}-row-{ordinal}"),
@@ -3395,11 +3398,12 @@ pub(super) fn display_jt_indices(
             }
             if let Some(ctx) = ctx {
                 ctx.charge_entities(1, "admit DisplayJT index entity")?;
-                ctx.charge_retained(
-                    u64::try_from("nx:display-jt:index#".len()).unwrap_or(u64::MAX)
-                        + decimal_digits(index_ordinal),
-                    "retain DisplayJT index identity",
-                )?;
+                let id_len = cadmpeg_core::decode::u64_from_index("nx:display-jt:index#".len())
+                    .checked_add(decimal_digits(index_ordinal))
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit("retain DisplayJT index identity", 0, u64::MAX)
+                    })?;
+                ctx.charge_retained(id_len, "retain DisplayJT index identity")?;
             }
             Ok(DisplayJtIndex::new(
                 format!("nx:display-jt:index#{index_ordinal}"),
@@ -3476,7 +3480,7 @@ pub(super) fn display_jt_documents(
         };
         if let Some(ctx) = ctx {
             ctx.charge_retained(
-                u64::try_from(version_field.len()).unwrap_or(u64::MAX),
+                cadmpeg_core::decode::u64_from_index(version_field.len()),
                 "retain DisplayJT version text",
             )?;
         }
@@ -3569,10 +3573,13 @@ pub(super) fn display_jt_documents(
             }
             if let Some(ctx) = ctx {
                 ctx.charge_entities(1, "admit DisplayJT toc entry")?;
-                let id_len = u64::try_from("nx:display-jt:toc-entry#".len()).unwrap_or(u64::MAX)
-                    + u64::try_from(document_key.len()).unwrap_or(u64::MAX)
-                    + 1
-                    + decimal_digits(ordinal);
+                let id_len = cadmpeg_core::decode::u64_from_index("nx:display-jt:toc-entry#".len())
+                    .checked_add(cadmpeg_core::decode::u64_from_index(document_key.len()))
+                    .and_then(|len| len.checked_add(1))
+                    .and_then(|len| len.checked_add(decimal_digits(ordinal)))
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit("retain DisplayJT toc identity", 0, u64::MAX)
+                    })?;
                 ctx.charge_retained(id_len, "retain DisplayJT toc identity")?;
             }
             toc_entries.push(DisplayJtTocEntry {
@@ -3587,11 +3594,14 @@ pub(super) fn display_jt_documents(
         }
         if let Some(ctx) = ctx {
             ctx.charge_entities(1, "admit DisplayJT document entity")?;
-            let id_len = u64::try_from("nx:display-jt:document#".len()).unwrap_or(u64::MAX)
-                + u64::try_from(document_key.len()).unwrap_or(u64::MAX);
+            let id_len = cadmpeg_core::decode::u64_from_index("nx:display-jt:document#".len())
+                .checked_add(cadmpeg_core::decode::u64_from_index(document_key.len()))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("retain DisplayJT document identity", 0, u64::MAX)
+                })?;
             ctx.charge_retained(id_len, "retain DisplayJT document identity")?;
             ctx.charge_retained(
-                u64::try_from(row.id.len()).unwrap_or(u64::MAX),
+                cadmpeg_core::decode::u64_from_index(row.id.len()),
                 "retain DisplayJT document index reference",
             )?;
             ctx.charge_collection_items(1, "admit DisplayJT document")?;
@@ -3972,7 +3982,7 @@ pub(super) fn display_jt_topology_packet_sequences(
                 TopologyPacketRole::SplitFacePositions,
             ]);
         ctx.charge_collection_items(
-            u64::try_from(role_count).unwrap_or(u64::MAX),
+            cadmpeg_core::decode::u64_from_index(role_count),
             "nx JT topology packets",
         )?;
         let packet_bytes = role_count
@@ -3985,7 +3995,7 @@ pub(super) fn display_jt_topology_packet_sequences(
             ctx.refuse_codec_limit(
                 "nx JT topology packets",
                 0,
-                u64::try_from(role_count).unwrap_or(u64::MAX),
+                cadmpeg_core::decode::u64_from_index(role_count),
             )
         })?;
         for role in roles {
@@ -5992,7 +6002,7 @@ fn resolve_display_jt_node_paths(
                     ctx.refuse_codec_limit(
                         "nx JT parent path states",
                         0,
-                        u64::try_from(count).unwrap_or(u64::MAX),
+                        cadmpeg_core::decode::u64_from_index(count),
                     )
                 })
                 .ok()?;

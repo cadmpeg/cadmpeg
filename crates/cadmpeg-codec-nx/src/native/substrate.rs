@@ -34,7 +34,7 @@ pub(crate) fn topology_streams<'a>(
 ) -> Result<Vec<Cow<'a, [u8]>>, CodecError> {
     let semantic = prepare_topology_streams(ctx, scan, None)?;
     ctx.charge_collection_items(
-        u64::try_from(semantic.len()).unwrap_or(u64::MAX),
+        cadmpeg_core::decode::u64_from_index(semantic.len()),
         "nx topology byte views",
     )?;
     let mut bytes = Vec::new();
@@ -53,7 +53,7 @@ fn prepare_topology_streams<'a>(
     mut unmatched_tombstone_counts: Option<&mut BTreeMap<&'static str, usize>>,
 ) -> Result<Vec<TopologyStream<'a>>, CodecError> {
     ctx.charge_collection_items(
-        u64::try_from(scan.streams.len()).unwrap_or(u64::MAX),
+        cadmpeg_core::decode::u64_from_index(scan.streams.len()),
         "nx prepared topology streams",
     )?;
     let mut semantic = Vec::new();
@@ -249,7 +249,7 @@ impl StreamView {
             .map_or_else(|| Rc::clone(&graph), Rc::clone);
         let intersections = if let Some(delta_indices) = paired_deltas {
             ctx.charge_collection_items(
-                u64::try_from(delta_indices.len()).unwrap_or(u64::MAX),
+                cadmpeg_core::decode::u64_from_index(delta_indices.len()),
                 "nx auxiliary replacement views",
             )?;
             let mut replacement_streams = Vec::new();
@@ -338,7 +338,7 @@ impl<'a> ParsedStreams<'a> {
         }
 
         ctx.charge_collection_items(
-            u64::try_from(scan.streams.len()).unwrap_or(u64::MAX),
+            cadmpeg_core::decode::u64_from_index(scan.streams.len()),
             "nx parsed stream records",
         )?;
         let mut streams = Vec::new();
@@ -429,7 +429,7 @@ impl<'a> ParsedStreams<'a> {
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<Option<Census>>, CodecError> {
         ctx.charge_collection_items(
-            u64::try_from(self.streams.len()).unwrap_or(u64::MAX),
+            cadmpeg_core::decode::u64_from_index(self.streams.len()),
             "nx delta census slots",
         )?;
         let mut censuses = Vec::new();
