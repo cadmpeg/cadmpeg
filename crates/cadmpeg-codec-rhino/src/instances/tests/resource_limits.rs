@@ -65,6 +65,26 @@ fn assert_resource(error: &FramingError, operation: &str) {
 }
 
 #[test]
+fn sha1_text_refuses_retained_limit() {
+    with_retained_limit(39, |ctx| {
+        let error = crate::instances::hex(ctx, &[0x5a; 20], "Rhino test SHA-1")
+            .expect_err("forty hex bytes exceed retained limit");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.operation == "Rhino test SHA-1"
+        ));
+    });
+    with_retained_limit(40, |ctx| {
+        assert_eq!(
+            crate::instances::hex(ctx, &[0x5a; 20], "Rhino test SHA-1")
+                .expect("digest text fits retained limit"),
+            "5a".repeat(20)
+        );
+    });
+}
+
+#[test]
 fn reference_object_array_ranges_refuse_collection_limit() {
     let archive = ArchiveVersion::V8;
     let mut data = 1_i32.to_le_bytes().to_vec();

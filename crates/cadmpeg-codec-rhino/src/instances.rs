@@ -326,15 +326,19 @@ impl DefinitionDiagnostic {
     }
 }
 
-/// Renders bytes as lowercase hexadecimal.
-pub(crate) fn hex(bytes: &[u8]) -> String {
+/// Renders a SHA-1 digest as retained lowercase hexadecimal.
+pub(crate) fn hex(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8; 20],
+    operation: &'static str,
+) -> Result<String, cadmpeg_core::CodecError> {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
-    let mut value = String::with_capacity(bytes.len() * 2);
+    let mut value = crate::wire::admitted_retained_string(ctx, 40, operation)?;
     for byte in bytes {
         value.push(char::from(DIGITS[usize::from(byte >> 4)]));
         value.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
     }
-    value
+    Ok(value)
 }
 
 fn checksum_warning_excluding(
