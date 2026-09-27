@@ -284,12 +284,13 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
-    let replay_bound_surfaces = scan
-        .curves
-        .tabulated_cylinder_replays
-        .iter()
-        .map(|replay| replay.surface_id)
-        .collect::<BTreeSet<_>>();
+    let mut replay_bound_surfaces = BTreeSet::new();
+    for replay in &scan.curves.tabulated_cylinder_replays {
+        if !replay_bound_surfaces.contains(&replay.surface_id) {
+            ctx.charge_collection_items(1, "creo line-extrusion replay surface ids")?;
+            replay_bound_surfaces.insert(replay.surface_id);
+        }
+    }
     let mut transferred = 0;
     for record in &scan.surfaces.parameters {
         if replay_bound_surfaces.contains(&record.surface_id) {
@@ -492,6 +493,9 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut replay_counts = BTreeMap::<u32, usize>::new();
     for replay in &scan.curves.tabulated_cylinder_replays {
+        if !replay_counts.contains_key(&replay.surface_id) {
+            ctx.charge_collection_items(1, "creo tabulated-cylinder replay counts")?;
+        }
         *replay_counts.entry(replay.surface_id).or_default() += 1;
     }
     let mut transferred = 0;
@@ -519,8 +523,13 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
         let chart_origin = unique_tabulated_cylinder_prototype(scan, replay)
             .and_then(crate::surface::SurfacePrototypeRecord::tabulated_cylinder_chart_origin);
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-        let directrix =
-            placed_tabulated_cylinder_directrix(replay, parameters, chart_origin, &mut refusal);
+        let directrix = placed_tabulated_cylinder_directrix(
+            ctx,
+            replay,
+            parameters,
+            chart_origin,
+            &mut refusal,
+        )?;
         let refused = refusal.take_records();
         let Some((directrix, sweep)) = directrix.filter(|_| refused.is_empty()) else {
             note_tabulated_cylinder_refusals(

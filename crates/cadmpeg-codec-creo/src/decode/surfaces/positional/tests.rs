@@ -11,6 +11,83 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::test_support::build_prt;
 use crate::CreoCodec;
 
+fn scan_with_tabulated_replay() -> crate::container::ContainerScan<'static> {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.curves
+        .tabulated_cylinder_replays
+        .push(crate::surface::TabulatedCylinderCurveReplay {
+            body: Vec::new(),
+            surface_id: 7,
+            curve_id: 9,
+            curve_type: 0x13,
+            flip: 1,
+            tangent_condition: 0,
+            degree: 3,
+            parameter_body: Vec::new(),
+            control_point_ids: [1, 2, 3, 4],
+            successor_reference: 5,
+            control_point_bodies: std::array::from_fn(|_| Vec::new()),
+            control_points: [None; 4],
+            terminal_reference: 6,
+            offset: 0,
+            surface_row_offset: 0,
+        });
+    scan
+}
+
+#[test]
+fn line_extrusion_replay_set_refuses_before_node_insertion() {
+    let scan = scan_with_tabulated_replay();
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
+        super::transfer_positional_line_extrusion_planes(
+            &ctx,
+            &scan,
+            &mut cadmpeg_ir::document::CadIr::empty(),
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    };
+    assert_eq!(run(1).expect("service admits replay set"), 0);
+    assert!(matches!(
+        run(0),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo line-extrusion replay surface ids"
+    ));
+}
+
+#[test]
+fn tabulated_replay_counts_refuse_before_node_insertion() {
+    let scan = scan_with_tabulated_replay();
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
+        super::transfer_tabulated_cylinder_spline_extrusions(
+            &ctx,
+            &scan,
+            &mut cadmpeg_ir::document::CadIr::empty(),
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut Vec::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    };
+    assert_eq!(run(1).expect("service admits replay count"), 0);
+    assert!(matches!(
+        run(0),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo tabulated-cylinder replay counts"
+    ));
+}
+
 fn positional_round_result(limit: u64) -> Result<usize, CodecError> {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.rows.push(crate::feature::rows::FeatureRow {

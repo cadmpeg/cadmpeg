@@ -31,7 +31,9 @@ use crate::decode::sketch::equations_coordinate::{
     SectionCoordinateEquation,
 };
 use crate::decode::surfaces::fc05_model_frame;
-use crate::decode::sweep::nurbs::{placed_tabulated_cylinder_directrix, signed_unit_chart};
+use crate::decode::sweep::nurbs::{
+    placed_tabulated_cylinder_directrix as checked_tabulated_cylinder_directrix, signed_unit_chart,
+};
 use crate::decode::sweep::planes::{feature_outline_planes, feature_plane_equations};
 use crate::decode::sweep::surfaces::{
     extruded_section_line, revolved_section_circle, revolved_section_surface,
@@ -58,6 +60,20 @@ use cadmpeg_ir::{
 use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_REVOLUTION_CONE_ANGLE: f64 = 1.0e-12;
+
+fn placed_tabulated_cylinder_directrix(
+    replay: &crate::surface::TabulatedCylinderCurveReplay,
+    parameters: &crate::surface::SurfaceParameterRecord,
+    chart_origin: Option<[f64; 3]>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
+) -> Option<(cadmpeg_ir::geometry::nurbs::NurbsCurve, [f64; 3])> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
+    checked_tabulated_cylinder_directrix(&ctx, replay, parameters, chart_origin, refusal)
+        .expect("service profile admits tabulated directrix")
+}
 
 #[test]
 fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() {
@@ -1438,6 +1454,92 @@ fn split_outline_carrier_requires_complementary_square_bounds() {
         [[[-1.0, 0.0], [1.0, 0.5]], [[-1.0, 0.5], [1.0, 3.0]]],
     )
     .is_none());
+}
+
+fn tabulated_directrix_limit_fixture() -> (
+    crate::surface::TabulatedCylinderCurveReplay,
+    crate::surface::SurfaceParameterRecord,
+) {
+    let replay = crate::surface::TabulatedCylinderCurveReplay {
+        body: Vec::new(),
+        surface_id: 7,
+        curve_id: 9,
+        curve_type: 0x13,
+        flip: 1,
+        tangent_condition: 0,
+        degree: 3,
+        parameter_body: Vec::new(),
+        control_point_ids: [1, 2, 3, 4],
+        successor_reference: 5,
+        control_point_bodies: std::array::from_fn(|_| Vec::new()),
+        control_points: [
+            Some([1.0, 2.0]),
+            Some([2.0, 2.5]),
+            Some([3.0, 3.5]),
+            Some([4.0, 4.0]),
+        ],
+        terminal_reference: 6,
+        offset: 0,
+        surface_row_offset: 0,
+    };
+    let parameters = crate::surface::SurfaceParameterRecord {
+        surface_id: 7,
+        body: Vec::new(),
+        scalar_tokens: Vec::new(),
+        opaque_spans: Vec::new(),
+        scalar_frames: Vec::new(),
+        carrier: crate::surface::SurfaceParameterCarrier::Resolved(
+            crate::surface::InlineSurfaceCarrier::Tabulated {
+                variant: crate::surface::ExtrusionVariant::TabulatedCylinder,
+                frame: crate::surface::TabulatedCylinderFrame::new(
+                    [1.0, 2.0, 5.0, 4.0, 4.0, 10.0],
+                    [0xa2, 0x42, 0x88, 0xa3, 0x18, 0x8a],
+                )
+                .expect("finite frame fixture"),
+            },
+        ),
+        boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+        offset: 0,
+        body_offset: 0,
+    };
+    (replay, parameters)
+}
+
+fn tabulated_directrix_limit_error(limit: u64) -> cadmpeg_core::CodecError {
+    let (replay, parameters) = tabulated_directrix_limit_fixture();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
+    checked_tabulated_cylinder_directrix(
+        &ctx,
+        &replay,
+        &parameters,
+        None,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect_err("tabulated directrix exceeds collection limit")
+}
+
+#[test]
+fn tabulated_directrix_controls_refuse_collection_limit() {
+    assert!(matches!(
+        tabulated_directrix_limit_error(3),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "creo tabulated-cylinder directrix controls"
+    ));
+}
+
+#[test]
+fn tabulated_directrix_knots_refuse_collection_limit() {
+    assert!(matches!(
+        tabulated_directrix_limit_error(11),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "creo tabulated-cylinder directrix knots"
+    ));
 }
 
 #[test]
