@@ -5,7 +5,8 @@ use crate::ids::kind;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroU32;
 
-use super::{named_parameter, record_values, references, source_numeric_id, RecordExt, ValueExt};
+use super::{named_parameter, record_values, source_numeric_id, RecordExt, ValueExt};
+use super::reference::{first_matching as first_matching_reference, references, visit as visit_references};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -610,14 +611,14 @@ pub(super) fn decode(
             continue;
         };
         if annotations.get(definition).is_some() {
-            for item in named_parameter(record, "DRAUGHTING_MODEL_ITEM_ASSOCIATION", 4)
-                .into_iter()
-                .flat_map(references)
-            {
-                presentation_semantics
-                    .entry(item)
-                    .or_default()
-                    .push(definition);
+            if let Some(items) = named_parameter(record, "DRAUGHTING_MODEL_ITEM_ASSOCIATION", 4) {
+                visit_references(items, &mut |item| {
+                    presentation_semantics
+                        .entry(item)
+                        .or_default()
+                        .push(definition);
+                    false
+                });
             }
             typed.insert(id);
         }
@@ -640,20 +641,22 @@ pub(super) fn decode(
             0,
             ctx,
         )?;
-        let parameters = record_values(record).collect::<Vec<_>>();
         // Placement identity is the carrier key; the transform value cannot
         // make two source carriers one semantic carrier.
         let mut placement_candidates = BTreeMap::new();
         let mut placement_visited = BTreeMap::new();
-        for reference in parameters.iter().flat_map(|value| references(value)) {
-            collect_placement_candidates(
-                reference,
-                exchange,
-                geometry,
-                &mut placement_visited,
-                &mut placement_candidates,
-                0,
-            );
+        for parameter in record_values(record) {
+            visit_references(parameter, &mut |reference| {
+                collect_placement_candidates(
+                    reference,
+                    exchange,
+                    geometry,
+                    &mut placement_visited,
+                    &mut placement_candidates,
+                    0,
+                );
+                false
+            });
         }
         let placement = match placement_candidates.len() {
             0 => None,
@@ -667,12 +670,15 @@ pub(super) fn decode(
                 None
             }
         };
-        let mut semantics = parameters
-            .iter()
-            .flat_map(|value| references(value))
-            .filter(|reference| annotations.get(*reference).is_some())
-            .map(pmi_id)
-            .collect::<Vec<_>>();
+        let mut semantics = Vec::new();
+        for parameter in record_values(record) {
+            visit_references(parameter, &mut |reference| {
+                if annotations.get(reference).is_some() {
+                    semantics.push(pmi_id(reference));
+                }
+                false
+            });
+        }
         semantics.extend(
             presentation_semantics
                 .get(&id)
@@ -786,47 +792,39 @@ fn mark_characteristic_representations(
     typed: &mut HashSet<u64>,
 ) {
     for (id, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
-        let parameters = record
-            .partials
-            .iter()
-            .flat_map(|partial| &partial.parameters)
-            .collect::<Vec<_>>();
-        let record_references = parameters
-            .iter()
-            .flat_map(|value| references(value))
-            .collect::<Vec<_>>();
-        if !record_references
-            .iter()
-            .any(|reference| annotations.get(*reference).is_some())
-        {
+        let Some(_) = first_matching_reference(record_values(record), |reference| {
+            annotations.get(reference).is_some()
+        }) else {
             continue;
-        }
+        };
         typed.insert(id);
-        for representation_id in record_references {
-            let Some(representation) = exchange.records().get(&representation_id) else {
-                continue;
-            };
-            if !representation
-                .partials
-                .iter()
-                .any(|partial| partial.name == "SHAPE_DIMENSION_REPRESENTATION")
-            {
-                continue;
-            }
-            typed.insert(representation_id);
-            typed.extend(
-                representation
+        for parameter in record_values(record) {
+            visit_references(parameter, &mut |representation_id| {
+                let Some(representation) = exchange.records().get(&representation_id) else {
+                    return false;
+                };
+                if !representation
                     .partials
                     .iter()
-                    .flat_map(|partial| &partial.parameters)
-                    .flat_map(references)
-                    .filter(|reference| {
-                        exchange
+                    .any(|partial| partial.name == "SHAPE_DIMENSION_REPRESENTATION")
+                {
+                    return false;
+                }
+                typed.insert(representation_id);
+                for parameter in record_values(representation) {
+                    visit_references(parameter, &mut |reference| {
+                        if exchange
                             .records()
-                            .get(reference)
+                            .get(&reference)
                             .is_some_and(is_measure_record)
-                    }),
-            );
+                        {
+                            typed.insert(reference);
+                        }
+                        false
+                    });
+                }
+                false
+            });
         }
     }
 }
@@ -878,13 +876,16 @@ fn resolve_geometric_item_usages(
                 .or_default()
                 .insert(annotation_index);
         }
-        for reference in record_values(record).flat_map(references) {
-            if shape_aspects.contains(&reference) {
-                aspect_annotations
-                    .entry(reference)
-                    .or_default()
-                    .insert(annotation_index);
-            }
+        for parameter in record_values(record) {
+            visit_references(parameter, &mut |reference| {
+                if shape_aspects.contains(&reference) {
+                    aspect_annotations
+                        .entry(reference)
+                        .or_default()
+                        .insert(annotation_index);
+                }
+                false
+            });
         }
     }
 
@@ -1006,7 +1007,7 @@ fn push_target(targets: &mut Vec<PmiTarget>, target: PmiTarget) {
 }
 
 fn first_reference(value: &Value) -> Option<u64> {
-    references(value).into_iter().next()
+    first_matching_reference(std::iter::once(value), |_| true)
 }
 
 fn relationship_endpoints(record: &RawRecord) -> Option<(u64, u64)> {
@@ -1227,7 +1228,7 @@ fn hidden_presentation_annotation_ids(exchange: &Exchange) -> BTreeSet<u64> {
         else {
             continue;
         };
-        for target in references(items) {
+        visit_references(items, &mut |target| {
             if exchange
                 .records()
                 .get(&target)
@@ -1235,7 +1236,8 @@ fn hidden_presentation_annotation_ids(exchange: &Exchange) -> BTreeSet<u64> {
             {
                 hidden.insert(target);
             }
-        }
+            false
+        });
     }
     hidden
 }
@@ -1662,29 +1664,17 @@ fn characteristic_values(
     let mut result = BTreeMap::<u64, PmiValue>::new();
     for (id, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
         let mut measurements = measure_context(geometry, id, losses, graph_limit);
-        let parameters = record
-            .partials
-            .iter()
-            .flat_map(|partial| &partial.parameters)
-            .collect::<Vec<_>>();
-        let Some(characteristic) =
-            parameters
-                .iter()
-                .flat_map(|value| references(value))
-                .find(|id| {
-                    exchange
-                        .records()
-                        .get(id)
-                        .is_some_and(|record| dimension_descriptor(record).is_some())
-                })
+        let Some(characteristic) = first_matching_reference(record_values(record), |id| {
+            exchange
+                .records()
+                .get(&id)
+                .is_some_and(|record| dimension_descriptor(record).is_some())
+        })
         else {
             continue;
         };
-        let representation = parameters
-            .iter()
-            .flat_map(|value| references(value))
-            .find(|id| {
-                exchange.records().get(id).is_some_and(|record| {
+        let representation = first_matching_reference(record_values(record), |id| {
+                exchange.records().get(&id).is_some_and(|record| {
                     record
                         .partials
                         .iter()
@@ -1704,7 +1694,7 @@ fn characteristic_values(
         let values = if let Some(items) = representation_items {
             characteristic_measure_values(items.iter(), exchange, &mut measurements, ctx)?
         } else {
-            characteristic_measure_values(parameters.iter().copied(), exchange, &mut measurements, ctx)?
+            characteristic_measure_values(record_values(record), exchange, &mut measurements, ctx)?
         };
         let mut named_count = 0usize;
         let mut named_first = None;

@@ -27,6 +27,7 @@ mod index;
 pub(crate) mod pmi;
 pub(crate) mod presentation;
 pub(crate) mod product;
+mod reference;
 mod representation;
 pub(crate) mod tessellation;
 pub(crate) mod topology;
@@ -1615,15 +1616,6 @@ fn record_values(record: &RawRecord) -> impl Iterator<Item = &Value> {
         .partials
         .iter()
         .flat_map(|partial| partial.parameters.iter())
-}
-
-fn references(value: &Value) -> Vec<u64> {
-    match value {
-        Value::Reference(id) => vec![*id],
-        Value::List(values) => values.iter().flat_map(references).collect(),
-        Value::Typed(_, value) => references(value),
-        _ => Vec::new(),
-    }
 }
 
 fn source_numeric_id(identity: &str, kind: &str) -> Option<u64> {
