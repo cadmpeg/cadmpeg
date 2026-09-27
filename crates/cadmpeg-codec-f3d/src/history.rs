@@ -147,6 +147,10 @@ pub(crate) fn decode(
         .position(|window| window == DELTA)
     {
         let offset = search + relative;
+        ctx.charge_collection_items(1, "f3d history delta offsets")?;
+        delta_offsets.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d history delta offset allocation", 0, 1)
+        })?;
         delta_offsets.push(offset);
         search = offset + DELTA.len();
     }
