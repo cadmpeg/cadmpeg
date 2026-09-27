@@ -982,8 +982,9 @@ impl CodecBackend for FcstdCodec {
             let attachments = attachment::transfer(ctx, &graph.objects, &graph.properties)?;
             namespace.set_arena(ctx, "attachments", &attachments)?;
             let mut curve_transfer =
-                brep::transfer_text_curves(&shape_payloads, &graph.properties)?;
+                brep::transfer_text_curves(ctx, &shape_payloads, &graph.properties)?;
             let surface_transfer = brep::transfer_text_surfaces(
+                ctx,
                 &shape_payloads,
                 &graph.properties,
                 &mut curve_transfer,
