@@ -957,12 +957,12 @@ pub(crate) fn parse_attributes(
         let color_source = ColorSource::parse(reader.u8()?);
         let linetype_source = reader.u8()?;
         let material_source = reader.u8()?;
-        let name = settings::utf16(&mut reader)?;
-        let url = settings::utf16(&mut reader)?;
+        let name = settings::utf16_retained(ctx, &mut reader, "Rhino object name")?;
+        let url = settings::utf16_retained(ctx, &mut reader, "Rhino object URL")?;
         let groups = if version.1 >= 1 {
             let count = reader.i32()?;
             let bytes = bounded_count(&reader, count, 4)?;
-            let mut values = Vec::with_capacity(bytes / 4);
+            let mut values = crate::chunks::admitted_vec(ctx, bytes / 4, "Rhino object groups")?;
             for _ in 0..bytes / 4 {
                 values.push(reader.i32()?);
             }
@@ -978,7 +978,8 @@ pub(crate) fn parse_attributes(
         let display_materials = if version.1 >= 3 {
             let count = reader.i32()?;
             let bytes = bounded_count(&reader, count, 32)?;
-            let mut values = Vec::with_capacity(bytes / 32);
+            let mut values =
+                crate::chunks::admitted_vec(ctx, bytes / 32, "Rhino object display materials")?;
             for _ in 0..bytes / 32 {
                 values.push((uuid(&mut reader)?, uuid(&mut reader)?));
             }
@@ -1003,7 +1004,11 @@ pub(crate) fn parse_attributes(
             let active_space = reader.u8()?;
             let count = reader.i32()?;
             let bytes = bounded_count(&reader, count, 32)?;
-            let mut values = Vec::with_capacity(bytes / 32);
+            let mut values = crate::chunks::admitted_vec(
+                ctx,
+                bytes / 32,
+                "Rhino object explicit display materials",
+            )?;
             for _ in 0..bytes / 32 {
                 values.push((uuid(&mut reader)?, uuid(&mut reader)?));
             }
@@ -1182,8 +1187,12 @@ pub(crate) fn parse_attributes(
         }
         last_item = Some(attribute_item);
         match attribute_item {
-            AttributeItem::Name => attributes.name = settings::utf16(&mut reader)?,
-            AttributeItem::Url => attributes.url = settings::utf16(&mut reader)?,
+            AttributeItem::Name => {
+                attributes.name = settings::utf16_retained(ctx, &mut reader, "Rhino object name")?;
+            }
+            AttributeItem::Url => {
+                attributes.url = settings::utf16_retained(ctx, &mut reader, "Rhino object URL")?;
+            }
             AttributeItem::LinetypeIndex => attributes.linetype_index = reader.i32()?,
             AttributeItem::MaterialIndex => attributes.material_index = reader.i32()?,
             AttributeItem::RenderingAttributes => {
@@ -1221,7 +1230,8 @@ pub(crate) fn parse_attributes(
             AttributeItem::Groups => {
                 let count = reader.i32()?;
                 let bytes = bounded_count(&reader, count, 4)?;
-                attributes.groups.clear();
+                attributes.groups =
+                    crate::chunks::admitted_vec(ctx, bytes / 4, "Rhino object groups")?;
                 for _ in 0..bytes / 4 {
                     attributes.groups.push(reader.i32()?);
                 }
@@ -1231,7 +1241,8 @@ pub(crate) fn parse_attributes(
             AttributeItem::DisplayMaterials => {
                 let count = reader.i32()?;
                 let bytes = bounded_count(&reader, count, 32)?;
-                attributes.display_materials.clear();
+                attributes.display_materials =
+                    crate::chunks::admitted_vec(ctx, bytes / 32, "Rhino object display materials")?;
                 for _ in 0..bytes / 32 {
                     attributes
                         .display_materials
@@ -1248,7 +1259,7 @@ pub(crate) fn parse_attributes(
             }
             AttributeItem::Clipping => {
                 attributes.clipping_proof = reader.bool_with_writer_version(writer_version)?;
-                attributes.clipping_plane_ids = read_uuid_list(&mut reader, archive)?;
+                attributes.clipping_plane_ids = read_uuid_list(ctx, &mut reader, archive)?;
             }
             AttributeItem::SectionAttributesSource => {
                 attributes.section_attributes_source = reader.u8()?;
@@ -1311,6 +1322,7 @@ pub(crate) fn parse_attributes(
 }
 
 pub(crate) fn read_uuid_list(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
 ) -> Result<Vec<Uuid>, FramingError> {
@@ -1338,7 +1350,7 @@ pub(crate) fn read_uuid_list(
     }
     let count = payload.i32()?;
     let bytes = bounded_count(&payload, count, 16)?;
-    let mut values = Vec::with_capacity(bytes / 16);
+    let mut values = crate::chunks::admitted_vec(ctx, bytes / 16, "Rhino UUID list")?;
     for _ in 0..bytes / 16 {
         values.push(uuid(&mut payload)?);
     }

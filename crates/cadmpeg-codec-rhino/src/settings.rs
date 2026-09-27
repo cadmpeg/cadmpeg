@@ -2391,7 +2391,7 @@ fn parse_layer(
         if item == 28 {
             layer.extension_items.push(item);
             layer.no_clipping_planes = Some(reader.bool_with_writer_version(writer_version)?);
-            read_uuid_list(&mut reader, archive)?;
+            read_uuid_list(ctx, &mut reader, archive)?;
             item = reader.u8()?;
         }
         if version.1 > 10 {
