@@ -1857,14 +1857,12 @@ impl PcurveNurbs {
             values: &[T],
             operation: &'static str,
         ) -> Result<Vec<T>, cadmpeg_core::CodecError> {
-            let count = u64::try_from(values.len())
-                .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+            let count = cadmpeg_core::decode::u64_from_index(values.len());
             let bytes = count
-                .checked_mul(
-                    u64::try_from(std::mem::size_of::<T>())
-                        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
-                )
-                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+                .checked_mul(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<T>(),
+                ))
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, count))?;
             ctx.charge_collection_items(count, operation)?;
             ctx.charge_retained(bytes, operation)?;
             let mut copy = Vec::new();
@@ -1888,6 +1886,31 @@ impl PcurveNurbs {
             knots: KnotVector::new(knots).map_err(cadmpeg_core::CodecError::malformed)?,
             poles,
             periodic: self.periodic,
+        })
+    }
+
+    /// Build from admitted knot and pole rows without copying either lane.
+    ///
+    /// # Errors
+    ///
+    /// Refuses inconsistent cardinalities or a zero degree.
+    pub fn from_admitted_rows(
+        degree: u32,
+        knots: KnotVector,
+        poles: PcurveNurbsPoles<FinitePoint2>,
+        periodic: bool,
+    ) -> Result<Self, NurbsError> {
+        require_curve_cardinality(degree, knots.len(), poles.count(), "control_points")?;
+        if degree == 0 {
+            return Err(NurbsError::Structure(
+                "pcurve NURBS degree must be positive".into(),
+            ));
+        }
+        Ok(Self {
+            degree,
+            knots,
+            poles,
+            periodic,
         })
     }
 

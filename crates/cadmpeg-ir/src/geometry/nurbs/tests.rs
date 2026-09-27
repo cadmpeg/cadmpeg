@@ -92,6 +92,61 @@ fn admitted_nurbs_parts_preserve_the_existing_curve_and_surface_wire() {
 }
 
 #[test]
+fn admitted_surface_grid_preserves_the_existing_wire() {
+    use crate::geometry::nurbs::NurbsSurfaceAxis;
+
+    let surface = surface();
+    let u = NurbsSurfaceAxis::new(1, surface.u_knots().clone(), true);
+    let v = NurbsSurfaceAxis::new(1, surface.v_knots().clone(), false);
+    let admitted = NurbsSurface::from_admitted_grid(u, v, surface.pole_grid().clone(), true)
+        .expect("admitted fixture grid");
+    assert_eq!(admitted, surface);
+    assert_eq!(
+        serde_json::to_vec(&admitted).expect("admitted surface wire"),
+        serde_json::to_vec(&surface).expect("fixture surface wire")
+    );
+}
+
+#[test]
+fn owned_curve_mapping_preserves_polynomial_and_rational_poles() {
+    use crate::features::FinitePoint3;
+    use crate::geometry::nurbs::NurbsCurve;
+
+    let rational = NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        Some(vec![1.0, 0.5]),
+        false,
+    )
+    .expect("rational fixture curve");
+    for source in [curve(), rational] {
+        let mut expected = source.clone();
+        expected
+            .map_control_points(|point| {
+                FinitePoint3::new(Point3::new(
+                    point.get().x + 1.0,
+                    point.get().y,
+                    point.get().z,
+                ))
+                .ok_or_else(|| crate::geometry::nurbs::NurbsError::EditRefused("finite map".into()))
+            })
+            .expect("finite point map");
+        let actual = source
+            .try_map_owned_control_points(|point| {
+                FinitePoint3::new(Point3::new(
+                    point.get().x + 1.0,
+                    point.get().y,
+                    point.get().z,
+                ))
+                .ok_or("finite map")
+            })
+            .expect("finite owned point map");
+        assert_eq!(actual, expected);
+    }
+}
+
+#[test]
 fn a_refused_curve_pole_edit_keeps_the_prior_poles() {
     let mut curve = curve();
     let original = curve.clone();
