@@ -26,7 +26,7 @@ use crate::native::{
     copy_xml_text, parse_bool, GuiDocumentRecord, GuiPropertyRecord, GuiStateRecord,
     GuiViewProviderRecord, ObjectRecord, PropertyRecord, ValueRecord,
 };
-use crate::resource::{collection_vec, insert_hash_map, reserve_vec_items, reserved_vec};
+use crate::resource::{collection_vec, insert_hash_map, reserve_vec_items, reserved_vec, retained_join, retained_string};
 
 use schema::Admission as GuiSchemaAdmission;
 
@@ -675,6 +675,39 @@ fn presentation_property_type(name: &str) -> Option<&'static str> {
     }
 }
 
+fn gui_named_entries<'a>(
+    ctx: &DecodeContext<'_>,
+    record: impl Fn() -> Result<String, CodecError>,
+    entries: impl IntoIterator<Item = (&'a str, &'a str)>,
+) -> Result<(BTreeMap<cadmpeg_core::text::NonBlankString, String>, Vec<cadmpeg_core::text::NamedEntryError>), CodecError> {
+    use cadmpeg_core::text::{NamedEntryError, NonBlankString};
+    let mut kept = BTreeMap::new();
+    let mut refused = Vec::new();
+    for (name, value) in entries {
+        let name = retained_string(ctx, name, "FCStd GUI presentation property name")?;
+        let value = retained_string(ctx, value, "FCStd GUI presentation property value")?;
+        match NonBlankString::new(name) {
+            Some(key) if kept.contains_key(&key) => {
+                reserve_vec_items(ctx, &mut refused, 1, "FCStd GUI refused property keys")?;
+                refused.push(NamedEntryError::Restated {
+                    record: record()?,
+                    key: NonBlankString::new(retained_string(ctx, key.as_str(), "FCStd GUI restated property key")?)
+                        .ok_or_else(|| CodecError::malformed("restated GUI property key became blank"))?,
+                });
+            }
+            Some(key) => {
+                ctx.charge_collection_items(1, "FCStd GUI presentation property map")?;
+                kept.insert(key, value);
+            }
+            None => {
+                reserve_vec_items(ctx, &mut refused, 1, "FCStd GUI refused property keys")?;
+                refused.push(NamedEntryError::Blank { record: record()? });
+            }
+        }
+    }
+    Ok((kept, refused))
+}
+
 /// Transfers the GUI graph's presentation layer into `plan`.
 ///
 /// A property whose key is blank is charged to `losses` and the rest of the
@@ -702,14 +735,16 @@ fn transfer_neutral_presentation(
                     .iter()
                     .enumerate()
                     .map(|(order, state)| {
-                        let (attributes, refused) = cadmpeg_core::text::named_entries_reporting(
-                            format_args!("the gui {} state", state.kind),
-                            state.attributes.clone(),
-                        );
-                        charge_refused_gui_keys(&mut state_losses, &refused);
+                        let (attributes, refused) = gui_named_entries(
+                            ctx,
+                            || retained_join(ctx, &["the gui ", state.kind.as_str(), " state"], "", "FCStd GUI state record name"),
+                            state.attributes.iter().map(|(name, value)| (name.as_str(), value.as_str())),
+                        )?;
+                        charge_refused_gui_keys(ctx, &mut state_losses, &refused)?;
                         Ok(PresentationState {
                             kind: if state.kind == "Camera" {
                                 PresentationStateKind::Camera(camera_state_value(
+                                    ctx,
                                     state,
                                     &mut state_losses,
                                 )?)
@@ -773,17 +808,15 @@ fn transfer_neutral_presentation(
                 })
             })
             .transpose()?;
-        let (provider_properties, refused) = cadmpeg_core::text::named_entries_reporting(
-            &provider.id,
-            owned.iter().map(|property| {
-                (
-                    property.name.clone(),
-                    gui_property_value(property)
-                        .map_or_else(|| property.xml.text().to_owned(), str::to_owned),
-                )
-            }),
-        );
-        charge_refused_gui_keys(losses, &refused);
+        let (provider_properties, refused) = gui_named_entries(
+            ctx,
+            || retained_string(ctx, &provider.id, "FCStd GUI provider record name"),
+            owned.iter().map(|property| (
+                property.name.as_str(),
+                gui_property_value(property).unwrap_or_else(|| property.xml.text()),
+            )),
+        )?;
+        charge_refused_gui_keys(ctx, losses, &refused)?;
         reserve_vec_items(ctx, &mut plan.view_presentations, 1, "FCStd view presentations")?;
         plan.view_presentations.push(ViewPresentation {
             id: PresentationId::compose(
@@ -823,18 +856,32 @@ fn gui_property_value(property: &GuiPropertyRecord) -> Option<&str> {
 /// One loss per property key the reader could not key, naming the key's own
 /// record and, for a restated key, the key.
 fn charge_refused_gui_keys(
+    ctx: &DecodeContext<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     refused: &[cadmpeg_core::text::NamedEntryError],
-) {
+) -> Result<(), CodecError> {
+    use cadmpeg_core::text::NamedEntryError;
     for key in refused {
+        let message = match key {
+            NamedEntryError::Blank { record } => retained_join(ctx,
+                &[record.as_str(), " states a property with a blank key; the property value is not transferred"],
+                "", "FCStd GUI refused property note")?,
+            NamedEntryError::Restated { record, key } => retained_join(ctx,
+                &[record.as_str(), " states the property ", key.as_str(),
+                    " a second time; the property value is not transferred"],
+                "", "FCStd GUI refused property note")?,
+        };
+        reserve_vec_items(ctx, losses, 1, "FCStd GUI refused property losses")?;
         losses.push(
             FreecadLossCode::SourceGuiPropertyKeyBlank
-                .note(format!("{key}; the property value is not transferred")),
+                .note(message),
         );
     }
+    Ok(())
 }
 
 fn camera_state_value(
+    ctx: &DecodeContext<'_>,
     state: &GuiStateRecord,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<CameraState, CodecError> {
@@ -859,11 +906,12 @@ fn camera_state_value(
             })
         })
         .transpose()?;
-    let (properties, refused) = cadmpeg_core::text::named_entries_reporting(
-        format_args!("the gui {} state", state.kind),
-        state.attributes.clone(),
-    );
-    charge_refused_gui_keys(losses, &refused);
+    let (properties, refused) = gui_named_entries(
+        ctx,
+        || retained_join(ctx, &["the gui ", state.kind.as_str(), " state"], "", "FCStd GUI state record name"),
+        state.attributes.iter().map(|(name, value)| (name.as_str(), value.as_str())),
+    )?;
+    charge_refused_gui_keys(ctx, losses, &refused)?;
     Ok(CameraState {
         position,
         orientation,

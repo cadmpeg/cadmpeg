@@ -179,6 +179,44 @@ fn gui_view_presentation_refuses_at_caller_limit() {
             if limit.operation == "FCStd view presentations"));
 }
 
+#[test]
+fn gui_presentation_property_map_refuses_at_caller_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::super::gui_named_entries(&ctx, || Ok("record".into()), [("key", "value")]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FCStd GUI presentation property map"));
+}
+
+#[test]
+fn gui_refused_property_list_refuses_at_caller_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::super::gui_named_entries(&ctx, || Ok("record".into()),
+        [("key", "first"), ("key", "second")]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FCStd GUI refused property keys"));
+}
+
+#[test]
+fn gui_refused_property_loss_refuses_at_caller_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    let refused = [cadmpeg_core::text::NamedEntryError::Blank { record: "record".into() }];
+    assert!(matches!(super::super::charge_refused_gui_keys(&ctx, &mut Vec::new(), &refused),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FCStd GUI refused property losses"));
+}
+
 fn assert_gui_state_service(xml: &str) {
     let document = roxmltree::Document::parse(xml).expect("GUI state XML");
     let arena = cadmpeg_core::decode::DecodeArena::new();
