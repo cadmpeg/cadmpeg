@@ -522,7 +522,13 @@ pub fn decode_with_header(
         .checked_mul(record_slot_bytes)
         .ok_or_else(|| ctx.refuse_codec_limit("ASM record index bytes", u64::MAX, u64::MAX))?;
     let _record_index_reservation = ctx.reserve_scoped(record_index_bytes, "index ASM records")?;
-    let by_index: HashMap<i64, &Record> = records.iter().map(|r| (r.index as i64, r)).collect();
+    let mut by_index: HashMap<i64, &Record> = HashMap::new();
+    by_index
+        .try_reserve(records.len())
+        .map_err(|_| ctx.refuse_codec_limit("index ASM records", 0, record_slots))?;
+    for record in records {
+        by_index.insert(record.index as i64, record);
+    }
     // Subtype-definition positions, built once for every carrier resolution.
     let token_count = records.iter().try_fold(0_u64, |count, record| {
         let record_tokens = u64::try_from(record.tokens.len())
@@ -661,6 +667,7 @@ pub fn decode_with_header(
         format,
     );
     emit_containers(
+        ctx,
         &mut out,
         records,
         &by_index,
@@ -670,14 +677,14 @@ pub fn decode_with_header(
         header_scale,
         format,
     )?;
-    let emitted_attributes = emit_attributes(&mut out, records, &by_index, &reach, format)?;
+    let emitted_attributes = emit_attributes(ctx, &mut out, records, &by_index, &reach, format)?;
     if purpose == DecodePurpose::Model {
         emit_passthrough_unknowns(ctx, &mut out, records, bytes, &reach, format)?;
-        count_other_records(&mut out, records, &reach, &emitted_attributes);
-        emit_annotation_records(&mut out, records, &by_index, &carriers, stream, format)?;
+        count_other_records(ctx, &mut out, records, &reach, &emitted_attributes)?;
+        emit_annotation_records(ctx, &mut out, records, &by_index, &carriers, stream, format)?;
 
         classify_body_kinds(&mut out);
-        clamp_edge_ranges_to_carrier_domains(&mut out)?;
+        clamp_edge_ranges_to_carrier_domains(ctx, &mut out)?;
     }
 
     Ok(out)

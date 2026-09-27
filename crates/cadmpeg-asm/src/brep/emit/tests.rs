@@ -541,14 +541,14 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
             nurbs_curve_parameter_domain(normalized),
             Some(if reversed { [-5.0, -2.0] } else { [2.0, 5.0] })
         );
-        emit_carrier_curve(
+        emit_carrier_curve(&asm_decode_ctx,
             &mut out,
             4,
             &mut carriers,
             &HashSet::new(),
             &HashSet::new(),
             crate::asm_format!("f3d"),
-        );
+        ).expect("carrier emission succeeds");
         let ProceduralCurveDefinition::Spring(definition_payload) =
             out.procedural_curves[0].1.definition()
         else {
@@ -707,6 +707,10 @@ fn invalid_cache_first_context_keeps_the_decoded_curve() {
 
 #[test]
 fn procedural_curve_admission_failures_keep_the_carrier() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     use super::super::ProceduralCurveSource;
     use cadmpeg_ir::geometry::{IntcurveSupportContext, IntcurveSupportSide, SilhouetteKind};
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -746,14 +750,14 @@ fn procedural_curve_admission_failures_keep_the_carrier() {
             CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         );
         carriers.procedural_curve_defs.insert(4, source);
-        emit_carrier_curve(
+        emit_carrier_curve(&resource_ctx,
             &mut out,
             4,
             &mut carriers,
             &HashSet::new(),
             &HashSet::new(),
             crate::asm_format!("f3d"),
-        );
+        ).expect("carrier emission succeeds");
         assert_eq!(out.curves.len(), 1);
         assert_eq!(out.curves[0].id.as_str(), "f3d:brep:entity#4");
         assert!(out.procedural_curves.is_empty());
@@ -782,6 +786,10 @@ fn procedural_curve_admission_failures_keep_the_carrier() {
 
 #[test]
 fn failed_procedural_curves_discard_only_their_candidate_children() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     use super::super::ProceduralCurveSource;
     use crate::nurbs::proc_curve::{EmbeddedIntersection, SupportSlot};
     use cadmpeg_ir::math::Point3;
@@ -860,14 +868,14 @@ fn failed_procedural_curves_discard_only_their_candidate_children() {
                 parsed_domain: Some([0.0, 1.0]),
             },
         );
-        emit_carrier_curve(
+        emit_carrier_curve(&resource_ctx,
             &mut out,
             4,
             &mut carriers,
             &HashSet::from([4]),
             &HashSet::from([4]),
             crate::asm_format!("f3d"),
-        );
+        ).expect("carrier emission succeeds");
         assert_eq!(
             out.surfaces
                 .iter()

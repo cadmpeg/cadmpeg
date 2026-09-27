@@ -4,11 +4,12 @@
 use super::attributes::unknown_record_id;
 use super::geometry::is_edge_record;
 use super::{id, AsmBrep, Carriers};
+use crate::decode_alloc::CountedIteratorExt;
 use crate::ids::{brep_id, IdFormat};
 use crate::sab::Record;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{AttributeId, ProceduralCurveId, ProceduralSurfaceId};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 /// Provenance tag for a source record or a synthetic procedural entity.
 pub enum AnnotationTag {
@@ -55,6 +56,7 @@ pub struct AnnotationRecord {
 /// Emit annotation records mapping every emitted entity, attribute, unknown,
 /// and synthetic procedural id back to its source record offset.
 pub(super) fn emit_annotation_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
@@ -66,7 +68,7 @@ pub(super) fn emit_annotation_records(
         .curves
         .iter()
         .map(|curve| (curve.id.as_str(), &curve.geometry))
-        .collect::<HashMap<_, _>>();
+        .collect_counted_map(ctx, "ASM annotation curve geometry index")?;
     let emitted_ids = out
         .bodies
         .iter()
@@ -82,17 +84,17 @@ pub(super) fn emit_annotation_records(
         .chain(out.surfaces.iter().map(|entity| entity.id.as_str()))
         .chain(out.curves.iter().map(|entity| entity.id.as_str()))
         .chain(out.pcurves.iter().map(|entity| entity.id.as_str()))
-        .collect::<HashSet<_>>();
+        .collect_counted_set(ctx, "ASM annotation emitted IDs")?;
     let attribute_ids = out
         .attributes
         .iter()
         .map(|attribute| attribute.id.as_str())
-        .collect::<HashSet<_>>();
+        .collect_counted_set(ctx, "ASM annotation attribute IDs")?;
     let unknown_ids = out
         .unknowns
         .iter()
         .map(|unknown| unknown.id().as_str())
-        .collect::<HashSet<_>>();
+        .collect_counted_set(ctx, "ASM annotation unknown IDs")?;
     let procedural_ids = out
         .procedural_surfaces
         .iter()
@@ -102,7 +104,7 @@ pub(super) fn emit_annotation_records(
                 .iter()
                 .map(|(_, entity)| entity.id.as_str()),
         )
-        .collect::<HashSet<_>>();
+        .collect_counted_set(ctx, "ASM annotation procedural IDs")?;
     for record in records {
         let entity_id = id(format, record.index as i64).into_string();
         if emitted_ids.contains(entity_id.as_str()) {
