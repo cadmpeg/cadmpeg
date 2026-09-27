@@ -725,3 +725,101 @@ fn staged_brep_collections_refuse_just_below_each_required_count() {
         );
     }
 }
+
+#[test]
+fn brep_mesh_cache_retention_refusal_reaches_the_caller() {
+    let (mut data, mut raw) = source_shaped_plane_brep();
+    let mesh_start = data.len();
+    data.push(0x30);
+    data.extend(3_i32.to_le_bytes());
+    data.extend(1_i32.to_le_bytes());
+    for _ in 0..4 {
+        data.extend(0.0_f64.to_le_bytes());
+        data.extend(1.0_f64.to_le_bytes());
+    }
+    data.extend([0; 16]);
+    data.extend([0; 64]);
+    data.extend(0_i32.to_le_bytes());
+    data.extend([0; 5]);
+    data.extend(1_i32.to_le_bytes());
+    data.extend([0, 1, 2, 2]);
+    let vertex_bytes = [0.0_f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+        .into_iter()
+        .flat_map(f32::to_le_bytes)
+        .collect::<Vec<_>>();
+    data.extend(
+        u32::try_from(vertex_bytes.len())
+            .expect("vertex size")
+            .to_le_bytes(),
+    );
+    data.extend(crc32fast::hash(&vertex_bytes).to_le_bytes());
+    data.push(0);
+    data.extend(vertex_bytes);
+    for _ in 0..4 {
+        data.extend(0_u32.to_le_bytes());
+    }
+    raw.render_meshes.push(Some(crate::brep::RawBrepMesh {
+        mesh: crate::brep::RawBrepChild {
+            class_uuid: crate::mesh::ON_MESH,
+            class_data_range: mesh_start..data.len(),
+            source_range: mesh_start..data.len(),
+        },
+        userdata: Vec::new(),
+    }));
+    let brep = with_expand_bytes(&data, |expand| {
+        crate::brep::ValidatedRawBrep::try_new(expand.ctx(), raw)
+    })
+    .expect("validate Brep with one mesh cache slot");
+    let association = SourceObjectAssociation {
+        format: cadmpeg_ir::CodecFormat::Rhino,
+        object_id: cadmpeg_core::text::NonBlankString::new("plane-brep".to_string())
+            .expect("nonempty source identity"),
+        name: Some("plane".to_string()),
+        color: None,
+        visible: Some(true),
+        layer: None,
+        instance_path: Vec::new(),
+    };
+    let unknown: UnknownId = "rhino:object:record#plane"
+        .try_into()
+        .expect("valid identity");
+    let staged = with_expand_bytes(&data, |expand| {
+        stage_brep(BrepTransferInput {
+            expand,
+            data: &data,
+            archive: ArchiveVersion::V5,
+            writer_version: Some(200_206_180),
+            brep: &brep,
+            key: "plane",
+            association: &association,
+            unknown: &unknown,
+            scale: MillimeterScale::IDENTITY,
+            mesh_budget: &mut crate::mesh::MeshBudget::new(),
+        })
+    })
+    .expect("mesh cache fits service limits");
+    assert_eq!(staged.draft.model().tessellations.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 35;
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
+        .expect("source bytes fit the root limit");
+    let refused = stage_brep(BrepTransferInput {
+        expand: crate::mesh::MeshExpand::new(&ctx, root),
+        data: &data,
+        archive: ArchiveVersion::V5,
+        writer_version: Some(200_206_180),
+        brep: &brep,
+        key: "plane",
+        association: &association,
+        unknown: &unknown,
+        scale: MillimeterScale::IDENTITY,
+        mesh_budget: &mut crate::mesh::MeshBudget::new(),
+    })
+    .expect_err("36 mesh bytes exceed the 35-byte retention limit");
+    assert!(matches!(
+        refused,
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "rhino_mesh_buffer"
+    ));
+}
