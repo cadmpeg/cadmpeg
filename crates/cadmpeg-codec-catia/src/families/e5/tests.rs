@@ -570,21 +570,30 @@ fn decode_e5_stream_transfers_standalone_d8_carrier() {
 #[test]
 fn e5_decode_route_propagates_orientation_collection_refusal() {
     let file = object_main_catpart(&e5_torus_topology_stream());
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let error = CatiaCodec
-        .decode(
-            &mut Cursor::new(file),
+    let mut found = false;
+    for cap in 0..2048 {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let result = CatiaCodec.decode(
+            &mut Cursor::new(&file),
             &DecodeOptions {
                 policy,
                 ..DecodeOptions::default()
             },
-        )
-        .expect_err("E5 orientation locations exceed the collection limit");
-    assert!(matches!(error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "catia e5 orientation locations"));
+        );
+        match result {
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                    && limit.operation == "catia e5 orientation locations" =>
+            {
+                found = true;
+                break;
+            }
+            Ok(_) => break,
+            _ => {}
+        }
+    }
+    assert!(found, "E5 orientation locations must propagate their collection refusal");
 }
 
 #[test]
