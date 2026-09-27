@@ -889,6 +889,7 @@ pub(crate) fn direct_checksum_ranges<'a>(
 
 /// Frames complete nested chunks through a short zero class-end marker.
 pub(crate) fn checksum_children_through_class_end(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
@@ -911,6 +912,7 @@ pub(crate) fn checksum_children_through_class_end(
                 value: children.len() as i128,
             });
         }
+        reserve_admitted_vec(ctx, &mut children, 1, "Rhino class-end checksum children")?;
         children.push(child.range());
         reader.skip(child.next_offset() - start)?;
         if child.typecode == TCODE_CLASS_END {

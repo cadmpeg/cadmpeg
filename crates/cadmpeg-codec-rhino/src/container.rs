@@ -410,12 +410,14 @@ fn checksum_warning(
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_RENDER_USERDATA {
         let children = match checksum_children_through_class_end(
+            ctx,
             data,
             chunk.body().clone(),
             archive,
             "render-settings userdata",
         ) {
             Ok(children) => children,
+            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
