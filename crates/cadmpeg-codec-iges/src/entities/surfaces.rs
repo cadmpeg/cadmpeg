@@ -937,20 +937,21 @@ struct AngularBasis {
     controls: Vec<(f64, f64)>,
 }
 
-fn angular_basis(start: f64, end: f64) -> Option<AngularBasis> {
+fn angular_basis(start: f64, end: f64, ctx: Option<&DecodeContext<'_>>) -> Result<Option<AngularBasis>, CodecError> {
     let sweep = end - start;
     if !sweep.is_finite()
         || sweep <= 0.0
         || sweep > std::f64::consts::TAU + super::curve_conversion::ANGULAR_TOLERANCE
     {
-        return None;
+        return Ok(None);
     }
     let sweep = sweep.min(std::f64::consts::TAU);
     let end = start + sweep;
     let segment_count = super::curve_conversion::quarter_turn_spans(sweep);
     let segment_angle = sweep / segment_count as f64;
-    let mut knots = vec![start; 3];
-    let mut controls = Vec::with_capacity(segment_count * 2 + 1);
+    let mut knots = reserve_optional_vec(ctx, segment_count * 2 + 4, "iges revolution angular knots")?;
+    knots.extend([start; 3]);
+    let mut controls = reserve_optional_vec(ctx, segment_count * 2 + 1, "iges revolution angular controls")?;
     controls.push((start, 1.0));
     for segment in 0..segment_count {
         let segment_start = start + segment as f64 * segment_angle;
@@ -963,7 +964,7 @@ fn angular_basis(start: f64, end: f64) -> Option<AngularBasis> {
         }
     }
     knots.extend([end; 3]);
-    Some(AngularBasis { knots, controls })
+    Ok(Some(AngularBasis { knots, controls }))
 }
 
 fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceGeometry> {
@@ -1736,7 +1737,7 @@ pub(super) fn project(
         let Some(AngularBasis {
             knots: v_knots,
             controls: angular_controls,
-        }) = angular_basis(start_angle, end_angle)
+        }) = angular_basis(start_angle, end_angle, ctx)?
         else {
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "revolution angular interval is not in (0, 2*pi]"))?;
             continue;
