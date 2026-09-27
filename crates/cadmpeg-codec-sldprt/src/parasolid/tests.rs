@@ -245,6 +245,16 @@ fn parasolid_stream_header_is_parsed() {
 }
 
 #[test]
+fn parasolid_header_preserves_lossy_description_decoding() {
+    let mut stream = parasolid_payload("partition", "SCH_SW_33103_11000");
+    stream[6] = 0xff;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &DecodePolicy::service()).unwrap();
+    let header = crate::parasolid::stream_header(&ctx, &stream).unwrap().unwrap();
+    assert_eq!(header.description, "�artition");
+}
+
+#[test]
 fn parasolid_extracts_every_direct_stream_in_block() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(
@@ -403,7 +413,7 @@ fn parasolid_mesh_polyline_decodes_counted_xyz_array() {
     for value in [1.0f64, 2.0, 3.0, 4.0, 5.0, 6.0] {
         stream.extend(value.to_be_bytes());
     }
-    let header = crate::parasolid::stream_header(&stream).unwrap();
+    let header = crate::parasolid::stream_header(&ctx, &stream).unwrap().unwrap();
     assert_eq!(
         crate::parasolid::mesh_polyline_from_header(&ctx, &stream, &header).unwrap(),
         Some(vec![

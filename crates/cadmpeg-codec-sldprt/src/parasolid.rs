@@ -52,19 +52,18 @@ pub(crate) fn extract_streams_with_offsets(
     } else {
         direct_stream_headers(payload, ctx)?
     };
-    for (index, (start, header)) in starts.iter().enumerate() {
-        let end = starts
-            .get(index + 1)
-            .map_or(payload.len(), |(offset, _)| *offset);
+    let mut starts = starts.into_iter().peekable();
+    while let Some((start, header)) = starts.next() {
+        let end = starts.peek().map_or(payload.len(), |(offset, _)| *offset);
         ctx.charge_collection_items(1, "collect direct Parasolid streams")?;
         out.try_reserve(1).map_err(|_| {
             ctx.refuse_codec_limit("collect direct Parasolid streams", u64::MAX - 1, u64::MAX)
         })?;
-        let payload = ctx.copy_retained(&payload[*start..end], "retain direct Parasolid stream")?;
+        let payload = ctx.copy_retained(&payload[start..end], "retain direct Parasolid stream")?;
         out.push(ExtractedStream {
-            offset: *start,
+            offset: start,
             payload,
-            header: header.clone(),
+            header,
         });
     }
     if !out.is_empty() {
@@ -145,18 +144,22 @@ pub(crate) fn extract_streams_with_offsets(
                     View::over_retained(&payload[i..]),
                     ExpandSpec::Unknown,
                 ) {
-                    Ok((view, _))
-                        if view.window().starts_with(b"PS\0\0")
-                            && stream_header(view.window()).is_some() =>
-                    {
-                        Some(ctx.copy_retained(view.window(), "retain Parasolid zlib candidate")?)
+                    Ok((view, _)) if view.window().starts_with(b"PS\0\0") => {
+                        if let Some(header) = stream_header(ctx, view.window())? {
+                            Some(ExtractedStream {
+                                offset: i,
+                                payload: ctx.copy_retained(view.window(), "retain Parasolid zlib candidate")?,
+                                header,
+                            })
+                        } else {
+                            None
+                        }
                     }
                     Ok(_) => None,
                     Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                     Err(_) => None,
             };
-            if let Some(inner) = inner {
-                if let Some(stream) = extracted_stream(i, inner) {
+            if let Some(stream) = inner {
                     if !out
                         .iter()
                         .any(|existing| existing.payload == stream.payload)
@@ -167,7 +170,6 @@ pub(crate) fn extract_streams_with_offsets(
                         })?;
                         out.push(stream);
                     }
-                }
             }
         }
         i += 1;
@@ -207,7 +209,7 @@ fn single_wrapped_stream(
         return Ok(None);
     };
     let inflated = inflate_zlib_frame_budgeted(ctx, member, uncompressed_size)?;
-    Ok(inflated.and_then(|bytes| extracted_stream(magic_at, bytes)))
+    inflated.map_or(Ok(None), |bytes| extracted_stream(ctx, magic_at, bytes))
 }
 
 fn chained_wrapped_stream(
@@ -297,19 +299,25 @@ fn chained_wrapped_stream(
     } else {
         ctx.concat_retained(&frame_outputs, "retain concatenated Parasolid stream")?
     };
-    Ok(extracted_stream(chain_len_at, stream))
+    extracted_stream(ctx, chain_len_at, stream)
 }
 
-fn extracted_stream(offset: usize, payload: Vec<u8>) -> Option<ExtractedStream> {
+fn extracted_stream(
+    ctx: &DecodeContext<'_>,
+    offset: usize,
+    payload: Vec<u8>,
+) -> Result<Option<ExtractedStream>, CodecError> {
     if !payload.starts_with(b"PS\0\0") {
-        return None;
+        return Ok(None);
     }
-    let header = stream_header(&payload)?;
-    Some(ExtractedStream {
+    let Some(header) = stream_header(ctx, &payload)? else {
+        return Ok(None);
+    };
+    Ok(Some(ExtractedStream {
         offset,
         payload,
         header,
-    })
+    }))
 }
 
 fn as_usize(value: u32) -> Option<usize> {
@@ -391,7 +399,7 @@ fn direct_stream_headers(
         if bytes != b"PS\0\0" {
             continue;
         }
-        if let Some(header) = stream_header(&payload[start..]) {
+        if let Some(header) = stream_header(ctx, &payload[start..])? {
             ctx.charge_collection_items(1, "collect Parasolid headers")?;
             headers.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit("collect Parasolid headers", u64::MAX - 1, u64::MAX)
@@ -417,31 +425,104 @@ pub(crate) struct StreamHeader {
 ///
 /// Returns `None` when the signature, description, or schema token is missing or
 /// truncated.
-pub(crate) fn stream_header(payload: &[u8]) -> Option<StreamHeader> {
-    let sig = parasolid_offset(payload)?;
-    let desc_len_at = sig + 4;
-    let mut view = View::over_retained(payload);
-    view.seek(desc_len_at)?;
-    let desc_len = usize::from(view.u16_be()?);
-    let desc_start = desc_len_at + 2;
-    let desc_end = desc_start + desc_len;
-    let description = String::from_utf8_lossy(payload.get(desc_start..desc_end)?).into_owned();
+pub(crate) fn stream_header(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Option<StreamHeader>, CodecError> {
+    let Some((description_bytes, token, schema_end)) = (|| {
+        let sig = parasolid_offset(payload)?;
+        let desc_len_at = sig + 4;
+        let mut view = View::over_retained(payload);
+        view.seek(desc_len_at)?;
+        let desc_len = usize::from(view.u16_be()?);
+        let desc_start = desc_len_at + 2;
+        let desc_end = desc_start + desc_len;
+        let description_bytes = payload.get(desc_start..desc_end)?;
 
-    // The padding between description and the length-prefixed schema token is not
-    // fixed, so the `SCH_` marker is located directly; the preceding byte is the
-    // schema length ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#31-stream-header)).
-    let window_end = (desc_end + 64).min(payload.len());
-    let token = cadmpeg_parasolid::find_u8_length_prefixed_schema_token(
-        payload.get(desc_end..window_end)?,
+        // The padding between description and the length-prefixed schema token is not
+        // fixed, so the `SCH_` marker is located directly; the preceding byte is the
+        // schema length ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#31-stream-header)).
+        let window_end = (desc_end + 64).min(payload.len());
+        let token = cadmpeg_parasolid::find_u8_length_prefixed_schema_token(
+            payload.get(desc_end..window_end)?,
+        )?;
+        Some((description_bytes, token, desc_end + token.end()))
+    })() else {
+        return Ok(None);
+    };
+    let description_len = lossy_utf8_len(description_bytes).ok_or_else(|| {
+        ctx.refuse_codec_limit("retain Parasolid stream description", u64::MAX - 1, u64::MAX)
+    })?;
+    ctx.charge_retained(
+        u64::try_from(description_len).map_err(|_| {
+            ctx.refuse_codec_limit("retain Parasolid stream description", u64::MAX - 1, u64::MAX)
+        })?,
+        "retain Parasolid stream description",
     )?;
-    let schema_end = desc_end + token.end();
-    let schema = cadmpeg_parasolid::OwnedSchemaToken::from(token);
+    let mut description = String::new();
+    description.try_reserve(description_len).map_err(|_| {
+        ctx.refuse_codec_limit("retain Parasolid stream description", u64::MAX - 1, u64::MAX)
+    })?;
+    append_lossy_utf8(&mut description, description_bytes);
 
-    Some(StreamHeader {
+    let schema_text = token.value();
+    ctx.charge_retained(
+        u64::try_from(schema_text.len()).map_err(|_| {
+            ctx.refuse_codec_limit("retain Parasolid schema token", u64::MAX - 1, u64::MAX)
+        })?,
+        "retain Parasolid schema token",
+    )?;
+    let mut owned_schema = String::new();
+    owned_schema.try_reserve(schema_text.len()).map_err(|_| {
+        ctx.refuse_codec_limit("retain Parasolid schema token", u64::MAX - 1, u64::MAX)
+    })?;
+    owned_schema.push_str(schema_text);
+    let schema = cadmpeg_parasolid::OwnedSchemaToken::try_from(owned_schema).map_err(|_| {
+        CodecError::Malformed("Parasolid schema token is invalid".into())
+    })?;
+
+    Ok(Some(StreamHeader {
         description,
         schema,
         body_offset: schema_end,
-    })
+    }))
+}
+
+fn lossy_utf8_len(mut bytes: &[u8]) -> Option<usize> {
+    let mut size = 0usize;
+    loop {
+        match std::str::from_utf8(bytes) {
+            Ok(valid) => return size.checked_add(valid.len()),
+            Err(error) => {
+                size = size.checked_add(error.valid_up_to())?.checked_add(3)?;
+                let invalid = error.error_len().unwrap_or(bytes.len() - error.valid_up_to());
+                bytes = bytes.get(error.valid_up_to().checked_add(invalid)?..)?;
+            }
+        }
+    }
+}
+
+fn append_lossy_utf8(output: &mut String, mut bytes: &[u8]) {
+    loop {
+        match std::str::from_utf8(bytes) {
+            Ok(valid) => {
+                output.push_str(valid);
+                break;
+            }
+            Err(error) => {
+                let valid = std::str::from_utf8(&bytes[..error.valid_up_to()]);
+                if let Ok(valid) = valid {
+                    output.push_str(valid);
+                }
+                output.push(char::REPLACEMENT_CHARACTER);
+                let invalid = error.error_len().unwrap_or(bytes.len() - error.valid_up_to());
+                let Some(remaining) = bytes.get(error.valid_up_to() + invalid..) else {
+                    break;
+                };
+                bytes = remaining;
+            }
+        }
+    }
 }
 
 fn parasolid_offset(payload: &[u8]) -> Option<usize> {
@@ -452,8 +533,9 @@ fn parasolid_offset(payload: &[u8]) -> Option<usize> {
 
 /// Test whether the description identifies a partition or deltas body stream.
 pub(crate) fn is_body_stream(header: &StreamHeader) -> bool {
-    let d = header.description.to_ascii_lowercase();
-    d.contains("partition") || d.contains("deltas")
+    let bytes = header.description.as_bytes();
+    bytes.windows(9).any(|part| part.eq_ignore_ascii_case(b"partition"))
+        || bytes.windows(6).any(|part| part.eq_ignore_ascii_case(b"deltas"))
 }
 
 /// Decode the unique counted XYZ polyline carried by a classified mesh stream.
