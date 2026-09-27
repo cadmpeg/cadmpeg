@@ -656,6 +656,68 @@ fn e5_boundary_plan_refuses_before_face_and_relation_growth() {
 }
 
 #[test]
+fn e5_emitted_rosters_refuse_before_nested_growth() {
+    let file = object_main_catpart(&e5_torus_topology_stream());
+    let mut refused = std::collections::HashSet::new();
+    for cap in 0..4096 {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        match CatiaCodec.decode(
+            &mut Cursor::new(&file),
+            &DecodeOptions { policy, ..DecodeOptions::default() },
+        ) {
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+                refused.insert(limit.operation);
+            }
+            Ok(_) => break,
+            Err(error) => panic!("unexpected topology decode refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_e5_emitted_curve_ids",
+        "catia_e5_region_ids",
+        "catia_e5_body_regions",
+        "catia_e5_region_shells",
+        "catia_e5_shell_face_ids",
+        "catia_e5_face_loop_ids",
+        "catia_e5_loop_coedge_ids",
+        "catia_e5_loop_vertex_uses",
+        "catia_e5_radial_edge_keys",
+        "catia_e5_radial_occurrences",
+        "catia_e5_coedge_pcurve_uses",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
+fn e5_free_vertex_owner_refuses_before_roster_growth() {
+    let file = e5_catpart();
+    let mut refused = std::collections::HashSet::new();
+    for cap in 0..2048 {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        match CatiaCodec.decode(
+            &mut Cursor::new(&file),
+            &DecodeOptions { policy, ..DecodeOptions::default() },
+        ) {
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+                refused.insert(limit.operation);
+            }
+            Ok(_) => break,
+            Err(error) => panic!("unexpected free vertex decode refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_e5_free_body_regions",
+        "catia_e5_free_region_shells",
+        "catia_e5_free_vertices",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
 fn e5_route_propagates_station_collection_refusal() {
     let mut stream = e5_d8_rolling_ball_stream();
     for id in 100..109 {
