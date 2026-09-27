@@ -29,13 +29,13 @@ fn profiled_hole_histories_report_collection_limit() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-    project_profiled_hole_constructions(Some(&ctx), &mut [], &[], &histories, &[])
+    project_profiled_hole_constructions(&ctx, &mut [], &[], &histories, &[])
         .expect("service profile admits one history");
 
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 3;
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-    let error = project_profiled_hole_constructions(Some(&ctx), &mut [], &[], &histories, &[])
+    let error = project_profiled_hole_constructions(&ctx, &mut [], &[], &histories, &[])
         .expect_err("one history exceeds the collection limit");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
@@ -713,6 +713,8 @@ fn incomplete_axial_profile_does_not_assign_dimension_roles() {
 
 #[test]
 fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut history = native_history();
     history.features[0].properties.insert(
         cadmpeg_core::nonblank_literal!("DissectableChildren"),
@@ -851,7 +853,7 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         Some("native-position")
     );
 
-    project_profiled_hole_constructions(None, &mut features, &entities, &[history], &[lane])
+    project_profiled_hole_constructions(&ctx, &mut features, &entities, &[history], &[lane])
         .unwrap();
 
     assert!(matches!(
@@ -871,6 +873,8 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
 
 #[test]
 fn ordered_profile_fallback_excludes_claimed_profiles() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut history = native_history();
     let mut second_hole = history.features[0].clone();
     second_hole.id = "second-hole".into();
@@ -980,7 +984,7 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
     ]
     .concat();
 
-    project_profiled_hole_constructions(None, &mut features, &entities, &[history], &[]).unwrap();
+    project_profiled_hole_constructions(&ctx, &mut features, &entities, &[history], &[]).unwrap();
 
     assert!(matches!(
         features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
