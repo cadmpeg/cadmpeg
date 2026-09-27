@@ -135,19 +135,9 @@ pub(crate) fn transfer(
                 children: TreeChildren::default(),
             })
         } else if is_body(&object.type_name) {
-            body_definition(&owned, &feature_ids).unwrap_or_else(|| {
-                FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
-                })
-            })
+            body_definition(&owned, &feature_ids).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_datum(&object.type_name) {
-            datum_definition(&object.type_name, &owned).unwrap_or_else(|| {
-                FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
-                })
-            })
+            datum_definition(&object.type_name, &owned).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_sketch(&object.type_name) {
             let decoded = parse_sketch(ctx, object, &owned)?;
             let sketch = decoded.sketch;
@@ -170,34 +160,14 @@ pub(crate) fn transfer(
         } else if is_stored_geometry_feature(&object.type_name) {
             FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
         } else if object.type_name == "PartDesign::FeatureBase" {
-            feature_base_definition(&owned, &feature_ids).unwrap_or_else(|| {
-                FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
-                })
-            })
+            feature_base_definition(&owned, &feature_ids).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_imported_geometry(&object.type_name) {
-            imported_geometry_definition(&object.type_name, &owned).unwrap_or_else(|| {
-                FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
-                })
-            })
+            imported_geometry_definition(&object.type_name, &owned).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_part_construction_geometry(&object.type_name) {
             part_construction_geometry_definition(&object.type_name, &owned, entries)
-                .unwrap_or_else(|| {
-                    FeatureDefinition::Operation(FeatureOperation::Native {
-                        kind: object.type_name.clone().into(),
-                        parameters: native_parameters(&owned),
-                    })
-                })
+                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_primitive(&object.type_name) {
-            primitive_definition(&object.type_name, &owned).unwrap_or_else(|| {
-                FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
-                })
-            })
+            primitive_definition(&object.type_name, &owned).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_boolean(&object.type_name) {
             boolean_definition(&object.type_name, &owned)
                 .or_else(|| {
@@ -205,28 +175,13 @@ pub(crate) fn transfer(
                         .then(|| cached_shape_definition(&owned))
                         .flatten()
                 })
-                .unwrap_or_else(|| {
-                    FeatureDefinition::Operation(FeatureOperation::Native {
-                        kind: object.type_name.clone().into(),
-                        parameters: native_parameters(&owned),
-                    })
-                })
+                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_loft(&object.type_name) {
             loft_definition(&object.type_name, &owned, &sketch_ids)
                 .or_else(|| cached_shape_definition(&owned))
-                .unwrap_or_else(|| {
-                    FeatureDefinition::Operation(FeatureOperation::Native {
-                        kind: object.type_name.clone().into(),
-                        parameters: native_parameters(&owned),
-                    })
-                })
+                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_sweep(&object.type_name) {
-            sweep_definition(&object.type_name, &owned, &sketch_ids).unwrap_or_else(|| {
-                FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
-                })
-            })
+            sweep_definition(&object.type_name, &owned, &sketch_ids).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_helical_sweep(&object.type_name) {
             helical_sweep_definition(
                 &object.type_name,
@@ -236,26 +191,11 @@ pub(crate) fn transfer(
                 objects,
                 &properties_by_owner,
             )
-            .unwrap_or_else(|| {
-                FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
-                })
-            })
+            .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if matches!(object.type_name.as_str(), "Part::Helix" | "Part::Spiral") {
-            parametric_helix_definition(&object.type_name, &owned).unwrap_or_else(|| {
-                FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
-                })
-            })
+            parametric_helix_definition(&object.type_name, &owned).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_binder(&object.type_name) {
-            binder_definition(&object.type_name, &owned, &feature_ids).unwrap_or_else(|| {
-                FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
-                })
-            })
+            binder_definition(&object.type_name, &owned, &feature_ids).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_pattern(&object.type_name) {
             pattern_definition(
                 ctx,
@@ -269,19 +209,9 @@ pub(crate) fn transfer(
                     entries,
                 },
             )?
-            .unwrap_or_else(|| {
-                FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
-                })
-            })
+            .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if object.type_name == "Part::Scale" {
-            scale_definition(&owned).unwrap_or_else(|| {
-                FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
-                })
-            })
+            scale_definition(&owned).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_hole(&object.type_name) {
             hole_definition(
                 &object.id,
@@ -291,12 +221,7 @@ pub(crate) fn transfer(
                 &properties_by_owner,
                 program_version,
             )
-            .unwrap_or_else(|| {
-                FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
-                })
-            })
+            .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_extrusion(&object.type_name) {
             let profile = match profile_ref(&object.id, &owned, &sketch_ids) {
                 ProfileRef::Planar(PlanarProfileRef::Unresolved(_)) => {
@@ -329,111 +254,45 @@ pub(crate) fn transfer(
                 profile_normal,
                 &ir.model.sketches,
             )?
-            .unwrap_or_else(|| {
-                FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
-                })
-            })
+            .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_revolution(&object.type_name) {
             revolution_definition(&object.type_name, &object.id, &owned, &sketch_ids)
-                .unwrap_or_else(|| {
-                    FeatureDefinition::Operation(FeatureOperation::Native {
-                        kind: object.type_name.clone().into(),
-                        parameters: native_parameters(&owned),
-                    })
-                })
+                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if matches!(
             object.type_name.as_str(),
             "PartDesign::Thickness" | "Part::Thickness"
         ) {
-            thickness_definition(&object.type_name, &owned).unwrap_or_else(|| {
-                FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
-                })
-            })
+            thickness_definition(&object.type_name, &owned).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if matches!(object.type_name.as_str(), "Part::Offset" | "Part::Offset2D") {
-            offset_shape_definition(&object.type_name, &owned).unwrap_or_else(|| {
-                FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
-                })
-            })
+            offset_shape_definition(&object.type_name, &owned).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if matches!(
             object.type_name.as_str(),
             "Part::Compound" | "Part::Compound2" | "Part::Refine" | "Part::Reverse"
         ) {
-            derived_shape_definition(&object.type_name, &owned).unwrap_or_else(|| {
-                FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
-                })
-            })
+            derived_shape_definition(&object.type_name, &owned).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if object.type_name == "Part::RuledSurface" {
-            ruled_surface_definition(&owned).unwrap_or_else(|| {
-                FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
-                })
-            })
+            ruled_surface_definition(&owned).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if object.type_name == "Part::Section" {
-            section_shape_definition(&owned).unwrap_or_else(|| {
-                FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
-                })
-            })
+            section_shape_definition(&owned).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if object.type_name == "Part::Mirroring" {
-            mirror_shape_definition(&owned).unwrap_or_else(|| {
-                FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
-                })
-            })
+            mirror_shape_definition(&owned).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if object.type_name == "Part::ProjectOnSurface" {
-            project_on_surface_definition(&owned).unwrap_or_else(|| {
-                FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
-                })
-            })
+            project_on_surface_definition(&owned).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if object.type_name == "PartDesign::Draft" {
-            draft_definition(&owned, objects, &properties_by_owner).unwrap_or_else(|| {
-                FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
-                })
-            })
+            draft_definition(&owned, objects, &properties_by_owner).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_fillet(&object.type_name) {
             fillet_definition(&object.type_name, &owned, entries)
                 .or_else(|| cached_shape_definition(&owned))
-                .unwrap_or_else(|| {
-                    FeatureDefinition::Operation(FeatureOperation::Native {
-                        kind: object.type_name.clone().into(),
-                        parameters: native_parameters(&owned),
-                    })
-                })
+                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_chamfer(&object.type_name) {
             chamfer_definition(&object.type_name, &owned, entries, program_version)
                 .or_else(|| cached_shape_definition(&owned))
-                .unwrap_or_else(|| {
-                    FeatureDefinition::Operation(FeatureOperation::Native {
-                        kind: object.type_name.clone().into(),
-                        parameters: native_parameters(&owned),
-                    })
-                })
+                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else {
-            FeatureDefinition::Operation(FeatureOperation::Native {
-                kind: object.type_name.clone().into(),
-                parameters: native_parameters(&owned),
-            })
+            native_definition(ctx, &object.type_name, &owned)?
         };
         if cycle_affected.contains(object.id.as_str()) {
-            definition = FeatureDefinition::Operation(FeatureOperation::Native {
-                kind: object.type_name.clone().into(),
-                parameters: native_parameters(&owned),
-            });
+            definition = native_definition(ctx, &object.type_name, &owned)?;
         }
         let mut semantic_dependencies = Vec::new();
         if let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) = &definition {
@@ -445,7 +304,7 @@ pub(crate) fn transfer(
                 }
             }
         }
-        let definition = post_processed_definition(definition, &object.type_name, &owned);
+        let definition = post_processed_definition(ctx, definition, &object.type_name, &owned)?;
         append_operation_parameters(ctx, &mut ir.model.parameters, object, &owned)?;
         let mut outputs = Vec::new();
         for payload in payloads.iter().filter(|payload| owned.iter().any(|property| property.id == payload.property)) {
@@ -513,7 +372,7 @@ pub(crate) fn transfer(
             name: Some(retained_string(ctx, &object.name, "fcstd feature name")?),
             suppressed: bool_property(&owned, "Suppressed"),
             dependencies: (dependencies).into_iter().collect(),
-            source_properties: feature_state(&object.id, &owned)?,
+            source_properties: feature_state(ctx, &object.id, &owned)?,
             source_tag: Some(retained_string(ctx, &object.type_name, "fcstd feature source type")?),
             source_text: None,
             source_content: FeatureContent::default(),
@@ -547,17 +406,14 @@ pub(crate) fn transfer(
             .iter_mut()
             .find(|feature| feature.native_ref.as_deref() == Some(object.id.as_str()))
         {
-            feature
-                .evaluation
-                .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(
-                        properties_by_owner
-                            .get(object.id.as_str())
-                            .map(Vec::as_slice)
-                            .unwrap_or_default(),
-                    ),
-                }));
+            feature.evaluation.set_definition(native_definition(
+                ctx,
+                &object.type_name,
+                properties_by_owner
+                    .get(object.id.as_str())
+                    .map(Vec::as_slice)
+                    .unwrap_or_default(),
+            )?);
             feature.dependencies.clear();
         }
     }
@@ -779,11 +635,12 @@ fn feature_ordinals<'a>(
 
 /// Apply an operation's shape-refinement and boolean-tolerance controls.
 fn post_processed_definition(
+    ctx: &DecodeContext<'_>,
     definition: FeatureDefinition,
     kind: &str,
     properties: &[&PropertyRecord],
-) -> FeatureDefinition {
-    match post_process_controls(properties) {
+) -> Result<FeatureDefinition, CodecError> {
+    Ok(match post_process_controls(properties) {
         PostProcessControlState::Absent => definition,
         PostProcessControlState::Valid {
             refine,
@@ -794,20 +651,10 @@ fn post_processed_definition(
                 refine,
                 fuzzy_tolerance,
             },
-            FeatureDefinition::PostProcess { .. } => {
-                FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: kind.to_owned().into(),
-                    parameters: native_parameters(properties),
-                })
-            }
+            FeatureDefinition::PostProcess { .. } => native_definition(ctx, kind, properties)?,
         },
-        PostProcessControlState::Malformed => {
-            FeatureDefinition::Operation(FeatureOperation::Native {
-                kind: kind.to_owned().into(),
-                parameters: native_parameters(properties),
-            })
-        }
-    }
+        PostProcessControlState::Malformed => native_definition(ctx, kind, properties)?,
+    })
 }
 
 enum PostProcessControlState {
@@ -1222,11 +1069,19 @@ fn append_operation_parameters(
         let is_angle = property.type_name.contains("Angle");
         let mut retained = BTreeMap::new();
         if let Some((native_ref, _)) = &expression {
+            ctx.charge_collection_items(1, "fcstd operation expression properties")?;
             retained.insert(
                 cadmpeg_core::nonblank_literal!("expression_native_ref"),
                 retained_string(ctx, native_ref, "fcstd operation expression reference")?,
             );
         }
+        let expression = match expression {
+            Some((_, expression)) => expression,
+            None => match scalar_text(property, |text| retained_string(ctx, text, "fcstd operation scalar expression")) {
+                Some(text) => text?,
+                None => retained_format(ctx, format_args!("{}", value.get()), "fcstd operation numeric expression")?,
+            },
+        };
         reserve_vec_items(ctx, parameters, 1, "fcstd operation parameters")?;
         parameters.push(DesignParameter {
             id: ParameterId::compose(
@@ -1237,10 +1092,7 @@ fn append_operation_parameters(
                 .map_err(CodecError::malformed)?),
             ordinal: property.order as u32,
             name: retained_string(ctx, &property.name, "fcstd operation parameter name")?,
-            expression: expression.map_or_else(
-                || scalar_text(property).unwrap_or_else(|| value.get().to_string()),
-                |(_, expression)| expression,
-            ),
+            expression,
             display: None,
             value: if is_angle {
                 cadmpeg_ir::scalar::Angle::new(value.get().to_radians()).map(ParameterValue::Angle)
@@ -1956,6 +1808,7 @@ fn validate_sketch_placement(ctx: &DecodeContext<'_>, properties: &[&PropertyRec
 }
 
 fn feature_state(
+    ctx: &DecodeContext<'_>,
     object: &str,
     properties: &[&PropertyRecord],
 ) -> Result<BTreeMap<NonBlankString, String>, CodecError> {
@@ -1970,29 +1823,47 @@ fn feature_state(
         "Touched",
         "Visibility",
     ];
-    let named = properties
-        .iter()
-        .filter(|property| STATE_NAMES.contains(&property.name.as_str()))
-        .map(|property| {
-            let value = property
-                .links()
-                .first()
-                .and_then(|link| link.as_ref()?.object().map(str::to_owned))
-                .or_else(|| scalar_text(property))
-                .unwrap_or_else(|| property.xml.text().to_owned());
-            (property.name.clone(), value)
-        })
-        .collect::<Vec<_>>();
-    Ok(cadmpeg_core::text::named_entries(object, named)?)
+    let mut state = BTreeMap::new();
+    for property in properties.iter().filter(|property| STATE_NAMES.contains(&property.name.as_str())) {
+        let value = if let Some(link) = property.links().first()
+            .and_then(|link| link.as_ref()?.object()) {
+            retained_string(ctx, link, "fcstd feature state value")?
+        } else if let Some(value) = scalar_text(property, |text| {
+            retained_string(ctx, text, "fcstd feature state value")
+        }) {
+            value?
+        } else {
+            retained_string(ctx, property.xml.text(), "fcstd feature state value")?
+        };
+        let name = retained_string(ctx, &property.name, "fcstd feature state name")?;
+        let Some(name) = NonBlankString::new(name) else {
+            return Err(crate::resource::malformed_charged(
+                ctx, format_args!("{object} states a property with a blank key"),
+                "fcstd feature state blank key error",
+            ));
+        };
+        if state.contains_key(&name) {
+            return Err(crate::resource::malformed_charged(
+                ctx, format_args!("{object} states the property {name} a second time"),
+                "fcstd feature state duplicate key error",
+            ));
+        }
+        ctx.charge_collection_items(1, "fcstd feature state properties")?;
+        state.insert(name, value);
+    }
+    Ok(state)
 }
 
 fn bool_property(properties: &[&PropertyRecord], name: &str) -> Option<bool> {
-    let value = scalar_text(property(properties, name)?)?;
-    match value.to_ascii_lowercase().as_str() {
-        "1" | "true" => Some(true),
-        "0" | "false" => Some(false),
-        _ => None,
-    }
+    scalar_text(property(properties, name)?, |value| {
+        if value == "1" || value.eq_ignore_ascii_case("true") {
+            Some(true)
+        } else if value == "0" || value.eq_ignore_ascii_case("false") {
+            Some(false)
+        } else {
+            None
+        }
+    })?
 }
 
 /// Read an operation enumeration while keeping absence distinct from malformed persistence.
@@ -4952,24 +4823,62 @@ fn scalar_value(property: &PropertyRecord) -> Option<FiniteReal> {
     if tag == "Bool" {
         return None;
     }
-    let attributes = direct_root_attributes(property, tag)?;
-    let value = attributes.get("value")?.parse::<f64>().ok()?;
+    let value = direct_root_value(property, tag, "value", str::parse::<f64>)?.ok()?;
     FiniteReal::new(value)
 }
 
-fn scalar_text(property: &PropertyRecord) -> Option<String> {
+fn scalar_text<T>(property: &PropertyRecord, use_value: impl FnOnce(&str) -> T) -> Option<T> {
     let tag = text_value_tag(&property.type_name)?;
-    direct_root_attributes(property, tag)?.remove("value")
+    direct_root_value(property, tag, "value", use_value)
 }
 
-fn native_parameters(properties: &[&PropertyRecord]) -> BTreeMap<NonBlankString, String> {
-    properties
-        .iter()
-        .filter_map(|property| {
-            let name = NonBlankString::new(property.name.clone())?;
-            scalar_text(property).map(|value| (name, value))
-        })
-        .collect()
+fn direct_root_value<T>(
+    property: &PropertyRecord,
+    expected_tag: &str,
+    attribute: &str,
+    use_value: impl FnOnce(&str) -> T,
+) -> Option<T> {
+    let document = roxmltree::Document::parse(property.xml.text()).ok()?;
+    let mut roots = document.root_element().children()
+        .filter(|node| node.is_element() && node.has_tag_name(expected_tag));
+    let root = roots.next()?;
+    if roots.next().is_some()
+        || document.descendants().filter(|node| node.has_tag_name(expected_tag)).count() != 1 {
+        return None;
+    }
+    root.attribute(attribute).map(use_value)
+}
+
+fn native_parameters(
+    ctx: &DecodeContext<'_>,
+    properties: &[&PropertyRecord],
+) -> Result<BTreeMap<NonBlankString, String>, CodecError> {
+    let mut parameters = BTreeMap::new();
+    for property in properties {
+        let Some(value) = scalar_text(property, |text| {
+            retained_string(ctx, text, "fcstd native parameter value")
+        }) else { continue };
+        let Some(name) = NonBlankString::new(retained_string(
+            ctx, &property.name, "fcstd native parameter name",
+        )?) else { continue };
+        let value = value?;
+        if !parameters.contains_key(&name) {
+            ctx.charge_collection_items(1, "fcstd native parameters")?;
+        }
+        parameters.insert(name, value);
+    }
+    Ok(parameters)
+}
+
+fn native_definition(
+    ctx: &DecodeContext<'_>,
+    kind: &str,
+    properties: &[&PropertyRecord],
+) -> Result<FeatureDefinition, CodecError> {
+    Ok(FeatureDefinition::Operation(FeatureOperation::Native {
+        kind: retained_string(ctx, kind, "fcstd native feature kind")?.into(),
+        parameters: native_parameters(ctx, properties)?,
+    }))
 }
 
 fn primitive_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
