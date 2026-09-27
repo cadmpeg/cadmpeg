@@ -332,7 +332,12 @@ impl SourceUnitCarriers {
         Ok(())
     }
 
-    pub(super) fn admit_edge(&mut self, ir: &mut CadIr, mut edge: Edge) -> Result<(), CodecError> {
+    pub(super) fn admit_edge(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        ir: &mut CadIr,
+        mut edge: Edge,
+    ) -> Result<(), CodecError> {
         self.scale_tolerance(&mut edge.tolerance)?;
         let source_range = edge.param_range().map(cadmpeg_ir::units::FiniteVector::get);
         if let (Some(scale), EdgeCarrier::Bounded(curve_id, interval)) =
@@ -351,9 +356,19 @@ impl SourceUnitCarriers {
             }
         }
         if let Some(source_range) = source_range {
-            self.edge_parameter_ranges
-                .insert(edge.id.clone(), source_range);
+            if let Some(existing) = self.edge_parameter_ranges.get_mut(&edge.id) {
+                *existing = source_range;
+            } else {
+                ctx.charge_collection_items(1, "creo source edge range nodes")?;
+                let id = EdgeId::mint(ctx.copy_retained_text(
+                    edge.id.as_str(),
+                    "creo source edge range IDs",
+                )?)
+                .map_err(CodecError::malformed)?;
+                self.edge_parameter_ranges.insert(id, source_range);
+            }
         }
+        ctx.try_reserve_items(&mut ir.model.edges, 1, "creo model edges")?;
         ir.model.edges.push(edge);
         Ok(())
     }
@@ -725,6 +740,69 @@ mod tests {
             if resource.dimension == ResourceDimension::CollectionItems
                 && resource.operation == "creo model pcurves"));
         assert!(ir.model.pcurves.is_empty());
+    }
+
+    fn admission_edge(range: Option<[f64; 2]>) -> Edge {
+        let vertex = cadmpeg_ir::ids::VertexId::mint("creo:test:vertex#0")
+            .expect("identity grammar");
+        Edge {
+            id: cadmpeg_ir::ids::EdgeId::mint("creo:test:edge#0")
+                .expect("identity grammar"),
+            carrier: EdgeCarrier::new(
+                Some(CurveId::mint("creo:test:curve#0").expect("identity grammar")),
+                range,
+            )
+            .expect("source edge carrier"),
+            start: vertex.clone(),
+            end: vertex,
+            tolerance: None,
+        }
+    }
+
+    #[test]
+    fn edge_admission_refuses_before_model_vector_growth() {
+        let mut ir = CadIr::empty();
+        let error = zero_collection_ctx(|ctx| {
+            SourceUnitCarriers::default().admit_edge(ctx, &mut ir, admission_edge(None))
+        })
+        .expect_err("one edge needs one model vector row");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo model edges"));
+        assert!(ir.model.edges.is_empty());
+    }
+
+    #[test]
+    fn bounded_edge_admission_refuses_before_source_range_node() {
+        let mut ir = CadIr::empty();
+        let error = zero_collection_ctx(|ctx| {
+            SourceUnitCarriers::default().admit_edge(
+                ctx,
+                &mut ir,
+                admission_edge(Some([0.0, 1.0])),
+            )
+        })
+        .expect_err("one bounded edge needs one source range node");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo source edge range nodes"));
+        assert!(ir.model.edges.is_empty());
+    }
+
+    #[test]
+    fn bounded_edge_admission_refuses_before_source_range_id_copy() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let mut ir = CadIr::empty();
+        let error = SourceUnitCarriers::default()
+            .admit_edge(&ctx, &mut ir, admission_edge(Some([0.0, 1.0])))
+            .expect_err("source range key needs retained bytes");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo source edge range IDs"));
+        assert!(ir.model.edges.is_empty());
     }
 
     #[test]
@@ -1366,8 +1444,8 @@ mod tests {
             end: vertex,
             tolerance: PositiveReal::new(0.1),
         };
-        source_carriers
-            .admit_edge(&mut ir, edge)
+        crate::decode::with_test_decode_ctx(|ctx| source_carriers
+            .admit_edge(ctx, &mut ir, edge))
             .expect("edge admission");
         assert_eq!(
             ir.model.edges[0]
@@ -1413,8 +1491,9 @@ mod tests {
         let (mut ir, mut source_carriers, curve_id) = source_line_for_range_tests();
         let vertex =
             cadmpeg_ir::ids::VertexId::mint("creo:visibgeom:vertex#1").expect("identity grammar");
-        let error = source_carriers
+        let error = crate::decode::with_test_decode_ctx(|ctx| source_carriers
             .admit_edge(
+                ctx,
                 &mut ir,
                 Edge {
                     id: cadmpeg_ir::ids::EdgeId::mint("creo:visibgeom:edge#1")
@@ -1425,7 +1504,7 @@ mod tests {
                     end: vertex,
                     tolerance: None,
                 },
-            )
+            ))
             .expect_err("millimeter range overflows");
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
         assert!(ir.model.edges.is_empty());
