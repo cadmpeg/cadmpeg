@@ -477,3 +477,48 @@ fn presentation_layer_vertex_identity_refuses_retained_limit() {
 fn presentation_layer_product_identity_refuses_retained_limit() {
     identity_copy_refuses("step_presentation_layer_product_identity");
 }
+
+fn invisible_body_refuses(operation: &str, depth: bool) {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("invisibility exchange");
+    let setup_arena = DecodeArena::new();
+    let (setup_ctx, _) = DecodeContext::from_root_bytes(source, &setup_arena, &DecodePolicy::default())
+        .expect("setup root");
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let index = crate::reader::index::CarrierIndex::from_ir(&ir, &setup_ctx).expect("setup index");
+    let topology = crate::reader::topology::decode(&exchange, &mut ir, &index, &setup_ctx)
+        .expect("setup topology");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    if depth {
+        policy.limits.max_recursion_depth = 0;
+    } else {
+        policy.limits.max_collection_items = 0;
+    }
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("root fits policy");
+    assert!(matches!(
+        super::super::invisible_body_ids(1, &exchange, &topology.value, &std::collections::BTreeMap::new(), Some(&ctx)),
+        Err(CodecError::ResourceLimit(refusal)) if refusal.operation == operation
+    ));
+}
+
+#[test]
+fn presentation_invisible_body_active_refuses_collection_limit() {
+    invisible_body_refuses("step_presentation_invisible_body_active", false);
+}
+
+#[test]
+fn presentation_invisible_body_walk_refuses_depth_limit() {
+    invisible_body_refuses("step_presentation_invisible_body_walk", true);
+}
+
+#[test]
+fn presentation_invisible_body_ids_refuse_collection_limit() {
+    ordered_set_refuses("step_presentation_invisible_body_ids");
+}
+
+#[test]
+fn presentation_invisible_body_identity_refuses_retained_limit() {
+    identity_copy_refuses("step_presentation_invisible_body_identity");
+}

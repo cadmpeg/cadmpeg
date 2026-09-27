@@ -110,7 +110,7 @@ pub(super) fn decode(
                 continue;
             }
             let (body_ids, target_supported) =
-                invisible_body_ids(target, exchange, topology, &body_indices);
+                invisible_body_ids(target, exchange, topology, &body_indices, ctx)?;
             let mut hidden = false;
             for body_id in body_ids {
                 if let Some(index) = body_indices.get(body_id.as_str()) {
@@ -537,7 +537,8 @@ fn invisible_body_ids(
     exchange: &Exchange,
     topology: &TopologyData,
     body_indices: &BTreeMap<String, usize>,
-) -> (Vec<BodyId>, bool) {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(BTreeSet<BodyId>, bool), CodecError> {
     let mut body_ids = BTreeSet::new();
     let mut active = BTreeSet::new();
     let supported = collect_invisible_body_ids(
@@ -547,8 +548,9 @@ fn invisible_body_ids(
         body_indices,
         &mut active,
         &mut body_ids,
-    );
-    (body_ids.into_iter().collect(), supported)
+        ctx,
+    )?;
+    Ok((body_ids, supported))
 }
 
 fn collect_invisible_body_ids(
@@ -558,25 +560,37 @@ fn collect_invisible_body_ids(
     body_indices: &BTreeMap<String, usize>,
     active: &mut BTreeSet<u64>,
     body_ids: &mut BTreeSet<BodyId>,
-) -> bool {
-    if !active.insert(id) {
-        return false;
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
+    if active.contains(&id) {
+        return Ok(false);
     }
+    let _nested = ctx
+        .map(|ctx| ctx.enter_nested("step_presentation_invisible_body_walk"))
+        .transpose()?;
+    insert_presentation_set(active, id, ctx, "step_presentation_invisible_body_active")?;
     if let Some(ids) = topology.body_by_root.get(&id) {
-        body_ids.extend(ids.iter().cloned());
+        for body in ids {
+            if !body_ids.contains(body) {
+                let body = clone_presentation_identity::<BodyId>(
+                    body.as_str(), ctx, "step_presentation_invisible_body_identity",
+                )?;
+                insert_presentation_set(body_ids, body, ctx, "step_presentation_invisible_body_ids")?;
+            }
+        }
         active.remove(&id);
-        return !ids.is_empty();
+        return Ok(!ids.is_empty());
     }
     let fallback = BodyId::from(ids::data(kind!("body"), id));
     if body_indices.contains_key(fallback.as_str()) {
-        body_ids.insert(fallback);
+        insert_presentation_set(body_ids, fallback, ctx, "step_presentation_invisible_body_ids")?;
         active.remove(&id);
-        return true;
+        return Ok(true);
     }
 
     let Some(record) = exchange.records().get(&id) else {
         active.remove(&id);
-        return false;
+        return Ok(false);
     };
     let mut found_reference = false;
     let mut supported = true;
@@ -600,7 +614,8 @@ fn collect_invisible_body_ids(
                 body_indices,
                 active,
                 body_ids,
-            );
+                ctx,
+            )?;
         }
     } else if record
         .partials
@@ -617,12 +632,13 @@ fn collect_invisible_body_ids(
                     body_indices,
                     active,
                     body_ids,
-                );
+                    ctx,
+                )?;
             }
         }
     }
     active.remove(&id);
-    found_reference && supported
+    Ok(found_reference && supported)
 }
 
 fn expand_style_targets(
