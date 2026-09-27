@@ -143,15 +143,16 @@ impl DecodedCurve {
         }
     }
 
-    pub(crate) fn reported_geometry(&self) -> CurveGeometry {
+    pub(crate) fn reported_geometry(&self) -> &CurveGeometry {
         match self {
-            Self::Leaf { geometry, .. } => geometry.clone(),
-            Self::Compound { .. } => {
-                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None })
-            }
+            Self::Leaf { geometry, .. } => geometry,
+            Self::Compound { .. } => &UNKNOWN_REPORTED_CURVE,
         }
     }
 }
+
+static UNKNOWN_REPORTED_CURVE: CurveGeometry =
+    CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None });
 
 /// A semantic geometry error.
 #[derive(Debug)]
@@ -779,7 +780,19 @@ pub(crate) fn exact_nurbs(
 ) -> Result<NurbsCurve, GeometryError> {
     match curve {
         DecodedCurve::Leaf { geometry, .. } => match geometry {
-            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => Ok(nurbs.clone()),
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
+                ctx.charge_collection_items(
+                    cadmpeg_core::decode::u64_from_index(nurbs.knots().len()),
+                    "Rhino exact NURBS knots",
+                )?;
+                ctx.charge_collection_items(
+                    cadmpeg_core::decode::u64_from_index(nurbs.pole_count()),
+                    "Rhino exact NURBS poles",
+                )?;
+                nurbs.try_clone().map_err(|_| {
+                    collection_allocation_failed("Rhino exact NURBS copy", nurbs.knots().len())
+                })
+            }
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
                 let center = circle_curve.center();
                 let axis = circle_curve.frame().axis().as_raw();
@@ -812,6 +825,7 @@ pub(crate) fn exact_nurbs(
                     return Err(error(offset, "polycurve segment domain is invalid"));
                 }
                 segments.push(remap_nurbs_domain(
+                    ctx,
                     exact_nurbs(ctx, child, offset)?,
                     target,
                     offset,
@@ -823,7 +837,8 @@ pub(crate) fn exact_nurbs(
 }
 
 pub(crate) fn remap_nurbs_domain(
-    mut curve: NurbsCurve,
+    ctx: &DecodeContext<'_>,
+    curve: NurbsCurve,
     target: [FiniteReal; 2],
     offset: usize,
 ) -> Result<NurbsCurve, GeometryError> {
@@ -848,31 +863,28 @@ pub(crate) fn remap_nurbs_domain(
         return Err(error(offset, "curve target domain is invalid"));
     }
     let target = target.map(FiniteReal::get);
-    let remapped = curve
-        .knots()
-        .iter()
-        .copied()
-        .map(|knot| {
-            let fraction = cadmpeg_ir::math::parameter_fraction(knot, source[0], source[1])
-                .map(cadmpeg_ir::scalar::FiniteReal::get)
-                .ok_or_else(|| error(offset, "curve knot remap overflowed"))?;
-            let value = if fraction == 0.0 {
-                target[0]
-            } else if fraction == 1.0 {
-                target[1]
-            } else {
-                (1.0 - fraction) * target[0] + fraction * target[1]
-            };
+    let mut remapped = charged_vec(ctx, curve.knots().len(), "Rhino remapped NURBS knots")?;
+    for knot in curve.knots().iter().copied() {
+        let fraction = cadmpeg_ir::math::parameter_fraction(knot, source[0], source[1])
+            .map(cadmpeg_ir::scalar::FiniteReal::get)
+            .ok_or_else(|| error(offset, "curve knot remap overflowed"))?;
+        let value = if fraction == 0.0 {
+            target[0]
+        } else if fraction == 1.0 {
+            target[1]
+        } else {
+            (1.0 - fraction) * target[0] + fraction * target[1]
+        };
+        remapped.push(
             value
                 .is_finite()
                 .then_some(value)
-                .ok_or_else(|| error(offset, "curve knot remap overflowed"))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+                .ok_or_else(|| error(offset, "curve knot remap overflowed"))?,
+        );
+    }
     curve
-        .edit_knots(|knots| knots.copy_from_slice(&remapped))
-        .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
-    Ok(curve)
+        .with_knots(remapped)
+        .map_err(|error| GeometryError::malformed(offset, error.to_string()))
 }
 
 /// Exact joined curve and recoverable join diagnostics.
@@ -2160,11 +2172,14 @@ mod tests {
             false,
         )
         .unwrap();
-        let remapped = super::remap_nurbs_domain(
-            curve,
-            [FiniteReal::ZERO, FiniteReal::new(1.0e200).unwrap()],
-            0,
-        )
+        let remapped = with_test_context(|ctx| {
+            super::remap_nurbs_domain(
+                ctx,
+                curve,
+                [FiniteReal::ZERO, FiniteReal::new(1.0e200).unwrap()],
+                0,
+            )
+        })
         .unwrap();
         assert_eq!(remapped.knots().as_slice(), &[0.0, 0.0, 1.0e200, 1.0e200]);
         let joined = with_test_context(|ctx| {
@@ -2224,6 +2239,58 @@ mod tests {
             false,
         )
         .expect("valid rational line")
+    }
+
+    fn exact_line_for_limits() -> DecodedCurve {
+        DecodedCurve::leaf(
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(rational_line_for_limits())),
+            Diagnostics::new(),
+        )
+    }
+
+    #[test]
+    fn exact_nurbs_knots_refuse_collection_limit() {
+        let error = with_collection_limit(3, |ctx| exact_nurbs(ctx, &exact_line_for_limits(), 0))
+            .expect_err("four knot copies exceed three collection items");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.operation == "Rhino exact NURBS knots"
+        ));
+    }
+
+    #[test]
+    fn exact_nurbs_poles_refuse_collection_limit() {
+        let error = with_collection_limit(5, |ctx| exact_nurbs(ctx, &exact_line_for_limits(), 0))
+            .expect_err("two copied poles exceed five collection items after four knots");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.operation == "Rhino exact NURBS poles"
+        ));
+        assert!(with_test_context(|ctx| exact_nurbs(ctx, &exact_line_for_limits(), 0)).is_ok());
+    }
+
+    #[test]
+    fn remapped_nurbs_knots_refuse_collection_limit() {
+        let target = [
+            FiniteReal::new(2.0).expect("finite"),
+            FiniteReal::new(3.0).expect("finite"),
+        ];
+        let error = with_collection_limit(3, |ctx| {
+            super::remap_nurbs_domain(ctx, rational_line_for_limits(), target, 0)
+        })
+        .expect_err("four remapped knots exceed three collection items");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.operation == "Rhino remapped NURBS knots"
+        ));
+        let remapped = with_test_context(|ctx| {
+            super::remap_nurbs_domain(ctx, rational_line_for_limits(), target, 0)
+        })
+        .expect("service profile admits remapped knots");
+        assert_eq!(remapped.knots().as_slice(), &[2.0, 2.0, 3.0, 3.0]);
     }
 
     fn assert_elevation_refusal(limit: u64, target: usize, operation: &str) {
@@ -3100,7 +3167,9 @@ mod tests {
                 false,
             )
             .unwrap();
-            let r = super::remap_nurbs_domain(n, [FiniteReal::ZERO, FiniteReal::ONE], 0);
+            let r = with_test_context(|ctx| {
+                super::remap_nurbs_domain(ctx, n, [FiniteReal::ZERO, FiniteReal::ONE], 0)
+            });
             println!("Rhino remap{domain:?}: {r:?}");
             assert_eq!(r.unwrap().knots().as_slice(), &[0., 0., 1., 1.]);
         }

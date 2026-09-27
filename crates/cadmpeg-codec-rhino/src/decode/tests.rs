@@ -733,6 +733,26 @@ fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
 }
 
 #[test]
+fn c2_joined_segments_refuse_collection_limit() {
+    let compound = crate::curves::DecodedCurve::Compound {
+        children: vec![(
+            finite_parameter(0.0),
+            decoded_nurbs(line_nurbs(0.0, 1.0, true)),
+        )],
+        end_parameter: finite_parameter(1.0),
+        warnings: Diagnostics::new(),
+    };
+    let error = with_collection_limit(0, |ctx| c2_curve_to_nurbs_join(ctx, compound, 0))
+        .err()
+        .expect("one C2 segment exceeds zero collection items");
+    assert!(matches!(
+        error,
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+            if refusal.operation == "Rhino C2 joined segments"
+    ));
+}
+
+#[test]
 fn recursive_c2_polycurve_preserves_nested_parent_parameterization() {
     let nested = crate::curves::DecodedCurve::Compound {
         children: vec![

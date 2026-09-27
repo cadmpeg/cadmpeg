@@ -1379,6 +1379,23 @@ impl NurbsCurve {
         Ok(())
     }
 
+    /// Replace the knot vector of an owned curve without copying its poles.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a knot count inconsistent with the degree and pole count, a
+    /// non-finite knot, or a decreasing pair.
+    pub fn with_knots(mut self, knots: Vec<f64>) -> Result<Self, NurbsError> {
+        require_curve_cardinality(
+            self.degree,
+            knots.len(),
+            self.poles.count(),
+            "control_points",
+        )?;
+        self.knots = KnotVector::new(knots)?;
+        Ok(self)
+    }
+
     /// Build a NURBS curve from a source's pole lane and weight lane.
     ///
     /// A source that states poles and weights as two arrays pairs them here,
@@ -1429,6 +1446,35 @@ impl NurbsCurve {
     /// positions.
     pub const fn pole_rows(&self) -> &NurbsPoles3<FinitePoint3> {
         &self.poles
+    }
+
+    /// Copy an admitted curve with fallible allocations for its knot and pole lanes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an allocation error when either lane cannot reserve its storage.
+    pub fn try_clone(&self) -> Result<Self, std::collections::TryReserveError> {
+        let knots = self.knots.try_clone()?;
+        let poles = match &self.poles {
+            NurbsPoles3::Polynomial { points } => {
+                let mut copy = Vec::new();
+                copy.try_reserve_exact(points.len())?;
+                copy.extend_from_slice(points);
+                NurbsPoles3::Polynomial { points: copy }
+            }
+            NurbsPoles3::Rational { points } => {
+                let mut copy = Vec::new();
+                copy.try_reserve_exact(points.len())?;
+                copy.extend_from_slice(points);
+                NurbsPoles3::Rational { points: copy }
+            }
+        };
+        Ok(Self {
+            degree: self.degree,
+            knots,
+            poles,
+            periodic: self.periodic,
+        })
     }
 
     /// Control points in parameter order.
