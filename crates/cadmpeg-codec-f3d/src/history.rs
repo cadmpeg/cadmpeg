@@ -690,16 +690,19 @@ fn bind_complete_record_tables(
             return Ok(false);
         }
         ctx.charge_collection_items(1, "retain F3D archived record frame")?;
+        archived_frames.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("retain F3D archived record frame", 0, 1)
+        })?;
         if archived_frames.insert(revision_id, framed).is_some() {
             return Ok(false);
         }
     }
-    let Some(archive) = historical_record_archive(states, active_records, archived_frames) else {
+    let Some(archive) = historical_record_archive(ctx, states, active_records, archived_frames)? else {
         return Ok(false);
     };
     let mut complete = true;
     for state in states.iter_mut() {
-        let Some(records) = materialize_record_table(state, &archive) else {
+        let Some(records) = materialize_record_table(ctx, state, &archive)? else {
             complete = false;
             break;
         };
@@ -766,21 +769,31 @@ fn topology_entity_slots(topology: &AsmHistoricalTopology) -> HashSet<i64> {
 type HistoricalRecordArchive = HashMap<i64, cadmpeg_asm::sab::Record>;
 
 fn historical_record_archive(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     states: &[AsmDeltaState],
     active_records: &[cadmpeg_asm::sab::Record],
     archived_frames: HashMap<i64, cadmpeg_asm::sab::Record>,
-) -> Option<HistoricalRecordArchive> {
+) -> Result<Option<HistoricalRecordArchive>, cadmpeg_core::CodecError> {
     if active_records
         .iter()
         .enumerate()
         .any(|(index, record)| record.index != index)
     {
-        return None;
+        return Ok(None);
     }
-    let active_count = i64::try_from(active_records.len()).ok()?;
-    let mut revision_entities = (0..active_count)
-        .map(|entity_ref| (entity_ref, entity_ref))
-        .collect::<HashMap<_, _>>();
+    let Some(active_count) = i64::try_from(active_records.len()).ok() else {
+        return Ok(None);
+    };
+    let active_count_items = u64::try_from(active_records.len())
+        .map_err(|_| ctx.refuse_codec_limit("index F3D active record revisions", 0, u64::MAX))?;
+    ctx.charge_collection_items(active_count_items, "index F3D active record revisions")?;
+    let mut revision_entities = HashMap::new();
+    revision_entities.try_reserve(active_records.len()).map_err(|_| {
+        ctx.refuse_codec_limit("index F3D active record revisions", 0, active_count_items)
+    })?;
+    for entity_ref in 0..active_count {
+        revision_entities.insert(entity_ref, entity_ref);
+    }
     for change in states
         .iter()
         .flat_map(|state| &state.bulletin_boards)
@@ -790,36 +803,69 @@ fn historical_record_archive(
             continue;
         };
         let entity_ref = change.new_ref().unwrap_or(old_ref);
+        ctx.charge_collection_items(1, "index F3D archived record revisions")?;
+        revision_entities.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("index F3D archived record revisions", 0, 1)
+        })?;
         if revision_entities.insert(old_ref, entity_ref).is_some() {
-            return None;
+            return Ok(None);
         }
     }
-    let mut records = active_records
-        .iter()
-        .cloned()
-        .enumerate()
-        .map(|(revision, record)| Some((i64::try_from(revision).ok()?, record)))
-        .collect::<Option<HashMap<_, _>>>()?;
+    ctx.charge_collection_items(active_count_items, "retain F3D active record archive")?;
+    let mut records = HashMap::new();
+    records.try_reserve(active_records.len()).map_err(|_| {
+        ctx.refuse_codec_limit("retain F3D active record archive", 0, active_count_items)
+    })?;
+    for (revision, record) in active_records.iter().enumerate() {
+        let Some(revision) = i64::try_from(revision).ok() else {
+            return Ok(None);
+        };
+        records.insert(revision, record.clone());
+    }
     for (revision_id, framed) in archived_frames {
+        ctx.charge_collection_items(1, "retain F3D archived record archive")?;
+        records.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("retain F3D archived record archive", 0, 1)
+        })?;
         if records.insert(revision_id, framed).is_some() {
-            return None;
+            return Ok(None);
         }
     }
     if records.len() != revision_entities.len() {
-        return None;
+        return Ok(None);
     }
     for (&revision_ref, record) in &mut records {
-        record.index = usize::try_from(*revision_entities.get(&revision_ref)?).ok()?;
+        let Some(&entity_ref) = revision_entities.get(&revision_ref) else {
+            return Ok(None);
+        };
+        let Some(index) = usize::try_from(entity_ref).ok() else {
+            return Ok(None);
+        };
+        record.index = index;
+        if std::sync::Arc::strong_count(&record.tokens) > 1 {
+            let token_count = u64::try_from(record.tokens.len()).map_err(|_| {
+                ctx.refuse_codec_limit("copy F3D archived record tokens", 0, u64::MAX)
+            })?;
+            ctx.charge_collection_items(token_count, "copy F3D archived record tokens")?;
+            let token_width = u64::try_from(std::mem::size_of::<cadmpeg_asm::sab::Token>())
+                .map_err(|_| ctx.refuse_codec_limit("copy F3D archived record tokens", 0, u64::MAX))?;
+            let token_bytes = token_count.checked_mul(token_width)
+                .ok_or_else(|| ctx.refuse_codec_limit("copy F3D archived record tokens", 0, u64::MAX))?;
+            ctx.charge_retained(token_bytes, "copy F3D archived record tokens")?;
+        }
         for token in std::sync::Arc::make_mut(&mut record.tokens) {
             let cadmpeg_asm::sab::Token::Ref(reference) = token else {
                 continue;
             };
             if *reference >= 0 {
-                *reference = *revision_entities.get(reference)?;
+                let Some(&entity_ref) = revision_entities.get(reference) else {
+                    return Ok(None);
+                };
+                *reference = entity_ref;
             }
         }
     }
-    Some(records)
+    Ok(Some(records))
 }
 
 fn bind_historical_transitions(states: &mut [AsmDeltaState]) {
@@ -9359,38 +9405,50 @@ pub(crate) fn historical_topology_with_tags(
 }
 
 fn materialize_record_table(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     state: &AsmDeltaState,
     archive: &HistoricalRecordArchive,
-) -> Option<Vec<cadmpeg_asm::sab::Record>> {
+) -> Result<Option<Vec<cadmpeg_asm::sab::Record>>, cadmpeg_core::CodecError> {
     if state.entity_versions.is_empty() {
-        return None;
+        return Ok(None);
     }
-    let present = state
-        .entity_versions
-        .iter()
-        .map(|version| version.entity_ref)
-        .collect::<HashSet<_>>();
-    if present.len() != state.entity_versions.len() {
-        return None;
-    }
-    let mut records = Vec::with_capacity(state.entity_versions.len());
+    let count = u64::try_from(state.entity_versions.len())
+        .map_err(|_| ctx.refuse_codec_limit("index F3D historical record presence", 0, u64::MAX))?;
+    ctx.charge_collection_items(count, "index F3D historical record presence")?;
+    let mut present = HashSet::new();
+    present.try_reserve(state.entity_versions.len()).map_err(|_| {
+        ctx.refuse_codec_limit("index F3D historical record presence", 0, count)
+    })?;
     for version in &state.entity_versions {
-        let record = archive.get(&version.record_ref)?;
+        present.insert(version.entity_ref);
+    }
+    if present.len() != state.entity_versions.len() {
+        return Ok(None);
+    }
+    ctx.charge_collection_items(count, "materialize F3D historical record table")?;
+    let mut records = Vec::new();
+    records.try_reserve(state.entity_versions.len()).map_err(|_| {
+        ctx.refuse_codec_limit("materialize F3D historical record table", 0, count)
+    })?;
+    for version in &state.entity_versions {
+        let Some(record) = archive.get(&version.record_ref) else {
+            return Ok(None);
+        };
         if i64::try_from(record.index).ok() != Some(version.entity_ref) {
-            return None;
+            return Ok(None);
         }
         for token in record.tokens.iter() {
             let cadmpeg_asm::sab::Token::Ref(reference) = token else {
                 continue;
             };
             if *reference >= 0 && !present.contains(reference) {
-                return None;
+                return Ok(None);
             }
         }
         records.push(record.clone());
     }
     records.sort_unstable_by_key(|record| record.index);
-    Some(records)
+    Ok(Some(records))
 }
 
 fn decode_bulletin_boards(
