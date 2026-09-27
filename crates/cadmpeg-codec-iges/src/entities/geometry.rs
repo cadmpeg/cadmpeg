@@ -492,24 +492,23 @@ pub(super) fn declared_affine_progression(values: &[f64], uncertainties: &[f64])
     {
         return false;
     }
-    let intervals = values
+    if values
         .iter()
         .zip(uncertainties)
         .map(|(value, uncertainty)| DeclaredInterval::around(*value, *uncertainty))
-        .collect::<Vec<_>>();
-    if intervals
-        .iter()
         .any(|interval| !interval.lower.is_finite() || !interval.upper.is_finite())
     {
         return false;
     }
     let mut lower = f64::NEG_INFINITY;
     let mut upper = f64::INFINITY;
-    for first in 0..intervals.len() {
-        for second in first + 1..intervals.len() {
+    for first in 0..values.len() {
+        let first_interval = DeclaredInterval::around(values[first], uncertainties[first]);
+        for second in first + 1..values.len() {
+            let second_interval = DeclaredInterval::around(values[second], uncertainties[second]);
             let span = (second - first) as f64;
-            let pair_lower = (intervals[second].lower - intervals[first].upper) / span;
-            let pair_upper = (intervals[second].upper - intervals[first].lower) / span;
+            let pair_lower = (second_interval.lower - first_interval.upper) / span;
+            let pair_upper = (second_interval.upper - first_interval.lower) / span;
             if !pair_lower.is_finite() || !pair_upper.is_finite() {
                 return false;
             }

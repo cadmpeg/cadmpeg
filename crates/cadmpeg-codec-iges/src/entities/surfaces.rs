@@ -130,18 +130,15 @@ pub(super) fn type128_parameter_bound_intervals(
         .checked_add(v_knot_count)?
         .checked_add(pole_count)?
         .checked_add(pole_value_count)?;
-    (0..4)
-        .map(|offset| {
+    let interval_at = |offset| {
             let index = range_start.checked_add(offset)?;
             let value = record.number(index)?;
             Some(DeclaredInterval::around(
                 value,
                 record.number_uncertainty(index, value, precision),
             ))
-        })
-        .collect::<Option<Vec<_>>>()?
-        .try_into()
-        .ok()
+        };
+    Some([interval_at(0)?, interval_at(1)?, interval_at(2)?, interval_at(3)?])
 }
 
 fn tabulated_directrix_type_allowed(
