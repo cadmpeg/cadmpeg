@@ -21,7 +21,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::transform::Transform;
 
-use crate::chunks::{ArchiveVersion, BoundedReader};
+use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
 use crate::test_support::test_dump::{
     anonymous_chunk, circle_payload, class_userdata, class_userdata_v2_with_direct_payload,
     class_userdata_with_anonymous_payload, class_userdata_with_payload, definition_record,
@@ -111,6 +111,7 @@ fn anonymous_instance_crc_mismatch_warns_and_consumes_boundary() {
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
     let mut warnings = Diagnostics::new();
     let (_, payload) = anonymous(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &mut reader,
         ArchiveVersion::V5,
@@ -122,6 +123,39 @@ fn anonymous_instance_crc_mismatch_warns_and_consumes_boundary() {
     assert_eq!(payload.remaining(), 0);
     assert_eq!(warnings.len(), 1);
     assert!(warnings[0].contains("instance test CRC mismatch"));
+}
+
+#[test]
+fn anonymous_instance_crc_diagnostic_refuses_collection_limit() {
+    let body = [1_i32.to_le_bytes(), 0_i32.to_le_bytes()].concat();
+    let mut bytes = 0x4000_8000_u32.to_le_bytes().to_vec();
+    bytes.extend_from_slice(
+        &i64::try_from(body.len() + 4)
+            .expect("bounded body")
+            .to_le_bytes(),
+    );
+    bytes.extend_from_slice(&body);
+    bytes.extend_from_slice(&crc32fast::hash(&body).to_le_bytes());
+    let crc = bytes.len() - 1;
+    bytes[crc] ^= 1;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("root bytes admitted");
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+    let refused = anonymous(
+        &ctx,
+        &bytes,
+        &mut reader,
+        ArchiveVersion::V5,
+        "instance test",
+        &mut Diagnostics::new(),
+    )
+    .expect_err("checksum diagnostic exceeds zero collection items");
+    assert!(
+        matches!(refused, FramingError::Resource(limit) if limit.operation == "Rhino diagnostics")
+    );
 }
 
 #[test]

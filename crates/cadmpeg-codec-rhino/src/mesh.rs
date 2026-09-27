@@ -375,7 +375,7 @@ pub(crate) fn decode(
     let post_2006_fields =
         major == 3 && minor >= 4 && writer_version.is_some_and(|version| version >= 200_606_010);
     if post_2006_fields {
-        read_mapping_tag(&mut reader, archive, &mut decoded.warnings)?;
+        read_mapping_tag(expand.ctx(), &mut reader, archive, &mut decoded.warnings)?;
         if minor >= 5 {
             for _ in 0..3 {
                 let value = reader.u8()?;
@@ -388,6 +388,7 @@ pub(crate) fn decode(
         }
         if minor >= 6 && reader.bool_with_writer_version(writer_version)? {
             ngon_count = read_ngons(
+                expand.ctx(),
                 &mut reader,
                 archive,
                 vertex_count,
@@ -1190,6 +1191,7 @@ fn inflate<'a>(
 }
 
 fn read_ngons(
+    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     vertices: usize,
@@ -1203,7 +1205,7 @@ fn read_ngons(
         archive,
         false,
     )?;
-    crate::chunks::warn_checksum(reader.backing_bytes(), &chunk, "mesh ngon", warnings)?;
+    crate::chunks::warn_checksum(ctx, reader.backing_bytes(), &chunk, "mesh ngon", warnings)?;
     let mut child =
         BoundedReader::new(reader.backing_bytes(), chunk.body().start, chunk.body().end)?;
     let major = child.i32()?;
@@ -1234,6 +1236,7 @@ fn read_ngons(
 }
 
 fn read_mapping_tag(
+    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
@@ -1245,7 +1248,13 @@ fn read_mapping_tag(
         archive,
         false,
     )?;
-    crate::chunks::warn_checksum(reader.backing_bytes(), &chunk, "mesh mapping tag", warnings)?;
+    crate::chunks::warn_checksum(
+        ctx,
+        reader.backing_bytes(),
+        &chunk,
+        "mesh mapping tag",
+        warnings,
+    )?;
     let mut child =
         BoundedReader::new(reader.backing_bytes(), chunk.body().start, chunk.body().end)?;
     let major = child.i32()?;
@@ -2822,8 +2831,13 @@ mod tests {
         bytes.extend(mapping);
         let end = bytes.len();
         let mut reader = BoundedReader::new(&bytes, 3, end).expect("reader");
-        read_mapping_tag(&mut reader, ArchiveVersion::V5, &mut Diagnostics::new())
-            .expect("mapping");
+        read_mapping_tag(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut reader,
+            ArchiveVersion::V5,
+            &mut Diagnostics::new(),
+        )
+        .expect("mapping");
 
         let mut ngon = 1_i32.to_le_bytes().to_vec();
         ngon.extend(0_i32.to_le_bytes());
@@ -2837,6 +2851,7 @@ mod tests {
         let end = bytes.len();
         let mut reader = BoundedReader::new(&bytes, 5, end).expect("reader");
         read_ngons(
+            &cadmpeg_test_support::service_decode_context(),
             &mut reader,
             ArchiveVersion::V5,
             3,
@@ -2860,10 +2875,46 @@ mod tests {
         let end = bytes.len();
         let mut reader = BoundedReader::new(&bytes, 0, end).expect("reader");
         let mut warnings = Diagnostics::new();
-        read_mapping_tag(&mut reader, ArchiveVersion::V5, &mut warnings).expect("mapping");
+        read_mapping_tag(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut reader,
+            ArchiveVersion::V5,
+            &mut warnings,
+        )
+        .expect("mapping");
         assert_eq!(reader.position(), end);
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].contains("mapping tag CRC mismatch"));
+    }
+
+    #[test]
+    fn mapping_crc_diagnostic_refuses_collection_limit() {
+        let mut mapping = 1_i32.to_le_bytes().to_vec();
+        mapping.extend(1_i32.to_le_bytes());
+        mapping.extend([0; 16]);
+        mapping.extend(7_i32.to_le_bytes());
+        mapping.extend((0..16).flat_map(|_| 1.0_f64.to_le_bytes()));
+        mapping.extend(3_u32.to_le_bytes());
+        let mut bytes = chunk(&mapping);
+        let crc = bytes.len() - 1;
+        bytes[crc] ^= 1;
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let refused = with_expand_policy(&bytes, policy, |expand| {
+            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+            read_mapping_tag(
+                expand.ctx(),
+                &mut reader,
+                ArchiveVersion::V5,
+                &mut Diagnostics::new(),
+            )
+            .expect_err("checksum diagnostic exceeds zero collection items")
+        });
+        assert!(matches!(
+            refused,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino diagnostics"
+        ));
     }
 
     #[test]
