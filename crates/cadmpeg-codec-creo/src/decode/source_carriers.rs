@@ -52,16 +52,18 @@ impl SourceUnitCarriers {
         Ok(())
     }
 
-    pub(super) fn admit_body(&self, ir: &mut CadIr, mut body: Body) -> Result<(), CodecError> {
+    pub(super) fn admit_body(&self, ctx: &DecodeContext<'_>, ir: &mut CadIr, mut body: Body) -> Result<(), CodecError> {
         if let Some(transform) = body.transform.as_mut() {
             self.scale_product_translation(transform)?;
         }
+        ctx.try_reserve_items(&mut ir.model.bodies, 1, "creo model bodies")?;
         ir.model.bodies.push(body);
         Ok(())
     }
 
     pub(super) fn admit_occurrence(
         &self,
+        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         mut occurrence: Occurrence,
     ) -> Result<(), CodecError> {
@@ -69,6 +71,7 @@ impl SourceUnitCarriers {
         if let Some(transform) = occurrence.linked_prototype.as_mut() {
             self.scale_product_translation(transform)?;
         }
+        ctx.try_reserve_items(&mut ir.model.occurrences, 1, "creo model occurrences")?;
         ir.model.occurrences.push(occurrence);
         Ok(())
     }
@@ -129,6 +132,7 @@ impl SourceUnitCarriers {
 
     pub(super) fn admit_sketch(
         &self,
+        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         mut sketch: Sketch,
     ) -> Result<(), CodecError> {
@@ -142,6 +146,7 @@ impl SourceUnitCarriers {
             })?;
             sketch.placement = sketch.placement.with_origin(origin);
         }
+        ctx.try_reserve_items(&mut ir.model.sketches, 1, "creo model sketches")?;
         ir.model.sketches.push(sketch);
         Ok(())
     }
@@ -172,9 +177,11 @@ impl SourceUnitCarriers {
 
     pub(super) fn admit_sketch_constraints(
         &self,
+        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         constraints: Vec<SketchConstraint>,
     ) -> Result<(), CodecError> {
+        ctx.try_reserve_items(&mut ir.model.sketch_constraints, constraints.len(), "creo model sketch constraints")?;
         for mut constraint in constraints {
             if let Some(scale) = self.length_scale_mm {
                 constraint.definition.scale_lengths(scale).map_err(|error| match error {
@@ -547,6 +554,79 @@ mod tests {
         assert!(ir.model.parameters.is_empty());
     }
 
+    fn zero_collection_ctx<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        run(&ctx)
+    }
+
+    #[test]
+    fn body_admission_refuses_before_model_vector_growth() {
+        let mut ir = CadIr::empty();
+        let error = zero_collection_ctx(|ctx| SourceUnitCarriers::default().admit_body(
+            ctx,
+            &mut ir,
+            Body {
+                id: cadmpeg_ir::ids::BodyId::mint("creo:test:body#0")
+                    .expect("identity grammar"),
+                kind: BodyKind::Solid,
+                regions: Vec::new(),
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
+        )).expect_err("one body needs one model vector row");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo model bodies"));
+        assert!(ir.model.bodies.is_empty());
+    }
+
+    #[test]
+    fn occurrence_admission_refuses_before_model_vector_growth() {
+        let mut ir = CadIr::empty();
+        let error = zero_collection_ctx(|ctx| SourceUnitCarriers::default().admit_occurrence(
+            ctx,
+            &mut ir,
+            source_occurrence(translated_product_transform(0.0), None),
+        )).expect_err("one occurrence needs one model vector row");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo model occurrences"));
+        assert!(ir.model.occurrences.is_empty());
+    }
+
+    #[test]
+    fn sketch_admission_refuses_before_model_vector_growth() {
+        let mut ir = CadIr::empty();
+        let error = zero_collection_ctx(|ctx| SourceUnitCarriers::default().admit_sketch(
+            ctx,
+            &mut ir,
+            source_sketch(Point3::new(0.0, 0.0, 0.0)),
+        )).expect_err("one sketch needs one model vector row");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo model sketches"));
+        assert!(ir.model.sketches.is_empty());
+    }
+
+    #[test]
+    fn sketch_constraint_admission_refuses_before_counted_model_rows() {
+        let mut ir = CadIr::empty();
+        let error = zero_collection_ctx(|ctx| SourceUnitCarriers::default().admit_sketch_constraints(
+            ctx,
+            &mut ir,
+            vec![source_distance_constraint(2.0)],
+        )).expect_err("one constraint needs one model vector row");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo model sketch constraints"));
+        assert!(ir.model.sketch_constraints.is_empty());
+    }
+
     fn source_feature(definition: FeatureDefinition) -> Feature {
         Feature {
             id: cadmpeg_ir::features::FeatureId::mint("creo:test:feature#1")
@@ -649,14 +729,14 @@ mod tests {
     fn planar_sketch_lengths_are_in_millimeters_at_admission() {
         let mut ir = CadIr::empty();
         let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        carriers
-            .admit_sketch(&mut ir, source_sketch(Point3::new(1.0, 0.0, 0.0)))
+        crate::decode::with_test_decode_ctx(|ctx| carriers
+            .admit_sketch(ctx, &mut ir, source_sketch(Point3::new(1.0, 0.0, 0.0))))
             .expect("sketch admission");
         carriers
             .admit_sketch_entities(&mut ir, vec![source_sketch_line(1.0)])
             .expect("entity admission");
-        carriers
-            .admit_sketch_constraints(&mut ir, vec![source_distance_constraint(2.0)])
+        crate::decode::with_test_decode_ctx(|ctx| carriers
+            .admit_sketch_constraints(ctx, &mut ir, vec![source_distance_constraint(2.0)]))
             .expect("constraint admission");
         assert_eq!(
             ir.model.sketches[0]
@@ -692,8 +772,8 @@ mod tests {
     fn sketch_origin_overflow_refuses_before_admission() {
         let mut ir = CadIr::empty();
         let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        let error = carriers
-            .admit_sketch(&mut ir, source_sketch(Point3::new(f64::MAX, 0.0, 0.0)))
+        let error = crate::decode::with_test_decode_ctx(|ctx| carriers
+            .admit_sketch(ctx, &mut ir, source_sketch(Point3::new(f64::MAX, 0.0, 0.0))))
             .expect_err("millimeter placement cannot be represented");
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
         assert!(ir.model.sketches.is_empty());
@@ -714,8 +794,8 @@ mod tests {
     fn sketch_constraint_overflow_refuses_before_admission() {
         let mut ir = CadIr::empty();
         let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        let error = carriers
-            .admit_sketch_constraints(&mut ir, vec![source_distance_constraint(f64::MAX)])
+        let error = crate::decode::with_test_decode_ctx(|ctx| carriers
+            .admit_sketch_constraints(ctx, &mut ir, vec![source_distance_constraint(f64::MAX)]))
             .expect_err("millimeter constraint cannot be represented");
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
         assert!(ir.model.sketch_constraints.is_empty());
@@ -838,8 +918,9 @@ mod tests {
     fn product_transform_translations_are_in_millimeters_at_admission() {
         let mut ir = CadIr::empty();
         let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        carriers
+        crate::decode::with_test_decode_ctx(|ctx| carriers
             .admit_body(
+                ctx,
                 &mut ir,
                 Body {
                     id: cadmpeg_ir::ids::BodyId::mint("creo:test:body#0")
@@ -851,16 +932,17 @@ mod tests {
                     color: None,
                     visible: None,
                 },
-            )
+            ))
             .expect("body admission");
-        carriers
+        crate::decode::with_test_decode_ctx(|ctx| carriers
             .admit_occurrence(
+                ctx,
                 &mut ir,
                 source_occurrence(
                     translated_product_transform(2.0),
                     Some(translated_product_transform(3.0)),
                 ),
-            )
+            ))
             .expect("occurrence admission");
         assert_eq!(
             ir.model.bodies[0]
@@ -883,11 +965,12 @@ mod tests {
     fn product_transform_translation_overflow_refuses_before_admission() {
         let mut ir = CadIr::empty();
         let carriers = SourceUnitCarriers::new(PositiveReal::new(1000.0));
-        let error = carriers
+        let error = crate::decode::with_test_decode_ctx(|ctx| carriers
             .admit_occurrence(
+                ctx,
                 &mut ir,
                 source_occurrence(translated_product_transform(f64::MAX), None),
-            )
+            ))
             .expect_err("a non-finite translation has no transform");
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
         assert!(

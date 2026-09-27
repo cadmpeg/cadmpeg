@@ -170,6 +170,7 @@ pub(super) fn transfer_part_product(
     });
     ctx.charge_entities(1, "admit Creo model occurrences")?;
     source_carriers.admit_occurrence(
+        ctx,
         ir,
         Occurrence {
             id: occurrence_id,
