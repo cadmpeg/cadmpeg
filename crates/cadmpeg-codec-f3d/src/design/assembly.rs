@@ -253,16 +253,39 @@ pub(crate) fn project_assembly_joints(
         let Some(stream) = native_stream(&occurrence.id) else {
             continue;
         };
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "f3d assembly occurrence map entry")?;
+        let source = occurrence.occurrence_guid.as_str();
+        let (reservation, key) = if let Some(ctx) = ctx {
+            let count = u64::try_from(source.len()).map_err(|_| {
+                ctx.refuse_codec_limit("f3d assembly occurrence key length", 0, 1)
+            })?;
+            let reservation = ctx.reserve_scoped(count, "f3d assembly occurrence key")?;
+            let mut key = String::new();
+            key.try_reserve_exact(source.len()).map_err(|_| {
+                ctx.refuse_codec_limit("f3d assembly occurrence key allocation", 0, 1)
+            })?;
+            key.extend(source.chars().map(|character| character.to_ascii_lowercase()));
+            (Some(reservation), key)
+        } else {
+            (None, source.to_ascii_lowercase())
+        };
+        match occurrences.entry((stream, key)) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                if let Some(ctx) = ctx {
+                    ctx.charge_retained(
+                        u64::try_from(source.len()).map_err(|_| {
+                            ctx.refuse_codec_limit("f3d assembly occurrence key length", 0, 1)
+                        })?,
+                        "f3d assembly occurrence key",
+                    )?;
+                    ctx.charge_collection_items(1, "f3d assembly occurrence map entry")?;
+                }
+                entry.insert(Some(occurrence));
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                *entry.get_mut() = None;
+            }
         }
-        occurrences
-            .entry((
-                stream,
-                occurrence.occurrence_guid.as_str().to_ascii_lowercase(),
-            ))
-            .and_modify(|candidate| *candidate = None)
-            .or_insert(Some(occurrence));
+        drop(reservation);
     }
     let mut joints = BTreeMap::new();
     for scope in scopes {
@@ -328,9 +351,6 @@ pub(crate) fn project_assembly_joints(
             }
             None => (None, None),
         };
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "f3d assembly joint map entry")?;
-        }
         let id = crate::ids::neutral_assembly_joint_id(scope);
         let [first_operand, second_operand] = operands;
         let first_frame = super::components::neutral_transform(frames[0].transform)?;
@@ -343,7 +363,12 @@ pub(crate) fn project_assembly_joints(
             })
         });
         let translation_offset = [x?, y?, z?];
-        joints.entry(id.as_str().to_owned()).or_insert_with(|| {
+        if !joints.contains_key(id.as_str()) {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "f3d assembly joint map entry")?;
+            }
+            let key = copy_assembly_text(ctx, id.as_str(), false)?;
+            let native_ref = copy_assembly_text(ctx, &scope.id, false)?;
             let mut joint = AssemblyJoint::paired(
                 id,
                 PairedJointKind::Fixed {
@@ -366,9 +391,9 @@ pub(crate) fn project_assembly_joints(
                 ],
                 None,
             );
-            joint.native_ref = Some(scope.id.clone());
-            joint
-        });
+            joint.native_ref = Some(native_ref);
+            joints.insert(key, joint);
+        }
     }
     let mut projected = Vec::new();
     if let Some(ctx) = ctx {
@@ -810,9 +835,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn assembly_occurrence_map_refuses_collection_limit() {
-        let occurrence = crate::records::feature::assembly_features::DesignComponentOccurrence::try_new(
+    fn one_native_occurrence() -> crate::records::feature::assembly_features::DesignComponentOccurrence {
+        crate::records::feature::assembly_features::DesignComponentOccurrence::try_new(
             crate::records::feature::assembly_features::DesignComponentOccurrenceDraft {
                 id: "f3d:Design/BulkStream.dat:design-component-occurrence#1".into(),
                 class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
@@ -831,7 +855,12 @@ mod tests {
                 placement: crate::records::feature::assembly_features::DesignComponentOccurrencePlacement::Base,
             },
         )
-        .unwrap();
+        .unwrap()
+    }
+
+    #[test]
+    fn assembly_occurrence_map_refuses_collection_limit() {
+        let occurrence = one_native_occurrence();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
@@ -844,6 +873,34 @@ mod tests {
                 if limit.dimension == ResourceDimension::CollectionItems
                     && limit.operation == "f3d assembly occurrence map entry"
         ));
+    }
+
+    #[test]
+    fn assembly_occurrence_key_refuses_materialized_limit() {
+        let occurrence = one_native_occurrence();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_materialized_bytes = 35;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::project_assembly_joints(Some(&ctx), &[], &[occurrence], &[])
+            .expect_err("one occurrence key needs 36 temporary bytes");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.operation == "f3d assembly occurrence key"));
+    }
+
+    #[test]
+    fn assembly_occurrence_key_refuses_retained_limit() {
+        let occurrence = one_native_occurrence();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = 35;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::project_assembly_joints(Some(&ctx), &[], &[occurrence], &[])
+            .expect_err("one occurrence key needs 36 retained bytes");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "f3d assembly occurrence key"));
     }
 
     fn one_joint_scopes() -> Vec<DesignParameterScope> {
@@ -915,6 +972,35 @@ mod tests {
                 if limit.dimension == ResourceDimension::CollectionItems
                     && limit.operation == "f3d assembly joint map entry"
         ));
+    }
+
+    #[test]
+    fn assembly_joint_key_refuses_retained_limit() {
+        let scopes = one_joint_scopes();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::project_assembly_joints(Some(&ctx), &scopes, &[], &[])
+            .expect_err("the joint map key needs retained text");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "f3d assembly operand text"));
+    }
+
+    #[test]
+    fn assembly_joint_native_reference_refuses_retained_limit() {
+        let scopes = one_joint_scopes();
+        let key_length = crate::ids::neutral_assembly_joint_id(&scopes[2]).as_str().len();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = u64::try_from(key_length).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::project_assembly_joints(Some(&ctx), &scopes, &[], &[])
+            .expect_err("the native reference follows the retained joint key");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "f3d assembly operand text"));
     }
 
     #[test]
