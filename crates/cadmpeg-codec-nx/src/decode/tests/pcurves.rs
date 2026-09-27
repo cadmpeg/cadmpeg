@@ -1759,11 +1759,11 @@ fn rational_spine_closest_search_resolves_close_global_branches() {
     let point = Point3::new(0.0, 1.0e-4, 0.0);
 
     let first =
-        closest_nurbs_curve_parameter(&curve, point, Some(0.099)).expect("first close branch");
+        closest_nurbs_curve_parameter(&curve, point, Some(0.099)).expect("evaluator allocation succeeds").expect("first close branch");
     let second =
-        closest_nurbs_curve_parameter(&curve, point, Some(0.101)).expect("second close branch");
+        closest_nurbs_curve_parameter(&curve, point, Some(0.101)).expect("evaluator allocation succeeds").expect("second close branch");
     let remote =
-        closest_nurbs_curve_parameter(&curve, point, Some(0.69)).expect("remote global branch");
+        closest_nurbs_curve_parameter(&curve, point, Some(0.69)).expect("evaluator allocation succeeds").expect("remote global branch");
 
     assert!((first - 0.1).abs() < 1.0e-8);
     assert!((second - 0.1001).abs() < 1.0e-8);
@@ -1806,7 +1806,7 @@ fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
         [4.0]
     );
     assert_eq!(
-        closest_nurbs_curve_parameter(&curve, Point3::new(0.0, 0.0, 0.0), Some(4.1),)
+        closest_nurbs_curve_parameter(&curve, Point3::new(0.0, 0.0, 0.0), Some(4.1),).expect("evaluator allocation succeeds")
             .expect("periodic curve phase"),
         4.0
     );
