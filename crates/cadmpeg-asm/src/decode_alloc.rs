@@ -106,6 +106,23 @@ pub(crate) fn insert_hash_set<T: Eq + Hash>(
     Ok(values.insert(value))
 }
 
+pub(crate) fn insert_string_set(
+    ctx: &DecodeContext<'_>,
+    values: &mut HashSet<String>,
+    value: &str,
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    if values.contains(value) {
+        return Ok(false);
+    }
+    ctx.charge_collection_items(1, operation)?;
+    let owned = copy_string(ctx, value, operation)?;
+    values
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    Ok(values.insert(owned))
+}
+
 pub(crate) fn collect_hash_map<K: Eq + Hash, V>(
     ctx: &DecodeContext<'_>,
     values: impl IntoIterator<Item = (K, V)>,
