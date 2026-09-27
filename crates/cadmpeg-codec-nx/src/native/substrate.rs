@@ -84,13 +84,22 @@ fn prepare_topology_streams<'a>(
 /// restricting the delta candidates to those the segment stream links mark as `deltas`
 /// when any links are present.
 pub(super) fn paired_delta_streams(scan: &Scan) -> BTreeMap<usize, Vec<usize>> {
-    let links = super::segments::segment_stream_links(&scan.container, &scan.streams);
-    let linked_deltas = links
-        .iter()
-        .filter(|link| link.stream_kind == crate::parasolid::StreamKind::Deltas)
-        .map(|link| link.stream_ordinal as usize)
-        .collect::<BTreeSet<_>>();
-    pair_stream_indices(&scan.streams, (!links.is_empty()).then_some(&linked_deltas))
+    let mut has_links = false;
+    let mut linked_deltas = BTreeSet::new();
+    for wrapper in scan.container.segment_stream_wrappers() {
+        if let Some((ordinal, stream)) = scan
+            .streams
+            .iter()
+            .enumerate()
+            .find(|(_, stream)| stream.file_offset == wrapper.zlib_offset)
+        {
+            has_links = true;
+            if stream.kind() == crate::parasolid::StreamKind::Deltas {
+                linked_deltas.insert(ordinal);
+            }
+        }
+    }
+    pair_stream_indices(&scan.streams, has_links.then_some(&linked_deltas))
 }
 
 /// Pair each eligible delta stream with the nearest preceding partition stream of the
