@@ -30,7 +30,7 @@ use cadmpeg_ir::geometry::{
     ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
     Surface, SurfaceCurveFamily, SurfaceGeometry,
 };
-use cadmpeg_ir::hash::{sha256, sha256_hex};
+use cadmpeg_ir::hash::sha256;
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
     RegionId, ShellId, SurfaceId, UnknownId, VertexId,
@@ -1425,11 +1425,15 @@ pub(super) fn unknown_stream(
     stream: &Stream,
 ) -> Result<UnknownRecord, CodecError> {
     let data = ctx.copy_retained(&stream.inflated, "retain NX unknown stream")?;
-    Ok(unknown_stream_record(si, stream, Some(data)))
+    unknown_stream_record(ctx, si, stream, Some(data))
 }
 
-pub(super) fn unknown_stream_metadata(si: usize, stream: &Stream) -> UnknownRecord {
-    unknown_stream_record(si, stream, None)
+pub(super) fn unknown_stream_metadata(
+    ctx: &DecodeContext<'_>,
+    si: usize,
+    stream: &Stream,
+) -> Result<UnknownRecord, CodecError> {
+    unknown_stream_record(ctx, si, stream, None)
 }
 
 pub(super) fn retain_unknown_stream_data(
@@ -1443,18 +1447,39 @@ pub(super) fn retain_unknown_stream_data(
     Ok(())
 }
 
-fn unknown_stream_record(si: usize, stream: &Stream, data: Option<Vec<u8>>) -> UnknownRecord {
-    let id: UnknownId = IdScope::container().id(&cadmpeg_ir::identity_component!("parasolid"), si);
+fn unknown_stream_record(
+    ctx: &DecodeContext<'_>,
+    si: usize,
+    stream: &Stream,
+    data: Option<Vec<u8>>,
+) -> Result<UnknownRecord, CodecError> {
+    let id = render_retained_text(
+        ctx,
+        format_args!("nx:container:parasolid#{si}"),
+        "nx unknown stream id",
+    )?;
+    let id = UnknownId::mint(id).map_err(|error| CodecError::Malformed(error.to_string()))?;
     let offset = stream.file_offset as u64;
     match data {
-        Some(data) => UnknownRecord::retained(id, offset, data, Vec::new()),
-        None => UnknownRecord::unavailable(
-            id,
-            offset,
-            stream.inflated.len() as u64,
-            sha256_hex(&stream.inflated),
-            Vec::new(),
-        ),
+        Some(data) => Ok(UnknownRecord::retained(id, offset, data, Vec::new())),
+        None => {
+            ctx.charge_work(
+                u64::try_from(stream.inflated.len()).unwrap_or(u64::MAX),
+                "hash NX unknown stream",
+            )?;
+            let digest = render_retained_text(
+                ctx,
+                HexDigest(sha256(&stream.inflated)),
+                "nx unknown stream digest",
+            )?;
+            Ok(UnknownRecord::unavailable(
+                id,
+                offset,
+                u64::try_from(stream.inflated.len()).unwrap_or(u64::MAX),
+                digest,
+                Vec::new(),
+            ))
+        }
     }
 }
 
@@ -1609,6 +1634,23 @@ impl Display for HexDigest {
     }
 }
 
+fn render_retained_text(
+    ctx: &DecodeContext<'_>,
+    value: impl Display,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let mut count = CountBytes(0);
+    write!(&mut count, "{value}")
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    ctx.charge_retained(u64::try_from(count.0).unwrap_or(u64::MAX), operation)?;
+    let mut text = String::new();
+    text.try_reserve_exact(count.0)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    write!(&mut text, "{value}")
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    Ok(text)
+}
+
 fn insert_source_attribute(
     ctx: &DecodeContext<'_>,
     attributes: &mut BTreeMap<String, String>,
@@ -1642,7 +1684,7 @@ fn insert_source_attribute(
 #[cfg(test)]
 mod tests {
     use super::super::geometry_work::GeometryWorkBudget;
-    use super::{source_meta, unknown_stream, CurvePointCache};
+    use super::{source_meta, unknown_stream, unknown_stream_metadata, CurvePointCache};
     use crate::container::Container;
     use crate::decode::Scan;
     use crate::parasolid::Stream;
@@ -1666,6 +1708,71 @@ mod tests {
             },
             streams: Vec::new(),
         }
+    }
+
+    fn preview_stream(bytes: Vec<u8>) -> Stream {
+        Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: bytes,
+            body: crate::parasolid::StreamBody::Preview,
+        }
+    }
+
+    #[test]
+    fn unknown_stream_metadata_refuses_identity_text_at_retained_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            unknown_stream_metadata(&ctx, 0, &preview_stream(Vec::new())),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "nx unknown stream id"
+        ));
+    }
+
+    #[test]
+    fn unknown_stream_metadata_refuses_digest_text_at_retained_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = "nx:container:parasolid#0".len() as u64;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            unknown_stream_metadata(&ctx, 0, &preview_stream(Vec::new())),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "nx unknown stream digest"
+        ));
+    }
+
+    #[test]
+    fn unknown_stream_metadata_refuses_digest_work_at_caller_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            unknown_stream_metadata(&ctx, 0, &preview_stream(vec![7])),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "hash NX unknown stream"
+        ));
+    }
+
+    #[test]
+    fn unknown_stream_metadata_preserves_identity_and_digest_under_service_profile() {
+        let stream = preview_stream(vec![7]);
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let unknown = unknown_stream_metadata(&ctx, 0, &stream).unwrap();
+        assert_eq!(unknown.id().as_str(), "nx:container:parasolid#0");
+        assert_eq!(unknown.offset(), 0);
+        assert_eq!(unknown.data(), None);
+        let wire = serde_json::to_value(&unknown).unwrap();
+        assert_eq!(wire["retention"]["sha256"], cadmpeg_ir::hash::sha256_hex(&stream.inflated));
     }
 
     #[test]

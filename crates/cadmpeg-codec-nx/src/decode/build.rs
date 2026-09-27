@@ -313,7 +313,7 @@ pub(super) fn try_decode_geometry(
         {
             let unknown_index = unknowns.len();
             reserve_unknown_pair(ctx, &mut unknowns, &mut stream_unknowns)?;
-            let unknown = unknown_stream_metadata(si, stream);
+            let unknown = unknown_stream_metadata(ctx, si, stream)?;
             let container_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
             annotations
                 .note(unknown.id(), &container_stream, stream.file_offset as u64)
@@ -1179,7 +1179,7 @@ pub(super) fn try_decode_geometry(
         // Preserve the whole inflated stream verbatim so nothing is dropped.
         let unknown_index = unknowns.len();
         reserve_unknown_pair(ctx, &mut unknowns, &mut stream_unknowns)?;
-        let mut unknown = unknown_stream_metadata(si, stream);
+        let mut unknown = unknown_stream_metadata(ctx, si, stream)?;
         for surface in &ir.model.surfaces[first_surface..] {
             push_unknown_link(ctx, &mut unknown, surface.id.as_str())?;
         }
