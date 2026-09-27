@@ -3,7 +3,7 @@
 
 use super::curve_conversion::{circular_arc_nurbs, elliptical_arc_nurbs, parabolic_arc_nurbs};
 use super::geometry::{entity_loss, resolve_transform, source_object, WireProjectionOutcome};
-use crate::decode_resource::reserve_admitted_vec;
+use crate::decode_resource::{reserve_admitted_vec, reserve_vec};
 use crate::directory::{DirectoryEntry, Hierarchy, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
@@ -127,7 +127,7 @@ fn composite_point_adjacency_valid(
     child_sequences: &[u32],
     curve_carriers: &BTreeMap<u32, CurveId>,
     context: &CompositePointContext<'_, '_, '_, '_>,
-) -> bool {
+) -> Result<bool, CodecError> {
     let all_points = child_sequences
         .iter()
         .copied()
@@ -137,40 +137,40 @@ fn composite_point_adjacency_valid(
         .any(|pair| context.is_point(pair[0]) && context.is_point(pair[1]))
         && !(all_points && child_sequences.len() == 2)
     {
-        return false;
+        return Ok(false);
     }
     for (position, sequence) in child_sequences.iter().enumerate() {
         if !context.is_point(*sequence) {
             continue;
         }
         let Some(point) = context.member_point(*sequence) else {
-            return false;
+            return Ok(false);
         };
         if position > 0 && !context.is_point(child_sequences[position - 1]) {
             let Some(curve_id) = curve_carriers.get(&child_sequences[position - 1]) else {
-                return false;
+                return Ok(false);
             };
-            let Some((_, end)) = curve_endpoints(ir, curve_id, index, context.tolerance) else {
-                return false;
+            let Some((_, end)) = curve_endpoints(ir, curve_id, index, context.tolerance)? else {
+                return Ok(false);
             };
             if !close_with_tolerance(end.get(), point, Some(context.tolerance)) {
-                return false;
+                return Ok(false);
             }
         }
         if position + 1 < child_sequences.len() && !context.is_point(child_sequences[position + 1])
         {
             let Some(curve_id) = curve_carriers.get(&child_sequences[position + 1]) else {
-                return false;
+                return Ok(false);
             };
-            let Some((start, _)) = curve_endpoints(ir, curve_id, index, context.tolerance) else {
-                return false;
+            let Some((start, _)) = curve_endpoints(ir, curve_id, index, context.tolerance)? else {
+                return Ok(false);
             };
             if !close_with_tolerance(point, start.get(), Some(context.tolerance)) {
-                return false;
+                return Ok(false);
             }
         }
     }
-    true
+    Ok(true)
 }
 
 pub(super) fn curve_carrier_id(
@@ -329,42 +329,44 @@ fn select_composite_edge(
     geometry: &SolvedCurveGeometry,
     candidates: &[CompositeEdge],
     tolerance: f64,
-) -> Option<CompositeEdge> {
-    let usable = candidates
-        .iter()
-        .filter(|edge| {
-            let Some(range) = edge.param_range else {
-                return false;
-            };
-            if !matches!(geometry, SolvedCurveGeometry::Line(_)) {
-                return true;
-            }
+) -> Result<Option<CompositeEdge>, CodecError> {
+    let mut first: Option<&CompositeEdge> = None;
+    let mut agreement = true;
+    for edge in candidates {
+        let Some(range) = edge.param_range else {
+            continue;
+        };
+        if matches!(geometry, SolvedCurveGeometry::Line(_)) {
             let (Some(start), Some(end)) = (
                 point_for_vertex(ir, &edge.start, index),
                 point_for_vertex(ir, &edge.end, index),
             ) else {
-                return false;
+                continue;
             };
-            let (Ok(evaluated_start), Ok(evaluated_end)) = (
-                cadmpeg_ir::eval::curve_point_solved(geometry, range[0]),
-                cadmpeg_ir::eval::curve_point_solved(geometry, range[1]),
-            ) else {
-                return false;
+            let Some(evaluated_start) =
+                finite_or_refusal(cadmpeg_ir::eval::curve_point_solved(geometry, range[0]))?
+            else {
+                continue;
             };
-            // GE-05: candidate admission uses the same strict MUR rule as joins.
-            close_with_tolerance(evaluated_start.get(), start.get(), Some(tolerance))
-                && close_with_tolerance(evaluated_end.get(), end.get(), Some(tolerance))
-        })
-        .collect::<Vec<_>>();
-    let first = usable.first()?;
-    usable
-        .iter()
-        .skip(1)
-        .all(|candidate| {
-            candidate.param_range == first.param_range
-                && composite_edge_endpoints_agree(ir, index, candidate, first, tolerance)
-        })
-        .then(|| (*first).clone())
+            let Some(evaluated_end) =
+                finite_or_refusal(cadmpeg_ir::eval::curve_point_solved(geometry, range[1]))?
+            else {
+                continue;
+            };
+            if !close_with_tolerance(evaluated_start.get(), start.get(), Some(tolerance))
+                || !close_with_tolerance(evaluated_end.get(), end.get(), Some(tolerance))
+            {
+                continue;
+            }
+        }
+        if let Some(previous) = first {
+            agreement &= edge.param_range == previous.param_range
+                && composite_edge_endpoints_agree(ir, index, edge, previous, tolerance);
+        } else {
+            first = Some(edge);
+        }
+    }
+    Ok(first.filter(|_| agreement).cloned())
 }
 
 fn homogeneous_point_is_valid(point: &[f64; 4]) -> bool {
@@ -1505,13 +1507,16 @@ fn bounded_edge_for_curve(
     curve_id: &CurveId,
     tolerance: f64,
     index: Option<&CompositeIndex>,
-) -> Option<CompositeEdge> {
+) -> Result<Option<CompositeEdge>, CodecError> {
     let curve = match index {
         Some(index) => index
             .curve_positions
             .get(curve_id)
-            .and_then(|position| ir.model.curves.get(*position))?,
-        None => ir.model.curves.iter().find(|curve| curve.id == *curve_id)?,
+            .and_then(|position| ir.model.curves.get(*position)),
+        None => ir.model.curves.iter().find(|curve| curve.id == *curve_id),
+    };
+    let Some(curve) = curve else {
+        return Ok(None);
     };
     let edge_candidates: Cow<'_, [CompositeEdge]> = match index {
         Some(index) => Cow::Borrowed(index.edges.get(curve_id).map_or(&[][..], Vec::as_slice)),
@@ -1528,13 +1533,10 @@ fn bounded_edge_for_curve(
                 .collect(),
         ),
     };
-    select_composite_edge(
-        ir,
-        index,
-        curve.geometry.solved()?,
-        &edge_candidates,
-        tolerance,
-    )
+    let Some(geometry) = curve.geometry.solved() else {
+        return Ok(None);
+    };
+    select_composite_edge(ir, index, geometry, &edge_candidates, tolerance)
 }
 
 fn bounded_nurbs_for_id(
@@ -1599,7 +1601,7 @@ fn bounded_nurbs_for_id(
         let range = [0.0, concatenated.segments.end()];
         return Ok(Some((concatenated.nurbs, range)));
     }
-    let Some(edge) = bounded_edge_for_curve(ir, curve_id, join_tolerance.unwrap_or(0.0), index)
+    let Some(edge) = bounded_edge_for_curve(ir, curve_id, join_tolerance.unwrap_or(0.0), index)?
     else {
         return Ok(None);
     };
@@ -1642,7 +1644,7 @@ fn bounded_nurbs_for_id(
                 index,
                 &edge,
                 join_tolerance,
-            )
+            )?
             .is_none()
             {
                 return Ok(None);
@@ -1673,7 +1675,7 @@ fn bounded_nurbs_for_id(
                 index,
                 &edge,
                 join_tolerance,
-            )
+            )?
             .is_none()
             {
                 return Ok(None);
@@ -1697,7 +1699,7 @@ fn bounded_nurbs_for_id(
                 index,
                 &edge,
                 join_tolerance,
-            )
+            )?
             .is_none()
             {
                 return Ok(None);
@@ -1732,8 +1734,8 @@ pub(super) fn bounded_parameter_range_for_curve(
     curve_id: &CurveId,
     tolerance: f64,
     index: Option<&CompositeIndex>,
-) -> Option<[f64; 2]> {
-    bounded_edge_for_curve(ir, curve_id, tolerance, index)?.param_range
+) -> Result<Option<[f64; 2]>, CodecError> {
+    Ok(bounded_edge_for_curve(ir, curve_id, tolerance, index)?.and_then(|edge| edge.param_range))
 }
 
 pub(super) fn bounded_nurbs_for_curve_with_tolerance(
@@ -1791,21 +1793,26 @@ fn curve_endpoints(
     curve_id: &CurveId,
     index: &CompositeIndex,
     tolerance: f64,
-) -> Option<(FinitePoint3, FinitePoint3)> {
-    let curve_position = index.curve_positions.get(curve_id)?;
-    let curve = ir.model.curves.get(*curve_position)?;
-    let candidates = index.edges.get(curve_id)?;
-    let edge = select_composite_edge(
-        ir,
-        Some(index),
-        curve.geometry.solved()?,
-        candidates,
-        tolerance,
-    )?;
-    Some((
-        point_for_vertex(ir, &edge.start, Some(index))?,
-        point_for_vertex(ir, &edge.end, Some(index))?,
-    ))
+) -> Result<Option<(FinitePoint3, FinitePoint3)>, CodecError> {
+    let Some(curve_position) = index.curve_positions.get(curve_id) else {
+        return Ok(None);
+    };
+    let Some(curve) = ir.model.curves.get(*curve_position) else {
+        return Ok(None);
+    };
+    let Some(candidates) = index.edges.get(curve_id) else {
+        return Ok(None);
+    };
+    let Some(geometry) = curve.geometry.solved() else {
+        return Ok(None);
+    };
+    let edge = select_composite_edge(ir, Some(index), geometry, candidates, tolerance)?;
+    Ok(edge.and_then(|edge| {
+        Some((
+            point_for_vertex(ir, &edge.start, Some(index))?,
+            point_for_vertex(ir, &edge.end, Some(index))?,
+        ))
+    }))
 }
 
 fn anchor_analytic_nurbs_endpoint_poles(
@@ -1815,22 +1822,36 @@ fn anchor_analytic_nurbs_endpoint_poles(
     index: Option<&CompositeIndex>,
     edge: &CompositeEdge,
     tolerance: Option<f64>,
-) -> Option<()> {
+) -> Result<Option<()>, CodecError> {
     let Some(tolerance) = tolerance else {
-        return Some(());
+        return Ok(Some(()));
     };
-    let start = point_for_vertex(ir, &edge.start, index)?;
-    let end = point_for_vertex(ir, &edge.end, index)?;
-    let evaluated_start = cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, interval[0]).ok()?;
-    let evaluated_end = cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, interval[1]).ok()?;
+    let (Some(start), Some(end)) = (
+        point_for_vertex(ir, &edge.start, index),
+        point_for_vertex(ir, &edge.end, index),
+    ) else {
+        return Ok(None);
+    };
+    let Some(evaluated_start) =
+        finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, interval[0]))?
+    else {
+        return Ok(None);
+    };
+    let Some(evaluated_end) =
+        finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, interval[1]))?
+    else {
+        return Ok(None);
+    };
     if !close_with_tolerance(evaluated_start.get(), start.get(), Some(tolerance))
         || !close_with_tolerance(evaluated_end.get(), end.get(), Some(tolerance))
     {
-        return None;
+        return Ok(None);
     }
-    let last = nurbs.pole_count().checked_sub(1)?;
+    let Some(last) = nurbs.pole_count().checked_sub(1) else {
+        return Ok(None);
+    };
     let mut visited = 0usize;
-    nurbs
+    Ok(nurbs
         .map_control_points(|point| {
             let mapped = if visited == last {
                 end
@@ -1842,8 +1863,7 @@ fn anchor_analytic_nurbs_endpoint_poles(
             visited += 1;
             Ok(mapped)
         })
-        .ok()?;
-    Some(())
+        .ok())
 }
 
 fn project_native_composite(
@@ -1852,38 +1872,51 @@ fn project_native_composite(
     entry: &DirectoryEntry,
     child_curves: &[CurveId],
     join_tolerance: f64,
+    ctx: Option<&DecodeContext<'_>>,
     sequences: &mut super::geometry::SourceSequences,
-) -> Option<EdgeId> {
+) -> Result<Option<EdgeId>, CodecError> {
     if child_curves
         .iter()
         .any(|curve_id| !index.curve_positions.contains_key(curve_id))
     {
-        return None;
+        return Ok(None);
     }
-    let endpoints = child_curves
-        .iter()
-        .map(|curve_id| curve_endpoints(ir, curve_id, index, join_tolerance))
-        .collect::<Option<Vec<_>>>()?;
-    let start = endpoints.first()?.0;
-    let end = endpoints.last()?.1;
-    let segments = child_curves
-        .iter()
-        .enumerate()
-        .map(|(index, curve)| CompositeCurveSegment {
+    let mut endpoints = match ctx {
+        Some(ctx) => reserve_vec(ctx, child_curves.len(), "iges composite native endpoints")?,
+        None => reserve_admitted_vec(child_curves.len(), "iges composite native endpoints")?,
+    };
+    for curve_id in child_curves {
+        let Some(endpoint) = curve_endpoints(ir, curve_id, index, join_tolerance)? else {
+            return Ok(None);
+        };
+        endpoints.push(endpoint);
+    }
+    let (Some(start), Some(end)) = (
+        endpoints.first().map(|pair| pair.0),
+        endpoints.last().map(|pair| pair.1),
+    ) else {
+        return Ok(None);
+    };
+    let mut segments = match ctx {
+        Some(ctx) => reserve_vec(ctx, child_curves.len(), "iges composite native segments")?,
+        None => reserve_admitted_vec(child_curves.len(), "iges composite native segments")?,
+    };
+    for (position, curve) in child_curves.iter().enumerate() {
+        segments.push(CompositeCurveSegment {
             curve: curve.clone(),
             same_sense: true,
-            transition: if index > 0
+            transition: if position > 0
                 && close_with_tolerance(
-                    endpoints[index - 1].1.get(),
-                    endpoints[index].0.get(),
+                    endpoints[position - 1].1.get(),
+                    endpoints[position].0.get(),
                     Some(join_tolerance),
                 ) {
                 CompositeCurveTransition::Continuous
             } else {
                 CompositeCurveTransition::Discontinuous
             },
-        })
-        .collect::<Vec<_>>();
+        });
+    }
     let stem = crate::ids::Stem::directory(entry.sequence);
     let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
     sequences.record_point(&start_point, &stem);
@@ -1910,13 +1943,20 @@ fn project_native_composite(
         },
     ]);
     sequences.record_curve(&curve_id, entry.sequence);
+    let Some(segments) = cadmpeg_ir::geometry::CompositeCurveSegments::try_from(segments).ok()
+    else {
+        return Ok(None);
+    };
+    let Some(source) = source_object(entry).ok() else {
+        return Ok(None);
+    };
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
-            segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(segments).ok()?,
+            segments,
             self_intersect: None,
         }),
-        source_object: Some(source_object(entry).ok()?),
+        source_object: Some(source),
     });
     ir.model.edges.push(Edge {
         id: edge_id.clone(),
@@ -1935,7 +1975,7 @@ fn project_native_composite(
         },
         [(start_vertex, start), (end_vertex, end)],
     );
-    Some(edge_id)
+    Ok(Some(edge_id))
 }
 
 /// The degraded carrier, if one was built, and the loss it charges either way.
@@ -1946,9 +1986,18 @@ fn project_degraded_composite(
     child_curves: &[CurveId],
     join_tolerance: f64,
     reason: &str,
+    ctx: Option<&DecodeContext<'_>>,
     sequences: &mut super::geometry::SourceSequences,
-) -> (Option<EdgeId>, LossNote) {
-    let edge = project_native_composite(ir, index, entry, child_curves, join_tolerance, sequences);
+) -> Result<(Option<EdgeId>, LossNote), CodecError> {
+    let edge = project_native_composite(
+        ir,
+        index,
+        entry,
+        child_curves,
+        join_tolerance,
+        ctx,
+        sequences,
+    )?;
     let loss = if edge.is_some() {
         degraded_carrier_loss(entry, reason)
     } else {
@@ -1957,7 +2006,7 @@ fn project_degraded_composite(
             format!("{reason}, and no ordered native composite carrier can be constructed"),
         )
     };
-    (edge, loss)
+    Ok((edge, loss))
 }
 
 pub(super) fn project(
@@ -2166,7 +2215,7 @@ fn project_with_type_130_policy(
             &child_sequences,
             &curve_carriers,
             &point_context,
-        ) {
+        )? {
             losses.push(entity_loss(
                 entry,
                 "point or connect-point adjacency is invalid",
@@ -2231,8 +2280,9 @@ fn project_with_type_130_policy(
                 &curve_ids,
                 join_tolerance,
                 &reason,
+                ctx,
                 sequences,
-            );
+            )?;
             losses.push(loss);
             if let Some(edge) = edge {
                 wire_edges.push(edge);
@@ -2263,8 +2313,9 @@ fn project_with_type_130_policy(
                         }
                         error => error.to_string(),
                     },
+                    ctx,
                     sequences,
-                );
+                )?;
                 losses.push(loss);
                 if let Some(edge) = edge {
                     wire_edges.push(edge);
@@ -2281,8 +2332,9 @@ fn project_with_type_130_policy(
                 &curve_ids,
                 join_tolerance,
                 "child endpoints do not join within the Global minimum resolution",
+                ctx,
                 sequences,
-            );
+            )?;
             losses.push(loss);
             if let Some(edge) = edge {
                 wire_edges.push(edge);
@@ -2301,8 +2353,9 @@ fn project_with_type_130_policy(
                 &curve_ids,
                 join_tolerance,
                 "its start cannot be evaluated",
+                ctx,
                 sequences,
-            );
+            )?;
             losses.push(loss);
             if let Some(edge) = edge {
                 wire_edges.push(edge);
@@ -2320,8 +2373,9 @@ fn project_with_type_130_policy(
                 &curve_ids,
                 join_tolerance,
                 "its end cannot be evaluated",
+                ctx,
                 sequences,
-            );
+            )?;
             losses.push(loss);
             if let Some(edge) = edge {
                 wire_edges.push(edge);

@@ -335,7 +335,7 @@ fn bounded_evaluable_curve(
         return Ok(None);
     }
     let Some(parameter_interval) =
-        super::composite::bounded_parameter_range_for_curve(ir, curve_id, tolerance, Some(index))
+        super::composite::bounded_parameter_range_for_curve(ir, curve_id, tolerance, Some(index))?
     else {
         return Ok(None);
     };
@@ -1604,7 +1604,7 @@ pub(super) fn project(
             &directrix_id,
             global.minimum_resolution_mm(),
             Some(&composite_index),
-        )
+        )?
         .unwrap_or(cached_interval);
         let source_interval = curve_geometry(ir, &directrix_id)
             .map_or(cached_interval, |geometry| {
@@ -1960,7 +1960,7 @@ pub(super) fn project(
             &generatrix_id,
             global.minimum_resolution_mm(),
             Some(&composite_index),
-        )
+        )?
         .unwrap_or(cached_interval);
         let source_interval = curve_geometry(ir, &generatrix_id)
             .map_or(cached_interval, |geometry| {

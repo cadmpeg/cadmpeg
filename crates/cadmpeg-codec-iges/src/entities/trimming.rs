@@ -8,7 +8,7 @@ use super::geometry::{
     BoundaryVertexDerivation, BoundaryVertexSourceEndpoint, DeclaredInterval, ProjectionOutcome,
 };
 use super::{affine_parameter_map, line_directrix, pointer};
-use crate::decode_resource::reserve_vec;
+use crate::decode_resource::{reserve_vec, reserve_vec_growth};
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::{ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
@@ -715,66 +715,99 @@ fn source_curve_control_polygon_within_bounds(
         })
 }
 
-fn linear_model_nurbs_points(nurbs: &NurbsCurve, range: [f64; 2]) -> Option<Vec<Point3>> {
+fn linear_model_nurbs_points(
+    nurbs: &NurbsCurve,
+    range: [f64; 2],
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<Point3>>, CodecError> {
     if nurbs
         .weights()
         .is_some_and(|weights| weights.iter().any(|weight| weight.get() != 1.0))
     {
-        return None;
+        return Ok(None);
     }
-    linear_nurbs_parameters(
+    let Some(parameters) = linear_nurbs_parameters(
         nurbs.degree(),
         nurbs.knots(),
         nurbs.pole_count(),
         nurbs.periodic(),
         range,
-    )?
-    .into_iter()
-    .map(|parameter| {
-        cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, parameter)
-            .ok()
-            .map(FinitePoint3::get)
-    })
-    .collect()
+    ) else {
+        return Ok(None);
+    };
+    let mut points = reserve_vec(ctx, parameters.len(), "iges linear model boundary points")?;
+    for parameter in parameters {
+        let Some(point) =
+            finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, parameter))?
+        else {
+            return Ok(None);
+        };
+        points.push(point.get());
+    }
+    Ok(Some(points))
 }
 
-fn linear_pcurve_points(geometry: &PcurveGeometry, range: [f64; 2]) -> Option<Vec<[f64; 2]>> {
+fn linear_pcurve_points(
+    geometry: &PcurveGeometry,
+    range: [f64; 2],
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<[f64; 2]>>, CodecError> {
     let PcurveGeometry::Nurbs { nurbs } = geometry else {
-        return None;
+        return Ok(None);
     };
     if nurbs
         .weights()
         .is_some_and(|weights| weights.iter().any(|weight| weight.get() != 1.0))
     {
-        return None;
+        return Ok(None);
     }
-    linear_nurbs_parameters(
+    let Some(parameters) = linear_nurbs_parameters(
         nurbs.degree(),
         nurbs.knots(),
         nurbs.control_points().len(),
         nurbs.periodic(),
         range,
-    )?
-    .into_iter()
-    .map(|parameter| {
-        cadmpeg_ir::eval::pcurve_uv(geometry, parameter)
-            .ok()
-            .map(|point| [point.u, point.v])
-    })
-    .collect()
+    ) else {
+        return Ok(None);
+    };
+    let mut points = reserve_vec(
+        ctx,
+        parameters.len(),
+        "iges linear parameter boundary points",
+    )?;
+    for parameter in parameters {
+        let Some(point) = finite_or_refusal(cadmpeg_ir::eval::pcurve_uv(geometry, parameter))?
+        else {
+            return Ok(None);
+        };
+        points.push([point.u, point.v]);
+    }
+    Ok(Some(points))
 }
 
-fn append_path<T: Copy + PartialEq>(target: &mut Vec<T>, path: Vec<T>) -> Option<()> {
-    let first = path.first().copied()?;
+fn append_path<T: Copy + PartialEq>(
+    target: &mut Vec<T>,
+    path: Vec<T>,
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    let Some(first) = path.first().copied() else {
+        return Ok(false);
+    };
     if target.last().is_some_and(|last| *last != first) {
-        return None;
+        return Ok(false);
     }
+    let additional = if target.is_empty() {
+        path.len()
+    } else {
+        path.len() - 1
+    };
+    reserve_vec_growth(ctx, target, additional, "iges linear boundary path")?;
     if target.is_empty() {
         target.extend(path);
     } else {
         target.extend(path.into_iter().skip(1));
     }
-    Some(())
+    Ok(true)
 }
 
 fn normalize_model_ring_endpoints(points: &mut [Point3], tolerance: f64) {
@@ -798,29 +831,45 @@ fn linear_boundary_model_points(
     items: &[BoundaryItem],
     index: &ModelIndex<'_>,
     closure_tolerance: f64,
-) -> Option<Vec<Point3>> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<Point3>>, CodecError> {
     let mut points = Vec::new();
     for item in items {
-        let curve = index.curves(item.model_curve.as_str())?;
+        let Some(curve) = index.curves(item.model_curve.as_str()) else {
+            return Ok(None);
+        };
         let mut curve_points = match curve.geometry.solved() {
-            Some(SolvedCurveGeometry::Line(_)) => vec![item.start.get(), item.end.get()],
-            Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
-                linear_model_nurbs_points(nurbs, item.source_edge.param_range()?.get())?
+            Some(SolvedCurveGeometry::Line(_)) => {
+                let mut line = reserve_vec(ctx, 2, "iges linear model boundary line")?;
+                line.push(item.start.get());
+                line.push(item.end.get());
+                line
             }
-            _ => return None,
+            Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
+                let Some(range) = item.source_edge.param_range() else {
+                    return Ok(None);
+                };
+                let Some(points) = linear_model_nurbs_points(nurbs, range.get(), ctx)? else {
+                    return Ok(None);
+                };
+                points
+            }
+            _ => return Ok(None),
         };
         if curve_points.first().copied() != Some(item.start.get())
             || curve_points.last().copied() != Some(item.end.get())
         {
-            return None;
+            return Ok(None);
         }
         if item.segment.sense == Sense::Reversed {
             curve_points.reverse();
         }
-        append_path(&mut points, curve_points)?;
+        if !append_path(&mut points, curve_points, ctx)? {
+            return Ok(None);
+        }
     }
     normalize_model_ring_endpoints(&mut points, closure_tolerance);
-    Some(points)
+    Ok(Some(points))
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -848,13 +897,17 @@ fn linear_boundary_geometry(
     resolution: f64,
     closure_tolerance: f64,
     surface_kind: BoundarySurfaceKind,
-) -> Option<LinearBoundaryGeometry> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<LinearBoundaryGeometry>, CodecError> {
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = support else {
-        return None;
+        return Ok(None);
     };
     let origin = plane_surface.origin().get();
     let normal = plane_surface.frame().axis().as_raw();
-    let model_points = linear_boundary_model_points(items, index, closure_tolerance)?;
+    let Some(model_points) = linear_boundary_model_points(items, index, closure_tolerance, ctx)?
+    else {
+        return Ok(None);
+    };
     let model_plane = (origin, *normal);
     if items.iter().any(|item| {
         let Some(curve) = index.curves(item.model_curve.as_str()) else {
@@ -872,9 +925,11 @@ fn linear_boundary_geometry(
             &mut BTreeSet::new(),
         )
     }) {
-        return None;
+        return Ok(None);
     }
-    let model_coordinates = plane_coordinates(&model_points, model_plane)?;
+    let Some(model_coordinates) = plane_coordinates(&model_points, model_plane) else {
+        return Ok(None);
+    };
     if surface_kind == BoundarySurfaceKind::Trimmed
         && items
             .iter()
@@ -884,24 +939,26 @@ fn linear_boundary_geometry(
             .iter()
             .all(|item| item.segment.parameter_curves_authoritative)
         {
-            return None;
+            return Ok(None);
         }
         let mut parameter_points = Vec::new();
         for item in items {
             if item.pcurves.is_empty() {
-                return None;
+                return Ok(None);
             }
             for (geometry, range) in &item.pcurves {
-                append_path(
-                    &mut parameter_points,
-                    linear_pcurve_points(geometry, *range)?,
-                )?;
+                let Some(points) = linear_pcurve_points(geometry, *range, ctx)? else {
+                    return Ok(None);
+                };
+                if !append_path(&mut parameter_points, points, ctx)? {
+                    return Ok(None);
+                }
             }
         }
         normalize_parameter_ring_endpoints(&mut parameter_points, closure_tolerance);
-        Some(LinearBoundaryGeometry::Parameter(parameter_points))
+        Ok(Some(LinearBoundaryGeometry::Parameter(parameter_points)))
     } else {
-        Some(LinearBoundaryGeometry::Model(model_coordinates))
+        Ok(Some(LinearBoundaryGeometry::Model(model_coordinates)))
     }
 }
 
@@ -2212,7 +2269,8 @@ pub(super) fn project(
                 carrier_agreement_tolerance,
                 sewing_tolerance,
                 surface_kind,
-            ));
+                ctx,
+            )?);
             let loop_id = crate::ids::r#loop(&stem.slot(boundary_index));
             let coedge_ids = (0..items.len())
                 .map(|index| crate::ids::coedge(&stem.slot(boundary_index).slot(index)))
