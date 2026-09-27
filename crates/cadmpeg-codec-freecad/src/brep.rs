@@ -28,7 +28,7 @@ use cadmpeg_ir::SourceObjectAssociation;
 use serde::{Deserialize, Serialize};
 
 use crate::native::{self, EntryRecord, PropertyRecord};
-use crate::resource::{collection_vec, optional_collection_vec, reserve_vec_items};
+use crate::resource::{collection_vec, optional_collection_vec, reserve_vec_items, retained_string};
 
 /// Exact-shape side-entry form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -2295,19 +2295,22 @@ pub(crate) fn parse_payloads(
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
 ) -> Result<Vec<ShapePayloadRecord>, CodecError> {
-    let entries = entries
-        .iter()
-        .map(|entry| (entry.name.as_str(), entry))
-        .collect::<BTreeMap<_, _>>();
+    let mut entries_by_name = BTreeMap::new();
+    for entry in entries {
+        if !entries_by_name.contains_key(entry.name.as_str()) {
+            ctx.charge_collection_items(1, "FreeCAD shape entry index")?;
+        }
+        entries_by_name.insert(entry.name.as_str(), entry);
+    }
     let mut payloads = Vec::new();
     for property in properties
         .iter()
         .filter(|property| property.type_name == "Part::PropertyPartShape")
     {
-        let Some(name) = direct_shape_entry(property)? else {
+        let Some(name) = direct_shape_entry(ctx, property)? else {
             continue;
         };
-        let entry = entries.get(name.as_str()).ok_or_else(|| {
+        let entry = entries_by_name.get(name.as_str()).ok_or_else(|| {
             CodecError::malformed(format_args!("missing exact-shape entry {name}"))
         })?;
         let payload = if entry.data.is_empty() {
@@ -2322,15 +2325,15 @@ pub(crate) fn parse_payloads(
         reserve_vec_items(ctx, &mut payloads, 1, "FreeCAD shape payload records")?;
         payloads.push(ShapePayloadRecord {
             id: crate::native::native_child_id("shape-payload", &property.id, &name),
-            property: property.id.clone(),
-            entry: entry.id.clone(),
+            property: retained_string(ctx, &property.id, "FreeCAD shape payload property")?,
+            entry: retained_string(ctx, &entry.id, "FreeCAD shape payload entry")?,
             payload,
         });
     }
     Ok(payloads)
 }
 
-fn direct_shape_entry(property: &PropertyRecord) -> Result<Option<String>, CodecError> {
+fn direct_shape_entry(ctx: &DecodeContext<'_>, property: &PropertyRecord) -> Result<Option<String>, CodecError> {
     let document = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
         CodecError::malformed(format_args!(
             "invalid exact-shape property XML {}: {error}",
@@ -2344,24 +2347,20 @@ fn direct_shape_entry(property: &PropertyRecord) -> Result<Option<String>, Codec
             property.id
         )));
     }
-    let parts = root
+    let mut parts = root
         .children()
-        .filter(|node| node.has_tag_name("Part"))
-        .collect::<Vec<_>>();
-    let part = match parts.as_slice() {
-        [] => return Ok(None),
-        [part] => *part,
-        _ => {
-            return Err(CodecError::malformed(format_args!(
-                "exact-shape property {} has multiple direct Part carriers",
-                property.id
-            )));
-        }
-    };
-    Ok(part
-        .attribute("file")
+        .filter(|node| node.has_tag_name("Part"));
+    let Some(part) = parts.next() else { return Ok(None); };
+    if parts.next().is_some() {
+        return Err(CodecError::malformed(format_args!(
+            "exact-shape property {} has multiple direct Part carriers",
+            property.id
+        )));
+    }
+    part.attribute("file")
         .filter(|file| !file.is_empty())
-        .map(str::to_owned))
+        .map(|file| retained_string(ctx, file, "FreeCAD shape entry name"))
+        .transpose()
 }
 
 /// Derive an exhaustive family census from successfully parsed exact-shape payloads.
@@ -6445,9 +6444,50 @@ pub(crate) mod tests {
             referenced_by: vec![property.id.clone()],
             data: Vec::new(),
         };
-        let result = with_collection_limit(&[], 0, |ctx| parse_payloads(ctx, &[property], &[entry]));
+        let result = with_collection_limit(&[], 1, |ctx| parse_payloads(ctx, &[property], &[entry]));
         assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
             if limit.operation == "FreeCAD shape payload records"));
+    }
+
+    #[test]
+    fn shape_entry_index_refuses_on_collection_limit() {
+        let entry = EntryRecord {
+            id: crate::native::native_id("entry", "empty.brp"),
+            name: "empty.brp".into(),
+            role: cadmpeg_core::container::ContainerRole::Brep,
+            referenced_by: Vec::new(),
+            data: Vec::new(),
+        };
+        let result = with_collection_limit(&[], 0, |ctx| parse_payloads(ctx, &[], &[entry]));
+        assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD shape entry index"));
+    }
+
+    #[test]
+    fn shape_entry_name_refuses_on_retained_limit() {
+        let property = PropertyRecord {
+            id: crate::native::native_id("property", "Shape"),
+            owner: crate::native::native_id("object", "Shape"),
+            name: "Shape".into(),
+            type_name: "Part::PropertyPartShape".into(),
+            family: crate::native::PropertyFamily::Geometry,
+            status: None,
+            body: crate::native::PropertyBody::Persisted {
+                values: Vec::new(), links: Vec::new(), side_entries: Vec::new(), dynamic: None,
+            },
+            order: 0,
+            xml: crate::native::RetainedXml::from_text(
+                "<Property><Part file=\"empty.brp\"/></Property>".into(), 0,
+            ).expect("valid test XML"),
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        assert!(matches!(super::direct_shape_entry(&ctx, &property),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.operation == "FreeCAD shape entry name"));
     }
 
     fn test_parse_text(bytes: &[u8]) -> Result<(super::ShapeSet, super::TextTopologyVersion), CodecError> {
