@@ -3343,25 +3343,62 @@ pub(crate) fn string_values(bytes: &[u8], base_offset: usize) -> Vec<StringValue
 }
 
 /// Decode complete `03 26, canonical UUID text, 00` values in `bytes`.
-pub(crate) fn uuid_string_values(bytes: &[u8], base_offset: usize) -> Vec<UuidStringValue<'_>> {
+pub(crate) fn uuid_string_values<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
+    base_offset: usize,
+) -> Result<Vec<UuidStringValue<'a>>, CodecError> {
     const MARKER: &[u8] = &[0x03, 0x26];
     const TEXT_LEN: usize = 36;
-    bytes
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+        "scan NX UUID strings",
+    )?;
+    let mut values = Vec::new();
+    for (offset, _) in bytes
         .windows(MARKER.len())
         .enumerate()
         .filter(|(_, window)| *window == MARKER)
-        .filter_map(|(offset, _)| {
-            let start = offset.checked_add(MARKER.len())?;
-            let end = start.checked_add(TEXT_LEN)?;
-            let raw = bytes.get(start..end)?;
-            let value =
-                crate::canonical_uuid::CanonicalUuid::new(std::str::from_utf8(raw).ok()?).ok()?;
-            (bytes.get(end) == Some(&0)).then_some(UuidStringValue {
-                offset: base_offset + offset,
-                value,
-            })
-        })
-        .collect()
+    {
+        let Some(start) = offset.checked_add(MARKER.len()) else {
+            continue;
+        };
+        let Some(end) = start.checked_add(TEXT_LEN) else {
+            continue;
+        };
+        let Some(raw) = bytes.get(start..end) else {
+            continue;
+        };
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(TEXT_LEN),
+            "parse NX UUID string",
+        )?;
+        let Ok(text) = std::str::from_utf8(raw) else {
+            continue;
+        };
+        let Ok(value) = crate::canonical_uuid::CanonicalUuid::new(text) else {
+            continue;
+        };
+        if bytes.get(end) != Some(&0) {
+            continue;
+        }
+        let Some(absolute_offset) = base_offset.checked_add(offset) else {
+            continue;
+        };
+        ctx.charge_collection_items(1, "nx UUID strings")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<UuidStringValue<'_>>()),
+            "retain NX UUID string frame",
+        )?;
+        values
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("nx UUID strings", 0, 1))?;
+        values.push(UuidStringValue {
+            offset: absolute_offset,
+            value,
+        });
+    }
+    Ok(values)
 }
 
 #[cfg(test)]
@@ -3370,8 +3407,12 @@ mod uuid_string_value_tests {
 
     #[test]
     fn decodes_only_complete_canonical_uuid_frames() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .unwrap();
         let mut bytes = b"prefix\x03\x2601234567-89ab-cdef-0123-456789abcdef\0suffix".to_vec();
-        let values = uuid_string_values(&bytes, 100);
+        let values = uuid_string_values(&ctx, &bytes, 100).unwrap();
         assert_eq!(values.len(), 1);
         assert_eq!(values[0].offset, 106);
         assert_eq!(
@@ -3380,7 +3421,7 @@ mod uuid_string_value_tests {
         );
 
         bytes[6 + 2 + 9] = b'A';
-        assert!(uuid_string_values(&bytes, 0).is_empty());
+        assert!(uuid_string_values(&ctx, &bytes, 0).unwrap().is_empty());
         assert!(
             crate::canonical_uuid::CanonicalUuid::new("01234567-89ab-cdef-0123-456789abcde")
                 .is_err()
@@ -3396,12 +3437,55 @@ mod uuid_string_value_tests {
     }
 
     #[test]
+    fn uuid_frames_refuse_collection_limit() {
+        let bytes = b"\x03\x2601234567-89ab-cdef-0123-456789abcdef\0";
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+            .unwrap();
+        let error = uuid_string_values(&ctx, bytes, 0).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    }
+
+    #[test]
+    fn uuid_frames_refuse_retained_limit() {
+        let bytes = b"\x03\x2601234567-89ab-cdef-0123-456789abcdef\0";
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+            .unwrap();
+        let error = uuid_string_values(&ctx, bytes, 0).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    }
+
+    #[test]
+    fn uuid_frames_refuse_work_limit() {
+        let bytes = b"\x03\x2601234567-89ab-cdef-0123-456789abcdef\0";
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+            .unwrap();
+        let error = uuid_string_values(&ctx, bytes, 0).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+    }
+
+    #[test]
     fn rejects_truncated_or_unterminated_uuid_frames() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .unwrap();
         let frame = b"\x03\x2601234567-89ab-cdef-0123-456789abcdef\0";
-        assert!(uuid_string_values(&frame[..frame.len() - 1], 0).is_empty());
+        assert!(uuid_string_values(&ctx, &frame[..frame.len() - 1], 0).unwrap().is_empty());
         let mut unterminated = frame.to_vec();
         *unterminated.last_mut().expect("nonempty frame") = 1;
-        assert!(uuid_string_values(&unterminated, 0).is_empty());
+        assert!(uuid_string_values(&ctx, &unterminated, 0).unwrap().is_empty());
     }
 }
 
