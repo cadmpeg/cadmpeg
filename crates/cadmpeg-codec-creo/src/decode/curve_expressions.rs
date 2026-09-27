@@ -192,9 +192,10 @@ fn curve_expression_parameter_order(
     )?;
     for (row, assignment) in dependencies.iter_mut().zip(&record.assignments) {
         for name in &assignment.dependencies {
-            let Some(&index) =
-                unique_assignment_indices.get(&crate::curve::expression_identifier_key(name))
-            else {
+            let (mut key, _reservation) =
+                ctx.copy_scoped_text(name, "creo curve-expression ordering lookup")?;
+            key.make_ascii_lowercase();
+            let Some(&index) = unique_assignment_indices.get(&key) else {
                 continue;
             };
             if row.contains(&index) {
