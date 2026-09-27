@@ -2326,6 +2326,7 @@ fn build_geometry_ir(
         display_sections.push((section, faces));
     }
     let mut ir = CadIr::decoded(source_meta(
+        ctx,
         scan,
         classification,
         metadata_header.as_ref(),
@@ -3169,6 +3170,7 @@ fn assign_native_configuration_indices(ir: &CadIr, native: &mut crate::native::S
 }
 
 fn source_meta(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     classification: &crate::dialect::LayerClassification,
     header: Option<&StreamHeader>,
@@ -3197,11 +3199,14 @@ fn source_meta(
         cadmpeg_core::nonblank_literal!("compound_stream_count"),
         scan.compound_streams.len().to_string(),
     );
-    let active_name = container::active_parasolid_summary(scan).map(|(name, _, _)| name);
-    if let Some(active_name) = active_name {
+    if let Some(site) = container::select_active_parasolid_site(scan) {
         attributes.insert(
             cadmpeg_core::nonblank_literal!("active_parasolid_block"),
-            active_name,
+            copy_retained_string(
+                ctx,
+                site.source_stream().as_str(),
+                "retain SLDPRT active site name",
+            )?,
         );
     } else {
         attributes.insert(
@@ -3212,15 +3217,15 @@ fn source_meta(
     if let Some(header) = header {
         attributes.insert(
             cadmpeg_core::nonblank_literal!("parasolid_schema"),
-            header.schema.value().to_owned(),
+            copy_retained_string(ctx, header.schema.value(), "retain SLDPRT source schema")?,
         );
         attributes.insert(
             cadmpeg_core::nonblank_literal!("parasolid_description"),
-            header.description.clone(),
+            copy_retained_string(ctx, &header.description, "retain SLDPRT source description")?,
         );
     }
     add_preview_metadata(scan, &mut attributes);
-    add_solidworks_xml_metadata(scan, &mut attributes)?;
+    add_solidworks_xml_metadata(ctx, scan, &mut attributes)?;
     Ok(SourceMeta::classified(
         classification.layers().clone(),
         attributes,
@@ -3301,10 +3306,11 @@ fn add_preview_metadata(
 }
 
 fn add_solidworks_xml_metadata(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     attributes: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
 ) -> Result<(), CodecError> {
-    let active_configuration_name = container::active_configuration_name(scan);
+    let active_configuration_name = container::active_configuration_name_ref(scan);
     if let Some(envelope) = container::solidworks_envelope(scan) {
         for (key, value) in [
             (
@@ -3321,24 +3327,28 @@ fn add_solidworks_xml_metadata(
             ),
         ] {
             if let Some(value) = value {
-                attributes.insert(key, value.clone());
+                attributes.insert(key, copy_retained_string(ctx, value, "retain SLDPRT XML metadata")?);
             }
         }
-        if let Some(value) = active_configuration_name.as_deref() {
+        if let Some(value) = active_configuration_name {
             attributes.insert(
                 cadmpeg_core::nonblank_literal!("sw_configuration_name"),
-                value.into(),
+                copy_retained_string(ctx, value, "retain SLDPRT configuration name")?,
             );
         } else if let Some(value) = &envelope.configuration_name {
             attributes.insert(
                 cadmpeg_core::nonblank_literal!("sw_configuration_name"),
-                value.clone(),
+                copy_retained_string(ctx, value, "retain SLDPRT configuration name")?,
             );
         }
-        attributes.extend(cadmpeg_core::text::named_entries(
-            "the solidworks envelope",
-            envelope.configuration_attributes.clone(),
-        )?);
+        for (key, value) in &envelope.configuration_attributes {
+            let name = copy_retained_string(ctx, key, "retain SLDPRT configuration key")?;
+            let name = cadmpeg_core::text::NonBlankString::new(name)
+                .ok_or_else(|| CodecError::Malformed("invalid SLDPRT configuration key".into()))?;
+            let value = copy_retained_string(ctx, value, "retain SLDPRT configuration value")?;
+            ctx.charge_collection_items(1, "copy SLDPRT configuration attribute")?;
+            attributes.insert(name, value);
+        }
     }
     Ok(())
 }
@@ -3483,7 +3493,7 @@ fn build_metadata_ir(
         cadmpeg_core::nonblank_literal!("block_count"),
         scan.blocks.len().to_string(),
     );
-    add_solidworks_xml_metadata(scan, &mut attributes)?;
+    add_solidworks_xml_metadata(ctx, scan, &mut attributes)?;
 
     if let Some(site) = container::select_active_parasolid_site(scan) {
         let name = site.name();

@@ -131,6 +131,27 @@ fn geometry_material_appearance_refuses_collection_limit() {
 }
 
 #[test]
+fn geometry_xml_metadata_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x43,
+        "Contents/SolidWorks",
+        br#"<swSolidWorks swPath="part.sldprt"/>"#,
+    ));
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&source, &mut options, "retain SLDPRT XML metadata");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain SLDPRT XML metadata"
+    ));
+}
+
+#[test]
 fn native_loss_validation_propagates_typed_load_retained_refusal() {
     use cadmpeg_core::decode::ResourceDimension;
 

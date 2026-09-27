@@ -1181,7 +1181,7 @@ pub(crate) fn active_configuration_name(scan: &ContainerScan<'_>) -> Option<Stri
     active_configuration_name_ref(scan).map(str::to_owned)
 }
 
-fn active_configuration_name_ref<'a>(scan: &'a ContainerScan<'_>) -> Option<&'a str> {
+pub(crate) fn active_configuration_name_ref<'a>(scan: &'a ContainerScan<'_>) -> Option<&'a str> {
     scan.solidworks
         .manifest_active_configuration
         .unique_ref()
