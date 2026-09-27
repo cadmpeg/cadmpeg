@@ -1218,7 +1218,7 @@ pub(super) fn try_decode_geometry(
         return Ok(None);
     }
 
-    ir.source = Some(source_meta(scan, dialects)?);
+    ir.source = Some(source_meta(ctx, scan, dialects)?);
 
     ctx.admit_entities(
         ir.model.entity_count() as u64,

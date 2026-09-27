@@ -30,7 +30,7 @@ use cadmpeg_ir::geometry::{
     ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
     Surface, SurfaceCurveFamily, SurfaceGeometry,
 };
-use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::hash::{sha256, sha256_hex};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
     RegionId, ShellId, SurfaceId, UnknownId, VertexId,
@@ -42,6 +42,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::{self, Display, Write as _};
 
 const EPS_EMIT_CANONICAL_TRIM_RANGE_E6: f64 = 1.0e-6;
 
@@ -1459,82 +1460,52 @@ fn unknown_stream_record(si: usize, stream: &Stream, data: Option<Vec<u8>>) -> U
 
 /// Builds source metadata from classified layers and the container scan.
 pub(super) fn source_meta(
+    ctx: &DecodeContext<'_>,
     scan: &Scan,
     dialects: &DialectLayers,
 ) -> Result<SourceMeta, cadmpeg_core::CodecError> {
     let mut attributes = BTreeMap::new();
-    attributes.insert(
-        "file_size".to_string(),
-        scan.container.physical_size.to_string(),
-    );
-    attributes.insert(
-        "directory_entries".to_string(),
-        scan.container.entries.len().to_string(),
-    );
-    attributes.insert(
-        "header_entry_count".to_string(),
-        scan.container
-            .entry_count(crate::container::Region::Header)
-            .to_string(),
-    );
+    insert_source_attribute(ctx, &mut attributes, "file_size", scan.container.physical_size)?;
+    insert_source_attribute(ctx, &mut attributes, "directory_entries", scan.container.entries.len())?;
+    insert_source_attribute(
+        ctx, &mut attributes, "header_entry_count",
+        scan.container.entry_count(crate::container::Region::Header),
+    )?;
     if let crate::container::ContainerLayout::Modern {
         footer_offset,
         footer_fingerprint,
         ..
     } = scan.container.layout
     {
-        attributes.insert("footer_offset".to_string(), footer_offset.to_string());
-        attributes.insert(
-            "footer_entry_count".to_string(),
-            scan.container
-                .entry_count(crate::container::Region::Footer)
-                .to_string(),
-        );
-        attributes.insert(
-            "footer_fingerprint".to_string(),
-            format!("{:08x}", assemble_u32_be(footer_fingerprint)),
-        );
+        insert_source_attribute(ctx, &mut attributes, "footer_offset", footer_offset)?;
+        insert_source_attribute(
+            ctx, &mut attributes, "footer_entry_count",
+            scan.container.entry_count(crate::container::Region::Footer),
+        )?;
+        insert_source_attribute(
+            ctx, &mut attributes, "footer_fingerprint",
+            format_args!("{:08x}", assemble_u32_be(footer_fingerprint)),
+        )?;
     }
     let (control_count, classified_control_count) = offset_store_control_counts(&scan.container);
     if control_count != 0 {
-        attributes.insert(
-            "offset_store_control_count".to_string(),
-            control_count.to_string(),
-        );
-        attributes.insert(
-            "classified_offset_store_control_count".to_string(),
-            classified_control_count.to_string(),
-        );
-        attributes.insert(
-            "unclassified_offset_store_control_count".to_string(),
-            (control_count - classified_control_count).to_string(),
-        );
+        insert_source_attribute(ctx, &mut attributes, "offset_store_control_count", control_count)?;
+        insert_source_attribute(ctx, &mut attributes, "classified_offset_store_control_count", classified_control_count)?;
+        insert_source_attribute(ctx, &mut attributes, "unclassified_offset_store_control_count", control_count - classified_control_count)?;
     }
-    attributes.insert(
-        "partition_streams".to_string(),
-        scan.count(StreamKind::Partition).to_string(),
-    );
-    attributes.insert(
-        "deltas_streams".to_string(),
-        scan.count(StreamKind::Deltas).to_string(),
-    );
-    attributes.insert(
-        "plain_streams".to_string(),
-        scan.count(StreamKind::Plain).to_string(),
-    );
+    insert_source_attribute(ctx, &mut attributes, "partition_streams", scan.count(StreamKind::Partition))?;
+    insert_source_attribute(ctx, &mut attributes, "deltas_streams", scan.count(StreamKind::Deltas))?;
+    insert_source_attribute(ctx, &mut attributes, "plain_streams", scan.count(StreamKind::Plain))?;
     for (index, path) in scan
         .container
         .external_reference_paths()
         .into_iter()
         .enumerate()
     {
-        attributes.insert(format!("external_reference.{index}"), path);
+        insert_source_attribute(ctx, &mut attributes, format_args!("external_reference.{index}"), path)?;
     }
     if let Some((_, table)) = scan.container.rmfastload_object_id_table() {
-        attributes.insert(
-            "rmfastload_active_object_count".to_string(),
-            table.object_ids.as_slice().len().to_string(),
-        );
+        insert_source_attribute(ctx, &mut attributes, "rmfastload_active_object_count", table.object_ids.as_slice().len())?;
     }
     let mut preview_count = 0usize;
     for entry in scan
@@ -1555,16 +1526,19 @@ pub(super) fn source_meta(
         let Some((width, height, precision, components)) = jpeg_dimensions(payload) else {
             continue;
         };
-        let prefix = format!("jpeg_preview_{preview_count}");
-        attributes.insert(format!("{prefix}_width"), width.to_string());
-        attributes.insert(format!("{prefix}_height"), height.to_string());
-        attributes.insert(format!("{prefix}_precision"), precision.to_string());
-        attributes.insert(format!("{prefix}_components"), components.to_string());
-        attributes.insert(format!("{prefix}_byte_len"), payload.len().to_string());
-        attributes.insert(format!("{prefix}_sha256"), sha256_hex(payload));
+        insert_source_attribute(ctx, &mut attributes, format_args!("jpeg_preview_{preview_count}_width"), width)?;
+        insert_source_attribute(ctx, &mut attributes, format_args!("jpeg_preview_{preview_count}_height"), height)?;
+        insert_source_attribute(ctx, &mut attributes, format_args!("jpeg_preview_{preview_count}_precision"), precision)?;
+        insert_source_attribute(ctx, &mut attributes, format_args!("jpeg_preview_{preview_count}_components"), components)?;
+        insert_source_attribute(ctx, &mut attributes, format_args!("jpeg_preview_{preview_count}_byte_len"), payload.len())?;
+        ctx.charge_work(
+            u64::try_from(payload.len()).unwrap_or(u64::MAX),
+            "hash NX source preview",
+        )?;
+        insert_source_attribute(ctx, &mut attributes, format_args!("jpeg_preview_{preview_count}_sha256"), HexDigest(sha256(payload)))?;
         preview_count += 1;
     }
-    attributes.insert("jpeg_preview_count".to_string(), preview_count.to_string());
+    insert_source_attribute(ctx, &mut attributes, "jpeg_preview_count", preview_count)?;
     for (index, stream) in scan
         .streams
         .iter()
@@ -1573,84 +1547,178 @@ pub(super) fn source_meta(
     {
         let census = crate::deltas::census::walk(&stream.inflated);
         if census.transmit_header.is_some() {
-            attributes.insert(format!("deltas.{index}.transmit_headers"), "1".to_string());
+            insert_source_attribute(ctx, &mut attributes, format_args!("deltas.{index}.transmit_headers"), "1")?;
         }
-        attributes.insert(
-            format!("deltas.{index}.grammar"),
-            "typed_status_framed_records".to_string(),
-        );
-        attributes.insert(
-            format!("deltas.{index}.bytes_decoded"),
-            census.bytes_decoded().to_string(),
-        );
+        insert_source_attribute(ctx, &mut attributes, format_args!("deltas.{index}.grammar"), "typed_status_framed_records")?;
+        insert_source_attribute(ctx, &mut attributes, format_args!("deltas.{index}.bytes_decoded"), census.bytes_decoded())?;
         if !census.body_revisions.is_empty() {
-            attributes.insert(
-                format!("deltas.{index}.body_revisions"),
-                census.body_revisions.len().to_string(),
-            );
+            insert_source_attribute(ctx, &mut attributes, format_args!("deltas.{index}.body_revisions"), census.body_revisions.len())?;
         }
         if !census.term_use_numeric_tails.is_empty() {
-            attributes.insert(
-                format!("deltas.{index}.term_use_numeric_tails"),
-                census.term_use_numeric_tails.len().to_string(),
-            );
+            insert_source_attribute(ctx, &mut attributes, format_args!("deltas.{index}.term_use_numeric_tails"), census.term_use_numeric_tails.len())?;
         }
         if !census.tagged_reference_lanes.is_empty() {
-            attributes.insert(
-                format!("deltas.{index}.tagged_reference_lanes"),
-                census.tagged_reference_lanes.len().to_string(),
-            );
+            insert_source_attribute(ctx, &mut attributes, format_args!("deltas.{index}.tagged_reference_lanes"), census.tagged_reference_lanes.len())?;
         }
         if !census.reference_type_maps.is_empty() {
-            attributes.insert(
-                format!("deltas.{index}.reference_type_maps"),
-                census.reference_type_maps.len().to_string(),
-            );
+            insert_source_attribute(ctx, &mut attributes, format_args!("deltas.{index}.reference_type_maps"), census.reference_type_maps.len())?;
         }
         if !census.reference_state_packets.is_empty() {
-            attributes.insert(
-                format!("deltas.{index}.reference_state_packets"),
-                census.reference_state_packets.len().to_string(),
-            );
+            insert_source_attribute(ctx, &mut attributes, format_args!("deltas.{index}.reference_state_packets"), census.reference_state_packets.len())?;
         }
         if !census.reference_marker_packets.is_empty() {
-            attributes.insert(
-                format!("deltas.{index}.reference_marker_packets"),
-                census.reference_marker_packets.len().to_string(),
-            );
+            insert_source_attribute(ctx, &mut attributes, format_args!("deltas.{index}.reference_marker_packets"), census.reference_marker_packets.len())?;
         }
         if !census.inline_schema_declarations.is_empty() {
-            attributes.insert(
-                format!("deltas.{index}.inline_schema_declarations"),
-                census.inline_schema_declarations.len().to_string(),
-            );
+            insert_source_attribute(ctx, &mut attributes, format_args!("deltas.{index}.inline_schema_declarations"), census.inline_schema_declarations.len())?;
         }
         for (name, count) in census.full_counts() {
-            attributes.insert(format!("deltas.{index}.full.{name}"), count.to_string());
+            insert_source_attribute(ctx, &mut attributes, format_args!("deltas.{index}.full.{name}"), count)?;
         }
         for (name, count) in census.tombstone_counts() {
-            attributes.insert(
-                format!("deltas.{index}.tombstone.{name}"),
-                count.to_string(),
-            );
+            insert_source_attribute(ctx, &mut attributes, format_args!("deltas.{index}.tombstone.{name}"), count)?;
         }
     }
+    ctx.charge_collection_items(
+        u64::try_from(attributes.len()).unwrap_or(u64::MAX),
+        "nx source attribute names",
+    )?;
     Ok(SourceMeta::classified(
         dialects.clone(),
         cadmpeg_core::text::named_entries("the nx part", attributes)?,
     ))
 }
 
+struct CountBytes(usize);
+
+impl fmt::Write for CountBytes {
+    fn write_str(&mut self, text: &str) -> fmt::Result {
+        self.0 = self.0.checked_add(text.len()).ok_or(fmt::Error)?;
+        Ok(())
+    }
+}
+
+struct HexDigest([u8; 32]);
+
+impl Display for HexDigest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for byte in self.0 {
+            write!(f, "{byte:02x}")?;
+        }
+        Ok(())
+    }
+}
+
+fn insert_source_attribute(
+    ctx: &DecodeContext<'_>,
+    attributes: &mut BTreeMap<String, String>,
+    key: impl Display,
+    value: impl Display,
+) -> Result<(), CodecError> {
+    let mut key_len = CountBytes(0);
+    let mut value_len = CountBytes(0);
+    write!(&mut key_len, "{key}")
+        .map_err(|_| ctx.refuse_codec_limit("nx source attribute text", 0, u64::MAX))?;
+    write!(&mut value_len, "{value}")
+        .map_err(|_| ctx.refuse_codec_limit("nx source attribute text", 0, u64::MAX))?;
+    let text_len = key_len.0.checked_add(value_len.0)
+        .ok_or_else(|| ctx.refuse_codec_limit("nx source attribute text", 0, u64::MAX))?;
+    ctx.charge_collection_items(1, "nx source attributes")?;
+    ctx.charge_retained(u64::try_from(text_len).unwrap_or(u64::MAX), "nx source attribute text")?;
+    let mut key_text = String::new();
+    key_text.try_reserve_exact(key_len.0)
+        .map_err(|_| ctx.refuse_codec_limit("nx source attribute text", 0, 1))?;
+    write!(&mut key_text, "{key}")
+        .map_err(|_| ctx.refuse_codec_limit("nx source attribute text", 0, 1))?;
+    let mut value_text = String::new();
+    value_text.try_reserve_exact(value_len.0)
+        .map_err(|_| ctx.refuse_codec_limit("nx source attribute text", 0, 1))?;
+    write!(&mut value_text, "{value}")
+        .map_err(|_| ctx.refuse_codec_limit("nx source attribute text", 0, 1))?;
+    attributes.insert(key_text, value_text);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::geometry_work::GeometryWorkBudget;
-    use super::{unknown_stream, CurvePointCache};
+    use super::{source_meta, unknown_stream, CurvePointCache};
+    use crate::container::Container;
+    use crate::decode::Scan;
     use crate::parasolid::Stream;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::geometry::CurveGeometry;
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
     use cadmpeg_ir::ids::CurveId;
     use cadmpeg_ir::math::Point3;
+
+    fn empty_source_scan() -> Scan<'static> {
+        Scan {
+            container: Container {
+                data: Vec::new().into(),
+                physical_size: 0,
+                layout: crate::container::test_modern_layout(0x06),
+                entries: Vec::new(),
+                fastload_table: None,
+                indexed_section_layouts: std::sync::OnceLock::new(),
+                om_section_cache: std::sync::OnceLock::new(),
+            },
+            streams: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn source_meta_refuses_first_attribute_node_at_collection_limit() {
+        let scan = empty_source_scan();
+        let (dialects, _) = crate::dialect::classify_layers(&scan).into_report_parts();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            source_meta(&ctx, &scan, &dialects),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "nx source attributes"
+        ));
+    }
+
+    #[test]
+    fn source_meta_refuses_first_attribute_text_at_retained_limit() {
+        let scan = empty_source_scan();
+        let (dialects, _) = crate::dialect::classify_layers(&scan).into_report_parts();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            source_meta(&ctx, &scan, &dialects),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "nx source attribute text"
+        ));
+    }
+
+    #[test]
+    fn source_meta_refuses_second_map_nodes_at_collection_limit() {
+        let scan = empty_source_scan();
+        let (dialects, _) = crate::dialect::classify_layers(&scan).into_report_parts();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (service_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let expected = source_meta(&service_ctx, &scan, &dialects).unwrap();
+        assert_eq!(expected.attributes["file_size"], "0");
+        let mut limited_policy = DecodePolicy::service();
+        limited_policy.limits.max_collection_items = expected.attributes.len() as u64;
+        let (limited_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
+        assert!(matches!(
+            source_meta(&limited_ctx, &scan, &dialects),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "nx source attribute names"
+        ));
+    }
 
     #[test]
     fn unknown_stream_copy_refuses_when_retained_budget_is_exhausted() {

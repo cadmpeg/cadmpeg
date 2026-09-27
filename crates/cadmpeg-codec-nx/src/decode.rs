@@ -257,7 +257,7 @@ fn build_metadata_ir(
     unknowns
         .try_reserve_exact(unknown_count)
         .map_err(|_| ctx.refuse_codec_limit("nx metadata unknown streams", 0, 1))?;
-    let mut ir = CadIr::decoded(source_meta(scan, dialects)?);
+    let mut ir = CadIr::decoded(source_meta(ctx, scan, dialects)?);
     let mut annotations = AnnotationBuilder::new();
     let mut losses = Vec::new();
     for (si, stream) in scan.streams.iter().enumerate() {
