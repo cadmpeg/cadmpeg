@@ -223,19 +223,20 @@ class PatternFilters(unittest.TestCase):
         text = 'CodecError::Malformed(format!(\n    "bad {}", x\n))\n'
         self.assertEqual(len(policy.MALFORMED_FORMAT.findall(text)), 1)
 
-    def test_integer_clamp_reports_all_four_forms(self) -> None:
+    def test_integer_clamp_reports_every_form(self) -> None:
         source = (
             "fn production() {\n"
             "    value.unwrap_or(u8::MAX);\n"
             "    value.unwrap_or( i16::MIN );\n"
             "    value.unwrap_or_else(|_| usize::MAX);\n"
             "    value.unwrap_or_else( |_| u128::MIN );\n"
+            "    value.unwrap_or_else(|| u64::MAX);\n"
             "}\n"
         )
         findings = policy.scan_patterns(policy.ROOT / "source.rs", source)
         self.assertEqual(
             [(finding.rule, finding.line) for finding in findings],
-            [("integer_clamp", line) for line in range(2, 6)],
+            [("integer_clamp", line) for line in range(2, 7)],
         )
 
     def test_integer_clamp_ignores_tests_and_comments(self) -> None:
