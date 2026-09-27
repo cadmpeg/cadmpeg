@@ -3,7 +3,8 @@
 
 use crate::card::{CardScan, FramingDefect, FramingRecoveries, PhysicalLine, Section};
 use crate::decode_resource::{
-    copy_optional_retained, reserve_optional_vec, reserve_optional_vec_growth,
+    copy_optional_retained, insert_optional_btree_map, insert_optional_btree_set,
+    reserve_optional_vec, reserve_optional_vec_growth,
 };
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord};
 use crate::global::{GlobalTable, NumericLimits, RealPrecision, ResolvedGlobal};
@@ -3400,7 +3401,10 @@ fn declared_range(entry: &DirectoryEntry, census: &Range<u32>) -> DeclaredRange 
 }
 
 /// The contiguous head of the run of cards whose back-pointer names one entry.
-fn contiguous_run(cards: &[u32]) -> Vec<u32> {
+fn contiguous_run(
+    cards: &[u32],
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Vec<u32>, CodecError> {
     let mut run = Vec::<u32>::new();
     for sequence in cards {
         if run
@@ -3409,35 +3413,43 @@ fn contiguous_run(cards: &[u32]) -> Vec<u32> {
         {
             break;
         }
+        reserve_optional_vec_growth(ctx, &mut run, 1, "iges contiguous parameter cards")?;
         run.push(*sequence);
     }
-    run
+    Ok(run)
 }
 
 /// The Directory Entries whose declared ranges claim a card in common.
 ///
 /// A start-ordered sweep over the ranges marks every participant: an overlap
 /// marks the later range and the range holding the highest end so far.
-fn overlapping_ranges(declared: &BTreeMap<u32, Range<u32>>) -> BTreeSet<u32> {
-    let mut ordered = declared
-        .iter()
-        .map(|(sequence, range)| (range.start, range.end, *sequence))
-        .collect::<Vec<_>>();
+fn overlapping_ranges(
+    declared: &BTreeMap<u32, Range<u32>>,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<BTreeSet<u32>, CodecError> {
+    let mut ordered = reserve_optional_vec(ctx, declared.len(), "iges declared parameter ranges")?;
+    ordered.extend(
+        declared
+            .iter()
+            .map(|(sequence, range)| (range.start, range.end, *sequence)),
+    );
     ordered.sort_unstable();
     let mut overlapping = BTreeSet::new();
     let mut highest_end = 0_u32;
     let mut highest_owner = None;
     for (start, end, sequence) in ordered {
         if start < highest_end {
-            overlapping.insert(sequence);
-            overlapping.extend(highest_owner);
+            insert_optional_btree_set(ctx, &mut overlapping, sequence, "iges overlapping parameter ranges")?;
+            if let Some(owner) = highest_owner {
+                insert_optional_btree_set(ctx, &mut overlapping, owner, "iges overlapping parameter ranges")?;
+            }
         }
         if end >= highest_end {
             highest_end = end;
             highest_owner = Some(sequence);
         }
     }
-    overlapping
+    Ok(overlapping)
 }
 
 struct OwnedParameterBytes {
@@ -3568,14 +3580,15 @@ fn resolve_ownership<'a>(
     recoveries: &mut FramingRecoveries,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Vec<Ownership<'a>>, CodecError> {
-    let typed = directory
-        .iter()
-        .map(|entry| entry.sequence)
-        .collect::<BTreeSet<_>>();
-    let candidates = directory
-        .iter()
-        .filter(|entry| !(entry.entity_type == 0 && entry.parameter_line_count == 0))
-        .collect::<Vec<_>>();
+    let mut typed = BTreeSet::new();
+    let mut candidates = Vec::new();
+    for entry in directory {
+        insert_optional_btree_set(ctx, &mut typed, entry.sequence, "iges typed parameter owners")?;
+        if !(entry.entity_type == 0 && entry.parameter_line_count == 0) {
+            reserve_optional_vec_growth(ctx, &mut candidates, 1, "iges parameter owner candidates")?;
+            candidates.push(entry);
+        }
+    }
     let census = lines
         .keys()
         .next()
@@ -3585,7 +3598,19 @@ fn resolve_ownership<'a>(
     let mut named_by = BTreeMap::<u32, Vec<u32>>::new();
     for (sequence, pointer) in back_pointers {
         if let Some(owner) = pointer {
-            named_by.entry(*owner).or_default().push(*sequence);
+            if !named_by.contains_key(owner) {
+                insert_optional_btree_map(
+                    ctx,
+                    &mut named_by,
+                    *owner,
+                    Vec::new(),
+                    "iges named parameter owners",
+                )?;
+            }
+            if let Some(cards) = named_by.get_mut(owner) {
+                reserve_optional_vec_growth(ctx, cards, 1, "iges named parameter owner cards")?;
+                cards.push(*sequence);
+            }
         }
     }
     let mut declared = BTreeMap::<u32, Range<u32>>::new();
@@ -3593,26 +3618,36 @@ fn resolve_ownership<'a>(
     for entry in &candidates {
         match declared_range(entry, &census) {
             DeclaredRange::Usable(range) => {
-                declared.insert(entry.sequence, range);
+                insert_optional_btree_map(ctx, &mut declared, entry.sequence, range, "iges declared parameter owners")?;
             }
             DeclaredRange::CardMissing => {
-                card_missing.insert(entry.sequence);
+                insert_optional_btree_set(ctx, &mut card_missing, entry.sequence, "iges missing parameter cards")?;
             }
             DeclaredRange::Unusable => {}
         }
     }
-    let mut conflicted = overlapping_ranges(&declared);
-    let claimed = declared
-        .iter()
-        .filter(|(sequence, _)| !conflicted.contains(sequence))
-        .flat_map(|(sequence, range)| range.clone().map(|card| (card, *sequence)))
-        .collect::<BTreeMap<_, _>>();
+    let mut conflicted = overlapping_ranges(&declared, ctx)?;
+    let mut claimed = BTreeMap::new();
+    for (sequence, range) in &declared {
+        if conflicted.contains(sequence) {
+            continue;
+        }
+        for card in range.clone() {
+            insert_optional_btree_map(
+                ctx,
+                &mut claimed,
+                card,
+                *sequence,
+                "iges claimed parameter cards",
+            )?;
+        }
+    }
     for (card, owner) in &claimed {
         match back_pointers.get(card).copied().flatten() {
             Some(pointer) if pointer == *owner => {}
             Some(pointer) if pointer % 2 == 1 && typed.contains(&pointer) => {
-                conflicted.insert(*owner);
-                conflicted.insert(pointer);
+                insert_optional_btree_set(ctx, &mut conflicted, *owner, "iges conflicting parameter owners")?;
+                insert_optional_btree_set(ctx, &mut conflicted, pointer, "iges conflicting parameter owners")?;
             }
             _ => {}
         }
@@ -3639,27 +3674,36 @@ fn resolve_ownership<'a>(
     let mut resolved = Vec::new();
     for entry in candidates {
         let range = declared.get(&entry.sequence).cloned();
-        if let Some(range) = &range {
-            charge_owned_cards(ctx, u64::from(range.end.saturating_sub(range.start)))?;
-        }
-        let run = || contiguous_run(named_by.get(&entry.sequence).map_or(&[][..], Vec::as_slice));
+        let run = || {
+            contiguous_run(
+                named_by.get(&entry.sequence).map_or(&[][..], Vec::as_slice),
+                ctx,
+            )
+        };
         if conflicted.contains(&entry.sequence) {
+            let cards = match range {
+                Some(range) => range_to_cards(range, ctx)?,
+                None => run()?,
+            };
+            reserve_optional_vec_growth(ctx, &mut resolved, 1, "iges resolved parameter ownership")?;
             resolved.push(Ownership {
                 entry,
-                cards: range.map_or_else(run, Iterator::collect),
+                cards,
                 quarantine: Some(ParameterDefect::OwnershipConflict),
             });
             continue;
         }
         if let Some(range) = range {
+            let cards = range_to_cards(range, ctx)?;
+            reserve_optional_vec_growth(ctx, &mut resolved, 1, "iges resolved parameter ownership")?;
             resolved.push(Ownership {
                 entry,
-                cards: range.collect(),
+                cards,
                 quarantine: None,
             });
             continue;
         }
-        let run = run();
+        let run = run()?;
         if let Some(first) = run.first().copied() {
             recoveries.record(
                 Section::Parameter,
@@ -3672,6 +3716,7 @@ fn resolve_ownership<'a>(
                 ),
                 format!("the back-pointer census run of {} card(s)", run.len()),
             );
+            reserve_optional_vec_growth(ctx, &mut resolved, 1, "iges resolved parameter ownership")?;
             resolved.push(Ownership {
                 entry,
                 cards: run,
@@ -3686,6 +3731,7 @@ fn resolve_ownership<'a>(
         } else {
             ParameterDefect::NoOwnedCards
         };
+        reserve_optional_vec_growth(ctx, &mut resolved, 1, "iges resolved parameter ownership")?;
         resolved.push(Ownership {
             entry,
             cards: Vec::new(),
@@ -3695,10 +3741,13 @@ fn resolve_ownership<'a>(
     Ok(resolved)
 }
 
-fn charge_owned_cards(ctx: Option<&DecodeContext<'_>>, count: u64) -> Result<(), CodecError> {
-    ctx.map_or(Ok(()), |ctx| {
-        ctx.charge_collection_items(count, "iges_parameter_ownership")
-    })
+fn range_to_cards(
+    range: Range<u32>,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Vec<u32>, CodecError> {
+    let mut cards = reserve_optional_vec(ctx, range.len(), "iges_parameter_ownership")?;
+    cards.extend(range);
+    Ok(cards)
 }
 
 pub(crate) fn assemble_with_context(
@@ -3708,16 +3757,33 @@ pub(crate) fn assemble_with_context(
     global: &ResolvedGlobal,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<ParameterAssembly, CodecError> {
-    let lines = scan.section(Section::Parameter).collect::<BTreeMap<_, _>>();
-    let back_pointers = lines
-        .iter()
-        .map(|(sequence, line)| (*sequence, back_pointer(line)))
-        .collect::<BTreeMap<_, _>>();
-    let entries = directory
+    let mut lines = BTreeMap::new();
+    for (sequence, line) in scan.section(Section::Parameter) {
+        insert_optional_btree_map(ctx, &mut lines, sequence, line, "iges parameter lines")?;
+    }
+    let mut back_pointers = BTreeMap::new();
+    for (sequence, line) in &lines {
+        insert_optional_btree_map(
+            ctx,
+            &mut back_pointers,
+            *sequence,
+            back_pointer(line),
+            "iges parameter back pointers",
+        )?;
+    }
+    let mut entries = BTreeMap::new();
+    for entry in directory
         .iter()
         .filter(|entry| !(entry.entity_type == 0 && entry.parameter_line_count == 0))
-        .map(|entry| (entry.sequence, entry))
-        .collect::<BTreeMap<_, _>>();
+    {
+        insert_optional_btree_map(
+            ctx,
+            &mut entries,
+            entry.sequence,
+            entry,
+            "iges parameter directory entries",
+        )?;
+    }
     let mut recoveries = FramingRecoveries::default();
     let ownership = resolve_ownership(directory, &lines, &back_pointers, &mut recoveries, ctx)?;
     let mut records = Vec::new();
@@ -3726,6 +3792,7 @@ pub(crate) fn assemble_with_context(
     for owned in &ownership {
         let entry = owned.entry;
         if let Some(defect) = owned.quarantine {
+            reserve_optional_vec_growth(ctx, &mut quarantined, 1, "iges quarantined parameter records")?;
             quarantined.push(quarantine(entry, &owned.cards, &lines, defect, None, ctx)?);
             continue;
         }
@@ -3752,6 +3819,7 @@ pub(crate) fn assemble_with_context(
             Ok(value) => value,
             Err(TokenizeFailure::Refusal(error)) => return Err(error),
             Err(TokenizeFailure::Defect(defect, offset)) => {
+                reserve_optional_vec_growth(ctx, &mut quarantined, 1, "iges quarantined parameter records")?;
                 quarantined.push(quarantine(
                     entry,
                     &owned.cards,
@@ -3765,6 +3833,7 @@ pub(crate) fn assemble_with_context(
         };
         if !matches!(tokens.first().map(|token| &token.value), Some(TokenValue::Integer(value)) if *value == entry.entity_type)
         {
+            reserve_optional_vec_growth(ctx, &mut quarantined, 1, "iges quarantined parameter records")?;
             quarantined.push(quarantine(
                 entry,
                 &owned.cards,
@@ -3793,13 +3862,20 @@ pub(crate) fn assemble_with_context(
             tokens,
             parameter_end,
         };
+        reserve_optional_vec_growth(ctx, &mut records, 1, "iges parameter records")?;
         records.push(record);
     }
     {
-        let record_by_directory = records
-            .iter()
-            .map(|record| (record.directory_sequence, record))
-            .collect::<BTreeMap<_, _>>();
+        let mut record_by_directory = BTreeMap::new();
+        for record in &records {
+            insert_optional_btree_map(
+                ctx,
+                &mut record_by_directory,
+                record.directory_sequence,
+                record,
+                "iges parameter record index",
+            )?;
+        }
         for record in &records {
             let analysis = analyze_trailing_pointer_groups_with_records_for_global_table(
                 record,
@@ -3807,7 +3883,13 @@ pub(crate) fn assemble_with_context(
                 &record_by_directory,
                 global.global_table(),
             );
-            trailing_pointer_analysis.insert(record.directory_sequence, analysis);
+            insert_optional_btree_map(
+                ctx,
+                &mut trailing_pointer_analysis,
+                record.directory_sequence,
+                analysis,
+                "iges trailing parameter pointers",
+            )?;
         }
     }
     for record in &mut records {
@@ -3819,14 +3901,22 @@ pub(crate) fn assemble_with_context(
             })
             .map_or(record.tokens.len(), |groups| groups.token_start);
     }
-    let accounted = ownership
+    let mut accounted = BTreeSet::new();
+    for sequence in ownership
         .iter()
         .flat_map(|owned| owned.cards.iter().copied())
-        .collect::<BTreeSet<_>>();
-    let quarantined_sequences = quarantined_directory
-        .iter()
-        .map(|record| record.sequence)
-        .collect::<BTreeSet<_>>();
+    {
+        insert_optional_btree_set(ctx, &mut accounted, sequence, "iges accounted parameter cards")?;
+    }
+    let mut quarantined_sequences = BTreeSet::new();
+    for record in quarantined_directory {
+        insert_optional_btree_set(
+            ctx,
+            &mut quarantined_sequences,
+            record.sequence,
+            "iges quarantined directory sequences",
+        )?;
+    }
     for (sequence, line) in &lines {
         let pointer = back_pointers.get(sequence).copied().flatten();
         if accounted.contains(sequence)
