@@ -348,6 +348,34 @@ fn curve_expression_assignment_indices(
     Ok((by_name, unique))
 }
 
+fn curve_expression_emitted_ordinals(
+    ctx: &DecodeContext<'_>,
+    record: &crate::curve::CurveExpressionRecord,
+    parameter_ordinals: &[u32],
+) -> Result<BTreeMap<usize, u32>, CodecError> {
+    let count = record
+        .assignments
+        .iter()
+        .filter(|assignment| assignment.parameter_target().is_some())
+        .count();
+    let mut indices = Vec::new();
+    ctx.try_reserve_items(&mut indices, count, "creo curve-expression emitted indices")?;
+    for (index, assignment) in record.assignments.iter().enumerate() {
+        if assignment.parameter_target().is_some() {
+            indices.push(index);
+        }
+    }
+    indices.sort_by_key(|index| parameter_ordinals[*index]);
+    let mut emitted = BTreeMap::new();
+    for (ordinal, index) in indices.into_iter().enumerate() {
+        let ordinal = u32::try_from(ordinal)
+            .map_err(|_| CodecError::malformed("curve expression parameter ordinal exceeds u32"))?;
+        ctx.charge_collection_items(1, "creo curve-expression emitted ordinals")?;
+        emitted.insert(index, ordinal);
+    }
+    Ok(emitted)
+}
+
 pub(super) fn transfer_curve_expression_features(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
@@ -385,19 +413,13 @@ pub(super) fn transfer_curve_expression_features(
             continue;
         };
         let parameter_names = curve_expression_parameter_names(ctx, &record.assignments)?;
-        let mut emitted_assignment_indices = record
-            .assignments
-            .iter()
-            .enumerate()
-            .filter_map(|(index, assignment)| assignment.parameter_target().map(|_| index))
-            .collect::<Vec<_>>();
-        emitted_assignment_indices.sort_by_key(|index| parameter_ordinals[*index]);
-        let emitted_ordinals = emitted_assignment_indices
-            .into_iter()
-            .enumerate()
-            .map(|(ordinal, index)| (index, ordinal as u32))
-            .collect::<BTreeMap<_, _>>();
-        let mut source_content = Vec::with_capacity(emitted_ordinals.len());
+        let emitted_ordinals = curve_expression_emitted_ordinals(ctx, record, &parameter_ordinals)?;
+        let mut source_content = Vec::new();
+        ctx.try_reserve_items(
+            &mut source_content,
+            emitted_ordinals.len(),
+            "creo curve-expression source content",
+        )?;
         for (assignment_ordinal, assignment) in record.assignments.iter().enumerate() {
             let Some((assignment_name, declared_unit)) = assignment.parameter_target() else {
                 continue;
