@@ -212,3 +212,24 @@ fn depdb_segment_distinct_prefixes_remain_ambiguous() {
     .expect("ambiguous segment is parsed")
     .is_none());
 }
+
+#[test]
+fn curve_prototype_vec_refuses_before_growth() {
+    let payload = b"crv_array\0crv_id\0\x07type\0\x08feat_id\0\x04";
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+            .expect("root input is admitted");
+        super::super::prototypes(&ctx, payload)
+    };
+    assert_eq!(run(1).expect("service admits one prototype").len(), 1);
+    let error = run(0).expect_err("one prototype requires a vector item");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo curve prototypes"
+    ));
+}

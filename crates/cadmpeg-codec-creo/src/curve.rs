@@ -760,7 +760,10 @@ impl BoundPrototypePcurve {
 /// Discover every labeled `crv_array` prototype. A label range ends at the
 /// following `crv_array` label, so DEPDB-concatenated namespaces remain
 /// independent.
-pub(crate) fn prototypes(payload: &[u8]) -> Vec<CurvePrototype> {
+pub(crate) fn prototypes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<CurvePrototype>, cadmpeg_core::CodecError> {
     let mut result = Vec::new();
     let mut start = 0;
     while let Some(relative) = find(payload, b"crv_array\0", start) {
@@ -798,6 +801,7 @@ pub(crate) fn prototypes(payload: &[u8]) -> Vec<CurvePrototype> {
                     .all(|direction| matches!(direction, 0x01 | 0xf6))
                     .then_some(directions)
             });
+        ctx.try_reserve_items(&mut result, 1, "creo curve prototypes")?;
         result.push(CurvePrototype {
             id,
             type_byte,
@@ -806,7 +810,7 @@ pub(crate) fn prototypes(payload: &[u8]) -> Vec<CurvePrototype> {
             offset: section_start,
         });
     }
-    result
+    Ok(result)
 }
 
 /// Promote a uniquely referenced named-prototype topology record to a native
@@ -5762,7 +5766,7 @@ pub(crate) fn depdb_cross_section_rows(
     let Ok(count) = usize::try_from(count) else {
         return Ok(Vec::new());
     };
-    if count == 0 || prototypes(payload).len() != 1 {
+    if count == 0 || prototypes(ctx, payload)?.len() != 1 {
         return Ok(Vec::new());
     }
     let Some(topology) = find(payload, b"topol_ref_data\0", after_count) else {
