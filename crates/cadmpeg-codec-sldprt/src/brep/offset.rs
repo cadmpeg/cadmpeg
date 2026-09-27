@@ -84,19 +84,38 @@ fn parse_at(body: &[u8], offset: usize) -> Option<(u16, OffsetCarrier)> {
 }
 
 /// Scan all structurally valid type-60 offset-surface records.
-pub(super) fn scan(body: &[u8]) -> HashMap<u16, OffsetCarrier> {
+pub(super) fn scan(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    body: &[u8],
+) -> Result<HashMap<u16, OffsetCarrier>, cadmpeg_core::CodecError> {
+    ctx.charge_work(body.len() as u64, "scan SLDPRT offset carriers")?;
     let mut out = HashMap::new();
     for offset in 0..body.len().saturating_sub(1) {
         if let Some((attr, carrier)) = parse_at(body, offset) {
+            if !out.contains_key(&attr) {
+                ctx.charge_collection_items(1, "index SLDPRT offset carriers")?;
+                out.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT offset carriers", u64::MAX - 1, u64::MAX))?;
+            }
             out.insert(attr, carrier);
         }
     }
-    out
+    Ok(out)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{scan, TAG};
+    use super::{OffsetCarrier, TAG};
+    use std::collections::HashMap;
+
+    fn scan_with_service_context(bytes: &[u8]) -> HashMap<u16, OffsetCarrier> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            bytes,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        ).expect("test carrier bytes fit service policy");
+        super::scan(&ctx, bytes).expect("test carriers fit service policy")
+    }
 
     fn partition(discriminator: u8, flag: u8, support: u16, distance: f64) -> Vec<u8> {
         let mut bytes = TAG.to_vec();
@@ -131,12 +150,12 @@ mod tests {
 
     #[test]
     fn parses_partition_and_deltas_framing() {
-        let partition = scan(&partition(b'V', 1, 6, -0.0025));
+        let partition = scan_with_service_context(&partition(b'V', 1, 6, -0.0025));
         let carrier = partition.get(&12).expect("partition offset surface");
         assert_eq!(carrier.support, 6);
         assert!((carrier.distance.get() + 2.5).abs() < 1.0e-12);
 
-        let deltas = scan(&deltas(0.0045));
+        let deltas = scan_with_service_context(&deltas(0.0045));
         let carrier = deltas.get(&12).expect("deltas offset surface");
         assert_eq!(carrier.support, 6);
         assert!((carrier.distance.get() - 4.5).abs() < 1.0e-12);
@@ -144,15 +163,15 @@ mod tests {
 
     #[test]
     fn rejects_invalid_fields_and_nonfinite_converted_distance() {
-        assert!(scan(&partition(b'X', 1, 6, 1.0)).is_empty());
-        assert!(scan(&partition(b'V', 2, 6, 1.0)).is_empty());
-        assert!(scan(&partition(b'V', 1, 1, 1.0)).is_empty());
-        assert!(scan(&partition(b'V', 1, 6, f64::INFINITY)).is_empty());
-        assert!(scan(&partition(b'V', 1, 6, f64::MAX)).is_empty());
+        assert!(scan_with_service_context(&partition(b'X', 1, 6, 1.0)).is_empty());
+        assert!(scan_with_service_context(&partition(b'V', 2, 6, 1.0)).is_empty());
+        assert!(scan_with_service_context(&partition(b'V', 1, 1, 1.0)).is_empty());
+        assert!(scan_with_service_context(&partition(b'V', 1, 6, f64::INFINITY)).is_empty());
+        assert!(scan_with_service_context(&partition(b'V', 1, 6, f64::MAX)).is_empty());
 
         let mut malformed_deltas = deltas(1.0);
         let support_terminator = malformed_deltas.len() - 9;
         malformed_deltas[support_terminator] = 0;
-        assert!(scan(&malformed_deltas).is_empty());
+        assert!(scan_with_service_context(&malformed_deltas).is_empty());
     }
 }

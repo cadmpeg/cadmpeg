@@ -149,8 +149,8 @@ pub(super) fn scan_carriers(
         out.insert(Carrier::Curve(carrier));
     }
     out.sweeps = sweep::scan_sweep_carriers(body);
-    (out.blends, out.blend_support_pairs) = blend::scan(body);
-    out.offsets = offset::scan(body);
+    (out.blends, out.blend_support_pairs) = blend::scan(ctx, body)?;
+    out.offsets = offset::scan(ctx, body)?;
     for intersection in
         intersection::scan_intersection_carriers(ctx, body, &mut lane_refusals)?.into_values()
     {
@@ -163,6 +163,110 @@ pub(super) fn scan_carriers(
 #[cfg(test)]
 mod tests {
     use super::{blend, CarrierIndex};
+
+    fn blend_body() -> Vec<u8> {
+        let mut bytes = vec![0x00, 0x38, 0xff];
+        bytes.extend_from_slice(&9u16.to_be_bytes());
+        bytes.extend_from_slice(&17u32.to_be_bytes());
+        for reference in [1u16, 2, 3, 4, 1] {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+        }
+        bytes.push(0x2b);
+        bytes.push(0x45);
+        for reference in [11u16, 12, 13] {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+        }
+        for value in [-0.0005f64, -0.0005, 1.0, -1.0] {
+            bytes.extend_from_slice(&value.to_be_bytes());
+        }
+        bytes
+    }
+
+    fn carrier_refusal(
+        dimension: cadmpeg_core::decode::ResourceDimension,
+        operation: &str,
+    ) -> cadmpeg_core::decode::ResourceLimit {
+        let bytes = blend_body();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        match dimension {
+            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                policy.limits.max_collection_items = 0;
+            }
+            cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                policy.limits.max_work_units = 0;
+            }
+            _ => panic!("carrier test selects a collection or work limit"),
+        }
+        for _ in 0..1024 {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &bytes,
+                &arena,
+                &policy,
+            ).expect("test carrier bytes fit the root limit");
+            let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+                super::scan_carriers(&ctx, &bytes)
+            else {
+                panic!("expected a carrier resource refusal");
+            };
+            assert_eq!(limit.dimension, dimension);
+            if limit.operation == operation {
+                let just_below = limit.used + limit.additional - 1;
+                match dimension {
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                        policy.limits.max_collection_items = just_below;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                        policy.limits.max_work_units = just_below;
+                    }
+                    _ => panic!("carrier test selects a collection or work limit"),
+                }
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &bytes,
+                    &arena,
+                    &policy,
+                ).expect("test carrier bytes fit the root limit");
+                let Err(cadmpeg_core::CodecError::ResourceLimit(repeated)) =
+                    super::scan_carriers(&ctx, &bytes)
+                else {
+                    panic!("one unit below the carrier request must refuse");
+                };
+                assert_eq!(repeated.dimension, dimension);
+                assert_eq!(repeated.operation, operation);
+                return limit;
+            }
+            let next = limit.used + limit.additional;
+            match dimension {
+                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                    policy.limits.max_collection_items = next;
+                }
+                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                    policy.limits.max_work_units = next;
+                }
+                _ => panic!("carrier test selects a collection or work limit"),
+            }
+        }
+        panic!("carrier charge was not reached");
+    }
+
+    #[test]
+    fn carrier_scan_refuses_collection_limit() {
+        let limit = carrier_refusal(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "index SLDPRT blend carriers",
+        );
+        assert_eq!(limit.additional, 1);
+    }
+
+    #[test]
+    fn carrier_scan_refuses_work_limit() {
+        let limit = carrier_refusal(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "scan SLDPRT blend carriers",
+        );
+        assert!(limit.additional > 0);
+    }
 
     #[test]
     fn merge_retains_zero_offset_blend_support_pairs() {
