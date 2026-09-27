@@ -1785,6 +1785,7 @@ fn rdk_material_userdata_requires_opaque(data: &[u8], userdata: &[UserdataDescri
 }
 
 fn wide_string(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -1800,9 +1801,13 @@ fn wide_string(
     let format = value.u8()?;
     let result = match format {
         0 if value.remaining() == 0 => String::new(),
-        1 => std::str::from_utf8(value.take(value.remaining())?)
-            .map(str::to_owned)
-            .map_err(|_| FramingError::structural(value.position(), "wide string is not UTF-8"))?,
+        1 => {
+            let bytes = value.take(value.remaining())?;
+            let text = std::str::from_utf8(bytes).map_err(|_| {
+                FramingError::structural(value.position(), "wide string is not UTF-8")
+            })?;
+            crate::wire::copy_retained_string(ctx, text, "Rhino wide string")?
+        }
         _ => {
             return Err(FramingError::structural(
                 value.position() - 1,
@@ -4313,6 +4318,7 @@ fn rendering_attributes(
 }
 
 fn parse_font(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -4335,12 +4341,17 @@ fn parse_font(
     }
     let mut font = FontRecord {
         characteristics: value.u32()?,
-        windows_logfont_name: wide_string(data, &mut value, archive)?,
-        postscript_name: utf16(&mut value)?,
+        windows_logfont_name: wide_string(ctx, data, &mut value, archive)?,
+        postscript_name: crate::settings::utf16_retained(
+            ctx,
+            &mut value,
+            "Rhino font PostScript name",
+        )?,
         ..FontRecord::default()
     };
     if minor >= 1 {
-        font.obsolete_description = utf16(&mut value)?;
+        font.obsolete_description =
+            crate::settings::utf16_retained(ctx, &mut value, "Rhino font obsolete description")?;
     }
     if minor >= 2 {
         font.weight = FontWeight::Modern {
@@ -4355,18 +4366,31 @@ fn parse_font(
         }
     }
     if minor >= 4 {
-        font.family_name = utf16(&mut value)?;
+        font.family_name =
+            crate::settings::utf16_retained(ctx, &mut value, "Rhino font family name")?;
     }
     if minor >= 5 {
-        font.locale_name = utf16(&mut value)?;
-        font.localized_postscript_name = utf16(&mut value)?;
-        font.english_postscript_name = utf16(&mut value)?;
-        font.localized_logfont_name = utf16(&mut value)?;
-        font.english_logfont_name = utf16(&mut value)?;
-        font.localized_family_name = utf16(&mut value)?;
-        font.english_family_name = utf16(&mut value)?;
-        font.localized_face_name = utf16(&mut value)?;
-        font.english_face_name = utf16(&mut value)?;
+        font.locale_name =
+            crate::settings::utf16_retained(ctx, &mut value, "Rhino font locale name")?;
+        font.localized_postscript_name = crate::settings::utf16_retained(
+            ctx,
+            &mut value,
+            "Rhino font localized PostScript name",
+        )?;
+        font.english_postscript_name =
+            crate::settings::utf16_retained(ctx, &mut value, "Rhino font English PostScript name")?;
+        font.localized_logfont_name =
+            crate::settings::utf16_retained(ctx, &mut value, "Rhino font localized LOGFONT name")?;
+        font.english_logfont_name =
+            crate::settings::utf16_retained(ctx, &mut value, "Rhino font English LOGFONT name")?;
+        font.localized_family_name =
+            crate::settings::utf16_retained(ctx, &mut value, "Rhino font localized family name")?;
+        font.english_family_name =
+            crate::settings::utf16_retained(ctx, &mut value, "Rhino font English family name")?;
+        font.localized_face_name =
+            crate::settings::utf16_retained(ctx, &mut value, "Rhino font localized face name")?;
+        font.english_face_name =
+            crate::settings::utf16_retained(ctx, &mut value, "Rhino font English face name")?;
         let panose = chunk_at(data, value.position(), value.end(), archive, false)?;
         if panose.typecode != ANONYMOUS || panose.short() {
             return Err(FramingError::structural(
@@ -4392,15 +4416,27 @@ fn parse_font(
     Ok(font)
 }
 
-fn parse_text_style(
-    data: &[u8],
+struct TextStyleParseInput {
     range: Range<usize>,
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     apple_runtime: bool,
     source_offset: usize,
+}
+
+fn parse_text_style(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+    input: TextStyleParseInput,
     losses: &mut Vec<LossNote>,
 ) -> Result<TextStyleRecord, FramingError> {
+    let TextStyleParseInput {
+        range,
+        archive,
+        writer_version,
+        apple_runtime,
+        source_offset,
+    } = input;
     if data.get(range.start).copied() != Some(0) {
         let mut reader = BoundedReader::new(data, range.start, range.end)?;
         let packed = reader.u8()?;
@@ -4411,31 +4447,62 @@ fn parse_text_style(
             ));
         }
         let index = reader.i32()?;
-        let description = utf16(&mut reader)?;
+        let description = crate::settings::utf16_retained(
+            ctx,
+            &mut reader,
+            "Rhino legacy text style description",
+        )?;
         let mut face_units = [0_u16; 64];
         for unit in &mut face_units {
             *unit = reader.u16()?;
         }
         let face_end = face_units.iter().position(|unit| *unit == 0).unwrap_or(64);
-        let windows_logfont_name = String::from_utf16_lossy(&face_units[..face_end]);
+        let face_units = &face_units[..face_end];
+        let mut face_len = 0_usize;
+        for character in std::char::decode_utf16(face_units.iter().copied()) {
+            face_len = face_len
+                .checked_add(character.unwrap_or(char::REPLACEMENT_CHARACTER).len_utf8())
+                .ok_or_else(|| {
+                    FramingError::structural(reader.position(), "legacy font face length overflow")
+                })?;
+        }
+        let mut windows_logfont_name =
+            crate::wire::admitted_retained_string(ctx, face_len, "Rhino legacy font face")?;
+        for character in std::char::decode_utf16(face_units.iter().copied()) {
+            windows_logfont_name.push(character.unwrap_or(char::REPLACEMENT_CHARACTER));
+        }
         let named_description =
             !description.is_empty() && !description.eq_ignore_ascii_case("Default");
         let postscript_name = if named_description
             && (apple_runtime || writer_version.is_some_and(|version| version > 201_802_230))
         {
-            description.clone()
+            crate::wire::copy_retained_string(ctx, &description, "Rhino legacy PostScript name")?
         } else {
             if named_description && !apple_runtime && writer_version.is_none() {
-                losses.push(crate::loss::writer_stamp_unverified(format!(
-                    "legacy text style at offset {source_offset} dropped the PostScript font name \"{description}\" because the archive has no writer-version stamp"
-                )));
+                crate::chunks::reserve_admitted_vec(
+                    ctx,
+                    losses,
+                    1,
+                    "Rhino text style writer-stamp losses",
+                )?;
+                losses.push(crate::loss::writer_stamp_unverified(
+                    crate::wire::admitted_format(
+                        ctx,
+                        format_args!("legacy text style at offset {source_offset} dropped the PostScript font name \"{description}\" because the archive has no writer-version stamp"),
+                        "Rhino text style writer-stamp loss text",
+                    )?,
+                ));
             }
             String::new()
         };
         let mut font = FontRecord {
             windows_logfont_name,
             postscript_name,
-            obsolete_description: description.clone(),
+            obsolete_description: crate::wire::copy_retained_string(
+                ctx,
+                &description,
+                "Rhino legacy font description",
+            )?,
             ..FontRecord::default()
         };
         if packed & 0x0f >= 1 {
@@ -4460,11 +4527,23 @@ fn parse_text_style(
         };
         reader.skip_remaining()?;
         return Ok(TextStyleRecord {
-            id: format!("rhino:presentation:text_style#index-{index}-offset-{source_offset}"),
+            id: crate::wire::admitted_format(
+                ctx,
+                format_args!("rhino:presentation:text_style#index-{index}-offset-{source_offset}"),
+                "Rhino text style ID",
+            )?,
             source_offset: source_offset as u64,
             archive_index: Some(index),
-            source_uuid: (!id.is_nil()).then(|| id.to_string()),
-            name: description.clone(),
+            source_uuid: (!id.is_nil())
+                .then(|| {
+                    crate::wire::admitted_format(
+                        ctx,
+                        format_args!("{id}"),
+                        "Rhino text style source UUID",
+                    )
+                })
+                .transpose()?,
+            name: crate::wire::copy_retained_string(ctx, &description, "Rhino text style name")?,
             font_description: description,
             font,
         });
@@ -4479,17 +4558,20 @@ fn parse_text_style(
     }
     let component = component(data, &mut reader, archive)?;
     let font_description = if reader.bool_with_writer_version(writer_version)? {
-        utf16(&mut reader)?
+        crate::settings::utf16_retained(ctx, &mut reader, "Rhino text style font description")?
     } else {
         String::new()
     };
     let font = if reader.bool_with_writer_version(writer_version)? {
-        parse_font(data, &mut reader, archive, writer_version)?
+        parse_font(ctx, data, &mut reader, archive, writer_version)?
     } else {
         FontRecord::default()
     };
     let (id, name) = if version.1 >= 1 {
-        (uuid(&mut reader)?, utf16(&mut reader)?)
+        (
+            uuid(&mut reader)?,
+            crate::settings::utf16_retained(ctx, &mut reader, "Rhino text style name")?,
+        )
     } else {
         (component.id, component.name)
     };
@@ -4498,17 +4580,41 @@ fn parse_text_style(
     Ok(TextStyleRecord {
         id: if id.is_nil() {
             index.map_or_else(
-                || format!("rhino:presentation:text_style#offset-{source_offset}"),
+                || {
+                    crate::wire::admitted_format(
+                        ctx,
+                        format_args!("rhino:presentation:text_style#offset-{source_offset}"),
+                        "Rhino text style ID",
+                    )
+                },
                 |index| {
-                    format!("rhino:presentation:text_style#index-{index}-offset-{source_offset}")
+                    crate::wire::admitted_format(
+                        ctx,
+                        format_args!(
+                            "rhino:presentation:text_style#index-{index}-offset-{source_offset}"
+                        ),
+                        "Rhino text style ID",
+                    )
                 },
             )
         } else {
-            format!("rhino:presentation:text_style#{id}")
-        },
+            crate::wire::admitted_format(
+                ctx,
+                format_args!("rhino:presentation:text_style#{id}"),
+                "Rhino text style ID",
+            )
+        }?,
         source_offset: source_offset as u64,
         archive_index: index,
-        source_uuid: (!id.is_nil()).then(|| id.to_string()),
+        source_uuid: (!id.is_nil())
+            .then(|| {
+                crate::wire::admitted_format(
+                    ctx,
+                    format_args!("{id}"),
+                    "Rhino text style source UUID",
+                )
+            })
+            .transpose()?,
         name,
         font_description,
         font,
@@ -4903,21 +5009,43 @@ pub(crate) fn install(
                 }
             } else if table_type == FONT_TABLE {
                 if let Ok(range) = class_data(scan.data, record, scan.archive, TEXT_STYLE) {
-                    if let Ok(value) =
-                        parse_text_style(
-                            scan.data,
+                    match parse_text_style(
+                        ctx,
+                        scan.data,
+                        TextStyleParseInput {
                             range,
-                            scan.archive,
-                            scan.metadata.properties.writer_version,
-                            scan.metadata.properties.application.as_ref().is_some_and(
-                                |application| application.name.to_ascii_lowercase().contains("mac"),
-                            ),
-                            record.range.start,
-                            &mut losses,
-                        )
-                    {
-                        text_styles.push(value);
-                        parsed = true;
+                            archive: scan.archive,
+                            writer_version: scan.metadata.properties.writer_version,
+                            apple_runtime: scan
+                                .metadata
+                                .properties
+                                .application
+                                .as_ref()
+                                .is_some_and(|application| {
+                                    application
+                                        .name
+                                        .as_bytes()
+                                        .windows(3)
+                                        .any(|part| part.eq_ignore_ascii_case(b"mac"))
+                                }),
+                            source_offset: record.range.start,
+                        },
+                        &mut losses,
+                    ) {
+                        Ok(value) => {
+                            crate::wire::reserve_collection(
+                                ctx,
+                                &mut text_styles,
+                                1,
+                                "Rhino text styles",
+                            )?;
+                            text_styles.push(value);
+                            parsed = true;
+                        }
+                        Err(FramingError::Resource(limit)) => {
+                            return Err(CodecError::ResourceLimit(limit))
+                        }
+                        Err(_) => {}
                     }
                 }
             }
