@@ -107,6 +107,7 @@ impl<R> StateGroupMembers<R> {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn into_rows(self) -> Vec<R> {
         match self.0 {
             GroupBody::Empty | GroupBody::CountedZero => Vec::new(),
@@ -130,6 +131,7 @@ impl<R> StateGroupMembers<R> {
         }))
     }
 
+    #[cfg(test)]
     pub(super) fn map_rows<U>(self, mut map: impl FnMut(u8, R) -> U) -> StateGroupMembers<U> {
         StateGroupMembers(match self.0 {
             GroupBody::Empty => GroupBody::Empty,
