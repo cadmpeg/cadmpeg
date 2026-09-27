@@ -1287,7 +1287,7 @@ where
         |record| record.node.record_index(),
         "mesh-scene-node",
     )?;
-    let scene_auxiliary_frames = typed_frame_map(
+    let mut scene_auxiliary_frames = typed_frame_map(
         ctx,
         typed_primary_frames(
             bytes,
@@ -1307,7 +1307,7 @@ where
         )?,
         "mesh-texture-filename",
     )?;
-    let collection_owners = unique_record_map(
+    let mut collection_owners = unique_record_map(
         ctx,
         typed_primary_frames(
             bytes,
@@ -1332,8 +1332,6 @@ where
     )?;
 
     let mut features = Vec::with_capacity(collections.len());
-    let mut used_collection_owners = HashSet::new();
-    let mut used_scene_auxiliaries = HashSet::new();
     for collection in collections {
         let stream_error = |invariant| malformed_mesh_graph(&stream, invariant);
         let candidate_scopes = scopes
@@ -1385,10 +1383,9 @@ where
                 stream_error("a mesh texture table belongs to exactly one mesh collection")
             })?;
         let collection_owner = collection_owners
-            .get(&collection.owner_record_index)
+            .remove(&collection.owner_record_index)
             .filter(|owner| {
                 owner.collection_record_index == collection.collection.record().record_index()
-                    && used_collection_owners.insert(owner.owner.record().record_index())
             })
             .ok_or_else(|| {
                 stream_error("each mesh collection has one unused owner with a reciprocal backlink")
@@ -1462,9 +1459,7 @@ where
                 .remove(&scene_node.state_record_index)
                 .ok_or_else(|| stream_error("each Scene node has one unused Scene state"))?;
             let scene_auxiliary_frame = scene_auxiliary_frames
-                .get(&scene_node.auxiliary_record_index)
-                .copied()
-                .filter(|_| used_scene_auxiliaries.insert(scene_node.auxiliary_record_index))
+                .remove(&scene_node.auxiliary_record_index)
                 .ok_or_else(|| {
                     stream_error("each Scene node has one unused Scene auxiliary record")
                 })?;
@@ -1511,7 +1506,7 @@ where
                 collection.collection,
                 DesignMeshTextureTable::new(texture_table.identity, textures)
                     .map_err(|message| malformed_mesh_graph(&stream, &message))?,
-                collection_owner.owner.clone(),
+                collection_owner.owner,
                 feature_bodies,
             )
             .map_err(|message| malformed_mesh_graph(&stream, &message))?,
@@ -2984,6 +2979,34 @@ mod tests {
         );
         let mut no_asset = no_texture_asset;
 
+        assert!(matches!(
+            parse_mesh_design_records(
+                &graph.bytes,
+                &graph.meta,
+                "Synthetic/BulkStream.dat",
+                &mut no_asset,
+            ),
+            Err(CodecError::Malformed(_))
+        ));
+    }
+
+    #[test]
+    fn mesh_graph_rejects_reused_scene_auxiliary() {
+        let mut graph = synthetic_mesh_graph_with_body_count(false, 2);
+        let frames = typed_primary_frames(
+            &graph.bytes,
+            &graph.meta,
+            SCENE_NODE_TYPE_GUID,
+            "mesh-scene-node",
+        )
+        .unwrap();
+        let second = frames.iter().find(|frame| frame.entity_id == 120).unwrap();
+        put_reference(
+            &mut graph.bytes,
+            second.start + scene_node::AUXILIARY_RECORD_REFERENCE,
+            106,
+        );
+        let mut no_asset = no_texture_asset;
         assert!(matches!(
             parse_mesh_design_records(
                 &graph.bytes,
