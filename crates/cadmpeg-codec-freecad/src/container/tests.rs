@@ -12,6 +12,59 @@ use cadmpeg_ir::{Codec, Confidence, DecodeOptions};
 use std::io::Cursor;
 use zip::write::SimpleFileOptions;
 
+#[test]
+fn document_root_error_refuses_at_retained_limit() {
+    let bytes = b"<UnexpectedRoot SchemaVersion=\"4\"/>";
+    crate::test_support::assert_retained_refusal_at(&[], "FCStd document root error", |ctx| {
+        super::parse_document(ctx, bytes)
+    });
+}
+
+#[test]
+fn document_parse_error_refuses_at_retained_limit() {
+    let bytes = b"<Document>";
+    crate::test_support::assert_retained_refusal_at(&[], "FCStd document parse error", |ctx| {
+        super::parse_document(ctx, bytes)
+    });
+}
+
+#[test]
+fn missing_entry_error_refuses_at_retained_limit() {
+    with_scanned_document(|scan| {
+        scan.data.clear();
+        crate::test_support::assert_retained_refusal_at(&[], "FCStd missing entry error", |ctx| {
+            super::entry_records(ctx, scan, &[])
+        });
+    });
+}
+
+#[test]
+fn overlapping_logical_span_error_refuses_at_retained_limit() {
+    let entry = crate::native::EntryRecord {
+        id: "fcstd:native:entry#Document.xml".into(),
+        name: "Document.xml".into(),
+        role: cadmpeg_core::container::ContainerRole::Auxiliary,
+        referenced_by: Vec::new(),
+        data: vec![0; 11],
+    };
+    let property = crate::native::PropertyRecord {
+        id: "fcstd:native:property#One".into(),
+        owner: "fcstd:native:object#Owner".into(),
+        name: "One".into(),
+        type_name: "App::PropertyString".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Transient,
+        order: 0,
+        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
+            .expect("valid XML span"),
+    };
+    let properties = [property.clone(), property];
+    crate::test_support::assert_retained_refusal_at(&[], "FCStd logical span error", |ctx| {
+        super::logical_ledger(ctx, &[entry.clone()], &properties, &crate::gui::Graph::default(), &[], &[], &[])
+    });
+}
+
 fn collection_context<T>(limit: u64, f: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();

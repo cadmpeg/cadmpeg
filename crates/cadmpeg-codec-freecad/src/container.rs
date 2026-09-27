@@ -20,7 +20,7 @@ use crate::native::{
     ArchiveSpan, ByteCoverageRecord, DocumentFacts, EntryRecord, LogicalClassification,
     LogicalSpan, PropertyFamily, PropertyRecord, StringTableRecord,
 };
-use crate::resource::{collection_vec, insert_hash_set, reserve_vec_items, retained_string, retained_suffix};
+use crate::resource::{collection_vec, insert_hash_set, reserve_vec_items, retained_format, retained_string, retained_suffix};
 
 const DETECTION_XML_BYTES: usize = 8 * 1024;
 
@@ -135,9 +135,11 @@ pub(crate) fn entry_records(
 ) -> Result<Vec<EntryRecord>, CodecError> {
     let mut records = collection_vec(ctx, scan.entries.len(), "FCStd entry records")?;
     for entry in &scan.entries {
-        let bytes = scan.data.get(&entry.name).map(|view| view.window()).ok_or_else(|| {
-            CodecError::malformed(format_args!("entry {} disappeared after scan", entry.name))
-        })?;
+        let Some(bytes) = scan.data.get(&entry.name).map(|view| view.window()) else {
+            return Err(CodecError::Malformed(retained_format(ctx,
+                format_args!("entry {} disappeared after scan", entry.name),
+                "FCStd missing entry error")?));
+        };
         let mut referenced_by = Vec::new();
         for property in properties.iter().filter(|property| property.side_entries().contains(&entry.name)) {
             reserve_vec_items(ctx, &mut referenced_by, 1, "FCStd entry referencing properties")?;
@@ -400,14 +402,16 @@ fn scan_tag_end(bytes: &[u8], start: usize) -> Option<usize> {
 pub(crate) fn parse_document(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<(DocumentFacts, String), CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
-    let xml = roxmltree::Document::parse(text)
-        .map_err(|error| CodecError::malformed(format_args!("invalid Document.xml: {error}")))?;
+    let xml = match roxmltree::Document::parse(text) {
+        Ok(xml) => xml,
+        Err(error) => return Err(CodecError::Malformed(retained_format(ctx,
+            format_args!("invalid Document.xml: {error}"), "FCStd document parse error")?)),
+    };
     let root = xml.root_element();
     if root.tag_name().name() != "Document" {
-        return Err(CodecError::WrongFormat(format!(
-            "Document.xml root is {}, expected Document",
-            root.tag_name().name()
-        )));
+        return Err(CodecError::WrongFormat(retained_format(ctx,
+            format_args!("Document.xml root is {}, expected Document", root.tag_name().name()),
+            "FCStd document root error")?));
     }
     let schema_version = canonical_attribute(ctx, root, "SchemaVersion", "schemaVersion")?
         .ok_or_else(|| CodecError::WrongFormat("Document.xml has no SchemaVersion".into()))?;
@@ -520,10 +524,9 @@ pub(crate) fn logical_ledger(
             let mut cursor = 0_u64;
             for (start, end, classification, owner) in ranges {
                 if start < cursor || end < start || end > entry.byte_len() {
-                    return Err(CodecError::malformed(format_args!(
-                        "overlapping or invalid {} record spans",
-                        entry.name
-                    )));
+                    return Err(CodecError::Malformed(retained_format(ctx,
+                        format_args!("overlapping or invalid {} record spans", entry.name),
+                        "FCStd logical span error")?));
                 }
                 push_logical_span(
                     ctx,
