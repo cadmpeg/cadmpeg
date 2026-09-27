@@ -197,6 +197,70 @@ fn feature_timeline_item_limit_refuses_before_counted_vector_allocation() {
 }
 
 #[test]
+fn timeline_collection_growth_refuses_at_map_child_and_output() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut bulk = Vec::new();
+    lp_ascii(&mut bulk, "256");
+    bulk.extend_from_slice(&35_u64.to_le_bytes());
+    lp_ascii(&mut bulk, "Timeline");
+    bulk.extend_from_slice(&[0, 0, 1]);
+    bulk.extend_from_slice(&17_u64.to_le_bytes());
+    bulk.extend_from_slice(&[0, 0]);
+    bulk.extend_from_slice(&0_u32.to_le_bytes());
+    let meta = design_metastream_with_records(
+        &[
+            (
+                super::FEATURE_TIMELINE_TYPE_GUID,
+                super::FEATURE_TIMELINE_BASE_TYPE_GUID,
+                super::FEATURE_TIMELINE_TYPE_VERSIONS[0],
+                "Fusion",
+                &[35],
+            ),
+            (
+                "11111111-2222-3333-4444-555555555555",
+                "",
+                0,
+                "Fusion",
+                &[17],
+            ),
+        ],
+        &[(35, 0)],
+    );
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+        .unwrap();
+    zip.write_all(&bulk).unwrap();
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&meta).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    let arena = DecodeArena::new();
+    for (allowance, operation) in [
+        (0, "index F3D timeline entity"),
+        (1, "index F3D timeline type GUID"),
+        (4, "retain F3D feature timeline"),
+    ] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = allowance;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = with_scan(&archive, |scan| super::decode_feature_timelines(&ctx, scan))
+            .err().unwrap();
+        assert!(matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == operation
+        ));
+    }
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let admitted = with_scan(&archive, |scan| super::decode_feature_timelines(&ctx, scan)).unwrap();
+    assert_eq!(admitted.len(), 1);
+    assert_eq!(admitted[0].record_index.get(), 35);
+}
+
+#[test]
 fn component_naming_space_binds_component_entity_to_context_uuid() {
     const COMPONENT_TYPE_GUID: &str = "11111111-2222-3333-4444-555555555555";
     const CONTEXT_UUID: &str = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";

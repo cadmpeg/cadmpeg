@@ -566,7 +566,10 @@ fn parse_feature_timeline_record(
         .and_then(|units| u64::try_from(units).ok())
         .ok_or_else(|| ctx.refuse_codec_limit("F3D timeline sort work", u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(work, "validate F3D timeline item uniqueness")?;
-    let mut items = Vec::with_capacity(count);
+    let mut items = Vec::new();
+    items.try_reserve(count).map_err(|_| {
+        ctx.refuse_codec_limit("F3D timeline item slots allocation", 0, 1)
+    })?;
     for _ in 0..count {
         let Some(target_offset) = at.checked_add(1) else {
             return Ok(None);
@@ -742,12 +745,16 @@ pub(crate) fn decode_feature_timelines(
             for entity_id in design_type.entities.values() {
                 if !type_guids_by_entity.contains_key(entity_id) {
                     ctx.charge_collection_items(1, "index F3D timeline entity")?;
+                    type_guids_by_entity.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit("F3D timeline entity index allocation", 0, 1)
+                    })?;
                 }
                 ctx.charge_collection_items(1, "index F3D timeline type GUID")?;
-                type_guids_by_entity
-                    .entry(*entity_id)
-                    .or_default()
-                    .push(design_type.type_guid.as_str());
+                let type_guids = type_guids_by_entity.entry(*entity_id).or_default();
+                type_guids.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("F3D timeline type GUID index allocation", 0, 1)
+                })?;
+                type_guids.push(design_type.type_guid.as_str());
             }
         }
         let mut source_ordinal = 0_u32;
@@ -827,6 +834,9 @@ pub(crate) fn decode_feature_timelines(
                     )
                 })?;
                 ctx.charge_collection_items(1, "retain F3D feature timeline")?;
+                out.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("F3D feature timelines allocation", 0, 1)
+                })?;
                 out.push(timeline);
             }
         }
