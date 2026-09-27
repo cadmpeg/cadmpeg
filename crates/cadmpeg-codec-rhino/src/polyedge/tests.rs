@@ -13,6 +13,39 @@ use crate::wire::Uuid;
 
 const OPENNURBS_UNSET_VALUE: f64 = -1.234_321_012_343_21e308;
 
+#[test]
+fn semantic_json_preserves_bytes_and_refuses_retained_limit() {
+    let payload = polyedge_payload();
+    let semantic = crate::decode::with_expand_bytes(&payload, |expand| {
+        let decoded =
+            decode(expand, 0..payload.len(), ArchiveVersion::V8).expect("valid polyedge fixture");
+        super::semantic_json(expand.ctx(), &decoded)
+            .expect("semantic JSON admitted")
+            .expect("semantic JSON serialized")
+    });
+    assert_eq!(
+        semantic,
+        r#"{"kind":"polyedge_reference","parameters":[0.0,10.0],"segments":[{"component":[2,17],"domain":[10.0,20.0],"edge_domain":[0.0,4.0],"object_id":"00000000-0000-0000-0000-000000000009","proxy_domain":[2.0,6.0],"reversed":true,"trim_domain":[1.0,3.0]}]}"#
+    );
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+            .expect("root bytes admitted");
+    let expand = crate::mesh::MeshExpand::new(&ctx, root);
+    let decoded =
+        decode(expand, 0..payload.len(), ArchiveVersion::V8).expect("valid polyedge fixture");
+    let refusal = super::semantic_json(&ctx, &decoded)
+        .expect_err("semantic JSON exceeds zero retained bytes");
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino polyedge semantic JSON"
+    ));
+}
+
 fn polyedge_payload_with_domains(edge_domain: [f64; 2], trim_domain: [f64; 2]) -> Vec<u8> {
     let mut segment = 1_i32.to_le_bytes().to_vec();
     segment.extend(0_i32.to_le_bytes());

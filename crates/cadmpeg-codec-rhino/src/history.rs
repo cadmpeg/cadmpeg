@@ -1211,7 +1211,13 @@ fn extended_geometry_json(
                     return None;
                 }
             };
-        return crate::polyedge::semantic_json(&polyedge);
+        return match crate::polyedge::semantic_json(expand.ctx(), &polyedge) {
+            Ok(semantic) => semantic,
+            Err(error) => {
+                *refusal = Some(error);
+                None
+            }
+        };
     } else {
         return None;
     };
