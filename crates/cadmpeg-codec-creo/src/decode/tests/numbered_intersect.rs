@@ -334,8 +334,16 @@ fn hole_outline_placement_preserves_stored_plane_order() {
 #[test]
 fn surface_prototype_dependencies_point_from_consumers_to_unique_producers() {
     let mut dependencies = BTreeMap::new();
-    add_surface_prototype_feature_dependencies(&mut dependencies, 40, &[0, 40, 286, 286, 1111]);
-    add_surface_prototype_feature_dependencies(&mut dependencies, 41, &[286]);
+    crate::decode::with_test_decode_ctx(|ctx| {
+        add_surface_prototype_feature_dependencies(
+            ctx,
+            &mut dependencies,
+            40,
+            &[0, 40, 286, 286, 1111],
+        )?;
+        add_surface_prototype_feature_dependencies(ctx, &mut dependencies, 41, &[286])
+    })
+    .expect("service profile admits prototype dependencies");
 
     assert_eq!(
         dependencies,
