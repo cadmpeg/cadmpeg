@@ -458,25 +458,45 @@ impl<'a> DecodeContext<'a> {
     }
 
     /// Appends a later geometry-phase link to an object record.
-    fn append_link(&mut self, source_order: usize, link: String) -> bool {
+    fn append_link(
+        &mut self,
+        source_order: usize,
+        link: &str,
+    ) -> Result<bool, cadmpeg_core::CodecError> {
         let Some(record) = self.unknowns.get_mut(source_order) else {
-            return false;
+            return Ok(false);
         };
-        if link == record.id().to_string() {
-            return false;
+        if link == record.id().as_str() {
+            return Ok(false);
         }
-        if let Err(index) = record.links().binary_search(&link) {
-            record.links_mut().insert(index, link);
+        if record
+            .links()
+            .binary_search_by(|existing| existing.as_str().cmp(link))
+            .is_ok()
+        {
+            return Ok(true);
         }
-        true
+        let copy = copy_retained_link(self.expand.ctx(), link)?;
+        append_link_to_record(self.expand.ctx(), record, copy)
     }
 
-    fn append_links(&mut self, source_order: usize, links: &[String]) -> bool {
+    fn append_links(
+        &mut self,
+        source_order: usize,
+        links: &[String],
+    ) -> Result<bool, cadmpeg_core::CodecError> {
         let Some(record) = self.unknowns.get_mut(source_order) else {
-            return false;
+            return Ok(false);
         };
-        append_links_to_record(record, links);
-        true
+        let ctx = self.expand.ctx();
+        for link in links {
+            if link.as_str() == record.id().as_str() || record.links().binary_search(link).is_ok() {
+                continue;
+            }
+            let copy = copy_retained_link(ctx, link)?;
+            append_link_to_record(ctx, record, copy)?;
+        }
+        Ok(true)
     }
 
     fn validate_candidate<T>(
@@ -958,7 +978,7 @@ impl<'a> DecodeContext<'a> {
                     });
                     match result {
                         Ok(()) => {
-                            self.append_links(source_order, &links);
+                            self.append_links(source_order, &links)?;
                             self.mark_decoded(source_order);
                             for code in unresolved {
                                 self.report.typed_losses.push(code.note(format!(
@@ -1169,7 +1189,7 @@ impl<'a> DecodeContext<'a> {
                 }
                 let mut links = loop_ids.into_iter().map(|(_, id)| id).collect::<Vec<_>>();
                 links.push(feature_id.to_string());
-                self.append_links(source_order, &links);
+                self.append_links(source_order, &links)?;
                 self.geometry_transferred = true;
                 self.mark_native_retained(source_order, RhinoLossCode::HatchFillNotTransferred);
             }
@@ -1254,7 +1274,7 @@ impl<'a> DecodeContext<'a> {
             .validate_candidate(|candidate, _annotations| candidate.model.features.push(feature))
         {
             Ok(()) => {
-                self.append_link(source_order, id.to_string());
+                self.append_link(source_order, id.as_str())?;
                 self.mark_native_retained(
                     source_order,
                     RhinoLossCode::PolyedgeReferencesNotResolved,
@@ -1369,7 +1389,7 @@ impl<'a> DecodeContext<'a> {
         });
         match result {
             Ok(()) => {
-                self.append_links(source_order, &[curve_id, feature_id.to_string()]);
+                self.append_links(source_order, &[curve_id, feature_id.to_string()])?;
                 self.geometry_transferred = true;
                 self.mark_native_retained(source_order, RhinoLossCode::DetailViewNotTransferred);
             }
@@ -1506,7 +1526,7 @@ impl<'a> DecodeContext<'a> {
             .validate_candidate(|candidate, _annotations| candidate.model.features.push(feature))
         {
             Ok(()) => {
-                self.append_link(source_order, feature_id.to_string());
+                self.append_link(source_order, feature_id.as_str())?;
                 self.geometry_transferred = true;
                 self.mark_native_retained(source_order, RhinoLossCode::CageLatticeNotTransferred);
             }
@@ -1580,7 +1600,7 @@ impl<'a> DecodeContext<'a> {
             .validate_candidate(|candidate, _annotations| candidate.model.features.push(feature))
         {
             Ok(()) => {
-                self.append_link(source_order, feature_id);
+                self.append_link(source_order, &feature_id)?;
                 self.geometry_transferred = true;
                 self.mark_native_retained(source_order, RhinoLossCode::MorphDeformationNotApplied);
             }
@@ -1749,7 +1769,7 @@ impl<'a> DecodeContext<'a> {
                 if let Some(model_id) = model_id {
                     links.push(model_id);
                 }
-                self.append_links(source_order, &links);
+                self.append_links(source_order, &links)?;
                 self.geometry_transferred = true;
                 self.mark_native_retained(
                     source_order,
@@ -1872,7 +1892,7 @@ impl<'a> DecodeContext<'a> {
                     .as_ref()
                     .is_ok_and(cadmpeg_ir::report::check::ValidationReport::is_ok)
                 {
-                    self.append_links(source_order, &links);
+                    self.append_links(source_order, &links)?;
                     self.mark_decoded(source_order);
                     self.geometry_transferred = true;
                     return Ok(true);
@@ -2013,7 +2033,7 @@ impl<'a> DecodeContext<'a> {
                 .is_some_and(crate::instances::is_reference_class)
             {
                 let nested = self.expand_reference_inner(member_order, transform, path, stack)?;
-                self.append_links(member_order, &nested);
+                self.append_links(member_order, &nested)?;
                 self.mark_decoded(member_order);
                 links.extend(nested);
                 continue;
@@ -2297,7 +2317,7 @@ impl<'a> DecodeContext<'a> {
                 return Ok(false);
             }
         };
-        self.append_link(source_order, link);
+        self.append_link(source_order, &link)?;
         self.geometry_transferred = true;
         Ok(true)
     }
@@ -2815,7 +2835,7 @@ impl<'a> DecodeContext<'a> {
                 self.annotate_point_topology(
                     &point_id, &vertex_id, &shell_id, &region_id, &body_id, scaled,
                 );
-                self.append_link(source_order, body_id.to_string());
+                self.append_link(source_order, body_id.as_str())?;
             }
             crate::curves::DecodedGeometry::PointCloud(cloud) => {
                 let crate::curves::PointCloud {
@@ -2921,7 +2941,7 @@ impl<'a> DecodeContext<'a> {
                         },
                     );
                 }
-                self.append_link(source_order, body_id.to_string());
+                self.append_link(source_order, body_id.as_str())?;
             }
             crate::curves::DecodedGeometry::Curve { curve } => {
                 let warnings = curve_warnings(&curve);
@@ -2952,7 +2972,7 @@ impl<'a> DecodeContext<'a> {
                         return Ok(false);
                     }
                 };
-                self.append_link(source_order, parent_id.to_string());
+                self.append_link(source_order, parent_id.as_str())?;
             }
             crate::curves::DecodedGeometry::Surface { surface } => match surface {
                 crate::surfaces::DecodedSurface::Typed {
@@ -2979,7 +2999,7 @@ impl<'a> DecodeContext<'a> {
                             Exactness::ByteExact
                         },
                     );
-                    self.append_link(source_order, surface_id.to_string());
+                    self.append_link(source_order, surface_id.as_str())?;
                 }
                 crate::surfaces::DecodedSurface::Procedural {
                     geometry,
@@ -3069,7 +3089,7 @@ impl<'a> DecodeContext<'a> {
                 return Ok(false);
             }
         };
-        self.append_links(source_order, &links);
+        self.append_links(source_order, &links)?;
         self.geometry_transferred = true;
         Ok(true)
     }
@@ -3204,7 +3224,7 @@ impl<'a> DecodeContext<'a> {
             }
             Err(CandidateError::Codec(error)) => return Err(error),
         };
-        self.append_links(source_order, &links);
+        self.append_links(source_order, &links)?;
         self.geometry_transferred = true;
         Ok(true)
     }
@@ -3247,7 +3267,7 @@ impl<'a> DecodeContext<'a> {
         });
         match validation {
             Ok(link) => {
-                self.append_link(source_order, link);
+                self.append_link(source_order, &link)?;
             }
             Err(CandidateError::Codec(error)) => return Err(error),
             Err(findings) => self.scan_warning(
@@ -3336,7 +3356,7 @@ impl<'a> DecodeContext<'a> {
                     mesh.quad_count
                 )));
         }
-        self.append_link(source_order, id);
+        self.append_link(source_order, &id)?;
         Ok(true)
     }
 
@@ -3462,7 +3482,7 @@ impl<'a> DecodeContext<'a> {
                     );
                 } else {
                     self.expansion_budget = budget;
-                    self.append_links(source_order, &links);
+                    self.append_links(source_order, &links)?;
                     self.report.typed_losses.extend(typed_losses);
                     for warning in warnings {
                         match warning.code {
@@ -3590,52 +3610,40 @@ fn append_record_links(ir: &mut CadIr, unknown: &UnknownId, links: &[String]) {
         .expect("fixture unknown records");
 }
 
-fn append_links_to_record(record: &mut UnknownRecord, links: &[String]) {
-    let id = record.id().clone();
-    append_links(&id, record.links_mut(), links);
+fn append_link_to_record(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    record: &mut UnknownRecord,
+    link: String,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    if link == record.id().as_str() {
+        return Ok(false);
+    }
+    if let Err(index) = record.links().binary_search(&link) {
+        reserve_transaction_vec(ctx, record.links_mut(), 1, "Rhino unknown record links")?;
+        record.links_mut().insert(index, link);
+    }
+    Ok(true)
 }
 
-fn append_links(unknown_id: &UnknownId, record_links: &mut Vec<String>, links: &[String]) {
-    let unknown = unknown_id.to_string();
-    let mut additions = links
-        .iter()
-        .filter(|link| *link != &unknown)
-        .cloned()
-        .collect::<Vec<_>>();
-    additions.sort();
-    additions.dedup();
-    if additions.is_empty() {
-        return;
-    }
-    let existing = std::mem::take(record_links);
-    let mut merged = Vec::with_capacity(existing.len().saturating_add(additions.len()));
-    let (mut left, mut right) = (
-        existing.into_iter().peekable(),
-        additions.into_iter().peekable(),
-    );
-    while let (Some(existing), Some(addition)) = (left.peek(), right.peek()) {
-        match existing.cmp(addition) {
-            std::cmp::Ordering::Less => {
-                if let Some(value) = left.next() {
-                    merged.push(value);
-                }
-            }
-            std::cmp::Ordering::Equal => {
-                if let Some(value) = left.next() {
-                    merged.push(value);
-                }
-                right.next();
-            }
-            std::cmp::Ordering::Greater => {
-                if let Some(value) = right.next() {
-                    merged.push(value);
-                }
-            }
-        }
-    }
-    merged.extend(left);
-    merged.extend(right);
-    *record_links = merged;
+fn copy_retained_link(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: &str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let bytes = u64_from_index(source.len());
+    ctx.charge_retained(bytes, "Rhino unknown record link copy")?;
+    let mut copy = String::new();
+    copy.try_reserve_exact(source.len()).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
+            dimension: cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
+            limit: u64::MAX,
+            used: 0,
+            additional: bytes,
+            operation: "Rhino unknown record link copy",
+        })
+    })?;
+    copy.push_str(source);
+    Ok(copy)
 }
 
 fn validation_findings(report: &cadmpeg_ir::report::check::ValidationReport) -> String {
