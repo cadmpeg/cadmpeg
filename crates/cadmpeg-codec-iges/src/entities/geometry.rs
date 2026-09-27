@@ -2,7 +2,7 @@
 //! Point and analytic curve entity projection.
 
 use super::curve_conversion::angularly_equal;
-use crate::decode_resource::{insert_optional_btree_map, insert_optional_btree_set, reserve_vec_growth};
+use crate::decode_resource::{collect_optional_vec, insert_optional_btree_map, insert_optional_btree_set, reserve_vec, reserve_vec_growth};
 use crate::directory::{DirectoryEntry, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
@@ -1643,10 +1643,12 @@ pub(crate) fn project_geometry(
         let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
         let curve = crate::ids::curve(&stem);
         let edge = crate::ids::edge(&stem);
+        reserve_vec_growth(ctx, &mut ir.model.points, 2, "iges circle neutral point slots")?;
         ir.model.points.extend([
             Point::new(start_point.clone(), start, None),
             Point::new(end_point.clone(), end, None),
         ]);
+        reserve_vec_growth(ctx, &mut ir.model.vertices, 2, "iges circle neutral vertex slots")?;
         ir.model.vertices.extend([
             Vertex {
                 id: start_vertex.clone(),
@@ -1660,6 +1662,7 @@ pub(crate) fn project_geometry(
             },
         ]);
         sequences.record_curve(&curve, entry.sequence, Some(ctx))?;
+        reserve_vec_growth(ctx, &mut ir.model.curves, 1, "iges circle neutral curve slots")?;
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -1681,6 +1684,7 @@ pub(crate) fn project_geometry(
             )),
             source_object: Some(source_object(entry, Some(ctx))?),
         });
+        reserve_vec_growth(ctx, &mut ir.model.edges, 1, "iges circle neutral edge slots")?;
         ir.model.edges.push(Edge {
             id: edge.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.0, angle]))
@@ -1689,8 +1693,9 @@ pub(crate) fn project_geometry(
             end: end_vertex,
             tolerance: None,
         });
+        reserve_vec_growth(ctx, &mut wire_edges, 1, "iges circle wire edge slots")?;
         wire_edges.push(edge);
-        decoded.insert(entry.sequence);
+        insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges circle decoded sequences")?;
     }
     for entry in directory
         .iter()
@@ -2008,27 +2013,27 @@ pub(crate) fn project_geometry(
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "parameter-range offset overflows"))?;
             continue;
         };
-        let collect_numbers = |start: usize, count: usize| -> Option<Vec<FiniteReal>> {
-            (start..start.checked_add(count)?)
-                .map(|index| record.number(index).and_then(FiniteReal::new))
-                .collect()
+        let collect_numbers = |start: usize, count: usize, operation: &'static str| -> Result<Option<Vec<FiniteReal>>, CodecError> {
+            let Some(end) = start.checked_add(count) else { return Ok(None); };
+            collect_optional_vec(ctx, (start..end).map(|index| record.number(index).and_then(FiniteReal::new)), operation)
         };
-        let Some(finite_knots) = collect_numbers(knot_start, knot_count) else {
+        let Some(finite_knots) = collect_numbers(knot_start, knot_count, "iges NURBS source knots")? else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "knot vector is truncated or non-finite"))?;
             continue;
         };
-        let Ok(knots) = KnotVector::from_finite_lanes(finite_knots.clone()) else {
+        let domain_start = finite_knots[degree_usize];
+        let domain_end = finite_knots[control_count];
+        let Ok(knots) = KnotVector::from_finite_lanes(finite_knots) else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "knot vector is decreasing"))?;
             continue;
         };
-        let Some(native_weights) = collect_numbers(weight_start, control_count) else {
+        let Some(native_weights) = collect_numbers(weight_start, control_count, "iges NURBS source weights")? else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "weight vector is truncated or non-finite"))?;
             continue;
         };
-        let Some(native_weights) = native_weights
-            .into_iter()
-            .map(|weight| PositiveReal::try_from(weight).ok())
-            .collect::<Option<Vec<_>>>()
+        let Some(native_weights) = collect_optional_vec(ctx,
+            native_weights.into_iter().map(|weight| PositiveReal::try_from(weight).ok()),
+            "iges NURBS positive weights")?
         else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "weights are not strictly positive"))?;
             continue;
@@ -2060,16 +2065,14 @@ pub(crate) fn project_geometry(
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "rational spline has equal weights but PROP3 declares rational"))?;
             continue;
         }
-        let Some(native_poles) = collect_numbers(pole_start, pole_value_count) else {
+        let Some(native_poles) = collect_numbers(pole_start, pole_value_count, "iges NURBS source poles")? else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "control-point vector is truncated or non-finite"))?;
             continue;
         };
-        let Some(mut parameter_range) = collect_numbers(range_start, 2) else {
+        let Some(mut parameter_range) = collect_numbers(range_start, 2, "iges NURBS source range")? else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "parameter range is missing or non-finite"))?;
             continue;
         };
-        let domain_start = finite_knots[degree_usize];
-        let domain_end = finite_knots[control_count];
         if parameter_range[0].get() < domain_start.get()
             && equal_within_significance(
                 range_start,
@@ -2117,7 +2120,7 @@ pub(crate) fn project_geometry(
                 continue;
             }
         };
-        let Some(control_points) = native_poles
+        let Some(control_points) = collect_optional_vec(ctx, native_poles
             .chunks_exact(3)
             .map(|point| {
                 transform.apply_point(Point3::new(
@@ -2125,17 +2128,13 @@ pub(crate) fn project_geometry(
                     point[1].get() * factor,
                     point[2].get() * factor,
                 ))
-            })
-            .collect::<Option<Vec<_>>>()
+            }), "iges NURBS placed controls")?
         else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "transformed control-point vector is non-finite"))?;
             continue;
         };
-        let raw_control_points = control_points
-            .iter()
-            .copied()
-            .map(FinitePoint3::get)
-            .collect::<Vec<_>>();
+        let mut raw_control_points = reserve_vec(ctx, control_points.len(), "iges NURBS plane controls")?;
+        raw_control_points.extend(control_points.iter().copied().map(FinitePoint3::get));
         let point_scale = raw_control_points
             .iter()
             .skip(1)
@@ -2152,7 +2151,7 @@ pub(crate) fn project_geometry(
                 super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "plane-normal offset overflows"))?;
                 continue;
             };
-            let Some(normal_values) = collect_numbers(normal_start, 3) else {
+            let Some(normal_values) = collect_numbers(normal_start, 3, "iges NURBS source normal")? else {
                 super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "plane-normal fields are missing or non-finite"))?;
                 continue;
             };
@@ -2186,12 +2185,11 @@ pub(crate) fn project_geometry(
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "non-planar spline flag disagrees with a unique control-point plane"))?;
             continue;
         }
-        let weights = (!polynomial).then(|| {
-            native_weights
-                .into_iter()
-                .map(NonZeroReal::from)
-                .collect::<Vec<_>>()
-        });
+        let weights = if polynomial { None } else {
+            let mut values = reserve_vec(ctx, native_weights.len(), "iges NURBS neutral weights")?;
+            values.extend(native_weights.into_iter().map(NonZeroReal::from));
+            Some(values)
+        };
         let nurbs =
             match NurbsPoles3::from_checked_lanes(control_points, weights).and_then(|poles| {
                 // IGES PROP4 is informational; neutral evaluation uses the
@@ -2236,10 +2234,12 @@ pub(crate) fn project_geometry(
         let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
         let curve = crate::ids::curve(&stem);
         let edge = crate::ids::edge(&stem);
+        reserve_vec_growth(ctx, &mut ir.model.points, 2, "iges NURBS neutral point slots")?;
         ir.model.points.extend([
             Point::new(start_point.clone(), start, None),
             Point::new(end_point.clone(), end, None),
         ]);
+        reserve_vec_growth(ctx, &mut ir.model.vertices, 2, "iges NURBS neutral vertex slots")?;
         ir.model.vertices.extend([
             Vertex {
                 id: start_vertex.clone(),
@@ -2253,11 +2253,13 @@ pub(crate) fn project_geometry(
             },
         ]);
         sequences.record_curve(&curve, entry.sequence, Some(ctx))?;
+        reserve_vec_growth(ctx, &mut ir.model.curves, 1, "iges NURBS neutral curve slots")?;
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
             source_object: Some(source_object(entry, Some(ctx))?),
         });
+        reserve_vec_growth(ctx, &mut ir.model.edges, 1, "iges NURBS neutral edge slots")?;
         ir.model.edges.push(Edge {
             id: edge.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::Bounded(curve, parameter_interval.into()),
@@ -2265,8 +2267,9 @@ pub(crate) fn project_geometry(
             end: end_vertex,
             tolerance: None,
         });
+        reserve_vec_growth(ctx, &mut wire_edges, 1, "iges NURBS wire edge slots")?;
         wire_edges.push(edge);
-        decoded.insert(entry.sequence);
+        insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges NURBS decoded sequences")?;
     }
     let mut admitted_entities = 0;
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_primitives")?;
