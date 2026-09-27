@@ -5,6 +5,7 @@ use super::{
     object_rendering_with_negative_minor, texture_payload, utf16_bytes,
 };
 use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
+use crate::loss::Diagnostics;
 use crate::presentation::rendering_attributes;
 use crate::presentation::TextStyleParseInput;
 use crate::settings;
@@ -418,6 +419,87 @@ fn texture_file_reference_refuses_retained_limit() {
         FramingError::Resource(refusal)
             if refusal.operation == "Rhino file reference full path"
     ));
+}
+
+fn texture_minor_zero_refusal(limit: u64) -> FramingError {
+    let bytes = texture_payload(0, &[]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("texture root admitted");
+    crate::presentation::parse_texture(
+        &ctx,
+        &bytes,
+        0..bytes.len(),
+        ArchiveVersion::V8,
+        42,
+        &mut Vec::new(),
+    )
+    .expect_err("texture value exceeds retained limit")
+}
+
+#[test]
+fn texture_legacy_path_refuses_retained_limit() {
+    assert!(
+        matches!(texture_minor_zero_refusal(0), FramingError::Resource(refusal) if refusal.operation == "Rhino texture legacy path")
+    );
+}
+
+#[test]
+fn texture_source_uuid_refuses_retained_limit() {
+    assert!(
+        matches!(texture_minor_zero_refusal(11), FramingError::Resource(refusal) if refusal.operation == "Rhino texture source UUID")
+    );
+}
+
+#[test]
+fn texture_transparency_uuid_refuses_retained_limit() {
+    assert!(
+        matches!(texture_minor_zero_refusal(47), FramingError::Resource(refusal) if refusal.operation == "Rhino texture transparency UUID")
+    );
+}
+
+#[test]
+fn texture_file_reference_loss_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let mut diagnostics = Diagnostics::new();
+    diagnostics.push("invalid reference");
+    let error = crate::presentation::append_file_reference_diagnostics(
+        &ctx,
+        &mut Vec::new(),
+        diagnostics,
+        42,
+    )
+    .expect_err("loss exceeds collection limit");
+    assert!(
+        matches!(error, FramingError::Resource(refusal) if refusal.operation == "Rhino texture file-reference losses")
+    );
+}
+
+#[test]
+fn texture_file_reference_loss_text_refuses_retained_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let mut diagnostics = Diagnostics::new();
+    diagnostics.push("invalid reference");
+    let error = crate::presentation::append_file_reference_diagnostics(
+        &ctx,
+        &mut Vec::new(),
+        diagnostics,
+        42,
+    )
+    .expect_err("loss text exceeds retained limit");
+    assert!(
+        matches!(error, FramingError::Resource(refusal) if refusal.operation == "Rhino texture file-reference loss text")
+    );
 }
 
 #[test]
