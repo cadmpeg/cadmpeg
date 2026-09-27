@@ -17,7 +17,7 @@ use crate::records::{
         body_recipe::DesignBodyRecipeOperand, construction::DesignConstructionOperandGroup,
     },
 };
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::Asset;
 use cadmpeg_ir::features::{
@@ -43,6 +43,7 @@ pub(crate) fn decode_decal_images(
 
 /// Project exact Decal image and face bindings into neutral features.
 pub(crate) fn project_decal_images(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     images: &[DesignDecalImage],
@@ -89,7 +90,7 @@ pub(crate) fn project_decal_images(
         if faces.is_empty() {
             continue;
         }
-        let Some(asset) = embedded_image_asset(scan, image.asset.name())? else {
+        let Some(asset) = embedded_image_asset(ctx, scan, image.asset.name())? else {
             continue;
         };
         let Some(feature) = features
