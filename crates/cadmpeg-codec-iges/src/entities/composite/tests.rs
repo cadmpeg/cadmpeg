@@ -1384,6 +1384,82 @@ fn composite_elevated_knots_refuse_collection_limit() {
 }
 
 #[test]
+fn composite_trimmed_lanes_refuse_fallible_copies_and_weight_conversion() {
+    let curve = test_nurbs(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 2.0, 0.0), Point3::new(2.0, -1.0, 0.0), Point3::new(4.0, 0.0, 0.0)],
+        Some(vec![1.0, 0.5, 2.0, 1.0]),
+    );
+    for operation in [
+        "iges composite trim knot copy",
+        "iges composite trimmed controls",
+        "iges composite trimmed knots",
+        "iges composite trimmed weight conversion",
+    ] {
+        let mut cap = 0_u64;
+        let mut found = false;
+        for _ in 0..4096 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            match trim_nurbs_to_interval(Some(&ctx), &curve, [0.25, 1.5]) {
+                Err(error) => match error.non_resource() {
+                    Err(CodecError::ResourceLimit(limit)) => {
+                        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                        if limit.operation == operation { found = true; break; }
+                        cap = limit.used.checked_add(limit.additional).unwrap();
+                    }
+                    other => panic!("unexpected trimmed lane failure at {operation}: {other:?}"),
+                },
+                Ok(_) => panic!("trimmed lane succeeded before {operation}"),
+            }
+        }
+        assert!(found, "trimmed lane boundary was not reached: {operation}");
+    }
+}
+
+#[test]
+fn composite_elevation_refuses_nested_knot_and_weight_storage() {
+    let source = || test_nurbs(
+        2,
+        vec![0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 2.0, 0.0), Point3::new(2.0, -1.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
+        Some(vec![1.0, 2.0, 1.0, 3.0]),
+    );
+    for operation in [
+        "iges composite elevation knot copy",
+        "iges composite internal knot values",
+        "iges composite elevated knot suffix",
+        "iges composite elevated weight conversion",
+        "iges composite elevated span",
+    ] {
+        let mut cap = 0_u64;
+        let mut found = false;
+        for _ in 0..4096 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut curve = source();
+            match elevate_nurbs_to_degree(Some(&ctx), &mut curve, [0.0, 1.0], 3, None) {
+                Err(error) => match error.non_resource() {
+                    Err(CodecError::ResourceLimit(limit)) => {
+                        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                        if limit.operation == operation { found = true; break; }
+                        cap = limit.used.checked_add(limit.additional).unwrap();
+                    }
+                    other => panic!("unexpected elevation failure at {operation}: {other:?}"),
+                },
+                Ok(()) => panic!("elevation succeeded before {operation}"),
+            }
+        }
+        assert!(found, "elevation boundary was not reached: {operation}");
+    }
+}
+
+#[test]
 fn composite_child_weights_refuse_collection_limit() {
     let curve = test_nurbs(
         1,
