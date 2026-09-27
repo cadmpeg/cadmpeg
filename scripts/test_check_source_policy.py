@@ -223,6 +223,32 @@ class PatternFilters(unittest.TestCase):
         text = 'CodecError::Malformed(format!(\n    "bad {}", x\n))\n'
         self.assertEqual(len(policy.MALFORMED_FORMAT.findall(text)), 1)
 
+    def test_integer_clamp_reports_all_four_forms(self) -> None:
+        source = (
+            "fn production() {\n"
+            "    value.unwrap_or(u8::MAX);\n"
+            "    value.unwrap_or( i16::MIN );\n"
+            "    value.unwrap_or_else(|_| usize::MAX);\n"
+            "    value.unwrap_or_else( |_| u128::MIN );\n"
+            "}\n"
+        )
+        findings = policy.scan_patterns(policy.ROOT / "source.rs", source)
+        self.assertEqual(
+            [(finding.rule, finding.line) for finding in findings],
+            [("integer_clamp", line) for line in range(2, 6)],
+        )
+
+    def test_integer_clamp_ignores_tests_and_comments(self) -> None:
+        source = (
+            "#[cfg(test)]\n"
+            "mod tests {\n"
+            "    fn test() { value.unwrap_or(u64::MAX); }\n"
+            "}\n"
+            "// value.unwrap_or_else(|_| i64::MIN);\n"
+        )
+        findings = policy.scan_patterns(policy.ROOT / "source.rs", source)
+        self.assertEqual([finding for finding in findings if finding.rule == "integer_clamp"], [])
+
     def test_loss_note_qualified_returns_are_types(self) -> None:
         for name in ["LossNote", "cadmpeg_ir::LossNote", "::cadmpeg_ir::report::LossNote",
                      "r#type::LossNote", "données::LossNote", "r#LossNote"]:
