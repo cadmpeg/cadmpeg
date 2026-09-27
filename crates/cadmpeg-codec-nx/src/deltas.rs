@@ -941,9 +941,13 @@ fn reference_marker_packets(
     stream: &[u8],
     census: &Census,
 ) -> Result<Vec<ReferenceMarkerPacket>, CodecError> {
-    Ok(uncovered_spans(ctx, stream.len(), census, true)?
-        .filter_map(|(offset, end)| reference_marker_packet(stream, offset, end))
-        .collect())
+    let mut packets = Vec::new();
+    for (offset, end) in uncovered_spans(ctx, stream.len(), census, true)? {
+        if let Some(packet) = reference_marker_packet(stream, offset, end) {
+            census::push_event(ctx, &mut packets, packet, "NX reference marker packets")?;
+        }
+    }
+    Ok(packets)
 }
 
 const REGION_SCHEMA_HEADER: &[u8] = &[
@@ -1363,17 +1367,27 @@ fn inline_body_states(
     stream: &[u8],
     census: &Census,
 ) -> Result<Vec<InlineBodyState>, CodecError> {
-    Ok(uncovered_spans(ctx, stream.len(), census, true)?
-        .filter(|(offset, _)| {
-            census.inline_schema_declarations.iter().any(|declaration| {
-                declaration.end == *offset && declaration.fields == InlineSchemaFields::BodyHeader
-            })
-        })
-        .filter_map(|(offset, gap_end)| inline_body_state(stream, offset, gap_end))
-        .collect())
+    let mut states = Vec::new();
+    for (offset, gap_end) in uncovered_spans(ctx, stream.len(), census, true)? {
+        if !census.inline_schema_declarations.iter().any(|declaration| {
+            declaration.end == offset && declaration.fields == InlineSchemaFields::BodyHeader
+        }) {
+            continue;
+        }
+        if let Some(state) = inline_body_state(ctx, stream, offset, gap_end)? {
+            census::push_event(ctx, &mut states, state, "NX inline BODY states")?;
+        }
+    }
+    Ok(states)
 }
 
-fn inline_body_state(stream: &[u8], offset: usize, gap_end: usize) -> Option<InlineBodyState> {
+fn inline_body_state(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    offset: usize,
+    gap_end: usize,
+) -> Result<Option<InlineBodyState>, CodecError> {
+    ctx.charge_work(u64_from_index(gap_end - offset), "scan NX inline BODY state")?;
     let next_header = ((offset + 1)..gap_end).find(|candidate| {
         [
             BODY_SCHEMA_HEADER,
@@ -1391,31 +1405,46 @@ fn inline_body_state(stream: &[u8], offset: usize, gap_end: usize) -> Option<Inl
         })
     });
     let expected_end = next_header.unwrap_or(gap_end);
-    let (first, consumed) = read_xmt(stream, offset)?;
-    let mut at = offset.checked_add(consumed)?;
+    let Some((first, consumed)) = read_xmt(stream, offset) else {
+        return Ok(None);
+    };
+    let Some(mut at) = offset.checked_add(consumed) else {
+        return Ok(None);
+    };
     if stream.get(at) == Some(&0) && at.checked_add(1) == Some(expected_end) {
-        return Some(InlineBodyState {
+        return Ok(NonNullXmt::try_from(first).ok().map(|reference| InlineBodyState {
             fields: InlineBodyStateFields::Compact {
-                reference: NonNullXmt::try_from(first).ok()?,
+                reference,
             },
             offset,
             end: expected_end,
-        });
+        }));
     }
-    (first == 3).then_some(())?;
+    if first != 3 {
+        return Ok(None);
+    }
 
-    let node_id = View::u32_be_at(stream, at)?;
-    at = at.checked_add(4)?;
-    let mut references = [0; 8];
-    for reference in &mut references {
-        let (value, consumed) = read_xmt(stream, at)?;
-        at = at.checked_add(consumed)?;
-        (stream.get(at) == Some(&1)).then_some(())?;
-        at = at.checked_add(1)?;
-        *reference = value;
-    }
-    let state_bytes = BodyStateBytes::try_from(stream.get(at..expected_end)?.to_vec()).ok()?;
-    Some(InlineBodyState {
+    let Some((node_id, references, at)) = (|| {
+        let node_id = View::u32_be_at(stream, at)?;
+        at = at.checked_add(4)?;
+        let mut references = [0; 8];
+        for reference in &mut references {
+            let (value, consumed) = read_xmt(stream, at)?;
+            at = at.checked_add(consumed)?;
+            (stream.get(at) == Some(&1)).then_some(())?;
+            at = at.checked_add(1)?;
+            *reference = value;
+        }
+        Some((node_id, references, at))
+    })() else {
+        return Ok(None);
+    };
+    let Some(raw_state) = stream.get(at..expected_end).filter(|bytes| !bytes.is_empty()) else {
+        return Ok(None);
+    };
+    let state_bytes = BodyStateBytes::try_from(ctx.copy_retained(raw_state, "NX inline BODY state bytes")?)
+        .ok();
+    Ok(state_bytes.map(|state_bytes| InlineBodyState {
         fields: InlineBodyStateFields::Revision {
             node_id,
             references,
@@ -1423,7 +1452,7 @@ fn inline_body_state(stream: &[u8], offset: usize, gap_end: usize) -> Option<Inl
         },
         offset,
         end: expected_end,
-    })
+    }))
 }
 
 fn region_schema_declaration(
@@ -1491,9 +1520,13 @@ fn type_150_state_packets(
     stream: &[u8],
     census: &Census,
 ) -> Result<Vec<Type150StatePacket>, CodecError> {
-    Ok(uncovered_spans(ctx, stream.len(), census, true)?
-        .filter_map(|(offset, end)| type_150_state_packet(stream, offset, end))
-        .collect())
+    let mut packets = Vec::new();
+    for (offset, end) in uncovered_spans(ctx, stream.len(), census, true)? {
+        if let Some(packet) = type_150_state_packet(stream, offset, end) {
+            census::push_event(ctx, &mut packets, packet, "NX type 150 state packets")?;
+        }
+    }
+    Ok(packets)
 }
 
 fn type_150_state_packet(
