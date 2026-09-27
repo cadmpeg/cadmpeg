@@ -777,7 +777,7 @@ pub(in super::super) fn signed_unit_chart(
     let frame_close = |left: f64, right: f64| {
         (left - right).abs() <= EPS_TABULATED_FRAME_EXACT * left.abs().max(right.abs()).max(1.0)
     };
-    let mut matches = Vec::new();
+    let mut mapping = None;
     for first_sign in [-1.0, 1.0] {
         for second_sign in [-1.0, 1.0] {
             let frame = [first_sign * frame[0], second_sign * frame[1]];
@@ -791,25 +791,24 @@ pub(in super::super) fn signed_unit_chart(
                 let chart_intercept = target[0] - slope * local[0];
                 if endpoint_close(target[1], slope * local[1] + chart_intercept)
                     && frame_close(chart_intercept.abs(), offset)
-                    && !matches.contains(&(slope, chart_intercept))
                 {
-                    matches.push((slope, chart_intercept));
+                    let candidate = (slope, chart_intercept);
+                    if mapping.is_some_and(|existing| existing != candidate) {
+                        return None;
+                    }
+                    mapping = Some(candidate);
                 }
             }
         }
     }
-    let [mapping] = matches.as_slice() else {
-        return None;
-    };
-    Some(*mapping)
+    mapping
 }
 
-pub(in super::super) fn placed_tabulated_cylinder_directrix(
+fn tabulated_cylinder_placement(
     replay: &crate::surface::TabulatedCylinderCurveReplay,
     parameters: &crate::surface::SurfaceParameterRecord,
     chart_origin: Option<[f64; 3]>,
-    refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<(NurbsCurve, [f64; 3])> {
+) -> Option<([Point3; 4], [f64; 3])> {
     #[derive(Clone, Copy)]
     enum FrameLayout {
         LegacyReflected,
@@ -820,15 +819,14 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
     if parameters.boundary != crate::surface::SurfaceBodyBoundary::CompoundClose {
         return None;
     }
-    let points = replay
-        .control_points
-        .iter()
-        .copied()
-        .collect::<Option<Vec<_>>>()?;
+    let [Some(p0), Some(p1), Some(p2), Some(p3)] = replay.control_points else {
+        return None;
+    };
+    let points = [p0, p1, p2, p3];
     let (values, layout) = parameters
         .tabulated_cylinder_frame()
         .map(|frame| {
-            let values = frame.values().to_vec();
+            let values = frame.values().get();
             let heads = frame.prefixes();
             let offset_planar_layout = matches!(heads.as_slice(), [_, 0x46, _, _, 0x46, _]);
             let zero_offset_layout = matches!(heads.as_slice(), [_, 0x42, _, _, 0x18, _]);
@@ -844,16 +842,15 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
             let [_, frame] = parameters.scalar_frames.as_slice() else {
                 return None;
             };
-            let values = frame
-                .slots
-                .iter()
-                .map(|slot| slot.value)
-                .collect::<Option<Vec<_>>>()?;
+            let [a0, a1, a2, b0, b1, b2] = frame.slots.as_slice() else {
+                return None;
+            };
+            let values = [
+                a0.value?, a1.value?, a2.value?, b0.value?, b1.value?, b2.value?,
+            ];
             Some((values, FrameLayout::LegacyReflected))
         })?;
-    let [a0, a1, a2, b0, b1, b2] = values.as_slice() else {
-        return None;
-    };
+    let [a0, a1, a2, b0, b1, b2] = &values;
     let first = [*a0, *a1, *a2];
     let second = [*b0, *b1, *b2];
     let local_start = points.first()?;
@@ -915,32 +912,33 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
             zero_offset || prototype_offset
         }
     };
-    let assignments = (0..3)
-        .flat_map(|first_axis| {
-            (0..3)
-                .filter(move |&second_axis| {
-                    first_axis != second_axis
-                        && axis_matches(first_axis, 0)
-                        && axis_matches(second_axis, 1)
-                })
-                .map(move |second_axis| (first_axis, second_axis, 3 - first_axis - second_axis))
-        })
-        .collect::<Vec<_>>();
-    let [(first_axis, second_axis, sweep_axis)] = assignments.as_slice() else {
-        return None;
-    };
+    let mut assignment = None;
+    for candidate in (0..3).flat_map(|first_axis| {
+        (0..3)
+            .filter(move |&second_axis| {
+                first_axis != second_axis
+                    && axis_matches(first_axis, 0)
+                    && axis_matches(second_axis, 1)
+            })
+            .map(move |second_axis| (first_axis, second_axis, 3 - first_axis - second_axis))
+    }) {
+        if assignment.replace(candidate).is_some() {
+            return None;
+        }
+    }
+    let (first_axis, second_axis, sweep_axis) = assignment?;
     let (signed_chart, reflect_sweep) = match layout {
         FrameLayout::LegacyReflected => (None, false),
         FrameLayout::PrototypeOffsetPlanar => (
             Some((
                 signed_unit_chart(
                     [local_start[0], local_end[0]],
-                    [first[*first_axis], second[*first_axis]],
-                    chart_origin?[*first_axis].abs(),
+                    [first[first_axis], second[first_axis]],
+                    chart_origin?[first_axis].abs(),
                 )?,
                 signed_unit_chart(
                     [local_start[1], local_end[1]],
-                    [first[*second_axis], second[*second_axis]],
+                    [first[second_axis], second[second_axis]],
                     0.0,
                 )?,
             )),
@@ -950,103 +948,121 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
             Some((
                 signed_unit_chart(
                     [local_start[0], local_end[0]],
-                    [first[*first_axis], second[*first_axis]],
+                    [first[first_axis], second[first_axis]],
                     0.0,
                 )?,
                 signed_unit_chart(
                     [local_start[1], local_end[1]],
-                    [first[*second_axis], second[*second_axis]],
+                    [first[second_axis], second[second_axis]],
                     0.0,
                 )?,
             )),
             false,
         ),
         FrameLayout::SelectedPlanar => {
-            let mut first_intercepts = vec![(0.0, false)];
-            if let Some(origin) = chart_origin {
-                let intercept = origin[*first_axis].abs();
-                if intercept.is_finite() && !close(intercept, 0.0) {
-                    first_intercepts.push((intercept, true));
-                }
-            }
-            let candidates = first_intercepts
-                .into_iter()
-                .filter_map(|(first_offset, reflect_sweep)| {
+            let first_intercepts = [
+                Some((0.0, false)),
+                chart_origin.and_then(|origin| {
+                    let intercept = origin[first_axis].abs();
+                    (intercept.is_finite() && !close(intercept, 0.0)).then_some((intercept, true))
+                }),
+            ];
+            let mut selected = None;
+            for candidate in first_intercepts.into_iter().flatten().filter_map(
+                |(first_offset, reflect_sweep)| {
                     Some((
                         (
                             signed_unit_chart(
                                 [local_start[0], local_end[0]],
-                                [first[*first_axis], second[*first_axis]],
+                                [first[first_axis], second[first_axis]],
                                 first_offset,
                             )?,
                             signed_unit_chart(
                                 [local_start[1], local_end[1]],
-                                [first[*second_axis], second[*second_axis]],
+                                [first[second_axis], second[second_axis]],
                                 0.0,
                             )?,
                         ),
                         reflect_sweep,
                     ))
-                })
-                .collect::<Vec<_>>();
-            let [(chart, reflect_sweep)] = candidates.as_slice() else {
-                return None;
-            };
-            (Some(*chart), *reflect_sweep)
-        }
-    };
-    let control_points = points
-        .iter()
-        .map(|point| {
-            let mut placed = [0.0; 3];
-            match signed_chart {
-                Some(((first_slope, first_intercept), (second_slope, second_intercept))) => {
-                    placed[*first_axis] = first_slope * point[0] + first_intercept;
-                    placed[*second_axis] = second_slope * point[1] + second_intercept;
-                    placed[*sweep_axis] = if reflect_sweep {
-                        -first[*sweep_axis]
-                    } else {
-                        first[*sweep_axis]
-                    };
-                }
-                None => {
-                    let chart_first =
-                        first[*first_axis].max(second[*first_axis]) - (point[0] - local_start[0]);
-                    let chart_second =
-                        first[*second_axis].min(second[*second_axis]) + (point[1] - local_start[1]);
-                    placed[*first_axis] = if *first_axis < 2 {
-                        -chart_first
-                    } else {
-                        chart_first
-                    };
-                    placed[*second_axis] = if *second_axis < 2 {
-                        -chart_second
-                    } else {
-                        chart_second
-                    };
-                    placed[*sweep_axis] = first[*sweep_axis];
+                },
+            ) {
+                if selected.replace(candidate).is_some() {
+                    return None;
                 }
             }
-            Point3::from(placed)
-        })
-        .collect();
-    let mut sweep = [0.0; 3];
-    sweep[*sweep_axis] = if reflect_sweep {
-        first[*sweep_axis] - second[*sweep_axis]
-    } else {
-        second[*sweep_axis] - first[*sweep_axis]
+            let (chart, reflect_sweep) = selected?;
+            (Some(chart), reflect_sweep)
+        }
     };
-    if !sweep[*sweep_axis].is_finite() || sweep[*sweep_axis] == 0.0 {
+    let control_points = points.map(|point| {
+        let mut placed = [0.0; 3];
+        match signed_chart {
+            Some(((first_slope, first_intercept), (second_slope, second_intercept))) => {
+                placed[first_axis] = first_slope * point[0] + first_intercept;
+                placed[second_axis] = second_slope * point[1] + second_intercept;
+                placed[sweep_axis] = if reflect_sweep {
+                    -first[sweep_axis]
+                } else {
+                    first[sweep_axis]
+                };
+            }
+            None => {
+                let chart_first =
+                    first[first_axis].max(second[first_axis]) - (point[0] - local_start[0]);
+                let chart_second =
+                    first[second_axis].min(second[second_axis]) + (point[1] - local_start[1]);
+                placed[first_axis] = if first_axis < 2 {
+                    -chart_first
+                } else {
+                    chart_first
+                };
+                placed[second_axis] = if second_axis < 2 {
+                    -chart_second
+                } else {
+                    chart_second
+                };
+                placed[sweep_axis] = first[sweep_axis];
+            }
+        }
+        Point3::from(placed)
+    });
+    let mut sweep = [0.0; 3];
+    sweep[sweep_axis] = if reflect_sweep {
+        first[sweep_axis] - second[sweep_axis]
+    } else {
+        second[sweep_axis] - first[sweep_axis]
+    };
+    if !sweep[sweep_axis].is_finite() || sweep[sweep_axis] == 0.0 {
         return None;
     }
-    match NurbsCurve::from_lanes(
-        3,
-        vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-        control_points,
-        None,
-        false,
-    ) {
-        Ok(curve) => Some((curve, sweep)),
+    Some((control_points, sweep))
+}
+
+pub(in super::super) fn placed_tabulated_cylinder_directrix(
+    ctx: &DecodeContext<'_>,
+    replay: &crate::surface::TabulatedCylinderCurveReplay,
+    parameters: &crate::surface::SurfaceParameterRecord,
+    chart_origin: Option<[f64; 3]>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
+) -> Result<Option<(NurbsCurve, [f64; 3])>, CodecError> {
+    let Some((control_points, sweep)) =
+        tabulated_cylinder_placement(replay, parameters, chart_origin)
+    else {
+        return Ok(None);
+    };
+    let mut controls = Vec::new();
+    ctx.try_reserve_items(
+        &mut controls,
+        control_points.len(),
+        "creo tabulated-cylinder directrix controls",
+    )?;
+    controls.extend(control_points);
+    let mut knots = Vec::new();
+    ctx.try_reserve_items(&mut knots, 8, "creo tabulated-cylinder directrix knots")?;
+    knots.extend([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]);
+    match NurbsCurve::from_lanes(3, knots, controls, None, false) {
+        Ok(curve) => Ok(Some((curve, sweep))),
         Err(error) => {
             refusal.note(
                 format!(
@@ -1055,7 +1071,7 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
                 ),
                 &error,
             );
-            None
+            Ok(None)
         }
     }
 }
