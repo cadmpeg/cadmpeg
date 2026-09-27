@@ -396,12 +396,12 @@ fn native_edge_carrier_binding_requires_equal_object_identity() {
     ];
     let native_support_ids = HashSet::from([70, 71]);
     assert_eq!(
-        standard_native_support_edge_ids(&supports, &native_support_ids),
+        crate::test_support::with_service_context(|ctx| standard_native_support_edge_ids(ctx, &supports, &native_support_ids)).expect("service budget"),
         vec![Some(70), None]
     );
 
     assert_eq!(
-        standard_native_support_edge_ids(&supports[1..], &HashSet::from([900])),
+        crate::test_support::with_service_context(|ctx| standard_native_support_edge_ids(ctx, &supports[1..], &HashSet::from([900]))).expect("service budget"),
         vec![Some(900)]
     );
 }
