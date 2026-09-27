@@ -187,6 +187,11 @@ pub(super) fn non_finite_control_point() -> NurbsError {
 pub trait PoleValue<T>: Copy {
     /// The admitted value, absent when a raw value is not finite.
     fn admit(self) -> Option<T>;
+
+    /// Admit a curve pole lane, retaining its storage when the poles are admitted.
+    fn admit_curve_poles(poles: NurbsPoles3<Self>) -> Result<NurbsPoles3<T>, NurbsError> {
+        poles.try_map_points(|point| point.admit().ok_or_else(non_finite_control_point))
+    }
 }
 
 impl PoleValue<FinitePoint3> for Point3 {
@@ -198,6 +203,12 @@ impl PoleValue<FinitePoint3> for Point3 {
 impl PoleValue<FinitePoint3> for FinitePoint3 {
     fn admit(self) -> Option<FinitePoint3> {
         Some(self)
+    }
+
+    fn admit_curve_poles(
+        poles: NurbsPoles3<Self>,
+    ) -> Result<NurbsPoles3<FinitePoint3>, NurbsError> {
+        Ok(poles)
     }
 }
 
@@ -253,7 +264,7 @@ impl<P: PoleValue<FinitePoint3>> NurbsPoles3<P> {
     ///
     /// Refuses a pole position with a non-finite coordinate.
     fn admit(self) -> Result<NurbsPoles3<FinitePoint3>, NurbsError> {
-        self.try_map_points(|point| point.admit().ok_or_else(non_finite_control_point))
+        P::admit_curve_poles(self)
     }
 }
 
