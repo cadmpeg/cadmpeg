@@ -3220,70 +3220,77 @@ fn resolve_unit_scales(
             continue;
         }
         if let Some(length) = length {
-            length_candidates
-                .entry(representation_id)
-                .or_default()
-                .push(length);
+            add_unit_candidate(&mut length_candidates, representation_id, length, ctx, "step_length_candidate_groups", "step_length_candidate_values")?;
         }
         if let Some(angle) = angle {
-            angle_candidates
-                .entry(representation_id)
-                .or_default()
-                .push(angle);
+            add_unit_candidate(&mut angle_candidates, representation_id, angle, ctx, "step_angle_candidate_groups", "step_angle_candidate_values")?;
         }
         let Some(items) = representation_items(representation) else {
             continue;
         };
         let mut members = BTreeSet::new();
         for item in items {
-            collect_unit_scope_members(item, exchange, &mut members, &mut BTreeSet::new());
+            collect_unit_scope_members(item, exchange, &mut members, &mut BTreeSet::new(), ctx)?;
         }
         for member in members {
             if let Some(length) = length {
-                length_candidates.entry(member).or_default().push(length);
+                add_unit_candidate(&mut length_candidates, member, length, ctx, "step_length_candidate_groups", "step_length_candidate_values")?;
             }
             if let Some(angle) = angle {
-                angle_candidates.entry(member).or_default().push(angle);
+                add_unit_candidate(&mut angle_candidates, member, angle, ctx, "step_angle_candidate_groups", "step_angle_candidate_values")?;
             }
         }
     }
-    let length = finalize_unit_candidates(length_candidates, "length", losses);
-    let angle = finalize_unit_candidates(angle_candidates, "plane-angle", losses);
+    let length = finalize_unit_candidates(length_candidates, default_length, "length", losses, ctx)?;
+    let angle = finalize_unit_candidates(angle_candidates, default_angle, "plane-angle", losses, ctx)?;
     Ok(UnitScales {
         default_length,
         default_angle,
-        length: length
-            .into_iter()
-            .filter(|(_, scale)| *scale != default_length)
-            .collect(),
-        angle: angle
-            .into_iter()
-            .filter(|(_, scale)| *scale != default_angle)
-            .collect(),
+        length,
+        angle,
     })
+}
+
+fn add_unit_candidate(
+    candidates: &mut BTreeMap<u64, Vec<PositiveReal>>,
+    id: u64,
+    scale: PositiveReal,
+    ctx: &DecodeContext<'_>,
+    group_operation: &'static str,
+    value_operation: &'static str,
+) -> Result<(), CodecError> {
+    if !candidates.contains_key(&id) {
+        ctx.charge_collection_items(1, group_operation)?;
+    }
+    let values = candidates.entry(id).or_default();
+    push_geometry_vec(values, scale, ctx, value_operation)
 }
 
 fn finalize_unit_candidates(
     candidates: BTreeMap<u64, Vec<PositiveReal>>,
+    default: PositiveReal,
     dimension: &str,
     losses: &mut Vec<LossNote>,
-) -> BTreeMap<u64, PositiveReal> {
+    ctx: &DecodeContext<'_>,
+) -> Result<BTreeMap<u64, PositiveReal>, CodecError> {
     let mut selected = BTreeMap::new();
     let mut ambiguous = 0;
     for (id, values) in candidates {
         match unique_scale(&values) {
-            Some(scale) => {
+            Some(scale) if scale != default => {
+                ctx.charge_collection_items(1, "step_unit_selected_scales")?;
                 selected.insert(id, scale);
             }
+            Some(_) => {}
             None => ambiguous += 1,
         }
     }
     if ambiguous > 0 {
-        losses.push(StepLossCode::ConflictingRepresentationUnits.note(format!(
+        push_geometry_vec(losses, StepLossCode::ConflictingRepresentationUnits.note(format!(
                 "{ambiguous} geometry record(s) belong to representations with conflicting {dimension} units; source-order unit selection was not applied"
-            )));
+            )), ctx, "step_geometry_losses")?;
     }
-    selected
+    Ok(selected)
 }
 
 fn unique_scale(values: &[PositiveReal]) -> Option<PositiveReal> {
@@ -3352,19 +3359,26 @@ fn collect_unit_scope_members(
     exchange: &Exchange,
     members: &mut BTreeSet<u64>,
     active: &mut BTreeSet<u64>,
-) {
-    if !active.insert(id) {
-        return;
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    let _depth = ctx.enter_nested("step_unit_scope_walk")?;
+    if active.contains(&id) {
+        return Ok(());
     }
+    ctx.charge_collection_items(1, "step_unit_scope_active")?;
+    active.insert(id);
     let Some(record) = exchange.records().get(&id) else {
-        return;
+        return Ok(());
     };
     if is_unit_record(record) || is_representation_context_record(record) {
-        return;
+        return Ok(());
+    }
+    if !members.contains(&id) {
+        ctx.charge_collection_items(1, "step_unit_scope_members")?;
     }
     members.insert(id);
     if record.partial("PCURVE").is_some() {
-        return;
+        return Ok(());
     }
     if record.partial("MAPPED_ITEM").is_some() {
         // The mapping source keeps the units of its mapped representation.
@@ -3374,9 +3388,9 @@ fn collect_unit_scope_members(
             .and_then(|partial| partial.parameters.last())
             .and_then(Value::reference)
         {
-            collect_unit_scope_members(target, exchange, members, active);
+            collect_unit_scope_members(target, exchange, members, active, ctx)?;
         }
-        return;
+        return Ok(());
     }
     for parameter in record
         .partials
@@ -3393,9 +3407,10 @@ fn collect_unit_scope_members(
             {
                 continue;
             }
-            collect_unit_scope_members(reference, exchange, members, active);
+            collect_unit_scope_members(reference, exchange, members, active, ctx)?;
         }
     }
+    Ok(())
 }
 
 fn is_unit_record(record: &RawRecord) -> bool {
