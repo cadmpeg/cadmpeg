@@ -1332,10 +1332,10 @@ impl NativeModel {
         let part_attributes = part_attributes(container);
         let configuration_attribute_uses =
             configuration_attribute_uses(&configurations, &part_attributes);
-        let external_references = external_references(container);
-        let external_reference_records = external_reference_records(container);
+        let external_references = external_references(ctx, container)?;
+        let external_reference_records = external_reference_records(ctx, container)?;
         let external_reference_indexed_records =
-            external_reference_indexed_records(container, &external_reference_records);
+            external_reference_indexed_records(ctx, container, &external_reference_records)?;
         let external_reference_empty_records =
             external_reference_empty_records(container, &external_reference_indexed_records);
         let external_reference_tail_reference_pairs =

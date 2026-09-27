@@ -2716,10 +2716,13 @@ fn parse_material_texture_catalog(
 }
 
 /// Decode end-anchored external child-part string tables.
-pub(super) fn external_references(container: &Container) -> Vec<ExternalReference> {
+pub(super) fn external_references(
+    ctx: &DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<ExternalReference>, cadmpeg_core::CodecError> {
     let mut ordinals = BTreeMap::<String, u32>::new();
-    container
-        .external_reference_strings()
+    Ok(container
+        .external_reference_strings(ctx)?
         .into_iter()
         .map(|(entry, relative, path)| {
             let ordinal = ordinals.entry(entry.name.clone()).or_default();
@@ -2734,13 +2737,16 @@ pub(super) fn external_references(container: &Container) -> Vec<ExternalReferenc
                 source_offset: entry_offset + relative as u64,
             }
         })
-        .collect()
+        .collect::<Vec<_>>())
 }
 
 /// Decode exact indexed external-reference record prefixes.
-pub(super) fn external_reference_records(container: &Container) -> Vec<ExternalReferenceRecord> {
-    container
-        .external_reference_records()
+pub(super) fn external_reference_records(
+    ctx: &DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<ExternalReferenceRecord>, cadmpeg_core::CodecError> {
+    Ok(container
+        .external_reference_records(ctx)?
         .into_iter()
         .map(|(entry, record)| {
             let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
@@ -2758,14 +2764,15 @@ pub(super) fn external_reference_records(container: &Container) -> Vec<ExternalR
                 source_offset: entry_offset + record.offset as u64,
             }
         })
-        .collect()
+        .collect())
 }
 
 /// Retain all indexed records and link uniquely decoded handle-set records.
 pub(super) fn external_reference_indexed_records(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     decoded: &[ExternalReferenceRecord],
-) -> Vec<ExternalReferenceIndexedRecord> {
+) -> Result<Vec<ExternalReferenceIndexedRecord>, cadmpeg_core::CodecError> {
     let mut decoded_by_key = BTreeMap::<(&str, u32), Option<&ExternalReferenceRecord>>::new();
     for record in decoded {
         decoded_by_key
@@ -2773,8 +2780,8 @@ pub(super) fn external_reference_indexed_records(
             .and_modify(|value| *value = None)
             .or_insert(Some(record));
     }
-    container
-        .external_reference_indexed_records()
+    Ok(container
+        .external_reference_indexed_records(ctx)?
         .into_iter()
         .filter_map(|(entry, record)| {
             let entry_offset = entry.file_span()?.0;
@@ -2797,7 +2804,7 @@ pub(super) fn external_reference_indexed_records(
                 source_offset,
             })
         })
-        .collect()
+        .collect())
 }
 
 /// Decode every exact six- or seven-byte empty indexed record.

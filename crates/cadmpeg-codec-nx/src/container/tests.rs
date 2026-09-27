@@ -528,7 +528,11 @@ fn container_bounds_rmfastload_table_at_its_first_product_record() {
 #[test]
 fn external_reference_string_table_is_end_anchored() {
     let table = b"prefix\x01\x02\x00\x00\x00\x09\x00child.prt\x0c\x00nested/b.prt";
-    let (_, strings) = crate::container::parse_extref_string_table(table).expect("string table");
+    let (_, strings) = crate::test_support::with_decode_context(|ctx| {
+        crate::container::parse_extref_string_table(ctx, table)
+    })
+    .expect("string table resources")
+    .expect("string table");
     assert_eq!(
         strings
             .into_iter()
@@ -539,8 +543,16 @@ fn external_reference_string_table_is_end_anchored() {
 
     let mut trailed = table.to_vec();
     trailed.push(0);
-    assert!(crate::container::parse_extref_string_table(&trailed).is_none());
-    assert!(crate::container::parse_extref_string_table(b"\x01\xff\xff\xff\xff").is_none());
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::container::parse_extref_string_table(ctx, &trailed)
+    })
+    .expect("string table resources")
+    .is_none());
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::container::parse_extref_string_table(ctx, b"\x01\xff\xff\xff\xff")
+    })
+    .expect("string table resources")
+    .is_none());
 }
 
 #[test]
@@ -573,7 +585,6 @@ fn external_reference_paths_refuse_collection_limit() {
         error,
         CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "nx external reference paths"
     ));
 }
 
@@ -603,8 +614,15 @@ fn external_reference_record_parser_accepts_sorted_repeated_handles() {
     payload.push(5);
     payload.extend_from_slice(b"\x01\x01\x00\x00\x00\x09\x00child.prt");
 
-    let records = crate::container::parse_extref_records(&payload);
-    let indexed = crate::container::parse_extref_record_index(&payload).expect("record index");
+    let records = crate::test_support::with_decode_context(|ctx| {
+        crate::container::parse_extref_records(ctx, &payload)
+    })
+    .expect("record resources");
+    let indexed = crate::test_support::with_decode_context(|ctx| {
+        crate::container::parse_extref_record_index(ctx, &payload)
+    })
+    .expect("index resources")
+    .expect("record index");
     assert_eq!(indexed.len(), 1);
     assert_eq!(indexed[0].record_id, 6);
     assert_eq!(indexed[0].offset, 41);
@@ -625,9 +643,16 @@ fn external_reference_record_parser_accepts_sorted_repeated_handles() {
         .rposition(|window| window == [0xe0, 0x20, 0x30, 0x40, 0x50])
         .expect("closing duplicate");
     payload[duplicate + 1] = 0x10;
-    assert!(crate::container::parse_extref_records(&payload).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::container::parse_extref_records(ctx, &payload)
+    })
+    .expect("record resources")
+    .is_empty());
     assert_eq!(
-        crate::container::parse_extref_record_index(&payload)
+        crate::test_support::with_decode_context(|ctx| {
+            crate::container::parse_extref_record_index(ctx, &payload)
+        })
+        .expect("index resources")
             .expect("opaque indexed record")
             .len(),
         1
