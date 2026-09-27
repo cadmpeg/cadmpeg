@@ -150,11 +150,8 @@ pub(super) fn feature_operation_chronological_labels(
 }
 
 /// Exact body-write frame retained from one feature operation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "body_write_wire::BodyWriteWire",
-    into = "body_write_wire::BodyWriteWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "body_write_wire::BodyWriteWire")]
 pub(super) struct FeatureOperationBodyWrite {
     pub(super) id: String,
     pub(super) operation_label: Option<String>,
@@ -341,11 +338,8 @@ impl TryFrom<FeatureOperationObjectReferenceWire> for FeatureOperationObjectRefe
 }
 
 /// Exactly framed common record in one bounded feature operation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "common_frame_wire::CommonFrameWire",
-    into = "common_frame_wire::CommonFrameWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "common_frame_wire::CommonFrameWire")]
 pub(super) struct FeatureOperationCommonFrame {
     pub(super) id: String,
     pub(super) operation_record: String,
@@ -354,11 +348,8 @@ pub(super) struct FeatureOperationCommonFrame {
 }
 
 /// Canonical terminal common-frame suffix of one feature operation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "common_frame_wire::TerminalFrameWire",
-    into = "common_frame_wire::TerminalFrameWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "common_frame_wire::TerminalFrameWire")]
 pub(super) struct FeatureOperationTerminalFrame {
     pub(super) id: String,
     pub(super) operation_record: String,
