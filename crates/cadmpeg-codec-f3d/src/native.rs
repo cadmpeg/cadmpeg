@@ -72,6 +72,18 @@ use cadmpeg_asm::brep::records::{
     TransformHints, VertexOwnership, WireTopology,
 };
 
+fn native_count(
+    ctx: &DecodeContext<'_>,
+    count: usize,
+    operation: &'static str,
+) -> Result<u64, cadmpeg_ir::NativeConvertError> {
+    u64::try_from(count).map_err(|_| {
+        cadmpeg_ir::NativeConvertError::Resource(
+            ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX),
+        )
+    })
+}
+
 fn owner_indices<'a>(
     ctx: Option<&DecodeContext<'_>>,
     ids: impl ExactSizeIterator<Item = &'a str>,
@@ -82,23 +94,25 @@ fn owner_indices<'a>(
             .map(|(ordinal, id)| (id.to_owned(), ordinal))
             .collect());
     };
-    ctx.charge_collection_items(ids.len() as u64, "index F3D native owners")?;
+    let count = native_count(ctx, ids.len(), "index F3D native owners")?;
+    ctx.charge_collection_items(count, "index F3D native owners")?;
     let mut indexed = HashMap::new();
     indexed.try_reserve(ids.len()).map_err(|_| {
         cadmpeg_ir::NativeConvertError::Resource(ctx.refuse_codec_limit(
             "index F3D native owners",
             0,
-            ids.len() as u64,
+            count,
         ))
     })?;
     for (ordinal, id) in ids.enumerate() {
-        ctx.charge_retained(id.len() as u64, "retain F3D native owner id")?;
+        let id_bytes = native_count(ctx, id.len(), "retain F3D native owner id")?;
+        ctx.charge_retained(id_bytes, "retain F3D native owner id")?;
         let mut key = String::new();
         key.try_reserve(id.len()).map_err(|_| {
             cadmpeg_ir::NativeConvertError::Resource(ctx.refuse_codec_limit(
                 "retain F3D native owner id",
                 0,
-                id.len() as u64,
+                id_bytes,
             ))
         })?;
         key.push_str(id);
@@ -159,12 +173,13 @@ fn group_by_owner<T>(
 
     let mut grouped = Vec::new();
     if let Some(ctx) = ctx {
-        ctx.charge_collection_items(owner_count as u64, "group F3D native owners")?;
+        let count = native_count(ctx, owner_count, "group F3D native owners")?;
+        ctx.charge_collection_items(count, "group F3D native owners")?;
         grouped.try_reserve(owner_count).map_err(|_| {
             cadmpeg_ir::NativeConvertError::Resource(ctx.refuse_codec_limit(
                 "group F3D native owners",
                 0,
-                owner_count as u64,
+                count,
             ))
         })?;
     }
@@ -1515,23 +1530,17 @@ impl F3dNative {
                 }
             };
         }
-        macro_rules! admit_index {
-            ($count:expr, $operation:literal) => {
-                if let Some(ctx) = ctx {
-                    ctx.charge_collection_items($count as u64, $operation)?;
-                }
-            };
-        }
         let sketch_relations = match ctx {
             Some(ctx) => {
                 let wires: Vec<SketchRelationSerde> = read_arena!("sketch_relations");
-                admit_index!(wires.len(), "load sketch relations");
+                let count = native_count(ctx, wires.len(), "load sketch relations")?;
+                ctx.charge_collection_items(count, "load sketch relations")?;
                 let mut relations = Vec::new();
                 relations.try_reserve(wires.len()).map_err(|_| {
                     cadmpeg_ir::NativeConvertError::Resource(ctx.refuse_codec_limit(
                         "load sketch relations",
                         0,
-                        wires.len() as u64,
+                        count,
                     ))
                 })?;
                 for wire in wires {
@@ -1653,14 +1662,15 @@ impl F3dNative {
             |change| &change.id,
             |change| &change.parent,
         )?;
-        admit_index!(boards.len(), "attach F3D history boards");
         let mut attached_boards = Vec::new();
         if let Some(ctx) = ctx {
+            let count = native_count(ctx, boards.len(), "attach F3D history boards")?;
+            ctx.charge_collection_items(count, "attach F3D history boards")?;
             attached_boards.try_reserve(boards.len()).map_err(|_| {
                 cadmpeg_ir::NativeConvertError::Resource(ctx.refuse_codec_limit(
                     "attach F3D history boards",
                     0,
-                    boards.len() as u64,
+                    count,
                 ))
             })?;
         }
@@ -1686,14 +1696,15 @@ impl F3dNative {
             |record| &record.id,
             |record| &record.parent,
         )?;
-        admit_index!(states.len(), "attach F3D history states");
         let mut attached_states = Vec::new();
         if let Some(ctx) = ctx {
+            let count = native_count(ctx, states.len(), "attach F3D history states")?;
+            ctx.charge_collection_items(count, "attach F3D history states")?;
             attached_states.try_reserve(states.len()).map_err(|_| {
                 cadmpeg_ir::NativeConvertError::Resource(ctx.refuse_codec_limit(
                     "attach F3D history states",
                     0,
-                    states.len() as u64,
+                    count,
                 ))
             })?;
         }
