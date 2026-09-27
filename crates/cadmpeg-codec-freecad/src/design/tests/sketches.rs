@@ -67,6 +67,20 @@ fn constraint_integer_list_refuses_at_caller_limit() {
 }
 
 #[test]
+fn constraint_attribute_refuses_at_retained_limit() {
+    let xml = roxmltree::Document::parse("<Constraint Name=\"width\"/>")
+        .expect("valid constraint XML");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::super::nonempty_attr(&ctx, xml.root_element(), "Name"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "fcstd constraint attribute"));
+}
+
+#[test]
 fn circular_arc_admits_finite_fields_and_keeps_invalid_native_fallback() {
     let mut attributes = std::collections::BTreeMap::from([
         ("CenterX".to_owned(), "1".to_owned()),
