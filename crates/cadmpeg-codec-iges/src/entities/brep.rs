@@ -123,17 +123,21 @@ fn topology_vertex(
     list: u32,
     index: usize,
     sequences: &mut super::geometry::SourceSequences,
-) -> Option<VertexId> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<VertexId>, CodecError> {
     if let Some(existing) = vertex_ids.get(&(list, index)) {
-        return Some(existing.clone());
+        return Ok(Some(existing.clone()));
     }
     let point_id = crate::ids::point(&stem.child(list).slot(index + 1));
+    let Some(position) = FinitePoint3::new(vertex_lists[&list][index]) else {
+        return Ok(None);
+    };
     let point = Point::new(
         point_id.clone(),
-        FinitePoint3::new(vertex_lists[&list][index])?,
+        position,
         None,
     );
-    sequences.record_point(&point_id, stem);
+    sequences.record_point(&point_id, stem, Some(ctx))?;
     let vertex_id = crate::ids::vertex(&stem.child(list).slot(index + 1));
     candidate.model_mut().points.push(point);
     candidate.model_mut().vertices.push(Vertex {
@@ -141,7 +145,7 @@ fn topology_vertex(
         point: point_id,
         tolerance: None,
     });
-    Some(vertex_ids.entry((list, index)).or_insert(vertex_id).clone())
+    Ok(Some(vertex_ids.entry((list, index)).or_insert(vertex_id).clone()))
 }
 
 fn source_edge_for_vertices<'a>(
@@ -809,7 +813,7 @@ pub(super) fn project(
         let mut candidate = ModelDraft::new();
         let stem = crate::ids::Stem::directory(entry.sequence);
         let body_id = crate::ids::body(&stem);
-        sequences.record_body(&body_id, entry.sequence, &stem);
+        sequences.record_body(&body_id, entry.sequence, &stem, Some(ctx))?;
         let region_id = crate::ids::region(&stem);
         let mut vertex_ids = BTreeMap::<(u32, usize), VertexId>::new();
         let mut edge_ids = BTreeMap::<(u32, usize), EdgeId>::new();
@@ -840,7 +844,7 @@ pub(super) fn project(
                     break;
                 };
                 let face_id = crate::ids::face(&shell_stem.child(face_sequence));
-                sequences.record_face(&face_id, face_sequence);
+                sequences.record_face(&face_id, face_sequence, Some(ctx))?;
                 let loop_id_for = |sequence| crate::ids::r#loop(&shell_stem.child(sequence));
                 for loop_sequence in face_definition.loops.iter() {
                     let uses = loops[&loop_sequence].clone();
@@ -888,7 +892,8 @@ pub(super) fn project(
                                 *vertex_list,
                                 *vertex_index,
                                 sequences,
-                            ) else {
+                                ctx,
+                            )? else {
                                 continue;
                             };
                             let after = if coedge_ids.is_empty() {
@@ -946,13 +951,12 @@ pub(super) fn project(
                             continue;
                         };
                         let edge_definition = edge_lists[edge_list][*edge_index];
-                        let placed = [
+                        let mut placed = true;
+                        for (list, index) in [
                             (edge_definition.start_list, edge_definition.start_index),
                             (edge_definition.end_list, edge_definition.end_index),
-                        ]
-                        .into_iter()
-                        .fold(true, |placed, (list, index)| {
-                            topology_vertex(
+                        ] {
+                            placed = topology_vertex(
                                 &mut candidate,
                                 &mut vertex_ids,
                                 &vertex_lists,
@@ -960,10 +964,9 @@ pub(super) fn project(
                                 list,
                                 index,
                                 sequences,
-                            )
-                            .is_some()
-                                && placed
-                        });
+                                ctx,
+                            )?.is_some() && placed;
+                        }
                         if !placed {
                             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "an edge vertex position states a non-finite coordinate"))?;
                             valid = false;

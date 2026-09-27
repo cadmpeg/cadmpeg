@@ -814,11 +814,11 @@ pub(super) fn project(
         let start_point = crate::ids::point(
             &crate::ids::Stem::directory(entry.sequence).part(crate::ids::Word::Start),
         );
-        sequences.record_point(&start_point, &crate::ids::Stem::directory(entry.sequence));
+        sequences.record_point(&start_point, &crate::ids::Stem::directory(entry.sequence), ctx)?;
         let end_point = crate::ids::point(
             &crate::ids::Stem::directory(entry.sequence).part(crate::ids::Word::End),
         );
-        sequences.record_point(&end_point, &crate::ids::Stem::directory(entry.sequence));
+        sequences.record_point(&end_point, &crate::ids::Stem::directory(entry.sequence), ctx)?;
         let start_vertex = crate::ids::vertex(
             &crate::ids::Stem::directory(entry.sequence).part(crate::ids::Word::Start),
         );
@@ -855,7 +855,7 @@ pub(super) fn project(
             }
         };
         if offset_source_id != source_id {
-            sequences.record_curve(&offset_source_id, entry.sequence);
+            sequences.record_curve(&offset_source_id, entry.sequence, ctx)?;
             ir.model.curves.push(Curve {
                 id: offset_source_id.clone(),
                 geometry: CurveGeometry::Solved(offset_source_geometry.clone()),
@@ -884,7 +884,7 @@ pub(super) fn project(
                 tolerance: None,
             },
         ]);
-        sequences.record_curve(&curve_id, entry.sequence);
+        sequences.record_curve(&curve_id, entry.sequence, ctx)?;
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry,

@@ -51,6 +51,8 @@ fn conic_indexes_neutral_records_and_wire_edges_refuse_limits() {
     for operation in [
         "iges conic parameter index",
         "iges conic directory index",
+        "iges source point sequences",
+        "iges source curve sequences",
         "iges conic neutral points",
         "iges conic neutral vertices",
         "iges conic neutral curves",

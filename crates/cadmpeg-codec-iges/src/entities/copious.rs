@@ -386,7 +386,7 @@ pub(super) fn project(
                 let point = crate::ids::point(
                     &crate::ids::Stem::directory(entry.sequence).tail_index(index + 1),
                 );
-                sequences.record_point(&point, &crate::ids::Stem::directory(entry.sequence));
+                sequences.record_point(&point, &crate::ids::Stem::directory(entry.sequence), Some(ctx))?;
                 let vertex = crate::ids::vertex(
                     &crate::ids::Stem::directory(entry.sequence).tail_index(index + 1),
                 );
@@ -448,9 +448,9 @@ pub(super) fn project(
         let end = positions[positions.len() - 1];
         let stem = crate::ids::Stem::directory(entry.sequence);
         let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
-        sequences.record_point(&start_point, &stem);
+        sequences.record_point(&start_point, &stem, Some(ctx))?;
         let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
-        sequences.record_point(&end_point, &stem);
+        sequences.record_point(&end_point, &stem, Some(ctx))?;
         let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
         let end_vertex = if entry.form == 63 {
             start_vertex.clone()
@@ -481,7 +481,7 @@ pub(super) fn project(
                 tolerance: topology_tolerance,
             });
         }
-        sequences.record_curve(&curve, entry.sequence);
+        sequences.record_curve(&curve, entry.sequence, Some(ctx))?;
         let knots = collect_optional_vec(
             ctx,
             knots.into_iter().map(FiniteReal::new),

@@ -1922,9 +1922,9 @@ fn project_native_composite(
     }
     let stem = crate::ids::Stem::directory(entry.sequence);
     let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
-    sequences.record_point(&start_point, &stem);
+    sequences.record_point(&start_point, &stem, ctx)?;
     let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
-    sequences.record_point(&end_point, &stem);
+    sequences.record_point(&end_point, &stem, ctx)?;
     let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
     let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
     let curve_id = crate::ids::curve(&stem);
@@ -1945,7 +1945,7 @@ fn project_native_composite(
             tolerance: None,
         },
     ]);
-    sequences.record_curve(&curve_id, entry.sequence);
+    sequences.record_curve(&curve_id, entry.sequence, ctx)?;
     let Some(segments) = cadmpeg_ir::geometry::CompositeCurveSegments::try_from(segments).ok()
     else {
         return Ok(None);
@@ -2370,9 +2370,9 @@ fn project_with_type_130_policy(
         };
         let stem = crate::ids::Stem::directory(entry.sequence);
         let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
-        sequences.record_point(&start_point, &stem);
+        sequences.record_point(&start_point, &stem, ctx)?;
         let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
-        sequences.record_point(&end_point, &stem);
+        sequences.record_point(&end_point, &stem, ctx)?;
         let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
         let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
         let curve_id = crate::ids::curve(&stem);
@@ -2393,7 +2393,7 @@ fn project_with_type_130_policy(
                 tolerance: None,
             },
         ]);
-        sequences.record_curve(&curve_id, entry.sequence);
+        sequences.record_curve(&curve_id, entry.sequence, ctx)?;
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),

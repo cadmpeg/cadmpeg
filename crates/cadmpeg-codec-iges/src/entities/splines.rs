@@ -182,9 +182,9 @@ fn add_edge(
     };
     let stem = crate::ids::Stem::directory(entry.sequence);
     let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
-    sequences.record_point(&start_point, &stem);
+    sequences.record_point(&start_point, &stem, Some(ctx))?;
     let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
-    sequences.record_point(&end_point, &stem);
+    sequences.record_point(&end_point, &stem, Some(ctx))?;
     let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
     let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
     let curve = crate::ids::curve(&stem);
@@ -205,7 +205,7 @@ fn add_edge(
             tolerance: None,
         },
     ]);
-    sequences.record_curve(&curve, entry.sequence);
+    sequences.record_curve(&curve, entry.sequence, Some(ctx))?;
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
@@ -890,8 +890,7 @@ pub(super) fn project(
         };
         sequences.record_surface(
             &crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
-            entry.sequence,
-        );
+            entry.sequence, Some(ctx))?;
         ir.model.surfaces.push(Surface {
             id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
