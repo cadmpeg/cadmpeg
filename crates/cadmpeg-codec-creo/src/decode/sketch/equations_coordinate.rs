@@ -1140,16 +1140,27 @@ pub(in crate::decode) fn solve_section_coordinate_equations(
     let mut solved = BTreeMap::<SectionCoordinateVariable, f64>::new();
     let mut remaining = section_remaining_variables(ctx, variables.len())?;
     while let Some(component) = next_section_component(ctx, &mut remaining, &adjacency)? {
-        let columns = component.iter().copied().collect::<Vec<_>>();
-        let local_columns = columns
-            .iter()
-            .enumerate()
-            .map(|(local, global)| (*global, local))
-            .collect::<BTreeMap<_, _>>();
-        let component_equations = component
-            .iter()
-            .flat_map(|variable| variable_equations[*variable].iter().copied())
-            .collect::<BTreeSet<_>>();
+        let mut columns = Vec::new();
+        ctx.try_reserve_items(
+            &mut columns,
+            component.len(),
+            "creo section component columns",
+        )?;
+        columns.extend(component.iter().copied());
+        let mut local_columns = BTreeMap::new();
+        for (local, global) in columns.iter().enumerate() {
+            ctx.charge_collection_items(1, "creo section local columns")?;
+            local_columns.insert(*global, local);
+        }
+        let mut component_equations = BTreeSet::new();
+        for variable in &component {
+            for &equation_index in &variable_equations[*variable] {
+                if !component_equations.contains(&equation_index) {
+                    ctx.charge_collection_items(1, "creo section component equations")?;
+                    component_equations.insert(equation_index);
+                }
+            }
+        }
         let mut matrix = component_equations
             .into_iter()
             .map(|equation_index| &equations[equation_index])
@@ -1485,6 +1496,60 @@ mod tests {
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo section remaining variables")
+        );
+    }
+
+    #[test]
+    fn section_component_columns_refuse_before_vector_reserve() {
+        let equations = [SectionCoordinateEquation::point_value(
+            1,
+            SectionAxis::U,
+            1.0,
+        )];
+        let error = with_collection_limit(10, |ctx| {
+            super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
+        })
+        .expect_err("the component needs an ordered column vector");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section component columns")
+        );
+    }
+
+    #[test]
+    fn section_local_columns_refuse_before_tree_insert() {
+        let equations = [SectionCoordinateEquation::point_value(
+            1,
+            SectionAxis::U,
+            1.0,
+        )];
+        let error = with_collection_limit(11, |ctx| {
+            super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
+        })
+        .expect_err("the first local index follows one admitted column");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section local columns")
+        );
+    }
+
+    #[test]
+    fn section_component_equations_refuse_before_tree_insert() {
+        let equations = [SectionCoordinateEquation::point_value(
+            1,
+            SectionAxis::U,
+            1.0,
+        )];
+        let error = with_collection_limit(12, |ctx| {
+            super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
+        })
+        .expect_err("the component equation follows its local column");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section component equations")
         );
     }
 
