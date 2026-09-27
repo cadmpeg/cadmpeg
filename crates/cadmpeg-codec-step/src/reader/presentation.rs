@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use super::{named_parameter, references, RecordExt, ValueExt};
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{
@@ -21,7 +22,7 @@ use crate::ids;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::decode_text;
+use super::decode_text_charged;
 use super::topology::TopologyData;
 use super::StageOutcome;
 
@@ -31,7 +32,7 @@ pub(super) fn decode(
     ir: &mut CadIr,
     product_definition_ids_by_source: &BTreeMap<u64, Vec<ProductDefinitionId>>,
     ctx: Option<&DecodeContext<'_>>,
-) -> StageOutcome<()> {
+) -> Result<StageOutcome<()>, CodecError> {
     let mut typed = HashSet::new();
     let mut losses = Vec::new();
     let graph_limit = super::record_graph_limit(ctx);
@@ -192,16 +193,19 @@ pub(super) fn decode(
             continue;
         }
         let Some(name) =
-            named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 0).and_then(|value| {
-                decode_text(
+            named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 0).map(|value| {
+                decode_text_charged(
                     exchange,
                     value,
                     &mut losses,
                     layer_id,
                     "presentation layer name",
                     StepLossCode::MetadataStringInvalid,
+                    ctx,
                 )
             })
+            .transpose()?
+            .flatten()
         else {
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no name"
@@ -209,16 +213,19 @@ pub(super) fn decode(
             continue;
         };
         let description = named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 1)
-            .and_then(|value| {
-                decode_text(
+            .map(|value| {
+                decode_text_charged(
                     exchange,
                     value,
                     &mut losses,
                     layer_id,
                     "presentation layer description",
                     StepLossCode::MetadataStringInvalid,
+                    ctx,
                 )
             })
+            .transpose()?
+            .flatten()
             .filter(|value| !value.is_empty());
         let mut items = Vec::new();
         for id in assigned_items.iter().filter_map(ValueExt::reference) {
@@ -312,7 +319,7 @@ pub(super) fn decode(
             continue;
         }
         let color =
-            combine_color_resolutions(style_references.iter().copied().filter_map(|reference| {
+            combine_color_resolutions(style_references.iter().copied().map(|reference| {
                 find_color(
                     reference,
                     exchange,
@@ -322,26 +329,26 @@ pub(super) fn decode(
                     &mut losses,
                     &mut invalid_surface_sides,
                     0,
+                    ctx,
                 )
-            }));
-        let color = color.or_else(|| {
-            matches!(domain, StyleDomain::Curve | StyleDomain::Point).then(|| {
-                combine_color_resolutions(style_references.iter().copied().filter_map(
-                    |reference| {
-                        find_color(
-                            reference,
-                            exchange,
-                            StyleDomain::Surface,
-                            &mut active,
-                            &mut color_cache,
-                            &mut losses,
-                            &mut invalid_surface_sides,
-                            0,
-                        )
-                    },
-                ))
-            })?
-        });
+            }))?;
+        let color = if color.is_none() && matches!(domain, StyleDomain::Curve | StyleDomain::Point) {
+            combine_color_resolutions(style_references.iter().copied().map(|reference| {
+                find_color(
+                    reference,
+                    exchange,
+                    StyleDomain::Surface,
+                    &mut active,
+                    &mut color_cache,
+                    &mut losses,
+                    &mut invalid_surface_sides,
+                    0,
+                    ctx,
+                )
+            }))?
+        } else {
+            color
+        };
         let color = match color {
             Some(ColorResolution::Candidate(candidate)) => candidate,
             Some(ColorResolution::Ambiguous { .. }) => {
@@ -545,12 +552,12 @@ pub(super) fn decode(
                 )));
         }
     }
-    StageOutcome {
+    Ok(StageOutcome {
         value: (),
         claims: typed,
         losses,
         notes: Vec::new(),
-    }
+    })
 }
 
 fn invisible_body_ids(
@@ -1071,12 +1078,15 @@ impl ColorResolution {
 }
 
 fn combine_color_resolutions(
-    resolutions: impl IntoIterator<Item = ColorResolution>,
-) -> CachedColor {
+    resolutions: impl IntoIterator<Item = Result<CachedColor, CodecError>>,
+) -> Result<CachedColor, CodecError> {
     let mut best_priority = None;
     let mut best = None;
     let mut ambiguous = false;
     for resolution in resolutions {
+        let Some(resolution) = resolution? else {
+            continue;
+        };
         let priority = resolution.priority();
         let replace = best_priority.is_none_or(|current| priority > current);
         if replace {
@@ -1111,11 +1121,13 @@ fn combine_color_resolutions(
             }
         }
     }
-    let rank = best_priority?;
+    let Some(rank) = best_priority else {
+        return Ok(None);
+    };
     if ambiguous {
-        Some(ColorResolution::Ambiguous { rank })
+        Ok(Some(ColorResolution::Ambiguous { rank }))
     } else {
-        best.map(ColorResolution::Candidate)
+        Ok(best.map(ColorResolution::Candidate))
     }
 }
 
@@ -1129,26 +1141,32 @@ fn find_color(
     losses: &mut Vec<LossNote>,
     invalid_surface_sides: &mut BTreeSet<u64>,
     depth: usize,
-) -> CachedColor {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<CachedColor, CodecError> {
     if depth >= 256 {
-        return None;
+        return Ok(None);
     }
     if let Some(result) = cache.get(&(id, domain)) {
-        return result.clone();
+        return Ok(result.clone());
     }
-    let record = exchange.records().get(&id)?;
+    let Some(record) = exchange.records().get(&id) else {
+        return Ok(None);
+    };
     if is_presentation_style_by_context(record) {
-        return None;
+        return Ok(None);
     }
     if !active.insert(id) {
-        return None;
+        return Ok(None);
     }
     let transparency = (domain == StyleDomain::Surface)
         .then(|| surface_transparency(id, record, exchange, losses))
         .flatten();
-    let mut result = (|| {
+    let result = (|| -> Result<CachedColor, CodecError> {
         let side_rank = if domain == StyleDomain::Surface {
-            surface_side_rank(id, record, losses, invalid_surface_sides)?
+            let Some(rank) = surface_side_rank(id, record, losses, invalid_surface_sides) else {
+                return Ok(None);
+            };
+            rank
         } else {
             SurfaceSideRank::NoUsage
         };
@@ -1181,8 +1199,8 @@ fn find_color(
                 .flat_map(|partial| partial.parameters.iter())
                 .flat_map(references)
             {
-                // discarded-value: caching the colour and recording its losses is the whole effect; a record of an incompatible domain states no colour of its own
-                let _ = find_color(
+                // The recursive search caches the colour and records its losses.
+                find_color(
                     reference,
                     exchange,
                     domain,
@@ -1191,20 +1209,29 @@ fn find_color(
                     losses,
                     invalid_surface_sides,
                     depth + 1,
-                );
+                    ctx,
+                )?;
             }
-            return None;
+            return Ok(None);
         }
         match name {
             Some("COLOUR_RGB") => {
-                let rgb = record
+                let Some(rgb) = record
                     .partials
                     .iter()
-                    .find(|partial| partial.name == "COLOUR_RGB")?;
+                    .find(|partial| partial.name == "COLOUR_RGB") else {
+                    return Ok(None);
+                };
                 let offset = usize::from(record.partials.len() == 1);
-                let r = rgb.parameters.get(offset)?.number()?;
-                let g = rgb.parameters.get(offset + 1)?.number()?;
-                let b = rgb.parameters.get(offset + 2)?.number()?;
+                let Some(r) = rgb.parameters.get(offset).and_then(ValueExt::number) else {
+                    return Ok(None);
+                };
+                let Some(g) = rgb.parameters.get(offset + 1).and_then(ValueExt::number) else {
+                    return Ok(None);
+                };
+                let Some(b) = rgb.parameters.get(offset + 2).and_then(ValueExt::number) else {
+                    return Ok(None);
+                };
                 let name_value = if record.partials.len() == 1 {
                     rgb.parameters.first()
                 } else {
@@ -1214,21 +1241,29 @@ fn find_color(
                         .find(|partial| partial.name == "COLOUR_SPECIFICATION")
                         .and_then(|partial| partial.parameters.first())
                 };
-                Some(ColorResolution::Candidate(ColorCandidate {
-                    rank: side_rank,
-                    id,
-                    color: Color::new(r as f32, g as f32, b as f32, 1.0)?,
-                    name: name_value.and_then(|value| {
-                        decode_text(
+                let Some(color) = Color::new(r as f32, g as f32, b as f32, 1.0) else {
+                    return Ok(None);
+                };
+                let name = name_value
+                    .map(|value| {
+                        decode_text_charged(
                             exchange,
                             value,
                             losses,
                             id,
                             "colour name",
                             StepLossCode::AttributeStringInvalid,
+                            ctx,
                         )
-                    }),
-                }))
+                    })
+                    .transpose()?
+                    .flatten();
+                Ok(Some(ColorResolution::Candidate(ColorCandidate {
+                    rank: side_rank,
+                    id,
+                    color,
+                    name,
+                })))
             }
             Some("DRAUGHTING_PRE_DEFINED_COLOUR") => {
                 let name_value = if record.partials.len() == 1 {
@@ -1239,23 +1274,29 @@ fn find_color(
                         .iter()
                         .find(|partial| partial.name == "PRE_DEFINED_ITEM")
                         .and_then(|partial| partial.parameters.first())
-                }?;
-                let name = decode_text(
+                };
+                let Some(name_value) = name_value else {
+                    return Ok(None);
+                };
+                let Some(name) = decode_text_charged(
                     exchange,
                     name_value,
                     losses,
                     id,
                     "predefined colour name",
                     StepLossCode::AttributeStringInvalid,
-                )?;
-                predefined(&name).map(|color| {
+                    ctx,
+                )? else {
+                    return Ok(None);
+                };
+                Ok(predefined(&name).map(|color| {
                     ColorResolution::Candidate(ColorCandidate {
                         rank: side_rank,
                         id,
                         color,
                         name: Some(name),
                     })
-                })
+                }))
             }
             _ => combine_color_resolutions(
                 record
@@ -1263,7 +1304,7 @@ fn find_color(
                     .iter()
                     .flat_map(|partial| partial.parameters.iter())
                     .flat_map(references)
-                    .filter_map(|reference| {
+                    .map(|reference| {
                         find_color(
                             reference,
                             exchange,
@@ -1273,12 +1314,19 @@ fn find_color(
                             losses,
                             invalid_surface_sides,
                             depth + 1,
+                            ctx,
                         )
                     })
-                    .map(|candidate| candidate.with_min_rank(side_rank)),
+                    .map(|result| {
+                        result.map(|candidate| {
+                            candidate.map(|candidate| candidate.with_min_rank(side_rank))
+                        })
+                    }),
             ),
         }
     })();
+    active.remove(&id);
+    let mut result = result?;
     if let Some(transparency) = transparency {
         match result.as_mut() {
             Some(ColorResolution::Candidate(candidate)) => {
@@ -1291,9 +1339,8 @@ fn find_color(
             None => {}
         }
     }
-    active.remove(&id);
     cache.insert((id, domain), result.clone());
-    result
+    Ok(result)
 }
 
 fn surface_transparency(

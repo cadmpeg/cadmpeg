@@ -424,7 +424,7 @@ fn decode_exchange_mode(
         &mut session.ir,
         &product.value.product_definition_ids_by_source,
         Some(session.ctx),
-    );
+    )?;
     session.charge_stage("step_validation_decode")?;
     let mut validation = validation::decode(exchange, &geometry.value, &mut session.ir, session.ctx)?;
     if !session.ir.model.points.is_empty()
