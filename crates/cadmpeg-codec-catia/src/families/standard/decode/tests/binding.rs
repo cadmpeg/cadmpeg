@@ -27,6 +27,7 @@ use crate::families::standard::decode::standard_curve_edge_classes;
 use crate::families::standard::decode::standard_curve_geometry_gauge_keys;
 use crate::families::standard::decode::standard_endpoint_pair_supports_topology;
 use crate::families::standard::decode::standard_face_point_membership;
+use crate::families::standard::decode::standard_face_boundary_witnesses;
 use crate::families::standard::decode::standard_oriented_analytic_curve_parameter_range;
 use crate::families::standard::decode::standard_pcurve_geometry;
 use crate::families::standard::decode::standard_serialized_endpoint_pairs;
@@ -244,6 +245,41 @@ fn owner_face_swaps_bind_when_every_complete_matching_has_one_carrier() {
             .expect("binding fits the service profile"),
         Some(vec![Some(7), Some(7)])
     );
+}
+
+#[test]
+fn a5_owner_domain_entries_refuse_before_normalization() {
+    let domains = vec![vec![(0, vec![7])]];
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        invariant_face_carrier_bindings(ctx, &domains, 1, None)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            invariant_face_carrier_bindings(ctx, &domains, 1, None)
+        })
+        .expect("service context admits one owner domain"),
+        Some(vec![Some(7)])
+    );
+}
+
+#[test]
+fn a5_face_witness_index_refuses_before_point_map_growth() {
+    let mut ir = CadIr::empty();
+    ir.model.points.push(Point::new(
+        PointId::mint("catia:test:point#a5-witness").expect("identity grammar"),
+        FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).expect("finite point"),
+        None,
+    ));
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        standard_face_boundary_witnesses(ctx, &ir)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+    assert!(crate::test_support::with_service_context(|ctx| {
+        standard_face_boundary_witnesses(ctx, &ir)
+    })
+    .expect("service context admits witness index")
+    .is_empty());
 }
 
 #[test]
