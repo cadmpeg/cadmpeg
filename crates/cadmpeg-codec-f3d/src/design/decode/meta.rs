@@ -5,7 +5,7 @@ use cadmpeg_core::container::{ContainerEntry, ContainerRole};
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded, take_reference, Reference};
@@ -472,74 +472,179 @@ fn local_reference(
 }
 
 fn parse_feature_timeline_record(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     stream: &str,
     frame: std::ops::Range<usize>,
-    expected_class_tag: &str,
-    expected_entity_id: u64,
+    expected: (&str, u64),
     source_ordinal: u32,
     type_guids_by_entity: &HashMap<u64, Vec<&str>>,
-) -> Option<DesignFeatureTimeline> {
-    let (start, end) = (frame.start, frame.end);
-    let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)?;
-    if class_tag != expected_class_tag || View::u64_le_at(bytes, after_tag)? != expected_entity_id {
-        return None;
-    }
-    let (_, payload) = lp_ascii_filtered(
-        bytes,
-        after_tag.checked_add(8)?,
-        0..=2000,
-        u8::is_ascii_graphic,
-    )?;
-    if bytes.get(payload..payload.checked_add(2)?)? != [0, 0] {
-        return None;
-    }
-
-    let mut at = payload.checked_add(2)?;
-    let context_reference_offset = at.checked_add(1)?;
-    let context_record_index = std::num::NonZeroU64::new(local_reference(
-        &take_reference(bytes, &mut at)?,
-        type_guids_by_entity,
-    )?)?;
-    let item_count_offset = at;
-    let count = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
-    at = at.checked_add(4)?;
-    if count > end.checked_sub(at)? / 11 {
-        return None;
-    }
+) -> Result<Option<DesignFeatureTimeline>, CodecError> {
+    let (expected_class_tag, expected_entity_id) = expected;
+    let Some((
+        class_tag,
+        mut at,
+        context_reference_offset,
+        context_record_index,
+        item_count_offset,
+        count,
+    )) = (|| {
+        let (start, end) = (frame.start, frame.end);
+        let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)?;
+        if class_tag != expected_class_tag
+            || View::u64_le_at(bytes, after_tag)? != expected_entity_id
+        {
+            return None;
+        }
+        let (_, payload) = lp_ascii_filtered(
+            bytes,
+            after_tag.checked_add(8)?,
+            0..=2000,
+            u8::is_ascii_graphic,
+        )?;
+        if bytes.get(payload..payload.checked_add(2)?)? != [0, 0] {
+            return None;
+        }
+        let mut at = payload.checked_add(2)?;
+        let context_reference_offset = at.checked_add(1)?;
+        let context_record_index = std::num::NonZeroU64::new(local_reference(
+            &take_reference(bytes, &mut at)?,
+            type_guids_by_entity,
+        )?)?;
+        let item_count_offset = at;
+        let count = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
+        at = at.checked_add(4)?;
+        if count > end.checked_sub(at)? / 11 {
+            return None;
+        }
+        Some((
+            class_tag,
+            at,
+            context_reference_offset,
+            context_record_index,
+            item_count_offset,
+            count,
+        ))
+    })()
+    else {
+        return Ok(None);
+    };
+    let count_u64 = u64::try_from(count)
+        .map_err(|_| ctx.refuse_codec_limit("F3D timeline item count", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_collection_items(count_u64, "admit F3D timeline item slots")?;
+    let work = count
+        .checked_next_power_of_two()
+        .and_then(|power| usize::try_from(power.ilog2()).ok())
+        .and_then(|levels| count.checked_mul(levels.checked_add(1)?)?.checked_mul(2))
+        .and_then(|units| u64::try_from(units).ok())
+        .ok_or_else(|| ctx.refuse_codec_limit("F3D timeline sort work", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(work, "validate F3D timeline item uniqueness")?;
     let mut items = Vec::with_capacity(count);
     for _ in 0..count {
-        let target_offset = at.checked_add(1)?;
-        let target = local_reference(&take_reference(bytes, &mut at)?, type_guids_by_entity)?;
+        let Some(target_offset) = at.checked_add(1) else {
+            return Ok(None);
+        };
+        let Some(reference) = take_reference(bytes, &mut at) else {
+            return Ok(None);
+        };
+        let Some(target) = local_reference(&reference, type_guids_by_entity) else {
+            return Ok(None);
+        };
+        let Some(target_offset) = u64::try_from(target_offset).ok() else {
+            return Ok(None);
+        };
         items.push(crate::records::identity::Located {
             value: target,
-            offset: target_offset as u64,
+            offset: target_offset,
         });
     }
-    if at != end {
-        return None;
+    if at != frame.end {
+        return Ok(None);
     }
 
-    DesignFeatureTimeline::try_new(
-        ids::native_design_feature_timeline_id(stream, start),
-        crate::records::entity_header::DesignTimelineFrame::new(
-            start as u64,
-            end.checked_sub(start)? as u64,
-            context_reference_offset as u64,
-            item_count_offset as u64,
-            items,
-        )
-        .ok()?,
-        crate::records::references::DesignClassTag::try_from(class_tag).ok()?,
-        std::num::NonZeroU64::new(expected_entity_id)?,
+    let source_start = frame.start;
+    let Some(frame_start) = u64::try_from(source_start).ok() else {
+        return Ok(None);
+    };
+    let Some(frame_length) = frame
+        .end
+        .checked_sub(frame.start)
+        .and_then(|value| u64::try_from(value).ok())
+    else {
+        return Ok(None);
+    };
+    let Some(context_reference_offset) = u64::try_from(context_reference_offset).ok() else {
+        return Ok(None);
+    };
+    let Some(item_count_offset) = u64::try_from(item_count_offset).ok() else {
+        return Ok(None);
+    };
+    let Some(frame) = crate::records::entity_header::DesignTimelineFrame::new(
+        frame_start,
+        frame_length,
+        context_reference_offset,
+        item_count_offset,
+        items,
+    )
+    .ok() else {
+        return Ok(None);
+    };
+    let Some(class_tag) = crate::records::references::DesignClassTag::try_from(class_tag).ok()
+    else {
+        return Ok(None);
+    };
+    let Some(record_index) = std::num::NonZeroU64::new(expected_entity_id) else {
+        return Ok(None);
+    };
+    let id_bytes = stream
+        .chars()
+        .try_fold("f3d:".len(), |length, character| {
+            let bytes = if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+                character.len_utf8().checked_mul(3)?
+            } else {
+                character.len_utf8()
+            };
+            length.checked_add(bytes)
+        })
+        .and_then(|scope| {
+            let digits = usize::try_from(source_start.checked_ilog10().unwrap_or(0) + 1).ok()?;
+            let retained = scope
+                .checked_add(":design-feature-timeline#".len())?
+                .checked_add(digits)?;
+            Some((scope, retained))
+        })
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("F3D timeline identity length", u64::MAX - 1, u64::MAX)
+        })?;
+    let temporary = id_bytes.0.checked_add(id_bytes.1).ok_or_else(|| {
+        ctx.refuse_codec_limit("F3D timeline identity length", u64::MAX - 1, u64::MAX)
+    })?;
+    let _id_reservation = ctx.reserve_scoped(
+        u64::try_from(temporary).map_err(|_| {
+            ctx.refuse_codec_limit("F3D timeline identity length", u64::MAX - 1, u64::MAX)
+        })?,
+        "format F3D timeline identity",
+    )?;
+    ctx.charge_retained(
+        u64::try_from(id_bytes.1).map_err(|_| {
+            ctx.refuse_codec_limit("F3D timeline identity length", u64::MAX - 1, u64::MAX)
+        })?,
+        "retain F3D timeline identity",
+    )?;
+    Ok(DesignFeatureTimeline::try_new(
+        ids::native_design_feature_timeline_id(stream, source_start),
+        frame,
+        class_tag,
+        record_index,
         source_ordinal,
         context_record_index,
     )
-    .ok()
+    .ok())
 }
 
 /// Decode the exact counted scope list that carries authored feature order.
 pub(crate) fn decode_feature_timelines(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<DesignFeatureTimeline>, CodecError> {
     let mut out = Vec::new();
@@ -552,31 +657,30 @@ pub(crate) fn decode_feature_timelines(
             scan.entry_bytes(&meta_entry.entry.name)?,
             &meta_entry.entry.name,
         )?;
-        let timeline_types = meta
-            .types
-            .iter()
-            .enumerate()
-            .filter(|(_, design_type)| {
-                design_type
-                    .type_guid
-                    .as_str()
-                    .eq_ignore_ascii_case(FEATURE_TIMELINE_TYPE_GUID)
-            })
-            .collect::<Vec<_>>();
-        if timeline_types.is_empty() {
+        let is_timeline_type = |design_type: &SegmentType| {
+            design_type
+                .type_guid
+                .as_str()
+                .eq_ignore_ascii_case(FEATURE_TIMELINE_TYPE_GUID)
+        };
+        if !meta.types.iter().any(is_timeline_type) {
             continue;
         }
-        if timeline_types
+        if meta
+            .types
             .iter()
-            .any(|(_, design_type)| !FEATURE_TIMELINE_TYPE_VERSIONS.contains(&design_type.version))
+            .filter(|design_type| is_timeline_type(design_type))
+            .any(|design_type| !FEATURE_TIMELINE_TYPE_VERSIONS.contains(&design_type.version))
         {
             return Err(CodecError::NotImplemented(
                 "unsupported Design feature-timeline record version".into(),
             ));
         }
-        if timeline_types
+        if meta
+            .types
             .iter()
-            .any(|(_, design_type)| !is_supported_feature_timeline_type(design_type))
+            .filter(|design_type| is_timeline_type(design_type))
+            .any(|design_type| !is_supported_feature_timeline_type(design_type))
         {
             return Err(CodecError::Malformed(
                 "Design feature-timeline type has incompatible registration metadata".into(),
@@ -592,11 +696,27 @@ pub(crate) fn decode_feature_timelines(
             ));
         }
         let prefix = meta_entry.prefix;
+        let bulk_name_len = prefix
+            .len()
+            .checked_add("BulkStream.dat".len())
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("F3D timeline bulk name", u64::MAX - 1, u64::MAX)
+            })?;
+        let _bulk_name_reservation = ctx.reserve_scoped(
+            u64::try_from(bulk_name_len).map_err(|_| {
+                ctx.refuse_codec_limit("F3D timeline bulk name", u64::MAX - 1, u64::MAX)
+            })?,
+            "build F3D timeline bulk name",
+        )?;
         let bulk_name = format!("{prefix}BulkStream.dat");
         let bytes = scan.entry_bytes(&bulk_name)?;
         let mut type_guids_by_entity = HashMap::<u64, Vec<&str>>::new();
         for design_type in &meta.types {
             for entity_id in design_type.entities.values() {
+                if !type_guids_by_entity.contains_key(entity_id) {
+                    ctx.charge_collection_items(1, "index F3D timeline entity")?;
+                }
+                ctx.charge_collection_items(1, "index F3D timeline type GUID")?;
                 type_guids_by_entity
                     .entry(*entity_id)
                     .or_default()
@@ -604,7 +724,13 @@ pub(crate) fn decode_feature_timelines(
             }
         }
         let mut source_ordinal = 0_u32;
-        for (type_ordinal, design_type) in timeline_types {
+        for (type_ordinal, design_type) in meta
+            .types
+            .iter()
+            .enumerate()
+            .filter(|(_, design_type)| is_timeline_type(design_type))
+        {
+            let _class_tag_reservation = ctx.reserve_scoped(3, "format F3D timeline class tag")?;
             let expected_class_tag = u32::try_from(type_ordinal)
                 .ok()
                 .and_then(|ordinal| ordinal.checked_add(256))
@@ -620,17 +746,27 @@ pub(crate) fn decode_feature_timelines(
                 source_ordinal = source_ordinal.checked_add(1).ok_or_else(|| {
                     CodecError::Malformed("Design feature-timeline ordinal exceeds u32".into())
                 })?;
-                let matches = meta
+                ctx.charge_work(
+                    u64::try_from(meta.records.len()).map_err(|_| {
+                        ctx.refuse_codec_limit("F3D timeline record search", u64::MAX - 1, u64::MAX)
+                    })?,
+                    "find F3D timeline primary record",
+                )?;
+                let mut matches = meta
                     .records
                     .iter()
                     .enumerate()
-                    .filter(|(_, record)| record.entity_id == *entity_id)
-                    .collect::<Vec<_>>();
-                let [(record_ordinal, record)] = matches.as_slice() else {
+                    .filter(|(_, record)| record.entity_id == *entity_id);
+                let Some((record_ordinal, record)) = matches.next() else {
                     return Err(CodecError::Malformed(
                         "Design feature timeline has no unique primary record-index entry".into(),
                     ));
                 };
+                if matches.next().is_some() {
+                    return Err(CodecError::Malformed(
+                        "Design feature timeline has no unique primary record-index entry".into(),
+                    ));
+                }
                 let start = usize::try_from(record.bulk_offset).map_err(|_| {
                     CodecError::Malformed("Design feature-timeline offset exceeds usize".into())
                 })?;
@@ -650,19 +786,20 @@ pub(crate) fn decode_feature_timelines(
                     ));
                 }
                 let timeline = parse_feature_timeline_record(
+                    ctx,
                     bytes,
                     &bulk_name,
                     start..end,
-                    &expected_class_tag,
-                    *entity_id,
+                    (&expected_class_tag, *entity_id),
                     entity_source_ordinal,
                     &type_guids_by_entity,
-                )
+                )?
                 .ok_or_else(|| {
                     CodecError::Malformed(
                         "Design feature-timeline record does not match its exact frame".into(),
                     )
                 })?;
+                ctx.charge_collection_items(1, "retain F3D feature timeline")?;
                 out.push(timeline);
             }
         }

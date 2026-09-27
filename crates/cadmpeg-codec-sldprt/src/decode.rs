@@ -116,7 +116,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             )?;
             report.losses.append(&mut pmi_losses);
             append_tessellation_losses(&ir, &mut report);
-            append_design_losses(&ir, &mut report);
+            append_design_losses(ctx, &ir, &mut report)?;
             return decode_result(ir, report, annotations, unknowns);
         }
     }
@@ -130,7 +130,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     )?;
     let mut report = build_container_report(&scan, &classification);
     report.losses.append(&mut pmi_losses);
-    append_design_losses(&ir, &mut report);
+    append_design_losses(ctx, &ir, &mut report)?;
     decode_result(ir, report, annotations, unknowns)
 }
 
@@ -309,7 +309,11 @@ fn spatial_sketch_constraint_has_complete_neutral_semantics(
     }
 }
 
-fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
+fn append_design_losses(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    report: &mut DecodeBody,
+) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{
         AngularTermination, BodyRetentionMode, BodySelection, BooleanOp, EdgeSelection,
         ExtrudeExtent, FaceSelection, FeatureDefinition, FeatureOperation, FeatureSourceContent,
@@ -317,10 +321,16 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
     };
     use cadmpeg_ir::sketches::{SketchGeometryDefinition, SpatialSketchGeometryDefinition};
 
-    let native = ir
-        .native
-        .namespace("sldprt")
-        .and_then(|namespace| crate::native::SldprtNative::load(namespace).ok());
+    let native = match ir.native.namespace("sldprt") {
+        None => None,
+        Some(namespace) => match crate::native::SldprtNative::load_charged(ctx, namespace) {
+            Ok(native) => Some(native),
+            Err(error) => match CodecError::from(error) {
+                limit @ CodecError::ResourceLimit(_) => return Err(limit),
+                _ => None,
+            },
+        },
+    };
 
     let active_configurations = ir
         .model
@@ -1664,9 +1674,10 @@ incomplete_face_selection(targets) || incomplete_face_selection(replacements)},
         .count();
     if unresolved_body_modes > 0 {
         report.losses.push(SldprtLossCode::FeatureBodyRetentionUnresolved.note(format!(
-                "{unresolved_body_modes} body delete/keep feature(s) retain selected native body identities without a decoded retention mode."
-            )));
+            "{unresolved_body_modes} body delete/keep feature(s) retain selected native body identities without a decoded retention mode."
+        )));
     }
+    Ok(())
 }
 
 fn configuration_source_needs_update(

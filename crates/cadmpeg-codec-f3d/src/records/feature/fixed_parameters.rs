@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fixed extrude, fillet and chamfer parameter payloads.
 
+use crate::records::serde_column::SliceColumn;
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveReal};
 use serde::{Deserialize, Serialize};
 
@@ -42,7 +43,11 @@ pub(crate) enum DesignFixedExtrudeDistance {
 
 #[cfg(test)]
 mod tests {
-    use super::DesignFixedExtrudeDistance;
+    use super::{
+        DesignFixedExtrudeDistance, DesignFixedFilletGroup, DesignFixedFilletGroupWire,
+        FIXED_FILLET_GROUP_CLONE_COUNT,
+    };
+    use serde::Serialize;
 
     #[test]
     fn fixed_extrude_distance_construction_json_refuses_nonpositive_value() {
@@ -66,6 +71,64 @@ mod tests {
         assert!(serde_json::from_value::<DesignFixedExtrudeDistance>(wire.clone()).is_ok());
         wire["scalar"]["value"] = serde_json::json!(0.0);
         assert!(serde_json::from_value::<DesignFixedExtrudeDistance>(wire).is_err());
+    }
+
+    fn group(variable: bool, tangency: bool) -> DesignFixedFilletGroup {
+        let mut wire = if variable {
+            serde_json::json!({
+                "radii": [1.0, 2.0, 3.0],
+                "radius_record_indexes": [10, 11, 12],
+                "radius_offsets": [100, 108, 116],
+                "intermediate_parameters": [0.25],
+                "intermediate_parameter_record_indexes": [20],
+                "intermediate_parameter_offsets": [200]
+            })
+        } else {
+            serde_json::json!({
+                "radii": [1.0],
+                "radius_record_indexes": [10],
+                "radius_offsets": [100]
+            })
+        };
+        if tangency {
+            wire["tangency_weight"] =
+                serde_json::json!({"value": 1.0, "record_index": 5, "value_offset": 50});
+        }
+        serde_json::from_value(wire).unwrap()
+    }
+
+    #[test]
+    fn fixed_fillet_group_borrowed_wire_matches_owned_wire_bytes() {
+        for variable in [false, true] {
+            for tangency in [false, true] {
+                let group = group(variable, tangency);
+                let owned = DesignFixedFilletGroupWire::from(group.clone());
+                assert_eq!(
+                    serde_json::to_vec(&group).unwrap(),
+                    serde_json::to_vec(&owned).unwrap()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn fixed_fillet_group_native_retained_limit_refuses_before_clone() {
+        #[derive(Serialize)]
+        struct NestedRecord<'a> {
+            id: &'static str,
+            value: &'a DesignFixedFilletGroup,
+        }
+        let group = group(true, true);
+        let record = NestedRecord {
+            id: "f3d:native:fixed-fillet-group#0",
+            value: &group,
+        };
+        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+            &record,
+            "design_parameter_scopes",
+            || FIXED_FILLET_GROUP_CLONE_COUNT.with(|count| count.set(0)),
+            || FIXED_FILLET_GROUP_CLONE_COUNT.with(std::cell::Cell::get),
+        );
     }
 }
 
@@ -96,14 +159,27 @@ pub(crate) struct DesignFixedFilletParameters {
 }
 
 /// One fillet radius law and its optional tangency weight.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignFixedFilletGroupWire",
-    into = "DesignFixedFilletGroupWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignFixedFilletGroupWire")]
 pub(crate) struct DesignFixedFilletGroup {
     tangency_weight: Option<DesignFixedFilletScalar>,
     law: DesignFixedFilletLaw,
+}
+
+#[cfg(test)]
+thread_local! {
+    static FIXED_FILLET_GROUP_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignFixedFilletGroup {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        FIXED_FILLET_GROUP_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            tangency_weight: self.tangency_weight.clone(),
+            law: self.law.clone(),
+        }
+    }
 }
 
 impl DesignFixedFilletGroup {
@@ -222,6 +298,73 @@ struct DesignFixedFilletGroupWire {
     intermediate_parameter_offsets: Vec<u64>,
 }
 
+#[derive(Clone, Copy)]
+enum FilletRadiusField {
+    Value,
+    RecordIndex,
+    Offset,
+}
+
+struct FilletRadiusColumn<'a> {
+    law: &'a DesignFixedFilletLaw,
+    field: FilletRadiusField,
+}
+
+impl Serialize for FilletRadiusColumn<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self.field {
+            FilletRadiusField::Value => {
+                serializer.collect_seq(self.law.radii().map(|scalar| scalar.value))
+            }
+            FilletRadiusField::RecordIndex => {
+                serializer.collect_seq(self.law.radii().map(|scalar| scalar.record_index))
+            }
+            FilletRadiusField::Offset => {
+                serializer.collect_seq(self.law.radii().map(|scalar| scalar.value_offset))
+            }
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct DesignFixedFilletGroupWireRef<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tangency_weight: Option<&'a DesignFixedFilletScalar>,
+    radii: FilletRadiusColumn<'a>,
+    radius_record_indexes: FilletRadiusColumn<'a>,
+    radius_offsets: FilletRadiusColumn<'a>,
+    #[serde(skip_serializing_if = "SliceColumn::is_empty")]
+    intermediate_parameters: SliceColumn<'a, DesignFixedFilletIntermediate, FiniteReal>,
+    #[serde(skip_serializing_if = "SliceColumn::is_empty")]
+    intermediate_parameter_record_indexes: SliceColumn<'a, DesignFixedFilletIntermediate, u32>,
+    #[serde(skip_serializing_if = "SliceColumn::is_empty")]
+    intermediate_parameter_offsets: SliceColumn<'a, DesignFixedFilletIntermediate, u64>,
+}
+
+impl Serialize for DesignFixedFilletGroup {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let radius = |field| FilletRadiusColumn {
+            law: &self.law,
+            field,
+        };
+        let intermediate = self.law.intermediate();
+        DesignFixedFilletGroupWireRef {
+            tangency_weight: self.tangency_weight.as_ref(),
+            radii: radius(FilletRadiusField::Value),
+            radius_record_indexes: radius(FilletRadiusField::RecordIndex),
+            radius_offsets: radius(FilletRadiusField::Offset),
+            intermediate_parameters: SliceColumn::new(intermediate, |row| row.parameter.value),
+            intermediate_parameter_record_indexes: SliceColumn::new(intermediate, |row| {
+                row.parameter.record_index
+            }),
+            intermediate_parameter_offsets: SliceColumn::new(intermediate, |row| {
+                row.parameter.value_offset
+            }),
+        }
+        .serialize(serializer)
+    }
+}
+
 impl TryFrom<DesignFixedFilletGroupWire> for DesignFixedFilletGroup {
     type Error = String;
 
@@ -291,6 +434,7 @@ impl TryFrom<DesignFixedFilletGroupWire> for DesignFixedFilletGroup {
     }
 }
 
+#[cfg(test)]
 impl From<DesignFixedFilletGroup> for DesignFixedFilletGroupWire {
     fn from(group: DesignFixedFilletGroup) -> Self {
         Self {

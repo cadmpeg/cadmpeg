@@ -14,6 +14,7 @@ use std::collections::{HashMap, HashSet};
 /// `emitted` as a [`SourceAttribute`] bound to `target`.
 #[allow(clippy::implicit_hasher)]
 pub fn collect_attributes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entity: &Record,
     target: &AttributeTarget,
     by_index: &HashMap<i64, &Record>,
@@ -23,12 +24,16 @@ pub fn collect_attributes(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut current = entity.ref_at(0);
     let mut chain = HashSet::new();
-    while let Some(index) = current.filter(|index| chain.insert(*index)) {
+    while let Some(index) = current {
+        if !crate::decode_alloc::insert_hash_set(ctx, &mut chain, index, "ASM attribute chain")? {
+            break;
+        }
         let Some(record) = by_index.get(&index) else {
             break;
         };
-        if emitted.insert(index) {
-            out.push(source_attribute(record, target.clone(), format)?);
+        if crate::decode_alloc::insert_hash_set(ctx, emitted, index, "ASM emitted attributes")? {
+            crate::decode_alloc::reserve_vec_slot(ctx, out, "ASM source attributes")?;
+            out.push(source_attribute(ctx, record, target.clone(), format)?);
         }
         current = attribute_next(record);
     }
@@ -143,6 +148,7 @@ pub fn attribute_key(attribute: &SourceAttribute) -> &str {
 /// Serialize one attribute record's value chunks as a [`SourceAttribute`]
 /// bound to `target`. A NaN or infinite number refuses the record.
 pub fn source_attribute(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &Record,
     target: AttributeTarget,
     format: IdFormat,
@@ -150,37 +156,51 @@ pub fn source_attribute(
     // Chunks, not raw tokens: the serialized value list is defined over the
     // value tokens, and a payload identifier names an embedded construction
     // rather than carrying an attribute value.
-    let values = record
-        .chunks()
-        .map(|token| {
-            attribute_value(token, format).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed(format_args!(
-                    "attribute record {} ({}) holds a non-finite number",
-                    record.index, record.name
-                ))
-            })
-        })
-        .collect::<Result<_, _>>()?;
+    let mut values = Vec::new();
+    for token in record.chunks() {
+        crate::decode_alloc::reserve_vec_slot(ctx, &mut values, "ASM attribute values")?;
+        let value = attribute_value(ctx, token, format)?.ok_or_else(|| {
+            cadmpeg_core::CodecError::malformed(format_args!(
+                "attribute record {} ({}) holds a non-finite number",
+                record.index, record.name
+            ))
+        })?;
+        values.push(value);
+    }
     Ok(SourceAttribute {
         id: brep_id!(format, AttributeId, "attribute", record.index),
         target,
-        name: record.name.clone(),
+        name: crate::decode_alloc::copy_string(ctx, &record.name, "ASM attribute record name")?,
         values,
     })
 }
 
 /// The attribute value one token carries, or `None` for a number that is not
 /// finite.
-fn attribute_value(token: &Token, format: IdFormat) -> Option<AttributeValue> {
-    Some(match token {
+fn attribute_value(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    token: &Token,
+    format: IdFormat,
+) -> Result<Option<AttributeValue>, cadmpeg_core::CodecError> {
+    Ok(Some(match token {
         Token::Char(value) => AttributeValue::Integer(i64::from(*value)),
         Token::Short(value) => AttributeValue::Integer(i64::from(*value)),
         Token::Long(value) | Token::Enum(value) | Token::Int64(value) => {
             AttributeValue::Integer(*value)
         }
-        Token::Float(value) => AttributeValue::float(f64::from(*value))?,
-        Token::Double(value) => AttributeValue::float(*value)?,
-        Token::Str(value) => AttributeValue::String(value.clone()),
+        Token::Float(value) => match AttributeValue::float(f64::from(*value)) {
+            Some(value) => value,
+            None => return Ok(None),
+        },
+        Token::Double(value) => match AttributeValue::float(*value) {
+            Some(value) => value,
+            None => return Ok(None),
+        },
+        Token::Str(value) => AttributeValue::String(crate::decode_alloc::copy_string(
+            ctx,
+            value,
+            "ASM attribute string",
+        )?),
         Token::True => AttributeValue::Boolean(true),
         Token::False => AttributeValue::Boolean(false),
         Token::Ref(value) => {
@@ -188,10 +208,18 @@ fn attribute_value(token: &Token, format: IdFormat) -> Option<AttributeValue> {
         }
         Token::SubtypeOpen => AttributeValue::String("subtype_open".into()),
         Token::SubtypeClose => AttributeValue::String("subtype_close".into()),
-        Token::Position(value) | Token::Vector3(value) => AttributeValue::vector(*value)?,
-        Token::Vector2(value) => AttributeValue::vector(*value)?,
-        Token::Ident(value) | Token::SubIdent(value) => AttributeValue::String(value.clone()),
-    })
+        Token::Position(value) | Token::Vector3(value) => match AttributeValue::vector(*value) {
+            Some(value) => value,
+            None => return Ok(None),
+        },
+        Token::Vector2(value) => match AttributeValue::vector(*value) {
+            Some(value) => value,
+            None => return Ok(None),
+        },
+        Token::Ident(value) | Token::SubIdent(value) => AttributeValue::String(
+            crate::decode_alloc::copy_string(ctx, value, "ASM attribute identifier")?,
+        ),
+    }))
 }
 
 /// Decode a native transform record into an IR affine transform, scaling the
@@ -200,14 +228,10 @@ pub fn decode_transform(
     record: &Record,
     header_scale: f64,
 ) -> Option<cadmpeg_ir::transform::Transform> {
-    let vectors: Vec<[f64; 3]> = record
-        .tokens
-        .iter()
-        .filter_map(|token| match token {
-            Token::Position(value) | Token::Vector3(value) => Some(*value),
-            _ => None,
-        })
-        .collect();
+    let mut vectors = record.tokens.iter().filter_map(|token| match token {
+        Token::Position(value) | Token::Vector3(value) => Some(*value),
+        _ => None,
+    });
     let scale = record
         .tokens
         .iter()
@@ -216,7 +240,13 @@ pub fn decode_transform(
             _ => None,
         })
         .next_back()?;
-    let [x, y, z, translation] = vectors.as_slice() else {
+    let (Some(x), Some(y), Some(z), Some(translation), None) = (
+        vectors.next(),
+        vectors.next(),
+        vectors.next(),
+        vectors.next(),
+        vectors.next(),
+    ) else {
         return None;
     };
     // The attribute stores a homogeneous scale in the `w` slot. Only the
@@ -278,18 +308,22 @@ fn direct_attribute_color(record: &Record) -> Option<DirectAttributeColor> {
     let payload = attribute_base(record)?.payload();
     match record.name.as_str() {
         "rgb_color-st-attrib" => {
-            let channels = record
-                .chunks()
-                .enumerate()
-                .skip(payload)
-                .filter_map(|(field, token)| match token {
+            let mut channels = record.chunks().enumerate().skip(payload).filter_map(
+                |(field, token)| match token {
                     Token::Double(value) => Some((field, *value)),
                     _ => None,
-                })
-                .collect::<Vec<_>>();
-            let [(r_field, r), (g_field, g), (b_field, b)] = match channels.as_slice() {
-                [red, green, blue] => [*red, *green, *blue],
-                [red, green, blue, (_, 1.0)] => [*red, *green, *blue],
+                },
+            );
+            let channels = [
+                channels.next(),
+                channels.next(),
+                channels.next(),
+                channels.next(),
+                channels.next(),
+            ];
+            let [(r_field, r), (g_field, g), (b_field, b)] = match channels {
+                [Some(red), Some(green), Some(blue), None, None] => [red, green, blue],
+                [Some(red), Some(green), Some(blue), Some((_, 1.0)), None] => [red, green, blue],
                 _ => return None,
             };
             if ![r, g, b]
@@ -355,11 +389,11 @@ fn direct_attribute_color(record: &Record) -> Option<DirectAttributeColor> {
 /// The first well-formed exact direct-color carrier on an attribute chain.
 pub fn attribute_chain_color_carrier<'a>(
     entity: &Record,
+    max_steps: usize,
     mut by_index: impl FnMut(i64) -> Option<&'a Record>,
 ) -> Option<(&'a Record, DirectAttributeColor)> {
     let mut current = entity.ref_at(0)?;
-    let mut seen = HashSet::new();
-    while seen.insert(current) {
+    for _ in 0..max_steps {
         let record = by_index(current)?;
         if let Some(color) = direct_attribute_color(record) {
             return Some((record, color));
@@ -372,56 +406,102 @@ pub fn attribute_chain_color_carrier<'a>(
 /// The first well-formed exact direct color on `entity`'s attribute chain.
 #[allow(clippy::implicit_hasher)]
 pub fn attribute_chain_color(entity: &Record, by_index: &HashMap<i64, &Record>) -> Option<Color> {
-    attribute_chain_color_carrier(entity, |index| by_index.get(&index).copied())
-        .map(|(_, decoded)| decoded.color)
+    attribute_chain_color_carrier(entity, by_index.len(), |index| {
+        by_index.get(&index).copied()
+    })
+    .map(|(_, decoded)| decoded.color)
 }
 
 /// The first non-empty name attribute on `entity`'s attribute chain.
 #[allow(clippy::implicit_hasher)]
-pub fn attribute_chain_name(entity: &Record, by_index: &HashMap<i64, &Record>) -> Option<String> {
-    let mut current = entity.ref_at(0)?;
-    let mut seen = HashSet::new();
-    while seen.insert(current) {
-        let record = by_index.get(&current)?;
+pub fn attribute_chain_name(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    entity: &Record,
+    by_index: &HashMap<i64, &Record>,
+) -> Result<Option<String>, cadmpeg_core::CodecError> {
+    let Some(mut current) = entity.ref_at(0) else {
+        return Ok(None);
+    };
+    for _ in 0..by_index.len() {
+        let Some(record) = by_index.get(&current) else {
+            return Ok(None);
+        };
         if record.name == "string_attrib-name_attrib-gen-attrib" {
-            let values = record
-                .tokens
-                .iter()
-                .filter_map(|token| match token {
-                    Token::Str(value) => Some(value.as_str()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>();
-            if let [.., "name", value] = values.as_slice() {
+            let mut values = record.tokens.iter().filter_map(|token| match token {
+                Token::Str(value) => Some(value.as_str()),
+                _ => None,
+            });
+            let mut previous = None;
+            let mut last = None;
+            for value in &mut values {
+                previous = last;
+                last = Some(value);
+            }
+            if let (Some("name"), Some(value)) = (previous, last) {
                 if !value.is_empty() {
-                    return Some((*value).to_owned());
+                    let name = crate::decode_alloc::copy_string(ctx, value, "ASM attribute name")?;
+                    return Ok(Some(name));
                 }
             }
         }
-        current = attribute_next(record)?;
+        let Some(next) = attribute_next(record) else {
+            return Ok(None);
+        };
+        current = next;
     }
-    None
+    Ok(None)
 }
 
 /// The `UnknownId` for a preserved carrier record. Shared by the passthrough
 /// `UnknownRecord` and any `SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown)` that links to it, so the
 /// reference resolves under validation.
 pub fn unknown_record_id(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     rec: &Record,
     format: IdFormat,
 ) -> Result<UnknownId, cadmpeg_core::CodecError> {
-    let kind = IdentityComponent::try_new(rec.head().to_owned()).map_err(|error| {
+    let name = crate::decode_alloc::copy_string(ctx, rec.head(), "ASM unknown record kind")?;
+    let kind = IdentityComponent::try_new(name).map_err(|error| {
         cadmpeg_core::CodecError::malformed(format_args!(
             "invalid ASM source identity component: {error}"
         ))
     })?;
-    Ok(UnknownId::from(format.brep_identity(&kind, rec.index)))
+    Ok(UnknownId::from(
+        format.try_brep_identity(ctx, &kind, rec.index)?,
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::decode_transform;
     use crate::sab::{Record, Token};
+
+    #[test]
+    fn unknown_record_identity_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let record = Record {
+            index: 1,
+            name: "mystery".into(),
+            tokens: std::sync::Arc::from([]),
+            offset: 0,
+            len: 0,
+        };
+        let expected = "f3d:brep:mystery#1";
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 7 + expected.len() as u64 - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test input fits input limit");
+        let error = super::unknown_record_id(&ctx, &record, crate::asm_format!("f3d"))
+            .expect_err("dynamic identity exceeds retained limit");
+        let CodecError::ResourceLimit(refusal) = error else {
+            panic!("expected resource refusal, got {error:?}");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(refusal.operation, "ASM unknown record identity");
+    }
 
     fn transform_record(scale: f64, x: [f64; 3]) -> Record {
         Record {
