@@ -8,6 +8,65 @@ use crate::design::decode::sketch::native_scope_charged;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent};
+use std::fmt::Write;
+
+pub(super) fn neutral_asset_id_charged(
+    ctx: &DecodeContext<'_>,
+    entry_name: &str,
+) -> Result<cadmpeg_ir::assets::AssetId, CodecError> {
+    const PREFIX: &str = "f3d:model:asset#";
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut encoded_len = 0usize;
+    for character in entry_name.chars() {
+        let bytes = character.len_utf8();
+        let width = if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+            bytes.checked_mul(3)
+        } else {
+            Some(bytes)
+        }
+        .ok_or_else(|| ctx.refuse_codec_limit("f3d asset identifier length", 0, 1))?;
+        encoded_len = encoded_len.checked_add(width).ok_or_else(|| {
+            ctx.refuse_codec_limit("f3d asset identifier length", 0, 1)
+        })?;
+    }
+    let mut digits = 1usize;
+    let mut remaining = encoded_len;
+    while remaining >= 10 {
+        remaining /= 10;
+        digits += 1;
+    }
+    let capacity = PREFIX.len()
+        .checked_add(digits)
+        .and_then(|length| length.checked_add(1))
+        .and_then(|length| length.checked_add(encoded_len))
+        .ok_or_else(|| ctx.refuse_codec_limit("f3d asset identifier length", 0, 1))?;
+    ctx.charge_retained(
+        u64::try_from(capacity)
+            .map_err(|_| ctx.refuse_codec_limit("f3d asset identifier length", 0, 1))?,
+        "f3d asset identifier",
+    )?;
+    let mut id = String::new();
+    id.try_reserve_exact(capacity).map_err(|_| {
+        ctx.refuse_codec_limit("f3d asset identifier allocation", 0, 1)
+    })?;
+    id.push_str(PREFIX);
+    write!(&mut id, "{encoded_len}:")
+        .map_err(|_| CodecError::malformed("F3D asset identifier formatting failed"))?;
+    for character in entry_name.chars() {
+        if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+            let mut bytes = [0u8; 4];
+            for byte in character.encode_utf8(&mut bytes).as_bytes() {
+                id.push('%');
+                id.push(char::from(HEX[usize::from(byte >> 4)]));
+                id.push(char::from(HEX[usize::from(byte & 0x0f)]));
+            }
+        } else {
+            id.push(character);
+        }
+    }
+    cadmpeg_ir::assets::AssetId::mint(id)
+        .map_err(|error| CodecError::malformed(format_args!("{error}")))
+}
 
 pub(super) fn embedded_image_asset(
     ctx: &DecodeContext<'_>,
@@ -46,7 +105,7 @@ pub(super) fn embedded_image_asset(
     let native_ref = native_scope_charged(ctx, &entry.name)?;
     Ok(Some(
         Asset::try_new(
-            crate::ids::neutral_asset_id(&entry.name),
+            neutral_asset_id_charged(ctx, &entry.name)?,
             Some(name),
             media_type,
             AssetContent::Embedded {
@@ -223,5 +282,30 @@ mod tests {
                 assert_eq!(images, [17]);
             });
         });
+    }
+
+    #[test]
+    fn embedded_asset_identifier_refuses_retained_limit() {
+        for entry in ["plain.png", "a:b#c%d.png", "spaced\tname é.png"] {
+            let expected = crate::ids::neutral_asset_id(entry);
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_retained_bytes =
+                u64::try_from(expected.as_str().len() - 1).unwrap();
+            let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let refusal = super::neutral_asset_id_charged(&limited, entry);
+            assert!(matches!(
+                refusal,
+                Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                    if failure.dimension == ResourceDimension::RetainedBytes
+                        && failure.operation == "f3d asset identifier"
+            ));
+            let admitted = super::neutral_asset_id_charged(
+                &cadmpeg_test_support::service_decode_context(),
+                entry,
+            )
+            .unwrap();
+            assert_eq!(admitted, expected);
+        }
     }
 }
