@@ -21,6 +21,15 @@ enum LimitScope {
     PerExpand,
 }
 
+struct FormattedByteCount(usize);
+
+impl std::fmt::Write for FormattedByteCount {
+    fn write_str(&mut self, text: &str) -> std::fmt::Result {
+        self.0 = self.0.checked_add(text.len()).ok_or(std::fmt::Error)?;
+        Ok(())
+    }
+}
+
 /// Cap on the initial per-expand reservation before any output is produced.
 const RESERVE_CLAMP: usize = 8 * 1024 * 1024;
 
@@ -269,6 +278,25 @@ impl<'a> DecodeContext<'a> {
         let mut text = String::new();
         self.try_reserve_retained_text(&mut text, value.len(), operation)?;
         text.push_str(value);
+        Ok(text)
+    }
+
+    /// Formats session-retained text after charging its exact UTF-8 byte size.
+    ///
+    /// The first formatting pass counts bytes without allocating. The second
+    /// writes into a String whose capacity was reserved fallibly.
+    pub fn format_retained(
+        &self,
+        value: impl std::fmt::Display,
+        operation: &'static str,
+    ) -> Result<String, CodecError> {
+        let mut count = FormattedByteCount(0);
+        std::fmt::write(&mut count, format_args!("{value}"))
+            .map_err(|_| CodecError::Malformed("retained text formatting failed".into()))?;
+        let mut text = String::new();
+        self.try_reserve_retained_text(&mut text, count.0, operation)?;
+        std::fmt::write(&mut text, format_args!("{value}"))
+            .map_err(|_| CodecError::Malformed("retained text formatting failed".into()))?;
         Ok(text)
     }
 
@@ -779,5 +807,25 @@ mod tests {
         assert!(matches!(error, crate::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::MaterializedBytes
                 && limit.operation == "test scoped text"));
+    }
+
+    #[test]
+    fn retained_format_refuses_before_string_growth() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 4;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        assert_eq!(
+            ctx.format_retained(format_args!("{number}" , number = 1234), "test retained format")
+                .expect("four rendered bytes fit"),
+            "1234"
+        );
+        let error = ctx
+            .format_retained(5, "test retained format")
+            .expect_err("one more byte exceeds the retained limit");
+        assert!(matches!(error, crate::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "test retained format"));
     }
 }

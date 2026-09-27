@@ -243,29 +243,6 @@ pub fn named_entries_reporting<V>(
     (kept, refused)
 }
 
-struct FormattedByteCount(usize);
-
-impl std::fmt::Write for FormattedByteCount {
-    fn write_str(&mut self, text: &str) -> std::fmt::Result {
-        self.0 = self.0.checked_add(text.len()).ok_or(std::fmt::Error)?;
-        Ok(())
-    }
-}
-
-fn checked_record_text(
-    ctx: &DecodeContext<'_>,
-    record: &impl std::fmt::Display,
-) -> Result<String, CodecError> {
-    let mut count = FormattedByteCount(0);
-    std::fmt::write(&mut count, format_args!("{record}"))
-        .map_err(|_| CodecError::Malformed("named entry record formatting failed".into()))?;
-    let mut text = String::new();
-    ctx.try_reserve_retained_text(&mut text, count.0, "named entry refused record")?;
-    std::fmt::write(&mut text, format_args!("{record}"))
-        .map_err(|_| CodecError::Malformed("named entry record formatting failed".into()))?;
-    Ok(text)
-}
-
 /// Keys named entries after the caller admits each new map node and refusal.
 ///
 /// The BTreeMap keeps the same order and first-value rule as
@@ -289,7 +266,7 @@ pub fn named_entries_reporting_checked<V>(
                     slot.insert(value);
                 }
                 std::collections::btree_map::Entry::Occupied(slot) => {
-                    let record = checked_record_text(ctx, &record)?;
+                    let record = ctx.format_retained(&record, "named entry refused record")?;
                     let key = NonBlankString(ctx.copy_retained_text(
                         slot.key().as_str(),
                         "named entry refused key",
@@ -299,7 +276,7 @@ pub fn named_entries_reporting_checked<V>(
                 }
             },
             None => {
-                let record = checked_record_text(ctx, &record)?;
+                let record = ctx.format_retained(&record, "named entry refused record")?;
                 ctx.try_reserve_items(&mut refused, 1, "named entry refusals")?;
                 refused.push(NamedEntryError::Blank { record });
             }
