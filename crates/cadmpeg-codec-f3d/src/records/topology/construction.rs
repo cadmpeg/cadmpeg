@@ -1353,11 +1353,8 @@ impl From<DesignConstructionOperandIdentity> for DesignConstructionOperandIdenti
 }
 
 /// Entity-tracking path embedded in a construction-operand identity chain.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignConstructionTrackingPathWire",
-    into = "DesignConstructionTrackingPathWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignConstructionTrackingPathWire")]
 pub(crate) struct DesignConstructionTrackingPath {
     frame: crate::records::frame_chain::RecordFrameChain,
     /// Outer tracking-wrapper dynamic class tag.
@@ -1378,6 +1375,84 @@ pub(crate) struct DesignConstructionTrackingPath {
     second_related_identity: Option<u64>,
     /// Following-record dynamic class tag.
     pub(crate) following_class_tag: DesignClassTag,
+}
+
+#[cfg(test)]
+thread_local! {
+    static CONSTRUCTION_TRACKING_PATH_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignConstructionTrackingPath {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        CONSTRUCTION_TRACKING_PATH_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            frame: self.frame,
+            wrapper_class_tag: self.wrapper_class_tag.clone(),
+            carrier_class_tag: self.carrier_class_tag.clone(),
+            primary_identity: self.primary_identity,
+            selector: self.selector,
+            kind: self.kind,
+            first_related_identity: self.first_related_identity,
+            second_related_identity: self.second_related_identity,
+            following_class_tag: self.following_class_tag.clone(),
+        }
+    }
+}
+
+impl Serialize for DesignConstructionTrackingPath {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            wrapper_record_index: u32,
+            wrapper_byte_offset: u64,
+            wrapper_class_tag: &'a str,
+            carrier_record_index: u32,
+            carrier_byte_offset: u64,
+            carrier_class_tag: &'a str,
+            primary_identity: u64,
+            primary_identity_offset: u64,
+            selector: i32,
+            selector_offset: u64,
+            kind: u32,
+            kind_offset: u64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            first_related_identity: Option<u64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            first_related_identity_offset: Option<u64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            second_related_identity: Option<u64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            second_related_identity_offset: Option<u64>,
+            following_record_index: u32,
+            following_byte_offset: u64,
+            following_class_tag: &'a str,
+        }
+        WireRef {
+            wrapper_record_index: self.wrapper_record_index(),
+            wrapper_byte_offset: self.wrapper_byte_offset(),
+            wrapper_class_tag: self.wrapper_class_tag.as_str(),
+            carrier_record_index: self.carrier_record_index(),
+            carrier_byte_offset: self.carrier_byte_offset(),
+            carrier_class_tag: self.carrier_class_tag.as_str(),
+            primary_identity: self.primary_identity,
+            primary_identity_offset: self.primary_identity_offset(),
+            selector: self.selector,
+            selector_offset: self.selector_offset(),
+            kind: self.kind,
+            kind_offset: self.kind_offset(),
+            first_related_identity: self.first_related_identity().map(|value| value.value),
+            first_related_identity_offset: self.first_related_identity().map(|value| value.offset),
+            second_related_identity: self.second_related_identity().map(|value| value.value),
+            second_related_identity_offset: self
+                .second_related_identity()
+                .map(|value| value.offset),
+            following_record_index: self.following_record_index(),
+            following_byte_offset: self.following_byte_offset(),
+            following_class_tag: self.following_class_tag.as_str(),
+        }
+        .serialize(serializer)
+    }
 }
 
 impl DesignConstructionTrackingPath {
@@ -1433,6 +1508,7 @@ impl DesignConstructionTrackingPath {
         }
         Ok(value)
     }
+    #[cfg(test)]
     fn into_draft(self) -> DesignConstructionTrackingPathDraft {
         let first_related_identity = self.first_related_identity();
         let second_related_identity = self.second_related_identity();
@@ -1626,6 +1702,7 @@ impl TryFrom<DesignConstructionTrackingPathWire> for DesignConstructionTrackingP
     }
 }
 
+#[cfg(test)]
 impl From<DesignConstructionTrackingPath> for DesignConstructionTrackingPathWire {
     fn from(value: DesignConstructionTrackingPath) -> Self {
         let value = value.into_draft();
