@@ -59,8 +59,11 @@ impl<'a> MeshExpand<'a> {
 }
 
 /// Maps an expansion refusal to the mesh decoder error type.
-fn expansion_refused(offset: usize, refusal: &CodecError) -> GeometryError {
-    error(offset, format!("mesh buffer expansion refused: {refusal}"))
+fn expansion_refused(offset: usize, refusal: CodecError) -> GeometryError {
+    match refusal {
+        resource @ CodecError::ResourceLimit(_) => GeometryError::Codec(resource),
+        other => error(offset, format!("mesh buffer expansion refused: {other}")),
+    }
 }
 
 /// `ON_Mesh` class UUID.
@@ -168,19 +171,6 @@ fn buffer_output_limit(expand: MeshExpand<'_>) -> usize {
         expand.ctx.policy().limits.max_decompressed_bytes_per_expand,
         MAX_BUFFER_OUTPUT,
     )
-}
-
-fn commit_mesh_buffer(
-    expand: MeshExpand<'_>,
-    document_budget: &mut MeshBudget,
-    declared: usize,
-    position: usize,
-) -> Result<(), GeometryError> {
-    document_budget.commit(declared);
-    expand
-        .ctx
-        .charge_retained(u64_from_index(declared), "rhino_mesh_buffer")
-        .map_err(|refusal| expansion_refused(position, &refusal))
 }
 
 /// A decoded mesh and non-fatal channel warnings.
@@ -945,8 +935,10 @@ fn read_buffer<'a>(
     let (bytes, consumed): (Cow<'a, [u8]>, usize) = match method {
         0 => {
             let mut input = reader.unread()?;
-            let stored = input.take(declared)?.to_vec();
-            commit_mesh_buffer(expand, document_budget, declared, reader.position() - 4)?;
+            let stored = expand
+                .ctx()
+                .copy_retained(input.take(declared)?, "rhino_mesh_buffer")?;
+            document_budget.commit(declared);
             (Cow::Owned(stored), declared)
         }
         1 => {
@@ -992,8 +984,11 @@ fn read_buffer<'a>(
                     ),
                 ));
             }
+            expand
+                .ctx()
+                .charge_retained(u64_from_index(declared), "rhino_mesh_buffer")?;
             let (view, compressed) = inflate(expand, source, declared)?;
-            commit_mesh_buffer(expand, document_budget, declared, reader.position() - 4)?;
+            document_budget.commit(declared);
             if compressed != chunk.body().len() {
                 return Err(error(
                     chunk.body().start + compressed,
@@ -1079,7 +1074,7 @@ fn inflate<'a>(
         source,
         ExpandSpec::Exact(expected as u64),
     )
-    .map_err(|refusal| expansion_refused(base, &refusal))
+    .map_err(|refusal| expansion_refused(base, refusal))
 }
 
 fn read_ngons(
@@ -2612,6 +2607,56 @@ mod tests {
             );
             assert!(refused.is_err(), "cumulative expansion must be refused");
         });
+    }
+
+    #[test]
+    fn compressed_buffer_expansion_limit_is_a_codec_resource_refusal() {
+        let data = buffer(&[1, 2, 3], 1);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_decompressed_bytes_total = 2;
+        let refused = with_expand_policy(&data, policy, |expand| {
+            let mut reader = BoundedReader::new(&data, 0, data.len()).expect("reader");
+            read_buffer(
+                expand,
+                &mut reader,
+                3,
+                &mut Diagnostics::new(),
+                "vertices",
+                &mut 0,
+                &mut MeshBudget::new(),
+                ArchiveVersion::V8,
+            )
+            .expect_err("three expanded bytes exceed the two-byte limit")
+        });
+        assert!(matches!(
+            refused,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(_))
+        ));
+    }
+
+    #[test]
+    fn stored_buffer_retention_limit_refuses_before_copy() {
+        let data = buffer(&[1, 2, 3], 0);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 2;
+        let refused = with_expand_policy(&data, policy, |expand| {
+            let mut reader = BoundedReader::new(&data, 0, data.len()).expect("reader");
+            read_buffer(
+                expand,
+                &mut reader,
+                3,
+                &mut Diagnostics::new(),
+                "vertices",
+                &mut 0,
+                &mut MeshBudget::new(),
+                ArchiveVersion::V8,
+            )
+            .expect_err("three stored bytes exceed the two-byte limit")
+        });
+        assert!(matches!(
+            refused,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(_))
+        ));
     }
 
     #[test]

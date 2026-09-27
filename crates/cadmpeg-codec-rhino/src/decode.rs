@@ -4087,6 +4087,7 @@ fn stage_brep_carriers(
                         .tessellations
                         .push(mesh.tessellation);
                 }
+                Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
                 Err(error) => staged.mesh_cache_slot_dropped(kind, index, &error),
             }
         }
