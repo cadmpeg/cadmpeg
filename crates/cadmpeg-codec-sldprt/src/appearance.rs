@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::StreamName;
 
@@ -125,10 +125,11 @@ fn inline_definitions(section: Section<'_>, start: usize, end: usize) -> Vec<App
 
 /// Decode body/default and face-local assignments from `DisplayLists`.
 fn display_assignments(
+    ctx: &DecodeContext<'_>,
     section: Section<'_>,
     faces: &[DisplayFace],
-) -> Vec<DisplayAppearanceAssignment> {
-    let classes = crate::tessellation::class_intervals(section.payload());
+) -> Result<Vec<DisplayAppearanceAssignment>, cadmpeg_core::CodecError> {
+    let classes = crate::tessellation::class_intervals(ctx, section.payload())?;
     let mut assignments = Vec::new();
     for (table_index, face) in faces.iter().enumerate() {
         let Some(class) = classes.iter().find(|class| {
@@ -178,11 +179,14 @@ fn display_assignments(
             });
         }
     }
-    assignments
+    Ok(assignments)
 }
 
 /// Decode feature-source assignments from `ThirdPtyStore/VisualStates`.
-pub(crate) fn feature_assignments(scan: &ContainerScan) -> Vec<FeatureAppearanceAssignment> {
+pub(crate) fn feature_assignments(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Vec<FeatureAppearanceAssignment>, cadmpeg_core::CodecError> {
     let mut assignments = Vec::new();
     for section in scan
         .sections()
@@ -190,7 +194,7 @@ pub(crate) fn feature_assignments(scan: &ContainerScan) -> Vec<FeatureAppearance
     {
         let source_name = section.source_stream().clone();
         let bytes = section.payload();
-        let classes = crate::tessellation::class_intervals(bytes);
+        let classes = crate::tessellation::class_intervals(ctx, bytes)?;
         for marker_offset in bytes
             .windows(feature_visual::MARKER_VALUE.len())
             .enumerate()
@@ -249,16 +253,17 @@ pub(crate) fn feature_assignments(scan: &ContainerScan) -> Vec<FeatureAppearance
             });
         }
     }
-    assignments
+    Ok(assignments)
 }
 
 /// Resolve the verified `DisplayLists` precedence: body, feature, then face.
 pub(crate) fn resolve_display_appearances(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     section: Section<'_>,
     faces: &[DisplayFace],
-) -> ResolvedDisplayAppearances {
-    let native_assignments = display_assignments(section, faces);
+) -> Result<ResolvedDisplayAppearances, cadmpeg_core::CodecError> {
+    let native_assignments = display_assignments(ctx, section, faces)?;
     let mut by_face = BTreeMap::new();
     for assignment in &native_assignments {
         if let DisplayAppearanceTarget::Body(face_indexes) = &assignment.target {
@@ -270,7 +275,7 @@ pub(crate) fn resolve_display_appearances(
 
     let mut feature_by_source =
         HashMap::<FeatureSourceId, Option<FeatureAppearanceAssignment>>::new();
-    for assignment in feature_assignments(scan) {
+    for assignment in feature_assignments(ctx, scan)? {
         feature_by_source
             .entry(assignment.feature_source_id)
             .and_modify(|existing| {
@@ -313,10 +318,10 @@ pub(crate) fn resolve_display_appearances(
             by_face.insert(face_index, assignment.definition);
         }
     }
-    ResolvedDisplayAppearances {
+    Ok(ResolvedDisplayAppearances {
         by_face,
         matched_feature_sources,
-    }
+    })
 }
 
 #[cfg(test)]

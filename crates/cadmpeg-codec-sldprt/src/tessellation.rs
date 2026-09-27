@@ -236,83 +236,110 @@ pub(crate) struct ClassInterval {
     source_ids: Vec<u32>,
 }
 
-pub(crate) fn class_intervals(payload: &[u8]) -> Vec<ClassInterval> {
-    let declarations = payload
-        .windows(CLASS_MARKER.len())
-        .enumerate()
-        .filter_map(|(offset, marker)| (marker == CLASS_MARKER).then_some(offset))
-        .filter_map(|offset| {
-            let length = usize::from(View::u16_le_at(payload, offset + 4)?);
-            if !(1..=128).contains(&length) {
-                return None;
-            }
-            let name = payload.get(offset + 6..offset + 6 + length)?;
-            if !name
-                .iter()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
-            {
-                return None;
-            }
-            let name = std::str::from_utf8(name).ok()?;
-            Some((offset, name.to_string()))
-        })
-        .collect::<Vec<_>>();
-    declarations
-        .iter()
-        .enumerate()
-        .filter_map(|(index, (offset, class))| {
-            let start = offset + 6 + class.len();
-            let end = declarations
-                .get(index + 1)
-                .map_or(payload.len(), |(offset, _)| *offset);
-            let content = ByteRange::new(start, end)?;
-            let records = payload.get(start..end)?;
-            let source_ids = records
-                .windows(scene_src::LEN)
-                .filter_map(|window| {
-                    (window.starts_with(SCENE_SOURCE_MARKER))
-                        .then(|| View::u32_le_at(window, scene_src::SOURCE_ID))
-                        .flatten()
-                        .filter(|source| *source != 0)
-                })
-                .collect();
-            Some(ClassInterval {
-                name: class.clone(),
-                class_offset: *offset,
-                content,
-                source_ids,
-            })
-        })
-        .collect()
+pub(crate) fn class_intervals(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<ClassInterval>, cadmpeg_core::CodecError> {
+    let mut declarations = Vec::new();
+    for (offset, marker) in payload.windows(CLASS_MARKER.len()).enumerate() {
+        if marker != CLASS_MARKER {
+            continue;
+        }
+        let Some(length) = View::u16_le_at(payload, offset + 4).map(usize::from) else {
+            continue;
+        };
+        if !(1..=128).contains(&length) {
+            continue;
+        }
+        let Some(name_bytes) = payload.get(offset + 6..offset + 6 + length) else {
+            continue;
+        };
+        if !name_bytes.iter().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')) {
+            continue;
+        }
+        let Ok(name_text) = std::str::from_utf8(name_bytes) else {
+            continue;
+        };
+        ctx.charge_retained(length as u64, "retain SLDPRT display class name")?;
+        let mut name = String::new();
+        name.try_reserve(length).map_err(|_| ctx.refuse_codec_limit("retain SLDPRT display class name", u64::MAX - 1, u64::MAX))?;
+        name.push_str(name_text);
+        ctx.charge_collection_items(1, "collect SLDPRT display class declarations")?;
+        declarations.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect SLDPRT display class declarations", u64::MAX - 1, u64::MAX))?;
+        declarations.push((offset, name));
+    }
+    let mut declarations = declarations.into_iter().peekable();
+    let mut intervals = Vec::new();
+    while let Some((offset, name)) = declarations.next() {
+        let start = offset + 6 + name.len();
+        let end = declarations.peek().map_or(payload.len(), |(next, _)| *next);
+        let Some(content) = ByteRange::new(start, end) else {
+            continue;
+        };
+        let Some(records) = payload.get(start..end) else {
+            continue;
+        };
+        let mut source_ids = Vec::new();
+        for window in records.windows(scene_src::LEN) {
+            let Some(source) = window.starts_with(SCENE_SOURCE_MARKER)
+                .then(|| View::u32_le_at(window, scene_src::SOURCE_ID))
+                .flatten()
+                .filter(|source| *source != 0)
+            else {
+                continue;
+            };
+            ctx.charge_collection_items(1, "collect SLDPRT display class sources")?;
+            source_ids.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect SLDPRT display class sources", u64::MAX - 1, u64::MAX))?;
+            source_ids.push(source);
+        }
+        ctx.charge_collection_items(1, "collect SLDPRT display class intervals")?;
+        intervals.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect SLDPRT display class intervals", u64::MAX - 1, u64::MAX))?;
+        intervals.push(ClassInterval { name, class_offset: offset, content, source_ids });
+    }
+    Ok(intervals)
 }
 
-fn scene_classes(payload: &[u8]) -> Vec<(u32, String)> {
-    class_intervals(payload)
-        .into_iter()
-        .filter(|class| {
-            matches!(
-                crate::classification::native_object_class(&class.name).tree_node(),
-                Some(
-                    cadmpeg_ir::features::FeatureTreeNodeRole::AmbientLight
-                        | cadmpeg_ir::features::FeatureTreeNodeRole::DirectionalLight
-                        | cadmpeg_ir::features::FeatureTreeNodeRole::PointLight
-                        | cadmpeg_ir::features::FeatureTreeNodeRole::SpotLight
-                )
+fn scene_classes(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<(u32, String)>, cadmpeg_core::CodecError> {
+    let mut classes = Vec::new();
+    for class in class_intervals(ctx, payload)? {
+        if !matches!(
+            crate::classification::native_object_class(&class.name).tree_node(),
+            Some(
+                cadmpeg_ir::features::FeatureTreeNodeRole::AmbientLight
+                    | cadmpeg_ir::features::FeatureTreeNodeRole::DirectionalLight
+                    | cadmpeg_ir::features::FeatureTreeNodeRole::PointLight
+                    | cadmpeg_ir::features::FeatureTreeNodeRole::SpotLight
             )
-        })
-        .flat_map(|class| {
-            class
-                .source_ids
-                .into_iter()
-                .map(move |source| (source, class.name.clone()))
-        })
-        .collect()
+        ) {
+            continue;
+        }
+        for source in class.source_ids {
+            ctx.charge_retained(class.name.len() as u64, "retain SLDPRT scene class name")?;
+            let mut name = String::new();
+            name.try_reserve(class.name.len()).map_err(|_| ctx.refuse_codec_limit("retain SLDPRT scene class name", u64::MAX - 1, u64::MAX))?;
+            name.push_str(&class.name);
+            ctx.charge_collection_items(1, "collect SLDPRT scene classes")?;
+            classes.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect SLDPRT scene classes", u64::MAX - 1, u64::MAX))?;
+            classes.push((source, name));
+        }
+    }
+    Ok(classes)
 }
 
-pub(crate) fn scene_feature_classes(scan: &ContainerScan) -> HashMap<u32, String> {
+pub(crate) fn scene_feature_classes(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<HashMap<u32, String>, cadmpeg_core::CodecError> {
     let mut candidates = HashMap::<u32, Option<String>>::new();
     for section in scan.sections() {
-        for (source, class) in scene_classes(section.payload()) {
+        for (source, class) in scene_classes(ctx, section.payload())? {
+            if !candidates.contains_key(&source) {
+                ctx.charge_collection_items(1, "index SLDPRT scene class sources")?;
+                candidates.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT scene class sources", u64::MAX - 1, u64::MAX))?;
+            }
             candidates
                 .entry(source)
                 .and_modify(|existing| {
@@ -323,10 +350,15 @@ pub(crate) fn scene_feature_classes(scan: &ContainerScan) -> HashMap<u32, String
                 .or_insert_with(|| Some(class));
         }
     }
-    candidates
-        .into_iter()
-        .filter_map(|(source, class)| class.map(|class| (source, class)))
-        .collect()
+    let mut resolved = HashMap::new();
+    for (source, class) in candidates {
+        if let Some(class) = class {
+            ctx.charge_collection_items(1, "collect SLDPRT scene feature classes")?;
+            resolved.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect SLDPRT scene feature classes", u64::MAX - 1, u64::MAX))?;
+            resolved.insert(source, class);
+        }
+    }
+    Ok(resolved)
 }
 
 pub(crate) fn auxiliary_channels_are_consistent(
