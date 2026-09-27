@@ -727,7 +727,7 @@ fn unsupported_retained_native_records_are_refused_before_output() {
         .or_default()
         .push(
             cadmpeg_ir::NativeRecord::new(
-                "rhino:presentation:material#unsupported",
+                cadmpeg_ir::ids::Identity::new("rhino:presentation:material#unsupported").expect("valid identity"),
                 serde_json::Map::new(),
             )
             .expect("valid native identity"),

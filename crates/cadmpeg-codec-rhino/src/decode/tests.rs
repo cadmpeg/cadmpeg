@@ -1273,7 +1273,7 @@ fn candidate_rejection_restores_native_records_annotations_and_all_model_arenas(
                 candidate.native.namespace_mut("rhino").arenas_mut().insert(
                     "history_records".into(),
                     vec![NativeRecord::new(
-                        "rhino:history:record#rejected",
+                        cadmpeg_ir::ids::Identity::new("rhino:history:record#rejected").expect("valid identity"),
                         serde_json::Map::new(),
                     )
                     .unwrap()],

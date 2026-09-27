@@ -16,7 +16,7 @@ fn model_entity_wins_when_native_id_collides() {
     namespace.arenas_mut().insert(
         "records".into(),
         vec![NativeRecord::new(
-            id.clone(),
+            crate::ids::Identity::new(id.clone()).expect("valid identity"),
             Map::from_iter([("native_only".into(), Value::Bool(true))]),
         )
         .expect("valid native identity")],
@@ -54,7 +54,7 @@ fn native_topology_link_must_resolve() {
     ir.native.namespace_mut("f3d").arenas_mut().insert(
         "sketch_curve_links".into(),
         vec![NativeRecord::new(
-            "native:test:link#0",
+            crate::ids::Identity::new("native:test:link#0").expect("valid identity"),
             serde_json::from_value(serde_json::json!({"links": ["missing"]})).unwrap(),
         )
         .expect("valid native identity")],

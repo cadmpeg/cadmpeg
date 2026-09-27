@@ -327,7 +327,7 @@ mod tests {
         let mut namespace = NativeNamespace::default();
         namespace.arenas_mut().insert(
             "records".into(),
-            vec![NativeRecord::new(native_id, Map::new()).expect("valid native identity")],
+            vec![NativeRecord::new(crate::ids::Identity::new(native_id).expect("valid identity"), Map::new()).expect("valid native identity")],
         );
         ir.native.0.insert("test".into(), namespace);
         let model_id = "test:fixture:model#0";

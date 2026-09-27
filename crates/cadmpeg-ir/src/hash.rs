@@ -399,7 +399,7 @@ mod tests {
         }) else {
             panic!("the pinned record literal is a JSON object");
         };
-        NativeRecord::new("pin:test:record#0", fields).expect("valid native identity")
+        NativeRecord::new(crate::ids::Identity::new("pin:test:record#0").expect("valid identity"), fields).expect("valid native identity")
     }
 
     fn pinned_native() -> Native {
@@ -529,7 +529,7 @@ mod tests {
         let mut ir = pinned_document();
         ir.native.namespace_mut("pin").arenas_mut().insert(
             "unknowns".into(),
-            vec![NativeRecord::new("pin:model:record#0", fields).expect("valid native identity")],
+            vec![NativeRecord::new(crate::ids::Identity::new("pin:model:record#0").expect("valid identity"), fields).expect("valid native identity")],
         );
         ir.finalize();
         ir
@@ -802,7 +802,7 @@ mod tests {
         namespace.arenas_mut().insert(
             "records".into(),
             vec![
-                NativeRecord::new("other:test:record#0", serde_json::Map::new())
+                NativeRecord::new(crate::ids::Identity::new("other:test:record#0").expect("valid identity"), serde_json::Map::new())
                     .expect("valid native identity"),
             ],
         );
