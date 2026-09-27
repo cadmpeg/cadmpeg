@@ -4968,18 +4968,26 @@ fn attach_standard_topology(
         propagated_endpoint_pairs,
         mesh_propagated_endpoint_pairs,
     );
-    let mut constrained_endpoint_options = endpoint_options.as_ref().map(|options| {
-        options
-            .iter()
-            .enumerate()
-            .map(|(edge, pairs)| {
-                propagated_endpoint_pairs
-                    .as_ref()
-                    .and_then(|propagated| propagated.get(edge).copied().flatten())
-                    .map_or_else(|| pairs.clone(), |pair| vec![pair])
-            })
-            .collect::<Vec<_>>()
-    });
+    let mut constrained_endpoint_options = if let Some(options) = endpoint_options.as_ref() {
+        let mut copied = Vec::new();
+        for (edge, pairs) in options.iter().enumerate() {
+            let row = if let Some(pair) = propagated_endpoint_pairs
+                .as_ref()
+                .and_then(|propagated| propagated.get(edge).copied().flatten())
+            {
+                ctx.alloc_filled(1, pair, "catia_endpoint_propagated_pair")
+                    .map_err(StandardTopologyError::Resource)?
+            } else {
+                crate::resource::copy_slice(ctx, pairs, "catia_endpoint_pair_copy")
+                    .map_err(StandardTopologyError::Resource)?
+            };
+            crate::resource::push(ctx, &mut copied, row, "catia_endpoint_option_copy")
+                .map_err(StandardTopologyError::Resource)?;
+        }
+        Some(copied)
+    } else {
+        None
+    };
     if let (Some(options), Some(ports)) = (
         constrained_endpoint_options.as_mut(),
         missing_edge::standard_mesh_edge_ports(ctx, spine)
@@ -4987,13 +4995,15 @@ fn attach_standard_topology(
     ) {
         let pruned = if deferred_port_edges.iter().any(|deferred| *deferred) {
             fbb::prune_edge_candidates_by_port_domains_with_deferred(
+                ctx,
                 &ports,
                 options,
                 &deferred_port_edges,
             )
         } else {
-            fbb::prune_edge_candidates_by_port_domains(&ports, options)
-        };
+            fbb::prune_edge_candidates_by_port_domains(ctx, &ports, options)
+        }
+        .map_err(StandardTopologyError::Resource)?;
         if let Some(pruned) = pruned {
             *options = pruned;
         }
@@ -5209,18 +5219,23 @@ fn attach_standard_topology(
                 )
             })
         };
-        let point_positions = ir
-            .model
-            .points
-            .iter()
-            .map(|point| point.position().get())
-            .collect::<Vec<_>>();
-        let mut solver_deferred_edges = deferred_port_edges.clone();
+        let mut point_positions = Vec::new();
+        for point in &ir.model.points {
+            crate::resource::push(
+                ctx,
+                &mut point_positions,
+                point.position().get(),
+                "catia_solver_point_positions",
+            )?;
+        }
+        let mut solver_deferred_edges =
+            crate::resource::copy_slice(ctx, &deferred_port_edges, "catia_solver_deferred_edges")?;
         if let Some(ports) = missing_edge::edge_port_identities(ctx, spine)? {
             if !missing_edge::expand_deferred_edge_port_components(
+                ctx,
                 &ports,
                 &mut solver_deferred_edges,
-            ) {
+            )? {
                 return Ok(None);
             }
         }
