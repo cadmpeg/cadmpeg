@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Charged fallible growth for CATIA decode collections.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::hash::Hash;
 
 use cadmpeg_core::decode::{
@@ -280,6 +280,29 @@ pub(crate) fn admit_map_entry<K: Eq + Hash, V>(
             .map_err(|_| allocation_failed(values.len(), values.capacity(), 1, operation))?;
     }
     Ok(())
+}
+
+pub(crate) fn admit_btree_entry<K: Ord, V>(
+    ctx: &DecodeContext<'_>,
+    values: &BTreeMap<K, V>,
+    key: &K,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !values.contains_key(key) {
+        ctx.charge_collection_items(1, operation)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn insert_btree_map<K: Ord, V>(
+    ctx: &DecodeContext<'_>,
+    values: &mut BTreeMap<K, V>,
+    key: K,
+    value: V,
+    operation: &'static str,
+) -> Result<Option<V>, CodecError> {
+    admit_btree_entry(ctx, values, &key, operation)?;
+    Ok(values.insert(key, value))
 }
 
 fn temporary_bytes<T>(
