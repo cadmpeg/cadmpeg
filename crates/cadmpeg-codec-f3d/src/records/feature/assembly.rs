@@ -1023,11 +1023,8 @@ pub(crate) struct DesignAssemblyOperandPathLink {
 }
 
 /// Counted occurrence path qualifying one assembly operand construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignAssemblyOperandPathWire",
-    into = "DesignAssemblyOperandPathWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignAssemblyOperandPathWire")]
 pub(crate) struct DesignAssemblyOperandPath {
     link: DesignAssemblyOperandPathLink,
     pub(crate) record_index: u32,
@@ -1037,6 +1034,83 @@ pub(crate) struct DesignAssemblyOperandPath {
     occurrence_guids: Vec<Located<DesignRelaxedGuidText>>,
     /// Ordered identity GUIDs and their UTF-16 code-unit locations.
     identity_guids: Vec<Located<DesignRelaxedGuidText>>,
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(super) static ASSEMBLY_OPERAND_PATH_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignAssemblyOperandPath {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        ASSEMBLY_OPERAND_PATH_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            link: self.link.clone(),
+            record_index: self.record_index,
+            class_tag: self.class_tag.clone(),
+            byte_offset: self.byte_offset,
+            occurrence_guids: self.occurrence_guids.clone(),
+            identity_guids: self.identity_guids.clone(),
+        }
+    }
+}
+
+struct PathGuidValues<'a>(&'a [Located<DesignRelaxedGuidText>]);
+struct PathGuidOffsets<'a>(&'a [Located<DesignRelaxedGuidText>]);
+
+impl PathGuidValues<'_> {
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl PathGuidOffsets<'_> {
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl Serialize for PathGuidValues<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter().map(|guid| &guid.value))
+    }
+}
+
+impl Serialize for PathGuidOffsets<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter().map(|guid| guid.offset))
+    }
+}
+
+#[derive(Serialize)]
+struct DesignAssemblyOperandPathRef<'a> {
+    link: &'a DesignAssemblyOperandPathLink,
+    record_index: u32,
+    class_tag: &'a str,
+    byte_offset: u64,
+    occurrence_guids: PathGuidValues<'a>,
+    occurrence_guid_offsets: PathGuidOffsets<'a>,
+    #[serde(skip_serializing_if = "PathGuidValues::is_empty")]
+    identity_guids: PathGuidValues<'a>,
+    #[serde(skip_serializing_if = "PathGuidOffsets::is_empty")]
+    identity_guid_offsets: PathGuidOffsets<'a>,
+}
+
+impl Serialize for DesignAssemblyOperandPath {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DesignAssemblyOperandPathRef {
+            link: &self.link,
+            record_index: self.record_index,
+            class_tag: self.class_tag.as_str(),
+            byte_offset: self.byte_offset,
+            occurrence_guids: PathGuidValues(&self.occurrence_guids),
+            occurrence_guid_offsets: PathGuidOffsets(&self.occurrence_guids),
+            identity_guids: PathGuidValues(&self.identity_guids),
+            identity_guid_offsets: PathGuidOffsets(&self.identity_guids),
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Counted occurrence path qualifying one assembly operand construction.
@@ -1177,6 +1251,7 @@ impl TryFrom<DesignAssemblyOperandPathWire> for DesignAssemblyOperandPath {
     }
 }
 
+#[cfg(test)]
 impl From<DesignAssemblyOperandPath> for DesignAssemblyOperandPathWire {
     fn from(path: DesignAssemblyOperandPath) -> Self {
         let (occurrence_guids, occurrence_guid_offsets) = path
