@@ -252,7 +252,7 @@ pub(super) fn summarize(ctx: &DecodeContext<'_>, scan: &decode::Scan) -> Result<
         });
     }
 
-    let (classification, mut notes) = decode::summarize(scan);
+    let (classification, mut notes) = crate::scan_notes::summarize(scan);
     notes.extend(storage_notes);
     let container_kind = classification.container_kind();
     let (dialects, dialect_losses) = classification.into_report_parts();
@@ -341,4 +341,3 @@ fn insert_summary_attribute(
     attributes.insert(key, rendered);
     Ok(())
 }
-

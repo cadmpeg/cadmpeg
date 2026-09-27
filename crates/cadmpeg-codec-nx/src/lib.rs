@@ -96,6 +96,7 @@ mod nurbs;
 mod om;
 mod om_tokens;
 mod parasolid;
+mod scan_notes;
 mod payload_text;
 mod printable_string;
 mod topology;
