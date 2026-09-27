@@ -99,6 +99,60 @@ fn decodes_bounded_utf8_and_utf16_strings() {
 }
 
 #[test]
+fn retained_utf16_charges_exact_utf8_length_and_preserves_surrogates() {
+    let bytes = utf16_bytes("é😀");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut limited = cadmpeg_core::decode::DecodePolicy::service();
+    limited.limits.max_retained_bytes = 5;
+    let (limited_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &limited)
+            .expect("root bytes admitted");
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded UTF-16 reader");
+    let error = settings::utf16_retained(&limited_ctx, &mut reader, "Rhino test UTF-16 text")
+        .expect_err("six UTF-8 bytes exceed five retained bytes");
+    assert!(matches!(
+        error,
+        crate::chunks::FramingError::Resource(refusal)
+            if refusal.operation == "Rhino test UTF-16 text"
+    ));
+
+    let mut admitted = cadmpeg_core::decode::DecodePolicy::service();
+    admitted.limits.max_retained_bytes = 6;
+    let (admitted_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &admitted)
+            .expect("root bytes admitted");
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded UTF-16 reader");
+    assert_eq!(
+        settings::utf16_retained(&admitted_ctx, &mut reader, "Rhino test UTF-16 text")
+            .expect("exact UTF-8 length admitted"),
+        "é😀"
+    );
+}
+
+#[test]
+fn retained_utf16_preserves_invalid_surrogate_error() {
+    let mut bytes = Vec::new();
+    bytes.extend(2_u32.to_le_bytes());
+    bytes.extend(0xd83d_u16.to_le_bytes());
+    bytes.extend(0_u16.to_le_bytes());
+    let mut original = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded UTF-16 reader");
+    let expected = settings::utf16(&mut original).expect_err("unpaired surrogate is invalid");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("root bytes admitted");
+    let mut retained = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded UTF-16 reader");
+    assert_eq!(
+        settings::utf16_retained(&ctx, &mut retained, "Rhino test UTF-16 text")
+            .expect_err("unpaired surrogate is invalid"),
+        expected
+    );
+}
+
+#[test]
 fn maps_standard_units_to_millimeters() {
     assert_eq!(settings::standard_scale(2), Some(1.0));
     assert_eq!(settings::standard_scale(8), Some(25.4));
