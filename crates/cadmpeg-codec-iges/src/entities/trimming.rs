@@ -8,12 +8,12 @@ use super::geometry::{
     BoundaryVertexDerivation, BoundaryVertexSourceEndpoint, DeclaredInterval, ProjectionOutcome,
 };
 use super::{affine_parameter_map, line_directrix, pointer};
-use crate::decode_resource::{reserve_vec, reserve_vec_growth};
+use crate::decode_resource::{format_retained, reserve_vec, reserve_vec_growth};
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::{ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TokenValue};
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::eval::finite_or_refusal;
@@ -162,9 +162,14 @@ fn find_cluster_root(parents: &mut [usize], index: usize) -> usize {
 fn cluster_boundary_positions(
     positions: &[FinitePoint3],
     tolerance: cadmpeg_ir::scalar::PositiveReal,
-) -> Result<Vec<BoundaryVertexCluster>, BoundaryVertexClusterError> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<BoundaryVertexCluster>, BoundaryVertexCreationError> {
     let tolerance = tolerance.get();
-    let mut parents = (0..positions.len()).collect::<Vec<_>>();
+    let count = u64_from_index(positions.len());
+    let pair_count = if count == 0 { 0 } else { count.checked_mul(count - 1).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("iges boundary clustering comparisons", u64::MAX, 1))? / 2 };
+    ctx.charge_work(pair_count, "iges boundary clustering comparisons")?;
+    let mut parents = reserve_vec(ctx, positions.len(), "iges boundary cluster parents")?;
+    parents.extend(0..positions.len());
     for (left_index, left) in positions.iter().enumerate() {
         for (right_index, right) in positions.iter().enumerate().skip(left_index + 1) {
             if !close(left.get(), right.get(), tolerance) {
@@ -180,9 +185,15 @@ fn cluster_boundary_positions(
     let mut members_by_root = BTreeMap::<usize, Vec<usize>>::new();
     for index in 0..positions.len() {
         let root = find_cluster_root(&mut parents, index);
-        members_by_root.entry(root).or_default().push(index);
+        if !members_by_root.contains_key(&root) {
+            ctx.charge_collection_items(1, "iges boundary cluster roots")?;
+        }
+        let members = members_by_root.entry(root).or_default();
+        reserve_vec_growth(ctx, members, 1, "iges boundary cluster members")?;
+        members.push(index);
     }
-    let mut clusters = Vec::with_capacity(members_by_root.len());
+    let mut clusters = reserve_vec(ctx, members_by_root.len(), "iges boundary cluster slots")?;
+    ctx.charge_work(pair_count, "iges boundary cluster transitivity comparisons")?;
     for members in members_by_root.into_values() {
         if members.iter().enumerate().any(|(offset, left)| {
             members
@@ -190,7 +201,7 @@ fn cluster_boundary_positions(
                 .skip(offset + 1)
                 .any(|right| !close(positions[*left].get(), positions[*right].get(), tolerance))
         }) {
-            return Err(BoundaryVertexClusterError::NonTransitive);
+            return Err(BoundaryVertexClusterError::NonTransitive.into());
         }
         let representative = members
             .iter()
@@ -220,17 +231,16 @@ fn create_boundary_vertices(
     sequences: &mut super::geometry::SourceSequences,
     ctx: &DecodeContext<'_>,
 ) -> Result<(Vec<VertexId>, Vec<BoundaryVertexDerivation>), BoundaryVertexCreationError> {
-    let positions = source_endpoints
-        .iter()
-        .map(|endpoint| endpoint.position)
-        .collect::<Vec<_>>();
-    let clusters = cluster_boundary_positions(&positions, tolerance)?;
-    let mut vertex_ids = (0..positions.len())
-        .map(|_| None)
-        .collect::<Vec<Option<VertexId>>>();
-    let mut derivations = Vec::new();
+    let mut positions = reserve_vec(ctx, source_endpoints.len(), "iges boundary endpoint positions")?;
+    positions.extend(source_endpoints.iter().map(|endpoint| endpoint.position));
+    let clusters = cluster_boundary_positions(&positions, tolerance, ctx)?;
+    let mut vertex_ids = reserve_vec(ctx, positions.len(), "iges boundary endpoint vertex slots")?;
+    vertex_ids.resize(positions.len(), None);
+    let mut derivations = reserve_vec(ctx, clusters.len(), "iges boundary vertex derivations")?;
     for (index, cluster) in clusters.into_iter().enumerate() {
         let point_id = crate::ids::point(&stem.slot(boundary).slot(index));
+        reserve_vec_growth(ctx, &mut candidate.model_mut().points, 1, "iges boundary points")?;
+        reserve_vec_growth(ctx, &mut candidate.model_mut().vertices, 1, "iges boundary vertices")?;
         sequences.record_point(&point_id, stem, Some(ctx))?;
         let vertex_id = crate::ids::vertex(&stem.slot(boundary).slot(index));
         candidate.model_mut().points.push(Point::new(
@@ -243,23 +253,29 @@ fn create_boundary_vertices(
             point: point_id,
             tolerance: Some(tolerance),
         });
-        let source_endpoints = cluster
-            .members
-            .iter()
-            .map(|member| source_endpoints[*member].clone())
-            .collect();
+        let mut derivation_endpoints = reserve_vec(ctx, cluster.members.len(), "iges boundary derivation endpoints")?;
+        for member in &cluster.members {
+            let endpoint = &source_endpoints[*member];
+            derivation_endpoints.push(BoundaryVertexSourceEndpoint {
+                edge: format_retained(ctx, format_args!("{}", endpoint.edge), "iges boundary derivation edge text")?,
+                endpoint: endpoint.endpoint,
+                position: endpoint.position,
+            });
+        }
         derivations.push(BoundaryVertexDerivation {
-            source_entity: source_entity.into(),
+            source_entity: format_retained(ctx, format_args!("{source_entity}"), "iges boundary derivation source text")?,
             vertex: vertex_id.clone(),
             representative: cluster.representative,
             tolerance: tolerance.get(),
-            source_endpoints,
+            source_endpoints: derivation_endpoints,
         });
         for member in cluster.members {
             vertex_ids[member] = Some(vertex_id.clone());
         }
     }
-    Ok((vertex_ids.into_iter().flatten().collect(), derivations))
+    let mut result_ids = reserve_vec(ctx, vertex_ids.len(), "iges boundary result vertex ids")?;
+    result_ids.extend(vertex_ids.into_iter().flatten());
+    Ok((result_ids, derivations))
 }
 
 fn point_position(index: &ModelIndex<'_>, id: &VertexId) -> Option<FinitePoint3> {
@@ -2216,26 +2232,19 @@ pub(super) fn project(
                 ctx,
             )?);
             let loop_id = crate::ids::r#loop(&stem.slot(boundary_index));
-            let coedge_ids = (0..items.len())
-                .map(|index| crate::ids::coedge(&stem.slot(boundary_index).slot(index)))
-                .collect::<Vec<_>>();
-            let source_endpoints = items
-                .iter()
-                .flat_map(|item| {
-                    [
-                        BoundaryVertexSourceEndpoint {
-                            edge: item.source_edge.id.as_str().to_owned(),
-                            endpoint: BoundaryEndpoint::Start,
-                            position: item.start,
-                        },
-                        BoundaryVertexSourceEndpoint {
-                            edge: item.source_edge.id.as_str().to_owned(),
-                            endpoint: BoundaryEndpoint::End,
-                            position: item.end,
-                        },
-                    ]
-                })
-                .collect::<Vec<_>>();
+            let mut coedge_ids = reserve_vec(ctx, items.len(), "iges trimming coedge ids")?;
+            let endpoint_count = items.len().checked_mul(2).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("iges trimming source endpoints", u64::MAX, 1))?;
+            let mut source_endpoints = reserve_vec(ctx, endpoint_count, "iges trimming source endpoints")?;
+            for (index, item) in items.iter().enumerate() {
+                coedge_ids.push(crate::ids::coedge(&stem.slot(boundary_index).slot(index)));
+                for (endpoint, position) in [(BoundaryEndpoint::Start, item.start), (BoundaryEndpoint::End, item.end)] {
+                    source_endpoints.push(BoundaryVertexSourceEndpoint {
+                        edge: format_retained(ctx, format_args!("{}", item.source_edge.id), "iges trimming source endpoint edge text")?,
+                        endpoint,
+                        position,
+                    });
+                }
+            }
             let Some(checked_sewing_tolerance) =
                 cadmpeg_ir::scalar::PositiveReal::new(sewing_tolerance)
             else {
@@ -2246,7 +2255,7 @@ pub(super) fn project(
             let (vertex_ids, derivations) = match create_boundary_vertices(
                 &mut candidate,
                 &stem,
-                &format!("iges:entity:directory#{}", entry.sequence),
+                &format_retained(ctx, format_args!("iges:entity:directory#{}", entry.sequence), "iges trimming source entity text")?,
                 boundary_index,
                 &source_endpoints,
                 checked_sewing_tolerance,
@@ -2261,6 +2270,7 @@ pub(super) fn project(
                 }
                 Err(BoundaryVertexCreationError::Resource(error)) => return Err(error),
             };
+            reserve_vec_growth(ctx, &mut candidate_boundary_vertex_derivations, derivations.len(), "iges trimming candidate vertex derivations")?;
             candidate_boundary_vertex_derivations.extend(derivations);
             for (segment_index, item) in items.into_iter().enumerate() {
                 let edge_id = crate::ids::edge(&stem.slot(boundary_index).slot(segment_index));
