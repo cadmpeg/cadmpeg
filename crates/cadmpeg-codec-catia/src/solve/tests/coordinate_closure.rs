@@ -1555,11 +1555,12 @@ fn duplicate_face_slot_without_admitted_alternate_remains_unresolved() {
 
 #[test]
 fn duplicate_face_assignment_visitor_keeps_alternates_correlated() {
+    catia_test_context!(ctx);
     let serialized = [[0, 0], [1, 1], [0, 2]];
     let allowed = [vec![2, 1, 0], Vec::new(), Vec::new()];
     let mut assignments = Vec::new();
 
-    let outcome = visit_duplicate_face_assignments(&serialized, &allowed, 3, 4, |assignment| {
+    let outcome = visit_duplicate_face_assignments(&ctx, &serialized, &allowed, 3, 4, |assignment| {
         assignments.push(assignment.to_vec());
         Ok(true)
     })
@@ -1578,11 +1579,12 @@ fn duplicate_face_assignment_visitor_keeps_alternates_correlated() {
 
 #[test]
 fn duplicate_face_assignment_visitor_reports_the_bound() {
+    catia_test_context!(ctx);
     let serialized = [[0, 0], [0, 0]];
     let allowed = [vec![1, 2], vec![1, 2]];
     let mut visits = 0;
 
-    let outcome = visit_duplicate_face_assignments(&serialized, &allowed, 3, 3, |_| {
+    let outcome = visit_duplicate_face_assignments(&ctx, &serialized, &allowed, 3, 3, |_| {
         visits += 1;
         Ok(true)
     })
@@ -1590,6 +1592,33 @@ fn duplicate_face_assignment_visitor_reports_the_bound() {
 
     assert_eq!(outcome, Some(DuplicateFaceAssignmentVisit::Exhausted));
     assert_eq!(visits, 3);
+}
+
+#[test]
+fn duplicate_face_visitor_refuses_before_assignment_and_choice_storage() {
+    let serialized = [[0usize, 0]];
+    let allowed = [vec![0usize, 1]];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        visit_duplicate_face_assignments(ctx, &serialized, &allowed, 2, 4, |_| Ok(true))
+    };
+    assert_eq!(crate::test_support::with_service_context(run).expect("service budget"), Some(DuplicateFaceAssignmentVisit::Complete));
+    let mut operations = std::collections::HashSet::new();
+    for limit in 0..=32 {
+        match crate::test_support::with_collection_limit(limit, run) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
+                operations.insert(error.operation);
+            }
+            Ok(Some(DuplicateFaceAssignmentVisit::Complete)) => break,
+            outcome => panic!("unexpected duplicate visit outcome: {outcome:?}"),
+        }
+    }
+    for operation in [
+        "catia_duplicate_visit_assignment",
+        "catia_duplicate_visit_choices",
+        "catia_duplicate_visit_branches",
+    ] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
 }
 
 #[test]
