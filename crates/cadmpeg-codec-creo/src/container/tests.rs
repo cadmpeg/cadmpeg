@@ -18,6 +18,73 @@ use cadmpeg_ir::Exactness;
 use crate::container::{self, Layout, UnknownLayout};
 use crate::CreoCodec;
 
+#[test]
+fn feature_definition_aggregation_refuses_before_vec_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let payload = b"feat_defs_917\0template\xe3S2D0004\0replay";
+    let section = super::Section::scan("FeatDefs".to_string(), 0, payload.len(), None, payload)
+        .expect("bounded feature section");
+    let run = |items| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = items;
+        let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+            .expect("root feature input is admitted");
+        super::feature_definitions(&ctx, std::slice::from_ref(&section)).map(|rows| rows.len())
+    };
+    assert_eq!(run(1).expect("one definition admitted"), 1);
+    let error = run(0).expect_err("aggregate definition needs an item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo feature definitions"));
+}
+
+fn depdb_recipe_rows_with_limits(
+    items: u64,
+    retained: u64,
+) -> Result<usize, cadmpeg_core::CodecError> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let payload = b"\xe3\xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 1\0\xf6\0protextrude\0";
+    let section = super::Section::scan("DEPDB_DATA".to_string(), 0, payload.len(), None, payload)
+        .expect("bounded recipe section");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = items;
+    policy.limits.max_retained_bytes = retained;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("root recipe input is admitted");
+    super::depdb_recipe_rows(&ctx, &[section]).map(|rows| rows.len())
+}
+
+#[test]
+fn depdb_recipe_row_body_refuses_before_retained_copy() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    assert_eq!(
+        depdb_recipe_rows_with_limits(6, u64::MAX).expect("one recipe row"),
+        1
+    );
+    let error = depdb_recipe_rows_with_limits(6, 0).expect_err("row body needs retained bytes");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo DEPDB recipe row body"));
+}
+
+#[test]
+fn depdb_recipe_row_refuses_before_vec_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    let error = depdb_recipe_rows_with_limits(5, u64::MAX).expect_err("row needs a vector item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo DEPDB recipe rows"));
+}
+
 fn reference_scan_with_limit(
     payload: &[u8],
     items: u64,

@@ -22,8 +22,6 @@ use crate::feature::definitions::FeatureSegment;
 use crate::feature::definitions::FeatureSegmentKind;
 use crate::feature::definitions::FeatureSegmentTable;
 use crate::feature::definitions::ScalarLane;
-use crate::feature::operations::operation_states;
-use crate::feature::operations::operations;
 use crate::feature::operations::reference_names;
 use crate::feature::operations::FeatureRecipe;
 use crate::feature::operations::FeatureReferenceName;
@@ -31,6 +29,18 @@ use crate::feature::rows::field_value;
 use crate::feature::rows::FeatureFieldValue;
 use crate::psb;
 use crate::scalar;
+
+fn operation_states(payload: &[u8]) -> Vec<crate::feature::operations::FeatureOperationState> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        crate::feature::operations::operation_states(ctx, payload)
+    })
+    .expect("feature operation states are admitted")
+}
+
+fn operations(payload: &[u8]) -> Vec<crate::feature::operations::FeatureOperation> {
+    crate::decode::with_test_decode_ctx(|ctx| crate::feature::operations::operations(ctx, payload))
+        .expect("feature operations are admitted")
+}
 
 #[test]
 fn decodes_var_arr_dictionary_sign_pairs() {
