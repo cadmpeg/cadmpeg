@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! ISO 10303-21 string escape decoding and canonical encoding.
 
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
+
 use crate::parse::implementation_level::ImplementationLevel;
 
 /// A malformed or unsupported string escape.
@@ -13,6 +16,13 @@ pub(crate) struct StringError {
     message: String,
 }
 
+/// A malformed string or caller-context refusal while decoding it.
+#[derive(Debug)]
+pub(crate) enum StringDecodeFailure {
+    Invalid(StringError),
+    Resource(CodecError),
+}
+
 /// Decode the bytes between a Part 21 string token's apostrophe delimiters.
 pub(crate) fn decode(input: &[u8]) -> Result<String, StringError> {
     decode_with_level(input, ImplementationLevel::LegacyEdition1)
@@ -22,13 +32,52 @@ pub(crate) fn decode_with_level(
     input: &[u8],
     level: ImplementationLevel,
 ) -> Result<String, StringError> {
+    let len = decoded_len(input, level)?;
     let mut output = String::new();
+    output.try_reserve_exact(len).map_err(|_| StringError {
+        offset: 0,
+        message: "string allocation refused".into(),
+    })?;
+    decode_chars(input, level, |character| output.push(character))?;
+    Ok(output)
+}
+
+pub(crate) fn decode_with_context(
+    input: &[u8],
+    level: ImplementationLevel,
+    ctx: &DecodeContext<'_>,
+) -> Result<String, StringDecodeFailure> {
+    let len = decoded_len(input, level).map_err(StringDecodeFailure::Invalid)?;
+    let operation = "step_string_text";
+    ctx.charge_retained(u64_from_index(len), operation)
+        .map_err(StringDecodeFailure::Resource)?;
+    let mut output = String::new();
+    output.try_reserve_exact(len).map_err(|_| {
+        StringDecodeFailure::Resource(ctx.refuse_codec_limit(operation, 0, u64_from_index(len)))
+    })?;
+    decode_chars(input, level, |character| output.push(character))
+        .map_err(StringDecodeFailure::Invalid)?;
+    Ok(output)
+}
+
+fn decoded_len(input: &[u8], level: ImplementationLevel) -> Result<usize, StringError> {
+    // One source byte expands to at most two UTF-8 bytes, so this sum fits usize.
+    let mut len = 0usize;
+    decode_chars(input, level, |character| len += character.len_utf8())?;
+    Ok(len)
+}
+
+fn decode_chars(
+    input: &[u8],
+    level: ImplementationLevel,
+    mut emit: impl FnMut(char),
+) -> Result<(), StringError> {
     let mut at = 0;
     let mut page = b'A';
     while at < input.len() {
         match input[at] {
             b'\'' if input.get(at + 1) == Some(&b'\'') => {
-                output.push('\'');
+                emit('\'');
                 at += 2;
             }
             b'\\'
@@ -38,7 +87,7 @@ pub(crate) fn decode_with_level(
                 at += 3;
             }
             b'\\' if input.get(at + 1) == Some(&b'\\') => {
-                output.push('\\');
+                emit('\\');
                 at += 2;
             }
             b'\\' if input.get(at + 1) == Some(&b'P') => {
@@ -57,24 +106,20 @@ pub(crate) fn decode_with_level(
                 let Some(&code) = input.get(at + 3) else {
                     return error(at, "truncated S escape");
                 };
-                output.push(decode_page_byte(page, code | 0x80, at)?);
+                emit(decode_page_byte(page, code | 0x80, at)?);
                 at += 4;
             }
             b'\\' if input.get(at + 1) == Some(&b'X') => match input.get(at + 2) {
                 Some(b'\\') => {
                     let byte = hex_byte(input, at + 3)?;
-                    output.push(char::from(byte));
+                    emit(char::from(byte));
                     at += 5;
                 }
                 Some(b'2') if input.get(at + 3) == Some(&b'\\') => {
-                    let (decoded, end) = decode_wide(input, at + 4, 4)?;
-                    output.push_str(&decoded);
-                    at = end;
+                    at = decode_wide(input, at + 4, 4, &mut emit)?;
                 }
                 Some(b'4') if input.get(at + 3) == Some(&b'\\') => {
-                    let (decoded, end) = decode_wide(input, at + 4, 8)?;
-                    output.push_str(&decoded);
-                    at = end;
+                    at = decode_wide(input, at + 4, 8, &mut emit)?;
                 }
                 _ => return error(at, "invalid X escape"),
             },
@@ -92,14 +137,18 @@ pub(crate) fn decode_with_level(
                         offset: start + error.valid_up_to(),
                         message: "invalid UTF-8 direct string bytes".into(),
                     })?;
-                    output.push_str(text);
+                    for character in text.chars() {
+                        emit(character);
+                    }
                 } else {
-                    output.extend(direct.iter().map(|byte| char::from(*byte)));
+                    for byte in direct {
+                        emit(char::from(*byte));
+                    }
                 }
             }
         }
     }
-    Ok(output)
+    Ok(())
 }
 
 fn decode_page_byte(page: u8, byte: u8, offset: usize) -> Result<char, StringError> {
@@ -169,7 +218,12 @@ fn push_hex_digits(output: &mut String, bytes: &[u8]) {
     }
 }
 
-fn decode_wide(input: &[u8], start: usize, width: usize) -> Result<(String, usize), StringError> {
+fn decode_wide(
+    input: &[u8],
+    start: usize,
+    width: usize,
+    emit: &mut impl FnMut(char),
+) -> Result<usize, StringError> {
     let Some(relative_end) = input[start..]
         .windows(4)
         .position(|bytes| bytes == b"\\X0\\")
@@ -180,7 +234,7 @@ fn decode_wide(input: &[u8], start: usize, width: usize) -> Result<(String, usiz
     if !(end - start).is_multiple_of(width) {
         return error(start, "wide escape has incomplete code unit");
     }
-    let mut scalars = Vec::new();
+    let mut high_surrogate = None;
     for offset in (start..end).step_by(width) {
         let raw = std::str::from_utf8(&input[offset..offset + width])
             .ok()
@@ -189,28 +243,50 @@ fn decode_wide(input: &[u8], start: usize, width: usize) -> Result<(String, usiz
                 offset,
                 message: "wide escape contains non-hexadecimal digits".into(),
             })?;
-        scalars.push(raw);
-    }
-    let decoded = if width == 4 {
-        let units = scalars.into_iter().map(|value| value as u16);
-        char::decode_utf16(units)
-            .collect::<Result<String, _>>()
-            .map_err(|_| StringError {
-                offset: start,
-                message: "wide escape contains an isolated surrogate".into(),
-            })?
-    } else {
-        scalars
-            .into_iter()
-            .map(|value| {
-                char::from_u32(value).ok_or_else(|| StringError {
+        if width == 4 {
+            let Ok(unit) = u16::try_from(raw) else {
+                return error(offset, "wide escape contains non-hexadecimal digits");
+            };
+            match unit {
+                0xd800..=0xdbff => {
+                    if high_surrogate.replace(unit).is_some() {
+                        return error(start, "wide escape contains an isolated surrogate");
+                    }
+                }
+                0xdc00..=0xdfff => {
+                    let Some(high) = high_surrogate.take() else {
+                        return error(start, "wide escape contains an isolated surrogate");
+                    };
+                    let scalar = 0x10000
+                        + ((u32::from(high) - 0xd800) << 10)
+                        + (u32::from(unit) - 0xdc00);
+                    let Some(character) = char::from_u32(scalar) else {
+                        return error(start, "wide escape contains an isolated surrogate");
+                    };
+                    emit(character);
+                }
+                _ => {
+                    if high_surrogate.is_some() {
+                        return error(start, "wide escape contains an isolated surrogate");
+                    }
+                    let Some(character) = char::from_u32(u32::from(unit)) else {
+                        return error(start, "wide escape contains an isolated surrogate");
+                    };
+                    emit(character);
+                }
+            }
+        } else {
+            let character = char::from_u32(raw).ok_or_else(|| StringError {
                     offset: start,
                     message: "wide escape contains an invalid Unicode scalar".into(),
-                })
-            })
-            .collect::<Result<String, _>>()?
-    };
-    Ok((decoded, end + 4))
+                })?;
+            emit(character);
+        }
+    }
+    if high_surrogate.is_some() {
+        return error(start, "wide escape contains an isolated surrogate");
+    }
+    Ok(end + 4)
 }
 
 fn hex_byte(input: &[u8], offset: usize) -> Result<u8, StringError> {

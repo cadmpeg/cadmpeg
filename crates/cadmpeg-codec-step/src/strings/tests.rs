@@ -73,6 +73,59 @@ fn writer_and_lexer_preserve_apostrophes_and_backslashes_once() {
 }
 
 #[test]
+fn wide_escape_streams_surrogate_pairs_and_rejects_isolated_surrogates() {
+    assert_eq!(
+        crate::strings::decode(b"\\X2\\D83DDE42\\X0\\")
+            .expect("valid UTF-16 surrogate pair"),
+        "🙂"
+    );
+    assert_eq!(
+        crate::strings::decode(b"\\X2\\D83D\\X0\\")
+            .expect_err("isolated high surrogate")
+            .message,
+        "wide escape contains an isolated surrogate"
+    );
+    assert_eq!(
+        crate::strings::decode(b"\\X2\\DE42\\X0\\")
+            .expect_err("isolated low surrogate")
+            .message,
+        "wide escape contains an isolated surrogate"
+    );
+}
+
+#[test]
+fn decoded_string_text_refuses_retained_limit_before_output_allocation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    assert!(matches!(
+        crate::strings::decode_with_context(
+            b"\xE9",
+            crate::parse::implementation_level::ImplementationLevel::LegacyEdition1,
+            &ctx,
+        ),
+        Err(crate::strings::StringDecodeFailure::Resource(CodecError::ResourceLimit(limit)))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "step_string_text"
+    ));
+    let malformed = crate::strings::decode_with_context(
+        b"\\X\\GG",
+        crate::parse::implementation_level::ImplementationLevel::LegacyEdition1,
+        &ctx,
+    );
+    assert!(matches!(
+        malformed,
+        Err(crate::strings::StringDecodeFailure::Invalid(error))
+            if error.message == "byte escape contains non-hexadecimal digits"
+    ));
+}
+
+#[test]
 fn invalid_step_string_escape_is_reported_as_metadata_loss() {
     let decoded = decode_inline(r"#1=PRODUCT('\X\GG','valid name','',());");
 
