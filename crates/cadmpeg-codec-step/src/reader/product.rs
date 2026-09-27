@@ -79,6 +79,21 @@ fn clone_product_text(
     Ok(copy)
 }
 
+fn insert_product_map<K: Ord, V>(
+    values: &mut BTreeMap<K, V>,
+    key: K,
+    value: V,
+    ctx: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<Option<V>, CodecError> {
+    if !values.contains_key(&key) {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, operation)?;
+        }
+    }
+    Ok(values.insert(key, value))
+}
+
 fn claim_product_typed(
     typed: &mut HashSet<u64>,
     id: u64,
@@ -1202,8 +1217,21 @@ fn occurrence_placements(
         ) {
             Ok(Some((usage, transform))) => {
                 if usages.contains_key(&usage) {
-                    context_candidates.entry(usage).or_default().push(record_id);
-                    result.insert(usage, transform);
+                    if !context_candidates.contains_key(&usage) {
+                        if let Some(ctx) = ctx {
+                            ctx.charge_collection_items(1, "step_context_candidate_groups")?;
+                        }
+                    }
+                    let grouped = context_candidates.entry(usage).or_default();
+                    reserve_product_items(grouped, 1, ctx, "step_context_candidate_members")?;
+                    grouped.push(record_id);
+                    insert_product_map(
+                        &mut result,
+                        usage,
+                        transform,
+                        ctx,
+                        "step_occurrence_placement_results",
+                    )?;
                 }
             }
             Ok(None) => {}
@@ -1218,34 +1246,53 @@ fn occurrence_placements(
     }
     for (&usage, source_ids) in &context_candidates {
         if source_ids.len() > 1 {
-            let mut source_ids = source_ids.clone();
+            let mut copied = Vec::new();
+            reserve_product_items(
+                &mut copied,
+                source_ids.len(),
+                ctx,
+                "step_ambiguous_context_source_copy",
+            )?;
+            copied.extend_from_slice(source_ids);
+            let mut source_ids = copied;
             source_ids.sort_unstable();
             source_ids.dedup();
-            ambiguous.insert(usage, source_ids);
+            insert_product_map(
+                ambiguous,
+                usage,
+                source_ids,
+                ctx,
+                "step_ambiguous_placement_groups",
+            )?;
         }
     }
-    let occurrence_representations = exchange
-        .entities("SHAPE_DEFINITION_REPRESENTATION")
-        .filter_map(|(record_id, record)| {
-            let shape = named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 0)
-                .and_then(ValueExt::reference)?;
-            let usage = *pds.get(&shape)?;
-            usages.contains_key(&usage).then_some((
-                usage,
-                (
-                    record_id,
-                    named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 1)
-                        .and_then(ValueExt::reference)?,
-                ),
-            ))
-        })
-        .fold(
-            BTreeMap::<u64, Vec<(u64, u64)>>::new(),
-            |mut result, (usage, representation)| {
-                result.entry(usage).or_default().push(representation);
-                result
-            },
-        );
+    let mut occurrence_representations = BTreeMap::<u64, Vec<(u64, u64)>>::new();
+    for (record_id, record) in exchange.entities("SHAPE_DEFINITION_REPRESENTATION") {
+        let Some(shape) = named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 0)
+            .and_then(ValueExt::reference)
+        else {
+            continue;
+        };
+        let Some(&usage) = pds.get(&shape) else {
+            continue;
+        };
+        if !usages.contains_key(&usage) {
+            continue;
+        }
+        let Some(representation) = named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 1)
+            .and_then(ValueExt::reference)
+        else {
+            continue;
+        };
+        if !occurrence_representations.contains_key(&usage) {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "step_occurrence_representation_groups")?;
+            }
+        }
+        let grouped = occurrence_representations.entry(usage).or_default();
+        reserve_product_items(grouped, 1, ctx, "step_occurrence_representation_members")?;
+        grouped.push((record_id, representation));
+    }
     for (&usage_id, representations) in &occurrence_representations {
         let Some(usage) = usages.get(&usage_id) else {
             continue;
@@ -1285,6 +1332,12 @@ fn occurrence_placements(
                         Err(error) => return Err(placement_error(error)),
                     };
                 if child_representations.contains(&mapped_representation) {
+                    reserve_product_items(
+                        &mut candidates,
+                        1,
+                        ctx,
+                        "step_occurrence_placement_candidates",
+                    )?;
                     candidates.push((source_id, transform));
                 }
             }
@@ -1295,36 +1348,90 @@ fn occurrence_placements(
                 .is_some_and(|source_ids| !source_ids.is_empty())
             && !candidates.is_empty()
         {
-            let mut source_ids = context_candidates[&usage_id].clone();
+            let original = &context_candidates[&usage_id];
+            let mut source_ids = Vec::new();
+            reserve_product_items(
+                &mut source_ids,
+                original.len(),
+                ctx,
+                "step_competing_context_source_copy",
+            )?;
+            source_ids.extend_from_slice(original);
+            reserve_product_items(
+                &mut source_ids,
+                candidates.len(),
+                ctx,
+                "step_competing_mapped_sources",
+            )?;
             source_ids.extend(candidates.iter().map(|(source_id, _)| *source_id));
             source_ids.sort_unstable();
             source_ids.dedup();
             result.remove(&usage_id);
-            ambiguous.insert(usage_id, source_ids.clone());
-            competing.insert(usage_id, source_ids);
+            let mut copied = Vec::new();
+            reserve_product_items(
+                &mut copied,
+                source_ids.len(),
+                ctx,
+                "step_competing_source_copy",
+            )?;
+            copied.extend_from_slice(&source_ids);
+            insert_product_map(
+                ambiguous,
+                usage_id,
+                copied,
+                ctx,
+                "step_ambiguous_placement_groups",
+            )?;
+            insert_product_map(
+                competing,
+                usage_id,
+                source_ids,
+                ctx,
+                "step_competing_placement_groups",
+            )?;
             continue;
         }
         match candidates.as_slice() {
             [(_, transform)] => {
-                result.insert(usage_id, *transform);
+                insert_product_map(
+                    &mut result,
+                    usage_id,
+                    *transform,
+                    ctx,
+                    "step_occurrence_placement_results",
+                )?;
             }
             [] => {}
             _ => {
-                let mut source_ids = candidates
-                    .iter()
-                    .map(|(source_id, _)| *source_id)
-                    .collect::<Vec<_>>();
+                let mut source_ids = Vec::new();
+                reserve_product_items(
+                    &mut source_ids,
+                    candidates.len(),
+                    ctx,
+                    "step_ambiguous_mapped_sources",
+                )?;
+                source_ids.extend(candidates.iter().map(|(source_id, _)| *source_id));
                 source_ids.sort_unstable();
                 source_ids.dedup();
-                ambiguous.insert(usage_id, source_ids);
+                insert_product_map(
+                    ambiguous,
+                    usage_id,
+                    source_ids,
+                    ctx,
+                    "step_ambiguous_placement_groups",
+                )?;
             }
         }
     }
     let mut sibling_usage_counts = BTreeMap::<(u64, u64), usize>::new();
     for usage in usages.values() {
-        *sibling_usage_counts
-            .entry((usage.parent_definition, usage.child_definition))
-            .or_default() += 1;
+        let pair = (usage.parent_definition, usage.child_definition);
+        if !sibling_usage_counts.contains_key(&pair) {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "step_sibling_usage_counts")?;
+            }
+        }
+        *sibling_usage_counts.entry(pair).or_default() += 1;
     }
     for (&usage_id, usage) in usages {
         if result.contains_key(&usage_id) || ambiguous.contains_key(&usage_id) {
@@ -1377,6 +1484,12 @@ fn occurrence_placements(
                     && mapped_definitions.contains(&usage.child_definition)
                     && !placements.contains(&transform)
                 {
+                    reserve_product_items(
+                        &mut placements,
+                        1,
+                        ctx,
+                        "step_fallback_occurrence_placements",
+                    )?;
                     placements.push(transform);
                 }
             }
@@ -1384,7 +1497,13 @@ fn occurrence_placements(
         let sibling_usage_count =
             sibling_usage_counts[&(usage.parent_definition, usage.child_definition)];
         if sibling_usage_count == 1 && placements.len() == 1 {
-            result.insert(usage_id, placements[0]);
+            insert_product_map(
+                &mut result,
+                usage_id,
+                placements[0],
+                ctx,
+                "step_occurrence_placement_results",
+            )?;
         } else if !placements.is_empty() {
             reserve_product_items(losses, 1, ctx, "step_product_losses")?;
             losses.push(StepLossCode::DecodeWarning.note(format!(
