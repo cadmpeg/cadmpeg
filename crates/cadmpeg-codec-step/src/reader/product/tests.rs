@@ -149,6 +149,16 @@ fn product_definition_group_members_refuse_collection_limit() {
 }
 
 #[test]
+fn product_definition_descriptions_refuse_collection_limit() {
+    product_collection_refuses("step_product_definition_descriptions");
+}
+
+#[test]
+fn product_definition_counts_refuse_collection_limit() {
+    product_collection_refuses("step_product_definition_counts");
+}
+
+#[test]
 fn product_string_text_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
