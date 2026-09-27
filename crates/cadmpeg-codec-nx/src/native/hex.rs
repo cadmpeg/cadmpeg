@@ -78,10 +78,20 @@ impl TryFrom<String> for ToggleId {
     type Error = &'static str;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        if !is_lowercase_hex(&value, 32) {
+        if !Self::is_valid(&value) {
             return Err("SavedToggleEntry.toggle_id must be 32 lowercase hexadecimal digits");
         }
         Ok(Self(value))
+    }
+}
+
+impl ToggleId {
+    pub(super) fn is_valid(value: &str) -> bool {
+        is_lowercase_hex(value, 32)
+    }
+
+    pub(super) fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
