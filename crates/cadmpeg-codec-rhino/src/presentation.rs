@@ -2065,23 +2065,30 @@ fn optional_malformed<T>(value: Result<T, FramingError>) -> Result<Option<T>, Co
 }
 
 fn append_file_reference_diagnostics(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     losses: &mut Vec<LossNote>,
     diagnostics: Diagnostics,
     source_offset: usize,
-) {
+) -> Result<(), FramingError> {
     for diagnostic in diagnostics {
         let code = diagnostic.code.unwrap_or(RhinoLossCode::IntegrityFailure);
+        crate::chunks::reserve_admitted_vec(ctx, losses, 1, "Rhino texture file-reference losses")?;
         losses.push(
-            code.note(format!(
-                "texture file reference at offset {}: {}",
-                source_offset, diagnostic.message
-            ))
+            code.note(crate::wire::admitted_format(
+                ctx,
+                format_args!(
+                    "texture file reference at offset {}: {}",
+                    source_offset, diagnostic.message
+                ),
+                "Rhino texture file-reference loss text",
+            )?)
             .with_provenance(
                 SourceProvenance::root("rhino", source_offset as u64)
                     .with_tag("PRESENTATION/TEXTURE/FILE_REFERENCE"),
             ),
         );
     }
+    Ok(())
 }
 
 fn parse_texture(
@@ -2101,7 +2108,7 @@ fn parse_texture(
     }
     let id = uuid(&mut reader)?;
     let mapping_channel_id = reader.u32()?;
-    let legacy_file_path = utf16(&mut reader)?;
+    let legacy_file_path = crate::settings::utf16_deferred(&mut reader)?;
     let enabled = reader.bool()?;
     let texture_type = reader.u32()?;
     let mode = reader.u32()?;
@@ -2142,11 +2149,14 @@ fn parse_texture(
         ) {
             Ok(value) => value,
             Err(error) => {
-                append_file_reference_diagnostics(losses, diagnostics, source_offset);
+                if matches!(error, FramingError::Resource(_)) {
+                    return Err(error);
+                }
+                append_file_reference_diagnostics(ctx, losses, diagnostics, source_offset)?;
                 return Err(error);
             }
         };
-        append_file_reference_diagnostics(losses, diagnostics, value.source_range.start);
+        append_file_reference_diagnostics(ctx, losses, diagnostics, value.source_range.start)?;
         Some(TextureFileReference {
             full_path: value.full_path,
             relative_path: value.relative_path,
@@ -2164,16 +2174,30 @@ fn parse_texture(
                 "Rhino texture content SHA-1",
             )?,
             path_status: value.path_status,
-            embedded_file_uuid: value.embedded_file_id.map(|id| id.to_string()),
+            embedded_file_uuid: value
+                .embedded_file_id
+                .map(|id| {
+                    crate::wire::admitted_format(
+                        ctx,
+                        format_args!("{id}"),
+                        "Rhino texture embedded-file UUID",
+                    )
+                })
+                .transpose()?,
         })
     } else {
         None
     };
+    let legacy_file_path = legacy_file_path.admit(ctx, "Rhino texture legacy path")?;
     let treat_as_linear = (version.1 >= 2).then(|| reader.bool()).transpose()?;
     reader.skip_remaining()?;
     Ok(TextureRecord {
         source_offset: source_offset as u64,
-        source_uuid: (!id.is_nil()).then(|| id.to_string()),
+        source_uuid: (!id.is_nil())
+            .then(|| {
+                crate::wire::admitted_format(ctx, format_args!("{id}"), "Rhino texture source UUID")
+            })
+            .transpose()?,
         mapping_channel_id,
         legacy_file_path,
         enabled,
@@ -2185,7 +2209,15 @@ fn parse_texture(
         uvw_transform,
         border_color,
         transparent_color,
-        transparency_texture_uuid: (!transparency.is_nil()).then(|| transparency.to_string()),
+        transparency_texture_uuid: (!transparency.is_nil())
+            .then(|| {
+                crate::wire::admitted_format(
+                    ctx,
+                    format_args!("{transparency}"),
+                    "Rhino texture transparency UUID",
+                )
+            })
+            .transpose()?,
         bump_scale,
         alpha_blend,
         rgb_blend_constant,
@@ -2281,11 +2313,13 @@ impl LegacyTextureKind {
 }
 
 fn parse_v2_v3_texture(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     source_offset: usize,
     kind: LegacyTextureKind,
 ) -> Result<Option<TextureRecord>, FramingError> {
-    let legacy_file_path = utf16(reader)?;
+    let legacy_file_path =
+        crate::settings::utf16_retained(ctx, reader, "Rhino V2/V3 texture path")?;
     let mode = reader.i32()?;
     let _obsolete_index = reader.i32()?;
     let bump_scale = if matches!(kind, LegacyTextureKind::Bump) {
@@ -2385,17 +2419,7 @@ fn parse_v2_v3_material(
 
     let mut textures = Vec::new();
     if let Some(texture) =
-        parse_v2_v3_texture(&mut reader, source_offset, LegacyTextureKind::Bitmap)?
-    {
-        crate::chunks::reserve_admitted_vec(
-            ctx,
-            &mut textures,
-            1,
-            "Rhino V2/V3 material textures",
-        )?;
-        textures.push(texture);
-    }
-    if let Some(texture) = parse_v2_v3_texture(&mut reader, source_offset, LegacyTextureKind::Bump)?
+        parse_v2_v3_texture(ctx, &mut reader, source_offset, LegacyTextureKind::Bitmap)?
     {
         crate::chunks::reserve_admitted_vec(
             ctx,
@@ -2406,8 +2430,22 @@ fn parse_v2_v3_material(
         textures.push(texture);
     }
     if let Some(texture) =
-        parse_v2_v3_texture(&mut reader, source_offset, LegacyTextureKind::Environment)?
+        parse_v2_v3_texture(ctx, &mut reader, source_offset, LegacyTextureKind::Bump)?
     {
+        crate::chunks::reserve_admitted_vec(
+            ctx,
+            &mut textures,
+            1,
+            "Rhino V2/V3 material textures",
+        )?;
+        textures.push(texture);
+    }
+    if let Some(texture) = parse_v2_v3_texture(
+        ctx,
+        &mut reader,
+        source_offset,
+        LegacyTextureKind::Environment,
+    )? {
         crate::chunks::reserve_admitted_vec(
             ctx,
             &mut textures,
@@ -2419,8 +2457,8 @@ fn parse_v2_v3_material(
 
     let archive_index = reader.i32()?;
     let plugin = uuid(&mut reader)?;
-    let _obsolete_library = utf16(&mut reader)?;
-    let name = utf16(&mut reader)?;
+    crate::settings::utf16_deferred(&mut reader)?;
+    let name = crate::settings::utf16_retained(ctx, &mut reader, "Rhino V2/V3 material name")?;
     let (id, reflection, transparent, index_of_refraction) = if minor >= 1 {
         (
             uuid(&mut reader)?,
@@ -2437,18 +2475,37 @@ fn parse_v2_v3_material(
         )
     };
     reader.skip_remaining()?;
-    let key = if id.is_nil() {
-        format!("record-{source_offset}")
-    } else {
-        id.to_string()
-    };
     Ok(MaterialRecord {
-        id: format!("rhino:presentation:material#{key}"),
+        id: if id.is_nil() {
+            crate::wire::admitted_format(
+                ctx,
+                format_args!("rhino:presentation:material#record-{source_offset}"),
+                "Rhino material ID",
+            )?
+        } else {
+            crate::wire::admitted_format(
+                ctx,
+                format_args!("rhino:presentation:material#{id}"),
+                "Rhino material ID",
+            )?
+        },
         source_offset: source_offset as u64,
         archive_index: Some(archive_index),
-        source_uuid: (!id.is_nil()).then(|| id.to_string()),
+        source_uuid: (!id.is_nil())
+            .then(|| {
+                crate::wire::admitted_format(
+                    ctx,
+                    format_args!("{id}"),
+                    "Rhino material source UUID",
+                )
+            })
+            .transpose()?,
         name,
-        plugin_uuid: plugin.to_string(),
+        plugin_uuid: crate::wire::admitted_format(
+            ctx,
+            format_args!("{plugin}"),
+            "Rhino material plugin UUID",
+        )?,
         ambient,
         diffuse,
         emission,
@@ -2524,7 +2581,7 @@ fn parse_material(
         }
         let id = uuid(&mut reader)?;
         let index = reader.i32()?;
-        let name = utf16(&mut reader)?;
+        let name = crate::settings::utf16_retained(ctx, &mut reader, "Rhino material name")?;
         (
             reader,
             Component {
@@ -2552,9 +2609,19 @@ fn parse_material(
         if writer_version.is_some_and(|version| version < 200_912_010) {
             transparent = diffuse;
         } else if writer_version.is_none() && diffuse != transparent {
-            losses.push(crate::loss::writer_stamp_unverified(format!(
-                "legacy material at offset {source_offset} kept its stored transparent color instead of the pre-2009 diffuse substitution because the archive has no writer-version stamp"
-            )));
+            crate::chunks::reserve_admitted_vec(
+                ctx,
+                losses,
+                1,
+                "Rhino material writer-stamp losses",
+            )?;
+            losses.push(crate::loss::writer_stamp_unverified(
+                crate::wire::admitted_format(
+                    ctx,
+                    format_args!("legacy material at offset {source_offset} kept its stored transparent color instead of the pre-2009 diffuse substitution because the archive has no writer-version stamp"),
+                    "Rhino material writer-stamp loss text",
+                )?,
+            ));
         }
     }
     let index_of_refraction = read_finite(&mut reader, "index of refraction")?;
@@ -2563,7 +2630,7 @@ fn parse_material(
     let transparency = read_finite(&mut reader, "transparency")?;
     let textures = texture_array(ctx, data, &mut reader, archive, losses)?;
     if !modern && minor >= 1 {
-        let _obsolete_library = utf16(&mut reader)?;
+        crate::settings::utf16_deferred(&mut reader)?;
     }
     if minor >= 2 || modern {
         let count = reader.i32()?;
@@ -2607,18 +2674,37 @@ fn parse_material(
         None
     };
     reader.skip_remaining()?;
-    let key = if component.id.is_nil() {
-        format!("record-{source_offset}")
-    } else {
-        component.id.to_string()
-    };
     Ok(MaterialRecord {
-        id: format!("rhino:presentation:material#{key}"),
+        id: if component.id.is_nil() {
+            crate::wire::admitted_format(
+                ctx,
+                format_args!("rhino:presentation:material#record-{source_offset}"),
+                "Rhino material ID",
+            )?
+        } else {
+            crate::wire::admitted_format(
+                ctx,
+                format_args!("rhino:presentation:material#{}", component.id),
+                "Rhino material ID",
+            )?
+        },
         source_offset: source_offset as u64,
         archive_index: component.index,
-        source_uuid: (!component.id.is_nil()).then(|| component.id.to_string()),
+        source_uuid: (!component.id.is_nil())
+            .then(|| {
+                crate::wire::admitted_format(
+                    ctx,
+                    format_args!("{}", component.id),
+                    "Rhino material source UUID",
+                )
+            })
+            .transpose()?,
         name: component.name,
-        plugin_uuid: plugin.to_string(),
+        plugin_uuid: crate::wire::admitted_format(
+            ctx,
+            format_args!("{plugin}"),
+            "Rhino material plugin UUID",
+        )?,
         ambient,
         diffuse,
         emission,
@@ -2633,7 +2719,12 @@ fn parse_material(
         shareable,
         disable_lighting,
         fresnel,
-        rdk_instance_uuid: rdk.filter(|id| !id.is_nil()).map(|id| id.to_string()),
+        rdk_instance_uuid: rdk
+            .filter(|id| !id.is_nil())
+            .map(|id| {
+                crate::wire::admitted_format(ctx, format_args!("{id}"), "Rhino material RDK UUID")
+            })
+            .transpose()?,
         diffuse_texture_alpha_transparency: alpha,
         physically_based,
     })
@@ -4805,9 +4896,23 @@ pub(crate) fn install(
                     ) {
                         Ok(mut material) => {
                             if let Some(instance_id) = legacy_rdk_instance_id {
-                                material.plugin_uuid = UNIVERSAL_RENDER_ENGINE.to_string();
-                                material.rdk_instance_uuid = Some(instance_id.to_string());
+                                material.plugin_uuid = crate::wire::admitted_format(
+                                    ctx,
+                                    format_args!("{UNIVERSAL_RENDER_ENGINE}"),
+                                    "Rhino material render-engine UUID",
+                                )?;
+                                material.rdk_instance_uuid = Some(crate::wire::admitted_format(
+                                    ctx,
+                                    format_args!("{instance_id}"),
+                                    "Rhino material instance UUID",
+                                )?);
                             }
+                            crate::wire::reserve_collection(
+                                ctx,
+                                &mut materials,
+                                1,
+                                "Rhino materials",
+                            )?;
                             materials.push(material);
                             if material_requires_opaque {
                                 opaque_records.push(OpaqueRecord {

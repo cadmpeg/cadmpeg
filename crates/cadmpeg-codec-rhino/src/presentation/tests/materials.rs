@@ -46,6 +46,99 @@ fn legacy_material_bytes(diffuse: [u8; 4]) -> Vec<u8> {
     bytes
 }
 
+fn legacy_material_refusal(limit: u64, writer_version: Option<i64>) -> FramingError {
+    let bytes = legacy_material_bytes([5, 6, 7, 8]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("legacy material root admitted");
+    parse_material(
+        &ctx,
+        &bytes,
+        MaterialParseInput {
+            range: 0..bytes.len(),
+            archive: ArchiveVersion::V5,
+            writer_version,
+            source_offset: 0,
+            physically_based: None,
+        },
+        &mut Vec::new(),
+    )
+    .expect_err("legacy material retained value exceeds limit")
+}
+
+#[test]
+fn legacy_material_name_refuses_retained_limit() {
+    assert!(
+        matches!(legacy_material_refusal(0, Some(200_912_009)), FramingError::Resource(refusal) if refusal.operation == "Rhino material name")
+    );
+}
+
+#[test]
+fn legacy_material_id_refuses_retained_limit() {
+    assert!(
+        matches!(legacy_material_refusal(5, Some(200_912_009)), FramingError::Resource(refusal) if refusal.operation == "Rhino material ID")
+    );
+}
+
+#[test]
+fn legacy_material_source_uuid_refuses_retained_limit() {
+    let id_len = "rhino:presentation:material#11111111-1111-1111-1111-111111111111".len();
+    assert!(
+        matches!(legacy_material_refusal(u64::try_from(5 + id_len).expect("budget fits"), Some(200_912_009)), FramingError::Resource(refusal) if refusal.operation == "Rhino material source UUID")
+    );
+}
+
+#[test]
+fn legacy_material_plugin_uuid_refuses_retained_limit() {
+    let id_len = "rhino:presentation:material#11111111-1111-1111-1111-111111111111".len();
+    assert!(
+        matches!(legacy_material_refusal(u64::try_from(5 + id_len + 36).expect("budget fits"), Some(200_912_009)), FramingError::Resource(refusal) if refusal.operation == "Rhino material plugin UUID")
+    );
+}
+
+#[test]
+fn legacy_material_rdk_uuid_refuses_retained_limit() {
+    let id_len = "rhino:presentation:material#11111111-1111-1111-1111-111111111111".len();
+    assert!(
+        matches!(legacy_material_refusal(u64::try_from(5 + id_len + 72).expect("budget fits"), Some(200_912_009)), FramingError::Resource(refusal) if refusal.operation == "Rhino material RDK UUID")
+    );
+}
+
+#[test]
+fn unstamped_material_loss_refuses_collection_limit() {
+    let bytes = legacy_material_bytes([5, 6, 7, 8]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("legacy material root admitted");
+    let error = parse_material(
+        &ctx,
+        &bytes,
+        MaterialParseInput {
+            range: 0..bytes.len(),
+            archive: ArchiveVersion::V5,
+            writer_version: None,
+            source_offset: 0,
+            physically_based: None,
+        },
+        &mut Vec::new(),
+    )
+    .expect_err("writer-stamp loss exceeds collection limit");
+    assert!(
+        matches!(error, FramingError::Resource(refusal) if refusal.operation == "Rhino material writer-stamp losses")
+    );
+}
+
+#[test]
+fn unstamped_material_loss_text_refuses_retained_limit() {
+    assert!(
+        matches!(legacy_material_refusal(5, None), FramingError::Resource(refusal) if refusal.operation == "Rhino material writer-stamp loss text")
+    );
+}
+
 #[test]
 fn legacy_material_preserves_core_appearance_and_switches() {
     let bytes = legacy_material_bytes([5, 6, 7, 8]);
@@ -183,6 +276,84 @@ fn v2_v3_material_payload(minor: u8) -> Vec<u8> {
     }
     bytes.extend([0xaa, 0xbb]);
     bytes
+}
+
+fn v2_v3_material_refusal(limit: u64) -> FramingError {
+    let bytes = v2_v3_material_payload(1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("V2 material root admitted");
+    parse_material(
+        &ctx,
+        &bytes,
+        MaterialParseInput {
+            range: 0..bytes.len(),
+            archive: ArchiveVersion::V2,
+            writer_version: None,
+            source_offset: 77,
+            physically_based: None,
+        },
+        &mut Vec::new(),
+    )
+    .expect_err("V2 material retained value exceeds limit")
+}
+
+macro_rules! v2_material_text_limit {
+    ($name:ident, $limit:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            assert!(matches!(
+                v2_v3_material_refusal($limit),
+                FramingError::Resource(refusal) if refusal.operation == $operation
+            ));
+        }
+    };
+}
+
+v2_material_text_limit!(
+    v2_bitmap_path_refuses_retained_limit,
+    0,
+    "Rhino V2/V3 texture path"
+);
+v2_material_text_limit!(
+    v2_bump_path_refuses_retained_limit,
+    10,
+    "Rhino V2/V3 texture path"
+);
+v2_material_text_limit!(
+    v2_environment_path_refuses_retained_limit,
+    18,
+    "Rhino V2/V3 texture path"
+);
+v2_material_text_limit!(
+    v2_material_name_refuses_retained_limit,
+    33,
+    "Rhino V2/V3 material name"
+);
+v2_material_text_limit!(
+    v2_material_id_refuses_retained_limit,
+    42,
+    "Rhino material ID"
+);
+
+#[test]
+fn v2_material_source_uuid_refuses_retained_limit() {
+    let id_len = "rhino:presentation:material#55555555-5555-5555-5555-555555555555".len();
+    assert!(matches!(
+        v2_v3_material_refusal(u64::try_from(42 + id_len).expect("budget fits")),
+        FramingError::Resource(refusal) if refusal.operation == "Rhino material source UUID"
+    ));
+}
+
+#[test]
+fn v2_material_plugin_uuid_refuses_retained_limit() {
+    let id_len = "rhino:presentation:material#55555555-5555-5555-5555-555555555555".len();
+    assert!(matches!(
+        v2_v3_material_refusal(u64::try_from(42 + id_len + 36).expect("budget fits")),
+        FramingError::Resource(refusal) if refusal.operation == "Rhino material plugin UUID"
+    ));
 }
 
 #[test]
