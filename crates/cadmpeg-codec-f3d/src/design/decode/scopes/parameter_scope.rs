@@ -279,7 +279,7 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_fixed_fillet_parameters(bytes, &records, &scope);
+                let construction = exact_fixed_fillet_parameters(ctx, bytes, &records, &scope)?;
                 if let scope::DesignScopePayloadMut::Fillet(slot)
                 | scope::DesignScopePayloadMut::Conge(slot)
                 | scope::DesignScopePayloadMut::Abrundung(slot)
