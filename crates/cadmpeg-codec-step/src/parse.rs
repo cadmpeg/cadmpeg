@@ -846,9 +846,13 @@ impl Parser<'_, '_, '_> {
                     ),
                     _ => return self.err("expected reference name"),
                 };
-                if !same_kind.insert(id) {
+                if same_kind.contains(&id) {
                     return self.err("duplicate reference name");
                 }
+                if let Some(ctx) = self.budget {
+                    ctx.charge_collection_items(1, "step_parse_external_reference_ids")?;
+                }
+                same_kind.insert(id);
                 if other_kind.contains(&id) {
                     return self.err("duplicate external occurrence integer");
                 }
