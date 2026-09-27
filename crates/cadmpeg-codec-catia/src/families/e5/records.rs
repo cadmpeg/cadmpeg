@@ -146,9 +146,8 @@ const E5_D8_TAIL_BYTES: usize = 63;
 const E5_D8_ARC_TOLERANCE: f64 = 1e-8;
 const E5_D8_RADIUS_TOLERANCE: f64 = 1e-8;
 
-fn e5_records(data: &[u8]) -> Vec<E5Record> {
+fn e5_records(data: &[u8]) -> impl Iterator<Item = E5Record> + '_ {
     crate::container::all_e5_record_spans(data)
-        .into_iter()
         .filter_map(|range| {
             let pos = range.start;
             let size = View::u16_le_at(data, pos + 5).map(usize::from)?;
@@ -158,7 +157,6 @@ fn e5_records(data: &[u8]) -> Vec<E5Record> {
                 size,
             })
         })
-        .collect()
 }
 
 /// Read the complete ordered E5 `05 08 01` coordinate roster matching the
