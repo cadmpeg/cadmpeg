@@ -30,6 +30,36 @@ fn frame_wire() -> DesignConstructionOperandGroupFrameWire {
 }
 
 #[test]
+fn construction_transform_borrowed_wire_matches_owned_wire_bytes() {
+    let transform = frame_wire().trailing_transforms.into_iter().next().unwrap();
+    let owned = super::DesignConstructionOperandTransformDraft::from(transform.clone());
+    assert_eq!(
+        serde_json::to_vec(&transform).unwrap(),
+        serde_json::to_vec(&owned).unwrap()
+    );
+}
+
+#[test]
+fn construction_transform_native_retained_limit_refuses_before_clone() {
+    #[derive(serde::Serialize)]
+    struct NestedRecord<'a> {
+        id: &'static str,
+        value: &'a DesignConstructionOperandTransform,
+    }
+    let transform = frame_wire().trailing_transforms.into_iter().next().unwrap();
+    let record = NestedRecord {
+        id: "f3d:native:construction-transform#0",
+        value: &transform,
+    };
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_parameter_scopes",
+        || super::CONSTRUCTION_TRANSFORM_CLONE_COUNT.with(|count| count.set(0)),
+        || super::CONSTRUCTION_TRANSFORM_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+
+#[test]
 fn construction_frame_rejects_invalid_scalars_offsets_and_trailing_arity() {
     for value in [-1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         let mut wire = frame_wire();

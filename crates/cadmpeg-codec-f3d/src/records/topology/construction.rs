@@ -671,11 +671,8 @@ pub(crate) struct DesignConstructionOperandFlag {
 }
 
 /// Affine placement named by a construction-operand group's trailing run.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignConstructionOperandTransformDraft",
-    into = "DesignConstructionOperandTransformDraft"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignConstructionOperandTransformDraft")]
 pub(crate) struct DesignConstructionOperandTransform {
     frame: crate::records::frame_chain::RecordFrameChain,
     /// Per-file dynamic transform-record class tag.
@@ -684,6 +681,51 @@ pub(crate) struct DesignConstructionOperandTransform {
     pub(crate) transform: SketchPlacementMatrix,
     /// Per-file dynamic following-record class tag.
     pub(crate) following_class_tag: DesignClassTag,
+}
+
+#[cfg(test)]
+thread_local! {
+    static CONSTRUCTION_TRANSFORM_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignConstructionOperandTransform {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        CONSTRUCTION_TRANSFORM_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            frame: self.frame,
+            class_tag: self.class_tag.clone(),
+            transform: self.transform,
+            following_class_tag: self.following_class_tag.clone(),
+        }
+    }
+}
+
+impl Serialize for DesignConstructionOperandTransform {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            record_index: u32,
+            byte_offset: u64,
+            class_tag: &'a DesignClassTag,
+            transform: SketchPlacementMatrix,
+            transform_offset: u64,
+            following_record_index: u32,
+            following_byte_offset: u64,
+            following_class_tag: &'a DesignClassTag,
+        }
+        WireRef {
+            record_index: self.record_index(),
+            byte_offset: self.byte_offset(),
+            class_tag: &self.class_tag,
+            transform: self.transform,
+            transform_offset: self.transform_offset(),
+            following_record_index: self.following_record_index(),
+            following_byte_offset: self.following_byte_offset(),
+            following_class_tag: &self.following_class_tag,
+        }
+        .serialize(serializer)
+    }
 }
 
 impl DesignConstructionOperandTransform {
@@ -711,6 +753,7 @@ impl DesignConstructionOperandTransform {
         }
         Ok(value)
     }
+    #[cfg(test)]
     fn into_draft(self) -> DesignConstructionOperandTransformDraft {
         let record_index = self.record_index();
         let byte_offset = self.byte_offset();
@@ -773,6 +816,7 @@ impl TryFrom<DesignConstructionOperandTransformDraft> for DesignConstructionOper
     }
 }
 
+#[cfg(test)]
 impl From<DesignConstructionOperandTransform> for DesignConstructionOperandTransformDraft {
     fn from(value: DesignConstructionOperandTransform) -> Self {
         let value = value.into_draft();
