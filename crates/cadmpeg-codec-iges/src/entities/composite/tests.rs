@@ -30,7 +30,133 @@ use crate::test_support::test_owned::{
     owned_test_file, owned_test_file_with_global, owned_test_file_with_global_and_directory_fields,
     OwnedTestEntity,
 };
+use crate::test_support::test_solids_and_structure::explicit_tetrahedron_solid_file;
 use crate::IgesCodec;
+
+#[test]
+fn composite_index_refuses_each_collection_before_insertion() {
+    let decoded = IgesCodec.decode(&mut Cursor::new(explicit_tetrahedron_solid_file()), &DecodeOptions::default()).unwrap();
+    let ir = decoded.ir();
+    assert!(!ir.model.curves.is_empty());
+    assert!(!ir.model.edges.is_empty());
+    assert!(!ir.model.vertices.is_empty());
+    for operation in [
+        "iges composite curve index nodes",
+        "iges composite edge index nodes",
+        "iges composite indexed edges",
+        "iges composite point index nodes",
+        "iges composite vertex index nodes",
+    ] {
+        let mut cap = 0_u64;
+        let mut found = false;
+        for _ in 0..4096 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            match CompositeIndex::from_ir(ir, Some(&ctx)) {
+                Err(CodecError::ResourceLimit(limit)) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    if limit.operation == operation { found = true; break; }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                Ok(_) => panic!("composite index succeeded before {operation}"),
+                Err(error) => panic!("unexpected composite index failure at {operation}: {error}"),
+            }
+        }
+        assert!(found, "composite index collection boundary was not reached: {operation}");
+    }
+}
+
+#[test]
+fn composite_index_refuses_each_retained_identity_copy() {
+    let decoded = IgesCodec.decode(&mut Cursor::new(explicit_tetrahedron_solid_file()), &DecodeOptions::default()).unwrap();
+    let ir = decoded.ir();
+    for operation in [
+        "iges composite curve index keys",
+        "iges composite edge index keys",
+        "iges composite indexed start ids",
+        "iges composite indexed end ids",
+        "iges composite point index keys",
+        "iges composite vertex index keys",
+    ] {
+        let mut cap = 0_u64;
+        let mut found = false;
+        for _ in 0..4096 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            match CompositeIndex::from_ir(ir, Some(&ctx)) {
+                Err(CodecError::ResourceLimit(limit)) => {
+                    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                    if limit.operation == operation { found = true; break; }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                Ok(_) => panic!("composite identity copy succeeded before {operation}"),
+                Err(error) => panic!("unexpected composite identity copy failure at {operation}: {error}"),
+            }
+        }
+        assert!(found, "composite retained boundary was not reached: {operation}");
+    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let index = CompositeIndex::from_ir(ir, Some(&ctx)).unwrap();
+    assert_eq!(index.curve_positions.len(), ir.model.curves.len());
+}
+
+#[test]
+fn composite_index_admits_added_entity_nodes_and_identity_keys() {
+    let curve = CurveId::mint("test:model:curve#added").unwrap();
+    let start = VertexId::mint("test:model:vertex#start").unwrap();
+    let end = VertexId::mint("test:model:vertex#end").unwrap();
+    let position = cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap();
+    let add = |index: &mut CompositeIndex, ctx: &DecodeContext<'_>| index.add_model_entity(
+        curve.clone(), 0,
+        super::CompositeEdge { start: start.clone(), end: end.clone(), param_range: None },
+        [(start.clone(), position), (end.clone(), position)],
+        Some(ctx),
+    );
+    for (dimension, operation) in [
+        (ResourceDimension::RetainedBytes, "iges composite added curve index key"),
+        (ResourceDimension::CollectionItems, "iges composite added curve index node"),
+        (ResourceDimension::RetainedBytes, "iges composite added edge index key"),
+        (ResourceDimension::CollectionItems, "iges composite added edge index node"),
+        (ResourceDimension::CollectionItems, "iges composite added edge slots"),
+        (ResourceDimension::CollectionItems, "iges composite added vertex index nodes"),
+    ] {
+        let mut cap = 0_u64;
+        let mut found = false;
+        for _ in 0..32 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                _ => panic!("unexpected resource dimension"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut index = CompositeIndex::default();
+            match add(&mut index, &ctx) {
+                Err(CodecError::ResourceLimit(limit)) => {
+                    assert_eq!(limit.dimension, dimension);
+                    if limit.operation == operation { found = true; break; }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                Ok(()) => panic!("composite index addition succeeded before {operation}"),
+                Err(error) => panic!("unexpected composite index addition failure: {error}"),
+            }
+        }
+        assert!(found, "composite index addition boundary was not reached: {operation}");
+    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut index = CompositeIndex::default();
+    add(&mut index, &ctx).unwrap();
+    assert_eq!(index.curve_positions.len(), 1);
+    assert_eq!(index.edges[&curve].len(), 1);
+    assert_eq!(index.vertex_points.len(), 2);
+}
 
 #[test]
 fn composite_source_object_refusal_survives_candidate_projection() {
@@ -1002,7 +1128,7 @@ fn composite_index_lookups_match_the_unindexed_scan() {
         tolerance: None,
     });
 
-    let index = CompositeIndex::from_ir(&ir);
+    let index = CompositeIndex::from_ir(&ir, None).unwrap();
     for curve_id in [bounded, edgeless, absent] {
         let scanned =
             bounded_nurbs_for_curve(&ir, &curve_id, None, None).expect("carrier lanes pair");
