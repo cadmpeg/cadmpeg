@@ -246,6 +246,108 @@ fn reserve_transaction_map<K: Eq + std::hash::Hash, V>(
         .map_err(|_| transaction_allocation_failed(operation, additional))
 }
 
+struct InstanceLinkSnapshot<'a> {
+    links: Vec<Vec<String>>,
+    _bytes: cadmpeg_core::decode::ScopedReservation<'a>,
+}
+
+fn snapshot_instance_links<'a>(
+    ctx: &'a cadmpeg_core::decode::DecodeContext<'_>,
+    records: &[UnknownRecord],
+) -> Result<InstanceLinkSnapshot<'a>, cadmpeg_core::CodecError> {
+    const BYTES: &str = "Rhino instance link snapshot bytes";
+    let bytes = records
+        .iter()
+        .flat_map(UnknownRecord::links)
+        .try_fold(0_u64, |total, link| {
+            total.checked_add(u64_from_index(link.len()))
+        })
+        .ok_or({
+            cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
+                dimension: cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+                reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
+                limit: u64::MAX,
+                used: u64::MAX,
+                additional: 1,
+                operation: BYTES,
+            })
+        })?;
+    let reservation = ctx.reserve_scoped(bytes, BYTES)?;
+    let mut links = Vec::new();
+    reserve_transaction_vec(
+        ctx,
+        &mut links,
+        records.len(),
+        "Rhino instance link snapshot rows",
+    )?;
+    for record in records {
+        let mut row = Vec::new();
+        reserve_transaction_vec(
+            ctx,
+            &mut row,
+            record.links().len(),
+            "Rhino instance link snapshot entries",
+        )?;
+        for link in record.links() {
+            let mut copy = String::new();
+            copy.try_reserve_exact(link.len()).map_err(|_| {
+                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
+                    dimension: cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+                    reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
+                    limit: u64::MAX,
+                    used: 0,
+                    additional: u64_from_index(link.len()),
+                    operation: BYTES,
+                })
+            })?;
+            copy.push_str(link);
+            row.push(copy);
+        }
+        links.push(row);
+    }
+    Ok(InstanceLinkSnapshot {
+        links,
+        _bytes: reservation,
+    })
+}
+
+fn snapshot_instance_statuses<'a>(
+    ctx: &'a cadmpeg_core::decode::DecodeContext<'_>,
+    statuses: &[Option<GeometryOutcome>],
+) -> Result<
+    (
+        Vec<Option<GeometryOutcome>>,
+        cadmpeg_core::decode::ScopedReservation<'a>,
+    ),
+    cadmpeg_core::CodecError,
+> {
+    const BYTES: &str = "Rhino instance status snapshot bytes";
+    let bytes = u64_from_index(statuses.len())
+        .checked_mul(u64_from_index(
+            std::mem::size_of::<Option<GeometryOutcome>>(),
+        ))
+        .ok_or({
+            cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
+                dimension: cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+                reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
+                limit: u64::MAX,
+                used: u64::MAX,
+                additional: 1,
+                operation: BYTES,
+            })
+        })?;
+    let reservation = ctx.reserve_scoped(bytes, BYTES)?;
+    let mut copy = Vec::new();
+    reserve_transaction_vec(
+        ctx,
+        &mut copy,
+        statuses.len(),
+        "Rhino instance status snapshot",
+    )?;
+    copy.extend_from_slice(statuses);
+    Ok((copy, reservation))
+}
+
 const MAX_INSTANCE_REFERENCES: usize = 1 << 20;
 const MAX_INSTANCE_MEMBERS: usize = 1 << 20;
 const MAX_INSTANCE_ENTITIES: usize = 1 << 20;
@@ -1865,14 +1967,11 @@ impl<'a> DecodeContext<'a> {
 
     fn expand_reference(&mut self, source_order: usize) -> Result<bool, cadmpeg_core::CodecError> {
         let original_model = ModelCheckpoint::capture(&self.ir.model);
-        let original_native = self.ir.native.clone();
         let annotation_checkpoint = self.annotations.clone();
-        let original_links = self
-            .unknowns
-            .iter()
-            .map(|record| record.links().to_vec())
-            .collect::<Vec<_>>();
-        let original_statuses = self.statuses.clone();
+        let session = self.expand.ctx();
+        let original_links = snapshot_instance_links(session, &self.unknowns)?;
+        let (original_statuses, _status_bytes) =
+            snapshot_instance_statuses(session, &self.statuses)?;
         let original_geometry_transferred = self.geometry_transferred;
         let report_checkpoint = self.report.checkpoint();
         let original_selection = self.instance_selection.clone();
@@ -1913,9 +2012,8 @@ impl<'a> DecodeContext<'a> {
         };
 
         original_model.discard_appended(&mut self.ir.model);
-        self.ir.native = original_native;
         self.annotations = annotation_checkpoint;
-        for (record, links) in self.unknowns.iter_mut().zip(original_links) {
+        for (record, links) in self.unknowns.iter_mut().zip(original_links.links) {
             *record.links_mut() = links;
         }
         self.statuses = original_statuses;
