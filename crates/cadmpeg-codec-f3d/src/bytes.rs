@@ -246,6 +246,28 @@ pub(crate) fn take_lp_utf8(bytes: &[u8], at: &mut usize) -> Option<String> {
     String::from_utf8(take_lp_u32_bytes(bytes, at)?.to_vec()).ok()
 }
 
+pub(crate) fn take_lp_utf8_charged(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: &mut usize,
+) -> Result<Option<String>, CodecError> {
+    let Some(raw) = take_lp_u32_bytes(bytes, at) else {
+        return Ok(None);
+    };
+    let Ok(value) = std::str::from_utf8(raw) else {
+        return Ok(None);
+    };
+    let length = u64::try_from(raw.len())
+        .map_err(|_| ctx.refuse_codec_limit("retain F3D UTF-8 string", 0, u64::MAX))?;
+    ctx.charge_retained(length, "retain F3D UTF-8 string")?;
+    let mut owned = String::new();
+    owned
+        .try_reserve(raw.len())
+        .map_err(|_| ctx.refuse_codec_limit("retain F3D UTF-8 string", 0, length))?;
+    owned.push_str(value);
+    Ok(Some(owned))
+}
+
 /// Advance `at` past a u32-length-prefixed byte string, reading none of it.
 ///
 /// `None` is the refusal a declared length the record cannot carry states.
@@ -475,4 +497,23 @@ pub(crate) fn lp_utf16_bytes(value: &str) -> Vec<u8> {
     let mut out = ((units.len() / 2) as u32).to_le_bytes().to_vec();
     out.extend(units);
     out
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn lp_utf8_string_refuses_retained_limit() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&4u32.to_le_bytes());
+        bytes.extend_from_slice(b"text");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 3;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test decode context");
+        let error = super::take_lp_utf8_charged(&ctx, &bytes, &mut 0)
+            .expect_err("encoded string must exceed retained budget");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D UTF-8 string"));
+    }
 }

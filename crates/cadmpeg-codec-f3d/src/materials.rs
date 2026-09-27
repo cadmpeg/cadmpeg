@@ -32,6 +32,7 @@ use cadmpeg_protein::{
 
 use crate::bytes::{
     is_guid_prefix, lp_ascii_filtered, lp_utf16_bounded, skip_lp_u32_bytes, take_lp_utf8,
+    take_lp_utf8_charged,
 };
 use crate::container::ContainerScan;
 use crate::design::presentation::{
@@ -564,13 +565,13 @@ pub(crate) fn decode_with_body_bindings<'a>(
                 .map(|appearance| appearance.id.clone())
                 .collect::<std::collections::HashSet<_>>();
             decoded.extend(
-                decode_fixed_logical_records(&record_frames)?
+                decode_fixed_logical_records(ctx, &record_frames)?
                     .into_iter()
                     .filter(|appearance| !decoded_ids.contains(&appearance.id)),
             );
             decoded
         } else {
-            decode_fixed_logical_records(&record_frames)?
+            decode_fixed_logical_records(ctx, &record_frames)?
         };
         for appearance in &mut appearances {
             if let Some(name) = appearance.name.as_deref() {
@@ -1759,7 +1760,7 @@ fn definition_catalog<'a>(
     let frames = cadmpeg_protein::framing::record_frames_admitted(ctx, entry.window())?;
     let mut definitions = std::collections::HashMap::new();
     for frame in frames {
-        let definition = decode_definition_catalog_record(frame.bytes())?;
+        let definition = decode_definition_catalog_record(ctx, frame.bytes())?;
         merge_definition_catalog_record(&mut definitions, definition);
     }
     Ok(definitions
@@ -1792,14 +1793,18 @@ fn merge_definition_catalog_record(
     }
 }
 
-fn decode_definition_catalog_record(record: &[u8]) -> Result<DefinitionCatalog, CodecError> {
+fn decode_definition_catalog_record(
+    ctx: &DecodeContext<'_>,
+    record: &[u8],
+) -> Result<DefinitionCatalog, CodecError> {
     let malformed = malformed_definition_catalog_record;
     if !record.starts_with(RECORD_MARKER) {
         return Err(malformed("marker", 0));
     }
     let mut position = RECORD_MARKER.len();
     let schema =
-        take_lp_utf8(record, &mut position).ok_or_else(|| malformed("schema", position))?;
+        take_lp_utf8_charged(ctx, record, &mut position)?
+            .ok_or_else(|| malformed("schema", position))?;
     let flag = *record
         .get(position)
         .ok_or_else(|| malformed("flag", position))?;
@@ -1807,9 +1812,9 @@ fn decode_definition_catalog_record(record: &[u8]) -> Result<DefinitionCatalog, 
         return Err(malformed("flag", position));
     }
     position += 1;
-    let asset_id = take_lp_utf8(record, &mut position)
+    let asset_id = take_lp_utf8_charged(ctx, record, &mut position)?
         .ok_or_else(|| malformed("asset identifier", position))?;
-    take_lp_utf8(record, &mut position)
+    take_lp_utf8_charged(ctx, record, &mut position)?
         .ok_or_else(|| malformed("base asset identifier", position))?;
     let version =
         View::u32_le_at(record, position).ok_or_else(|| malformed("format version", position))?;
@@ -1818,19 +1823,23 @@ fn decode_definition_catalog_record(record: &[u8]) -> Result<DefinitionCatalog, 
         return Err(malformed("format version", position - 4));
     }
     let category = if version >= 2 {
-        Some(take_lp_utf8(record, &mut position).ok_or_else(|| malformed("category", position))?)
+        Some(take_lp_utf8_charged(ctx, record, &mut position)?
+            .ok_or_else(|| malformed("category", position))?)
     } else {
         None
     };
     if version >= 1 {
-        take_lp_utf8(record, &mut position).ok_or_else(|| malformed("group", position))?;
+        take_lp_utf8_charged(ctx, record, &mut position)?
+            .ok_or_else(|| malformed("group", position))?;
     }
     if version == 3 {
-        take_lp_utf8(record, &mut position).ok_or_else(|| malformed("subgroup", position))?;
+        take_lp_utf8_charged(ctx, record, &mut position)?
+            .ok_or_else(|| malformed("subgroup", position))?;
     }
-    take_lp_utf8(record, &mut position).ok_or_else(|| malformed("description", position))?;
-    consume_catalog_strings(record, &mut position)?;
-    consume_catalog_strings(record, &mut position)?;
+    take_lp_utf8_charged(ctx, record, &mut position)?
+        .ok_or_else(|| malformed("description", position))?;
+    consume_catalog_strings(ctx, record, &mut position)?;
+    consume_catalog_strings(ctx, record, &mut position)?;
     if record[position..].iter().any(|byte| *byte != 0) {
         return Err(malformed("trailing padding", position));
     }
@@ -1845,14 +1854,18 @@ fn malformed_definition_catalog_record(_field: &str, _position: usize) -> CodecE
     CodecError::Malformed("Protein definition catalog record is malformed".into())
 }
 
-fn consume_catalog_strings(record: &[u8], position: &mut usize) -> Result<(), CodecError> {
+fn consume_catalog_strings(
+    ctx: &DecodeContext<'_>,
+    record: &[u8],
+    position: &mut usize,
+) -> Result<(), CodecError> {
     let count = View::u32_le_at(record, *position)
         .ok_or_else(|| malformed_definition_catalog_record("string count", *position))?;
     *position += 4;
     let count = bounded_len(u64::from(count), 4, record.len().saturating_sub(*position))
         .ok_or_else(|| malformed_definition_catalog_record("string count", *position))?;
     for _ in 0..count {
-        take_lp_utf8(record, position)
+        take_lp_utf8_charged(ctx, record, position)?
             .ok_or_else(|| malformed_definition_catalog_record("string", *position))?;
     }
     Ok(())
@@ -1879,11 +1892,12 @@ fn nested_entry<'a>(
 /// Decode the fixed source-less layouts emitted by [`encode_protein`]. Native
 /// Protein assets package schemas and use the schema-driven path instead.
 fn decode_fixed_logical_records(
+    ctx: &DecodeContext<'_>,
     frames: &[cadmpeg_protein::framing::RecordFrame],
 ) -> Result<Vec<Appearance>, CodecError> {
     frames
         .iter()
-        .map(|frame| decode_fixed_record(frame.bytes()))
+        .map(|frame| decode_fixed_record(ctx, frame.bytes()))
         .filter_map(Result::transpose)
         .collect()
 }
@@ -1897,18 +1911,18 @@ fn decode_fixed_logical_records(
 /// reads. That covers the `interior_model` subtypes with no fixed layout here,
 /// `PrismLayeredSchema` and `PrismWoodSchema`, whose colour offset must not be
 /// assumed from the opaque, metal, or transparent layouts.
-fn decode_fixed_record(record: &[u8]) -> Result<Option<Appearance>, CodecError> {
+fn decode_fixed_record(ctx: &DecodeContext<'_>, record: &[u8]) -> Result<Option<Appearance>, CodecError> {
     let mut position = RECORD_MARKER.len();
-    let Some(schema) = take_lp_utf8(record, &mut position) else {
+    let Some(schema) = take_lp_utf8_charged(ctx, record, &mut position)? else {
         return Ok(None);
     };
-    let Some(guid) = take_lp_utf8(record, &mut position) else {
+    let Some(guid) = take_lp_utf8_charged(ctx, record, &mut position)? else {
         return Ok(None);
     };
-    let Some(base) = take_lp_utf8(record, &mut position) else {
+    let Some(base) = take_lp_utf8_charged(ctx, record, &mut position)? else {
         return Ok(None);
     };
-    let Some(asset_lib_id) = take_lp_utf8(record, &mut position) else {
+    let Some(asset_lib_id) = take_lp_utf8_charged(ctx, record, &mut position)? else {
         return Ok(None);
     };
     let color = match schema.as_str() {
