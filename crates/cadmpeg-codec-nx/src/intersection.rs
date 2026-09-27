@@ -4,7 +4,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::bytes::find_iter;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::FitTolerance;
 use cadmpeg_ir::math::Point3;
@@ -353,14 +354,18 @@ struct Chart {
 
 /// Decode type-38 and single-byte `0x5a` records whose referenced chart and
 /// endpoint witnesses form a complete solved cache.
-pub(crate) fn curves(stream: &[u8], point_layout: ChartPointLayout) -> Vec<IntersectionCurve> {
-    scan(stream, point_layout).curves
+pub(crate) fn curves(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    point_layout: ChartPointLayout,
+) -> Result<Vec<IntersectionCurve>, CodecError> {
+    Ok(scan(ctx, stream, point_layout)?.curves)
 }
 
 /// Decode chart-backed constructions and classify every rejected construction.
-fn scan(stream: &[u8], point_layout: ChartPointLayout) -> CurveScan {
-    let graph = topology::Graph::parse(stream);
-    scan_with_graph(stream, &graph, point_layout)
+fn scan(ctx: &DecodeContext<'_>, stream: &[u8], point_layout: ChartPointLayout) -> Result<CurveScan, CodecError> {
+    let graph = topology::Graph::parse(ctx, stream)?;
+    Ok(scan_with_graph(stream, &graph, point_layout))
 }
 
 pub(crate) fn scan_with_graph(
@@ -388,12 +393,13 @@ pub(crate) fn scan_with_graph(
 /// Decode a merged partition/deltas stream with explicit auxiliary replacement boundaries.
 #[cfg(test)]
 fn scan_with_auxiliary_replacements(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     base_stream: &[u8],
     replacement_streams: &[&[u8]],
-) -> CurveScan {
-    let graph = topology::Graph::parse(stream);
-    scan_with_auxiliary_replacements_and_graph(stream, base_stream, replacement_streams, &graph)
+) -> Result<CurveScan, CodecError> {
+    let graph = topology::Graph::parse(ctx, stream)?;
+    Ok(scan_with_auxiliary_replacements_and_graph(stream, base_stream, replacement_streams, &graph))
 }
 
 pub(crate) fn scan_with_auxiliary_replacements_and_graph(

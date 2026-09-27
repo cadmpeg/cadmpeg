@@ -403,7 +403,7 @@ fn decode_retains_topology_owned_point_at_origin() {
         }),
         1
     );
-    let graph = crate::topology::Graph::parse(&stream);
+    let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream)).unwrap();
     assert_eq!(
         graph
             .get(NodeKind::Point, 11)
@@ -434,7 +434,7 @@ fn single_point_candidate_stream() -> Vec<u8> {
 #[test]
 fn ordered_point_candidates_refuse_index_node_at_collection_limit() {
     let stream = single_point_candidate_stream();
-    let graph = crate::topology::Graph::parse(&stream);
+    let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream)).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 1;
@@ -450,7 +450,7 @@ fn ordered_point_candidates_refuse_index_node_at_collection_limit() {
 #[test]
 fn ordered_point_candidates_refuse_output_slot_at_collection_limit() {
     let stream = single_point_candidate_stream();
-    let graph = crate::topology::Graph::parse(&stream);
+    let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream)).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 2;
@@ -466,7 +466,7 @@ fn ordered_point_candidates_refuse_output_slot_at_collection_limit() {
 #[test]
 fn ordered_point_candidates_refuse_scan_work_at_caller_limit() {
     let stream = single_point_candidate_stream();
-    let graph = crate::topology::Graph::parse(&stream);
+    let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream)).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 1;
@@ -492,7 +492,7 @@ fn decode_orders_graph_only_origin_before_later_nonzero_point() {
     put_vec3(&mut second, 16, [0.04, 0.05, 0.06]);
     stream.extend(second);
 
-    let graph = crate::topology::Graph::parse(&stream);
+    let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream)).unwrap();
     let points = crate::test_support::with_decode_context(|ctx| {
         ordered_point_candidates(ctx, &stream, &graph).unwrap()
     });
@@ -534,7 +534,7 @@ fn decode_orders_graph_only_escaped_analytics_before_later_records() {
     put_vec3(&mut line, 43, [0.0, 1.0, 0.0]);
     stream.extend(line);
 
-    let graph = crate::topology::Graph::parse(&stream);
+    let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream)).unwrap();
     let surfaces = crate::test_support::with_decode_context(|ctx| {
         ordered_surface_candidates(ctx, &stream, &graph).unwrap()
     });
@@ -571,7 +571,7 @@ fn decode_rejects_scanner_geometry_with_an_ambiguous_record_identity() {
         }),
         2
     );
-    let graph = crate::topology::Graph::parse(&stream);
+    let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream)).unwrap();
     assert!(graph.get(NodeKind::Plane, 77).is_none());
     assert!(crate::test_support::with_decode_context(|ctx| {
         ordered_surface_candidates(ctx, &stream, &graph)

@@ -74,23 +74,26 @@ fn prepare_topology_streams<'a>(
             paired_deltas.insert(delta);
         }
     }
-    let mut merge = |partition: &[u8], deltas: &[u8], census: &Census| {
+    let mut merge = |partition: &[u8], deltas: &[u8], census: &Census| -> Result<Vec<u8>, CodecError> {
         if let Some(totals) = unmatched_tombstone_counts.as_deref_mut() {
             let result =
-                crate::deltas::merge_full_records_with_tombstone_census(partition, deltas, census);
+                crate::deltas::merge_full_records_with_tombstone_census(ctx, partition, deltas, census)?;
             for (family, count) in result.unmatched_tombstones {
+                if !totals.contains_key(family) {
+                    ctx.charge_collection_items(1, "NX unmatched tombstone family totals")?;
+                }
                 *totals.entry(family).or_default() += count;
             }
-            result.merged
+            Ok(result.merged)
         } else {
-            crate::deltas::merge_full_records_with_census(partition, deltas, census)
+            crate::deltas::merge_full_records_with_census(ctx, partition, deltas, census)
         }
     };
     for (delta, stream) in scan.streams.iter().enumerate() {
         if stream.kind() == StreamKind::Deltas && !paired_deltas.contains(&delta) {
             let census = crate::deltas::census::walk(ctx, &stream.inflated)?;
             if !census.records.is_empty() || !census.tombstones.is_empty() {
-                let merged = merge(&[], &stream.inflated, &census);
+                let merged = merge(&[], &stream.inflated, &census)?;
                 semantic[delta].bytes = Cow::Owned(merged);
             }
             semantic[delta].delta_census = Some(census);
@@ -99,7 +102,7 @@ fn prepare_topology_streams<'a>(
     for (partition, deltas) in pairs {
         for delta in deltas {
             let census = crate::deltas::census::walk(ctx, &semantic[delta].bytes)?;
-            let merged = merge(&semantic[partition].bytes, &semantic[delta].bytes, &census);
+            let merged = merge(&semantic[partition].bytes, &semantic[delta].bytes, &census)?;
             semantic[partition].bytes = Cow::Owned(merged);
             semantic[delta].bytes = Cow::Borrowed(&[]);
             semantic[delta].delta_census = Some(census);
@@ -217,16 +220,20 @@ impl StreamView {
     /// Parse every cached family from a single byte buffer with the plain
     /// intersection scan. This is the raw view (`stream.inflated`); it is also the
     /// semantic view whenever the semantic bytes equal the raw bytes.
-    fn parse_uniform(bytes: &[u8], point_layout: crate::intersection::ChartPointLayout) -> Self {
-        let graph = Rc::new(Graph::parse(bytes));
-        StreamView {
+    fn parse_uniform(
+        ctx: &DecodeContext<'_>,
+        bytes: &[u8],
+        point_layout: crate::intersection::ChartPointLayout,
+    ) -> Result<Self, CodecError> {
+        let graph = Rc::new(Graph::parse(ctx, bytes)?);
+        Ok(StreamView {
             offset_surfaces: graph.offset_surfaces(),
             blend_surfaces: graph.blend_surfaces(),
             trimmed_curves: graph.trimmed_curves(),
             surface_curves: graph.surface_curves(),
             intersections: intersection::scan_with_graph(bytes, &graph, point_layout),
             graph,
-        }
+        })
     }
 
     /// Parse the semantic view: `graph` from the topology-merged bytes, the scanners
@@ -241,8 +248,11 @@ impl StreamView {
         paired_deltas: Option<&Vec<usize>>,
         point_layout: crate::intersection::ChartPointLayout,
     ) -> Result<(Self, Rc<Graph>), CodecError> {
-        let semantic_graph =
-            (semantic_bytes != topology_bytes).then(|| Rc::new(Graph::parse(semantic_bytes)));
+        let semantic_graph = if semantic_bytes != topology_bytes {
+            Some(Rc::new(Graph::parse(ctx, semantic_bytes)?))
+        } else {
+            None
+        };
         let scan_graph = semantic_graph.as_deref().unwrap_or(&graph);
         let nurbs_graph = semantic_graph
             .as_ref()
@@ -384,11 +394,11 @@ impl<'a> ParsedStreams<'a> {
                 }
             }
             let identical = paired.is_none() && topology_matches_raw && residual.is_empty();
-            let raw = Rc::new(StreamView::parse_uniform(&stream.inflated, point_layout));
+            let raw = Rc::new(StreamView::parse_uniform(ctx, &stream.inflated, point_layout)?);
             let (semantic, nurbs_graph) = if identical {
                 (Rc::clone(&raw), Rc::clone(&raw.graph))
             } else {
-                let graph = Rc::new(Graph::parse(&semantic_bytes));
+                let graph = Rc::new(Graph::parse(ctx, &semantic_bytes)?);
                 let topology_for_auxiliary = paired.map(|_| semantic_bytes.clone());
                 semantic_bytes.to_mut().extend_from_slice(&residual);
                 let (semantic, nurbs_graph) = StreamView::parse_semantic(

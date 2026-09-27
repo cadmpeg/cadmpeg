@@ -4086,7 +4086,7 @@ mod tests {
 
     #[test]
     fn group_member_xmt_is_checked_before_node_identity_fallback() {
-        let graph = Graph::parse(&many_face_partition_stream(1_000));
+        let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &many_face_partition_stream(1_000))).unwrap();
         let resolve = |member: &ParasolidGroupMember| match member
             .target
             .resolve(&graph, member.member_xmt)
@@ -5353,7 +5353,7 @@ mod tests {
         stream.extend_from_slice(&42u16.to_be_bytes());
         stream.extend_from_slice(b"deadbeef\0");
 
-        let graph = crate::topology::Graph::parse(&stream);
+        let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream)).unwrap();
         assert_eq!(
             graph
                 .get(crate::framing::node_kind::NodeKind::Face, 4)

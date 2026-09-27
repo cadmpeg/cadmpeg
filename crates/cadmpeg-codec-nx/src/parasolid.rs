@@ -750,7 +750,7 @@ fn structural_stream_candidate(
     if kind == StreamKind::Deltas {
         return Ok(false);
     }
-    let graph = crate::topology::Graph::parse(inflated);
+    let graph = crate::topology::Graph::parse(ctx, inflated)?;
     Ok([
         NodeKind::Body,
         NodeKind::Shell,

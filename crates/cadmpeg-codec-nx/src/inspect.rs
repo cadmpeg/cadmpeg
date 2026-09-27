@@ -111,7 +111,7 @@ pub(super) fn summarize(
             )?;
         }
         if stream.kind().is_parasolid() {
-            let graph = topology::Graph::parse(&stream.inflated);
+            let graph = topology::Graph::parse(ctx, &stream.inflated)?;
             for (kind, name) in [
                 (NodeKind::Body, "body"),
                 (NodeKind::Shell, "shell"),
@@ -134,7 +134,7 @@ pub(super) fn summarize(
                 )?;
             }
             if stream.kind() == parasolid::StreamKind::Partition {
-                let graph = topology::Graph::parse(&semantic_streams[si]);
+                let graph = topology::Graph::parse(ctx, &semantic_streams[si])?;
                 for (kind, name) in [
                     (NodeKind::Body, "body"),
                     (NodeKind::Shell, "shell"),

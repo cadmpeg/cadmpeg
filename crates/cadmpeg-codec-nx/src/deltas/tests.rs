@@ -760,7 +760,7 @@ fn deltas_intersection_normalizes_during_full_record_merge() {
     assert_eq!(census.bytes_decoded(), record_len);
 
     let merged = crate::test_support::with_decode_context(|ctx| crate::deltas::merge_full_records(ctx, &[], &stream)).unwrap();
-    let intersections = crate::topology::composite_curves(&merged);
+    let intersections = crate::test_support::with_decode_context(|ctx| crate::topology::composite_curves(ctx, &merged)).unwrap();
     assert_eq!(intersections.len(), 1);
     assert_eq!(intersections[0].xmt, 12);
     assert_eq!(
@@ -782,7 +782,7 @@ fn merge_replaces_a_partition_intersection_by_exact_xmt() {
     replacement[sense] = b'-';
 
     let merged = crate::test_support::with_decode_context(|ctx| crate::deltas::merge_full_records(ctx, &partition, &replacement)).unwrap();
-    let [intersection] = crate::topology::composite_curves(&merged)
+    let [intersection] = crate::test_support::with_decode_context(|ctx| crate::topology::composite_curves(ctx, &merged)).unwrap()
         .try_into()
         .expect("one current intersection");
 
@@ -1424,7 +1424,7 @@ fn deltas_offset_surface_normalizes_exact_record_envelope() {
         .remove(0);
     assert_eq!(record.canonical_bytes.len(), 39);
     assert_eq!(
-        crate::topology::offset_surfaces(&record.canonical_bytes)[0]
+        crate::test_support::with_decode_context(|ctx| crate::topology::offset_surfaces(ctx, &record.canonical_bytes)).unwrap()[0]
             .state
             .distance()
             .get(),
@@ -1484,7 +1484,7 @@ fn deltas_procedural_wrappers_normalize_complete_record_envelopes() {
             .find(|record| record.kind() == kind)
             .expect("procedural wrapper");
         assert_eq!(record.canonical_bytes.len(), byte_len);
-        assert!(crate::topology::Graph::parse(&record.canonical_bytes)
+        assert!(crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &record.canonical_bytes)).unwrap()
             .get(NodeKind::try_from(kind as u8).unwrap(), 12)
             .is_some());
     }
@@ -1581,7 +1581,7 @@ fn merged_deltas_full_record_replaces_partition_node() {
     assert_eq!(points[0].position.x, 12.5);
     assert_eq!(points[0].position.y, -2.0);
     assert_eq!(points[0].position.z, 4.0);
-    assert!(crate::topology::Graph::parse(&merged)
+    assert!(crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged)).unwrap()
         .get(NodeKind::Point, 11)
         .is_some());
 }
@@ -1598,7 +1598,7 @@ fn merged_tombstone_preserves_a_topology_referenced_carrier() {
     assert_eq!(census.tombstones[0].kind.code(), 29);
     assert_eq!(census.tombstones[0].xmt, 11);
     let merged = crate::test_support::with_decode_context(|ctx| crate::deltas::merge_full_records(ctx, &partition, &tombstone)).unwrap();
-    assert!(crate::topology::Graph::parse(&merged)
+    assert!(crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged)).unwrap()
         .get(NodeKind::Point, 11)
         .is_some());
     assert_eq!(analytic_points(&merged)[0].position.x, 10.0);
@@ -1650,7 +1650,7 @@ fn merged_exact_key_tombstone_removes_unreferenced_partition_node() {
     put_vec3(&mut partition, 16, [0.01, 0.02, 0.03]);
     let tombstone = [0, 29, 0, 11, 0, 1];
     let merged = crate::test_support::with_decode_context(|ctx| crate::deltas::merge_full_records(ctx, &partition, &tombstone)).unwrap();
-    assert!(crate::topology::Graph::parse(&merged)
+    assert!(crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged)).unwrap()
         .get(NodeKind::Point, 11)
         .is_none());
 }
@@ -1684,14 +1684,14 @@ fn final_body_revision_scopes_deltas_overlay_events() {
     historical_delete.extend_from_slice(&known_tombstone);
     historical_delete.extend_from_slice(&deltas_body_revision(2));
     let merged = crate::test_support::with_decode_context(|ctx| crate::deltas::merge_full_records(ctx, &partition, &historical_delete)).unwrap();
-    assert!(crate::topology::Graph::parse(&merged)
+    assert!(crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged)).unwrap()
         .get(NodeKind::Point, 11)
         .is_some());
 
     let mut current_delete = historical_delete;
     current_delete.extend_from_slice(&known_tombstone);
     let merged = crate::test_support::with_decode_context(|ctx| crate::deltas::merge_full_records(ctx, &partition, &current_delete)).unwrap();
-    assert!(crate::topology::Graph::parse(&merged)
+    assert!(crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged)).unwrap()
         .get(NodeKind::Point, 11)
         .is_none());
 }
@@ -1708,7 +1708,7 @@ fn body_revision_scopes_keep_each_monotonic_sequence_current() {
     deltas.extend(deltas_point(51, 0.004));
 
     let merged = crate::test_support::with_decode_context(|ctx| crate::deltas::merge_full_records(ctx, &[], &deltas)).unwrap();
-    let graph = crate::topology::Graph::parse(&merged);
+    let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged)).unwrap();
     assert!(graph.get(NodeKind::Point, 50).is_some());
     assert!(graph.get(NodeKind::Point, 51).is_some());
     let points = analytic_points(&merged);
@@ -1738,7 +1738,7 @@ fn body_revision_scopes_accept_reverse_serialized_counter_direction() {
     deltas.extend(deltas_point(51, 0.004));
 
     let merged = crate::test_support::with_decode_context(|ctx| crate::deltas::merge_full_records(ctx, &[], &deltas)).unwrap();
-    let graph = crate::topology::Graph::parse(&merged);
+    let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged)).unwrap();
     assert!(graph.get(NodeKind::Point, 50).is_some());
     assert!(graph.get(NodeKind::Point, 51).is_some());
     let points = analytic_points(&merged);
@@ -1918,8 +1918,10 @@ fn merged_result_preserves_tombstone_accounting() {
         &delete_then_add,
     ] {
         let census = crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, deltas)).unwrap();
-        let result =
-            crate::deltas::merge_full_records_with_tombstone_census(&partition, deltas, &census);
+        let result = crate::test_support::with_decode_context(|ctx| {
+            crate::deltas::merge_full_records_with_tombstone_census(ctx, &partition, deltas, &census)
+        })
+        .unwrap();
         assert_eq!(
             result.unmatched_tombstones,
             crate::test_support::with_decode_context(|ctx| crate::deltas::unmatched_terminal_tombstones_by_family(ctx, &partition, deltas)).unwrap()

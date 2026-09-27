@@ -179,7 +179,7 @@ fn decode_preserves_partition_loop_topology_over_deltas_history() {
     let deltas = deltas_loop_partition_stream();
     let merged = crate::test_support::with_decode_context(|ctx| crate::deltas::merge_full_records(ctx, &partition, &deltas)).unwrap();
     assert_eq!(
-        crate::topology::Graph::parse(&merged)
+        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged)).unwrap()
             .get(NodeKind::Loop, 5)
             .and_then(|node| node.u32_at(4)),
         Some(0)
@@ -197,7 +197,7 @@ fn decode_preserves_partition_shell_topology_over_deltas_history() {
     let deltas = deltas_shell_partition_stream();
     let merged = crate::test_support::with_decode_context(|ctx| crate::deltas::merge_full_records(ctx, &partition, &deltas)).unwrap();
     assert_eq!(
-        crate::topology::Graph::parse(&merged)
+        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged)).unwrap()
             .get(NodeKind::Shell, 3)
             .and_then(|node| node.u32_at(4)),
         Some(0)
@@ -278,7 +278,7 @@ fn decode_replaces_partition_offset_surface_from_status_framed_deltas() {
     assert_eq!(crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap().get("OFFSET_SURF"), Some(&1));
     let merged = crate::test_support::with_decode_context(|ctx| crate::deltas::merge_full_records(ctx, &partition, &deltas)).unwrap();
     assert_eq!(
-        crate::topology::offset_surfaces(&merged)
+        crate::test_support::with_decode_context(|ctx| crate::topology::offset_surfaces(ctx, &merged)).unwrap()
             .iter()
             .map(|surface| surface.state.distance().get())
             .collect::<Vec<_>>(),
@@ -343,7 +343,7 @@ fn decode_replaces_partition_trimmed_curve_from_status_framed_deltas() {
     let deltas = deltas_trimmed_curve_partition_stream();
     let merged = crate::test_support::with_decode_context(|ctx| crate::deltas::merge_full_records(ctx, &partition, &deltas)).unwrap();
     assert_eq!(
-        crate::topology::trimmed_curves(&merged)[0]
+        crate::test_support::with_decode_context(|ctx| crate::topology::trimmed_curves(ctx, &merged)).unwrap()[0]
             .state
             .parameters(),
         [0.000_3, 0.000_7]
@@ -370,7 +370,7 @@ fn decode_replaces_partition_surface_curve_from_status_framed_deltas() {
     let deltas = deltas_surface_curve_partition_stream();
     let merged = crate::test_support::with_decode_context(|ctx| crate::deltas::merge_full_records(ctx, &partition, &deltas)).unwrap();
     assert_eq!(
-        crate::topology::surface_curves(&merged)[0]
+        crate::test_support::with_decode_context(|ctx| crate::topology::surface_curves(ctx, &merged)).unwrap()[0]
             .state
             .tolerance()
             .get(),

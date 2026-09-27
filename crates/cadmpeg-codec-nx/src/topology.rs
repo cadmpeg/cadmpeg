@@ -10,7 +10,8 @@
 
 use crate::framing::node_kind::NodeKind;
 use crate::framing::xmt_reference::XmtTarget;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::Sense;
@@ -502,6 +503,22 @@ pub(crate) struct Graph {
     by_kind: BTreeMap<NodeKind, Vec<(NodeKind, u32)>>,
 }
 
+fn push_scoped<T>(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut ScopedReservation<'_>,
+    values: &mut Vec<T>,
+    value: T,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, operation)?;
+    reservation.grow(u64_from_index(std::mem::size_of::<T>()))?;
+    values
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    values.push(value);
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum ReferenceRole {
     Body,
@@ -606,8 +623,8 @@ pub(crate) struct CompositeCurve {
 }
 
 /// Decode validated type-38 surface-intersection construction records.
-pub(crate) fn composite_curves(stream: &[u8]) -> Vec<CompositeCurve> {
-    Graph::parse(stream).composite_curves()
+pub(crate) fn composite_curves(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Vec<CompositeCurve>, CodecError> {
+    Ok(Graph::parse(ctx, stream)?.composite_curves())
 }
 
 impl Graph {
@@ -721,8 +738,8 @@ pub(crate) fn intersection_data_curve_at(
 }
 
 /// Decode validated type-56 rolling-ball blend surfaces.
-pub(crate) fn blend_surfaces(stream: &[u8]) -> Vec<BlendSurface> {
-    Graph::parse(stream).blend_surfaces()
+pub(crate) fn blend_surfaces(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Vec<BlendSurface>, CodecError> {
+    Ok(Graph::parse(ctx, stream)?.blend_surfaces())
 }
 
 impl Graph {
@@ -757,8 +774,8 @@ impl Graph {
 }
 
 /// Decode validated type-60 offset-surface records.
-pub(crate) fn offset_surfaces(stream: &[u8]) -> Vec<OffsetSurface> {
-    Graph::parse(stream).offset_surfaces()
+pub(crate) fn offset_surfaces(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Vec<OffsetSurface>, CodecError> {
+    Ok(Graph::parse(ctx, stream)?.offset_surfaces())
 }
 
 impl Graph {
@@ -791,8 +808,8 @@ impl Graph {
 }
 
 /// Decode type-137 surface-curve records as aliases of their 3D basis curves.
-pub(crate) fn surface_curves(stream: &[u8]) -> Vec<SurfaceCurve> {
-    Graph::parse(stream).surface_curves()
+pub(crate) fn surface_curves(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Vec<SurfaceCurve>, CodecError> {
+    Ok(Graph::parse(ctx, stream)?.surface_curves())
 }
 
 impl Graph {
@@ -816,8 +833,8 @@ impl Graph {
 ///
 /// The result retains the basis-curve reference and parameter range. Topological
 /// endpoints come from the corresponding edge and vertex records.
-pub(crate) fn trimmed_curves(stream: &[u8]) -> Vec<TrimmedCurve> {
-    Graph::parse(stream).trimmed_curves()
+pub(crate) fn trimmed_curves(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Vec<TrimmedCurve>, CodecError> {
+    Ok(Graph::parse(ctx, stream)?.trimmed_curves())
 }
 
 impl Graph {
@@ -843,9 +860,9 @@ impl Graph {
 
 impl Graph {
     /// Parse supported fixed-record nodes from a neutral-binary stream.
-    pub(crate) fn parse(stream: &[u8]) -> Self {
-        let mut baseline = Self::parse_fixed_records(stream, false);
-        let full_domain = Self::parse_fixed_records(stream, true);
+    pub(crate) fn parse(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Self, CodecError> {
+        let (mut baseline, mut baseline_bytes) = Self::parse_fixed_records(ctx, stream, false)?;
+        let (full_domain, full_domain_bytes) = Self::parse_fixed_records(ctx, stream, true)?;
         let preserves_baseline = baseline.nodes.iter().all(|(key, node)| {
             full_domain
                 .nodes
@@ -853,37 +870,49 @@ impl Graph {
                 .is_some_and(|candidate| candidate.pos == node.pos && candidate.bytes == node.bytes)
         });
         if !preserves_baseline {
-            return baseline;
+            baseline_bytes.commit()?;
+            return Ok(baseline);
         }
         if !baseline.has_complete_body_topology()
             && full_domain.has_complete_body_topology()
             && full_domain.body_shape_face_count() != 0
         {
-            full_domain
+            full_domain_bytes.commit()?;
+            Ok(full_domain)
         } else {
-            baseline.admit_referenced_full_domain_nodes(&full_domain);
-            baseline
+            baseline.admit_referenced_full_domain_nodes(ctx, &mut baseline_bytes, &full_domain)?;
+            baseline_bytes.commit()?;
+            Ok(baseline)
         }
     }
 
     /// Admit full-domain nodes through unique typed XMT references.
-    fn admit_referenced_full_domain_nodes(&mut self, full_domain: &Self) {
+    fn admit_referenced_full_domain_nodes(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        reservation: &mut ScopedReservation<'_>,
+        full_domain: &Self,
+    ) -> Result<(), CodecError> {
         let mut candidates = BTreeMap::<(ReferenceRole, u32), Option<&Node>>::new();
         for node in full_domain.nodes.values() {
             let Some(role) = ReferenceRole::for_kind(node.kind) else {
                 continue;
             };
+            if !candidates.contains_key(&(role, node.xmt)) {
+                ctx.charge_collection_items(1, "NX topology candidate identities")?;
+            }
             candidates
                 .entry((role, node.xmt))
                 .and_modify(|candidate| *candidate = None)
                 .or_insert(Some(node));
         }
-        let mut required = self
-            .nodes
-            .values()
-            .flat_map(Node::reference_targets)
-            .filter(|(_, xmt)| *xmt > 1)
-            .collect::<BTreeSet<_>>();
+        let mut required = BTreeSet::new();
+        for target in self.nodes.values().flat_map(Node::reference_targets).filter(|(_, xmt)| *xmt > 1) {
+            if !required.contains(&target) {
+                ctx.charge_collection_items(1, "NX topology required targets")?;
+            }
+            required.insert(target);
+        }
         let mut changed = false;
         while let Some(target) = required.pop_first() {
             let Some(Some(candidate)) = candidates.get(&target) else {
@@ -893,28 +922,55 @@ impl Graph {
             if self.nodes.contains_key(&key) {
                 continue;
             }
-            required.extend(
-                candidate
-                    .reference_targets()
-                    .into_iter()
-                    .filter(|(_, xmt)| *xmt > 1),
-            );
+            for target in candidate.reference_targets().into_iter().filter(|(_, xmt)| *xmt > 1) {
+                if !required.contains(&target) {
+                    ctx.charge_collection_items(1, "NX topology required targets")?;
+                }
+                required.insert(target);
+            }
+            ctx.charge_collection_items(2, "NX topology admitted node indices")?;
+            reservation.grow(u64_from_index(candidate.bytes.len()))?;
+            let mut bytes = Vec::new();
+            bytes.try_reserve_exact(candidate.bytes.len()).map_err(|_| {
+                ctx.refuse_codec_limit("NX topology admitted node bytes", 0, u64_from_index(candidate.bytes.len()))
+            })?;
+            bytes.extend_from_slice(&candidate.bytes);
             self.by_pos.insert(candidate.pos, key);
-            self.nodes.insert(key, (*candidate).clone());
+            self.nodes.insert(key, Node {
+                kind: candidate.kind,
+                xmt: candidate.xmt,
+                pos: candidate.pos,
+                shift: candidate.shift,
+                bytes,
+            });
             changed = true;
         }
         if changed {
             self.by_kind.clear();
             for &key in self.by_pos.values() {
-                self.by_kind.entry(key.0).or_default().push(key);
+                if !self.by_kind.contains_key(&key.0) {
+                    ctx.charge_collection_items(1, "NX topology kind indices")?;
+                }
+                let keys = self.by_kind.entry(key.0).or_default();
+                ctx.charge_collection_items(1, "NX topology kind entries")?;
+                keys.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("NX topology kind entries", 0, 1))?;
+                keys.push(key);
             }
         }
+        Ok(())
     }
 
-    fn parse_fixed_records(stream: &[u8], full_node_id_domain: bool) -> Self {
+    fn parse_fixed_records<'ctx>(
+        ctx: &'ctx DecodeContext<'_>,
+        stream: &[u8],
+        full_node_id_domain: bool,
+    ) -> Result<(Self, ScopedReservation<'ctx>), CodecError> {
         let mut candidates = Vec::new();
         let mut ownership_candidates = Vec::new();
+        let mut candidate_reservation = ctx.reserve_scoped(0, "NX topology candidates")?;
+        let mut ownership_reservation = ctx.reserve_scoped(0, "NX topology ownership candidates")?;
         for pos in 0..stream.len().saturating_sub(3) {
+            ctx.charge_work(1, "scan NX topology candidates")?;
             if stream[pos] != 0 {
                 continue;
             }
@@ -922,55 +978,63 @@ impl Graph {
                 continue;
             };
             let len = fixed_len(kind);
-            let target = if matches!(kind, NodeKind::Body | NodeKind::Region) {
-                &mut ownership_candidates
-            } else {
-                &mut candidates
-            };
-            target.extend(
-                Self::fixed_record_candidates(stream, pos, kind, len, full_node_id_domain)
-                    .into_iter()
-                    .flatten(),
-            );
+            for candidate in Self::fixed_record_candidates(stream, pos, kind, len, full_node_id_domain)
+                .into_iter()
+                .flatten()
+            {
+                if matches!(kind, NodeKind::Body | NodeKind::Region) {
+                    push_scoped(ctx, &mut ownership_reservation, &mut ownership_candidates, candidate, "NX topology ownership candidates")?;
+                } else {
+                    push_scoped(ctx, &mut candidate_reservation, &mut candidates, candidate, "NX topology candidates")?;
+                }
+            }
         }
 
         // Resolve physical overlap before identity uniqueness. A candidate
         // that is wholly contained in a selected record is payload data, not
         // a second serialized node. Counting it first can invalidate the real
         // node and make otherwise stable identities depend on unrelated bytes.
-        let selected = Self::select_unique_candidates(Self::select_non_overlapping_candidates(
-            stream, candidates,
-        ));
+        let (non_overlapping, _non_overlapping_reservation) =
+            Self::select_non_overlapping_candidates(ctx, stream, candidates)?;
+        let (selected, _selected_reservation) = Self::select_unique_candidates(ctx, non_overlapping)?;
         // BODY and REGION carry ownership identity only. Their opaque fixed
         // payloads can contain complete-looking typed tags, so they are
         // admitted after typed topology/carrier selection and never veto a
         // typed candidate. An ownership node that shares bytes with a typed
         // node is ambiguous and is omitted; shells retain the identity even
         // when the optional BODY or REGION record is absent.
-        let ownership = Self::select_unique_candidates(Self::select_non_overlapping_candidates(
-            stream,
-            ownership_candidates,
-        ))
-        .into_iter()
-        .filter(|ownership| {
-            selected
-                .iter()
-                .all(|candidate| !candidate.overlaps(*ownership))
-        })
-        .collect::<Vec<_>>();
+        let (non_overlapping_ownership, _ownership_nonoverlap_reservation) =
+            Self::select_non_overlapping_candidates(ctx, stream, ownership_candidates)?;
+        let (ownership, _ownership_unique_reservation) =
+            Self::select_unique_candidates(ctx, non_overlapping_ownership)?;
+        let mut admitted_ownership = Vec::new();
+        let mut admitted_reservation = ctx.reserve_scoped(0, "NX admitted ownership candidates")?;
+        for candidate in ownership {
+            if selected.iter().all(|selected| !selected.overlaps(candidate)) {
+                push_scoped(ctx, &mut admitted_reservation, &mut admitted_ownership, candidate, "NX admitted ownership candidates")?;
+            }
+        }
         let mut graph = Self::default();
-        for candidate in selected.into_iter().chain(ownership) {
-            let Some(node) = candidate.materialize(stream) else {
+        let mut node_reservation = ctx.reserve_scoped(0, "NX topology node bytes")?;
+        for candidate in selected.into_iter().chain(admitted_ownership) {
+            let Some(node) = candidate.materialize(ctx, &mut node_reservation, stream)? else {
                 continue;
             };
             let key = (node.kind, node.xmt);
+            ctx.charge_collection_items(2, "NX topology node indices")?;
             graph.by_pos.insert(node.pos, key);
             graph.nodes.insert(key, node);
         }
         for &key in graph.by_pos.values() {
-            graph.by_kind.entry(key.0).or_default().push(key);
+            if !graph.by_kind.contains_key(&key.0) {
+                ctx.charge_collection_items(1, "NX topology kind indices")?;
+            }
+            let keys = graph.by_kind.entry(key.0).or_default();
+            ctx.charge_collection_items(1, "NX topology kind entries")?;
+            keys.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("NX topology kind entries", 0, 1))?;
+            keys.push(key);
         }
-        graph
+        Ok((graph, node_reservation))
     }
 
     fn fixed_record_candidates(
@@ -1030,11 +1094,15 @@ impl Graph {
     /// the fixed-record grammar provides no discriminator that can make one
     /// authoritative. Invalidate the identity instead of ranking candidates
     /// by topology shape, reference counts, or scan position.
-    fn select_unique_candidates(candidates: Vec<NodeCandidate>) -> Vec<NodeCandidate> {
+    fn select_unique_candidates<'ctx>(
+        ctx: &'ctx DecodeContext<'_>,
+        candidates: Vec<NodeCandidate>,
+    ) -> Result<(Vec<NodeCandidate>, ScopedReservation<'ctx>), CodecError> {
         let mut by_key = BTreeMap::<(NodeKind, u32), Option<NodeCandidate>>::new();
         for node in candidates {
             match by_key.entry((node.kind, node.xmt)) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "NX topology unique candidate keys")?;
                     entry.insert(Some(node));
                 }
                 std::collections::btree_map::Entry::Occupied(mut entry) => {
@@ -1045,26 +1113,38 @@ impl Graph {
                 }
             }
         }
-        by_key.into_values().flatten().collect()
+        let mut selected = Vec::new();
+        let mut reservation = ctx.reserve_scoped(0, "NX topology unique candidates")?;
+        for candidate in by_key.into_values().flatten() {
+            push_scoped(ctx, &mut reservation, &mut selected, candidate, "NX topology unique candidates")?;
+        }
+        Ok((selected, reservation))
     }
 
     /// Discard overlapping candidates when no serialized ownership boundary
     /// identifies which record owns the bytes.
-    fn select_non_overlapping_candidates(
+    fn select_non_overlapping_candidates<'ctx>(
+        ctx: &'ctx DecodeContext<'_>,
         stream: &[u8],
         mut nodes: Vec<NodeCandidate>,
-    ) -> Vec<NodeCandidate> {
+    ) -> Result<(Vec<NodeCandidate>, ScopedReservation<'ctx>), CodecError> {
+        let count = u64_from_index(nodes.len());
+        let sort_work = count.checked_mul(u64::from(usize::BITS - nodes.len().leading_zeros()))
+            .ok_or_else(|| ctx.refuse_codec_limit("sort NX topology candidates", 0, count))?;
+        ctx.charge_work(sort_work, "sort NX topology candidates")?;
         nodes.sort_by(|left, right| {
             left.pos
                 .cmp(&right.pos)
                 .then_with(|| left.end().cmp(&right.end()))
         });
         let mut selected = Vec::new();
+        let mut reservation = ctx.reserve_scoped(0, "NX topology nonoverlapping candidates")?;
         let mut start = 0;
         while let Some(first) = nodes.get(start).copied() {
+            ctx.charge_work(1, "select NX topology candidates")?;
             if fixed_record_boundary(stream, first.end()) {
                 let end = first.end();
-                selected.push(first);
+                push_scoped(ctx, &mut reservation, &mut selected, first, "NX topology nonoverlapping candidates")?;
                 start += 1;
                 while nodes
                     .get(start)
@@ -1085,7 +1165,7 @@ impl Graph {
             }
             let cluster = &nodes[start..end];
             if let [node] = cluster {
-                selected.push(*node);
+                push_scoped(ctx, &mut reservation, &mut selected, *node, "NX topology nonoverlapping candidates")?;
             } else {
                 let mut boundary_candidates = cluster
                     .iter()
@@ -1096,12 +1176,12 @@ impl Graph {
                     continue;
                 };
                 if boundary_candidates.next().is_none() {
-                    selected.push(node);
+                    push_scoped(ctx, &mut reservation, &mut selected, node, "NX topology nonoverlapping candidates")?;
                 }
             }
             start = end;
         }
-        selected
+        Ok((selected, reservation))
     }
 
     /// Look up a node by record type and XMT identifier.
@@ -1487,14 +1567,28 @@ impl NodeCandidate {
         self.pos < other.end() && other.pos < self.end()
     }
 
-    fn materialize(self, stream: &[u8]) -> Option<Node> {
-        Some(Node {
+    fn materialize(
+        self,
+        ctx: &DecodeContext<'_>,
+        reservation: &mut ScopedReservation<'_>,
+        stream: &[u8],
+    ) -> Result<Option<Node>, CodecError> {
+        let Some(bytes) = stream.get(self.pos..self.end) else {
+            return Ok(None);
+        };
+        reservation.grow(u64_from_index(bytes.len()))?;
+        let mut owned = Vec::new();
+        owned.try_reserve_exact(bytes.len()).map_err(|_| {
+            ctx.refuse_codec_limit("NX topology node bytes", 0, u64_from_index(bytes.len()))
+        })?;
+        owned.extend_from_slice(bytes);
+        Ok(Some(Node {
             kind: self.kind,
             xmt: self.xmt,
             pos: self.pos,
             shift: self.shift,
-            bytes: stream.get(self.pos..self.end)?.to_vec(),
-        })
+            bytes: owned,
+        }))
     }
 }
 

@@ -673,7 +673,7 @@ fn decode_tracks_all_extended_topology_reference_shifts() {
 #[test]
 fn decode_tracks_fully_extended_geometry_header_shift() {
     let stream = topology_with_fully_extended_geometry_headers();
-    let graph = crate::topology::Graph::parse(&stream);
+    let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream)).unwrap();
     assert!(matches!(
         graph
             .get(NodeKind::Plane, 6)
@@ -898,7 +898,7 @@ fn rmfastload_membership_declines_when_a_referenced_topology_entity_is_missing()
         .expect("fin record");
     put_ref(&mut stream, fin + 16, 99);
 
-    let graph = crate::topology::Graph::parse(&stream);
+    let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream)).unwrap();
     assert!(topology_body_node_ids(0, &graph).is_empty());
 }
 
