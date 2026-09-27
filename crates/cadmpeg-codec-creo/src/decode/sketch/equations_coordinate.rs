@@ -773,6 +773,24 @@ fn next_section_component(
     Ok(Some(component))
 }
 
+fn insert_solved_coordinate(
+    ctx: &DecodeContext<'_>,
+    solved: &mut BTreeMap<SectionCoordinateVariable, f64>,
+    variable: SectionCoordinateVariable,
+    value: f64,
+) -> Result<(), CodecError> {
+    match solved.entry(variable) {
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            ctx.charge_collection_items(1, "creo section solved coordinates")?;
+            entry.insert(value);
+        }
+        std::collections::btree_map::Entry::Occupied(mut entry) => {
+            entry.insert(value);
+        }
+    }
+    Ok(())
+}
+
 pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
     ctx: &DecodeContext<'_>,
     equations: &[SectionCoordinateEquation],
@@ -1189,18 +1207,25 @@ pub(in crate::decode) fn solve_section_coordinate_equations(
             for global in columns {
                 let variable = variables[global];
                 if let Some(value) = stored_coordinates.get(&variable) {
-                    solved.insert(variable, *value);
+                    insert_solved_coordinate(ctx, &mut solved, variable, *value)?;
                 }
             }
             continue;
         };
         for (local, value) in component_solution {
-            solved.insert(variables[columns[local]], value);
+            insert_solved_coordinate(ctx, &mut solved, variables[columns[local]], value)?;
         }
     }
     let mut points = BTreeMap::<u32, [Option<f64>; 2]>::new();
     for ((point, coordinate), value) in solved {
-        points.entry(point).or_insert([None; 2])[coordinate.index()] = Some(value);
+        let values = match points.entry(point) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo section solved points")?;
+                entry.insert([None; 2])
+            }
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+        };
+        values[coordinate.index()] = Some(value);
     }
     Ok(points)
 }
@@ -1671,6 +1696,56 @@ mod tests {
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo section matrix coefficients")
+        );
+    }
+
+    #[test]
+    fn section_solved_coordinates_refuse_before_tree_insert() {
+        let equations = [SectionCoordinateEquation::point_value(
+            1,
+            SectionAxis::U,
+            1.0,
+        )];
+        let error = with_collection_limit(17, |ctx| {
+            super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
+        })
+        .expect_err("the solved coordinate follows the admitted matrix result");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section solved coordinates")
+        );
+    }
+
+    #[test]
+    fn section_stored_fallback_refuses_before_solved_node() {
+        let error = with_collection_limit(0, |ctx| {
+            let mut solved = BTreeMap::new();
+            super::insert_solved_coordinate(ctx, &mut solved, (1, SectionAxis::U), 2.0)
+        })
+        .expect_err("a stored fallback value needs the same solved-map admission");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section solved coordinates")
+        );
+    }
+
+    #[test]
+    fn section_solved_points_refuse_before_tree_insert() {
+        let equations = [SectionCoordinateEquation::point_value(
+            1,
+            SectionAxis::U,
+            1.0,
+        )];
+        let error = with_collection_limit(18, |ctx| {
+            super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
+        })
+        .expect_err("the first point follows its solved coordinate");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section solved points")
         );
     }
 
