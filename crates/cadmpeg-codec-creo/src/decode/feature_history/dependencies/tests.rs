@@ -438,6 +438,90 @@ fn emitted_feature_identity_nodes_refuse_collection_limit() {
     emitted_feature_identity_error(false);
 }
 
+fn reconciliation_ir_with_emitted_parent() -> CadIr {
+    let mut ir = reconciliation_ir_with_generated_dependency();
+    let mut parent = ir.model.features[0].clone();
+    parent.id = IrFeatureId::mint("creo:model:feature#3")
+        .expect("fixture parent ID");
+    parent.ordinal = 0;
+    parent.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        IrFeatureDefinition::Operation(IrFeatureOperation::KnitSurface {
+            faces: FaceSelection::Unresolved,
+            merge_entities: Some(true),
+            create_solid: Some(false),
+            gap_tolerance: None,
+        }),
+    );
+    ir.model.features[0].ordinal = 1;
+    ir.model.features.insert(0, parent);
+    ir
+}
+
+fn reconciled_native_dependency_error(
+    collection: Option<u64>,
+    retained: Option<u64>,
+    operation: &'static str,
+) {
+    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut ir = reconciliation_ir_with_emitted_parent();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    if let Some(limit) = collection {
+        policy.limits.max_collection_items = limit;
+    }
+    if let Some(limit) = retained {
+        policy.limits.max_retained_bytes = limit;
+    }
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = super::reconcile_feature_links(
+        &ctx,
+        &scan,
+        &mut ir,
+        &BTreeMap::from([(10, vec![3])]),
+    )
+    .expect_err("one native dependency exceeds the limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.operation == operation), "{error:?}");
+}
+
+#[test]
+fn reconciled_native_dependency_id_refuses_retained_limit() {
+    reconciled_native_dependency_error(
+        None,
+        Some(("creo:model:feature#3".len() + "creo:model:feature#10".len()) as u64),
+        "creo reconciled native dependency IDs",
+    );
+}
+
+#[test]
+fn reconciled_native_dependencies_refuse_collection_limit() {
+    reconciled_native_dependency_error(
+        Some(9),
+        None,
+        "creo reconciled native dependencies",
+    );
+}
+
+#[test]
+fn reconciled_native_dependency_preserves_emitted_parent_under_service_policy() {
+    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut ir = reconciliation_ir_with_emitted_parent();
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::reconcile_feature_links(
+            ctx,
+            &scan,
+            &mut ir,
+            &BTreeMap::from([(10, vec![3])]),
+        )
+    })
+    .expect("service profile admits native dependency reconciliation");
+    let feature = ir.model.features.iter().find(|feature| feature.id.as_str() == "creo:model:feature#10")
+        .expect("child feature exists");
+    assert_eq!(feature.dependencies.as_slice(), &[IrFeatureId::mint("creo:model:feature#3")
+        .expect("fixture parent ID")]);
+}
+
 #[test]
 fn reconciled_generated_dependency_refuses_before_retained_id() {
     let scan = crate::container::scan_bytes_ok(Vec::new());
