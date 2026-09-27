@@ -82,6 +82,38 @@ pub(crate) fn lp_ascii_strict(
     Some((std::str::from_utf8(raw).ok()?.to_owned(), end))
 }
 
+/// Read a bounded strict-UTF-8 string after admitting its retained bytes.
+pub(crate) fn lp_ascii_strict_charged(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: usize,
+    bounds: RangeInclusive<usize>,
+) -> Result<Option<(String, usize)>, CodecError> {
+    let Some(length_u32) = View::u32_le_at(bytes, at) else {
+        return Ok(None);
+    };
+    let Ok(length) = usize::try_from(length_u32) else {
+        return Ok(None);
+    };
+    if !bounds.contains(&length) {
+        return Ok(None);
+    }
+    let Some((raw, end)) = lp_u32_bytes_at(bytes, at) else {
+        return Ok(None);
+    };
+    ctx.charge_work(u64::from(length_u32), "decode F3D ASCII string")?;
+    let Ok(value) = std::str::from_utf8(raw) else {
+        return Ok(None);
+    };
+    ctx.charge_retained(u64::from(length_u32), "retain F3D ASCII string")?;
+    let mut owned = String::new();
+    owned
+        .try_reserve(length)
+        .map_err(|_| ctx.refuse_codec_limit("retain F3D ASCII string", 0, u64::from(length_u32)))?;
+    owned.push_str(value);
+    Ok(Some((owned, end)))
+}
+
 /// Read a u32-length-prefixed ASCII string whose length lies in `bounds` and
 /// whose every byte satisfies `allowed`, decoding the payload lossily. Returns
 /// the string and the offset past it, or `None` when a byte is rejected.
@@ -173,7 +205,7 @@ pub(crate) fn lp_utf16_bounded_charged(
 
 #[cfg(test)]
 mod charged_string_tests {
-    use super::lp_utf16_bounded_charged;
+    use super::{lp_ascii_strict_charged, lp_utf16_bounded_charged};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     #[test]
@@ -188,6 +220,22 @@ mod charged_string_tests {
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == "retain F3D UTF-16 string"
+        ));
+    }
+
+
+    #[test]
+    fn bounded_ascii_string_refuses_retained_limit() {
+        let bytes = [2, 0, 0, 0, b'A', b'B'];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let error = lp_ascii_strict_charged(&ctx, &bytes, 0, 0..=128).unwrap_err();
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "retain F3D ASCII string"
         ));
     }
 }
