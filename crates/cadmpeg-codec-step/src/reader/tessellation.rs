@@ -729,6 +729,9 @@ pub(super) fn decode(
         } else {
             None
         };
+        ir.model.tessellations.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("step_tessellation_mesh_list", 0, 1)
+        })?;
         ir.model
             .tessellations
             .push(mesh.with_body(body).with_source_object(source_object));
@@ -1038,6 +1041,9 @@ fn insert_claim(
             bytes_for::<u64>(1, ctx, "step_tessellation_claims")?,
             "step_tessellation_claims",
         )?;
+        claims
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("step_tessellation_claims", 0, 1))?;
         claims.insert(id);
     }
     Ok(())
@@ -1099,7 +1105,11 @@ fn push_placement(
         ctx,
         "step_tessellation_placements",
     )?)?;
-    placements.entry(item).or_default().push(placement);
+    let values = placements.entry(item).or_default();
+    values
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("step_tessellation_placements", 0, 1))?;
+    values.push(placement);
     Ok(())
 }
 
@@ -1226,7 +1236,15 @@ fn product_linked_representations<'a>(
     }
     let mut pending_bytes =
         temporary_collection::<u64>(ctx, linked.len(), "step_tessellation_product_pending")?;
-    let mut pending = linked.iter().copied().collect::<Vec<_>>();
+    let mut pending = Vec::new();
+    pending.try_reserve_exact(linked.len()).map_err(|_| {
+        ctx.refuse_codec_limit(
+            "step_tessellation_product_pending",
+            0,
+            u64_from_index(linked.len()),
+        )
+    })?;
+    pending.extend(linked.iter().copied());
     while let Some(representation) = pending.pop() {
         for &related in relationships.get(&representation).into_iter().flatten() {
             if insert_temporary_set(
@@ -1242,6 +1260,9 @@ fn product_linked_representations<'a>(
                     ctx,
                     "step_tessellation_product_pending",
                 )?)?;
+                pending
+                    .try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("step_tessellation_product_pending", 0, 1))?;
                 pending.push(related);
             }
         }
@@ -1572,7 +1593,20 @@ fn push_loss(
             ctx.refuse_codec_limit("step_tessellation_loss_notes", u64::MAX - 1, u64::MAX)
         })?;
     ctx.charge_retained(retained_bytes, "step_tessellation_loss_notes")?;
-    losses.push(code.note(message.to_string()));
+    losses
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("step_tessellation_loss_notes", 0, 1))?;
+    let message_len = usize::try_from(message_bytes).map_err(|_| {
+        ctx.refuse_codec_limit("step_tessellation_loss_notes", u64::MAX - 1, u64::MAX)
+    })?;
+    let mut text = String::new();
+    text.try_reserve_exact(message_len).map_err(|_| {
+        ctx.refuse_codec_limit("step_tessellation_loss_notes", 0, message_bytes)
+    })?;
+    std::fmt::write(&mut text, message).map_err(|_| {
+        ctx.refuse_codec_limit("step_tessellation_loss_notes", 0, message_bytes)
+    })?;
+    losses.push(code.note(text));
     Ok(())
 }
 
@@ -1673,6 +1707,13 @@ fn complex_triangles<'a>(
         "step_complex_tessellation_triangles",
     )?;
     let mut triangles = Vec::new();
+    triangles.try_reserve_exact(triangle_count).map_err(|_| {
+        ctx.refuse_codec_limit(
+            "step_complex_tessellation_triangles",
+            0,
+            u64_from_index(triangle_count),
+        )
+    })?;
     for strip in strips {
         for index in 0..strip.len() - 2 {
             triangles.push(if index % 2 == 0 {
