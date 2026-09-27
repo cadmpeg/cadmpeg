@@ -70,7 +70,7 @@ fn compact_half_edges(
         map.get(index)
             .copied()
             .flatten()
-            .ok_or_else(|| malformed(name, "half-edge names a deleted slot"))
+            .ok_or_else(|| malformed(ctx, name, "half-edge names a deleted slot"))
     };
     let mut half_edges = Vec::new();
     for half in dense {
@@ -82,7 +82,7 @@ fn compact_half_edges(
                     face: match half.face {
                         -1 => None,
                         face => Some(usize::try_from(face).map_err(|_| {
-                            malformed(name, "half-edge face is negative or overflows")
+                            malformed(ctx, name, "half-edge face is negative or overflows")
                         })?),
                     },
                 };
@@ -247,34 +247,40 @@ pub(crate) fn decode(
     Ok((cages, losses))
 }
 
-fn malformed(name: &str, message: impl std::fmt::Display) -> CodecError {
-    crate::error::malformed(format!("T-spline cage {name}: {message}"))
+fn malformed(ctx: &DecodeContext<'_>, name: &str, message: impl std::fmt::Display) -> CodecError {
+    match format_retained(ctx, "describe malformed T-spline cage", |out| {
+        write!(out, "T-spline cage {name}: {message}")
+    }) {
+        Ok(text) => crate::error::malformed(text),
+        Err(refusal) => refusal,
+    }
 }
 
 fn parse_int<T: std::str::FromStr>(
+    ctx: &DecodeContext<'_>,
     name: &str,
     value: Option<&str>,
     field: &str,
 ) -> Result<T, CodecError> {
     value
         .and_then(|value| value.parse().ok())
-        .ok_or_else(|| malformed(name, format!("invalid {field}")))
+        .ok_or_else(|| malformed(ctx, name, format_args!("invalid {field}")))
 }
 
-fn parse_f64(name: &str, value: Option<&str>, field: &str) -> Result<FiniteReal, CodecError> {
+fn parse_f64(ctx: &DecodeContext<'_>, name: &str, value: Option<&str>, field: &str) -> Result<FiniteReal, CodecError> {
     value
         .and_then(|value| value.parse().ok())
         .and_then(FiniteReal::new)
-        .ok_or_else(|| malformed(name, format!("invalid {field}")))
+        .ok_or_else(|| malformed(ctx, name, format_args!("invalid {field}")))
 }
 
-fn parse_direction(name: &str, value: Option<&str>) -> Result<SubdGripDirection, CodecError> {
+fn parse_direction(ctx: &DecodeContext<'_>, name: &str, value: Option<&str>) -> Result<SubdGripDirection, CodecError> {
     match value {
         Some("NORTH") => Ok(SubdGripDirection::North),
         Some("EAST") => Ok(SubdGripDirection::East),
         Some("SOUTH") => Ok(SubdGripDirection::South),
         Some("WEST") => Ok(SubdGripDirection::West),
-        _ => Err(malformed(name, "invalid vertex direction")),
+        _ => Err(malformed(ctx, name, "invalid vertex direction")),
     }
 }
 
@@ -301,12 +307,13 @@ fn compact(
 }
 
 fn require_end<'a>(
+    ctx: &DecodeContext<'_>,
     name: &str,
     mut fields: impl Iterator<Item = &'a str>,
     record: &str,
 ) -> Result<(), CodecError> {
     if fields.next().is_some() {
-        return Err(malformed(name, format!("{record} has trailing fields")));
+        return Err(malformed(ctx, name, format_args!("{record} has trailing fields")));
     }
     Ok(())
 }
@@ -402,15 +409,15 @@ fn parse_pairs<'a>(
 ) -> Result<BTreeMap<usize, usize>, CodecError> {
     let mut values = Vec::new();
     for value in fields {
-        push_charged(ctx, &mut values, parse_int::<usize>(name, Some(value), record)?, "read T-spline symmetry map values")?;
+        push_charged(ctx, &mut values, parse_int::<usize>(ctx, name, Some(value), record)?, "read T-spline symmetry map values")?;
     }
     if values.len() % 2 != 0 {
-        return Err(malformed(name, format!("{record} has an unpaired index")));
+        return Err(malformed(ctx, name, format_args!("{record} has an unpaired index")));
     }
     let mut pairs = BTreeMap::new();
     for pair in values.chunks_exact(2) {
         if pairs.contains_key(&pair[0]) {
-            return Err(malformed(name, format!("{record} repeats a source index")));
+            return Err(malformed(ctx, name, format_args!("{record} repeats a source index")));
         }
         ctx.charge_collection_items(1, "index T-spline symmetry map pairs")?;
         pairs.insert(pair[0], pair[1]);
@@ -427,18 +434,17 @@ fn parse_radial_pairs<'a>(
     for value in fields {
         let index = value
             .parse::<u64>()
-            .map_err(|_| malformed(name, "invalid radial symmetry map index"))?;
+            .map_err(|_| malformed(ctx, name, "invalid radial symmetry map index"))?;
         push_charged(ctx, &mut values, index, "read T-spline radial map values")?;
     }
     if values.len() % 2 != 0 {
-        return Err(malformed(name, "radial symmetry map has an unpaired index"));
+        return Err(malformed(ctx, name, "radial symmetry map has an unpaired index"));
     }
     let mut sources = BTreeSet::new();
     let mut pairs = Vec::new();
     for pair in values.chunks_exact(2) {
         if sources.contains(&pair[0]) {
-            return Err(malformed(
-                name,
+            return Err(malformed(ctx, name,
                 "radial symmetry map repeats a source index",
             ));
         }
@@ -450,6 +456,7 @@ fn parse_radial_pairs<'a>(
 }
 
 fn validate_symmetry_map(
+    ctx: &DecodeContext<'_>,
     name: &str,
     forward: &BTreeMap<usize, usize>,
     reverse: &BTreeMap<usize, usize>,
@@ -461,9 +468,8 @@ fn validate_symmetry_map(
             || !slots.get(target).copied().unwrap_or(false)
             || (source != target && reverse.get(&target) != Some(&source))
         {
-            return Err(malformed(
-                name,
-                format!("{element} symmetry map is inconsistent"),
+            return Err(malformed(ctx, name,
+                format_args!("{element} symmetry map is inconsistent"),
             ));
         }
     }
@@ -472,16 +478,15 @@ fn validate_symmetry_map(
             || !slots.get(target).copied().unwrap_or(false)
             || forward.get(&target) != Some(&source)
         {
-            return Err(malformed(
-                name,
-                format!("{element} symmetry map is inconsistent"),
+            return Err(malformed(ctx, name,
+                format_args!("{element} symmetry map is inconsistent"),
             ));
         }
     }
     Ok(())
 }
 
-fn symmetry_plane(name: &str, values: [FiniteReal; 12]) -> Result<SubdPlaneFrame, CodecError> {
+fn symmetry_plane(ctx: &DecodeContext<'_>, name: &str, values: [FiniteReal; 12]) -> Result<SubdPlaneFrame, CodecError> {
     let origin = Point3::new(
         values[0].get() * CAGE_COORDINATE_SCALE,
         values[1].get() * CAGE_COORDINATE_SCALE,
@@ -493,15 +498,13 @@ fn symmetry_plane(name: &str, values: [FiniteReal; 12]) -> Result<SubdPlaneFrame
         || values[7].get().abs() > SYMMETRY_FRAME_EPS
         || values[11].get().abs() > SYMMETRY_FRAME_EPS
     {
-        return Err(malformed(
-            name,
+        return Err(malformed(ctx, name,
             "symmetry plane is not a homogeneous orthonormal frame",
         ));
     }
     SubdPlaneFrame::new(origin, first_axis, second_axis).map_err(|error| {
-        malformed(
-            name,
-            format!("symmetry plane is not a homogeneous orthonormal frame: {error}"),
+        malformed(ctx, name,
+            format_args!("symmetry plane is not a homogeneous orthonormal frame: {error}"),
         )
     })
 }
@@ -516,10 +519,10 @@ fn remap_symmetry_pairs(
     let mut remapped = Vec::new();
     for (&source, &target) in map {
         let source = ir_indices.get(source).copied().flatten().ok_or_else(|| {
-            malformed(name, format!("{element} symmetry source is deleted"))
+            malformed(ctx, name, format_args!("{element} symmetry source is deleted"))
         })?;
         let target = ir_indices.get(target).copied().flatten().ok_or_else(|| {
-            malformed(name, format!("{element} symmetry target is deleted"))
+            malformed(ctx, name, format_args!("{element} symmetry target is deleted"))
         })?;
         push_charged(ctx, &mut remapped, [source, target], "remap T-spline symmetry pairs")?;
     }
@@ -546,8 +549,7 @@ fn build_fan(
     let root_id = HalfEdgeId(root);
     let root_half = &half_edges[root];
     if root_half.vertex != vertex {
-        return Err(malformed(
-            name,
+        return Err(malformed(ctx, name,
             "vertex root does not terminate at its vertex",
         ));
     }
@@ -560,8 +562,7 @@ fn build_fan(
             if current == root_id {
                 break;
             }
-            return Err(malformed(
-                name,
+            return Err(malformed(ctx, name,
                 "vertex half-edge fan repeats before its root",
             ));
         }
@@ -569,8 +570,7 @@ fn build_fan(
         seen.insert(current);
         let half = &half_edges[current.index()];
         if half.vertex != vertex {
-            return Err(malformed(
-                name,
+            return Err(malformed(ctx, name,
                 "vertex half-edge fan leaves its terminal vertex",
             ));
         }
@@ -578,8 +578,7 @@ fn build_fan(
             .face
             .is_some_and(|face| !face_live.get(face).copied().unwrap_or(false))
         {
-            return Err(malformed(
-                name,
+            return Err(malformed(ctx, name,
                 "vertex half-edge fan names an invalid face",
             ));
         }
@@ -591,8 +590,7 @@ fn build_fan(
         let next = &half_edges[half.next.index()];
         let mate = &half_edges[next.mate.index()];
         let Some(rotated) = (mate.vertex == vertex).then_some(next.mate) else {
-            return Err(malformed(
-                name,
+            return Err(malformed(ctx, name,
                 "vertex fan rotation leaves its terminal vertex",
             ));
         };
@@ -601,7 +599,7 @@ fn build_fan(
             break;
         }
         if seen.len() >= half_edges.len() {
-            return Err(malformed(name, "vertex half-edge fan does not close"));
+            return Err(malformed(ctx, name, "vertex half-edge fan does not close"));
         }
     }
 
@@ -609,8 +607,7 @@ fn build_fan(
     for (index, slot) in fan.iter().enumerate() {
         if matches!(slot, FanSlot::Slot { face: None, .. }) {
             if gap.replace(index).is_some() {
-                return Err(malformed(
-                    name,
+                return Err(malformed(ctx, name,
                     "vertex half-edge fan has multiple boundary gaps",
                 ));
             }
@@ -641,24 +638,24 @@ fn grip_block(
 ) -> Result<Vec<Option<SubdSecondaryGrip>>, CodecError> {
     let end = cursor
         .checked_add(count)
-        .ok_or_else(|| malformed(name, "derived-grip block arity overflows"))?;
+        .ok_or_else(|| malformed(ctx, name, "derived-grip block arity overflows"))?;
     let values = indices
         .get(*cursor..end)
-        .ok_or_else(|| malformed(name, "derived-grip run is shorter than its declared arity"))?;
+        .ok_or_else(|| malformed(ctx, name, "derived-grip run is shorter than its declared arity"))?;
     *cursor = end;
     let mut grips = Vec::new();
     for &index in values {
         let grip = index.map(|index| {
             let point = grip_points.get(index).copied().flatten().ok_or_else(|| {
-                malformed(name, "derived-grip entry names a deleted grip")
+                malformed(ctx, name, "derived-grip entry names a deleted grip")
             })?;
             SubdSecondaryGrip::from_parts(
                 u32::try_from(index)
-                    .map_err(|_| malformed(name, "secondary grip index overflows IR"))?,
+                    .map_err(|_| malformed(ctx, name, "secondary grip index overflows IR"))?,
                 point.point,
                 point.weight,
             )
-            .map_err(|error| malformed(name, error))
+            .map_err(|error| malformed(ctx, name, error))
         }).transpose()?;
         push_charged(ctx, &mut grips, grip, "materialize T-spline grip block")?;
     }
@@ -708,18 +705,17 @@ fn build_secondary_layouts(
         if let GripVertexMarker::Secondary(Some(vertex)) = marker {
             *secondary_counts
                 .get_mut(*vertex)
-                .ok_or_else(|| malformed(name, "secondary grip vertex is out of range"))? += 1;
+                .ok_or_else(|| malformed(ctx, name, "secondary grip vertex is out of range"))? += 1;
         }
     }
 
     for connectivity in derived_grips {
         let vertex = connectivity.vertex;
         if !vertex_live.get(vertex).copied().unwrap_or(false) {
-            return Err(malformed(name, "derived-grip vertex is out of range"));
+            return Err(malformed(ctx, name, "derived-grip vertex is out of range"));
         }
         if has_cg[vertex] {
-            return Err(malformed(
-                name,
+            return Err(malformed(ctx, name,
                 "vertex has more than one derived-grip record",
             ));
         }
@@ -728,11 +724,10 @@ fn build_secondary_layouts(
             .get(vertex)
             .copied()
             .flatten()
-            .ok_or_else(|| malformed(name, "derived-grip vertex has no root direction"))?;
+            .ok_or_else(|| malformed(ctx, name, "derived-grip vertex has no root direction"))?;
         let fan = build_fan(ctx, name, vertex, root, half_edges, face_live)?;
         if connectivity.spoke_lengths.len() != fan.len() {
-            return Err(malformed(
-                name,
+            return Err(malformed(ctx, name,
                 "derived-grip wedge count does not match the completed vertex fan",
             ));
         }
@@ -745,12 +740,11 @@ fn build_secondary_layouts(
                 .checked_mul(
                     connectivity.spoke_lengths[(wedge + 1) % connectivity.spoke_lengths.len()],
                 )
-                .ok_or_else(|| malformed(name, "derived-grip sector arity overflows"))?;
+                .ok_or_else(|| malformed(ctx, name, "derived-grip sector arity overflows"))?;
             let slot = fan[(wedge + offset) % fan.len()];
             let FanSlot::Slot { half_edge, face } = slot else {
                 if spoke_count != 0 {
-                    return Err(malformed(
-                        name,
+                    return Err(malformed(ctx, name,
                         "phantom wedge carries a nonzero spoke length",
                     ));
                 }
@@ -763,7 +757,7 @@ fn build_secondary_layouts(
                     .copied()
                     .flatten()
                     .map(|(edge, _)| edge)
-                    .ok_or_else(|| malformed(name, "fan half-edge has no owning edge"))?,
+                    .ok_or_else(|| malformed(ctx, name, "fan half-edge has no owning edge"))?,
             );
             let sector_face = match face {
                 Some(face) => Some(
@@ -771,7 +765,7 @@ fn build_secondary_layouts(
                         .get(face)
                         .copied()
                         .flatten()
-                        .ok_or_else(|| malformed(name, "fan sector names a deleted face"))?,
+                        .ok_or_else(|| malformed(ctx, name, "fan sector names a deleted face"))?,
                 ),
                 None => None,
             };
@@ -799,19 +793,18 @@ fn build_secondary_layouts(
             }, "project T-spline grip wedges")?;
         }
         if cursor != connectivity.grip_indices.len() {
-            return Err(malformed(name, "derived-grip run has trailing entries"));
+            return Err(malformed(ctx, name, "derived-grip run has trailing entries"));
         }
         let vertex_ir =
-            vertex_ir[vertex].ok_or_else(|| malformed(name, "derived-grip vertex is deleted"))?;
+            vertex_ir[vertex].ok_or_else(|| malformed(ctx, name, "derived-grip vertex is deleted"))?;
         layouts[vertex_ir as usize] = Some(
-            SubdVertexGripLayout::new(direction, wedges).map_err(|error| malformed(name, error))?,
+            SubdVertexGripLayout::new(direction, wedges).map_err(|error| malformed(ctx, name, error))?,
         );
     }
 
     for (vertex, count) in secondary_counts.into_iter().enumerate() {
         if (count != 0) != has_cg[vertex] {
-            return Err(malformed(
-                name,
+            return Err(malformed(ctx, name,
                 "secondary-grip ownership does not have exactly one derived-grip record",
             ));
         }
@@ -837,9 +830,9 @@ impl EditorSelectionKind {
 
 fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage, CodecError> {
     let text = std::str::from_utf8(bytes)
-        .map_err(|error| malformed(name, format!("payload is not UTF-8: {error}")))?;
+        .map_err(|error| malformed(ctx, name, format_args!("payload is not UTF-8: {error}")))?;
     if text.lines().next() != Some("#TS0200") {
-        return Err(malformed(name, "unsupported header"));
+        return Err(malformed(ctx, name, "unsupported header"));
     }
 
     // Every topology token occupies a slot in its own record order, and a bare
@@ -882,11 +875,11 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             if !matches!(selection, EditorSelectionKind::Grips)
                 && !editor_declarations.insert(label)
             {
-                return Err(malformed(name, format!("duplicate {label} record")));
+                return Err(malformed(ctx, name, format_args!("duplicate {label} record")));
             }
             let mut values = BTreeSet::new();
             for value in fields {
-                let index = parse_int::<usize>(name, Some(value), label)?;
+                let index = parse_int::<usize>(ctx, name, Some(value), label)?;
                 insert_set_charged(ctx, &mut values, index, "read T-spline editor selections")?;
             }
             match selection {
@@ -901,42 +894,42 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             continue;
         }
         match record_kind {
-            Some("#TS0200") => require_end(name, fields, "header")?,
+            Some("#TS0200") => require_end(ctx, name, fields, "header")?,
             Some("degree") => {
-                if parse_int::<usize>(name, fields.next(), "degree")? != 3 {
-                    return Err(malformed(name, "unsupported degree"));
+                if parse_int::<usize>(ctx, name, fields.next(), "degree")? != 3 {
+                    return Err(malformed(ctx, name, "unsupported degree"));
                 }
-                require_end(name, fields, "degree declaration")?;
+                require_end(ctx, name, fields, "degree declaration")?;
                 declarations.insert("degree");
             }
             Some(declaration @ ("cap-type" | "end-conditions" | "star-knot-rule")) => {
                 let value = fields
                     .next()
-                    .ok_or_else(|| malformed(name, format!("missing {declaration} value")))?;
+                    .ok_or_else(|| malformed(ctx, name, format_args!("missing {declaration} value")))?;
                 if declaration == "end-conditions" {
                     end_conditions = Some(value);
                 }
-                require_end(name, fields, declaration)?;
+                require_end(ctx, name, fields, declaration)?;
                 declarations.insert(declaration);
             }
             Some("star-smoothness") => {
-                parse_f64(name, fields.next(), "star smoothness")?;
-                require_end(name, fields, "star-smoothness declaration")?;
+                parse_f64(ctx, name, fields.next(), "star smoothness")?;
+                require_end(ctx, name, fields, "star-smoothness declaration")?;
                 declarations.insert("star-smoothness");
             }
             Some("units") => {
                 if fields.next() != Some("1") || fields.next() != Some("meters") {
-                    return Err(malformed(name, "unsupported units declaration"));
+                    return Err(malformed(ctx, name, "unsupported units declaration"));
                 }
-                require_end(name, fields, "units declaration")?;
+                require_end(ctx, name, fields, "units declaration")?;
                 declarations.insert("units");
             }
             Some("f") => match fields.next() {
                 None => push_charged(ctx, &mut face_roots, None, "read T-spline face slots")?,
                 root => {
-                    push_charged(ctx, &mut face_roots, Some(parse_int::<usize>(name, root, "face root")?), "read T-spline face slots")?;
-                    parse_int::<i64>(name, fields.next(), "face flags")?;
-                    require_end(name, fields, "face")?;
+                    push_charged(ctx, &mut face_roots, Some(parse_int::<usize>(ctx, name, root, "face root")?), "read T-spline face slots")?;
+                    parse_int::<i64>(ctx, name, fields.next(), "face flags")?;
+                    require_end(ctx, name, fields, "face")?;
                 }
             },
             Some("e") => match fields.next() {
@@ -945,17 +938,17 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     push_charged(ctx, &mut edge_knot_intervals, None, "read T-spline edge knot intervals")?;
                 }
                 root => {
-                    push_charged(ctx, &mut edge_roots, Some(parse_int::<usize>(name, root, "edge root")?), "read T-spline edge slots")?;
-                    let knot_interval = parse_f64(name, fields.next(), "edge knot interval")?;
+                    push_charged(ctx, &mut edge_roots, Some(parse_int::<usize>(ctx, name, root, "edge root")?), "read T-spline edge slots")?;
+                    let knot_interval = parse_f64(ctx, name, fields.next(), "edge knot interval")?;
                     let knot_interval = PositiveReal::new(knot_interval.get())
-                        .ok_or_else(|| malformed(name, "edge knot interval is not positive"))?;
+                        .ok_or_else(|| malformed(ctx, name, "edge knot interval is not positive"))?;
                     push_charged(ctx, &mut edge_knot_intervals, Some(knot_interval), "read T-spline edge knot intervals")?;
-                    require_end(name, fields, "edge")?;
+                    require_end(ctx, name, fields, "edge")?;
                 }
             },
             Some("106ek") => {
-                push_charged(ctx, &mut edge_knot_records, parse_f64(name, fields.next(), "106ek value")?, "read T-spline edge knot records")?;
-                require_end(name, fields, "106ek")?;
+                push_charged(ctx, &mut edge_knot_records, parse_f64(ctx, name, fields.next(), "106ek value")?, "read T-spline edge knot records")?;
+                require_end(ctx, name, fields, "106ek")?;
             }
             Some("v") => match fields.next() {
                 None => {
@@ -963,9 +956,9 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     push_charged(ctx, &mut vertex_roots, None, "read T-spline vertex roots")?;
                 }
                 root => {
-                    let root = parse_int::<usize>(name, root, "vertex root")?;
-                    let direction = parse_direction(name, fields.next())?;
-                    require_end(name, fields, "vertex")?;
+                    let root = parse_int::<usize>(ctx, name, root, "vertex root")?;
+                    let direction = parse_direction(ctx, name, fields.next())?;
+                    require_end(ctx, name, fields, "vertex")?;
                     push_charged(ctx, &mut vertex_live, true, "read T-spline vertex live flags")?;
                     push_charged(ctx, &mut vertex_roots, Some((root, direction)), "read T-spline vertex roots")?;
                 }
@@ -974,122 +967,122 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 None => push_charged(ctx, &mut half_edges, None, "read T-spline half-edge slots")?,
                 next => {
                     let half = ParsedHalfEdge {
-                        next: parse_int::<usize>(name, next, "half-edge next index")?,
+                        next: parse_int::<usize>(ctx, name, next, "half-edge next index")?,
                         previous: parse_int::<usize>(
-                            name,
+                            ctx, name,
                             fields.next(),
                             "half-edge previous index",
                         )?,
-                        mate: parse_int::<usize>(name, fields.next(), "half-edge mate index")?,
-                        vertex: parse_int::<usize>(name, fields.next(), "half-edge vertex index")?,
-                        face: parse_int::<i64>(name, fields.next(), "half-edge face index")?,
+                        mate: parse_int::<usize>(ctx, name, fields.next(), "half-edge mate index")?,
+                        vertex: parse_int::<usize>(ctx, name, fields.next(), "half-edge vertex index")?,
+                        face: parse_int::<i64>(ctx, name, fields.next(), "half-edge face index")?,
                     };
-                    parse_int::<i64>(name, fields.next(), "half-edge edge index")?;
-                    parse_int::<i64>(name, fields.next(), "half-edge flags")?;
+                    parse_int::<i64>(ctx, name, fields.next(), "half-edge edge index")?;
+                    parse_int::<i64>(ctx, name, fields.next(), "half-edge flags")?;
                     if fields.next().is_some() {
-                        return Err(malformed(name, "half-edge has trailing fields"));
+                        return Err(malformed(ctx, name, "half-edge has trailing fields"));
                     }
                     push_charged(ctx, &mut half_edges, Some(half), "read T-spline half-edge slots")?;
                 }
             },
             Some("ec") => {
                 insert_set_charged(ctx, &mut crease_edges, parse_int::<usize>(
-                    name,
+                    ctx, name,
                     fields.next(),
                     "crease edge index",
                 )?, "read T-spline crease edges")?;
-                parse_int::<i64>(name, fields.next(), "crease flags")?;
-                require_end(name, fields, "crease")?;
+                parse_int::<i64>(ctx, name, fields.next(), "crease flags")?;
+                require_end(ctx, name, fields, "crease")?;
             }
             Some("0m") => match fields.next() {
                 Some("odd-grip-map") => {
-                    require_end(name, fields, "odd-grip-map declaration")?;
+                    require_end(ctx, name, fields, "odd-grip-map declaration")?;
                     in_grip_map = true;
                 }
                 Some("gvp") if in_grip_map => {
                     push_charged(ctx, &mut grip_vertices, GripVertexMarker::Primary(parse_int::<usize>(
-                        name,
+                        ctx, name,
                         fields.next(),
                         "grip vertex index",
                     )?), "read T-spline grip vertex markers")?;
-                    require_end(name, fields, "primary grip map")?;
+                    require_end(ctx, name, fields, "primary grip map")?;
                 }
                 Some("gv") if in_grip_map => {
                     let vertex =
-                        parse_int::<i64>(name, fields.next(), "secondary grip vertex index")?;
+                        parse_int::<i64>(ctx, name, fields.next(), "secondary grip vertex index")?;
                     if vertex < -1 {
-                        return Err(malformed(name, "secondary grip vertex is below -1"));
+                        return Err(malformed(ctx, name, "secondary grip vertex is below -1"));
                     }
                     push_charged(ctx, &mut grip_vertices, GripVertexMarker::Secondary(
                         (vertex >= 0).then_some(vertex as usize),
                     ), "read T-spline grip vertex markers")?;
-                    require_end(name, fields, "secondary grip map")?;
+                    require_end(ctx, name, fields, "secondary grip map")?;
                 }
                 Some("cg") if in_grip_map => {
-                    let vertex = parse_int::<usize>(name, fields.next(), "derived-grip vertex")?;
+                    let vertex = parse_int::<usize>(ctx, name, fields.next(), "derived-grip vertex")?;
                     let wedges =
-                        parse_int::<usize>(name, fields.next(), "derived-grip wedge count")?;
+                        parse_int::<usize>(ctx, name, fields.next(), "derived-grip wedge count")?;
                     let mut spoke_lengths = Vec::new();
                     for _ in 0..wedges {
-                        let length = parse_int::<usize>(name, fields.next(), "derived-grip spoke length")?;
+                        let length = parse_int::<usize>(ctx, name, fields.next(), "derived-grip spoke length")?;
                         push_charged(ctx, &mut spoke_lengths, length, "read T-spline derived-grip spokes")?;
                     }
                     if spoke_lengths.is_empty() {
-                        return Err(malformed(name, "derived-grip wedge count is zero"));
+                        return Err(malformed(ctx, name, "derived-grip wedge count is zero"));
                     }
                     let grip_count = spoke_lengths.iter().enumerate().try_fold(
                         0usize,
                         |count, (wedge, &spoke_count)| {
                             let cross = spoke_count
                                 .checked_mul(spoke_lengths[(wedge + 1) % spoke_lengths.len()])
-                                .ok_or_else(|| malformed(name, "derived-grip arity overflows"))?;
+                                .ok_or_else(|| malformed(ctx, name, "derived-grip arity overflows"))?;
                             count
                                 .checked_add(spoke_count)
                                 .and_then(|count| count.checked_add(cross))
-                                .ok_or_else(|| malformed(name, "derived-grip arity overflows"))
+                                .ok_or_else(|| malformed(ctx, name, "derived-grip arity overflows"))
                         },
                     )?;
                     let mut grip_indices = Vec::new();
                     for _ in 0..grip_count {
-                        let index = match parse_int::<i64>(name, fields.next(), "derived-grip index")? {
+                        let index = match parse_int::<i64>(ctx, name, fields.next(), "derived-grip index")? {
                             -1 => None,
                             index => Some(usize::try_from(index).map_err(|_| {
-                                malformed(name, "derived-grip index is negative or overflows")
+                                malformed(ctx, name, "derived-grip index is negative or overflows")
                             })?),
                         };
                         push_charged(ctx, &mut grip_indices, index, "read T-spline derived-grip indices")?;
                     }
-                    require_end(name, fields, "derived-grip connectivity")?;
+                    require_end(ctx, name, fields, "derived-grip connectivity")?;
                     push_charged(ctx, &mut derived_grips, DerivedGripConnectivity {
                         vertex,
                         spoke_lengths,
                         grip_indices,
                     }, "read T-spline derived grips")?;
                 }
-                _ => return Err(malformed(name, "unknown odd-grip-map record")),
+                _ => return Err(malformed(ctx, name, "unknown odd-grip-map record")),
             },
             Some("0g") => match fields.next() {
                 None => push_charged(ctx, &mut grip_points, None, "read T-spline grip points")?,
                 x => {
                     let point = Point3::new(
-                        parse_f64(name, x, "grip x")?.get() * CAGE_COORDINATE_SCALE,
-                        parse_f64(name, fields.next(), "grip y")?.get() * CAGE_COORDINATE_SCALE,
-                        parse_f64(name, fields.next(), "grip z")?.get() * CAGE_COORDINATE_SCALE,
+                        parse_f64(ctx, name, x, "grip x")?.get() * CAGE_COORDINATE_SCALE,
+                        parse_f64(ctx, name, fields.next(), "grip y")?.get() * CAGE_COORDINATE_SCALE,
+                        parse_f64(ctx, name, fields.next(), "grip z")?.get() * CAGE_COORDINATE_SCALE,
                     );
-                    let weight = parse_f64(name, fields.next(), "grip weight")?;
+                    let weight = parse_f64(ctx, name, fields.next(), "grip weight")?;
                     let weight = PositiveReal::new(weight.get())
                         .filter(|_| fields.next().is_none())
-                        .ok_or_else(|| malformed(name, "grip weight is not positive"))?;
+                        .ok_or_else(|| malformed(ctx, name, "grip weight is not positive"))?;
                     push_charged(ctx, &mut grip_points, Some(GripPoint { point, weight }), "read T-spline grip points")?;
                 }
             },
             Some("105sym") => {
-                let mode = match parse_int::<i64>(name, fields.next(), "symmetry flags")? {
+                let mode = match parse_int::<i64>(ctx, name, fields.next(), "symmetry flags")? {
                     0 => SymmetryMode::Correspondence,
                     1 => SymmetryMode::Radial,
-                    _ => return Err(malformed(name, "unsupported symmetry flags")),
+                    _ => return Err(malformed(ctx, name, "unsupported symmetry flags")),
                 };
-                require_end(name, fields, "symmetry header")?;
+                require_end(ctx, name, fields, "symmetry header")?;
                 if let Some(block) = current_symmetry.replace(PartialSymmetryBlock::new(mode)) {
                     push_charged(ctx, &mut symmetry_blocks, block, "read T-spline symmetry blocks")?;
                 }
@@ -1097,34 +1090,33 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             Some("105plane") => {
                 let block = current_symmetry
                     .as_mut()
-                    .ok_or_else(|| malformed(name, "symmetry plane has no header"))?;
+                    .ok_or_else(|| malformed(ctx, name, "symmetry plane has no header"))?;
                 let mut values = Vec::new();
                 for value in fields {
-                    push_charged(ctx, &mut values, parse_f64(name, Some(value), "symmetry plane coefficient")?, "read T-spline symmetry plane coefficients")?;
+                    push_charged(ctx, &mut values, parse_f64(ctx, name, Some(value), "symmetry plane coefficient")?, "read T-spline symmetry plane coefficients")?;
                 }
                 let plane: [FiniteReal; 12] = values
                     .try_into()
-                    .map_err(|_| malformed(name, "symmetry plane must have 12 coefficients"))?;
+                    .map_err(|_| malformed(ctx, name, "symmetry plane must have 12 coefficients"))?;
                 if block.plane.replace(plane).is_some() {
-                    return Err(malformed(name, "duplicate symmetry plane"));
+                    return Err(malformed(ctx, name, "duplicate symmetry plane"));
                 }
             }
             Some("105a") => {
                 let kind = fields
                     .next()
-                    .ok_or_else(|| malformed(name, "missing symmetry map kind"))?;
+                    .ok_or_else(|| malformed(ctx, name, "missing symmetry map kind"))?;
                 let pairs = parse_pairs(ctx, name, fields, "symmetry map")?;
                 let block = current_symmetry
                     .as_mut()
-                    .ok_or_else(|| malformed(name, "symmetry map has no header"))?;
+                    .ok_or_else(|| malformed(ctx, name, "symmetry map has no header"))?;
                 if block.mode != SymmetryMode::Correspondence {
-                    return Err(malformed(
-                        name,
+                    return Err(malformed(ctx, name,
                         "correspondence map belongs to a radial symmetry block",
                     ));
                 }
                 if block.record_kinds.contains(kind) {
-                    return Err(malformed(name, format!("duplicate {kind} symmetry map")));
+                    return Err(malformed(ctx, name, format_args!("duplicate {kind} symmetry map")));
                 }
                 let kind_name = copy_string_charged(ctx, kind, "retain T-spline symmetry kind")?;
                 insert_set_charged(ctx, &mut block.record_kinds, kind_name, "index T-spline symmetry kinds")?;
@@ -1135,27 +1127,25 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     "e" => &mut block.edge_reverse,
                     "vr" => &mut block.vertex_forward,
                     "v" => &mut block.vertex_reverse,
-                    _ => return Err(malformed(name, "unknown symmetry map kind")),
+                    _ => return Err(malformed(ctx, name, "unknown symmetry map kind")),
                 };
                 *target = pairs;
             }
             Some("105r") => {
                 let kind = fields
                     .next()
-                    .ok_or_else(|| malformed(name, "missing radial symmetry record kind"))?;
+                    .ok_or_else(|| malformed(ctx, name, "missing radial symmetry record kind"))?;
                 let block = current_symmetry
                     .as_mut()
-                    .ok_or_else(|| malformed(name, "radial symmetry record has no header"))?;
+                    .ok_or_else(|| malformed(ctx, name, "radial symmetry record has no header"))?;
                 if block.mode != SymmetryMode::Radial {
-                    return Err(malformed(
-                        name,
+                    return Err(malformed(ctx, name,
                         "radial symmetry record belongs to a correspondence block",
                     ));
                 }
                 if block.record_kinds.contains(kind) {
-                    return Err(malformed(
-                        name,
-                        format!("duplicate {kind} radial symmetry record"),
+                    return Err(malformed(ctx, name,
+                        format_args!("duplicate {kind} radial symmetry record"),
                     ));
                 }
                 let kind_name = copy_string_charged(ctx, kind, "retain T-spline symmetry kind")?;
@@ -1163,21 +1153,21 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 match kind {
                     "segments" => {
                         let segments =
-                            parse_int::<usize>(name, fields.next(), "radial symmetry segments")?;
+                            parse_int::<usize>(ctx, name, fields.next(), "radial symmetry segments")?;
                         block.radial_segments = Some(
                             std::num::NonZeroU32::new(u32::try_from(segments).map_err(|_| {
-                                malformed(name, "radial symmetry segments exceed u32")
+                                malformed(ctx, name, "radial symmetry segments exceed u32")
                             })?)
                             .ok_or_else(|| {
-                                malformed(name, "radial symmetry segments is not positive")
+                                malformed(ctx, name, "radial symmetry segments is not positive")
                             })?,
                         );
-                        require_end(name, fields, "radial symmetry segments")?;
+                        require_end(ctx, name, fields, "radial symmetry segments")?;
                     }
                     "sweep" => {
                         block.radial_sweep =
-                            Some(parse_f64(name, fields.next(), "radial symmetry sweep")?);
-                        require_end(name, fields, "radial symmetry sweep")?;
+                            Some(parse_f64(ctx, name, fields.next(), "radial symmetry sweep")?);
+                        require_end(ctx, name, fields, "radial symmetry sweep")?;
                     }
                     kind => {
                         let selector = match kind {
@@ -1188,9 +1178,8 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                             "vf" => SubdRadialMapSelector::Vf,
                             "vr" => SubdRadialMapSelector::Vr,
                             _ => {
-                                return Err(malformed(
-                                    name,
-                                    format!("unknown radial symmetry record {kind}"),
+                                return Err(malformed(ctx, name,
+                                    format_args!("unknown radial symmetry record {kind}"),
                                 ))
                             }
                         };
@@ -1200,22 +1189,22 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 }
             }
             Some(declaration @ ("tol" | "geom-tol")) => {
-                let tolerance = parse_f64(name, fields.next(), declaration)?;
+                let tolerance = parse_f64(ctx, name, fields.next(), declaration)?;
                 if tolerance.get() <= 0.0 {
-                    return Err(malformed(name, format!("{declaration} is not positive")));
+                    return Err(malformed(ctx, name, format_args!("{declaration} is not positive")));
                 }
-                require_end(name, fields, declaration)?;
+                require_end(ctx, name, fields, declaration)?;
                 if !terminal_declarations.insert(declaration) {
-                    return Err(malformed(name, format!("duplicate {declaration}")));
+                    return Err(malformed(ctx, name, format_args!("duplicate {declaration}")));
                 }
             }
             Some(declaration @ ("ver" | "behavior-version" | "compat-version")) => {
                 if fields.next().is_none() {
-                    return Err(malformed(name, format!("missing {declaration} value")));
+                    return Err(malformed(ctx, name, format_args!("missing {declaration} value")));
                 }
-                require_end(name, fields, declaration)?;
+                require_end(ctx, name, fields, declaration)?;
                 if !terminal_declarations.insert(declaration) {
-                    return Err(malformed(name, format!("duplicate {declaration}")));
+                    return Err(malformed(ctx, name, format_args!("duplicate {declaration}")));
                 }
             }
             Some(kind) => {
@@ -1266,7 +1255,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         || !half_edges.iter().any(Option::is_some)
         || (!grip_vertices.is_empty() && grip_vertices.len() != grip_points.len())
     {
-        return Err(malformed(name, "control cage is incomplete"));
+        return Err(malformed(ctx, name, "control cage is incomplete"));
     }
     let half_edges = compact_half_edges(
         ctx,
@@ -1281,45 +1270,44 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     let edge_live = collect_charged(ctx, edge_roots.iter().map(Option::is_some), "index T-spline live edges")?;
     for edge in &selected_edges {
         if !edge_live.get(*edge).copied().unwrap_or(false) {
-            return Err(malformed(name, "selected edge is out of range or deleted"));
+            return Err(malformed(ctx, name, "selected edge is out of range or deleted"));
         }
     }
     for vertex in &selected_vertices {
         if !vertex_live.get(*vertex).copied().unwrap_or(false) {
-            return Err(malformed(
-                name,
+            return Err(malformed(ctx, name,
                 "selected vertex is out of range or deleted",
             ));
         }
     }
     for grip in &selected_grips {
         if !grip_points.get(*grip).is_some_and(Option::is_some) {
-            return Err(malformed(name, "selected grip is out of range or deleted"));
+            return Err(malformed(ctx, name, "selected grip is out of range or deleted"));
         }
     }
     let mut typed_symmetry_blocks = Vec::new();
     for block in symmetry_blocks {
             let plane = block
                 .plane
-                .ok_or_else(|| malformed(name, "symmetry block has no plane"))?;
+                .ok_or_else(|| malformed(ctx, name, "symmetry block has no plane"))?;
             let kind = match block.mode {
                 SymmetryMode::Correspondence => {
                     validate_symmetry_map(
-                        name,
+                        ctx, name,
                         &block.face_forward,
                         &block.face_reverse,
                         &face_live,
                         "face",
                     )?;
                     validate_symmetry_map(
-                        name,
+                        ctx, name,
                         &block.edge_forward,
                         &block.edge_reverse,
                         &edge_live,
                         "edge",
                     )?;
                     validate_symmetry_map(
-                        name,
+                        ctx, name,
                         &block.vertex_forward,
                         &block.vertex_reverse,
                         &vertex_live,
@@ -1333,11 +1321,11 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 }
                 SymmetryMode::Radial => {
                     let segments = block.radial_segments.ok_or_else(|| {
-                        malformed(name, "radial symmetry block is missing segments")
+                        malformed(ctx, name, "radial symmetry block is missing segments")
                     })?;
                     let sweep = block
                         .radial_sweep
-                        .ok_or_else(|| malformed(name, "radial symmetry block is missing sweep"))?;
+                        .ok_or_else(|| malformed(ctx, name, "radial symmetry block is missing sweep"))?;
                     for selector in [
                         SubdRadialMapSelector::Ef,
                         SubdRadialMapSelector::Er,
@@ -1347,9 +1335,8 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                         SubdRadialMapSelector::Vr,
                     ] {
                         if !block.radial_maps.iter().any(|map| map.selector == selector) {
-                            return Err(malformed(
-                                name,
-                                format!(
+                            return Err(malformed(ctx, name,
+                                format_args!(
                                     "radial symmetry block is missing {}",
                                     match selector {
                                         SubdRadialMapSelector::Ef => "ef",
@@ -1380,29 +1367,27 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             .copied()
             .unwrap_or(false)
         {
-            return Err(malformed(name, "derived-grip connectivity is out of range"));
+            return Err(malformed(ctx, name, "derived-grip connectivity is out of range"));
         }
         for &index in connectivity.grip_indices.iter().flatten() {
             if !matches!(grip_vertices.get(index), Some(GripVertexMarker::Secondary(Some(vertex))) if *vertex == connectivity.vertex)
             {
-                return Err(malformed(
-                    name,
+                return Err(malformed(ctx, name,
                     "derived-grip entry is not a secondary grip of its vertex",
                 ));
             }
             let owner_slot = grip_owners
                 .get_mut(index)
-                .ok_or_else(|| malformed(name, "derived-grip entry is out of range"))?;
+                .ok_or_else(|| malformed(ctx, name, "derived-grip entry is out of range"))?;
             if owner_slot.replace(connectivity.vertex).is_some() {
-                return Err(malformed(name, "secondary grip is named more than once"));
+                return Err(malformed(ctx, name, "secondary grip is named more than once"));
             }
         }
     }
     for (index, marker) in grip_vertices.iter().enumerate() {
         if let GripVertexMarker::Secondary(Some(vertex)) = marker {
             if grip_owners[index] != Some(*vertex) {
-                return Err(malformed(
-                    name,
+                return Err(malformed(ctx, name,
                     "secondary grip is not named exactly once by derived connectivity",
                 ));
             }
@@ -1412,11 +1397,11 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         match marker {
             GripVertexMarker::Primary(vertex) | GripVertexMarker::Secondary(Some(vertex)) => {
                 if point.is_none() || !vertex_live.get(*vertex).copied().unwrap_or(false) {
-                    return Err(malformed(name, "grip vertex map is inconsistent"));
+                    return Err(malformed(ctx, name, "grip vertex map is inconsistent"));
                 }
             }
             GripVertexMarker::Secondary(None) if point.is_some() => {
-                return Err(malformed(name, "deleted grip marker has a point"));
+                return Err(malformed(ctx, name, "deleted grip marker has a point"));
             }
             GripVertexMarker::Secondary(None) => {}
         }
@@ -1431,7 +1416,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             || previous.next != id
             || !vertex_live.get(half.vertex).copied().unwrap_or(false)
         {
-            return Err(malformed(name, "half-edge topology is inconsistent"));
+            return Err(malformed(ctx, name, "half-edge topology is inconsistent"));
         }
     }
     for (vertex, live) in vertex_live.iter().copied().enumerate() {
@@ -1440,7 +1425,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 .get(vertex)
                 .copied()
                 .flatten()
-                .ok_or_else(|| malformed(name, "live vertex has no root direction"))?;
+                .ok_or_else(|| malformed(ctx, name, "live vertex has no root direction"))?;
             build_fan(ctx, name, vertex, root, &half_edges, &face_live)?;
         }
     }
@@ -1451,7 +1436,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     let face_ir = compact(ctx, face_roots.iter().map(Option::is_some))?;
     let mut symmetries = Vec::new();
     for block in typed_symmetry_blocks {
-            let plane = symmetry_plane(name, block.plane)?;
+            let plane = symmetry_plane(ctx, name, block.plane)?;
             let (kind, face_pairs, edge_pairs, vertex_pairs) = match block.kind {
                 SymmetryKind::Correspondence { face, edge, vertex } => (
                     SubdSymmetryKind::Correspondence {},
@@ -1465,14 +1450,14 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     maps,
                 } => (
                     SubdSymmetryKind::radial_from_parts(segments, sweep, maps)
-                        .map_err(|error| malformed(name, error))?,
+                        .map_err(|error| malformed(ctx, name, error))?,
                     Vec::new(),
                     Vec::new(),
                     Vec::new(),
                 ),
             };
             let symmetry = SubdSymmetry::new(kind, plane, face_pairs, edge_pairs, vertex_pairs)
-                .map_err(|error| malformed(name, error))?;
+                .map_err(|error| malformed(ctx, name, error))?;
             push_charged(ctx, &mut symmetries, symmetry, "project T-spline symmetries")?;
     }
     let edge_knot_intervals_ir = collect_charged(
@@ -1485,13 +1470,13 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             .get(slot)
             .copied()
             .flatten()
-            .ok_or_else(|| malformed(name, "half-edge names a deleted vertex slot"))
+            .ok_or_else(|| malformed(ctx, name, "half-edge names a deleted vertex slot"))
     };
 
     let mut vertex_points = BTreeMap::new();
     if grip_vertices.is_empty() {
         if grip_points.len() != vertex_live.len() {
-            return Err(malformed(name, "positional grip vertex map is incomplete"));
+            return Err(malformed(ctx, name, "positional grip vertex map is incomplete"));
         }
         for (slot, point) in grip_points.iter().enumerate() {
             if let (true, Some(point)) = (vertex_live[slot], point) {
@@ -1509,14 +1494,14 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             };
             let vertex = vertex_of(*slot)?;
             if vertex_points.contains_key(&vertex) {
-                return Err(malformed(name, "primary grip vertex map is inconsistent"));
+                return Err(malformed(ctx, name, "primary grip vertex map is inconsistent"));
             }
             ctx.charge_collection_items(1, "index T-spline vertex points")?;
             vertex_points.insert(vertex, point.point);
         }
     }
     if vertex_points.len() != live_vertices {
-        return Err(malformed(name, "primary grip vertex map is incomplete"));
+        return Err(malformed(ctx, name, "primary grip vertex map is incomplete"));
     }
 
     let mut edge_by_half =
@@ -1529,16 +1514,16 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 .replace((edge, true))
                 .is_some()
         {
-            return Err(malformed(name, "edge roots reuse a half-edge"));
+            return Err(malformed(ctx, name, "edge roots reuse a half-edge"));
         }
         let mate = &half_edges[half.mate.index()];
         push_charged(ctx, &mut edge_vertices, [vertex_of(mate.vertex)?, vertex_of(half.vertex)?], "project T-spline edge vertices")?;
     }
     if edge_by_half.iter().any(Option::is_none) {
-        return Err(malformed(name, "edge roots do not cover every half-edge"));
+        return Err(malformed(ctx, name, "edge roots do not cover every half-edge"));
     }
     if edge_knot_intervals_ir.len() != edge_vertices.len() {
-        return Err(malformed(name, "edge knot interval map is incomplete"));
+        return Err(malformed(ctx, name, "edge knot interval map is incomplete"));
     }
 
     let mut secondary_layouts = build_secondary_layouts(
@@ -1567,20 +1552,20 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         loop {
             let half = &half_edges[current.index()];
             if half.face != Some(face_slot) {
-                return Err(malformed(name, "face ring carries a different face index"));
+                return Err(malformed(ctx, name, "face ring carries a different face index"));
             }
             let (edge, reversed) = edge_by_half[current.index()]
-                .ok_or_else(|| malformed(name, "face half-edge has no edge"))?;
+                .ok_or_else(|| malformed(ctx, name, "face half-edge has no edge"))?;
             push_charged(ctx, &mut ring, SubdEdgeUse { edge, reversed }, "project T-spline face ring")?;
             current = half.next;
             if current == start_id {
                 break;
             }
             if ring.len() > half_edges.len() {
-                return Err(malformed(name, "face ring does not close"));
+                return Err(malformed(ctx, name, "face ring does not close"));
             }
         }
-        push_charged(ctx, &mut faces, SubdFace::new(ring).map_err(|error| malformed(name, error))?, "project T-spline faces")?;
+        push_charged(ctx, &mut faces, SubdFace::new(ring).map_err(|error| malformed(ctx, name, error))?, "project T-spline faces")?;
     }
 
     let mut crease_incidence =
@@ -1591,14 +1576,14 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             .copied()
             .flatten()
             .and_then(|edge| edge_vertices.get(edge as usize))
-            .ok_or_else(|| malformed(name, "crease edge is out of range"))?;
+            .ok_or_else(|| malformed(ctx, name, "crease edge is out of range"))?;
         crease_incidence[vertices[0] as usize] += 1;
         crease_incidence[vertices[1] as usize] += 1;
     }
     let mut vertices = Vec::new();
     for index in 0..live_vertices {
         let vertex_index = u32::try_from(index)
-            .map_err(|_| malformed(name, "T-spline vertex index exceeds u32"))?;
+            .map_err(|_| malformed(ctx, name, "T-spline vertex index exceeds u32"))?;
         let vertex = SubdVertex::new(
                 vertex_points[&vertex_index],
                 match crease_incidence[index] {
@@ -1609,7 +1594,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 },
                 secondary_layouts[index].take(),
             )
-            .map_err(|error| malformed(name, error))?;
+            .map_err(|error| malformed(ctx, name, error))?;
         push_charged(ctx, &mut vertices, vertex, "project T-spline vertices")?;
     }
     let mut creased_edges = BTreeSet::new();
@@ -1621,7 +1606,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     let mut edges = Vec::new();
     for (index, vertices) in edge_vertices.into_iter().enumerate() {
             let edge_index = u32::try_from(index)
-                .map_err(|_| malformed(name, "T-spline edge index exceeds u32"))?;
+                .map_err(|_| malformed(ctx, name, "T-spline edge index exceeds u32"))?;
             let crease = creased_edges.contains(&edge_index);
             let sharpness = if crease { FULL_CREASE_SHARPNESS } else { 0.0 };
             let edge = SubdEdge::from_parts(
@@ -1635,7 +1620,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 Some(edge_knot_intervals_ir[index]),
                 [0.0, 0.0],
             )
-            .map_err(|error| malformed(name, error))?;
+            .map_err(|error| malformed(ctx, name, error))?;
             push_charged(ctx, &mut edges, edge, "project T-spline edges")?;
     }
     let source_key = name
@@ -1646,12 +1631,12 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     Ok(ParsedCage {
         surface: SubdSurface {
             id: crate::ids::subd_id(source_key)
-                .map_err(|error| malformed(name, format_args!("invalid subd identity: {error}")))?,
+                .map_err(|error| malformed(ctx, name, format_args!("invalid subd identity: {error}")))?,
             scheme: SubdScheme::CatmullClark,
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::F3d,
                 object_id: cadmpeg_core::text::NonBlankString::new(name)
-                    .ok_or_else(|| malformed(name, "source object_id must not be empty"))?,
+                    .ok_or_else(|| malformed(ctx, name, "source object_id must not be empty"))?,
                 name: None,
                 color: None,
                 visible: None,
@@ -1659,7 +1644,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 instance_path: Vec::new(),
             }),
             cage: cadmpeg_ir::subd::SubdCage::new(vertices, edges, faces, symmetries)
-                .map_err(|error| malformed(name, error))?,
+                .map_err(|error| malformed(ctx, name, error))?,
         },
         unknown_record_kinds,
     })
@@ -1786,6 +1771,18 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         .unwrap_err();
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "describe undecoded T-spline cage"));
+    }
+
+    #[test]
+    fn tsm_malformed_record_text_refuses_retained_limit() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let arena = DecodeArena::new();
+        let source = b"invalid header";
+        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).unwrap();
+        let error = super::parse(&ctx, "long-name.tsm", source).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "describe malformed T-spline cage"));
     }
 
     #[test]
