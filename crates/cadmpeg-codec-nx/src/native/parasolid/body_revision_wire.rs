@@ -31,7 +31,8 @@ impl RevisionLengths {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 pub(super) struct RevisionWire {
     id: String,
     stream_ordinal: u32,
@@ -45,6 +46,39 @@ pub(super) struct RevisionWire {
     inflated_offset: u64,
 }
 
+#[derive(Serialize)]
+struct RevisionRef<'a> {
+    id: &'a str,
+    stream_ordinal: u32,
+    xmt: u32,
+    node_id: u32,
+    references: [u32; 8],
+    byte_len: u64,
+    prefix_byte_len: u64,
+    state_tail_byte_len: u64,
+    state_tail_sha256: &'a crate::native::hex::Sha256Hex,
+    inflated_offset: u64,
+}
+
+impl Serialize for ParasolidDeltasBodyRevision {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        RevisionRef {
+            id: &self.id,
+            stream_ordinal: self.stream_ordinal,
+            xmt: self.xmt.into(),
+            node_id: self.node_id,
+            references: self.references,
+            byte_len: self.lengths.total(),
+            prefix_byte_len: self.lengths.prefix(),
+            state_tail_byte_len: self.lengths.tail(),
+            state_tail_sha256: &self.state_tail_sha256,
+            inflated_offset: self.inflated_offset,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 impl From<ParasolidDeltasBodyRevision> for RevisionWire {
     fn from(value: ParasolidDeltasBodyRevision) -> Self {
         Self {
@@ -96,6 +130,10 @@ mod tests {
         let json = r#"{"id":"revision","stream_ordinal":0,"xmt":3,"node_id":9,"references":[2,3,4,5,6,7,8,9],"byte_len":36,"prefix_byte_len":32,"state_tail_byte_len":4,"state_tail_sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","inflated_offset":10}"#;
         let value: ParasolidDeltasBodyRevision = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&value).unwrap(), json);
+        assert_eq!(
+            serde_json::to_vec(&value).unwrap(),
+            serde_json::to_vec(&super::RevisionWire::from(value.clone())).unwrap()
+        );
         for xmt in [0, 1] {
             let mut wire = serde_json::to_value(&value).unwrap();
             wire["xmt"] = xmt.into();
@@ -110,5 +148,15 @@ mod tests {
             let error = serde_json::from_value::<ParasolidDeltasBodyRevision>(wire).unwrap_err();
             assert!(error.to_string().contains("byte_len"));
         }
+    }
+
+    #[test]
+    fn revision_native_limit_refuses_before_hash_copy() {
+        let json = r#"{"id":"nx:parasolid:body-revision#0","stream_ordinal":0,"xmt":3,"node_id":9,"references":[2,3,4,5,6,7,8,9],"byte_len":36,"prefix_byte_len":32,"state_tail_byte_len":4,"state_tail_sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","inflated_offset":10}"#;
+        let value: ParasolidDeltasBodyRevision = serde_json::from_str(json).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &value,
+            serde_json::from_str::<serde_json::Value>(json).unwrap(),
+        );
     }
 }
