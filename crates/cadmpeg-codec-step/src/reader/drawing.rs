@@ -2,7 +2,6 @@
 //! STEP drawing definitions, revisions, sheets, views, and their relations.
 
 use crate::ids::kind;
-use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt;
 
@@ -42,7 +41,42 @@ struct DrawingCandidate<'a> {
     name: &'static str,
     identity: Identity,
     offset: usize,
-    parameters: Cow<'a, [Value]>,
+    parameters: DrawingParameters<'a>,
+}
+
+#[derive(Clone, Copy)]
+struct DrawingParameters<'a> {
+    inherited_name: Option<&'a Value>,
+    direct: &'a [Value],
+}
+
+impl<'a> DrawingParameters<'a> {
+    fn from_slice(direct: &'a [Value]) -> Self {
+        Self {
+            inherited_name: None,
+            direct,
+        }
+    }
+
+    fn len(self) -> usize {
+        self.direct.len() + usize::from(self.inherited_name.is_some())
+    }
+
+    fn get(self, index: usize) -> Option<&'a Value> {
+        match self.inherited_name {
+            Some(name) if index == 0 => Some(name),
+            Some(_) => index.checked_sub(1).and_then(|index| self.direct.get(index)),
+            None => self.direct.get(index),
+        }
+    }
+
+    fn first(self) -> Option<&'a Value> {
+        self.get(0)
+    }
+
+    fn iter(self) -> impl Iterator<Item = &'a Value> {
+        self.inherited_name.into_iter().chain(self.direct.iter())
+    }
 }
 
 enum TargetResolution {
@@ -311,7 +345,7 @@ pub(super) fn decode(
         add_reference_fields(
             &mut relationships,
             name,
-            parameters.as_ref(),
+            parameters,
             id,
             &target_context,
             &mut losses,
@@ -547,7 +581,7 @@ fn required_parameter_count(name: &str) -> Option<usize> {
     }
 }
 
-fn source_parameters<'a>(record: &'a RawRecord, name: &str) -> Cow<'a, [Value]> {
+fn source_parameters<'a>(record: &'a RawRecord, name: &str) -> DrawingParameters<'a> {
     let direct = record
         .partials
         .iter()
@@ -555,32 +589,30 @@ fn source_parameters<'a>(record: &'a RawRecord, name: &str) -> Cow<'a, [Value]> 
         .map(|partial| partial.parameters.as_slice());
     if name == "DRAUGHTING_CALLOUT" {
         if let Some(parameters) = direct.filter(|parameters| parameters.len() >= 2) {
-            return Cow::Borrowed(parameters);
+            return DrawingParameters::from_slice(parameters);
         }
-        let mut parameters = Vec::new();
-        if let Some(value) = record
+        let inherited_name = record
             .partials
             .iter()
             .find(|partial| partial.name == "REPRESENTATION_ITEM")
-            .and_then(|partial| partial.parameters.first())
-        {
-            parameters.push(value.clone());
-        }
-        parameters.extend(direct.unwrap_or_default().iter().cloned());
-        return Cow::Owned(parameters);
+            .and_then(|partial| partial.parameters.first());
+        return DrawingParameters {
+            inherited_name,
+            direct: direct.unwrap_or_default(),
+        };
     }
     if let Some(parameters) = direct.filter(|parameters| !parameters.is_empty()) {
-        return Cow::Borrowed(parameters);
+        return DrawingParameters::from_slice(parameters);
     }
     if matches!(
         name,
         "DRAUGHTING_MODEL" | "PRESENTATION_VIEW" | "DRAWING_SHEET_REVISION"
     ) {
         if let Some(parameters) = representation::parameters(record) {
-            return Cow::Borrowed(parameters);
+            return DrawingParameters::from_slice(parameters);
         }
     }
-    Cow::Borrowed(direct.unwrap_or_default())
+    DrawingParameters::from_slice(direct.unwrap_or_default())
 }
 
 fn parameter_key(name: &str, index: usize) -> NonBlankString {
@@ -621,7 +653,7 @@ fn relationship_indices(name: &str) -> &'static [usize] {
 fn add_reference_fields(
     relationships: &mut BTreeMap<NonBlankString, Vec<ReferenceSelection>>,
     name: &str,
-    parameters: &[Value],
+    parameters: DrawingParameters<'_>,
     source_id: u64,
     target_context: &TargetContext<'_>,
     losses: &mut Vec<LossNote>,
