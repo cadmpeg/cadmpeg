@@ -127,6 +127,50 @@ fn validation_property_map_refuses_collection_limit() {
 }
 
 #[test]
+fn validation_mesh_edges_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let source = include_bytes!("../../../tests/fixtures/ap242_tessellation.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("mesh validation source decodes");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("root fits collection policy");
+    assert!(matches!(
+        super::mesh_properties(result.ir(), &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_validation_mesh_edges"
+    ));
+}
+
+#[test]
+fn validation_mesh_triangles_refuse_work_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let source = include_bytes!("../../../tests/fixtures/ap242_tessellation.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("mesh validation source decodes");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("root fits work policy");
+    assert!(matches!(
+        super::mesh_properties(result.ir(), &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::WorkUnits
+                && refusal.operation == "step_validation_mesh_triangles"
+    ));
+}
+
+#[test]
 fn complex_validation_measure_carrier_is_decoded() {
     let source = String::from_utf8(
         include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
@@ -308,6 +352,10 @@ fn numerical_followup_mesh_volume_and_centroid_are_translation_invariant() {
         .unwrap();
     let mut ir = decoded.ir().clone();
     assert_eq!(ir.model.bodies.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("root fits selected policy");
     for offset in [0.0, 1e6, 1e9] {
         let points = [[0., 0., 0.], [2., 0., 0.], [0., 1., 0.], [0., 0., 1.]]
             .map(|p| Point3::new(p[0] + offset, p[1] + offset, p[2] + offset))
@@ -326,7 +374,9 @@ fn numerical_followup_mesh_volume_and_centroid_are_translation_invariant() {
         .unwrap();
         tessellation.body = Some(ir.model.bodies[0].id.clone());
         ir.model.tessellations = vec![tessellation];
-        let properties = super::mesh_properties(&ir).unwrap();
+        let properties = super::mesh_properties(&ir, &ctx)
+            .expect("mesh budget admits calculation")
+            .expect("mesh properties exist");
         assert!((properties.volume - 1.0 / 3.0).abs() <= f64::EPSILON);
         assert_eq!(
             properties.centroid,
@@ -347,6 +397,10 @@ fn numerical_seventh_mesh_mass_properties_preserve_uniform_scale() {
         .unwrap();
     let mut ir = decoded.ir().clone();
     assert_eq!(ir.model.bodies.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("root fits selected policy");
     for scale in [1.0e-90, 1.0, 1.0e90] {
         let points = [[0., 0., 0.], [2., 0., 0.], [0., 1., 0.], [0., 0., 1.]]
             .map(|p| Point3::new(p[0] * scale, p[1] * scale, p[2] * scale))
@@ -365,7 +419,9 @@ fn numerical_seventh_mesh_mass_properties_preserve_uniform_scale() {
         .unwrap();
         tessellation.body = Some(ir.model.bodies[0].id.clone());
         ir.model.tessellations = vec![tessellation];
-        let properties = super::mesh_properties(&ir).unwrap();
+        let properties = super::mesh_properties(&ir, &ctx)
+            .expect("mesh budget admits calculation")
+            .expect("mesh properties exist");
         assert!(
             (properties.volume / scale / scale / scale - 1.0 / 3.0).abs() <= 8.0 * f64::EPSILON
         );

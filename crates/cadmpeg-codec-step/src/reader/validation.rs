@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometric validation-property decoding and mesh self-checks.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::u64_from_index;
@@ -98,7 +98,7 @@ pub(super) fn decode(
             properties.insert(id, description);
         }
     }
-    let computed = mesh_properties(ir);
+    let computed = mesh_properties(ir, ctx)?;
     let mut typed = HashSet::new();
     let mut validation_points = BTreeSet::new();
     let mut validation_representations = BTreeSet::new();
@@ -359,18 +359,22 @@ impl MeshProperties {
     }
 }
 
-fn mesh_properties(ir: &CadIr) -> Option<MeshProperties> {
-    let body = (ir.model.bodies.len() == 1).then(|| ir.model.bodies[0].id.clone())?;
+fn mesh_properties(ir: &CadIr, ctx: &DecodeContext<'_>) -> Result<Option<MeshProperties>, CodecError> {
+    let Some(body) = (ir.model.bodies.len() == 1).then_some(&ir.model.bodies[0].id) else {
+        return Ok(None);
+    };
     let meshes = ir
         .model
         .tessellations
         .iter()
-        .filter(|mesh| mesh.body.as_ref() == Some(&body));
-    let origin = meshes.clone().find_map(|mesh| {
+        .filter(|mesh| mesh.body.as_ref() == Some(body));
+    let Some(origin) = meshes.clone().find_map(|mesh| {
         mesh.triangles()
             .first()
             .and_then(|triangle| mesh.vertices().get(triangle[0] as usize).copied())
-    })?;
+    }) else {
+        return Ok(None);
+    };
     let extent = meshes
         .clone()
         .flat_map(cadmpeg_ir::tessellation::Tessellation::vertices)
@@ -380,7 +384,9 @@ fn mesh_properties(ir: &CadIr) -> Option<MeshProperties> {
                 .max((point.y - origin.y).abs())
                 .max((point.z - origin.z).abs())
         });
-    let exponent = cadmpeg_ir::math::power_of_two_bound(extent)?;
+    let Some(exponent) = cadmpeg_ir::math::power_of_two_bound(extent) else {
+        return Ok(None);
+    };
     let mut area = 0.0;
     let mut area_centroid = [0.0; 3];
     let mut signed_volume = 0.0;
@@ -391,18 +397,23 @@ fn mesh_properties(ir: &CadIr) -> Option<MeshProperties> {
     for mesh in meshes {
         let mut edge_uses = BTreeMap::<(u32, u32), usize>::new();
         for triangle in mesh.triangles() {
+            ctx.charge_work(1, "step_validation_mesh_triangles")?;
             let [a, b, c] = triangle.map(|index| mesh.vertices().get(index as usize).copied());
             let (Some(a), Some(b), Some(c)) = (a, b, c) else {
-                return None;
+                return Ok(None);
             };
             for [first, second] in [
                 [triangle[0], triangle[1]],
                 [triangle[1], triangle[2]],
                 [triangle[2], triangle[0]],
             ] {
-                *edge_uses
-                    .entry((first.min(second), first.max(second)))
-                    .or_default() += 1;
+                match edge_uses.entry((first.min(second), first.max(second))) {
+                    Entry::Occupied(mut entry) => *entry.get_mut() += 1,
+                    Entry::Vacant(entry) => {
+                        ctx.charge_collection_items(1, "step_validation_mesh_edges")?;
+                        entry.insert(1);
+                    }
+                }
             }
             let relative = |point: cadmpeg_ir::features::FinitePoint3| {
                 Some(Point3::new(
@@ -412,7 +423,7 @@ fn mesh_properties(ir: &CadIr) -> Option<MeshProperties> {
                 ))
             };
             let [Some(a), Some(b), Some(c)] = [a, b, c].map(relative) else {
-                return None;
+                return Ok(None);
             };
             coordinate_scale = coordinate_scale
                 .max(a.x.abs())
@@ -451,7 +462,7 @@ fn mesh_properties(ir: &CadIr) -> Option<MeshProperties> {
         watertight &= !edge_uses.is_empty() && edge_uses.values().all(|uses| *uses == 2);
     }
     if triangles == 0 || area == 0.0 {
-        return None;
+        return Ok(None);
     }
     let volume_epsilon = f64::EPSILON * coordinate_scale.powi(3) * (triangles as f64).max(1.0);
     let centroid = if watertight && signed_volume.abs() > volume_epsilon {
@@ -467,25 +478,32 @@ fn mesh_properties(ir: &CadIr) -> Option<MeshProperties> {
             area_centroid[2] / area,
         )
     };
-    let centroid = Point3::new(
-        origin.x + cadmpeg_ir::math::scale_power_of_two(centroid.x, exponent)?.get(),
-        origin.y + cadmpeg_ir::math::scale_power_of_two(centroid.y, exponent)?.get(),
-        origin.z + cadmpeg_ir::math::scale_power_of_two(centroid.z, exponent)?.get(),
-    );
+    let [Some(x), Some(y), Some(z)] = [centroid.x, centroid.y, centroid.z]
+        .map(|component| cadmpeg_ir::math::scale_power_of_two(component, exponent))
+    else {
+        return Ok(None);
+    };
+    let centroid = Point3::new(origin.x + x.get(), origin.y + y.get(), origin.z + z.get());
     if !area.is_finite() || !signed_volume.is_finite() || !centroid.is_finite() {
-        return None;
+        return Ok(None);
     }
-    let area = cadmpeg_ir::math::scale_power_of_two(area, 2 * exponent)?.get();
+    let Some(area) = cadmpeg_ir::math::scale_power_of_two(area, 2 * exponent) else {
+        return Ok(None);
+    };
     let volume = if signed_volume == 0.0 {
         0.0
     } else {
-        cadmpeg_ir::math::scale_power_of_two(signed_volume.abs(), 3 * exponent)?.get()
+        let Some(volume) = cadmpeg_ir::math::scale_power_of_two(signed_volume.abs(), 3 * exponent)
+        else {
+            return Ok(None);
+        };
+        volume.get()
     };
-    Some(MeshProperties {
-        area,
+    Ok(Some(MeshProperties {
+        area: area.get(),
         volume,
         centroid,
-    })
+    }))
 }
 
 /// The numeric entity identifier an IR identity ends with, or `None` when it
