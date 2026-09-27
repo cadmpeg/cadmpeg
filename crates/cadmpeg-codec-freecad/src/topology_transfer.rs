@@ -40,7 +40,7 @@ use crate::brep::{
 };
 use crate::loss::FreecadLossCode;
 use crate::native::PropertyRecord;
-use crate::resource::{collection_vec, reserve_vec_items};
+use crate::resource::{collection_vec, insert_hash_map, insert_hash_set, reserve_vec_items, retained_string};
 use cadmpeg_ir::report::loss::LossNote;
 
 const EPS_TOPOLOGY_TRANSFER_GEOMETRY: f64 = 1.0e-9;
@@ -122,10 +122,8 @@ pub(crate) fn transfer(
         let source_object = properties
             .iter()
             .find(|property| property.id == payload.property)
-            .map_or_else(
-                || payload.property.clone(),
-                |property| property.owner.clone(),
-            );
+            .map_or(payload.property.as_str(), |property| property.owner.as_str());
+        let source_object = retained_string(ctx, source_object, "FreeCAD topology source object")?;
         let source_object = cadmpeg_core::text::NonBlankString::new(source_object)
             .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?;
         let mut builder = Builder::new(ctx, payload, tables, source_object)?;
@@ -139,18 +137,25 @@ pub(crate) fn transfer(
         reserve_vec_items(ctx, losses, builder.losses.len(), "FreeCAD topology losses")?;
         losses.extend(builder.losses);
     }
-    close_radial_rings(&mut ir.model.coedges);
-    let referenced_pcurves = ir
-        .model
-        .coedges
-        .iter()
-        .flat_map(|coedge| &coedge.pcurves)
-        .map(|use_| &use_.pcurve)
-        .collect::<HashSet<_>>();
+    close_radial_rings(ctx, &mut ir.model.coedges)?;
+    let referenced_pcurves = referenced_pcurve_ids(ctx, &ir.model.coedges)?;
     ir.model
         .pcurves
         .retain(|pcurve| referenced_pcurves.contains(&pcurve.id));
     Ok(occurrences)
+}
+
+fn referenced_pcurve_ids<'a>(
+    ctx: &DecodeContext<'_>,
+    coedges: &'a [Coedge],
+) -> Result<HashSet<&'a PcurveId>, CodecError> {
+    let mut referenced = HashSet::new();
+    for coedge in coedges {
+        for pcurve in &coedge.pcurves {
+            insert_hash_set(ctx, &mut referenced, &pcurve.pcurve, "FreeCAD referenced pcurves")?;
+        }
+    }
+    Ok(referenced)
 }
 
 impl Tables<'_> {
@@ -213,7 +218,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         tables: Tables<'a>,
         source_object: cadmpeg_core::text::NonBlankString,
     ) -> Result<Self, CodecError> {
-        let source_indices = source_topology_indices(tables)?;
+        let source_indices = source_topology_indices(ctx, tables)?;
         Ok(Self {
             ctx,
             payload,
@@ -1996,6 +2001,7 @@ fn occurrence_label(shape: usize, transform: Transform) -> String {
 }
 
 fn source_topology_indices(
+    ctx: &DecodeContext<'_>,
     tables: Tables<'_>,
 ) -> Result<HashMap<(TextShapeKind, SourceOccurrenceKey), usize>, CodecError> {
     let mut indices = HashMap::new();
@@ -2011,31 +2017,24 @@ fn source_topology_indices(
     ] {
         let mut next_index = 1;
         for root in tables.roots {
-            let mut stack = vec![(root.clone(), Transform::identity())];
+            let mut stack = collection_vec(ctx, 1, "FreeCAD source topology stack")?;
+            stack.push((root.clone(), Transform::identity()));
             while let Some((shape_use, parent)) = stack.pop() {
                 let transform = parent
                     .compose(tables.location(shape_use.location)?)
                     .map_err(location_transform_error)?;
                 let shape = &tables.tshapes[shape_use.shape - 1];
                 if shape.kind() == target {
-                    let key = SourceOccurrenceKey::new(shape_use.shape, transform);
-                    if let std::collections::hash_map::Entry::Vacant(entry) =
-                        indices.entry((target, key))
-                    {
-                        entry.insert(next_index);
+                    let key = (target, SourceOccurrenceKey::new(shape_use.shape, transform));
+                    if !indices.contains_key(&key) {
+                        insert_hash_map(ctx, &mut indices, key, next_index, "FreeCAD source topology index")?;
                         next_index += 1;
                     }
                     continue;
                 }
                 if topology_rank(shape.kind()) < topology_rank(target) {
-                    stack.extend(
-                        shape
-                            .children
-                            .iter()
-                            .rev()
-                            .cloned()
-                            .map(|child| (child, transform)),
-                    );
+                    reserve_vec_items(ctx, &mut stack, shape.children.len(), "FreeCAD source topology stack")?;
+                    stack.extend(shape.children.iter().rev().cloned().map(|child| (child, transform)));
                 }
             }
         }
@@ -2106,17 +2105,28 @@ fn sense(reversed: bool) -> Sense {
     }
 }
 
-fn close_radial_rings(coedges: &mut [Coedge]) {
+fn close_radial_rings(ctx: &DecodeContext<'_>, coedges: &mut [Coedge]) -> Result<(), CodecError> {
     let mut by_edge: HashMap<EdgeId, Vec<usize>> = HashMap::new();
     for (index, coedge) in coedges.iter().enumerate() {
-        by_edge.entry(coedge.edge.clone()).or_default().push(index);
+        if !by_edge.contains_key(&coedge.edge) {
+            let key = EdgeId::mint(retained_string(ctx, coedge.edge.as_str(), "FreeCAD radial edge identity")?)
+                .map_err(CodecError::malformed)?;
+            insert_hash_map(ctx, &mut by_edge, key, Vec::new(), "FreeCAD radial edge index")?;
+        }
+        if let Some(indices) = by_edge.get_mut(&coedge.edge) {
+            reserve_vec_items(ctx, indices, 1, "FreeCAD radial coedge members")?;
+            indices.push(index);
+        }
     }
     for indices in by_edge.values() {
         if let [first, second] = indices.as_slice() {
-            coedges[*first].radial_next = coedges[*second].id.clone();
-            coedges[*second].radial_next = coedges[*first].id.clone();
+            coedges[*first].radial_next = CoedgeId::mint(retained_string(ctx, coedges[*second].id.as_str(), "FreeCAD radial coedge identity")?)
+                .map_err(CodecError::malformed)?;
+            coedges[*second].radial_next = CoedgeId::mint(retained_string(ctx, coedges[*first].id.as_str(), "FreeCAD radial coedge identity")?)
+                .map_err(CodecError::malformed)?;
         }
     }
+    Ok(())
 }
 
 fn edge_endpoint_uses(
