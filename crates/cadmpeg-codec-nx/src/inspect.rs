@@ -14,7 +14,10 @@ use crate::{container, decode, deltas, native, parasolid, topology};
 
 /// Build the container summary: one entry per catalogued directory stream, plus
 /// one per embedded Parasolid stream, and the shared container notes.
-pub(super) fn summarize(ctx: &DecodeContext<'_>, scan: &decode::Scan) -> Result<ContainerSummary, CodecError> {
+pub(super) fn summarize(
+    ctx: &DecodeContext<'_>,
+    scan: &decode::Scan,
+) -> Result<ContainerSummary, CodecError> {
     let entry_count = scan
         .container
         .entries
@@ -125,9 +128,9 @@ pub(super) fn summarize(ctx: &DecodeContext<'_>, scan: &decode::Scan) -> Result<
                     "records.",
                     name,
                     false,
-                    SummaryValue::Number(
-                        cadmpeg_core::decode::u64_from_index(graph.of_kind(kind).count()),
-                    ),
+                    SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
+                        graph.of_kind(kind).count(),
+                    )),
                 )?;
             }
             if stream.kind() == parasolid::StreamKind::Partition {
@@ -148,42 +151,126 @@ pub(super) fn summarize(ctx: &DecodeContext<'_>, scan: &decode::Scan) -> Result<
                         "records.live.",
                         name,
                         false,
-                        SummaryValue::Number(
-                            cadmpeg_core::decode::u64_from_index(graph.of_kind(kind).count()),
-                        ),
+                        SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
+                            graph.of_kind(kind).count(),
+                        )),
                     )?;
                 }
             } else if stream.kind() == parasolid::StreamKind::Deltas {
                 let census = deltas::census::walk(&stream.inflated);
                 if census.transmit_header.is_some() {
-                    insert_summary_attribute(ctx, &mut attributes, "records.delta.transmit_headers", "", false, SummaryValue::Text("1"))?;
+                    insert_summary_attribute(
+                        ctx,
+                        &mut attributes,
+                        "records.delta.transmit_headers",
+                        "",
+                        false,
+                        SummaryValue::Text("1"),
+                    )?;
                 }
                 if !census.body_revisions.is_empty() {
-                    insert_summary_attribute(ctx, &mut attributes, "records.delta.body_revisions", "", false, SummaryValue::Number(cadmpeg_core::decode::u64_from_index(census.body_revisions.len())))?;
+                    insert_summary_attribute(
+                        ctx,
+                        &mut attributes,
+                        "records.delta.body_revisions",
+                        "",
+                        false,
+                        SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
+                            census.body_revisions.len(),
+                        )),
+                    )?;
                 }
                 if !census.term_use_numeric_tails.is_empty() {
-                    insert_summary_attribute(ctx, &mut attributes, "records.delta.term_use_numeric_tails", "", false, SummaryValue::Number(cadmpeg_core::decode::u64_from_index(census.term_use_numeric_tails.len())))?;
+                    insert_summary_attribute(
+                        ctx,
+                        &mut attributes,
+                        "records.delta.term_use_numeric_tails",
+                        "",
+                        false,
+                        SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
+                            census.term_use_numeric_tails.len(),
+                        )),
+                    )?;
                 }
                 if !census.tagged_reference_lanes.is_empty() {
-                    insert_summary_attribute(ctx, &mut attributes, "records.delta.tagged_reference_lanes", "", false, SummaryValue::Number(cadmpeg_core::decode::u64_from_index(census.tagged_reference_lanes.len())))?;
+                    insert_summary_attribute(
+                        ctx,
+                        &mut attributes,
+                        "records.delta.tagged_reference_lanes",
+                        "",
+                        false,
+                        SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
+                            census.tagged_reference_lanes.len(),
+                        )),
+                    )?;
                 }
                 if !census.reference_type_maps.is_empty() {
-                    insert_summary_attribute(ctx, &mut attributes, "records.delta.reference_type_maps", "", false, SummaryValue::Number(cadmpeg_core::decode::u64_from_index(census.reference_type_maps.len())))?;
+                    insert_summary_attribute(
+                        ctx,
+                        &mut attributes,
+                        "records.delta.reference_type_maps",
+                        "",
+                        false,
+                        SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
+                            census.reference_type_maps.len(),
+                        )),
+                    )?;
                 }
                 if !census.reference_state_packets.is_empty() {
-                    insert_summary_attribute(ctx, &mut attributes, "records.delta.reference_state_packets", "", false, SummaryValue::Number(cadmpeg_core::decode::u64_from_index(census.reference_state_packets.len())))?;
+                    insert_summary_attribute(
+                        ctx,
+                        &mut attributes,
+                        "records.delta.reference_state_packets",
+                        "",
+                        false,
+                        SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
+                            census.reference_state_packets.len(),
+                        )),
+                    )?;
                 }
                 if !census.reference_marker_packets.is_empty() {
-                    insert_summary_attribute(ctx, &mut attributes, "records.delta.reference_marker_packets", "", false, SummaryValue::Number(cadmpeg_core::decode::u64_from_index(census.reference_marker_packets.len())))?;
+                    insert_summary_attribute(
+                        ctx,
+                        &mut attributes,
+                        "records.delta.reference_marker_packets",
+                        "",
+                        false,
+                        SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
+                            census.reference_marker_packets.len(),
+                        )),
+                    )?;
                 }
                 if !census.inline_schema_declarations.is_empty() {
-                    insert_summary_attribute(ctx, &mut attributes, "records.delta.inline_schema_declarations", "", false, SummaryValue::Number(cadmpeg_core::decode::u64_from_index(census.inline_schema_declarations.len())))?;
+                    insert_summary_attribute(
+                        ctx,
+                        &mut attributes,
+                        "records.delta.inline_schema_declarations",
+                        "",
+                        false,
+                        SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
+                            census.inline_schema_declarations.len(),
+                        )),
+                    )?;
                 }
                 for (family, count) in census.full_counts() {
-                    insert_summary_attribute(ctx, &mut attributes, "records.delta.full.", family, true, SummaryValue::Number(cadmpeg_core::decode::u64_from_index(count)))?;
+                    insert_summary_attribute(
+                        ctx,
+                        &mut attributes,
+                        "records.delta.full.",
+                        family,
+                        true,
+                        SummaryValue::Number(cadmpeg_core::decode::u64_from_index(count)),
+                    )?;
                 }
                 for (family, count) in census.tombstone_counts() {
-                    insert_summary_attribute(ctx, &mut attributes, "records.delta.tombstone.", family, true, SummaryValue::Number(cadmpeg_core::decode::u64_from_index(count)))?;
+                    insert_summary_attribute(
+                        ctx,
+                        &mut attributes,
+                        "records.delta.tombstone.",
+                        family,
+                        true,
+                        SummaryValue::Number(cadmpeg_core::decode::u64_from_index(count)),
+                    )?;
                 }
             }
         }

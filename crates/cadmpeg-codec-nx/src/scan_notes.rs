@@ -173,15 +173,13 @@ fn push_note(
     args: fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
     let mut measured = NoteBuffer::new();
-    measured
-        .write_fmt(args)
-        .map_err(|_| {
-            ctx.refuse_codec_limit(
-                "nx scan note text",
-                cadmpeg_core::decode::u64_from_index(MAX_SCAN_NOTE_BYTES),
-                cadmpeg_core::decode::u64_from_index(MAX_SCAN_NOTE_BYTES + 1),
-            )
-        })?;
+    measured.write_fmt(args).map_err(|_| {
+        ctx.refuse_codec_limit(
+            "nx scan note text",
+            cadmpeg_core::decode::u64_from_index(MAX_SCAN_NOTE_BYTES),
+            cadmpeg_core::decode::u64_from_index(MAX_SCAN_NOTE_BYTES + 1),
+        )
+    })?;
     ctx.charge_collection_items(1, "nx scan notes")?;
     ctx.charge_retained(
         cadmpeg_core::decode::u64_from_index(measured.len),

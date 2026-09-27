@@ -14,8 +14,8 @@ use crate::test_support::test_streams::offset_surface_topology_partition_stream;
 use crate::test_support::test_streams::topology_partition_stream;
 
 use crate::framing::node_kind::NodeKind;
-use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
 fn analytic_points(stream: &[u8]) -> Vec<super::DecodedPoint> {
     crate::test_support::with_decode_context(|ctx| super::points(ctx, stream).unwrap())

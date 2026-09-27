@@ -32,8 +32,7 @@ fn metadata_unknown_stream_slots_refuse_at_collection_limit() {
     let (ctx, root) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
     let error = super::super::build_metadata_ir(&ctx, root, &scan, &dialects)
-        .err()
-        .expect("one unknown stream needs one collection item");
+        .expect_err("one unknown stream needs one collection item");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)

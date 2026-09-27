@@ -2791,9 +2791,11 @@ fn reserve_group_vec<T>(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     values.try_reserve_exact(additional).map_err(|_| match ctx {
-        Some(ctx) => {
-            ctx.refuse_codec_limit(operation, 0, cadmpeg_core::decode::u64_from_index(additional))
-        }
+        Some(ctx) => ctx.refuse_codec_limit(
+            operation,
+            0,
+            cadmpeg_core::decode::u64_from_index(additional),
+        ),
         None => cadmpeg_core::decode::refuse_local_limit(
             operation,
             cadmpeg_core::decode::u64_from_index(additional),

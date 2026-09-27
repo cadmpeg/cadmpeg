@@ -3384,7 +3384,11 @@ pub(super) fn display_jt_indices(
                         })
                         .and_then(|len| len.checked_add(decimal_digits(ordinal)))
                         .ok_or_else(|| {
-                            ctx.refuse_codec_limit("retain DisplayJT index row identity", 0, u64::MAX)
+                            ctx.refuse_codec_limit(
+                                "retain DisplayJT index row identity",
+                                0,
+                                u64::MAX,
+                            )
                         })?;
                     ctx.charge_retained(id_len, "retain DisplayJT index row identity")?;
                 }

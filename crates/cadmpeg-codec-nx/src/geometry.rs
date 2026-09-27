@@ -79,9 +79,9 @@ pub(crate) fn points(
     stream: &[u8],
 ) -> Result<Vec<DecodedPoint>, CodecError> {
     analytic_records(ctx, stream, |record| match record {
-            AnalyticRecord::Point(point) => Some(point),
-            AnalyticRecord::Surface(_) | AnalyticRecord::Curve(_) => None,
-        })
+        AnalyticRecord::Point(point) => Some(point),
+        AnalyticRecord::Surface(_) | AnalyticRecord::Curve(_) => None,
+    })
 }
 
 /// Decode validated analytic surface records in source order.
@@ -90,9 +90,9 @@ pub(crate) fn surfaces(
     stream: &[u8],
 ) -> Result<Vec<DecodedSurface>, CodecError> {
     analytic_records(ctx, stream, |record| match record {
-            AnalyticRecord::Surface(surface) => Some(surface),
-            AnalyticRecord::Point(_) | AnalyticRecord::Curve(_) => None,
-        })
+        AnalyticRecord::Surface(surface) => Some(surface),
+        AnalyticRecord::Point(_) | AnalyticRecord::Curve(_) => None,
+    })
 }
 
 /// Decode validated analytic curve records in source order.
@@ -101,9 +101,9 @@ pub(crate) fn curves(
     stream: &[u8],
 ) -> Result<Vec<DecodedCurve>, CodecError> {
     analytic_records(ctx, stream, |record| match record {
-            AnalyticRecord::Curve(curve) => Some(curve),
-            AnalyticRecord::Point(_) | AnalyticRecord::Surface(_) => None,
-        })
+        AnalyticRecord::Curve(curve) => Some(curve),
+        AnalyticRecord::Point(_) | AnalyticRecord::Surface(_) => None,
+    })
 }
 
 fn analytic_records<T>(
