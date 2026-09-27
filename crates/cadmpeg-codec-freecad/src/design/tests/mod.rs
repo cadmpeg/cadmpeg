@@ -376,6 +376,43 @@ fn design_feature_identity_refuses_at_retained_limit() {
 }
 
 #[test]
+fn design_composed_identities_refuse_at_retained_limit() {
+    let object = crate::native::ObjectRecord {
+        id: "fcstd:native:object#Shape%20A".into(),
+        name: "Shape A".into(),
+        type_name: "Sketcher::SketchObject".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: Default::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    for (kind, tail, expected) in [
+        ("sketch", "", "fcstd:design:sketch#Shape%20A"),
+        ("sketch-entity", ":external:2", "fcstd:design:sketch-entity#Shape%20A:external:2"),
+        ("sketch-constraint", ":3", "fcstd:design:sketch-constraint#Shape%20A:3"),
+        ("parameter", ":cell:A1", "fcstd:design:parameter#Shape%20A:cell:A1"),
+        ("spreadsheet", "", "fcstd:design:spreadsheet#Shape%20A"),
+    ] {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root");
+        assert_eq!(super::design_identity_text(
+            &ctx, kind, &object, format_args!("{tail}"), "fcstd composed identity",
+        ).expect("identity fits policy"), expected);
+        crate::test_support::assert_retained_refusal_at(
+            &[], "fcstd composed identity",
+            |ctx| super::design_identity_text(
+                ctx, kind, &object, format_args!("{tail}"), "fcstd composed identity",
+            ),
+        );
+    }
+}
+
+#[test]
 fn design_parameter_object_name_index_refuses_at_collection_limit() {
     let object = crate::native::ObjectRecord {
         id: "fcstd:native:object#Feature".into(),
