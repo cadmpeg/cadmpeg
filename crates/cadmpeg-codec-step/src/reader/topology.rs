@@ -97,15 +97,23 @@ pub(super) struct TopologyData {
     pub(super) vertices_by_source: BTreeMap<u64, Vec<VertexId>>,
 }
 
-fn topology_commit_error(context: &str, error: &DraftError) -> String {
+fn topology_commit_error(
+    context: &str,
+    error: &DraftError,
+    ctx: &DecodeContext<'_>,
+) -> Result<String, CodecError> {
     match error {
-        DraftError::IdentityCollision(identity) => format!(
-            "{context} conflicts with decoded topology: identity collision at '{identity}': {error}"
+        DraftError::IdentityCollision(identity) => crate::decode_alloc::charged_format(
+            ctx, "step_topology_commit_error_text",
+            format_args!("{context} conflicts with decoded topology: identity collision at '{identity}': {error}"),
         ),
         DraftError::UnresolvedReference { .. }
         | DraftError::ReferenceWalk { .. }
         | DraftError::FeatureParents { .. } => {
-            format!("{context} conflicts with decoded topology: {error}")
+            crate::decode_alloc::charged_format(
+                ctx, "step_topology_commit_error_text",
+                format_args!("{context} conflicts with decoded topology: {error}"),
+            )
         }
     }
 }
@@ -523,7 +531,8 @@ pub(super) fn decode(
                 push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(topology_commit_error(
                     &format!("EDGE_BASED_WIREFRAME_MODEL #{model}"),
                     &error,
-                )), ctx, "step_topology_losses")?;
+                ctx,
+                )?), ctx, "step_topology_losses")?;
             } else {
                 committed += 1;
                 built_wire_models.insert(model);
@@ -568,7 +577,8 @@ pub(super) fn decode(
                 push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(topology_commit_error(
                     &format!("SHELL_BASED_WIREFRAME_MODEL #{model}"),
                     &error,
-                )), ctx, "step_topology_losses")?;
+                ctx,
+                )?), ctx, "step_topology_losses")?;
             } else {
                 committed += 1;
                 for shell in &built.shell_sources {
@@ -673,7 +683,8 @@ pub(super) fn decode(
                 push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(topology_commit_error(
                     &format!("STEP topology root #{id}"),
                     &error,
-                )), ctx, "step_topology_losses")?;
+                ctx,
+                )?), ctx, "step_topology_losses")?;
             } else {
                 for shell in &built.shell_sources {
                     result
@@ -761,7 +772,8 @@ pub(super) fn decode(
             push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(topology_commit_error(
                 &format!("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id}"),
                 &error,
-            )), ctx, "step_topology_losses")?;
+            ctx,
+            )?), ctx, "step_topology_losses")?;
         } else {
             result.body_by_root.insert(id, vec![built.body_id.clone()]);
             result.claims.extend(std::mem::take(&mut built.typed));

@@ -76,3 +76,19 @@ fn topology_loss_merge_refuses_collection_limit() {
                 && refusal.operation == "step_topology_loss_merge"
     ));
 }
+
+#[test]
+fn topology_commit_error_text_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    let error = cadmpeg_ir::draft::DraftError::IdentityCollision("step:data:body#1".into());
+    assert!(matches!(
+        super::super::topology_commit_error("topology root", &error, &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_topology_commit_error_text"
+    ));
+}
