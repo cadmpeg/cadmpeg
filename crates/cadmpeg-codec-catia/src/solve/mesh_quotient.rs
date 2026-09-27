@@ -5835,11 +5835,43 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
 
     type EndpointRelation = BTreeMap<usize, BTreeSet<usize>>;
 
+    fn insert_relation(
+        ctx: &DecodeContext<'_>,
+        relation: &mut EndpointRelation,
+        start: usize,
+        end: usize,
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        if !relation.contains_key(&start) {
+            ctx.charge_collection_items(1, operation)?;
+        }
+        let ends = relation.entry(start).or_default();
+        if !ends.contains(&end) {
+            ctx.charge_collection_items(1, operation)?;
+        }
+        Ok(ends.insert(end))
+    }
+
+    fn clone_relation(
+        ctx: &DecodeContext<'_>,
+        relation: &EndpointRelation,
+        operation: &'static str,
+    ) -> Result<EndpointRelation, CodecError> {
+        let mut copy = EndpointRelation::new();
+        for (&start, ends) in relation {
+            for &end in ends {
+                insert_relation(ctx, &mut copy, start, end, operation)?;
+            }
+        }
+        Ok(copy)
+    }
+
     fn compose_relations(
+        ctx: &DecodeContext<'_>,
         left: &EndpointRelation,
         right: &EndpointRelation,
         budget: Option<&WorkBudget<'_>>,
-    ) -> Option<EndpointRelation> {
+    ) -> Result<Option<EndpointRelation>, CodecError> {
         let mut composed = EndpointRelation::new();
         let mut state_count = 0usize;
         for (&start, middles) in left {
@@ -5849,25 +5881,44 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
                 };
                 for &end in ends {
                     if budget.is_some_and(|budget| !budget.charge()) {
-                        return None;
+                        return Ok(None);
                     }
-                    if composed.entry(start).or_default().insert(end) {
-                        state_count = state_count.checked_add(1)?;
+                    if insert_relation(
+                        ctx,
+                        &mut composed,
+                        start,
+                        end,
+                        "catia_endpoint_relation_composition",
+                    )? {
+                        let Some(next_count) = state_count.checked_add(1) else {
+                            return Ok(None);
+                        };
+                        state_count = next_count;
                         if state_count > MAX_LOCAL_ENDPOINT_STATES {
-                            return None;
+                            return Ok(None);
                         }
                     }
                 }
             }
         }
-        Some(composed)
+        Ok(Some(composed))
     }
 
-    fn identity_relation(points: &BTreeSet<usize>) -> EndpointRelation {
-        points
-            .iter()
-            .map(|&point| (point, BTreeSet::from([point])))
-            .collect()
+    fn identity_relation(
+        ctx: &DecodeContext<'_>,
+        points: &BTreeSet<usize>,
+    ) -> Result<EndpointRelation, CodecError> {
+        let mut identity = EndpointRelation::new();
+        for &point in points {
+            insert_relation(
+                ctx,
+                &mut identity,
+                point,
+                point,
+                "catia_endpoint_identity_relation",
+            )?;
+        }
+        Ok(identity)
     }
 
     (|| -> Option<Result<MeshEndpointPairSupport, CodecError>> {
@@ -5883,11 +5934,40 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
             let mut layers = Vec::<(usize, Vec<[usize; 2]>, EndpointRelation)>::new();
             for use_ in boundary {
                 let values = match candidates(use_.edge)? {
-                    MeshEndpointCandidates::Explicit(values) => values.to_vec(),
-                    MeshEndpointCandidates::Implicit(values) => values
-                        .take(MAX_LOCAL_ENDPOINT_STATES + 1)
-                        .collect::<Vec<_>>(),
-                    MeshEndpointCandidates::Selected(value) => vec![value],
+                    MeshEndpointCandidates::Explicit(values) => match crate::resource::copy_slice(
+                        ctx,
+                        values,
+                        "catia_endpoint_layer_values",
+                    ) {
+                        Ok(values) => values,
+                        Err(error) => return Some(Err(error)),
+                    },
+                    MeshEndpointCandidates::Implicit(values) => {
+                        let mut collected = Vec::new();
+                        for value in values.take(MAX_LOCAL_ENDPOINT_STATES + 1) {
+                            if let Err(error) = crate::resource::push(
+                                ctx,
+                                &mut collected,
+                                value,
+                                "catia_endpoint_layer_values",
+                            ) {
+                                return Some(Err(error));
+                            }
+                        }
+                        collected
+                    }
+                    MeshEndpointCandidates::Selected(value) => {
+                        let mut selected = Vec::new();
+                        if let Err(error) = crate::resource::push(
+                            ctx,
+                            &mut selected,
+                            value,
+                            "catia_endpoint_layer_values",
+                        ) {
+                            return Some(Err(error));
+                        }
+                        selected
+                    }
                 };
                 if values.len() > MAX_LOCAL_ENDPOINT_STATES {
                     return None;
@@ -5899,8 +5979,24 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
                     if !allowed(use_.edge, pair) {
                         continue;
                     }
-                    retained.push(pair);
-                    points.extend(pair);
+                    if let Err(error) = crate::resource::push(
+                        ctx,
+                        &mut retained,
+                        pair,
+                        "catia_endpoint_layer_retained_pairs",
+                    ) {
+                        return Some(Err(error));
+                    }
+                    for point in pair {
+                        if !points.contains(&point) {
+                            if let Err(error) =
+                                ctx.charge_collection_items(1, "catia_endpoint_layer_points")
+                            {
+                                return Some(Err(error));
+                            }
+                            points.insert(point);
+                        }
+                    }
                     for (rank, (start, end)) in [(pair[0], pair[1]), (pair[1], pair[0])]
                         .into_iter()
                         .enumerate()
@@ -5911,7 +6007,15 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
                         if !charge() {
                             return None;
                         }
-                        relation.entry(start).or_default().insert(end);
+                        if let Err(error) = insert_relation(
+                            ctx,
+                            &mut relation,
+                            start,
+                            end,
+                            "catia_endpoint_layer_relation",
+                        ) {
+                            return Some(Err(error));
+                        }
                     }
                 }
                 retained.sort_unstable();
@@ -5921,20 +6025,53 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
                         by_edge: HashMap::new(),
                     }));
                 }
-                layers.push((use_.edge, retained, relation));
+                if let Err(error) = crate::resource::push(
+                    ctx,
+                    &mut layers,
+                    (use_.edge, retained, relation),
+                    "catia_endpoint_layers",
+                ) {
+                    return Some(Err(error));
+                }
             }
             if points.len() > MAX_LOCAL_ENDPOINT_STATES {
                 return None;
             }
-            let identity = identity_relation(&points);
-            let mut prefixes = Vec::with_capacity(layers.len() + 1);
-            prefixes.push(identity.clone());
+            let identity = match identity_relation(ctx, &points) {
+                Ok(identity) => identity,
+                Err(error) => return Some(Err(error)),
+            };
+            let Some(layer_count) = layers.len().checked_add(1) else {
+                return Some(Err(ctx.refuse_codec_limit(
+                    "catia_endpoint_relation_layers",
+                    u64::MAX,
+                    u64::MAX,
+                )));
+            };
+            let mut prefixes = Vec::new();
+            let first = match clone_relation(ctx, &identity, "catia_endpoint_prefix_identity") {
+                Ok(identity) => identity,
+                Err(error) => return Some(Err(error)),
+            };
+            if let Err(error) =
+                crate::resource::push(ctx, &mut prefixes, first, "catia_endpoint_prefixes")
+            {
+                return Some(Err(error));
+            }
             for (index, (_, _, relation)) in layers.iter().enumerate() {
-                let composed = compose_relations(&prefixes[index], relation, budget)?;
-                prefixes.push(composed);
+                let composed = match compose_relations(ctx, &prefixes[index], relation, budget) {
+                    Ok(Some(composed)) => composed,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
+                if let Err(error) =
+                    crate::resource::push(ctx, &mut prefixes, composed, "catia_endpoint_prefixes")
+                {
+                    return Some(Err(error));
+                }
             }
             let mut suffixes = match ctx.alloc_filled(
-                layers.len() + 1,
+                layer_count,
                 EndpointRelation::new(),
                 "catia_endpoint_suffixes",
             ) {
@@ -5944,7 +6081,11 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
             suffixes[layers.len()] = identity;
             for layer in (0..layers.len()).rev() {
                 suffixes[layer] =
-                    compose_relations(&layers[layer].2, &suffixes[layer + 1], budget)?;
+                    match compose_relations(ctx, &layers[layer].2, &suffixes[layer + 1], budget) {
+                        Ok(Some(composed)) => composed,
+                        Ok(None) => return None,
+                        Err(error) => return Some(Err(error)),
+                    };
             }
             let mut boundary_support = HashMap::<usize, HashSet<[usize; 2]>>::new();
             for (layer, (edge, candidates, _)) in layers.into_iter().enumerate() {
@@ -5973,8 +6114,23 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
                         return None;
                     }
                     if supported {
-                        layer_support.insert(pair);
+                        if let Err(error) = crate::resource::insert_set(
+                            ctx,
+                            &mut layer_support,
+                            pair,
+                            "catia_endpoint_layer_support",
+                        ) {
+                            return Some(Err(error));
+                        }
                     }
+                }
+                if let Err(error) = crate::resource::admit_map_entry(
+                    ctx,
+                    &mut boundary_support,
+                    &edge,
+                    "catia_endpoint_boundary_support",
+                ) {
+                    return Some(Err(error));
                 }
                 boundary_support
                     .entry(edge)
@@ -5991,6 +6147,14 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
                 }));
             }
             for (edge, supported) in boundary_support {
+                if let Err(error) = crate::resource::admit_map_entry(
+                    ctx,
+                    &mut assignment_support,
+                    &edge,
+                    "catia_endpoint_assignment_support",
+                ) {
+                    return Some(Err(error));
+                }
                 assignment_support
                     .entry(edge)
                     .and_modify(|retained| retained.retain(|pair| supported.contains(pair)))
