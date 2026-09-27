@@ -217,7 +217,7 @@ fn numerical_0922b_wide_curve_inverse() {
             false,
         )
         .unwrap();
-        let r = nurbs_parameter_at_point(&curve, Point3::new(0.3, 0., 0.));
+        let r = nurbs_parameter_at_point(&curve, Point3::new(0.3, 0., 0.)).unwrap();
         let result = match r {
             InverseResolution::Unique(p) => Some(p),
             InverseResolution::NoMatch => None,
