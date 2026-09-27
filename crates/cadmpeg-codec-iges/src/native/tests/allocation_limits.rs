@@ -325,3 +325,119 @@ fn native_display_definition_refuses_retained_limit() {
     .unwrap();
     assert_eq!(reference.definition(), Some("iges:presentation:color#D3"));
 }
+
+#[test]
+fn native_primitive_dimension_nodes_and_names_refuse_limits() {
+    let bytes = owned_test_file(&[native_entity(158, 0, "158,2,0,0,0;")]);
+    assert_native_arena(&bytes, "primitive_solids");
+    for operation in [
+        "iges native primitive solid slots",
+        "iges native primitive dimension node",
+    ] {
+        assert_collection_refusal_at(&bytes, operation);
+    }
+    for operation in [
+        "iges native primitive dimension name",
+        "iges native primitive solid id",
+        "iges native primitive solid source",
+    ] {
+        assert_retained_refusal_at(&bytes, operation);
+    }
+}
+
+#[test]
+fn native_procedural_solid_slots_and_ids_refuse_limits() {
+    let bytes = owned_test_file(&[native_entity(164, 0, "164,0,1,0,0,1;")]);
+    assert_native_arena(&bytes, "procedural_solids");
+    assert_collection_refusal_at(&bytes, "iges native procedural solid slots");
+    for operation in [
+        "iges native procedural solid id",
+        "iges native procedural solid source",
+    ] {
+        assert_retained_refusal_at(&bytes, operation);
+    }
+}
+
+#[test]
+fn native_boolean_tree_slots_and_terms_refuse_limits() {
+    let bytes = owned_test_file(&[native_entity(180, 0, "180,1,1;")]);
+    assert_native_arena(&bytes, "boolean_trees");
+    for operation in [
+        "iges native boolean tree slots",
+        "iges native boolean term slots",
+    ] {
+        assert_collection_refusal_at(&bytes, operation);
+    }
+    for operation in [
+        "iges native boolean tree id",
+        "iges native boolean tree source",
+    ] {
+        assert_retained_refusal_at(&bytes, operation);
+    }
+}
+
+#[test]
+fn native_selected_component_slot_and_ids_refuse_limits() {
+    let bytes = owned_test_file(&[native_entity(182, 0, "182,0,0,0,0;")]);
+    assert_native_arena(&bytes, "selected_components");
+    assert_collection_refusal_at(&bytes, "iges native selected component slots");
+    for operation in [
+        "iges native selected component id",
+        "iges native selected component source",
+    ] {
+        assert_retained_refusal_at(&bytes, operation);
+    }
+}
+
+#[test]
+fn native_solid_assembly_outer_and_item_slots_refuse_limits() {
+    let bytes = owned_test_file(&[
+        native_entity(158, 0, "158,2,0,0,0;"),
+        native_entity(184, 0, "184,1,1,0;"),
+    ]);
+    assert_native_arena(&bytes, "solid_assemblies");
+    for operation in [
+        "iges native solid assembly slots",
+        "iges native solid assembly item slots",
+    ] {
+        assert_collection_refusal_at(&bytes, operation);
+    }
+    for operation in [
+        "iges native solid assembly id",
+        "iges native solid assembly source",
+        "iges native solid assembly member",
+    ] {
+        assert_retained_refusal_at(&bytes, operation);
+    }
+}
+
+#[test]
+fn native_manifold_outer_and_void_slots_refuse_limits() {
+    let bytes = owned_test_file(&[native_entity(186, 0, "186,0,1,1,0,1;")]);
+    assert_native_arena(&bytes, "manifold_solids");
+    for operation in [
+        "iges native manifold solid slots",
+        "iges native manifold void slots",
+    ] {
+        assert_collection_refusal_at(&bytes, operation);
+    }
+    for operation in [
+        "iges native manifold solid id",
+        "iges native manifold solid source",
+    ] {
+        assert_retained_refusal_at(&bytes, operation);
+    }
+}
+
+#[test]
+fn native_solid_instance_slot_and_ids_refuse_limits() {
+    let bytes = owned_test_file(&[native_entity(430, 0, "430,0;")]);
+    assert_native_arena(&bytes, "solid_instances");
+    assert_collection_refusal_at(&bytes, "iges native solid instance slots");
+    for operation in [
+        "iges native solid instance id",
+        "iges native solid instance source",
+    ] {
+        assert_retained_refusal_at(&bytes, operation);
+    }
+}
