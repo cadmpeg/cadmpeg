@@ -2,10 +2,12 @@
 //! Parse body members, bounds, bindings, and visibility.
 
 use cadmpeg_core::container::ContainerRole;
+use std::fmt::Write;
 
 use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded, take_reference};
 use crate::container::ContainerScan;
 use crate::design::decode::sketch::next_indexed_record_offset;
+use crate::design::decode::sketch::native_scope_charged;
 use crate::design::RECIPES;
 use crate::ids::{self, native_stream};
 use crate::layout::indexed_design_record_header;
@@ -16,7 +18,7 @@ use crate::records::{
 };
 use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_core::bytes::find_from;
-use cadmpeg_core::decode::{index_from_u32, u64_from_index, View};
+use cadmpeg_core::decode::{bounded_len, index_from_u32, u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Point3;
@@ -29,6 +31,7 @@ use std::collections::{HashMap, HashSet};
 /// stream) unless the declared count is fully consumed and immediately
 /// followed by a zero byte.
 pub(crate) fn decode_body_members(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<DesignBodyMember>, CodecError> {
     let mut out = Vec::new();
@@ -61,7 +64,14 @@ pub(crate) fn decode_body_members(
         if count > 100_000 {
             continue;
         }
-        let mut decoded = Vec::with_capacity(count);
+        let Some(count) = bounded_len(u64_from_index(count), 11, view.remaining()) else {
+            continue;
+        };
+        ctx.charge_collection_items(u64_from_index(count), "f3d body members")?;
+        let mut decoded = Vec::new();
+        decoded.try_reserve(count).map_err(|_| {
+            ctx.refuse_codec_limit("f3d body members allocation", 0, 1)
+        })?;
         for _ in 0..count {
             let cursor = view.position();
             if view.u8() != Some(1) {
@@ -76,14 +86,33 @@ pub(crate) fn decode_body_members(
                 decoded.clear();
                 break;
             };
+            let mut id = native_scope_charged(ctx, &entry.name)?;
+            let mut digits = 1;
+            let mut quotient = cursor;
+            while quotient >= 10 {
+                quotient /= 10;
+                digits += 1;
+            }
+            let suffix_bytes = "design-body-member".len() + 2 + digits;
+            ctx.charge_retained(u64_from_index(suffix_bytes), "f3d body member identifier")?;
+            id.try_reserve(suffix_bytes).map_err(|_| {
+                ctx.refuse_codec_limit("f3d body member identifier allocation", 0, 1)
+            })?;
+            write!(&mut id, ":design-body-member#{cursor}").map_err(|_| {
+                CodecError::Malformed("F3D body member identifier formatting failed".into())
+            })?;
             decoded.push(DesignBodyMember {
-                id: ids::native_design_body_member_id(&entry.name, cursor),
-                byte_offset: cursor as u64,
+                id,
+                byte_offset: u64_from_index(cursor),
                 entity_suffix,
                 flags,
             });
         }
         if decoded.len() == count && bytes.get(view.position()) == Some(&0) {
+            ctx.charge_collection_items(u64_from_index(decoded.len()), "f3d decoded body members")?;
+            out.try_reserve(decoded.len()).map_err(|_| {
+                ctx.refuse_codec_limit("f3d decoded body members allocation", 0, 1)
+            })?;
             out.extend(decoded);
         }
     }
@@ -1243,6 +1272,11 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::io::{Cursor, Write};
+
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use zip::CompressionMethod;
+
     use super::{
         body_bindings, body_bound_candidates, parse_body_map_frame, snapshot_body_map_records,
         typed_browser_node_hidden_flags,
@@ -1259,7 +1293,55 @@ mod tests {
     use crate::records::entity_header::DESIGN_MODULE_BODY;
     use crate::records::entity_header::DESIGN_MODULE_FUSION;
     use crate::test_support::indexed_header;
+    use crate::test_support::manifest_test::write_synthetic_manifests;
     use crate::test_support::push_reference_u64;
+    use crate::test_support::zip_test::with_scan;
+
+    #[test]
+    fn body_member_collections_and_identity_refuse_caller_limits() {
+        const ENTRY: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
+        let mut bulk = Vec::new();
+        bulk.extend_from_slice(&10_u32.to_le_bytes());
+        bulk.extend_from_slice(b"BodiesRoot");
+        bulk.extend_from_slice(&0_u16.to_le_bytes());
+        bulk.extend_from_slice(&10_u32.to_le_bytes());
+        bulk.extend_from_slice(b"BodiesRoot");
+        bulk.extend_from_slice(&1_u32.to_le_bytes());
+        let member_offset = bulk.len();
+        bulk.push(1);
+        bulk.extend_from_slice(&9_u64.to_le_bytes());
+        bulk.extend_from_slice(&2_u16.to_le_bytes());
+        bulk.push(0);
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        write_synthetic_manifests(&mut zip, stored);
+        zip.start_file(ENTRY, stored).unwrap();
+        zip.write_all(&bulk).unwrap();
+        let archive = zip.finish().unwrap().into_inner();
+        with_scan(&archive, |scan| {
+            for (collection_limit, retained_limit, dimension, operation) in [
+                (0, u64::MAX, ResourceDimension::CollectionItems, "f3d body members"),
+                (1, u64::MAX, ResourceDimension::CollectionItems, "f3d decoded body members"),
+                (1, 0, ResourceDimension::RetainedBytes, "f3d native stream key"),
+            ] {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_collection_items = collection_limit;
+                policy.limits.max_retained_bytes = retained_limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                assert!(matches!(
+                    super::decode_body_members(&ctx, scan),
+                    Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                        if failure.dimension == dimension && failure.operation == operation
+                ));
+            }
+            crate::design::test_support::with_test_decode_context(|ctx| {
+                let members = super::decode_body_members(ctx, scan).unwrap();
+                assert_eq!(members.len(), 1);
+                assert_eq!(members[0].id, crate::ids::native_design_body_member_id(ENTRY, member_offset));
+            });
+        });
+    }
 
     fn push_entity_header(out: &mut Vec<u8>, class_tag: &str, entity: u64) {
         out.extend_from_slice(&3u32.to_le_bytes());
