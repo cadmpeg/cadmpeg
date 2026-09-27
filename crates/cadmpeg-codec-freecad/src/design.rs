@@ -45,7 +45,7 @@ use cadmpeg_ir::{
 
 use crate::brep::ShapePayloadRecord;
 use crate::native::{malformed, EntryRecord, ObjectRecord, PropertyRecord};
-use crate::resource::{collection_allocation_failed, collection_vec, insert_hash_map, reserved_vec, retained_string};
+use crate::resource::{collection_allocation_failed, collection_vec, insert_hash_map, reserve_vec_items, reserved_vec, retained_string};
 
 const MAX_SKETCH_RECORDS: usize = 1_000_000;
 const EXTERNAL_GEO_AXIS_COUNT: usize = 2;
@@ -123,6 +123,7 @@ pub(crate) fn transfer(
         owned.extend_from_slice(source);
         let id = feature_id(object)?;
         let mut definition = if is_spreadsheet(&object.type_name) {
+            reserve_vec_items(ctx, &mut ir.model.spreadsheets, 1, "fcstd design spreadsheets")?;
             ir.model.spreadsheets.push(append_spreadsheet(
                 ctx,
                 &mut ir.model.parameters,
@@ -150,11 +151,18 @@ pub(crate) fn transfer(
         } else if is_sketch(&object.type_name) {
             let decoded = parse_sketch(ctx, object, &owned)?;
             let sketch = decoded.sketch;
-            let sketch_id = sketch.id.clone();
-            sketch_ids.insert(object.id.as_str(), sketch_id.clone());
+            let sketch_id = SketchId::mint(retained_string(ctx, sketch.id.as_str(), "fcstd design sketch identity")?)
+                .map_err(CodecError::malformed)?;
+            insert_hash_map(ctx, &mut sketch_ids, object.id.as_str(),
+                SketchId::mint(retained_string(ctx, sketch_id.as_str(), "fcstd design sketch index identity")?)
+                    .map_err(CodecError::malformed)?, "fcstd design sketch ids")?;
+            reserve_vec_items(ctx, &mut ir.model.sketches, 1, "fcstd neutral sketches")?;
             ir.model.sketches.push(sketch);
+            reserve_vec_items(ctx, &mut ir.model.sketch_entities, decoded.entities.len(), "fcstd neutral sketch entities")?;
             ir.model.sketch_entities.extend(decoded.entities);
+            reserve_vec_items(ctx, &mut ir.model.sketch_constraints, decoded.constraints.len(), "fcstd neutral sketch constraints")?;
             ir.model.sketch_constraints.extend(decoded.constraints);
+            reserve_vec_items(ctx, &mut ir.model.parameters, decoded.parameters.len(), "fcstd sketch parameters")?;
             ir.model.parameters.extend(decoded.parameters);
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
@@ -427,31 +435,27 @@ pub(crate) fn transfer(
                 parameters: native_parameters(&owned),
             });
         }
-        let semantic_dependencies = match &definition {
-            FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) => seeds
-                .iter()
-                .filter_map(|seed| match seed {
-                    PatternSeed::Feature(feature) => Some(feature.clone()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>(),
-            _ => Vec::new(),
-        };
+        let mut semantic_dependencies = Vec::new();
+        if let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) = &definition {
+            for seed in seeds {
+                if let PatternSeed::Feature(feature) = seed {
+                    reserve_vec_items(ctx, &mut semantic_dependencies, 1, "fcstd design pattern dependencies")?;
+                    semantic_dependencies.push(FeatureId::mint(retained_string(ctx, feature.as_str(), "fcstd design pattern dependency")?)
+                        .map_err(CodecError::malformed)?);
+                }
+            }
+        }
         let definition = post_processed_definition(definition, &object.type_name, &owned);
         append_operation_parameters(&mut ir.model.parameters, object, &owned)?;
-        let outputs: Vec<cadmpeg_ir::ids::BodyId> = payloads
-            .iter()
-            .filter(|payload| owned.iter().any(|property| property.id == payload.property))
-            .flat_map(|payload| {
-                body_ids
-                    .iter()
-                    .filter(move |body| {
-                        body.as_str()
-                            .starts_with(&crate::native::model_id("body", &payload.id, ""))
-                    })
-                    .cloned()
-            })
-            .collect();
+        let mut outputs = Vec::new();
+        for payload in payloads.iter().filter(|payload| owned.iter().any(|property| property.id == payload.property)) {
+            let prefix = crate::native::model_id("body", &payload.id, "");
+            for body in body_ids.iter().filter(|body| body.as_str().starts_with(&prefix)) {
+                reserve_vec_items(ctx, &mut outputs, 1, "fcstd design feature outputs")?;
+                outputs.push(cadmpeg_ir::ids::BodyId::mint(retained_string(ctx, body.as_str(), "fcstd design output body")?)
+                    .map_err(CodecError::malformed)?);
+            }
+        }
         let cycle_affected = cycle_affected.contains(object.id.as_str());
         let dependencies = if cycle_affected {
             // The native object and property arenas retain the exact cycle.
@@ -459,56 +463,56 @@ pub(crate) fn transfer(
             // would change when persisted declaration order changes.
             Vec::new()
         } else {
-            let mut dependency_objects = object
-                .dependencies
-                .iter()
-                .filter(|_| !is_body(&object.type_name))
-                .map(|dependency| (dependency.as_str(), true))
-                .chain(
-                    owned
-                        .iter()
-                        .flat_map(|property| property.links())
-                        .filter_map(|link| link.as_ref()?.object())
-                        .map(|dependency| (dependency, false)),
-                )
-                .collect::<Vec<_>>();
+            let mut dependency_objects = Vec::new();
+            if !is_body(&object.type_name) {
+                for dependency in &object.dependencies {
+                    reserve_vec_items(ctx, &mut dependency_objects, 1, "fcstd design dependency candidates")?;
+                    dependency_objects.push((dependency.as_str(), true));
+                }
+            }
+            for dependency in owned.iter().flat_map(|property| property.links())
+                .filter_map(|link| link.as_ref()?.object()) {
+                reserve_vec_items(ctx, &mut dependency_objects, 1, "fcstd design dependency candidates")?;
+                dependency_objects.push((dependency, false));
+            }
             let mut seen_dependencies = BTreeSet::new();
-            dependency_objects.retain(|(dependency, _)| seen_dependencies.insert(*dependency));
-            let mut dependencies = dependency_objects
-                .into_iter()
-                .filter_map(|(dependency, declared)| {
-                    feature_ids
-                        .get(dependency)
-                        .cloned()
-                        .map(|feature| (feature, declared))
-                })
-                .filter(|(dependency, declared)| {
-                    *declared
-                        || ordinal_by_feature
-                            .get(dependency)
-                            .is_some_and(|ordinal| *ordinal < feature_ordinals[object.id.as_str()])
-                })
-                .map(|(dependency, _)| dependency)
-                .collect::<Vec<_>>();
+            let mut dependencies = Vec::new();
+            for (dependency, declared) in dependency_objects {
+                if seen_dependencies.contains(dependency) {
+                    continue;
+                }
+                ctx.charge_collection_items(1, "fcstd design unique dependencies")?;
+                seen_dependencies.insert(dependency);
+                if let Some(feature) = feature_ids.get(dependency) {
+                    if declared || ordinal_by_feature.get(feature)
+                        .is_some_and(|ordinal| *ordinal < feature_ordinals[object.id.as_str()]) {
+                        reserve_vec_items(ctx, &mut dependencies, 1, "fcstd design feature dependencies")?;
+                        dependencies.push(FeatureId::mint(retained_string(ctx, feature.as_str(), "fcstd design feature dependency")?)
+                            .map_err(CodecError::malformed)?);
+                    }
+                }
+            }
             for dependency in semantic_dependencies {
                 if !dependencies.contains(&dependency)
                     && ordinal_by_feature
                         .get(&dependency)
                         .is_some_and(|ordinal| *ordinal < feature_ordinals[object.id.as_str()])
                 {
+                    reserve_vec_items(ctx, &mut dependencies, 1, "fcstd design feature dependencies")?;
                     dependencies.push(dependency);
                 }
             }
             dependencies
         };
+        reserve_vec_items(ctx, &mut ir.model.features, 1, "fcstd neutral features")?;
         ir.model.features.push(Feature {
             id,
             ordinal: feature_ordinals[object.id.as_str()],
-            name: Some(object.name.clone()),
+            name: Some(retained_string(ctx, &object.name, "fcstd feature name")?),
             suppressed: bool_property(&owned, "Suppressed"),
             dependencies: (dependencies).into_iter().collect(),
             source_properties: feature_state(&object.id, &owned)?,
-            source_tag: Some(object.type_name.clone()),
+            source_tag: Some(retained_string(ctx, &object.type_name, "fcstd feature source type")?),
             source_text: None,
             source_content: FeatureContent::default(),
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
@@ -517,7 +521,7 @@ pub(crate) fn transfer(
                     .try_into()
                     .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
-            native_ref: Some(object.id.clone()),
+            native_ref: Some(retained_string(ctx, &object.id, "fcstd feature native reference")?),
         });
     }
     let initial_cycle_affected_features = objects
