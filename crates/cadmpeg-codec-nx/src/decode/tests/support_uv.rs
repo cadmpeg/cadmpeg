@@ -131,7 +131,8 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
         &support_budget,
         &geometry_budget,
         false,
-    );
+    )
+    .expect("evaluator allocation succeeds");
 
     let pcurve_present = |procedural_id: &ProceduralCurveId| {
         let procedural = result
@@ -289,6 +290,7 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
             &geometry_budget,
             false,
         )
+        .expect("evaluator allocation succeeds")
         .endpoint_witnesses;
 
     let witness = crate::decode::pcurves::endpoint_witness_for_candidate(

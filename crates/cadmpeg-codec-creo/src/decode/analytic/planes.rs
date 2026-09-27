@@ -152,8 +152,9 @@ pub(super) struct CarrierSolveDiagnostics {
 }
 
 pub(super) fn solve_carriers_with_diagnostics(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     carriers: &[CarrierEquation],
-) -> (Option<[f64; 3]>, CarrierSolveDiagnostics) {
+) -> Result<(Option<[f64; 3]>, CarrierSolveDiagnostics), cadmpeg_core::CodecError> {
     let mut candidates = Vec::new();
     let mut diagnostics = CarrierSolveDiagnostics::default();
     for first in 0..carriers.len() {
@@ -221,10 +222,11 @@ pub(super) fn solve_carriers_with_diagnostics(
                             .chain(spheres.iter().copied().map(CarrierEquation::Sphere))
                             .collect::<Vec<_>>();
                         candidates.extend(intersect_plane_with_two_quadrics(
+                            ctx,
                             planes[0],
                             quadrics[0],
                             quadrics[1],
-                        ));
+                        )?);
                     } else {
                         candidates.extend(reduced);
                     }
@@ -328,12 +330,15 @@ pub(super) fn solve_carriers_with_diagnostics(
         [point] => Some(*point),
         _ => None,
     };
-    (point, diagnostics)
+    Ok((point, diagnostics))
 }
 
 #[cfg(test)]
-pub(in crate::decode) fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
-    solve_carriers_with_diagnostics(carriers).0
+pub(in crate::decode) fn solve_carriers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    carriers: &[CarrierEquation],
+) -> Result<Option<[f64; 3]>, cadmpeg_core::CodecError> {
+    Ok(solve_carriers_with_diagnostics(ctx, carriers)?.0)
 }
 
 pub(in crate::decode) fn is_axis_aligned(vector: [f64; 3]) -> bool {

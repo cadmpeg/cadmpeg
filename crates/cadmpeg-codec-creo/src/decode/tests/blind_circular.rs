@@ -641,12 +641,13 @@ fn round_support_planes_define_radius_without_generated_surface_rows() {
     }
 
     assert_eq!(
-        round_constant_radius(
+        crate::decode::with_test_decode_ctx(|ctx| round_constant_radius(
+            ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             913
-        )
+        ))
         .expect("round constant radius"),
         Some(0.5)
     );
@@ -755,12 +756,13 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
     }
 
     assert_eq!(
-        round_constant_radius(
+        crate::decode::with_test_decode_ctx(|ctx| round_constant_radius(
+            ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             913
-        )
+        ))
         .expect("round constant radius"),
         Some(0.5)
     );
@@ -784,12 +786,13 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
         .expect("valid CylinderSurface fixture");
     }
     assert_eq!(
-        round_constant_radius(
+        crate::decode::with_test_decode_ctx(|ctx| round_constant_radius(
+            ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             913
-        )
+        ))
         .expect("round constant radius"),
         None
     );
@@ -831,7 +834,7 @@ fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
     }
 
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 5, Some(SchemaClass::Round), "Round").expect("valid test fixture"),
+        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(ctx, &scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 5, Some(SchemaClass::Round), "Round")).expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
             ref groups,
         }) if matches!(
@@ -967,17 +970,18 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
         Some(0.5)
     );
     assert_eq!(
-        round_constant_radius(
+        crate::decode::with_test_decode_ctx(|ctx| round_constant_radius(
+            ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             5
-        )
+        ))
         .expect("round constant radius"),
         None
     );
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 5, Some(SchemaClass::Round), "Round").expect("valid test fixture"),
+        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(ctx, &scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 5, Some(SchemaClass::Round), "Round")).expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
             groups,
         }) if matches!(
@@ -1068,17 +1072,18 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
         Some(0.5)
     );
     assert_eq!(
-        round_constant_radius(
+        crate::decode::with_test_decode_ctx(|ctx| round_constant_radius(
+            ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             5
-        )
+        ))
         .expect("round constant radius"),
         None
     );
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 5, Some(SchemaClass::Round), "Round").expect("valid test fixture"),
+        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(ctx, &scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 5, Some(SchemaClass::Round), "Round")).expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
             groups,
         }) if matches!(
@@ -1173,17 +1178,18 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
         Some(0.5)
     );
     assert_eq!(
-        round_constant_radius(
+        crate::decode::with_test_decode_ctx(|ctx| round_constant_radius(
+            ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             5
-        )
+        ))
         .expect("round constant radius"),
         None
     );
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 5, Some(SchemaClass::Round), "Round").expect("valid test fixture"),
+        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(ctx, &scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 5, Some(SchemaClass::Round), "Round")).expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
             groups,
         }) if matches!(

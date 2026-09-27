@@ -461,6 +461,7 @@ pub(super) fn restore_configuration_tree_node_definitions(
 
 /// Apply sketch ownership projection to configuration-local feature snapshots.
 pub(crate) fn project_configuration_sketch_states(
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     ir: &mut cadmpeg_ir::CadIr,
     histories: &[FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
@@ -571,13 +572,14 @@ pub(crate) fn project_configuration_sketch_states(
             annotations,
         );
         crate::resolved_features::profiles::project_compact_sketch_profiles(
+            ctx,
             &mut features,
             &mut ir.model.sketches,
             &mut ir.model.sketch_entities,
             histories,
             scoped_lanes,
             &mut losses,
-        );
+        )?;
         crate::resolved_features::profiles::project_marker_backed_sketches(
             &mut features,
             &mut ir.model.sketches,
@@ -670,6 +672,7 @@ pub(crate) fn project_configuration_sketch_states(
             scoped_lanes,
         );
         crate::resolved_features::holes::project_profiled_hole_constructions(
+            ctx,
             &mut features,
             &ir.model.sketch_entities,
             histories,

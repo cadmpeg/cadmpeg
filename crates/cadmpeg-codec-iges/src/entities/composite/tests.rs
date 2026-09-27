@@ -36,7 +36,8 @@ use super::{
     bounded_nurbs_for_curve, bounded_nurbs_for_curve_with_tolerance, close, close_with_tolerance,
     composite_child_type_allowed, composite_line_font_valid, composite_logical_connector_use_valid,
     composite_minimum_child_count, composite_use_flag_valid, concatenate_nurbs,
-    elevate_nurbs_to_degree, reverse_nurbs, trim_nurbs_to_interval, CompositeIndex,
+    elevate_nurbs_to_degree, homogeneous_control_points, insert_homogeneous_knot, reverse_nurbs,
+    trim_nurbs_to_interval, CompositeIndex,
 };
 
 #[test]
@@ -1026,12 +1027,120 @@ fn rational_linear_degree_elevation_preserves_the_curve() {
     );
     let before = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 0.25)
         .expect("valid rational linear NURBS evaluates before degree elevation");
-    elevate_nurbs_to_degree(&mut curve, [0.0, 1.0], 2, None).expect("elevation lanes pair");
+    elevate_nurbs_to_degree(None, &mut curve, [0.0, 1.0], 2, None).expect("elevation lanes pair");
     let after = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 0.25)
         .expect("valid rational quadratic NURBS evaluates after degree elevation");
     assert!(before.distance(after.get()) <= 1.0e-12);
     assert_eq!(curve.control_points()[1], Point3::new(1.5, 0.0, 0.0));
     assert_eq!(curve.pole_rows().weights(), Some(vec![1.0, 2.0, 3.0]));
+}
+
+#[test]
+fn homogeneous_control_points_refuse_collection_limit() {
+    let curve = test_nurbs(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = homogeneous_control_points(Some(&ctx), &curve).unwrap_err();
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 0
+                && limit.additional == 2
+    ));
+}
+
+#[test]
+fn composite_knot_insertion_refuses_knot_collection_limit() {
+    let controls = [[1.0, 0.0, 0.0, 0.0], [1.0, 1.0, 0.0, 0.0]];
+    let knots = [0.0, 0.0, 1.0, 1.0];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = insert_homogeneous_knot(Some(&ctx), &controls, &knots, 1, 0.5).unwrap_err();
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 0
+                && limit.additional == 5
+    ));
+}
+
+#[test]
+fn composite_knot_insertion_refuses_control_collection_limit() {
+    let controls = [[1.0, 0.0, 0.0, 0.0], [1.0, 1.0, 0.0, 0.0]];
+    let knots = [0.0, 0.0, 1.0, 1.0];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 7;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = insert_homogeneous_knot(Some(&ctx), &controls, &knots, 1, 0.5).unwrap_err();
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 5
+                && limit.additional == 3
+    ));
+}
+
+#[test]
+fn composite_elevated_knots_refuse_collection_limit() {
+    let mut curve = test_nurbs(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        Some(vec![1.0, 2.0]),
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 19;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = elevate_nurbs_to_degree(Some(&ctx), &mut curve, [0.0, 1.0], 2, None)
+        .unwrap_err()
+        .non_resource()
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 17
+                && limit.additional == 3
+    ));
+}
+
+#[test]
+fn composite_child_weights_refuse_collection_limit() {
+    let curve = test_nurbs(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 7;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = concatenate_nurbs(Some(&ctx), vec![(curve, [0.0, 1.0], ())], None)
+        .unwrap_err()
+        .non_resource()
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 6
+                && limit.additional == 2
+    ));
 }
 
 #[test]
@@ -1049,7 +1158,7 @@ fn trimming_active_nurbs_subranges_preserves_a_rational_curve() {
         Some(vec![1.0, 0.5, 2.0, 1.0]),
     );
     let interval = [0.25, 1.5];
-    let trimmed = trim_nurbs_to_interval(&curve, interval)
+    let trimmed = trim_nurbs_to_interval(None, &curve, interval)
         .expect("carrier lanes pair")
         .expect("a bounded active interval has an exact NURBS subrange");
 
@@ -1082,13 +1191,14 @@ fn concatenation_accepts_exact_active_nurbs_subranges() {
         ],
         Some(vec![1.0, 0.5, 2.0, 1.0]),
     );
-    let first = trim_nurbs_to_interval(&curve, [0.0, 1.0])
+    let first = trim_nurbs_to_interval(None, &curve, [0.0, 1.0])
         .expect("carrier lanes pair")
         .expect("first active NURBS interval is exact");
-    let second = trim_nurbs_to_interval(&curve, [1.0, 2.0])
+    let second = trim_nurbs_to_interval(None, &curve, [1.0, 2.0])
         .expect("carrier lanes pair")
         .expect("second active NURBS interval is exact");
     let concatenated = concatenate_nurbs(
+        None,
         vec![(first, [0.0, 1.0], ()), (second, [1.0, 2.0], ())],
         None,
     )
@@ -1129,7 +1239,7 @@ fn trimming_supports_degree_zero_and_nonclamped_nurbs() {
         (piecewise_constant, [0.5, 1.5], vec![0.75, 1.25]),
         (nonclamped, [1.0, 3.0], vec![1.25, 2.0, 2.75]),
     ] {
-        let trimmed = trim_nurbs_to_interval(&curve, interval)
+        let trimmed = trim_nurbs_to_interval(None, &curve, interval)
             .expect("carrier lanes pair")
             .expect("a valid active interval has an exact NURBS subrange");
         for parameter in parameters {
@@ -1150,10 +1260,13 @@ fn concatenation_preserves_degree_zero_spans() {
         [0.0, 2.0],
     );
     let second = (test_nurbs(0, vec![0.0, 1.0], vec![point], None), [0.0, 1.0]);
-    let concatenated =
-        concatenate_nurbs(vec![(first.0, first.1, ()), (second.0, second.1, ())], None)
-            .expect("carrier lanes pair")
-            .expect("degree-zero spans with an exact join concatenate");
+    let concatenated = concatenate_nurbs(
+        None,
+        vec![(first.0, first.1, ()), (second.0, second.1, ())],
+        None,
+    )
+    .expect("carrier lanes pair")
+    .expect("degree-zero spans with an exact join concatenate");
 
     assert_eq!(concatenated.nurbs.degree(), 0);
     assert_eq!(
@@ -1188,7 +1301,7 @@ fn multi_span_linear_degree_elevation_preserves_a_degenerate_curve() {
     );
     let before = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 2.0)
         .expect("valid multi-span linear NURBS evaluates before degree elevation");
-    elevate_nurbs_to_degree(&mut curve, [0.5, 2.5], 3, None).expect("elevation lanes pair");
+    elevate_nurbs_to_degree(None, &mut curve, [0.5, 2.5], 3, None).expect("elevation lanes pair");
     let after = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 2.0)
         .expect("valid multi-span linear NURBS evaluates after degree elevation");
     assert_eq!(curve.degree(), 3);
@@ -1200,7 +1313,8 @@ fn multi_span_degree_zero_elevation_preserves_the_curve() {
     let point = Point3::new(1.0, 2.0, 3.0);
     let source = test_nurbs(0, vec![0.0, 1.0, 2.0], vec![point; 2], None);
     let mut elevated = source.clone();
-    elevate_nurbs_to_degree(&mut elevated, [0.0, 2.0], 2, None).expect("elevation lanes pair");
+    elevate_nurbs_to_degree(None, &mut elevated, [0.0, 2.0], 2, None)
+        .expect("elevation lanes pair");
     assert_eq!(elevated.degree(), 2);
     for parameter in [0.25, 0.75, 1.25, 1.75] {
         let before = cadmpeg_ir::eval::nurbs_curve_point_at(&source, parameter).unwrap();
@@ -1224,7 +1338,8 @@ fn multi_span_rational_degree_elevation_preserves_the_curve() {
         Some(vec![1.0, 2.0, 1.0, 3.0]),
     );
     let mut elevated = source.clone();
-    elevate_nurbs_to_degree(&mut elevated, [0.0, 1.0], 3, None).expect("elevation lanes pair");
+    elevate_nurbs_to_degree(None, &mut elevated, [0.0, 1.0], 3, None)
+        .expect("elevation lanes pair");
     assert_eq!(elevated.degree(), 3);
     assert_eq!(elevated.weights().map(|weights| weights.len()), Some(7));
     for parameter in [0.0, 0.125, 0.5, 0.75, 1.0] {
@@ -1260,11 +1375,12 @@ fn mixed_degree_composition_accepts_a_multi_span_linear_child() {
     ];
     for (index, (curve, interval)) in children.iter_mut().enumerate() {
         if curve.degree() < 3 {
-            elevate_nurbs_to_degree(curve, *interval, 3, None)
+            elevate_nurbs_to_degree(None, curve, *interval, 3, None)
                 .unwrap_or_else(|error| panic!("child {index} should elevate: {error}"));
         }
     }
     let concatenated = concatenate_nurbs(
+        None,
         children
             .into_iter()
             .map(|(curve, range)| (curve, range, ()))
@@ -1298,10 +1414,13 @@ fn concatenated_range_is_exactly_the_canonical_knot_domain() {
     let first = line(0.0, 0.3, 0.0);
     let second = line(1.0e9, 1.0e9 + 0.1, 1.0);
 
-    let concatenated =
-        concatenate_nurbs(vec![(first.0, first.1, ()), (second.0, second.1, ())], None)
-            .expect("carrier lanes pair")
-            .expect("joined lines should concatenate");
+    let concatenated = concatenate_nurbs(
+        None,
+        vec![(first.0, first.1, ()), (second.0, second.1, ())],
+        None,
+    )
+    .expect("carrier lanes pair")
+    .expect("joined lines should concatenate");
 
     assert_eq!(
         Some(&concatenated.segments.end()),
@@ -1451,7 +1570,8 @@ fn decode_concatenates_ordered_composite_curve_children() {
         Some(cadmpeg_ir::math::Point3::new(1.0, 0.5, 0.0))
     );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1504,7 +1624,8 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
     let validation = cadmpeg_ir::validate_neutral(
         outside_resolution.ir(),
         outside_resolution.report().losses.clone(),
-    );
+    )
+    .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let at_or_beyond_resolution = IgesCodec
@@ -1584,7 +1705,8 @@ fn decode_concatenates_exact_circular_arc_and_line_children() {
         std::f64::consts::FRAC_1_SQRT_2
     );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1614,7 +1736,8 @@ fn decode_converts_heterogeneous_composite_curve_children_to_an_exact_carrier() 
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1672,7 +1795,8 @@ fn decode_projects_mixed_degree_composite_pcurve() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1719,7 +1843,8 @@ fn decode_projects_a_composite_curve_with_an_inconsistent_parametric_spline_chil
             .count(),
         1
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1779,9 +1904,13 @@ fn a_reversed_child_interval_names_itself_not_the_endpoint_join() {
     // The second child states the interval [1.0, 0.0] over an ordinary knot
     // vector: the stated interval, not the knots, runs backwards.
     let second = (test_nurbs(0, vec![0.0, 1.0], vec![point], None), [1.0, 0.0]);
-    let error = concatenate_nurbs(vec![(first.0, first.1, ()), (second.0, second.1, ())], None)
-        .expect_err("a reversed child interval is refused by name")
-        .to_string();
+    let error = concatenate_nurbs(
+        None,
+        vec![(first.0, first.1, ()), (second.0, second.1, ())],
+        None,
+    )
+    .expect_err("a reversed child interval is refused by name")
+    .to_string();
     assert!(
         error.contains("reversed interval"),
         "the refusal names the reversed interval: {error}"
@@ -1795,7 +1924,7 @@ fn a_reversed_child_interval_names_itself_not_the_endpoint_join() {
 /// A composite that states no child at all is refused by name.
 #[test]
 fn an_empty_child_list_names_itself() {
-    let error = concatenate_nurbs(Vec::<(NurbsCurve, [f64; 2], ())>::new(), None)
+    let error = concatenate_nurbs(None, Vec::<(NurbsCurve, [f64; 2], ())>::new(), None)
         .expect_err("an empty child list is refused by name")
         .to_string();
     assert!(

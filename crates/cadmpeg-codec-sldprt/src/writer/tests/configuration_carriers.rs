@@ -1083,7 +1083,7 @@ fn semantic_writer_preserves_sheet_body_classification() {
         ))
         .expect("a finite position is a point"),
     );
-    let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 
     let mut encoded = Vec::new();
@@ -1497,7 +1497,7 @@ fn semantic_writer_preserves_unbound_material_definition() {
         ))
         .expect("a finite position is a point"),
     );
-    let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 
     let mut encoded = Vec::new();

@@ -3,7 +3,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
@@ -164,9 +165,10 @@ fn expression_dependency_reaches(dependencies: &[Vec<usize>], start: usize, targ
 }
 
 fn curve_expression_parameter_order(
+    ctx: &DecodeContext<'_>,
     record: &crate::curve::CurveExpressionRecord,
     unique_assignment_indices: &BTreeMap<String, usize>,
-) -> Option<CurveExpressionParameterOrder> {
+) -> Result<Option<CurveExpressionParameterOrder>, CodecError> {
     let dependencies = record
         .assignments
         .iter()
@@ -192,26 +194,27 @@ fn curve_expression_parameter_order(
             }
         }
     }
-    let mut ordinals = alloc_filled(
+    let mut ordinals = ctx.alloc_filled(
         dependencies.len(),
         None::<u32>,
         "creo curve-expression parameter ordinals",
-    )
-    .ok()?;
+    )?;
     for ordinal in 0..dependencies.len() {
-        let index = (0..dependencies.len()).find(|&candidate| {
+        let Some(index) = (0..dependencies.len()).find(|&candidate| {
             ordinals[candidate].is_none()
                 && dependencies[candidate].iter().all(|dependency| {
                     cyclic_edges.contains(&(candidate, *dependency))
                         || ordinals[*dependency].is_some()
                 })
-        })?;
+        }) else {
+            return Ok(None);
+        };
         ordinals[index] = Some(ordinal as u32);
     }
-    Some((
-        ordinals.into_iter().collect::<Option<Vec<u32>>>()?,
-        cyclic_edges,
-    ))
+    Ok(ordinals
+        .into_iter()
+        .collect::<Option<Vec<u32>>>()
+        .map(|ordinals| (ordinals, cyclic_edges)))
 }
 
 fn curve_expression_parameter_names(
@@ -290,7 +293,7 @@ pub(super) fn transfer_curve_expression_features(
             .filter_map(|(name, index)| index.map(|index| (name.clone(), index)))
             .collect::<BTreeMap<_, _>>();
         let Some((parameter_ordinals, cyclic_edges)) =
-            curve_expression_parameter_order(record, &unique_assignment_indices)
+            curve_expression_parameter_order(ctx, record, &unique_assignment_indices)?
         else {
             continue;
         };

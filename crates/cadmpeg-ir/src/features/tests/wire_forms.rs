@@ -323,7 +323,7 @@ fn generated_sweep_sections_round_trip_and_validate() {
             native_ref: None,
         });
         ir.finalize();
-        validate_neutral(&ir, Vec::new())
+        validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
     };
     let report = validate_definition(definition.clone());
     assert!(report.is_ok(), "{report:#?}");
@@ -382,7 +382,7 @@ fn full_round_fillet_keeps_automatic_side_semantics() {
         evaluation: crate::features::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     });
-    assert!(!validate_neutral(&ir, Vec::new())
+    assert!(!validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| {

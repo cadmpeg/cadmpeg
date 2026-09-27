@@ -17,7 +17,7 @@ fn decode_with_body(policy: DecodePolicy) -> Result<CadIr, CodecError> {
     );
     let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("test exchange parses");
     let mut ir = CadIr::empty();
-    let geometry = super::super::super::geometry::decode(&exchange, &mut ir).value;
+let geometry = super::super::super::geometry::decode(&exchange, &mut ir).expect("resource allocation did not fail").value;
     let index = super::super::super::index::CarrierIndex::from_ir(&ir);
     let topology_arena = DecodeArena::new();
     let (topology_ctx, _) = DecodeContext::from_root_bytes(

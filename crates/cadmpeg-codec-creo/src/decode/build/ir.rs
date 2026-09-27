@@ -50,7 +50,7 @@ pub(in super::super) fn build_container_ir(
     scan: &ContainerScan,
     classification: &crate::dialect::DialectClassification,
 ) -> Result<BuiltIr, CodecError> {
-    let (meta, coverage) = source_meta(scan, classification)?;
+    let (meta, coverage) = source_meta(ctx, scan, classification)?;
     let mut ir = CadIr::decoded(meta);
     let mut annotations = AnnotationBuilder::new();
     emit_legacy_arenas(ctx, scan, &mut ir, &mut annotations)?;
@@ -657,7 +657,7 @@ pub(in super::super) fn build_ir(
     scan: &ContainerScan,
     classification: &crate::dialect::DialectClassification,
 ) -> Result<BuiltIr, CodecError> {
-    let (meta, mut coverage) = source_meta(scan, classification)?;
+    let (meta, mut coverage) = source_meta(ctx, scan, classification)?;
     let mut ir = CadIr::decoded(meta);
     let mut annotations = AnnotationBuilder::new();
     let mut transfer_losses = Vec::new();

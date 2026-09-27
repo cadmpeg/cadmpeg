@@ -36,7 +36,7 @@ fn numerical_0922b_pcurve_knot_units() {
             .unwrap(),
         };
         let seeds = pcurve_selection_seeds(&index, &id, &p, &ir.model.surfaces[0].geometry);
-        let r = pcurve_surface_closest(&index, &id, &p, Point3::new(0.3, 0., 0.), &seeds).unwrap();
+        let r = pcurve_surface_closest(&index, &id, &p, Point3::new(0.3, 0., 0.), &seeds).expect("resource allocation did not fail").unwrap();
         println!("STEP d{d:e}, result{r:?}, x={}", r.1 / d);
         assert!(r.0 < 1e-14);
         assert!((r.1 / d - 0.3).abs() < 1e-14);
@@ -159,7 +159,7 @@ fn pcurve_locus_accepts_a_wide_finite_line_parameter_interval() {
         Point3::new(lower, 0.0, 0.0),
         Point3::new(upper, 0.0, 0.0),
         COINCIDENCE_TOLERANCE,
-    ));
+    ).expect("resource allocation did not fail"));
 }
 
 #[test]
@@ -196,7 +196,7 @@ fn pcurve_locus_finds_an_interior_curve_branch_near_the_float_limit() {
             Point3::new(x, 0.0, 0.0),
             &[midpoint],
             COINCIDENCE_TOLERANCE,
-        )
+        ).expect("resource allocation did not fail")
         .is_some());
     }
     let (exchange, _) =
@@ -229,7 +229,7 @@ fn pcurve_locus_finds_an_interior_curve_branch_near_the_float_limit() {
         Point3::new(0.5, 0.0, 0.0),
         Point3::new(0.6, 0.0, 0.0),
         COINCIDENCE_TOLERANCE,
-    ));
+    ).expect("resource allocation did not fail"));
 }
 
 #[test]
@@ -247,7 +247,7 @@ fn numerical_0922b_pcurve_retains_finite_seed_when_step_overflows() {
         .unwrap(),
     };
     assert_eq!(
-        mapped_pcurve_closest(&index, &id, &pcurve, Point3::new(1e200, 0., 0.), 0.),
+        mapped_pcurve_closest(&index, &id, &pcurve, Point3::new(1e200, 0., 0.), 0.).expect("resource allocation did not fail"),
         Some((1e200, 0.))
     );
 }
@@ -287,7 +287,7 @@ fn a_declared_pcurve_fit_with_an_overflowing_end_is_measured_at_its_finite_end()
             [-1., 1.],
             Point3::new(0., 0., 0.),
             Point3::new(7., 7., 7.),
-        ),
+        ).expect("resource allocation did not fail"),
         Some(0.)
     );
 }
@@ -315,7 +315,7 @@ fn the_mapped_pcurve_search_halves_a_step_whose_point_overflows() {
         target_parameter,
         0.,
     );
-    let (error, parameter) = mapped_pcurve_closest(&index, &id, &parabola, target, 1e152).unwrap();
+    let (error, parameter) = mapped_pcurve_closest(&index, &id, &parabola, target, 1e152).expect("resource allocation did not fail").unwrap();
     assert!(
         (parameter / target_parameter - 1.).abs() < 1e-6,
         "{parameter}"
@@ -360,7 +360,7 @@ fn a_declared_pcurve_fit_with_an_overflowing_placed_end_misses_by_an_infinite_di
             [-1., 1.],
             Point3::new(0., 0., 0.),
             Point3::new(7., 7., 7.),
-        ),
+        ).expect("resource allocation did not fail"),
         Some(f64::INFINITY)
     );
 }
@@ -386,7 +386,7 @@ fn a_declared_pcurve_fit_with_an_overflowing_line_end_is_measured_at_its_finite_
             [-1., 1.],
             Point3::new(0., 0., 0.),
             Point3::new(7., 7., 7.),
-        ),
+        ).expect("resource allocation did not fail"),
         Some(0.)
     );
 }

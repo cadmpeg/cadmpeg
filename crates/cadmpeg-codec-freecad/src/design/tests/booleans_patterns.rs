@@ -2,14 +2,77 @@
 //! Design booleans-patterns transfer unit tests.
 
 use crate::design::tests::definition;
+use crate::native::{PropertyBody, PropertyFamily, PropertyRecord, RetainedXml};
 use crate::test_support::test_archive::{archive, archive_entries, assert_valid_document};
 use crate::FcstdCodec;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 const EPS_PATTERN_ANGLE: f64 = 1.0e-12;
 const EPS_PATTERN_ANGLE_DEGREES: f64 = 1.0e-12;
+
+fn pattern_scalar(name: &str, value: f64) -> PropertyRecord {
+    let xml = format!("<Property><Float value=\"{value}\"/></Property>");
+    PropertyRecord {
+        id: name.to_owned(),
+        owner: "Pattern".to_owned(),
+        name: name.to_owned(),
+        type_name: "App::PropertyLength".to_owned(),
+        family: PropertyFamily::Quantity,
+        status: None,
+        body: PropertyBody::Persisted {
+            values: Vec::new(),
+            links: Vec::new(),
+            side_entries: Vec::new(),
+            dynamic: None,
+        },
+        order: 0,
+        xml: RetainedXml::from_text(xml, 0).expect("test scalar XML"),
+    }
+}
+
+#[test]
+fn uniform_pattern_intervals_report_collection_limit() {
+    let length = pattern_scalar("Length", 12.0);
+    let properties = [&length];
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("context");
+    let admitted =
+        crate::design::pattern_locations(&ctx, &properties, "", 4, 0, ("Length", "Offset"), &[])
+            .expect("service profile")
+            .expect("uniform locations");
+    assert_eq!(admitted.len(), 4);
+
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("context");
+    let error =
+        crate::design::pattern_locations(&ctx, &properties, "", 4, 0, ("Length", "Offset"), &[])
+            .expect_err("three intervals exceed the collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "freecad pattern intervals"));
+}
+
+#[test]
+fn irregular_pattern_intervals_report_collection_limit() {
+    let offset = pattern_scalar("Offset", 2.0);
+    let properties = [&offset];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("context");
+    let error =
+        crate::design::pattern_locations(&ctx, &properties, "", 4, 1, ("Length", "Offset"), &[])
+            .expect_err("three intervals exceed the collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "freecad pattern intervals"));
+}
 
 #[test]
 fn transfers_ordered_part_boolean_operands_and_infers_dependencies() {
@@ -393,7 +456,9 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
             && record.semantic_kind == "pattern"
             && record.neutral()
     }));
-    let baseline_findings = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).findings;
+    let baseline_findings = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail")
+        .findings;
     assert!(
         baseline_findings
             .iter()

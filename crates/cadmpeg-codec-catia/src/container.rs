@@ -20,8 +20,8 @@ use std::num::NonZeroU32;
 use std::ops::Range;
 
 use cadmpeg_core::bytes::{find, find_from};
-use cadmpeg_core::decode::View;
-use cadmpeg_core::ContainerEntry;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::ContainerSummary;
 
 use crate::layout::extent_struct as extent;
@@ -1319,17 +1319,18 @@ fn unique_largest_descriptor<'a>(
 /// is a partial spine; when it coexists with a coherent E5 walk, E5 owns the
 /// route. Anything that matches no invariant is [`Variant::Unknown`].
 fn identify_variant(
+    ctx: &DecodeContext<'_>,
     inner: Option<&InnerDir>,
     brep: Option<&[u8]>,
     main_data_stream: Option<&[u8]>,
     census: &Census,
     coherent_e5: bool,
-) -> Variant {
-    match (inner, brep) {
+) -> Result<Variant, CodecError> {
+    Ok(match (inner, brep) {
         // A standard edge table establishes a complete nested FBB body. It
         // takes precedence over an unrelated E5 stream in the same container.
         (Some(_), Some(brep)) if census.fbb_runs > 0 => {
-            let variant = identify_fbb_variant(main_data_stream.unwrap_or(brep), census);
+            let variant = identify_fbb_variant(ctx, main_data_stream.unwrap_or(brep), census)?;
             if variant == Variant::FbbOnly && coherent_e5 {
                 Variant::E5Stream
             } else {
@@ -1349,25 +1350,32 @@ fn identify_variant(
         // Nested container, but its directory catalogues no BREP body.
         (Some(_), None) => Variant::InnerNoDirectory,
         (Some(_), Some(_)) => Variant::FloatPackedInnerNoFbb,
-    }
+    })
 }
 
-fn identify_fbb_variant(brep: &[u8], census: &Census) -> Variant {
-    if crate::families::standard::fbb::standard_edge_count(brep).is_some() {
-        return Variant::StandardNested;
+fn identify_fbb_variant(
+    ctx: &DecodeContext<'_>,
+    brep: &[u8],
+    census: &Census,
+) -> Result<Variant, CodecError> {
+    if crate::families::standard::fbb::standard_edge_count(ctx, brep)?.is_some() {
+        return Ok(Variant::StandardNested);
     }
     if crate::families::standard::fbb::fbb_only_edge_count(brep).is_some() {
-        return Variant::FbbOnly;
+        return Ok(Variant::FbbOnly);
     }
     if census.edge_delimiters == 0 && census.vertex_markers > 0 {
-        Variant::FbbOnly
+        Ok(Variant::FbbOnly)
     } else {
-        Variant::Unknown
+        Ok(Variant::Unknown)
     }
 }
 
 /// Identify a whole `.CATPart` byte image.
-pub(crate) fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
+pub(crate) fn scan_bytes<'a>(
+    ctx: &DecodeContext<'_>,
+    data: impl Into<Cow<'a, [u8]>>,
+) -> Result<ContainerScan<'a>, CodecError> {
     let data = data.into();
     let outer_dir_offset = View::u32_be_at(&data, outer_hdr::DIRECTORY_OFFSET).unwrap_or(0);
     let outer_dir_length = View::u32_be_at(&data, outer_hdr::DIRECTORY_LENGTH).unwrap_or(0);
@@ -1409,6 +1417,7 @@ pub(crate) fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a
     }
 
     let variant = identify_variant(
+        ctx,
         inner.as_ref(),
         brep.as_deref(),
         main_data_stream.as_deref(),
@@ -1416,9 +1425,9 @@ pub(crate) fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a
         outer_body.is_some_and(|body| {
             e5_record_stream_in_segments(&data, body.range(), &finjpl_segments).is_some()
         }),
-    );
+    )?;
 
-    ContainerScan {
+    Ok(ContainerScan {
         data,
         outer_dir_offset,
         outer_dir_length,
@@ -1433,7 +1442,7 @@ pub(crate) fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a
         outer_container_declarations,
         census,
         variant,
-    }
+    })
 }
 
 /// Build a [`ContainerSummary`] enumerating the outer and inner directories'

@@ -52,7 +52,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         native_ref: None,
     });
     ir.finalize();
-    assert!(validate_neutral(&ir, Vec::new()).is_ok());
+    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
     let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
     assert_eq!(
         round_trip.model.configurations[0].bodies.as_deref(),
@@ -67,7 +67,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         ParameterId::mint("synthetic:test:parameter#missing").expect("identity grammar"),
         "30 mm".into(),
     )]);
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(configuration_id.0.as_str())
             && finding.message.contains("configuration parameter override")
@@ -98,7 +98,7 @@ fn configuration_body_membership_round_trips_and_validates() {
             }),
         },
     )]);
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     for reference in [
         "configuration parameter value",
         "configuration feature state",
@@ -118,7 +118,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         parameter_id.clone(),
         ParameterValue::Angle(Angle::new(1.0).unwrap()),
     )]);
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(configuration_id.0.as_str())
             && finding.message == "configuration parameter value is invalid"
@@ -169,7 +169,7 @@ fn configuration_body_membership_round_trips_and_validates() {
             }),
         },
     )]);
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(configuration_id.0.as_str())
             && finding.message.contains("does not precede")
@@ -187,12 +187,12 @@ fn configuration_body_membership_round_trips_and_validates() {
             }),
         },
     )]);
-    assert!(validate_neutral(&ir, Vec::new()).is_ok());
+    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
     ir.model.configurations[0].feature_states.clear();
 
     ir.model.configurations[0].active = true;
     ir.model.features[0].suppressed = Some(true);
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(configuration_id.0.as_str())
             && finding.message
@@ -216,7 +216,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     )]);
     // A dependency with no state in this configuration inherits its model-level
     // state; `feature_states` is allowed to be sparse, so that is not a finding.
-    assert!(validate_neutral(&ir, Vec::new()).is_ok());
+    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
     ir.model.configurations[0].feature_states.insert(
         first_feature.clone(),
         ConfigurationFeatureState {
@@ -228,7 +228,7 @@ fn configuration_body_membership_round_trips_and_validates() {
             }),
         },
     );
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(configuration_id.0.as_str())
             && finding.message
@@ -244,7 +244,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         .evaluation = ConfigurationEvaluation::Active {
         outputs: DistinctMembers::default(),
     };
-    assert!(validate_neutral(&ir, Vec::new()).is_ok());
+    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
     ir.model.configurations[0].feature_states.clear();
 
     ir.model.configurations[0].bodies = Some(
@@ -252,7 +252,7 @@ fn configuration_body_membership_round_trips_and_validates() {
             .try_into()
             .unwrap(),
     );
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(configuration_id.0.as_str())
             && finding.message.contains("missing configuration body")
@@ -275,7 +275,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations[0].active = true;
     ir.model.configurations[1].active = true;
     ir.finalize();
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report
         .findings
         .iter()

@@ -398,7 +398,7 @@ pub(super) fn try_decode_geometry(
             &surfaces_by_xmt,
             ir.tolerances.linear,
             &adaptive_geometry_budget,
-        );
+        )?;
         for (oi, offset) in view.offset_surfaces.iter().copied().enumerate() {
             let Some(support) = surfaces_by_xmt.get(&offset.state.support()).cloned() else {
                 continue;
@@ -666,35 +666,44 @@ pub(super) fn try_decode_geometry(
             let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
             intersection_constructions
                 .iter()
-                .filter_map(|construction| {
-                    let charted = charted_intersections.get(&construction.xmt)?;
-                    let mut support_uv = validate_serialized_support_uv_with_index(
-                        &model_index,
-                        &surfaces_by_xmt,
-                        [Some(charted.primary_support), charted.secondary_support],
-                        &charted.samples.points(),
-                        charted.fit_tolerance.get(),
-                        &charted.support_uv,
-                        &serialized_support_uv_geometry_budget,
-                    );
-                    if let Some(ext_support_uv) = assign_ext11_support_uv_with_index(
-                        &model_index,
-                        &surfaces_by_xmt,
-                        [Some(charted.primary_support), charted.secondary_support],
-                        &charted.samples.points(),
-                        charted.fit_tolerance.get(),
-                        &charted.ext_support_uv,
-                        &serialized_support_uv_geometry_budget,
-                    ) {
-                        for side in 0..2 {
-                            if support_uv[side].is_none() {
-                                support_uv[side].clone_from(&ext_support_uv[side]);
+                .map(
+                    |construction| -> Result<Option<_>, cadmpeg_core::CodecError> {
+                        let Some(charted) = charted_intersections.get(&construction.xmt) else {
+                            return Ok(None);
+                        };
+                        let mut support_uv = validate_serialized_support_uv_with_index(
+                            &model_index,
+                            &surfaces_by_xmt,
+                            [Some(charted.primary_support), charted.secondary_support],
+                            &charted.samples.points(),
+                            charted.fit_tolerance.get(),
+                            &charted.support_uv,
+                            &serialized_support_uv_geometry_budget,
+                        )?;
+                        if let Some(ext_support_uv) = assign_ext11_support_uv_with_index(
+                            &model_index,
+                            &surfaces_by_xmt,
+                            [Some(charted.primary_support), charted.secondary_support],
+                            &charted.samples.points(),
+                            charted.fit_tolerance.get(),
+                            &charted.ext_support_uv,
+                            &serialized_support_uv_geometry_budget,
+                        )? {
+                            for side in 0..2 {
+                                if support_uv[side].is_none() {
+                                    support_uv[side].clone_from(&ext_support_uv[side]);
+                                }
                             }
                         }
+                        Ok(Some((construction.xmt, support_uv)))
+                    },
+                )
+                .try_fold(BTreeMap::new(), |mut values, admitted| {
+                    if let Some((xmt, support_uv)) = admitted? {
+                        values.insert(xmt, support_uv);
                     }
-                    Some((construction.xmt, support_uv))
-                })
-                .collect::<BTreeMap<_, _>>()
+                    Ok::<_, cadmpeg_core::CodecError>(values)
+                })?
         };
         for (ci, construction) in intersection_constructions.into_iter().enumerate() {
             let curve_id: CurveId =
@@ -1054,7 +1063,7 @@ pub(super) fn try_decode_geometry(
                 &support_uv_validation_budget,
                 &completion_geometry_budget,
                 isolate_validation_lanes,
-            );
+            )?;
         support_uv_lane_geometry_exhausted |= support_uv_validation.lane_geometry_exhausted;
         let newly_validated_endpoint_witnesses = support_uv_validation.endpoint_witnesses;
         serialized_support_uv_geometry_budget.clear_blend_frame_cache();

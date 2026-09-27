@@ -443,6 +443,7 @@ pub(crate) fn decode_parameter_scopes(
 /// candidate resolves to a unique ASM state transition; an unresolved group
 /// remains an error so a duplicate cannot be selected by byte order.
 pub(crate) fn admit_history_bound_scope_variants(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scopes: &mut Vec<DesignParameterScope>,
     histories: &[crate::history_records::AsmHistory],
 ) -> Result<(), CodecError> {
@@ -457,8 +458,7 @@ pub(crate) fn admit_history_bound_scope_variants(
             .push(index);
     }
 
-    let mut admitted =
-        cadmpeg_core::decode::alloc_filled(scopes.len(), true, "f3d scope admission")?;
+    let mut admitted = ctx.alloc_filled(scopes.len(), true, "f3d scope admission")?;
     for indices in groups.values() {
         let [first, following @ ..] = indices.as_slice() else {
             continue;

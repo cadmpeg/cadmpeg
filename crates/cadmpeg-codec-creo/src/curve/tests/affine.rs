@@ -2,9 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::curve::curve_expression_solve_program;
-use crate::curve::evaluate_expression_program_details;
 use crate::curve::expression_records;
-use crate::curve::infer_solve_variable_dimensions;
 use crate::curve::quantity_value;
 use crate::curve::solve_unique_affine_system;
 use crate::curve::tests::evaluate_expression_program;
@@ -17,7 +15,42 @@ use crate::curve::ExternalRelationSymbols;
 use crate::curve::RelationDimension;
 use crate::curve::RelationEvaluationContext;
 use crate::curve::SolveUnknown;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+
+fn with_collection_limit<T>(
+    limit: u64,
+    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
+    run(&ctx)
+}
+
+fn evaluate_expression_program_details(
+    lines: &[CurveExpressionLine],
+    model_name: Option<&str>,
+    external_symbols: &ExternalRelationSymbols,
+) -> crate::curve::CurveExpressionEvaluation {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        crate::curve::evaluate_expression_program_details(ctx, lines, model_name, external_symbols)
+    })
+    .expect("test curve expression evaluation")
+}
+
+fn infer_solve_variable_dimensions(
+    block: &CurveExpressionSolveBlock,
+    values: &BTreeMap<String, CurveExpressionValue>,
+    known_dimensions: &[Option<RelationDimension>],
+    context: RelationEvaluationContext<'_>,
+) -> Option<Vec<RelationDimension>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        crate::curve::infer_solve_variable_dimensions(ctx, block, values, known_dimensions, context)
+    })
+    .expect("test dimension inference")
+}
 
 #[test]
 fn decodes_counted_curve_expression_source_lines() {
@@ -865,6 +898,95 @@ fn infers_integral_dimensions_through_sqrt_for_untyped_variables() {
         ),
         None,
     );
+}
+
+#[test]
+fn dimension_components_refuse_collection_limit() {
+    let block = CurveExpressionSolveBlock {
+        equations: Vec::new(),
+        assignments: Vec::new(),
+        unknowns: vec![SolveUnknown {
+            name: "length".to_owned(),
+            solution: None,
+        }],
+        offset: 0,
+        for_offset: 1,
+    };
+    let error = with_collection_limit(0, |ctx| {
+        crate::curve::infer_solve_variable_dimensions(
+            ctx,
+            &block,
+            &BTreeMap::new(),
+            &[Some(RelationDimension::LENGTH)],
+            RelationEvaluationContext::default(),
+        )
+    })
+    .expect_err("dimension component allocation exceeds the limit");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo_solve_dimension_components"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn dimension_axis_refuses_collection_limit() {
+    let mut rows = vec![AffineEquationRow {
+        coefficients: vec![1.0],
+        rhs: 2.0,
+    }];
+    let error = with_collection_limit(0, |ctx| {
+        crate::curve::solve_dimension_axis(ctx, &mut rows, 1, &BTreeSet::from([0]))
+    })
+    .expect_err("axis solution allocation exceeds the limit");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo_solve_dimension_axis"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+    ));
+}
+
+fn nonlinear_seed_error(limit: u64) -> cadmpeg_core::CodecError {
+    with_collection_limit(limit, |ctx| {
+        crate::curve::nonlinear_initial_guesses(
+            ctx,
+            &[Some(CurveExpressionValue::Number(1.0))],
+            &[RelationDimension::default()],
+        )
+    })
+    .expect_err("nonlinear seed allocation exceeds the limit")
+}
+
+#[test]
+fn nonlinear_zero_seed_refuses_collection_limit() {
+    assert!(matches!(
+        nonlinear_seed_error(0),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo_solve_seed_zero"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn nonlinear_magnitude_seed_refuses_collection_limit() {
+    assert!(matches!(
+        nonlinear_seed_error(1),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo_solve_seed_magnitude"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn nonlinear_axis_seed_refuses_collection_limit() {
+    assert!(matches!(
+        nonlinear_seed_error(11),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo_solve_seed_axis"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+    ));
 }
 
 #[test]

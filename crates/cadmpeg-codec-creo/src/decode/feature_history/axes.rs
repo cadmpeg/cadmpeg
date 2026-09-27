@@ -24,13 +24,19 @@ const EPS_AXIS_ALIGNMENT: f64 = 1.0e-10;
 const EPS_AXIS_OFFSET: f64 = 1.0e-9;
 
 pub(in super::super) fn resolved_revolution_axis(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     transform: &crate::placement::FeatureSectionTransform,
-) -> Option<RevolutionAxis> {
-    definition.variables.as_ref()?;
-    let segments = definition.segments.as_ref()?;
-    segments.is_complete().then_some(())?;
-    let points = resolved_section_points(definition);
+) -> Result<Option<RevolutionAxis>, cadmpeg_core::CodecError> {
+    let Some(segments) = definition
+        .variables
+        .as_ref()
+        .and(definition.segments.as_ref())
+        .filter(|segments| segments.is_complete())
+    else {
+        return Ok(None);
+    };
+    let points = resolved_section_points(ctx, definition)?;
     let candidates = segments
         .rows
         .ordinary()
@@ -57,9 +63,9 @@ pub(in super::super) fn resolved_revolution_axis(
         })
         .collect::<Vec<_>>();
     let [axis] = candidates.as_slice() else {
-        return None;
+        return Ok(None);
     };
-    Some(axis.clone())
+    Ok(Some(axis.clone()))
 }
 
 pub(in super::super) fn full_turn_revolution_carrier_axis(
@@ -187,26 +193,33 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
 }
 
 pub(in super::super) fn revolution_axis_for_transfer(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
-    definition: &crate::feature::definitions::FeatureDefinition,
-    transform: &crate::placement::FeatureSectionTransform,
+    section: (
+        &crate::feature::definitions::FeatureDefinition,
+        &crate::placement::FeatureSectionTransform,
+    ),
     extent: Option<&RevolveExtent>,
-) -> Option<RevolutionAxis> {
-    resolved_revolution_axis(definition, transform).or_else(|| {
-        full_turn_revolution_carrier_axis(scan, ir, source_carriers, feature_id, extent)
-    })
+) -> Result<Option<RevolutionAxis>, cadmpeg_core::CodecError> {
+    let (definition, transform) = section;
+    Ok(
+        resolved_revolution_axis(ctx, definition, transform)?.or_else(|| {
+            full_turn_revolution_carrier_axis(scan, ir, source_carriers, feature_id, extent)
+        }),
+    )
 }
 
 pub(super) fn feature_revolution_axis_for_transfer(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     extent: Option<&RevolveExtent>,
-) -> Option<RevolutionAxis> {
+) -> Result<Option<RevolutionAxis>, cadmpeg_core::CodecError> {
     let definition = unique_feature_profile_definition(
         &scan.features.definitions,
         &scan.features.section_transforms,
@@ -222,22 +235,21 @@ pub(super) fn feature_revolution_axis_for_transfer(
         [transform] => Some(*transform),
         _ => None,
     };
-    definition
-        .zip(transform)
-        .and_then(|(definition, transform)| {
-            revolution_axis_for_transfer(
-                scan,
-                ir,
-                source_carriers,
-                feature_id,
-                definition,
-                transform,
-                extent,
-            )
-        })
-        .or_else(|| {
-            full_turn_revolution_carrier_axis(scan, ir, source_carriers, feature_id, extent)
-        })
+    let axis = match definition.zip(transform) {
+        Some((definition, transform)) => revolution_axis_for_transfer(
+            ctx,
+            scan,
+            ir,
+            source_carriers,
+            feature_id,
+            (definition, transform),
+            extent,
+        )?,
+        None => None,
+    };
+    Ok(axis.or_else(|| {
+        full_turn_revolution_carrier_axis(scan, ir, source_carriers, feature_id, extent)
+    }))
 }
 
 pub(in super::super) fn section_profile_ref(ir: &CadIr, native_ref: String) -> ProfileRef {

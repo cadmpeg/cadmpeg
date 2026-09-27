@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use super::counted_parameter_scalar_slots;
 use super::cross_section_parameter_records;
 use super::named_prototype_records;
 use super::parameter_records;
@@ -9,7 +10,6 @@ use super::positional_spline_replay_body_end;
 use super::positional_spline_replay_prototype;
 use crate::scalar;
 use crate::surface::complete_surface_array_bounds;
-use crate::surface::counted_parameter_scalar_slots;
 use crate::surface::counted_row_bounds;
 use crate::surface::cross_section_plane_envelopes;
 use crate::surface::cross_section_rows;
@@ -887,6 +887,30 @@ fn counted_parameters_expand_compact_zero_runs() {
             (Some(0.0), vec![]),
         ])
     );
+}
+
+#[test]
+fn counted_parameter_slots_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
+    let error = crate::surface::counted_parameter_scalar_slots(
+        &ctx,
+        &[0xe4],
+        1,
+        &scalar::ScalarCache::default(),
+    )
+    .expect_err("two parser states exceed the collection limit");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo_counted_parameter_slots"
+    ));
 }
 
 #[test]

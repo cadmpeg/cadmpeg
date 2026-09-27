@@ -335,14 +335,18 @@ pub(super) fn try_decode_freeform_surfaces(
             &scan.data,
             container::consolidated_record_sources(scan),
         );
-        let mut b5_graph = crate::families::b5::graph::parse_from_records_budgeted(
+        let mut b5_graph = match crate::families::b5::graph::parse_from_records_budgeted(
+            ctx,
             &object_source,
             &selected_object_records,
             &object_frames,
             true,
             Some(&selection_budget),
             refusal,
-        );
+        ) {
+            Ok(graph) => graph,
+            Err(error) => return Some(Err(error)),
+        };
         let face_terminal_controls = b5_graph.as_ref().map(|graph| {
             graph.faces.iter().fold([0usize; 3], |mut counts, face| {
                 match face.terminal_control {
@@ -543,7 +547,14 @@ pub(super) fn try_decode_freeform_surfaces(
                 Ok(transferred) => transferred,
                 Err(error) => return Some(Err(error)),
             };
-            transferred && neutral_model_is_admissible(&mut topology_ir, &unknowns)
+            if transferred {
+                match neutral_model_is_admissible(&mut topology_ir, &unknowns) {
+                    Ok(admissible) => admissible,
+                    Err(limit) => return Some(Err(limit.into())),
+                }
+            } else {
+                false
+            }
         } else {
             false
         };
@@ -1252,17 +1263,31 @@ fn standard_carrier_endpoint_loci(
     pcurve: &PcurveGeometry,
     surface: &SurfaceGeometry,
     range: [f64; 2],
-) -> Option<[Point3; 2]> {
-    let start = cadmpeg_ir::eval::pcurve_uv(pcurve, range[0]).ok()?;
-    let end = cadmpeg_ir::eval::pcurve_uv(pcurve, range[1]).ok()?;
+) -> Result<Option<[Point3; 2]>, cadmpeg_core::decode::ResourceLimit> {
+    let start = match cadmpeg_ir::eval::pcurve_uv(pcurve, range[0]) {
+        Ok(start) => start,
+        Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
+        Err(_) => return Ok(None),
+    };
+    let end = match cadmpeg_ir::eval::pcurve_uv(pcurve, range[1]) {
+        Ok(end) => end,
+        Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
+        Err(_) => return Ok(None),
+    };
     // A non-finite locus is kept as the evaluation reached it.
     let locus = |uv: cadmpeg_ir::units::FinitePoint2| match cadmpeg_ir::eval::surface_point(
         surface, uv.u, uv.v,
     ) {
-        Ok(point) => Some(point.get()),
+        Ok(point) => Ok(Some(point.get())),
         Err(failure) => failure.non_finite(),
     };
-    Some([locus(start)?, locus(end)?])
+    let Some(start) = locus(start)? else {
+        return Ok(None);
+    };
+    let Some(end) = locus(end)? else {
+        return Ok(None);
+    };
+    Ok(Some([start, end]))
 }
 
 /// One exact consolidated line carrier: the curve it states, the wire interval
@@ -1909,7 +1934,7 @@ fn append_resolved_consolidated_surface_curves(
     let mut pending = VecDeque::from(
         crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
             data, records, refusal,
-        ),
+        )?,
     );
     while let Some(mut resolved) = pending.pop_front() {
         let Some(run) = complete_runs.get(&resolved.block.pcurves[0].pos) else {
@@ -1951,7 +1976,7 @@ fn append_resolved_consolidated_surface_curves(
                         &geometry,
                         surface_geometry,
                         resolved.block.parameters.range.endpoints(),
-                    );
+                    )?;
                 }
                 sides[side] = IntcurveSupportSide {
                     surface: Some(surface_id.clone()),
@@ -2340,7 +2365,7 @@ fn append_resolved_consolidated_surface_curves(
                                 freeform_surfaces[carrier].geometry.clone(),
                             ))
                         {
-                            return Some((identity, None));
+                            return Some(Ok((identity, None)));
                         }
                     }
                     let standard_partner_geometry = &ir
@@ -2372,7 +2397,7 @@ fn append_resolved_consolidated_surface_curves(
                             }) else {
                                 // The free side has no defined chart relation
                                 // to a non-planar or unresolved partner.
-                                return Some((identity, None));
+                                return Some(Ok((identity, None)));
                             };
                             let mut pcurve = consolidated_jet_pcurve(
                                 &resolved.block.pcurves[partner],
@@ -2438,10 +2463,11 @@ fn append_resolved_consolidated_surface_curves(
                     .flatten()
                     .map(cadmpeg_ir::scalar::PositiveReal::get)
                     .fold(cadmpeg_ir::units::COINCIDENCE_TOLERANCE, f64::max);
-                    let coedges = standard_surfaces
+                    let coedge_candidates = standard_surfaces
                         .iter()
                         .enumerate()
-                        .filter_map(|(side, surface)| {
+                        .map(|(side, surface)| {
+                            (|| -> Option<Result<Option<(usize, PcurveGeometry)>, cadmpeg_core::decode::ResourceLimit>> {
                             let candidates = ir
                                 .model
                                 .coedges
@@ -2487,16 +2513,25 @@ fn append_resolved_consolidated_surface_curves(
                                 .copied()
                                 .flatten()
                                 .map_or(edge_allowance, |value| edge_allowance.max(value.get()));
-                            pcurve_lift_reaches_endpoints(
+                            Some(pcurve_lift_reaches_endpoints(
                                 &geometry,
                                 surface_geometry.solved()?,
                                 resolved.block.parameters.range.endpoints(),
                                 edge_endpoints,
                                 face_allowance,
                             )
-                            .then_some((*coedge, geometry))
+                            .map(|matches| matches.then_some((*coedge, geometry))))
+                            })()
                         })
                         .collect::<Vec<_>>();
+                    let mut coedges = Vec::new();
+                    for candidate in coedge_candidates {
+                        match candidate {
+                            Some(Ok(Some(candidate))) => coedges.push(candidate),
+                            Some(Err(limit)) => return Some(Err(limit)),
+                            Some(Ok(None)) | None => {}
+                        }
+                    }
                     (!coedges.is_empty()).then(|| ConsolidatedStandardFaceBinding {
                         coedges,
                         standard_surfaces: standard_surfaces.clone(),
@@ -2510,8 +2545,8 @@ fn append_resolved_consolidated_surface_curves(
             } else {
                 None
             };
-            Some((identity, partner_pcurves))
-        });
+            Some(Ok((identity, partner_pcurves)))
+        }).transpose()?;
         let mut bound_new_standard_surface = false;
         if let Some((_, Some(binding))) = attachment.as_ref() {
             if let Some((standard_partner_side, carrier)) = binding.inferred_partner {
@@ -2841,24 +2876,28 @@ fn pcurve_lift_reaches_endpoints(
     range: [f64; 2],
     endpoints: [Point3; 2],
     allowance: f64,
-) -> bool {
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     if matches!(surface, SolvedSurfaceGeometry::Unknown { .. }) {
-        return false;
+        return Ok(false);
     }
     // A non-finite lift is measured as a finite one is.
     let lift = |parameter| {
-        let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter).ok()?;
+        let uv = match cadmpeg_ir::eval::pcurve_uv(pcurve, parameter) {
+            Ok(uv) => uv,
+            Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
+            Err(_) => return Ok(None),
+        };
         match cadmpeg_ir::eval::surface_point_solved(surface, uv.u, uv.v) {
-            Ok(point) => Some(point.get()),
+            Ok(point) => Ok(Some(point.get())),
             Err(failure) => failure.non_finite(),
         }
     };
-    let (Some(start), Some(end)) = (lift(range[0]), lift(range[1])) else {
-        return false;
+    let (Some(start), Some(end)) = (lift(range[0])?, lift(range[1])?) else {
+        return Ok(false);
     };
     let forward = distance(start, endpoints[0]).max(distance(end, endpoints[1]));
     let reversed = distance(start, endpoints[1]).max(distance(end, endpoints[0]));
-    forward.min(reversed) <= allowance
+    Ok(forward.min(reversed) <= allowance)
 }
 
 fn unique_endpoint_pair_match<T>(
@@ -3236,8 +3275,11 @@ mod tests {
             902,
             &[0x82, 0x18, 100, 0, 0x18, 0xe7, 0x03, 0x03],
         );
-        let graph = parse(&bytes, &mut crate::nurbs::LaneRefusals::new())
-            .expect("one resolved and one unresolved face");
+        let graph = crate::test_support::with_service_context(|ctx| {
+            parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+        })
+        .expect("service resource budget")
+        .expect("one resolved and one unresolved face");
         assert_eq!(graph.face_records.len(), 2);
         assert_eq!(graph.faces.len(), 1);
         assert!(graph
@@ -3257,22 +3299,30 @@ mod tests {
             object_id: 902,
             payload: vec![0x82, 0x18, 100, 0, 0x18, 0xe7, 0x03, 0x03],
         };
-        assert!(parse_from_records(
-            &[],
-            std::slice::from_ref(&record),
-            &[],
-            false,
-            &mut crate::nurbs::LaneRefusals::new()
-        )
-        .is_some());
-        assert!(parse_from_records(
-            &[],
-            &[record.clone(), record],
-            &[],
-            false,
-            &mut crate::nurbs::LaneRefusals::new()
-        )
-        .is_none());
+        assert!(
+            crate::test_support::with_service_context(|ctx| parse_from_records(
+                ctx,
+                &[],
+                std::slice::from_ref(&record),
+                &[],
+                false,
+                &mut crate::nurbs::LaneRefusals::new()
+            ))
+            .expect("service resource budget")
+            .is_some()
+        );
+        assert!(
+            crate::test_support::with_service_context(|ctx| parse_from_records(
+                ctx,
+                &[],
+                &[record.clone(), record],
+                &[],
+                false,
+                &mut crate::nurbs::LaneRefusals::new()
+            ))
+            .expect("service resource budget")
+            .is_none()
+        );
     }
 
     #[test]
@@ -3362,7 +3412,8 @@ mod tests {
             Point3::new(7.0, 11.0, 13.0)
         );
         ir.finalize();
-        let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:?}", validation.findings);
     }
 
@@ -3439,7 +3490,8 @@ mod tests {
             assert!((actual.z - expected.z).abs() < 1.0e-12);
         }
         ir.finalize();
-        let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:?}", validation.findings);
     }
 
@@ -4371,7 +4423,8 @@ mod tests {
                 range,
                 endpoints,
                 cadmpeg_ir::units::COINCIDENCE_TOLERANCE
-            ),
+            )
+            .expect("evaluator allocation succeeds"),
             "the recharted pcurve lifts onto the edge's vertex positions"
         );
         let naive = line_through(first, last);
@@ -4382,7 +4435,8 @@ mod tests {
                 range,
                 endpoints,
                 cadmpeg_ir::units::COINCIDENCE_TOLERANCE
-            ),
+            )
+            .expect("evaluator allocation succeeds"),
             "a pcurve stored in a foreign chart has no witness on this carrier"
         );
         // The witness is independent of endpoint order.
@@ -4392,7 +4446,8 @@ mod tests {
             range,
             [endpoints[1], endpoints[0]],
             cadmpeg_ir::units::COINCIDENCE_TOLERANCE
-        ));
+        )
+        .expect("evaluator allocation succeeds"));
         // A carrier with no geometry has no chart and admits no witness.
         assert!(!pcurve_lift_reaches_endpoints(
             &naive,
@@ -4400,7 +4455,8 @@ mod tests {
             range,
             endpoints,
             cadmpeg_ir::units::COINCIDENCE_TOLERANCE
-        ));
+        )
+        .expect("evaluator allocation succeeds"));
     }
 
     #[test]
@@ -4662,6 +4718,7 @@ mod tests {
     fn standard_carrier_endpoint_loci_keep_an_overflowing_lift() {
         let (cone, pcurve) = overflowing_cone_lift();
         let loci = super::standard_carrier_endpoint_loci(&pcurve, &cone, [0.0, 1.0])
+            .expect("evaluator allocation succeeds")
             .expect("both ends lift");
         assert!(!loci[0].is_finite());
         assert_eq!(loci[1], Point3::new(1.0, 0.0, 0.0));
@@ -4676,7 +4733,8 @@ mod tests {
             [0.0, 1.0],
             [Point3::new(5.0, 5.0, 5.0), Point3::new(1.0, 0.0, 0.0)],
             cadmpeg_ir::units::COINCIDENCE_TOLERANCE,
-        ));
+        )
+        .expect("evaluator allocation succeeds"));
     }
 
     /// The overflowing cone lift with the cone under the identity placement.
@@ -4701,6 +4759,7 @@ mod tests {
     fn standard_carrier_endpoint_loci_keep_an_overflowing_placed_lift() {
         let (cone, pcurve) = placed_overflowing_cone_lift();
         let loci = super::standard_carrier_endpoint_loci(&pcurve, &cone, [0.0, 1.0])
+            .expect("evaluator allocation succeeds")
             .expect("both ends lift");
         assert!(!loci[0].is_finite());
         assert_eq!(loci[1], Point3::new(1.0, 0.0, 0.0));
@@ -4715,6 +4774,7 @@ mod tests {
             [0.0, 1.0],
             [Point3::new(5.0, 5.0, 5.0), Point3::new(1.0, 0.0, 0.0)],
             cadmpeg_ir::units::COINCIDENCE_TOLERANCE,
-        ));
+        )
+        .expect("evaluator allocation succeeds"));
     }
 }

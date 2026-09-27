@@ -162,13 +162,22 @@ fn default_feature_xml_tag() -> String {
 
 /// A native feature-object identifier, or the reserved marker the source writes on records
 /// that carry no object identity of their own.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
+#[serde(try_from = "String")]
 pub(crate) enum FeatureSource {
     /// The reserved `-1` marker.
     Reserved,
     /// A native feature-object identifier.
     Id(FeatureSourceId),
+}
+
+impl Serialize for FeatureSource {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Reserved => serializer.serialize_str(RESERVED_FEATURE_SOURCE),
+            Self::Id(id) => serializer.collect_str(&id.value()),
+        }
+    }
 }
 
 impl FeatureSource {
@@ -213,11 +222,18 @@ impl TryFrom<String> for FeatureSource {
 
 impl From<FeatureSource> for String {
     fn from(value: FeatureSource) -> Self {
+        #[cfg(test)]
+        FEATURE_SOURCE_OWNED_WIRE_CALLS.with(|calls| calls.set(calls.get() + 1));
         match value {
             FeatureSource::Reserved => RESERVED_FEATURE_SOURCE.to_string(),
             FeatureSource::Id(id) => id.value().to_string(),
         }
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    static FEATURE_SOURCE_OWNED_WIRE_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// The wire spelling of the reserved feature-source marker.
@@ -400,7 +416,8 @@ pub(crate) enum HistoryContent {
 }
 
 /// The full parametric construction-history timeline for a part.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
 pub(crate) struct FeatureHistory {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -425,8 +442,29 @@ pub(crate) struct FeatureHistory {
     pub(crate) features: Vec<Feature>,
 }
 
+#[cfg(test)]
+thread_local! {
+    pub(crate) static FEATURE_HISTORY_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for FeatureHistory {
+    fn clone(&self) -> Self {
+        FEATURE_HISTORY_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            part_name: self.part_name.clone(),
+            properties: self.properties.clone(),
+            content: self.content.clone(),
+            configurations: self.configurations.clone(),
+            features: self.features.clone(),
+        }
+    }
+}
+
 /// Native feature-input stream retained for parametric replay and rewrite.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
 #[serde(try_from = "FeatureInputLaneWire")]
 pub(crate) struct FeatureInputLane {
     /// Stable source-derived identifier for this feature-input record.
@@ -472,6 +510,34 @@ pub(crate) struct FeatureInputLane {
     /// Typed sketch-entity markers located within `native_payload`.
     #[serde(default)]
     pub(crate) sketch_entities: Vec<SketchInputEntity>,
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static FEATURE_INPUT_LANE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for FeatureInputLane {
+    fn clone(&self) -> Self {
+        FEATURE_INPUT_LANE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            configuration: self.configuration.clone(),
+            native_payload: self.native_payload.clone(),
+            classes: self.classes.clone(),
+            names: self.names.clone(),
+            scalars: self.scalars.clone(),
+            relation_bindings: self.relation_bindings.clone(),
+            relation_instances: self.relation_instances.clone(),
+            body_selections: self.body_selections.clone(),
+            edge_selections: self.edge_selections.clone(),
+            surface_selections: self.surface_selections.clone(),
+            generated_surface_identities: self.generated_surface_identities.clone(),
+            references: self.references.clone(),
+            sketch_entities: self.sketch_entities.clone(),
+        }
+    }
 }
 
 /// Deserialization mirror admitting every sketch-entity marker against this lane's payload.
@@ -1999,6 +2065,64 @@ impl SketchRelationKind {
 #[cfg(test)]
 mod tests {
     use cadmpeg_test_support::refusal::{refusal, states_the_key};
+
+    #[test]
+    fn feature_source_borrowed_json_matches_owned_string_bytes() {
+        for source in [
+            super::FeatureSource::Reserved,
+            super::FeatureSource::Id(super::FeatureSourceId::try_from(41).unwrap()),
+        ] {
+            let owned = String::from(source);
+            assert_eq!(
+                serde_json::to_vec(&source).unwrap(),
+                serde_json::to_vec(&owned).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn feature_source_native_retained_limit_refuses_before_owned_wire_conversion() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        #[derive(serde::Serialize)]
+        struct SourceRecord {
+            id: &'static str,
+            source_id: super::FeatureSource,
+        }
+
+        let record = SourceRecord {
+            id: "sldprt:history:feature#41",
+            source_id: super::FeatureSource::Id(super::FeatureSourceId::try_from(41).unwrap()),
+        };
+        let arena_name = "features";
+        let needed = serde_json::to_vec(&record).unwrap().len() + arena_name.len();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
+        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        super::FEATURE_SOURCE_OWNED_WIRE_CALLS.with(|calls| calls.set(0));
+        let error = namespace
+            .set_arena(&limited, arena_name, std::slice::from_ref(&record))
+            .unwrap_err();
+        super::FEATURE_SOURCE_OWNED_WIRE_CALLS.with(|calls| assert_eq!(calls.get(), 0));
+        assert!(matches!(
+            cadmpeg_core::CodecError::from(error),
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "serialize native record"
+        ));
+
+        let (service, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        namespace
+            .set_arena(&service, arena_name, std::slice::from_ref(&record))
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(&namespace.arenas()[arena_name][0]).unwrap(),
+            serde_json::to_value(&record).unwrap()
+        );
+    }
 
     #[test]
     fn native_operand_wire_rejects_reserved_tags() {

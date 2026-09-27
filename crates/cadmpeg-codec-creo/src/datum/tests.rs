@@ -636,7 +636,7 @@ fn decode_merges_datum_geometry_and_operation_history_by_feature_id() {
             .ordinal,
         0
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 

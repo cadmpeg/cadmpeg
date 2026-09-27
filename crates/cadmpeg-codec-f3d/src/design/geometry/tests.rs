@@ -49,7 +49,8 @@ fn profile_polyline_keeps_finite_samples_in_a_wide_nurbs_domain() {
         sketch_id,
         SketchGeometry::try_from(SketchGeometryDefinition::Nurbs { curve }).unwrap(),
     );
-    let points = super::profile_use_polyline(&entity, [-f64::MAX, f64::MAX], false, 0.01)
+    let points = super::profile_use_polyline(&entity, [-f64::MAX, f64::MAX], false, 0.01, None)
+        .unwrap()
         .expect("finite wide NURBS profile samples");
     assert_eq!(points.first(), Some(&Point2::new(0.0, 0.0)));
     assert_eq!(points.last(), Some(&Point2::new(1.0, 0.0)));
@@ -66,7 +67,9 @@ fn certified_nurbs_tubes_cover_a_wide_finite_parameter_span() {
         false,
     )
     .expect("wide finite NURBS pcurve");
-    let tubes = super::certified_nurbs_tubes(&curve, 0.5).expect("finite wide-domain tubes");
+    let tubes = super::certified_nurbs_tubes(&curve, 0.5, None)
+        .unwrap()
+        .expect("finite wide-domain tubes");
     assert_eq!(
         tubes.first().map(|tube| tube.start),
         Some(Point2::new(0.0, 0.0))
@@ -97,7 +100,8 @@ fn profile_polyline_keeps_a_finite_midpoint_near_the_float_limit() {
         sketch_id,
         SketchGeometry::try_from(SketchGeometryDefinition::Nurbs { curve }).unwrap(),
     );
-    let points = super::profile_use_polyline(&entity, [lower, f64::MAX], false, 0.01)
+    let points = super::profile_use_polyline(&entity, [lower, f64::MAX], false, 0.01, None)
+        .unwrap()
         .expect("finite midpoint near the float limit");
     assert_eq!(points.first(), Some(&Point2::new(0.0, 0.0)));
     assert_eq!(points.last(), Some(&Point2::new(1.0, 0.0)));
@@ -177,7 +181,9 @@ fn empty_profile_table_arranges_face_around_open_sketch_branch() {
         ],
         1.0e-6,
         &arrangement_budget,
+        None,
     )
+    .expect("arrangement collection admitted")
     else {
         panic!("selected face must resolve from raw sketch geometry")
     };
@@ -256,11 +262,25 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
     };
 
     assert_eq!(
-        region_containing_points(&sketch, &entities, &[Point3::new(12.0, 21.0, 12.0)], 1.0e-6,),
+        region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(12.0, 21.0, 12.0)],
+            1.0e-6,
+            None
+        )
+        .unwrap(),
         Some(SketchProfileRegion::loops(0, Vec::new()).unwrap())
     );
     assert_eq!(
-        region_containing_points(&sketch, &entities, &[Point3::new(15.0, 21.0, 12.0)], 1.0e-6,),
+        region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(15.0, 21.0, 12.0)],
+            1.0e-6,
+            None
+        )
+        .unwrap(),
         None
     );
 
@@ -290,7 +310,9 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
             &entities,
             &[Point3::new(12.0, 21.0, 12.0)],
             1.0e-6,
-        ),
+            None
+        )
+        .unwrap(),
         None
     );
 }
@@ -352,15 +374,36 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
     };
 
     assert_eq!(
-        region_containing_points(&sketch, &entities, &[Point3::new(1.0, 1.0, 0.0)], 1.0e-6,),
+        region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(1.0, 1.0, 0.0)],
+            1.0e-6,
+            None
+        )
+        .unwrap(),
         Some(SketchProfileRegion::loops(0, vec![1]).unwrap())
     );
     assert_eq!(
-        region_containing_points(&sketch, &entities, &[Point3::new(3.0, 3.0, 0.0)], 1.0e-6,),
+        region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(3.0, 3.0, 0.0)],
+            1.0e-6,
+            None
+        )
+        .unwrap(),
         Some(SketchProfileRegion::loops(1, vec![2]).unwrap())
     );
     assert_eq!(
-        region_containing_points(&sketch, &entities, &[Point3::new(5.0, 5.0, 0.0)], 1.0e-6,),
+        region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(5.0, 5.0, 0.0)],
+            1.0e-6,
+            None
+        )
+        .unwrap(),
         Some(SketchProfileRegion::loops(2, Vec::new()).unwrap())
     );
     assert_eq!(
@@ -369,11 +412,20 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
             &entities,
             &[Point3::new(0.0, 5.0, 0.0), Point3::new(2.0, 5.0, 0.0)],
             1.0e-6,
-        ),
+            None
+        )
+        .unwrap(),
         Some(SketchProfileRegion::loops(0, vec![1]).unwrap())
     );
     assert_eq!(
-        region_containing_points(&sketch, &entities, &[Point3::new(2.0, 5.0, 0.0)], 1.0e-6),
+        region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(2.0, 5.0, 0.0)],
+            1.0e-6,
+            None
+        )
+        .unwrap(),
         None
     );
 }
@@ -465,7 +517,14 @@ fn nonperiodic_nurbs_boundary_resolves_atomic_region() {
     };
 
     assert_eq!(
-        region_containing_points(&sketch, &entities, &[Point3::new(1.0, 1.0, 0.0)], 1.0e-6),
+        region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(1.0, 1.0, 0.0)],
+            1.0e-6,
+            None
+        )
+        .unwrap(),
         Some(SketchProfileRegion::loops(0, vec![1]).unwrap())
     );
 }
@@ -542,7 +601,8 @@ fn coincident_circle_arc_arrangement() -> (Sketch, Vec<SketchEntity>, SketchEnti
 fn coincident_circle_arc_arrangement_resolves_trimmed_faces() {
     let (sketch, entities, line_id, arc_id) = coincident_circle_arc_arrangement();
     let arrangement_budget = local_arrangement_budget();
-    let faces = sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &arrangement_budget)
+    let faces = sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &arrangement_budget, None)
+        .expect("arrangement collection admitted")
         .expect("endpoint arrangement faces");
     assert_eq!(faces.len(), 2);
     let selected = arrangement_region_containing_points(
@@ -555,7 +615,9 @@ fn coincident_circle_arc_arrangement_resolves_trimmed_faces() {
         ],
         1.0e-7,
         &arrangement_budget,
+        None,
     )
+    .expect("arrangement collection admitted")
     .expect("left half-disk arrangement face");
     let SketchProfileRegion::Trimmed {
         outer_boundary,
@@ -580,8 +642,67 @@ fn sketch_arrangement_faces_declines_when_session_work_budget_is_exhausted() {
         .expect("root context for session work budget");
     let budget = ctx.work_budget(MAX_ARRANGEMENT_WALK_WORK as u64);
 
-    assert!(sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &budget).is_none());
+    assert!(
+        sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &budget, Some(&ctx))
+            .expect("work refusal remains an absent arrangement")
+            .is_none()
+    );
     assert!(budget.exhausted());
+}
+
+#[test]
+fn arrangement_visit_marks_refuse_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::arrangement_has_alternate_path(&[], 0, 0, 0, 2, Some(&ctx))
+        .expect_err("two visit marks exceed one admitted item");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.used == 0
+                && limit.additional == 2
+    ));
+}
+
+fn arrangement_refusal_with_collection_limit(maximum: u64) -> cadmpeg_core::CodecError {
+    let (sketch, entities, _, _) = coincident_circle_arc_arrangement();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = maximum;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let budget = local_arrangement_budget();
+    sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &budget, Some(&ctx))
+        .err()
+        .expect("arrangement exceeds the selected collection limit")
+}
+
+#[test]
+fn arrangement_outgoing_refuses_collection_limit() {
+    let error = arrangement_refusal_with_collection_limit(1826);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "f3d_arrangement_outgoing"
+                && limit.used == 1825
+                && limit.additional == 2
+    ));
+}
+
+#[test]
+fn arrangement_edge_visits_refuse_collection_limit() {
+    let error = arrangement_refusal_with_collection_limit(1829);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "f3d arrangement edge visits"
+                && limit.used == 1827
+                && limit.additional == 3
+    ));
 }
 
 #[test]
@@ -666,11 +787,25 @@ fn polygon_and_circle_boundaries_resolve_one_atomic_region() {
     let expected = SketchProfileRegion::loops(0, vec![1]).unwrap();
 
     assert_eq!(
-        region_containing_points(&sketch, &entities, &[Point3::new(4.0, 0.0, 0.0)], 1.0e-6,),
+        region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(4.0, 0.0, 0.0)],
+            1.0e-6,
+            None
+        )
+        .unwrap(),
         Some(expected.clone())
     );
     assert_eq!(
-        region_containing_points(&sketch, &entities, &[Point3::new(0.0, 0.0, 0.0)], 1.0e-6,),
+        region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(0.0, 0.0, 0.0)],
+            1.0e-6,
+            None
+        )
+        .unwrap(),
         Some(SketchProfileRegion::loops(1, Vec::new()).unwrap())
     );
 }
@@ -893,12 +1028,12 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         })
         .unwrap(),
     );
-    assert!(point_on_sketch_entity(Point2::new(0.0, 2.0), &arc, 1.0e-6));
-    assert!(!point_on_sketch_entity(
-        Point2::new(-2.0, 0.0),
-        &arc,
-        1.0e-6
-    ));
+    assert!(point_on_sketch_entity(Point2::new(0.0, 2.0), &arc, 1.0e-6)
+        .expect("resource allocation did not fail"));
+    assert!(
+        !point_on_sketch_entity(Point2::new(-2.0, 0.0), &arc, 1.0e-6)
+            .expect("resource allocation did not fail")
+    );
     let clockwise_arc = entity(
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(0.0, 0.0),
@@ -911,11 +1046,12 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
     assert!(point_lies_on_sketch_geometry(
         Point2::new(std::f64::consts::SQRT_2, std::f64::consts::SQRT_2),
         &clockwise_arc.geometry
-    ));
-    assert!(!point_lies_on_sketch_geometry(
-        Point2::new(-2.0, 0.0),
-        &clockwise_arc.geometry
-    ));
+    )
+    .expect("resource allocation did not fail"));
+    assert!(
+        !point_lies_on_sketch_geometry(Point2::new(-2.0, 0.0), &clockwise_arc.geometry)
+            .expect("resource allocation did not fail")
+    );
 
     let ellipse = entity(
         SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
@@ -932,21 +1068,18 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         })
         .unwrap(),
     );
-    assert!(point_on_sketch_entity(
-        Point2::new(-1.0, -1.0),
-        &ellipse,
-        1.0e-6
-    ));
-    assert!(!point_on_sketch_entity(
-        Point2::new(3.0, -1.0),
-        &ellipse,
-        1.0e-6
-    ));
-    assert!(!point_on_sketch_entity(
-        Point2::new(-1.0, -0.9),
-        &ellipse,
-        1.0e-6
-    ));
+    assert!(
+        point_on_sketch_entity(Point2::new(-1.0, -1.0), &ellipse, 1.0e-6)
+            .expect("resource allocation did not fail")
+    );
+    assert!(
+        !point_on_sketch_entity(Point2::new(3.0, -1.0), &ellipse, 1.0e-6)
+            .expect("resource allocation did not fail")
+    );
+    assert!(
+        !point_on_sketch_entity(Point2::new(-1.0, -0.9), &ellipse, 1.0e-6)
+            .expect("resource allocation did not fail")
+    );
 
     let nurbs = entity(SketchGeometry::nurbs(
         cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
@@ -962,16 +1095,14 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         )
         .unwrap(),
     ));
-    assert!(point_on_sketch_entity(
-        Point2::new(3.0, 2.0),
-        &nurbs,
-        1.0e-6
-    ));
-    assert!(!point_on_sketch_entity(
-        Point2::new(2.0, 4.0),
-        &nurbs,
-        1.0e-6
-    ));
+    assert!(
+        point_on_sketch_entity(Point2::new(3.0, 2.0), &nurbs, 1.0e-6)
+            .expect("resource allocation did not fail")
+    );
+    assert!(
+        !point_on_sketch_entity(Point2::new(2.0, 4.0), &nurbs, 1.0e-6)
+            .expect("resource allocation did not fail")
+    );
     let SketchGeometryDefinition::Nurbs { curve } = nurbs.geometry.definition() else {
         unreachable!()
     };
@@ -985,11 +1116,12 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         0.375,
     )
     .unwrap();
-    assert!(point_on_sketch_entity(*interior.as_raw(), &nurbs, 1.0e-9));
+    assert!(point_on_sketch_entity(*interior.as_raw(), &nurbs, 1.0e-9)
+        .expect("resource allocation did not fail"));
 }
 
 #[test]
-fn unbranched_closed_sketch_components_project_as_ordered_profiles() {
+fn unbranched_closed_sketch_components_project_as_ordered_profiles_and_refuse_visit_limit() {
     let sketch = SketchId::mint("f3d:model:sketch#profile").unwrap();
     let line = |id: &str, start: Point2, end: Point2| {
         SketchEntity::new(
@@ -1035,7 +1167,18 @@ fn unbranched_closed_sketch_components_project_as_ordered_profiles() {
         ),
     ];
 
-    let profiles = closed_sketch_profiles(&sketch, &entities, 1.0e-6);
+    let profiles = closed_sketch_profiles(None, &sketch, &entities, 1.0e-6).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = closed_sketch_profiles(Some(&ctx), &sketch, &entities, 1.0e-6)
+        .expect_err("five edge visit marks exceed four admitted collection items");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+    ));
     assert_eq!(profiles.len(), 2);
     assert_eq!(profiles[0].len(), 1);
     assert_eq!(
@@ -1080,7 +1223,7 @@ fn branched_line_graph_projects_each_bounded_face() {
         line("synthetic:test:id#divider", (1.0, 0.0), (1.0, 1.0)),
     ];
 
-    let profiles = closed_sketch_profiles(&sketch, &entities, 1.0e-6);
+    let profiles = closed_sketch_profiles(None, &sketch, &entities, 1.0e-6).unwrap();
     assert_eq!(profiles.len(), 2);
     assert!(profiles.iter().all(|profile| profile.len() == 4));
     assert!(profiles.iter().all(|profile| profile
@@ -1113,7 +1256,7 @@ fn branched_line_graph_with_a_shared_corner_projects_bounded_faces() {
         line("synthetic:test:id#inner-left", (0.0, 41.0), (0.0, 47.0)),
     ];
 
-    let profiles = closed_sketch_profiles(&sketch, &entities, 1.0e-6);
+    let profiles = closed_sketch_profiles(None, &sketch, &entities, 1.0e-6).unwrap();
     assert_eq!(
         profiles
             .iter()
@@ -1379,7 +1522,9 @@ fn numerical_0922b_large_line_split() {
             [0., 1.],
             &[Point2::new(0.5 * scale, 0.)],
             LARGE_LINE_TOLERANCE,
+            None,
         )
+        .unwrap()
         .unwrap();
         println!("Fusion split scale{scale:e}: {r:?}");
         assert_eq!(r, vec![0., 0.5, 1.]);

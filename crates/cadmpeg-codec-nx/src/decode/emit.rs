@@ -22,7 +22,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::eval::curve_point_with_budget;
+use cadmpeg_ir::eval::{curve_point_with_budget, finite_or_refusal};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::pcurve::PcurveMetadata;
 use cadmpeg_ir::geometry::{
@@ -428,28 +428,31 @@ pub(super) fn emit_topology(
         let start = fin_fields
             .vertex
             .and_then(|target| vertices.get(&u32::from(target)))
-            .cloned()
-            .or_else(|| {
-                closed_edge
-                    .then(|| {
-                        let curve = curve.as_ref()?;
-                        let curve_index = curve_indices.get(curve).copied()?;
-                        synthesize_closed_edge_vertex_with_curve_index_and_budget(
-                            ir,
-                            annotations,
-                            &scope,
-                            node,
-                            curve,
-                            curve_index,
-                            param_range,
-                            source_stream,
-                            decoded_tolerance(fields.tolerance),
-                            &mut curve_point_cache,
-                            adaptive_geometry_budget,
-                        )
-                    })
-                    .flatten()
-            });
+            .cloned();
+        let start = if start.is_some() || !closed_edge {
+            start
+        } else if let Some((curve, curve_index)) = curve.as_ref().and_then(|curve| {
+            curve_indices
+                .get(curve)
+                .copied()
+                .map(|index| (curve, index))
+        }) {
+            synthesize_closed_edge_vertex_with_curve_index_and_budget(
+                ir,
+                annotations,
+                &scope,
+                node,
+                curve,
+                curve_index,
+                param_range,
+                source_stream,
+                decoded_tolerance(fields.tolerance),
+                &mut curve_point_cache,
+                adaptive_geometry_budget,
+            )?
+        } else {
+            None
+        };
         let Some(start) = start else {
             continue;
         };
@@ -489,9 +492,17 @@ pub(super) fn emit_topology(
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         if let (Some(carrier), Some(range)) = (&curve, param_range) {
-            let oriented = curve_indices.get(carrier).copied().and_then(|curve_index| {
-                let (start_position, start_tolerance) = vertex_positions.get(&start).copied()?;
-                let (end_position, end_tolerance) = vertex_positions.get(&end).copied()?;
+            let oriented = if let Some((
+                curve_index,
+                (start_position, start_tolerance),
+                (end_position, end_tolerance),
+            )) = curve_indices
+                .get(carrier)
+                .copied()
+                .zip(vertex_positions.get(&start).copied())
+                .zip(vertex_positions.get(&end).copied())
+                .map(|((curve_index, start), end)| (curve_index, start, end))
+            {
                 orient_edge_range_for_geometry_with_budget(
                     &ir.model.curves[curve_index].geometry,
                     carrier,
@@ -504,8 +515,10 @@ pub(super) fn emit_topology(
                     procedural_curve_ids.contains(carrier),
                     &mut curve_point_cache,
                     adaptive_geometry_budget,
-                )
-            });
+                )?
+            } else {
+                None
+            };
             match oriented {
                 Some((oriented, reverse_edge)) => {
                     param_range = Some(oriented);
@@ -663,35 +676,41 @@ pub(super) fn emit_topology(
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
         let valid_pcurve_fins = fin_ids
             .keys()
-            .filter_map(|fin_xmt| {
-                let fields = graph.get(NodeKind::Fin, *fin_xmt)?.fin_fields()?;
-                let edge = fields
-                    .edge
-                    .and_then(|target| edges.get(&u32::from(target)))?;
-                let support = graph
-                    .get_target(NodeKind::Loop, fields.loop_xmt)
-                    .and_then(Node::loop_fields)
-                    .and_then(|loop_| graph.get_target(NodeKind::Face, loop_.face))
-                    .and_then(Node::face_fields)
-                    .and_then(|face| {
-                        face.surface
-                            .and_then(|target| surfaces.get(&u32::from(target)))
-                    })?;
-                let carrier = fields
-                    .curve_xmt
-                    .and_then(|target| pcurves.get(&u32::from(target)))
-                    .and_then(|id| index.pcurves(id.as_str()))?;
-                let use_range = fields
-                    .curve_xmt
-                    .and_then(|target| trim_ranges.get(&u32::from(target)))
-                    .copied()
-                    .and_then(ordered_parameter_range);
-                let parameter_range = use_range
-                    .or(carrier
-                        .parameter_range()
-                        .map(cadmpeg_ir::units::FiniteVector::get))
-                    .or_else(|| pcurve_parameter_range(&carrier.geometry));
-                let endpoints = pcurve_endpoint_witness_with_index_and_budget(
+            .map(|fin_xmt| -> Result<Option<u32>, CodecError> {
+                let candidate = (|| {
+                    let fields = graph.get(NodeKind::Fin, *fin_xmt)?.fin_fields()?;
+                    let edge = fields
+                        .edge
+                        .and_then(|target| edges.get(&u32::from(target)))?;
+                    let support = graph
+                        .get_target(NodeKind::Loop, fields.loop_xmt)
+                        .and_then(Node::loop_fields)
+                        .and_then(|loop_| graph.get_target(NodeKind::Face, loop_.face))
+                        .and_then(Node::face_fields)
+                        .and_then(|face| {
+                            face.surface
+                                .and_then(|target| surfaces.get(&u32::from(target)))
+                        })?;
+                    let carrier = fields
+                        .curve_xmt
+                        .and_then(|target| pcurves.get(&u32::from(target)))
+                        .and_then(|id| index.pcurves(id.as_str()))?;
+                    let use_range = fields
+                        .curve_xmt
+                        .and_then(|target| trim_ranges.get(&u32::from(target)))
+                        .copied()
+                        .and_then(ordered_parameter_range);
+                    let parameter_range = use_range
+                        .or(carrier
+                            .parameter_range()
+                            .map(cadmpeg_ir::units::FiniteVector::get))
+                        .or_else(|| pcurve_parameter_range(&carrier.geometry));
+                    Some((edge, support, carrier, parameter_range))
+                })();
+                let Some((edge, support, carrier, parameter_range)) = candidate else {
+                    return Ok(None);
+                };
+                let Some(endpoints) = pcurve_endpoint_witness_with_index_and_budget(
                     &index,
                     edge,
                     support,
@@ -701,49 +720,68 @@ pub(super) fn emit_topology(
                         .fit_tolerance()
                         .map(cadmpeg_ir::geometry::FitTolerance::get),
                     adaptive_geometry_budget,
-                )?;
-                let curve = index.edges(edge.as_str())?.curve()?;
-                let parameter_range = parameter_range?;
+                )?
+                else {
+                    return Ok(None);
+                };
+                let Some(curve) = index.edges(edge.as_str()).and_then(|edge| edge.curve()) else {
+                    return Ok(None);
+                };
+                let Some(parameter_range) = parameter_range else {
+                    return Ok(None);
+                };
                 let Some((candidate_geometry, candidate_range, _)) =
                     intersection_pcurves.get(&(curve.clone(), support.clone()))
                 else {
-                    return Some(*fin_xmt);
+                    return Ok(Some(*fin_xmt));
                 };
                 if *candidate_geometry != carrier.geometry || *candidate_range != parameter_range {
-                    return Some(*fin_xmt);
+                    return Ok(Some(*fin_xmt));
                 }
                 endpoint_witnesses
                     .entry((curve.clone(), support.clone()))
                     .or_default()
                     .push((carrier.geometry.clone(), parameter_range, endpoints));
-                Some(*fin_xmt)
+                Ok(Some(*fin_xmt))
             })
-            .collect::<BTreeSet<_>>();
+            .try_fold(BTreeSet::new(), |mut values, candidate| {
+                if let Some(fin_xmt) = candidate? {
+                    values.insert(fin_xmt);
+                }
+                Ok::<_, CodecError>(values)
+            })?;
         let fallback_pcurves = fin_ids
             .keys()
-            .filter_map(|fin_xmt| {
+            .map(|fin_xmt| -> Result<Option<_>, CodecError> {
                 if valid_pcurve_fins.contains(fin_xmt) {
-                    return None;
+                    return Ok(None);
                 }
-                let fields = graph.get(NodeKind::Fin, *fin_xmt)?.fin_fields()?;
-                let edge = fields
-                    .edge
-                    .and_then(|target| edges.get(&u32::from(target)))?;
-                let support = graph
-                    .get_target(NodeKind::Loop, fields.loop_xmt)
-                    .and_then(Node::loop_fields)
-                    .and_then(|loop_| graph.get_target(NodeKind::Face, loop_.face))
-                    .and_then(Node::face_fields)
-                    .and_then(|face| {
-                        face.surface
-                            .and_then(|target| surfaces.get(&u32::from(target)))
-                    })
-                    .cloned()?;
-                let carrier = edge_curves_by_id.get(edge).cloned()?;
-                let (geometry, parameter_range, fit_tolerance) = intersection_pcurves
-                    .get(&(carrier, support.clone()))?
-                    .clone();
-                pcurve_matches_edge_range_with_index_and_budget(
+                let candidate = (|| {
+                    let fields = graph.get(NodeKind::Fin, *fin_xmt)?.fin_fields()?;
+                    let edge = fields
+                        .edge
+                        .and_then(|target| edges.get(&u32::from(target)))?;
+                    let support = graph
+                        .get_target(NodeKind::Loop, fields.loop_xmt)
+                        .and_then(Node::loop_fields)
+                        .and_then(|loop_| graph.get_target(NodeKind::Face, loop_.face))
+                        .and_then(Node::face_fields)
+                        .and_then(|face| {
+                            face.surface
+                                .and_then(|target| surfaces.get(&u32::from(target)))
+                        })
+                        .cloned()?;
+                    let carrier = edge_curves_by_id.get(edge).cloned()?;
+                    let (geometry, parameter_range, fit_tolerance) = intersection_pcurves
+                        .get(&(carrier, support.clone()))?
+                        .clone();
+                    Some((edge, support, geometry, parameter_range, fit_tolerance))
+                })();
+                let Some((edge, support, geometry, parameter_range, fit_tolerance)) = candidate
+                else {
+                    return Ok(None);
+                };
+                Ok(pcurve_matches_edge_range_with_index_and_budget(
                     &index,
                     edge,
                     &support,
@@ -751,13 +789,18 @@ pub(super) fn emit_topology(
                     None,
                     fit_tolerance.map(cadmpeg_ir::geometry::FitTolerance::get),
                     adaptive_geometry_budget,
-                )
+                )?
                 .then_some((
                     *fin_xmt,
                     (support, geometry, parameter_range, fit_tolerance),
-                ))
+                )))
             })
-            .collect::<BTreeMap<_, _>>();
+            .try_fold(BTreeMap::new(), |mut values, candidate| {
+                if let Some((fin_xmt, pcurve)) = candidate? {
+                    values.insert(fin_xmt, pcurve);
+                }
+                Ok::<_, CodecError>(values)
+            })?;
         (valid_pcurve_fins, fallback_pcurves)
     };
     let mut serialized_branch_pcurves = BTreeSet::new();
@@ -1130,7 +1173,7 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
     tolerance: Option<cadmpeg_ir::scalar::PositiveReal>,
     curve_point_cache: &mut CurvePointCache,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<VertexId> {
+) -> Result<Option<VertexId>, cadmpeg_core::decode::ResourceLimit> {
     let parameter = {
         let geometry = &ir.model.curves[curve_index].geometry;
         range.map_or_else(
@@ -1143,9 +1186,11 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
             |range| range[0],
         )
     };
-    let position = {
+    let Some(position) = ({
         let geometry = &ir.model.curves[curve_index].geometry;
         curve_point_cache.point_with_budget(curve, geometry, parameter, geometry_budget)?
+    }) else {
+        return Ok(None);
     };
     let point: PointId = scope.id(
         &cadmpeg_ir::identity_component!("point"),
@@ -1171,7 +1216,7 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
         point,
         tolerance,
     });
-    Some(vertex)
+    Ok(Some(vertex))
 }
 
 pub(super) fn canonical_trim_range(geometry: &CurveGeometry, raw: [f64; 2]) -> Option<[f64; 2]> {
@@ -1274,6 +1319,7 @@ fn orient_edge_range_with_budget(
         &mut curve_point_cache,
         geometry_budget,
     )
+    .expect("evaluator allocation succeeds")
 }
 
 const MAX_CURVE_POINT_CACHE_ENTRIES: usize = 131_072;
@@ -1290,16 +1336,20 @@ impl CurvePointCache {
         geometry: &CurveGeometry,
         parameter: f64,
         geometry_budget: &GeometryWorkBudget<'_>,
-    ) -> Option<FinitePoint3> {
+    ) -> Result<Option<FinitePoint3>, cadmpeg_core::decode::ResourceLimit> {
         let key = (curve.clone(), parameter.to_bits());
         if let Some(point) = self.entries.get(&key) {
-            return *point;
+            return Ok(*point);
         }
-        let point = curve_point_with_budget(geometry, parameter, geometry_budget).ok();
+        let point = finite_or_refusal(curve_point_with_budget(
+            geometry,
+            parameter,
+            geometry_budget,
+        ))?;
         if self.entries.len() < MAX_CURVE_POINT_CACHE_ENTRIES {
             self.entries.insert(key, point);
         }
-        point
+        Ok(point)
     }
 }
 
@@ -1316,7 +1366,7 @@ fn orient_edge_range_for_geometry_with_budget(
     procedural_curve: bool,
     curve_point_cache: &mut CurvePointCache,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<([f64; 2], bool)> {
+) -> Result<Option<([f64; 2], bool)>, cadmpeg_core::decode::ResourceLimit> {
     let range = if range[0] <= range[1] {
         range
     } else {
@@ -1325,31 +1375,31 @@ fn orient_edge_range_for_geometry_with_budget(
     let range = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(_)) => {
             let sweep = range[1] - range[0];
-            (0.0..=std::f64::consts::TAU)
-                .contains(&sweep)
-                .then_some(())?;
+            if !(0.0..=std::f64::consts::TAU).contains(&sweep) {
+                return Ok(None);
+            }
             let start = range[0].rem_euclid(std::f64::consts::TAU);
             [start, start + sweep]
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_)) => {
             let sweep = range[1] - range[0];
-            (0.0..=std::f64::consts::TAU)
-                .contains(&sweep)
-                .then_some(())?;
+            if !(0.0..=std::f64::consts::TAU).contains(&sweep) {
+                return Ok(None);
+            }
             let start = range[0].rem_euclid(std::f64::consts::TAU);
             [start, start + sweep]
         }
         _ => range,
     };
     let at = match (
-        curve_point_cache.point_with_budget(curve, geometry, range[0], geometry_budget),
-        curve_point_cache.point_with_budget(curve, geometry, range[1], geometry_budget),
+        curve_point_cache.point_with_budget(curve, geometry, range[0], geometry_budget)?,
+        curve_point_cache.point_with_budget(curve, geometry, range[1], geometry_budget)?,
     ) {
         (Some(start), Some(end)) => [start.get(), end.get()],
         _ if procedural_curve => {
-            return Some((range, false));
+            return Ok(Some((range, false)));
         }
-        _ => return None,
+        _ => return Ok(None),
     };
     let allowance = [edge_tolerance, start_tolerance, end_tolerance]
         .into_iter()
@@ -1358,13 +1408,13 @@ fn orient_edge_range_for_geometry_with_budget(
     if Point3::distance(at[0], start_position) <= allowance
         && Point3::distance(at[1], end_position) <= allowance
     {
-        Some((range, false))
+        Ok(Some((range, false)))
     } else if Point3::distance(at[1], start_position) <= allowance
         && Point3::distance(at[0], end_position) <= allowance
     {
-        Some((range, true))
+        Ok(Some((range, true)))
     } else {
-        None
+        Ok(None)
     }
 }
 
@@ -1645,10 +1695,12 @@ mod tests {
 
         let first = cache
             .point_with_budget(&curve, &geometry, 0.25, &geometry_budget)
+            .expect("evaluator allocation succeeds")
             .expect("NURBS evaluation");
         let remaining_after_first = geometry_budget.remaining();
         let second = cache
             .point_with_budget(&curve, &geometry, 0.25, &geometry_budget)
+            .expect("evaluator allocation succeeds")
             .expect("cached NURBS evaluation");
 
         assert_eq!(first, second);

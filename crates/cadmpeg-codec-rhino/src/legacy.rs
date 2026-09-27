@@ -4740,7 +4740,8 @@ mod tests {
         assert_eq!(model.pcurves.len(), 4);
         assert_eq!(model.surfaces.len(), 1);
         assert_eq!(wire::coverage(result.report())["legacy_v1_breps"], 1);
-        let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+        let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(report.is_ok(), "{report:?}");
     }
 
@@ -4753,7 +4754,8 @@ mod tests {
         assert_eq!(result.ir().model.bodies.len(), 1, "{:?}", result.report());
         assert_eq!(result.ir().model.faces.len(), 1);
         assert_eq!(wire::coverage(result.report())["legacy_v1_breps"], 1);
-        let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+        let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(report.is_ok(), "{report:?}");
     }
 

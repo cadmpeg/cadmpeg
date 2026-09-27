@@ -4,7 +4,6 @@
 use crate::decode::sketch::axis::SectionAxis;
 
 use super::super::feature_history::dimensions::feature_skamp_table_complete;
-use super::super::sketch::coordinates::resolved_section_points;
 use super::super::sketch::skamp::{
     section_skamp_incidence_point, section_skamp_selected_point_id_with_ordinary_segment,
     unique_decoded_section_segment, SectionPointSource,
@@ -580,6 +579,7 @@ pub(super) fn section_skamp_same_coordinate(
     sketch: &SketchId,
     skamp: &crate::feature::definitions::FeatureSkamp,
     require_satisfied: bool,
+    resolved_points: Option<&BTreeMap<u32, [f64; 2]>>,
 ) -> Option<(SketchLocus, SketchLocus, SketchCoordinateAxis)> {
     let [first, second] = skamp.items.as_slice() else {
         return None;
@@ -591,7 +591,7 @@ pub(super) fn section_skamp_same_coordinate(
     if require_satisfied {
         let ([first_source, second_source], _) =
             section_skamp_same_coordinate_sources(definition, skamp)?;
-        let points = resolved_section_points(definition);
+        let points = resolved_points?;
         let point = |source| {
             Some(match source {
                 SectionPointSource::Point(point_id) => *points.get(&point_id)?,

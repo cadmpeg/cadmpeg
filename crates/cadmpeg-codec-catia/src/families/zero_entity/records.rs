@@ -780,15 +780,15 @@ pub(super) fn zero_entity_surfaces_in_range(
 #[must_use]
 fn zero_entity_support_runs(data: &[u8]) -> Vec<ZeroEntitySupportRun> {
     zero_entity_support_runs_in_range(data, 0..data.len(), &mut crate::nurbs::LaneRefusals::new())
+        .expect("test support run evaluator allocation succeeds")
 }
 
 /// Decode support runs whose complete record population stays inside `range`.
-#[must_use]
 pub(crate) fn zero_entity_support_runs_in_range(
     data: &[u8],
     range: Range<usize>,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Vec<ZeroEntitySupportRun> {
+) -> Result<Vec<ZeroEntitySupportRun>, cadmpeg_core::decode::ResourceLimit> {
     let records = zero_entity_records_in_range(data, range);
     let mut runs = Vec::new();
     let mut index = 0usize;
@@ -812,17 +812,19 @@ pub(crate) fn zero_entity_support_runs_in_range(
             let record = records[next];
             if let Some(support) = zero_entity_support_occurrence(data, record, refusal) {
                 let mut support = support;
-                if let Some((curve, parameters)) = support.pcurve.as_ref().and_then(|pcurve| {
-                    zero_entity_model_curve(
+                if let Some((pcurve, uv_endpoints)) =
+                    support.pcurve.as_ref().zip(support.uv_endpoints)
+                {
+                    if let Some((curve, parameters)) = zero_entity_model_curve(
                         &carrier_geometry,
                         pcurve,
-                        support.uv_endpoints?.map(|uv| uv.map(FiniteReal::get)),
+                        uv_endpoints.map(|uv| uv.map(FiniteReal::get)),
                         &format_args!("zero-entity support record at byte {}", record.pos),
                         refusal,
-                    )
-                }) {
-                    support.model_curve = Some(curve);
-                    support.model_parameters = Some(parameters);
+                    )? {
+                        support.model_curve = Some(curve);
+                        support.model_parameters = Some(parameters);
+                    }
                 }
                 support.model_curve_construction = support.pcurve.as_ref().and_then(|pcurve| {
                     zero_entity_model_curve_construction(&carrier_geometry, pcurve)
@@ -832,7 +834,7 @@ pub(crate) fn zero_entity_support_runs_in_range(
                         .uv_endpoints
                         .map(|endpoints| endpoints.map(|uv| uv[0]));
                 }
-                support.model_midpoint = support.pcurve.as_ref().and_then(|pcurve| {
+                let midpoint_input = support.pcurve.as_ref().and_then(|pcurve| {
                     let PcurveGeometry::Nurbs { nurbs } = pcurve else {
                         return None;
                     };
@@ -841,15 +843,23 @@ pub(crate) fn zero_entity_support_runs_in_range(
                     if start >= end {
                         return None;
                     }
-                    let uv = pcurve_uv(pcurve, start.midpoint(end)).ok()?;
-                    zero_entity_surface_point(&carrier_geometry, [uv.u, uv.v])
+                    Some((pcurve, start.midpoint(end)))
                 });
-                support.model_endpoints = support.uv_endpoints.and_then(|endpoints| {
+                if let Some((pcurve, parameter)) = midpoint_input {
+                    if let Some(uv) =
+                        cadmpeg_ir::eval::finite_or_refusal(pcurve_uv(pcurve, parameter))?
+                    {
+                        support.model_midpoint =
+                            zero_entity_surface_point(&carrier_geometry, [uv.u, uv.v])?;
+                    }
+                }
+                if let Some(endpoints) = support.uv_endpoints {
                     let [first, second] = endpoints.map(|uv| {
                         zero_entity_surface_point(&carrier_geometry, uv.map(FiniteReal::get))
                     });
-                    Some([first?, second?])
-                });
+                    support.model_endpoints =
+                        first?.zip(second?).map(|(first, second)| [first, second]);
+                }
                 supports.push(support);
             } else {
                 supports.clear();
@@ -922,7 +932,7 @@ pub(crate) fn zero_entity_support_runs_in_range(
             run.face = Some(face);
         }
     }
-    runs
+    Ok(runs)
 }
 
 fn bind_face_support_occurrences(
@@ -1429,45 +1439,47 @@ fn zero_entity_model_curve(
     uv_endpoints: [[f64; 2]; 2],
     record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<(CurveGeometry, [FiniteReal; 2])> {
-    let PcurveGeometry::Nurbs { nurbs } = pcurve else {
-        return None;
-    };
-    if nurbs.periodic() {
-        return None;
-    }
-    let constant_coordinate = |dimension: usize| {
-        let value = if dimension == 0 {
-            nurbs.control_points().first()?.u
-        } else {
-            nurbs.control_points().first()?.v
+) -> Result<Option<(CurveGeometry, [FiniteReal; 2])>, cadmpeg_core::decode::ResourceLimit> {
+    (|| -> Option<Result<_, cadmpeg_core::decode::ResourceLimit>> {
+        let PcurveGeometry::Nurbs { nurbs } = pcurve else {
+            return None;
         };
-        nurbs
-            .control_points()
-            .iter()
-            .all(|point| {
-                if dimension == 0 {
-                    point.u == value
-                } else {
-                    point.v == value
-                }
-            })
-            .then_some(value)
-    };
-    let (curve, parameters) = match surface {
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-            let origin = plane_surface.origin().get();
-            let normal = plane_surface.frame().axis().as_raw();
-            let u_axis = plane_surface.frame().reference().as_raw();
-            let v_axis = normal.cross(*u_axis);
-            let degree_index = usize::try_from(nurbs.degree()).ok()?;
-            let parameters = [
-                *nurbs.knots().get(degree_index)?,
-                *nurbs
-                    .knots()
-                    .get(nurbs.knots().len().checked_sub(degree_index + 1)?)?,
-            ];
-            Some((
+        if nurbs.periodic() {
+            return None;
+        }
+        let constant_coordinate = |dimension: usize| {
+            let value = if dimension == 0 {
+                nurbs.control_points().first()?.u
+            } else {
+                nurbs.control_points().first()?.v
+            };
+            nurbs
+                .control_points()
+                .iter()
+                .all(|point| {
+                    if dimension == 0 {
+                        point.u == value
+                    } else {
+                        point.v == value
+                    }
+                })
+                .then_some(value)
+        };
+        let (curve, parameters) =
+            match surface {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
+                    let origin = plane_surface.origin().get();
+                    let normal = plane_surface.frame().axis().as_raw();
+                    let u_axis = plane_surface.frame().reference().as_raw();
+                    let v_axis = normal.cross(*u_axis);
+                    let degree_index = usize::try_from(nurbs.degree()).ok()?;
+                    let parameters = [
+                        *nurbs.knots().get(degree_index)?,
+                        *nurbs
+                            .knots()
+                            .get(nurbs.knots().len().checked_sub(degree_index + 1)?)?,
+                    ];
+                    Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(crate::nurbs::note_refusal(
                     nurbs.lift(|point| {
                         Point3::new(
@@ -1481,190 +1493,213 @@ fn zero_entity_model_curve(
                 )?)),
                 parameters,
             ))
-        }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
-            if { constant_coordinate(0).is_some() } =>
-        {
-            let point = zero_entity_surface_point(surface, [constant_coordinate(0)?, 0.0])?;
-            Some((
-                CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                    cadmpeg_ir::geometry::analytic::LineCurve::new(
-                        point,
-                        *cylinder_surface.frame().axis(),
-                    ),
-                )),
-                uv_endpoints.map(|uv| uv[1]),
-            ))
-        }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
-            if { constant_coordinate(1).is_some() } =>
-        {
-            let origin = cylinder_surface.origin().get();
-            let axis = cylinder_surface.frame().axis().as_raw();
-            let radius = cylinder_surface.radius().get();
-            let height = constant_coordinate(1)?;
-            Some((
-                CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::analytic::CircleCurve::new(
-                        cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-                            origin.x + height * axis.x,
-                            origin.y + height * axis.y,
-                            origin.z + height * axis.z,
-                        ))?,
-                        *cylinder_surface.frame(),
-                        cylinder_surface.radius(),
-                    ),
-                )),
-                uv_endpoints.map(|uv| uv[0] / radius),
-            ))
-        }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
-            if { (cone_surface.ratio().get() == 1.0) && (constant_coordinate(0).is_some()) } =>
-        {
-            let axis = cone_surface.frame().axis().as_raw();
-            let ref_direction = cone_surface.frame().reference().as_raw();
-            let half_angle = cone_surface.half_angle().get();
-            let angle = constant_coordinate(0)?;
-            let transverse = axis.cross(*ref_direction);
-            let radial = cadmpeg_ir::math::Vector3::new(
-                angle.cos() * ref_direction.x + angle.sin() * transverse.x,
-                angle.cos() * ref_direction.y + angle.sin() * transverse.y,
-                angle.cos() * ref_direction.z + angle.sin() * transverse.z,
-            );
-            Some((
-                CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                        zero_entity_surface_point(surface, [angle, 0.0])?.get(),
-                        cadmpeg_ir::math::Vector3::new(
-                            half_angle.cos() * axis.x + half_angle.sin() * radial.x,
-                            half_angle.cos() * axis.y + half_angle.sin() * radial.y,
-                            half_angle.cos() * axis.z + half_angle.sin() * radial.z,
-                        ),
-                    )
-                    .ok()?,
-                )),
-                uv_endpoints.map(|uv| uv[1]),
-            ))
-        }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
-            if { (cone_surface.ratio().get() == 1.0) && (constant_coordinate(1).is_some()) } =>
-        {
-            let origin = cone_surface.origin().get();
-            let axis = cone_surface.frame().axis().as_raw();
-            let radius = cone_surface.radius().get();
-            let half_angle = cone_surface.half_angle().get();
-            let slant = constant_coordinate(1)?;
-            let circle_radius = radius + slant * half_angle.sin();
-            (circle_radius.is_finite() && circle_radius != 0.0).then_some(())?;
-            Some((
-                CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::analytic::CircleCurve::new(
-                        cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-                            origin.x + slant * half_angle.cos() * axis.x,
-                            origin.y + slant * half_angle.cos() * axis.y,
-                            origin.z + slant * half_angle.cos() * axis.z,
-                        ))?,
-                        signed_reference_frame(*cone_surface.frame(), circle_radius),
-                        cadmpeg_ir::scalar::PositiveLength::new(circle_radius.abs())?,
-                    ),
-                )),
-                uv_endpoints.map(|uv| uv[0]),
-            ))
-        }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
-            if { constant_coordinate(0).is_some() } =>
-        {
-            let center = torus_surface.center().get();
-            let axis = torus_surface.frame().axis().as_raw();
-            let ref_direction = torus_surface.frame().reference().as_raw();
-            let major_radius = torus_surface.major_radius().get();
-            let minor_radius = torus_surface.minor_radius().get();
-            let angle = constant_coordinate(0)? / major_radius;
-            let transverse = axis.cross(*ref_direction);
-            let radial = cadmpeg_ir::math::Vector3::new(
-                angle.cos() * ref_direction.x + angle.sin() * transverse.x,
-                angle.cos() * ref_direction.y + angle.sin() * transverse.y,
-                angle.cos() * ref_direction.z + angle.sin() * transverse.z,
-            );
-            Some((
-                CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                        Point3::new(
-                            center.x + major_radius * radial.x,
-                            center.y + major_radius * radial.y,
-                            center.z + major_radius * radial.z,
-                        ),
-                        radial.cross(*axis),
-                        radial,
-                        minor_radius,
-                    )
-                    .ok()?,
-                )),
-                uv_endpoints.map(|uv| uv[1] / minor_radius),
-            ))
-        }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
-            if { constant_coordinate(1).is_some() } =>
-        {
-            let center = torus_surface.center().get();
-            let axis = torus_surface.frame().axis().as_raw();
-            let major_radius = torus_surface.major_radius().get();
-            let minor_radius = torus_surface.minor_radius().get();
-            let angle = constant_coordinate(1)? / minor_radius;
-            let circle_radius = major_radius + minor_radius * angle.cos();
-            (circle_radius.is_finite() && circle_radius != 0.0).then_some(())?;
-            Some((
-                CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::analytic::CircleCurve::new(
-                        cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-                            center.x + minor_radius * angle.sin() * axis.x,
-                            center.y + minor_radius * angle.sin() * axis.y,
-                            center.z + minor_radius * angle.sin() * axis.z,
-                        ))?,
-                        signed_reference_frame(*torus_surface.frame(), circle_radius),
-                        cadmpeg_ir::scalar::PositiveLength::new(circle_radius.abs())?,
-                    ),
-                )),
-                uv_endpoints.map(|uv| uv[0] / major_radius),
-            ))
-        }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface))
-            if constant_coordinate(0).is_some() =>
-        {
-            Some((
-                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                    cadmpeg_ir::eval::nurbs_surface_isocurve(
-                        surface,
-                        cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
-                        constant_coordinate(0)?,
-                    )?,
-                )),
-                uv_endpoints.map(|uv| uv[1]),
-            ))
-        }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface))
-            if constant_coordinate(1).is_some() =>
-        {
-            Some((
-                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                    cadmpeg_ir::eval::nurbs_surface_isocurve(
-                        surface,
-                        cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V,
-                        constant_coordinate(1)?,
-                    )?,
-                )),
-                uv_endpoints.map(|uv| uv[0]),
-            ))
-        }
-        _ => None,
-    }?;
-    Some((
-        curve,
-        [
-            FiniteReal::new(parameters[0])?,
-            FiniteReal::new(parameters[1])?,
-        ],
-    ))
+                }
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
+                    if { constant_coordinate(0).is_some() } =>
+                {
+                    let point =
+                        match zero_entity_surface_point(surface, [constant_coordinate(0)?, 0.0]) {
+                            Ok(Some(point)) => point,
+                            Ok(None) => return None,
+                            Err(limit) => return Some(Err(limit)),
+                        };
+                    Some((
+                        CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                            cadmpeg_ir::geometry::analytic::LineCurve::new(
+                                point,
+                                *cylinder_surface.frame().axis(),
+                            ),
+                        )),
+                        uv_endpoints.map(|uv| uv[1]),
+                    ))
+                }
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
+                    if { constant_coordinate(1).is_some() } =>
+                {
+                    let origin = cylinder_surface.origin().get();
+                    let axis = cylinder_surface.frame().axis().as_raw();
+                    let radius = cylinder_surface.radius().get();
+                    let height = constant_coordinate(1)?;
+                    Some((
+                        CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                            cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                                cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                                    origin.x + height * axis.x,
+                                    origin.y + height * axis.y,
+                                    origin.z + height * axis.z,
+                                ))?,
+                                *cylinder_surface.frame(),
+                                cylinder_surface.radius(),
+                            ),
+                        )),
+                        uv_endpoints.map(|uv| uv[0] / radius),
+                    ))
+                }
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
+                    if {
+                        (cone_surface.ratio().get() == 1.0) && (constant_coordinate(0).is_some())
+                    } =>
+                {
+                    let axis = cone_surface.frame().axis().as_raw();
+                    let ref_direction = cone_surface.frame().reference().as_raw();
+                    let half_angle = cone_surface.half_angle().get();
+                    let angle = constant_coordinate(0)?;
+                    let transverse = axis.cross(*ref_direction);
+                    let radial = cadmpeg_ir::math::Vector3::new(
+                        angle.cos() * ref_direction.x + angle.sin() * transverse.x,
+                        angle.cos() * ref_direction.y + angle.sin() * transverse.y,
+                        angle.cos() * ref_direction.z + angle.sin() * transverse.z,
+                    );
+                    Some((
+                        CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                                match zero_entity_surface_point(surface, [angle, 0.0]) {
+                                    Ok(Some(point)) => point.get(),
+                                    Ok(None) => return None,
+                                    Err(limit) => return Some(Err(limit)),
+                                },
+                                cadmpeg_ir::math::Vector3::new(
+                                    half_angle.cos() * axis.x + half_angle.sin() * radial.x,
+                                    half_angle.cos() * axis.y + half_angle.sin() * radial.y,
+                                    half_angle.cos() * axis.z + half_angle.sin() * radial.z,
+                                ),
+                            )
+                            .ok()?,
+                        )),
+                        uv_endpoints.map(|uv| uv[1]),
+                    ))
+                }
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
+                    if {
+                        (cone_surface.ratio().get() == 1.0) && (constant_coordinate(1).is_some())
+                    } =>
+                {
+                    let origin = cone_surface.origin().get();
+                    let axis = cone_surface.frame().axis().as_raw();
+                    let radius = cone_surface.radius().get();
+                    let half_angle = cone_surface.half_angle().get();
+                    let slant = constant_coordinate(1)?;
+                    let circle_radius = radius + slant * half_angle.sin();
+                    (circle_radius.is_finite() && circle_radius != 0.0).then_some(())?;
+                    Some((
+                        CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                            cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                                cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                                    origin.x + slant * half_angle.cos() * axis.x,
+                                    origin.y + slant * half_angle.cos() * axis.y,
+                                    origin.z + slant * half_angle.cos() * axis.z,
+                                ))?,
+                                signed_reference_frame(*cone_surface.frame(), circle_radius),
+                                cadmpeg_ir::scalar::PositiveLength::new(circle_radius.abs())?,
+                            ),
+                        )),
+                        uv_endpoints.map(|uv| uv[0]),
+                    ))
+                }
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
+                    if { constant_coordinate(0).is_some() } =>
+                {
+                    let center = torus_surface.center().get();
+                    let axis = torus_surface.frame().axis().as_raw();
+                    let ref_direction = torus_surface.frame().reference().as_raw();
+                    let major_radius = torus_surface.major_radius().get();
+                    let minor_radius = torus_surface.minor_radius().get();
+                    let angle = constant_coordinate(0)? / major_radius;
+                    let transverse = axis.cross(*ref_direction);
+                    let radial = cadmpeg_ir::math::Vector3::new(
+                        angle.cos() * ref_direction.x + angle.sin() * transverse.x,
+                        angle.cos() * ref_direction.y + angle.sin() * transverse.y,
+                        angle.cos() * ref_direction.z + angle.sin() * transverse.z,
+                    );
+                    Some((
+                        CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                                Point3::new(
+                                    center.x + major_radius * radial.x,
+                                    center.y + major_radius * radial.y,
+                                    center.z + major_radius * radial.z,
+                                ),
+                                radial.cross(*axis),
+                                radial,
+                                minor_radius,
+                            )
+                            .ok()?,
+                        )),
+                        uv_endpoints.map(|uv| uv[1] / minor_radius),
+                    ))
+                }
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
+                    if { constant_coordinate(1).is_some() } =>
+                {
+                    let center = torus_surface.center().get();
+                    let axis = torus_surface.frame().axis().as_raw();
+                    let major_radius = torus_surface.major_radius().get();
+                    let minor_radius = torus_surface.minor_radius().get();
+                    let angle = constant_coordinate(1)? / minor_radius;
+                    let circle_radius = major_radius + minor_radius * angle.cos();
+                    (circle_radius.is_finite() && circle_radius != 0.0).then_some(())?;
+                    Some((
+                        CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                            cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                                cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                                    center.x + minor_radius * angle.sin() * axis.x,
+                                    center.y + minor_radius * angle.sin() * axis.y,
+                                    center.z + minor_radius * angle.sin() * axis.z,
+                                ))?,
+                                signed_reference_frame(*torus_surface.frame(), circle_radius),
+                                cadmpeg_ir::scalar::PositiveLength::new(circle_radius.abs())?,
+                            ),
+                        )),
+                        uv_endpoints.map(|uv| uv[0] / major_radius),
+                    ))
+                }
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface))
+                    if constant_coordinate(0).is_some() =>
+                {
+                    Some((
+                        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                            match cadmpeg_ir::eval::nurbs_surface_isocurve(
+                                surface,
+                                cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
+                                constant_coordinate(0)?,
+                            ) {
+                                Ok(Some(curve)) => curve,
+                                Ok(None) => return None,
+                                Err(limit) => return Some(Err(limit)),
+                            },
+                        )),
+                        uv_endpoints.map(|uv| uv[1]),
+                    ))
+                }
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface))
+                    if constant_coordinate(1).is_some() =>
+                {
+                    Some((
+                        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                            match cadmpeg_ir::eval::nurbs_surface_isocurve(
+                                surface,
+                                cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V,
+                                constant_coordinate(1)?,
+                            ) {
+                                Ok(Some(curve)) => curve,
+                                Ok(None) => return None,
+                                Err(limit) => return Some(Err(limit)),
+                            },
+                        )),
+                        uv_endpoints.map(|uv| uv[0]),
+                    ))
+                }
+                _ => None,
+            }?;
+        Some(Ok((
+            curve,
+            [
+                FiniteReal::new(parameters[0])?,
+                FiniteReal::new(parameters[1])?,
+            ],
+        )))
+    })()
+    .transpose()
 }
 
 fn zero_entity_model_curve_construction(
@@ -1742,7 +1777,10 @@ fn zero_entity_model_curve_construction(
     ))
 }
 
-fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Option<FinitePoint3> {
+fn zero_entity_surface_point(
+    geometry: &SurfaceGeometry,
+    [u, v]: [f64; 2],
+) -> Result<Option<FinitePoint3>, cadmpeg_core::decode::ResourceLimit> {
     let point = match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin().get();
@@ -1826,11 +1864,11 @@ fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Op
             )
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
-            return nurbs_surface_point(surface, u, v).ok();
+            return cadmpeg_ir::eval::finite_or_refusal(nurbs_surface_point(surface, u, v));
         }
-        _ => return None,
+        _ => return Ok(None),
     };
-    FinitePoint3::new(point)
+    Ok(FinitePoint3::new(point))
 }
 
 /// Decode complete `5e1a` allocation tuples.
@@ -2644,6 +2682,7 @@ mod tests {
                     + pitch.z * revolution_fraction,
             );
             let surface_point = zero_entity_surface_point(&surface, [angle, 1.0 + fraction])
+                .expect("evaluator allocation succeeds")
                 .expect("finite cone point");
             assert!((construction_point.x - surface_point.x).abs() < 1.0e-12);
             assert!((construction_point.y - surface_point.y).abs() < 1.0e-12);
@@ -2681,11 +2720,13 @@ mod tests {
             &"test support record",
             &mut crate::nurbs::LaneRefusals::new(),
         )
+        .expect("evaluator allocation succeeds")
         .expect("cone latitude");
         for index in 0..2 {
             let curve_point = curve_point(&curve, parameters[index].get()).expect("circle point");
-            let surface_point =
-                zero_entity_surface_point(&surface, endpoints[index]).expect("cone point");
+            let surface_point = zero_entity_surface_point(&surface, endpoints[index])
+                .expect("evaluator allocation succeeds")
+                .expect("cone point");
             assert!((curve_point.x - surface_point.x).abs() < 1.0e-12);
             assert!((curve_point.y - surface_point.y).abs() < 1.0e-12);
             assert!((curve_point.z - surface_point.z).abs() < 1.0e-12);
@@ -2714,6 +2755,7 @@ mod tests {
             &"test support record",
             &mut crate::nurbs::LaneRefusals::new(),
         )
+        .expect("evaluator allocation succeeds")
         .is_none());
     }
 
@@ -2744,12 +2786,15 @@ mod tests {
                 .expect("valid TorusSurface fixture"),
         ));
 
-        let cylinder_point =
-            zero_entity_surface_point(&cylinder, [std::f64::consts::PI, 3.0]).expect("cylinder");
-        let cone_point =
-            zero_entity_surface_point(&cone, [std::f64::consts::FRAC_PI_2, 3.0]).expect("cone");
+        let cylinder_point = zero_entity_surface_point(&cylinder, [std::f64::consts::PI, 3.0])
+            .expect("evaluator allocation succeeds")
+            .expect("cylinder");
+        let cone_point = zero_entity_surface_point(&cone, [std::f64::consts::FRAC_PI_2, 3.0])
+            .expect("evaluator allocation succeeds")
+            .expect("cone");
         let torus_point =
             zero_entity_surface_point(&torus, [2.0 * std::f64::consts::PI, std::f64::consts::PI])
+                .expect("evaluator allocation succeeds")
                 .expect("torus");
 
         assert!(cylinder_point.x.abs() < 1.0e-12);

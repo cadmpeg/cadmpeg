@@ -1124,16 +1124,26 @@ fn profiled_hole_construction_with_evidence(
 }
 
 pub(crate) fn project_profiled_hole_constructions(
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     features: &mut [cadmpeg_ir::features::Feature],
     entities: &[SketchEntity],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(histories.len() as u64, "SLDPRT profiled-hole history copy")?;
+    }
     let mut enriched_histories = histories.to_vec();
     crate::history::configuration::enrich_history_parameters_semantic(
         &mut enriched_histories,
         lanes,
     );
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(
+            histories.len() as u64,
+            "SLDPRT profiled-hole ownership copy",
+        )?;
+    }
     let mut ownership_histories = enriched_histories.clone();
     enrich_history_hole_constructions(&mut ownership_histories, lanes);
     let histories = enriched_histories.as_slice();
@@ -1151,6 +1161,9 @@ pub(crate) fn project_profiled_hole_constructions(
                         if kind.is_unresolved()
                 )
         };
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(features.len() as u64, "SLDPRT complete native-hole lookup")?;
+    }
     let complete_native_holes = features
         .iter()
         .filter_map(|feature| {
@@ -1167,6 +1180,9 @@ pub(crate) fn project_profiled_hole_constructions(
             feature.native_ref.clone()
         })
         .collect::<HashSet<_>>();
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(features.len() as u64, "SLDPRT model sketch lookup")?;
+    }
     let model_sketches = features
         .iter()
         .filter_map(|feature| {
@@ -1180,6 +1196,14 @@ pub(crate) fn project_profiled_hole_constructions(
             Some((feature.native_ref.clone()?, sketch.clone()))
         })
         .collect::<HashMap<_, _>>();
+    if let Some(ctx) = ctx {
+        for history in histories {
+            ctx.charge_collection_items(
+                history.features.len() as u64,
+                "SLDPRT native history lookup",
+            )?;
+        }
+    }
     let native_histories = histories
         .iter()
         .enumerate()
@@ -1190,12 +1214,17 @@ pub(crate) fn project_profiled_hole_constructions(
                 .map(move |feature| (feature.id.as_str(), history_index))
         })
         .collect::<HashMap<_, _>>();
-    let Ok(mut unowned_incomplete_holes) = alloc_filled(
-        histories.len(),
-        Vec::<(String, u32)>::new(),
-        "SLDPRT unowned incomplete-hole histories",
-    ) else {
-        return Ok(());
+    let mut unowned_incomplete_holes = match ctx {
+        Some(ctx) => ctx.alloc_filled(
+            histories.len(),
+            Vec::<(String, u32)>::new(),
+            "SLDPRT unowned incomplete-hole histories",
+        )?,
+        None => alloc_filled(
+            histories.len(),
+            Vec::<(String, u32)>::new(),
+            "SLDPRT unowned incomplete-hole histories",
+        )?,
     };
     for feature in features.iter() {
         let FeatureDefinition::Operation(FeatureOperation::Hole { shape, extent, .. }) =
@@ -2113,9 +2142,13 @@ pub(crate) fn project_generated_hole_axes(
 /// Ownership must be unique, or exact seed placements must partition the
 /// remaining carrier set without a shared or unowned direction.
 pub(crate) fn project_hole_topology_axes(
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     features: &mut [cadmpeg_ir::features::Feature],
     topology: &HoleTopology<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(features.len() as u64, "SLDPRT hole diameter lookup")?;
+    }
     let diameter_counts = features
         .iter()
         .filter(|feature| feature.suppressed != Some(true))
@@ -2135,6 +2168,9 @@ pub(crate) fn project_hole_topology_axes(
             *counts.entry(diameter).or_default() += 1;
             counts
         });
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(features.len() as u64, "SLDPRT unresolved hole lookup")?;
+    }
     let unresolved = features
         .iter()
         .enumerate()
@@ -2164,6 +2200,9 @@ pub(crate) fn project_hole_topology_axes(
             continue;
         }
 
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(features.len() as u64, "SLDPRT counterbore siblings")?;
+        }
         let siblings = features
             .iter()
             .enumerate()
@@ -2191,6 +2230,12 @@ pub(crate) fn project_hole_topology_axes(
             continue;
         }
 
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(
+                candidates.len() as u64,
+                "SLDPRT counterbore candidate keys",
+            )?;
+        }
         let candidate_keys = candidates
             .iter()
             .filter_map(hole_axis_key)
@@ -2227,6 +2272,12 @@ pub(crate) fn project_hole_topology_axes(
             continue;
         }
 
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(
+                candidates.len() as u64,
+                "SLDPRT residual counterbore axes",
+            )?;
+        }
         let residual = candidates
             .into_iter()
             .filter(|placement| hole_axis_key(placement).is_some_and(|key| !claimed.contains(&key)))
@@ -2239,7 +2290,8 @@ pub(crate) fn project_hole_topology_axes(
 
     let cylinders = cylindrical_bore_face_spans(topology);
     project_flat_blind_topology_axes(features, &cylinders);
-    project_drilled_hole_topology_axes(features, &cylinders, topology);
+    project_drilled_hole_topology_axes(ctx, features, &cylinders, topology)?;
+    Ok(())
 }
 
 fn project_flat_blind_topology_axes(
@@ -2298,11 +2350,15 @@ fn project_flat_blind_topology_axes(
 }
 
 fn project_drilled_hole_topology_axes(
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     features: &mut [cadmpeg_ir::features::Feature],
     cylinders: &[(Point3, FeatureDirection3, f64, f64, bool)],
     topology: &HoleTopology<'_>,
-) {
-    expand_seeded_drilled_hole_topology_axes(features, cylinders, topology);
+) -> Result<(), cadmpeg_core::CodecError> {
+    expand_seeded_drilled_hole_topology_axes(ctx, features, cylinders, topology)?;
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(features.len() as u64, "SLDPRT unresolved drilled holes")?;
+    }
     let unresolved = features
         .iter()
         .enumerate()
@@ -2358,6 +2414,7 @@ fn project_drilled_hole_topology_axes(
         };
         set_hole_placements(&mut features[index], placements);
     }
+    Ok(())
 }
 
 fn drilled_hole_topology_candidates(
@@ -2409,10 +2466,11 @@ fn drilled_hole_topology_candidates(
 }
 
 fn expand_seeded_drilled_hole_topology_axes(
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     features: &mut [cadmpeg_ir::features::Feature],
     cylinders: &[(Point3, FeatureDirection3, f64, f64, bool)],
     topology: &HoleTopology<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let mut visited = HashSet::new();
     for index in 0..features.len() {
         if visited.contains(&index) || features[index].suppressed == Some(true) {
@@ -2457,6 +2515,9 @@ fn expand_seeded_drilled_hole_topology_axes(
         {
             continue;
         }
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(features.len() as u64, "SLDPRT seeded hole siblings")?;
+        }
         let siblings = features
             .iter()
             .enumerate()
@@ -2469,6 +2530,9 @@ fn expand_seeded_drilled_hole_topology_axes(
             })
             .map(|(sibling, _)| sibling)
             .collect::<Vec<_>>();
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(siblings.len() as u64, "SLDPRT visited seeded holes")?;
+        }
         visited.extend(siblings.iter().copied());
         if siblings.len() < 2
             || siblings.iter().any(|&sibling| {
@@ -2494,8 +2558,9 @@ fn expand_seeded_drilled_hole_topology_axes(
         let Some(candidates) = candidates else {
             continue;
         };
-        partition_seeded_hole_axes(features, &siblings, &candidates);
+        partition_seeded_hole_axes(ctx, features, &siblings, &candidates)?;
     }
+    Ok(())
 }
 
 fn seeded_drilled_bore_candidates(
@@ -2551,16 +2616,23 @@ fn unclaimed_seeded_hole_candidates(
 }
 
 fn partition_seeded_hole_axes(
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     features: &mut [cadmpeg_ir::features::Feature],
     siblings: &[usize],
     candidates: &[HolePlacement],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(candidates.len() as u64, "SLDPRT seeded hole-axis keys")?;
+    }
     let candidate_keys = candidates
         .iter()
         .filter_map(hole_axis_key)
         .collect::<HashSet<_>>();
     if candidate_keys.len() != candidates.len() {
-        return;
+        return Ok(());
+    }
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(siblings.len() as u64, "SLDPRT seeded hole-axis directions")?;
     }
     let mut seed_directions: Vec<Vector3> = Vec::with_capacity(siblings.len());
     for &sibling in siblings {
@@ -2569,14 +2641,14 @@ fn partition_seeded_hole_axes(
             ..
         }) = features[sibling].evaluation.definition()
         else {
-            return;
+            return Ok(());
         };
         let mut axes = placements.iter().filter_map(|placement| match placement {
             HolePlacement::Axis { axis, .. } => Some(canonical_axis(axis.get())),
             HolePlacement::Directed { .. } => None,
         });
         let Some(direction) = axes.next() else {
-            return;
+            return Ok(());
         };
         if axes.any(|axis| axis.dot(direction) < 1.0 - EPS_HOLE_GEOMETRY)
             || placements.iter().any(|placement| {
@@ -2586,23 +2658,34 @@ fn partition_seeded_hole_axes(
                 .iter()
                 .any(|candidate| candidate.dot(direction) >= 1.0 - EPS_HOLE_GEOMETRY)
         {
-            return;
+            return Ok(());
         }
         seed_directions.push(direction);
     }
 
-    let Ok(mut partitions) = alloc_filled(
-        siblings.len(),
-        Vec::<HolePlacement>::new(),
-        "SLDPRT seeded hole-axis partitions",
-    ) else {
-        return;
+    let mut partitions = match ctx {
+        Some(ctx) => ctx.alloc_filled(
+            siblings.len(),
+            Vec::<HolePlacement>::new(),
+            "SLDPRT seeded hole-axis partitions",
+        )?,
+        None => alloc_filled(
+            siblings.len(),
+            Vec::<HolePlacement>::new(),
+            "SLDPRT seeded hole-axis partitions",
+        )?,
     };
     for placement in candidates {
         let HolePlacement::Axis { axis, .. } = placement else {
-            return;
+            return Ok(());
         };
         let direction = canonical_axis(axis.get());
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(
+                seed_directions.len() as u64,
+                "SLDPRT seeded hole-axis matches",
+            )?;
+        }
         let matches = seed_directions
             .iter()
             .enumerate()
@@ -2610,16 +2693,20 @@ fn partition_seeded_hole_axes(
             .map(|(index, _)| index)
             .collect::<Vec<_>>();
         let [partition] = matches.as_slice() else {
-            return;
+            return Ok(());
         };
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "SLDPRT seeded hole-axis placements")?;
+        }
         partitions[*partition].push(placement.clone());
     }
     if partitions.iter().any(Vec::is_empty) {
-        return;
+        return Ok(());
     }
     for (&sibling, partition) in siblings.iter().zip(partitions) {
         set_hole_placements(&mut features[sibling], partition);
     }
+    Ok(())
 }
 
 fn set_hole_placements(feature: &mut cadmpeg_ir::features::Feature, value: Vec<HolePlacement>) {

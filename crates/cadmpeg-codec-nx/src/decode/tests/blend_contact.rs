@@ -148,6 +148,7 @@ fn blend_grid_samples_a_wide_finite_spine_domain() {
     let grid = crate::decode::blend::blend_surface_parameter_grid_with_index_and_budget(
         &index, &surface, 0, &budget,
     )
+    .expect("evaluator allocation succeeds")
     .expect("finite wide blend grid");
     assert!(grid
         .iter()
@@ -179,6 +180,7 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
         None,
         &cadmpeg_core::decode::WorkBudget::new(TEST_SURFACE_INVERSION_WORK),
     )
+    .expect("resource allocation did not fail")
     .unwrap();
 
     assert!((actual.u - expected.u).abs() < 1.0e-10);
@@ -190,6 +192,7 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
         Some(Point2::new(f64::NAN, 0.5)),
         &cadmpeg_core::decode::WorkBudget::new(TEST_SURFACE_INVERSION_WORK),
     )
+    .expect("resource allocation did not fail")
     .unwrap();
     assert!((after_invalid_seed.u - expected.u).abs() < 1.0e-10);
     assert!((after_invalid_seed.v - expected.v).abs() < 1.0e-10);
@@ -597,6 +600,7 @@ fn nurbs_parameter_solver_rejects_a_remote_local_minimum_seed() {
         Some(Point2::new(0.875, 0.3)),
         &cadmpeg_core::decode::WorkBudget::new(TEST_SURFACE_INVERSION_WORK),
     )
+    .expect("resource allocation did not fail")
     .unwrap();
 
     assert!((actual.u - expected.u).abs() < 1.0e-10);
@@ -628,6 +632,7 @@ fn nurbs_parameter_solver_preserves_close_equal_branches() {
         Some(Point2::new(0.50011, 0.3)),
         &cadmpeg_core::decode::WorkBudget::new(TEST_SURFACE_INVERSION_WORK),
     )
+    .expect("resource allocation did not fail")
     .unwrap();
 
     assert!((actual.u - expected.u).abs() < 1.0e-10);
@@ -667,6 +672,7 @@ fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
         cadmpeg_ir::math::Point3::new(-5.0, 2.0, 0.0),
         Some(0.9),
     )
+    .expect("evaluator allocation succeeds")
     .unwrap();
 
     assert!((actual - 0.25).abs() < 1.0e-10);
@@ -685,8 +691,12 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         None,
     );
 
-    let first = closest_pcurve_parameters(&pcurve, Point2::new(0.5, 4.5), None).unwrap()[0];
-    let second = closest_pcurve_parameters(&pcurve, Point2::new(5.0, 4.5), None).unwrap()[0];
+    let first = closest_pcurve_parameters(&pcurve, Point2::new(0.5, 4.5), None)
+        .unwrap()
+        .unwrap()[0];
+    let second = closest_pcurve_parameters(&pcurve, Point2::new(5.0, 4.5), None)
+        .unwrap()
+        .unwrap()[0];
 
     assert!((first - 3.5).abs() < 1.0e-12);
     assert!((second - 8.0).abs() < 1.0e-12);
@@ -697,8 +707,9 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
         Some(vec![1.0, 2.0]),
     );
-    let rational_parameter =
-        closest_pcurve_parameters(&rational, Point2::new(0.5, 0.0), None).unwrap()[0];
+    let rational_parameter = closest_pcurve_parameters(&rational, Point2::new(0.5, 0.0), None)
+        .unwrap()
+        .unwrap()[0];
     assert!((rational_parameter - 1.0 / 3.0).abs() < 1.0e-10);
 
     let quadratic = test_pcurve(
@@ -711,8 +722,9 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         ],
         None,
     );
-    let quadratic_parameter =
-        closest_pcurve_parameters(&quadratic, Point2::new(1.0, 0.5), None).unwrap()[0];
+    let quadratic_parameter = closest_pcurve_parameters(&quadratic, Point2::new(1.0, 0.5), None)
+        .unwrap()
+        .unwrap()[0];
     assert!((quadratic_parameter - 0.5).abs() < 1.0e-10);
 
     let folded = test_pcurve(
@@ -725,18 +737,24 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         ],
         None,
     );
-    let first_fold =
-        closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(0.1)).unwrap()[0];
-    let second_fold =
-        closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(1.9)).unwrap()[0];
+    let first_fold = closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(0.1))
+        .unwrap()
+        .unwrap()[0];
+    let second_fold = closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(1.9))
+        .unwrap()
+        .unwrap()[0];
     assert_eq!(first_fold, 0.0);
     assert_eq!(second_fold, 2.0);
     assert_eq!(
-        closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(0.1)).unwrap(),
+        closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(0.1))
+            .unwrap()
+            .unwrap(),
         [0.0, 2.0]
     );
     assert_eq!(
-        closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(1.9)).unwrap(),
+        closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(1.9))
+            .unwrap()
+            .unwrap(),
         [2.0, 0.0]
     );
 
@@ -753,11 +771,15 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
     )
     .unwrap();
     assert_eq!(
-        closest_pcurve_parameters(&rational_folded, Point2::new(0.0, 0.0), Some(0.1),).unwrap(),
+        closest_pcurve_parameters(&rational_folded, Point2::new(0.0, 0.0), Some(0.1),)
+            .unwrap()
+            .unwrap(),
         [0.0, 2.0]
     );
     assert_eq!(
-        closest_pcurve_parameters(&rational_folded, Point2::new(0.0, 0.0), Some(1.9),).unwrap(),
+        closest_pcurve_parameters(&rational_folded, Point2::new(0.0, 0.0), Some(1.9),)
+            .unwrap()
+            .unwrap(),
         [2.0, 0.0]
     );
 
@@ -772,11 +794,15 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         None,
     );
     assert_eq!(
-        closest_pcurve_parameters(&quadratic_folded, Point2::new(0.0, 0.0), Some(0.1),).unwrap(),
+        closest_pcurve_parameters(&quadratic_folded, Point2::new(0.0, 0.0), Some(0.1),)
+            .unwrap()
+            .unwrap(),
         [0.0, 1.0]
     );
     assert_eq!(
-        closest_pcurve_parameters(&quadratic_folded, Point2::new(0.0, 0.0), Some(0.9),).unwrap(),
+        closest_pcurve_parameters(&quadratic_folded, Point2::new(0.0, 0.0), Some(0.9),)
+            .unwrap()
+            .unwrap(),
         [1.0, 0.0]
     );
 }
@@ -1198,6 +1224,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
             &mut contact_seeds,
             &geometry_budget,
         )
+        .expect("evaluator allocation succeeds")
         .expect("reverse contact relation transfers the certified boundary");
     assert!((actual.u - expected.u).abs() <= FIT_TOLERANCE);
     assert!((actual.v - expected.v).abs() <= FIT_TOLERANCE);
@@ -1233,13 +1260,16 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
         source_object: None,
     });
 
-    let first = closest_spine_parameter(&ir, &ellipse, point, None).unwrap();
+    let first = closest_spine_parameter(&ir, &ellipse, point, None)
+        .expect("evaluator allocation succeeds")
+        .unwrap();
     let continued = closest_spine_parameter(
         &ir,
         &ellipse,
         point,
         Some(parameter + std::f64::consts::TAU),
     )
+    .expect("evaluator allocation succeeds")
     .unwrap();
 
     assert!((first - parameter).abs() < 1.0e-8, "{first}");
@@ -1249,8 +1279,12 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
     );
 
     let center = Point3::new(2.0, 3.0, 4.0);
-    let upper = closest_spine_parameter(&ir, &ellipse, center, Some(1.4)).unwrap();
-    let lower = closest_spine_parameter(&ir, &ellipse, center, Some(4.8)).unwrap();
+    let upper = closest_spine_parameter(&ir, &ellipse, center, Some(1.4))
+        .expect("evaluator allocation succeeds")
+        .unwrap();
+    let lower = closest_spine_parameter(&ir, &ellipse, center, Some(4.8))
+        .expect("evaluator allocation succeeds")
+        .unwrap();
     assert!(
         (upper - std::f64::consts::FRAC_PI_2).abs() < 1.0e-8,
         "{upper}"
@@ -1383,11 +1417,15 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         None,
     ));
     let expected = Point2::new(8.0, 0.35);
-    let point = blend_surface_point(&ir, &surface, expected.u, expected.v).unwrap();
+    let point = blend_surface_point(&ir, &surface, expected.u, expected.v)
+        .expect("evaluator allocation succeeds")
+        .unwrap();
     let boundary_without_contact_chart = blend_surface_point(&ir, &surface, expected.u, 1.0)
+        .expect("evaluator allocation succeeds")
         .expect("analytic supports provide a blend boundary without a spine pcurve");
     let boundary_without_contact_parameters =
         blend_surface_parameters(&ir, &surface, boundary_without_contact_chart, None)
+            .expect("evaluator allocation succeeds")
             .expect("blend inverse evaluates an analytic-support boundary");
     assert!((0.0..=1.0).contains(&boundary_without_contact_parameters.v));
 
@@ -1444,19 +1482,27 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         1.0
     );
 
-    let actual = blend_surface_parameters(&ir, &surface, point, None).unwrap();
+    let actual = blend_surface_parameters(&ir, &surface, point, None)
+        .expect("evaluator allocation succeeds")
+        .unwrap();
 
     assert!((actual.u - expected.u).abs() < 1.0e-8);
     assert!((actual.v - expected.v).abs() < 1.0e-8);
 
-    let boundary_point = blend_surface_point(&ir, &surface, expected.u, 1.0).unwrap();
+    let boundary_point = blend_surface_point(&ir, &surface, expected.u, 1.0)
+        .expect("evaluator allocation succeeds")
+        .unwrap();
     let boundary_parameters = blend_surface_parameters(&ir, &surface, boundary_point, None)
+        .expect("evaluator allocation succeeds")
         .expect("blend inverse returns the section boundary");
     assert!((0.0..=1.0).contains(&boundary_parameters.v));
 
     let outside_boundary_point =
-        blend_surface_point(&ir, &surface, expected.u, 1.0 + OUTSIDE_BLEND_SECTION_DELTA).unwrap();
-    let outside_parameters = blend_surface_parameters(&ir, &surface, outside_boundary_point, None);
+        blend_surface_point(&ir, &surface, expected.u, 1.0 + OUTSIDE_BLEND_SECTION_DELTA)
+            .expect("evaluator allocation succeeds")
+            .unwrap();
+    let outside_parameters = blend_surface_parameters(&ir, &surface, outside_boundary_point, None)
+        .expect("evaluator allocation succeeds");
     assert!(outside_parameters.is_none());
     let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(
         crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
@@ -1471,6 +1517,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             BlendParameterGrid::Disabled,
             &geometry_budget,
         )
+        .expect("evaluator allocation succeeds")
         .expect("bounded source continuation admits the certified section point");
     assert!((continuation_parameters.u - expected.u).abs() < 1.0e-8);
     assert!((continuation_parameters.v - (1.0 + OUTSIDE_BLEND_SECTION_DELTA)).abs() < 1.0e-8);
@@ -1489,6 +1536,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             &mut direct_contact_seeds,
             &direct_geometry_budget,
         )
+        .expect("evaluator allocation succeeds")
         .expect("direct blend inverse admits a certified continuation point");
     assert!((direct_parameters.u - expected.u).abs() < DIRECT_INVERSE_TOLERANCE);
     assert!(
@@ -1503,6 +1551,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         Some(Point2::new(expected.u + 0.1, expected.v - 0.05)),
         1.0e-8,
     )
+    .expect("evaluator allocation succeeds")
     .unwrap();
     assert!((continued.u - expected.u).abs() < 1.0e-8);
     assert!((continued.v - expected.v).abs() < 1.0e-8);
@@ -1571,12 +1620,15 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         });
     let parameters = Point2::new(0.4, 0.35);
     let exact = blend_surface_u_derivative(&varying_frame, &surface, parameters.u, parameters.v, 0)
+        .expect("evaluator allocation succeeds")
         .expect("complete rolling-ball frame has an exact derivative");
     let step = 1.0e-6;
-    let before =
-        blend_surface_point(&varying_frame, &surface, parameters.u - step, parameters.v).unwrap();
-    let after =
-        blend_surface_point(&varying_frame, &surface, parameters.u + step, parameters.v).unwrap();
+    let before = blend_surface_point(&varying_frame, &surface, parameters.u - step, parameters.v)
+        .expect("evaluator allocation succeeds")
+        .unwrap();
+    let after = blend_surface_point(&varying_frame, &surface, parameters.u + step, parameters.v)
+        .expect("evaluator allocation succeeds")
+        .unwrap();
     let numerical = Vector3::new(
         (after.x - before.x) / (2.0 * step),
         (after.y - before.y) / (2.0 * step),
@@ -1627,8 +1679,9 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     let origin = cadmpeg_ir::features::FinitePoint3::new(origin).unwrap();
     *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction);
     *cache = geometry;
-    let translated_point =
-        blend_surface_point(&translated, &surface, expected.u, expected.v).unwrap();
+    let translated_point = blend_surface_point(&translated, &surface, expected.u, expected.v)
+        .expect("evaluator allocation succeeds")
+        .unwrap();
     let translated_parameters = blend_surface_parameters_for_fit(
         &translated,
         &surface,
@@ -1636,6 +1689,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         Some(Point2::new(expected.u + 0.1, expected.v - 0.05)),
         1.0e-3,
     )
+    .expect("evaluator allocation succeeds")
     .expect("exact section tangent is independent of model-space magnitude");
     assert!((translated_parameters.u - expected.u).abs() < 1.0e-3);
     assert!((translated_parameters.v - expected.v).abs() < 1.0e-3);
@@ -1723,7 +1777,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             None,
             1.0e-8,
         ),
-        Some(Point2::new(0.0, 0.0))
+        Ok(Some(Point2::new(0.0, 0.0)))
     );
     ir.model
         .procedural_curves
@@ -1748,7 +1802,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             None,
             1.0e-8,
         ),
-        Some(Point2::new(0.0, 0.0))
+        Ok(Some(Point2::new(0.0, 0.0)))
     );
 
     let carrier = ir
@@ -1778,8 +1832,12 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         .expect("solved carrier")
         .clone(),
     );
-    let coarse = coarse_blend_surface_parameters(&ir, &surface, point, 0).unwrap();
-    let coarse_point = blend_surface_point(&ir, &surface, coarse.u, coarse.v).unwrap();
+    let coarse = coarse_blend_surface_parameters(&ir, &surface, point, 0)
+        .expect("evaluator allocation succeeds")
+        .unwrap();
+    let coarse_point = blend_surface_point(&ir, &surface, coarse.u, coarse.v)
+        .expect("evaluator allocation succeeds")
+        .unwrap();
     assert!(
         ((coarse_point.x - point.x).powi(2)
             + (coarse_point.y - point.y).powi(2)
@@ -1795,8 +1853,11 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         Point2::new(expected.u + 0.5, expected.v + 0.1),
         0,
     )
+    .expect("evaluator allocation succeeds")
     .unwrap();
-    let refined_point = blend_surface_point(&ir, &surface, refined.u, refined.v).unwrap();
+    let refined_point = blend_surface_point(&ir, &surface, refined.u, refined.v)
+        .expect("evaluator allocation succeeds")
+        .unwrap();
     let refined_error = ((refined_point.x - point.x).powi(2)
         + (refined_point.y - point.y).powi(2)
         + (refined_point.z - point.z).powi(2))
@@ -1867,7 +1928,9 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         None,
     ));
     let expected = Point2::new(4.0, 0.2);
-    let point = blend_surface_point(&ir, &outer, expected.u, expected.v).unwrap();
+    let point = blend_surface_point(&ir, &outer, expected.u, expected.v)
+        .expect("evaluator allocation succeeds")
+        .unwrap();
     let outer_geometry = ir
         .model
         .surfaces
@@ -1888,9 +1951,12 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         0,
         &geometry_budget,
     )
+    .expect("evaluator allocation succeeds")
     .expect("budgeted evaluation handles a nested blend support");
     assert!(Point3::distance(evaluated, point) <= 64.0 * f64::EPSILON);
-    let actual = blend_surface_parameters(&ir, &outer, point, None).unwrap();
+    let actual = blend_surface_parameters(&ir, &outer, point, None)
+        .expect("evaluator allocation succeeds")
+        .unwrap();
     assert!((actual.u - expected.u).abs() < 1.0e-8);
     assert!((actual.v - expected.v).abs() < 1.0e-8);
 
@@ -1926,5 +1992,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         )
         .unwrap();
     });
-    assert!(blend_surface_point(&ir, &outer, expected.u, expected.v).is_none());
+    assert!(blend_surface_point(&ir, &outer, expected.u, expected.v)
+        .expect("evaluator allocation succeeds")
+        .is_none());
 }

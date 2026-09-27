@@ -409,7 +409,7 @@ pub(super) fn attach(
         annotations,
     )?;
     attach_active_configuration_parameter_values(ir, annotations)?;
-    attach_feature_operations(ir, model, annotations, losses)?;
+    attach_feature_operations(ctx, ir, model, annotations, losses)?;
     attach_block_dimension_parameter_consumers(
         ir,
         &model.features.feature_block_dimensions,
@@ -1229,6 +1229,7 @@ fn attach_initial_segment_bodies(
 }
 
 fn attach_feature_operations(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     model: &crate::native::model::NativeModel,
     annotations: &mut AnnotationBuilder,
@@ -1925,7 +1926,7 @@ fn attach_feature_operations(
         counterbore_operations(simple_hole_templates, &operation_positions).unwrap_or_default();
     let mut counterbore_dimensions = BTreeMap::new();
     if let Some(projection) =
-        counterbore_body_projection(ir, &counterbore_operations, &hole_outputs)
+        counterbore_body_projection(Some(ctx), ir, &counterbore_operations, &hole_outputs)?
     {
         hole_outputs.extend(projection.outputs);
         simple_hole_diameters.extend(projection.diameters);
@@ -1942,11 +1943,16 @@ fn attach_feature_operations(
     }
     let simple_hole_placements =
         hole_axis_placements_for_operations(ir, &simple_hole_operations, &hole_outputs);
-    let counterbore_hole_placements =
-        counterbore_axis_placements_for_operations(ir, &counterbore_operations, &hole_outputs);
+    let counterbore_hole_placements = counterbore_axis_placements_for_operations(
+        Some(ctx),
+        ir,
+        &counterbore_operations,
+        &hole_outputs,
+    )?;
     let blind_hole_placements =
         blind_hole_axis_placements_for_operations(ir, &blind_hole_operations, &hole_outputs);
-    let simple_hole_chamfers = simple_hole_chamfers(ir, simple_hole_templates, &hole_outputs);
+    let simple_hole_chamfers =
+        simple_hole_chamfers(Some(ctx), ir, simple_hole_templates, &hole_outputs)?;
     let hole_packages = hole_package_projection(
         ir,
         simple_hole_templates,
@@ -7094,15 +7100,18 @@ fn hole_body_projection(
 }
 
 fn counterbore_body_projection(
+    ctx: Option<&DecodeContext<'_>>,
     ir: &CadIr,
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
-) -> Option<HoleBodyProjection> {
+) -> Result<Option<HoleBodyProjection>, CodecError> {
     if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
     {
-        return None;
+        return Ok(None);
     }
-    let operations_by_body = hole_operations_by_body(ir, operations, outputs)?;
+    let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
+        return Ok(None);
+    };
     let mut projected_outputs = BTreeMap::new();
     let mut diameters = BTreeMap::new();
     let mut counterbores = BTreeMap::new();
@@ -7111,31 +7120,36 @@ fn counterbore_body_projection(
             // A counterbore pair has no serialized operation-to-pair relation
             // once multiple operations share one result body. Do not assign
             // geometry to history order.
-            return None;
+            return Ok(None);
         };
-        let body_faces = connected_solid_body_faces(ir, &body)?;
-        let witnesses = counterbore_cylinders(ir, &body_faces)?;
+        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
+            return Ok(None);
+        };
+        let Some(witnesses) = counterbore_cylinders(ctx, ir, &body_faces)? else {
+            return Ok(None);
+        };
         let [witness] = witnesses.as_slice() else {
-            return None;
+            return Ok(None);
         };
         projected_outputs.insert(operation.clone(), vec![body.clone()]);
-        diameters.insert(operation.clone(), Length::new(witness.bore_radius * 2.0)?);
-        counterbores.insert(
-            operation.clone(),
-            CounterboreDimensions {
-                diameter: cadmpeg_ir::scalar::PositiveLength::new(
-                    witness.counterbore_radius * 2.0,
-                )?,
-                depth: cadmpeg_ir::scalar::PositiveLength::new(witness.depth)?,
-            },
-        );
+        let Some(diameter) = Length::new(witness.bore_radius * 2.0) else {
+            return Ok(None);
+        };
+        diameters.insert(operation.clone(), diameter);
+        let (Some(diameter), Some(depth)) = (
+            cadmpeg_ir::scalar::PositiveLength::new(witness.counterbore_radius * 2.0),
+            cadmpeg_ir::scalar::PositiveLength::new(witness.depth),
+        ) else {
+            return Ok(None);
+        };
+        counterbores.insert(operation.clone(), CounterboreDimensions { diameter, depth });
     }
-    Some(HoleBodyProjection {
+    Ok(Some(HoleBodyProjection {
         outputs: projected_outputs,
         diameters,
         blind_depths: BTreeMap::new(),
         counterbores,
-    })
+    }))
 }
 
 fn blind_hole_body_projection(
@@ -7207,36 +7221,37 @@ fn hole_axis_placements_for_operations(
 }
 
 fn counterbore_axis_placements_for_operations(
+    ctx: Option<&DecodeContext<'_>>,
     ir: &CadIr,
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
-) -> BTreeMap<String, HolePlacement> {
+) -> Result<BTreeMap<String, HolePlacement>, CodecError> {
     if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
     {
-        return BTreeMap::new();
+        return Ok(BTreeMap::new());
     }
     let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
-        return BTreeMap::new();
+        return Ok(BTreeMap::new());
     };
     let mut placements = BTreeMap::new();
     for (body, operations) in operations_by_body {
         let [operation] = operations.as_slice() else {
-            return BTreeMap::new();
+            return Ok(BTreeMap::new());
         };
         let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
-            return BTreeMap::new();
+            return Ok(BTreeMap::new());
         };
-        let Some(witnesses) = counterbore_cylinders(ir, &body_faces) else {
-            return BTreeMap::new();
+        let Some(witnesses) = counterbore_cylinders(ctx, ir, &body_faces)? else {
+            return Ok(BTreeMap::new());
         };
         let [witness] = witnesses.as_slice() else {
-            return BTreeMap::new();
+            return Ok(BTreeMap::new());
         };
         let (Some(point), Some(direction)) = (
             cadmpeg_ir::features::FinitePoint3::new(witness.line_origin),
             cadmpeg_ir::features::FeatureDirection3::new(witness.axis),
         ) else {
-            return BTreeMap::new();
+            return Ok(BTreeMap::new());
         };
         placements.insert(
             operation.clone(),
@@ -7246,7 +7261,7 @@ fn counterbore_axis_placements_for_operations(
             },
         );
     }
-    placements
+    Ok(placements)
 }
 
 fn blind_hole_axis_placements_for_operations(
@@ -7671,21 +7686,30 @@ fn plane_annulus_witness(
 }
 
 fn counterbore_cylinders(
+    ctx: Option<&DecodeContext<'_>>,
     ir: &CadIr,
     body_faces: &[&Face],
-) -> Option<Vec<CounterboreCylinderWitness>> {
-    let cylinders = cylindrical_face_witnesses(ir, body_faces)?;
+) -> Result<Option<Vec<CounterboreCylinderWitness>>, CodecError> {
+    let Some(cylinders) = cylindrical_face_witnesses(ir, body_faces) else {
+        return Ok(None);
+    };
     if cylinders.is_empty() || cylinders.len() % 2 != 0 {
-        return None;
+        return Ok(None);
     }
     let linear_tolerance = ir.tolerances.linear.get();
     let angular_tolerance = ir.tolerances.angular.get();
-    let mut candidates = alloc_filled(
-        cylinders.len(),
-        Vec::<(usize, CounterboreCylinderWitness)>::new(),
-        "nx counterbore cylinder candidates",
-    )
-    .ok()?;
+    let mut candidates = match ctx {
+        Some(ctx) => ctx.alloc_filled(
+            cylinders.len(),
+            Vec::<(usize, CounterboreCylinderWitness)>::new(),
+            "nx counterbore cylinder candidates",
+        )?,
+        None => alloc_filled(
+            cylinders.len(),
+            Vec::<(usize, CounterboreCylinderWitness)>::new(),
+            "nx counterbore cylinder candidates",
+        )?,
+    };
     for (first_index, first) in cylinders.iter().enumerate() {
         for (second_index, second) in cylinders.iter().enumerate().skip(first_index + 1) {
             let (small, large) = if first.radius < second.radius {
@@ -7740,20 +7764,35 @@ fn counterbore_cylinders(
                 counterbore_radius: large.radius,
                 depth,
             };
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(2, "nx counterbore candidate pair")?;
+            }
             candidates[first_index].push((second_index, witness));
             candidates[second_index].push((first_index, witness));
         }
     }
     if candidates.iter().any(|candidates| candidates.len() != 1) {
-        return None;
+        return Ok(None);
+    }
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(
+            (cylinders.len() / 2) as u64,
+            "nx counterbore cylinder witnesses",
+        )?;
     }
     let mut witnesses = Vec::with_capacity(cylinders.len() / 2);
-    let mut used = alloc_filled(
-        cylinders.len(),
-        false,
-        "nx counterbore cylinder assignments",
-    )
-    .ok()?;
+    let mut used = match ctx {
+        Some(ctx) => ctx.alloc_filled(
+            cylinders.len(),
+            false,
+            "nx counterbore cylinder assignments",
+        )?,
+        None => alloc_filled(
+            cylinders.len(),
+            false,
+            "nx counterbore cylinder assignments",
+        )?,
+    };
     for first_index in 0..cylinders.len() {
         if used[first_index] {
             continue;
@@ -7763,13 +7802,13 @@ fn counterbore_cylinders(
             || candidates[second_index][0].0 != first_index
             || first_index == second_index
         {
-            return None;
+            return Ok(None);
         }
         used[first_index] = true;
         used[second_index] = true;
         witnesses.push(witness);
     }
-    Some(witnesses)
+    Ok(Some(witnesses))
 }
 
 /// Identify one blind bore from its unique planar termination. The cylinder
@@ -7941,10 +7980,11 @@ fn through_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<(Point
 /// through-hole bore has exactly two coaxial conical faces and every cone is
 /// bounded by the bore circle and one equal larger circle.
 fn simple_hole_chamfers(
+    ctx: Option<&DecodeContext<'_>>,
     ir: &CadIr,
     templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
     outputs: &BTreeMap<String, Vec<BodyId>>,
-) -> BTreeMap<String, HoleKind> {
+) -> Result<BTreeMap<String, HoleKind>, CodecError> {
     let template_counts = templates
         .iter()
         .fold(BTreeMap::new(), |mut counts, template| {
@@ -7967,11 +8007,11 @@ fn simple_hole_chamfers(
         .map(|template| template.operation_label.clone())
         .collect::<BTreeSet<_>>();
     if operations.is_empty() {
-        return BTreeMap::new();
+        return Ok(BTreeMap::new());
     }
     let operations = operations.into_iter().collect::<Vec<_>>();
     let Some(operations_by_body) = hole_operations_by_body(ir, &operations, outputs) else {
-        return BTreeMap::new();
+        return Ok(BTreeMap::new());
     };
 
     let surfaces = ir
@@ -8005,25 +8045,26 @@ fn simple_hole_chamfers(
     let mut treatments = BTreeMap::new();
     for (body, operations) in operations_by_body {
         let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
-            return BTreeMap::new();
+            return Ok(BTreeMap::new());
         };
         let Some(bores) = through_bore_cylinders(ir, &body_faces) else {
-            return BTreeMap::new();
+            return Ok(BTreeMap::new());
         };
         let [(_, _, bore_radius), ..] = bores.as_slice() else {
-            return BTreeMap::new();
+            return Ok(BTreeMap::new());
         };
         if bores.len() != operations.len()
             || bores
                 .iter()
                 .any(|(_, _, radius)| radius.to_bits() != bore_radius.to_bits())
         {
-            return BTreeMap::new();
+            return Ok(BTreeMap::new());
         }
-        let Ok(mut cone_counts) =
-            alloc_filled(bores.len(), 0usize, "nx simple-hole chamfer cone counts")
-        else {
-            return BTreeMap::new();
+        let mut cone_counts = match ctx {
+            Some(ctx) => {
+                ctx.alloc_filled(bores.len(), 0usize, "nx simple-hole chamfer cone counts")?
+            }
+            None => alloc_filled(bores.len(), 0usize, "nx simple-hole chamfer cone counts")?,
         };
         let mut outer_radii = Vec::new();
         let mut included_angles = Vec::new();
@@ -8040,7 +8081,7 @@ fn simple_hole_chamfers(
             let axis = cone_surface.frame().axis().as_raw();
             let half_angle = cone_surface.half_angle().get();
             if half_angle <= 0.0 || half_angle >= std::f64::consts::FRAC_PI_2 {
-                return BTreeMap::new();
+                return Ok(BTreeMap::new());
             }
             let matching_bores = bores
                 .iter()
@@ -8060,7 +8101,7 @@ fn simple_hole_chamfers(
                 })
                 .collect::<Vec<_>>();
             let [bore_ordinal] = matching_bores.as_slice() else {
-                return BTreeMap::new();
+                return Ok(BTreeMap::new());
             };
             cone_counts[*bore_ordinal] += 1;
 
@@ -8078,10 +8119,10 @@ fn simple_hole_chamfers(
                 .collect::<Vec<_>>();
             radii.sort_by(f64::total_cmp);
             let [inner, outer] = radii.as_slice() else {
-                return BTreeMap::new();
+                return Ok(BTreeMap::new());
             };
             if inner.to_bits() != bore_radius.to_bits() || outer <= inner {
-                return BTreeMap::new();
+                return Ok(BTreeMap::new());
             }
             outer_radii.push(*outer);
             included_angles.push(half_angle * 2.0);
@@ -8090,7 +8131,7 @@ fn simple_hole_chamfers(
             || outer_radii.len() != bores.len() * 2
             || included_angles.len() != outer_radii.len()
         {
-            return BTreeMap::new();
+            return Ok(BTreeMap::new());
         }
         outer_radii.sort_by(f64::total_cmp);
         included_angles.sort_by(f64::total_cmp);
@@ -8100,10 +8141,10 @@ fn simple_hole_chamfers(
             included_angles.last(),
             included_angles.first(),
         ) else {
-            return BTreeMap::new();
+            return Ok(BTreeMap::new());
         };
         if widest - narrowest > linear_tolerance || largest - smallest > angular_tolerance {
-            return BTreeMap::new();
+            return Ok(BTreeMap::new());
         }
         let (Some(diameter), Some(angle)) = (
             cadmpeg_ir::scalar::PositiveLength::new(
@@ -8113,7 +8154,7 @@ fn simple_hole_chamfers(
                 included_angles.iter().sum::<f64>() / included_angles.len() as f64,
             ),
         ) else {
-            return BTreeMap::new();
+            return Ok(BTreeMap::new());
         };
         let treatment = HoleKind::Chamfer { diameter, angle };
         treatments.extend(
@@ -8122,7 +8163,7 @@ fn simple_hole_chamfers(
                 .map(|operation| (operation, treatment)),
         );
     }
-    treatments
+    Ok(treatments)
 }
 
 fn unique_simple_hole_template(
