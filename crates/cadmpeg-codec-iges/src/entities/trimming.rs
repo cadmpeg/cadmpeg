@@ -1672,7 +1672,7 @@ struct BoundaryMatch<'a> {
 }
 
 fn select_boundary_edge(
-    candidates: &[Edge],
+    candidates: &[&Edge],
     carrier_index: &ModelIndex<'_>,
     boundary: BoundaryMatch<'_>,
     ctx: &DecodeContext<'_>,
@@ -1687,7 +1687,7 @@ fn select_boundary_edge(
     let mut candidates_with_endpoints = 0;
     let mut matched = reserve_vec(ctx, candidates.len(), "iges trimmed edge candidates")
         .map_err(BoundaryEdgeSelectionError::Resource)?;
-    for edge in candidates {
+    for &edge in candidates {
         let Some(start) = point_position(carrier_index, &edge.start) else {
             continue;
         };
@@ -1712,7 +1712,7 @@ fn select_boundary_edge(
     if pcurves.is_empty() {
         return if candidates.len() == 1 {
             let (edge, start, end) = candidates[0];
-            Ok((edge.clone(), start, end, true))
+            Ok((clone_boundary_edge(edge, ctx).map_err(BoundaryEdgeSelectionError::Resource)?, start, end, true))
         } else {
             Err(BoundaryEdgeSelectionError::Ambiguous)
         };
@@ -1741,10 +1741,10 @@ fn select_boundary_edge(
         }
     }
     match agreeing.as_slice() {
-        [(edge, start, end)] => Ok(((*edge).clone(), *start, *end, true)),
+        [(edge, start, end)] => Ok((clone_boundary_edge(edge, ctx).map_err(BoundaryEdgeSelectionError::Resource)?, *start, *end, true)),
         [] if !parameter_curves_authoritative && candidates.len() == 1 => {
             let (edge, start, end) = candidates[0];
-            Ok((edge.clone(), start, end, false))
+            Ok((clone_boundary_edge(edge, ctx).map_err(BoundaryEdgeSelectionError::Resource)?, start, end, false))
         }
         [] => {
             if parameter_curves_authoritative {
@@ -1755,6 +1755,26 @@ fn select_boundary_edge(
         }
         _ => Err(BoundaryEdgeSelectionError::Ambiguous),
     }
+}
+
+fn clone_boundary_edge(edge: &Edge, ctx: &DecodeContext<'_>) -> Result<Edge, CodecError> {
+    let carrier = match &edge.carrier {
+        cadmpeg_ir::topology::EdgeCarrier::Free => cadmpeg_ir::topology::EdgeCarrier::Free,
+        cadmpeg_ir::topology::EdgeCarrier::Endpoints(range) => cadmpeg_ir::topology::EdgeCarrier::Endpoints(*range),
+        cadmpeg_ir::topology::EdgeCarrier::Curve(curve) => cadmpeg_ir::topology::EdgeCarrier::Curve(
+            copy_optional_identity(Some(ctx), curve.as_str(), "iges selected edge curve ID")?,
+        ),
+        cadmpeg_ir::topology::EdgeCarrier::Bounded(curve, range) => cadmpeg_ir::topology::EdgeCarrier::Bounded(
+            copy_optional_identity(Some(ctx), curve.as_str(), "iges selected edge curve ID")?, *range,
+        ),
+    };
+    Ok(Edge {
+        id: copy_optional_identity(Some(ctx), edge.id.as_str(), "iges selected edge ID")?,
+        carrier,
+        start: copy_optional_identity(Some(ctx), edge.start.as_str(), "iges selected edge start ID")?,
+        end: copy_optional_identity(Some(ctx), edge.end.as_str(), "iges selected edge end ID")?,
+        tolerance: edge.tolerance,
+    })
 }
 
 pub(super) fn project(
@@ -1786,13 +1806,15 @@ pub(super) fn project(
 
     let carrier_index = ModelIndex::new(ir);
     let mut composite_index: Option<CompositeIndex> = None;
-    let mut edges_by_curve = BTreeMap::<CurveId, Vec<Edge>>::new();
+    let mut edges_by_curve = BTreeMap::<&CurveId, Vec<&Edge>>::new();
     for edge in &ir.model.edges {
         if let Some(curve) = edge.curve() {
-            edges_by_curve
-                .entry(curve.clone())
-                .or_default()
-                .push(edge.clone());
+            if !edges_by_curve.contains_key(curve) {
+                ctx.charge_collection_items(1, "iges boundary carrier index nodes")?;
+            }
+            let group = edges_by_curve.entry(curve).or_default();
+            reserve_vec_growth(ctx, group, 1, "iges boundary carrier edge references")?;
+            group.push(edge);
         }
     }
     let mut staged = Vec::new();

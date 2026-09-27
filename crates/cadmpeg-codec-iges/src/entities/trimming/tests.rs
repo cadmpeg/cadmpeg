@@ -109,6 +109,25 @@ fn trimming_projection_refuses_counted_boundary_vectors() {
 }
 
 #[test]
+fn boundary_carrier_index_and_selected_edge_refuse_unadmitted_storage() {
+    let bytes = bounded_plane_file();
+    for operation in [
+        "iges boundary carrier index nodes",
+        "iges boundary carrier edge references",
+    ] {
+        assert_trimming_collection_refusal(&bytes, operation);
+    }
+    for operation in [
+        "iges selected edge curve ID",
+        "iges selected edge ID",
+        "iges selected edge start ID",
+        "iges selected edge end ID",
+    ] {
+        assert_trimming_retained_refusal(&bytes, operation);
+    }
+}
+
+#[test]
 fn trimming_projection_refuses_retained_boundary_source_text() {
     let bytes = bounded_plane_file();
     for operation in [
@@ -792,7 +811,7 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
     )
     .unwrap());
     let (selected, start, end, pcurves_agree) = super::select_boundary_edge(
-        &candidates,
+        &[&candidates[0], &candidates[1]],
         &index,
         super::BoundaryMatch {
             surface_id: &surface_id,
@@ -823,7 +842,7 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
     });
     assert!(matches!(
         super::select_boundary_edge(
-            &ambiguous_candidates,
+            &[&ambiguous_candidates[0], &ambiguous_candidates[1], &ambiguous_candidates[2]],
             &index,
             super::BoundaryMatch {
                 surface_id: &surface_id,
