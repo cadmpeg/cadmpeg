@@ -2,7 +2,7 @@
 //! Constructive-solid primitive validation and native semantic ownership.
 
 use super::geometry::{
-    declared_orthogonal_vectors, declared_unit_vector, entity_loss, resolve_transform,
+    declared_orthogonal_vectors, declared_unit_vector, resolve_transform,
     ProjectionOutcome,
 };
 use super::pointer;
@@ -139,7 +139,7 @@ pub(super) fn project(
         matches!(entry.entity_type, 150 | 152 | 154 | 156 | 158 | 160 | 168) && entry.form == 0
     }) {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
         let factor = global.length_factor_mm();
@@ -153,7 +153,7 @@ pub(super) fn project(
             ctx,
         ) {
             error.non_resource()?;
-            losses.push(entity_loss(entry, "primitive placement is invalid"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "primitive placement is invalid"))?;
             continue;
         }
         let dimensions = match entry.entity_type {
@@ -176,7 +176,7 @@ pub(super) fn project(
             _ => None,
         };
         let Some(dimensions) = dimensions else {
-            losses.push(entity_loss(entry, "primitive dimensions are not numeric"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "primitive dimensions are not numeric"))?;
             continue;
         };
         let dimensions_valid = match entry.entity_type {
@@ -214,10 +214,7 @@ pub(super) fn project(
             _ => false,
         };
         if !dimensions_valid {
-            losses.push(entity_loss(
-                entry,
-                "primitive dimension invariant is violated",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "primitive dimension invariant is violated"))?;
             continue;
         }
         let (origin_start, x_axis_start, z_axis_start) = match entry.entity_type {
@@ -229,16 +226,16 @@ pub(super) fn project(
             160 => (3, None, Some(6)),
             168 => (4, Some(7), Some(10)),
             _ => {
-                losses.push(entity_loss(entry, "primitive solid type is unsupported"));
+                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "primitive solid type is unsupported"))?;
                 continue;
             }
         };
         let Some(origin) = vector_or(record, origin_start, Vector3::new(0.0, 0.0, 0.0)) else {
-            losses.push(entity_loss(entry, "primitive origin is invalid"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "primitive origin is invalid"))?;
             continue;
         };
         if !origin.is_finite() {
-            losses.push(entity_loss(entry, "primitive origin is non-finite"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "primitive origin is non-finite"))?;
             continue;
         }
         let x_axis =
@@ -263,7 +260,7 @@ pub(super) fn project(
                     )
                 })
         {
-            losses.push(entity_loss(entry, "primitive axes are not orthonormal"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "primitive axes are not orthonormal"))?;
             continue;
         }
         decoded.insert(entry.sequence);
@@ -274,7 +271,7 @@ pub(super) fn project(
             || (entry.entity_type == 164 && entry.form == 0)
     }) {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
         let factor = global.length_factor_mm();
@@ -284,21 +281,18 @@ pub(super) fn project(
                 .iter()
                 .any(|curve| curve.id == crate::ids::curve(&crate::ids::Stem::directory(*sequence)))
         }) else {
-            losses.push(entity_loss(entry, "solid profile curve pointer is invalid"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "solid profile curve pointer is invalid"))?;
             continue;
         };
         let Some(amount) = record
             .number_or(2, 1.0)
             .filter(|value| value.is_finite() && *value > 0.0)
         else {
-            losses.push(entity_loss(entry, "solid sweep amount is invalid"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "solid sweep amount is invalid"))?;
             continue;
         };
         if entry.entity_type == 162 && amount > 1.0 {
-            losses.push(entity_loss(
-                entry,
-                "solid revolution fraction is greater than one",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "solid revolution fraction is greater than one"))?;
             continue;
         }
         let (origin, direction_start) = if entry.entity_type == 162 {
@@ -313,23 +307,17 @@ pub(super) fn project(
                     .is_none()
             })
         {
-            losses.push(entity_loss(entry, "solid sweep axis is invalid"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "solid sweep axis is invalid"))?;
             continue;
         }
         let Some(closed) = profile_closed(ir, profile, global.minimum_resolution_mm()) else {
-            losses.push(entity_loss(
-                entry,
-                "solid profile endpoints are unavailable",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "solid profile endpoints are unavailable"))?;
             continue;
         };
         if (entry.entity_type == 162 && entry.form == 0 && closed)
             || (entry.entity_type == 164 && !closed)
         {
-            losses.push(entity_loss(
-                entry,
-                "solid sweep form disagrees with profile closure",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "solid sweep form disagrees with profile closure"))?;
             continue;
         }
         if let Err(error) = resolve_transform(
@@ -342,7 +330,7 @@ pub(super) fn project(
             ctx,
         ) {
             error.non_resource()?;
-            losses.push(entity_loss(entry, "solid sweep placement is invalid"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "solid sweep placement is invalid"))?;
             continue;
         }
         decoded.insert(entry.sequence);
@@ -354,14 +342,11 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 180 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
         let Some(count) = record.count(1).filter(|count| *count > 2) else {
-            losses.push(entity_loss(
-                entry,
-                "Boolean postfix length is not greater than two",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Boolean postfix length is not greater than two"))?;
             continue;
         };
         let terms = (0..count)
@@ -378,7 +363,7 @@ pub(super) fn project(
             })
             .collect::<Option<Vec<_>>>();
         let Some(terms) = terms else {
-            losses.push(entity_loss(entry, "Boolean postfix term is invalid"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Boolean postfix term is invalid"))?;
             continue;
         };
         let mut depth = 0_usize;
@@ -394,7 +379,7 @@ pub(super) fn project(
             BooleanTerm::Operation => false,
         });
         if !valid_stack || depth != 1 {
-            losses.push(entity_loss(entry, "Boolean postfix stack is unbalanced"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Boolean postfix stack is unbalanced"))?;
             continue;
         }
         boolean_definitions.insert(entry.sequence, terms);
@@ -423,10 +408,7 @@ pub(super) fn project(
                 })
         })?;
         if !operands_valid || cyclic {
-            losses.push(entity_loss(
-                entry,
-                "Boolean operands, form, or reference acyclicity is invalid",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Boolean operands, form, or reference acyclicity is invalid"))?;
             continue;
         }
         let factor = global.length_factor_mm();
@@ -440,7 +422,7 @@ pub(super) fn project(
             ctx,
         ) {
             error.non_resource()?;
-            losses.push(entity_loss(entry, "Boolean result placement is invalid"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Boolean result placement is invalid"))?;
             continue;
         }
         decoded.insert(*sequence);
@@ -451,7 +433,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 182 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
         let Some(_tree) = pointer(record, 1).filter(|sequence| {
@@ -460,20 +442,14 @@ pub(super) fn project(
                     .get(sequence)
                     .is_some_and(|target| target.entity_type == 180)
         }) else {
-            losses.push(entity_loss(
-                entry,
-                "selected-component Boolean tree pointer is invalid",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "selected-component Boolean tree pointer is invalid"))?;
             continue;
         };
         let point = (2..=4)
             .map(|index| record.number(index))
             .collect::<Option<Vec<_>>>();
         if point.is_none() || entry.status.use_flag(global.global_table()) != Some(UseFlag::Other) {
-            losses.push(entity_loss(
-                entry,
-                "selected-component point or entity-use flag is invalid",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "selected-component point or entity-use flag is invalid"))?;
             continue;
         }
         let factor = global.length_factor_mm();
@@ -487,10 +463,7 @@ pub(super) fn project(
             ctx,
         ) {
             error.non_resource()?;
-            losses.push(entity_loss(
-                entry,
-                "selected-component placement is invalid",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "selected-component placement is invalid"))?;
             continue;
         }
         decoded.insert(entry.sequence);

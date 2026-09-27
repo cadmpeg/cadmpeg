@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Text annotation entities.
 
-use super::geometry::{curve_geometry_coplanar, entity_loss, resolve_transform, ProjectionOutcome};
+use super::geometry::{curve_geometry_coplanar, resolve_transform, ProjectionOutcome};
 use super::presentation::{
     general_note_font_valid_for_global_table, new_general_note_charset_valid,
     new_general_note_font_valid,
@@ -1159,7 +1159,7 @@ pub(super) fn project(
                 | AnnotationKind::NewGeneralNote
                 | AnnotationKind::Leader => "text count, presentation metrics, encoding, placement, or Directory use flag is invalid",
             };
-            losses.push(entity_loss(entry, message));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", message))?;
         }
     }
 

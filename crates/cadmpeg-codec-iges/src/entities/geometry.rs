@@ -1203,26 +1203,20 @@ pub(super) fn curve_geometry_coplanar(
     }
 }
 
-pub(super) fn entity_loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
-    IgesLossCode::EntityNotProjected
-        .note(format!(
-            "IGES entity type {} form {} was not projected: {}",
-            entry.entity_type,
-            entry.form,
-            message.into()
-        ))
-        .with_provenance(entry.loss_provenance())
-}
-
 /// Records an entity loss when geometry admission fails.
 pub(super) fn admit<T>(
     result: Result<T, &str>,
     entry: &DirectoryEntry,
     losses: &mut Vec<LossNote>,
-) -> Option<T> {
-    result
-        .map_err(|message| losses.push(entity_loss(entry, message)))
-        .ok()
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<T>, CodecError> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(message) => {
+            super::push_optional_entity_loss(ctx, losses, entry, format_args!("{message}"))?;
+            Ok(None)
+        }
+    }
 }
 
 /// The Directory sequence a source-object association names.
@@ -1372,33 +1366,24 @@ pub(crate) fn project_geometry(
     let mut losses = Vec::new();
     for entry in directory {
         let Some(use_flag) = entry.status.use_flag(global_table) else {
-            losses.push(entity_loss(
-                entry,
-                format!(
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!(
                     "Entity Use Flag {:02} is outside the effective specification family",
                     entry.status.use_flag_code()
-                ),
-            ));
+                ))?;
             continue;
         };
         if !base_geometry_use_flag_valid(entry.entity_type, entry.form, use_flag, global_table) {
-            losses.push(entity_loss(
-                entry,
-                format!(
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!(
                     "Entity Use Flag {:02} is outside the IGES 4.0 base geometry values 00, 01, 02, and 05",
                     entry.status.use_flag_code()
-                ),
-            ));
+                ))?;
         } else if !base_geometry_line_font_valid(
             entry.entity_type,
             entry.form,
             entry.line_font,
             global_table,
         ) {
-            losses.push(entity_loss(
-                entry,
-                "Line Font must be nonzero for this IGES 4.0 geometry entity",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Line Font must be nonzero for this IGES 4.0 geometry entity"))?;
         }
     }
     let admitted_directory = if directory.iter().any(|entry| !admitted(entry)) {
@@ -1451,31 +1436,25 @@ pub(crate) fn project_geometry(
         .filter(|entry| entry.entity_type == 123 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
         let components = [record.number(1), record.number(2), record.number(3)];
         let [Some(x), Some(y), Some(z)] = components else {
-            losses.push(entity_loss(entry, "direction components are not numeric"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "direction components are not numeric"))?;
             continue;
         };
         let direction = Vector3::new(x, y, z);
         if !is_finite_nonzero_vector(direction) {
-            losses.push(entity_loss(entry, "direction is zero or non-finite"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "direction is zero or non-finite"))?;
             continue;
         }
         if !entry.status.is_physically_dependent() {
-            losses.push(entity_loss(
-                entry,
-                "Direction Entity is not marked physically dependent",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Direction Entity is not marked physically dependent"))?;
             continue;
         }
         if entry.transform != 0 {
-            losses.push(entity_loss(
-                entry,
-                "Direction Entity references a prohibited transformation",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Direction Entity references a prohibited transformation"))?;
         }
     }
     for entry in directory
@@ -1484,7 +1463,7 @@ pub(crate) fn project_geometry(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
         let mut values = [FiniteReal::ZERO; 7];
@@ -1496,10 +1475,7 @@ pub(crate) fn project_geometry(
             }
         }
         if let Some(index) = malformed {
-            losses.push(entity_loss(
-                entry,
-                format!("arc parameter {index} is not a finite number"),
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("arc parameter {index} is not a finite number"))?;
             continue;
         }
         let values = values.map(|value| value.get() * factor);
@@ -1515,7 +1491,7 @@ pub(crate) fn project_geometry(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                losses.push(entity_loss(entry, message));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", message))?;
                 continue;
             }
         };
@@ -1523,14 +1499,14 @@ pub(crate) fn project_geometry(
             .apply_vector(Vector3::new(1.0, 0.0, 0.0))
             .map(cadmpeg_ir::features::FiniteVector3::get)
         else {
-            losses.push(entity_loss(entry, "placement produces a non-finite vector"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "placement produces a non-finite vector"))?;
             continue;
         };
         let Some(basis_y) = transform
             .apply_vector(Vector3::new(0.0, 1.0, 0.0))
             .map(cadmpeg_ir::features::FiniteVector3::get)
         else {
-            losses.push(entity_loss(entry, "placement produces a non-finite vector"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "placement produces a non-finite vector"))?;
             continue;
         };
         let scale_x = basis_x.norm();
@@ -1541,24 +1517,21 @@ pub(crate) fn project_geometry(
             || (scale_x - scale_y).abs() > scale_tolerance
             || basis_x.dot(basis_y).abs() > scale_x * scale_y * COMPUTATION_TOLERANCE
         {
-            losses.push(entity_loss(
-                entry,
-                "affine placement does not preserve circular geometry",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "affine placement does not preserve circular geometry"))?;
             continue;
         }
         let Some(center) = transform.apply_point(Point3::new(values[1], values[2], values[0]))
         else {
-            losses.push(entity_loss(entry, "placement produces a non-finite point"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "placement produces a non-finite point"))?;
             continue;
         };
         let Some(start) = transform.apply_point(Point3::new(values[3], values[4], values[0]))
         else {
-            losses.push(entity_loss(entry, "placement produces a non-finite point"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "placement produces a non-finite point"))?;
             continue;
         };
         let Some(end) = transform.apply_point(Point3::new(values[5], values[6], values[0])) else {
-            losses.push(entity_loss(entry, "placement produces a non-finite point"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "placement produces a non-finite point"))?;
             continue;
         };
         let start_delta = start.vector_from(center.get());
@@ -1569,7 +1542,7 @@ pub(crate) fn project_geometry(
             let n = start_delta.norm();
             (n.is_finite() && n > 0.0).then(|| start_delta.scale(1.0 / n))
         }) else {
-            losses.push(entity_loss(entry, "arc start point equals its center"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "arc start point equals its center"))?;
             continue;
         };
         let ref_direction = UnitVector3::normalized_by_reciprocal(start_delta);
@@ -1579,7 +1552,7 @@ pub(crate) fn project_geometry(
             let n = v.norm();
             (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
         }) else {
-            losses.push(entity_loss(entry, "arc placement collapses its plane"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "arc placement collapses its plane"))?;
             continue;
         };
         let axis = UnitVector3::normalized_by_reciprocal(basis_x.cross(basis_y));
@@ -1588,17 +1561,14 @@ pub(crate) fn project_geometry(
             .minimum_resolution_mm()
             .max(radius.max(end_radius).max(1.0) * COMPUTATION_TOLERANCE);
         if !end_radius.is_finite() || (end_radius - radius).abs() > radius_tolerance {
-            losses.push(entity_loss(
-                entry,
-                "arc start and terminate points have different radii",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "arc start and terminate points have different radii"))?;
             continue;
         }
         let Some(end_raw) = ({
             let n = end_delta.norm();
             (n.is_finite() && n > 0.0).then(|| end_delta.scale(1.0 / n))
         }) else {
-            losses.push(entity_loss(entry, "arc terminate point equals its center"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "arc terminate point equals its center"))?;
             continue;
         };
         let end_direction = UnitVector3::normalized_by_reciprocal(end_delta);
@@ -1674,12 +1644,12 @@ pub(crate) fn project_geometry(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
         let coordinates = [record.number(1), record.number(2), record.number(3)];
         let [Some(x), Some(y), Some(z)] = coordinates else {
-            losses.push(entity_loss(entry, "X, Y, or Z is not numeric"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "X, Y, or Z is not numeric"))?;
             continue;
         };
         if !point_display_symbol_valid(record, &entries, global.global_table()) {
@@ -1701,13 +1671,13 @@ pub(crate) fn project_geometry(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                losses.push(entity_loss(entry, message));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", message))?;
                 continue;
             }
         };
         let Some(position) = transform.apply_point(Point3::new(x * factor, y * factor, z * factor))
         else {
-            losses.push(entity_loss(entry, "placement produces a non-finite point"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "placement produces a non-finite point"))?;
             continue;
         };
         let point = crate::ids::point(&crate::ids::Stem::directory(entry.sequence));
@@ -1734,29 +1704,20 @@ pub(crate) fn project_geometry(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
         let coordinates = [record.number(1), record.number(2)];
         let [Some(x), Some(y)] = coordinates else {
-            losses.push(entity_loss(
-                entry,
-                "X or Y reference coordinate is not numeric",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "X or Y reference coordinate is not numeric"))?;
             continue;
         };
         let Some(x) = FiniteReal::new(x) else {
-            losses.push(entity_loss(
-                entry,
-                "X or Y reference coordinate is not finite",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "X or Y reference coordinate is not finite"))?;
             continue;
         };
         let Some(y) = FiniteReal::new(y) else {
-            losses.push(entity_loss(
-                entry,
-                "X or Y reference coordinate is not finite",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "X or Y reference coordinate is not finite"))?;
             continue;
         };
         let required_real = |index| record.number(index).is_some();
@@ -1795,14 +1756,14 @@ pub(crate) fn project_geometry(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                losses.push(entity_loss(entry, message));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", message))?;
                 continue;
             }
         };
         let Some(position) =
             transform.apply_point(Point3::new(x.get() * factor, y.get() * factor, 0.0))
         else {
-            losses.push(entity_loss(entry, "placement produces a non-finite point"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "placement produces a non-finite point"))?;
             continue;
         };
         let point = crate::ids::point(&crate::ids::Stem::directory(entry.sequence));
@@ -1829,7 +1790,7 @@ pub(crate) fn project_geometry(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
         let mut coordinates = [FiniteReal::ZERO; 6];
@@ -1841,10 +1802,7 @@ pub(crate) fn project_geometry(
             }
         }
         if let Some(index) = malformed {
-            losses.push(entity_loss(
-                entry,
-                format!("endpoint coordinate {index} is not a finite number"),
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("endpoint coordinate {index} is not a finite number"))?;
             continue;
         }
         let coordinates = coordinates.map(|coordinate| coordinate.get() * factor);
@@ -1860,29 +1818,26 @@ pub(crate) fn project_geometry(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                losses.push(entity_loss(entry, message));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", message))?;
                 continue;
             }
         };
         let Some(start) =
             transform.apply_point(Point3::new(coordinates[0], coordinates[1], coordinates[2]))
         else {
-            losses.push(entity_loss(entry, "placement produces a non-finite point"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "placement produces a non-finite point"))?;
             continue;
         };
         let Some(end) =
             transform.apply_point(Point3::new(coordinates[3], coordinates[4], coordinates[5]))
         else {
-            losses.push(entity_loss(entry, "placement produces a non-finite point"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "placement produces a non-finite point"))?;
             continue;
         };
         let delta = end.vector_from(start.get());
         let length = delta.norm();
         if !length.is_finite() || length <= 0.0 {
-            losses.push(entity_loss(
-                entry,
-                "transformed endpoints are coincident or non-finite",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "transformed endpoints are coincident or non-finite"))?;
             continue;
         }
         let direction = UnitVector3::normalized_with_length(delta)
@@ -1942,26 +1897,23 @@ pub(crate) fn project_geometry(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
         let Some(k) = record.count(1) else {
-            losses.push(entity_loss(entry, "upper control-point index K is invalid"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "upper control-point index K is invalid"))?;
             continue;
         };
         let Some(degree) = record
             .integer(2)
             .and_then(|value| u32::try_from(value).ok())
         else {
-            losses.push(entity_loss(entry, "basis degree M is invalid"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "basis degree M is invalid"))?;
             continue;
         };
         let degree_usize = index_from_u32(degree);
         if k < degree_usize {
-            losses.push(entity_loss(
-                entry,
-                "control-point count is smaller than degree plus one",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "control-point count is smaller than degree plus one"))?;
             continue;
         }
         let flags = [
@@ -1971,38 +1923,35 @@ pub(crate) fn project_geometry(
             record.integer(6),
         ];
         if flags.iter().any(|flag| !matches!(flag, Some(0 | 1))) {
-            losses.push(entity_loss(
-                entry,
-                "one or more spline flags are not 0 or 1",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "one or more spline flags are not 0 or 1"))?;
             continue;
         }
         let Some(control_count) = k.checked_add(1) else {
-            losses.push(entity_loss(entry, "control-point count overflows"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "control-point count overflows"))?;
             continue;
         };
         let Some(knot_count) = control_count
             .checked_add(degree_usize)
             .and_then(|value| value.checked_add(1))
         else {
-            losses.push(entity_loss(entry, "knot count overflows"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "knot count overflows"))?;
             continue;
         };
         let knot_start = 7_usize;
         let Some(weight_start) = knot_start.checked_add(knot_count) else {
-            losses.push(entity_loss(entry, "weight offset overflows"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "weight offset overflows"))?;
             continue;
         };
         let Some(pole_start) = weight_start.checked_add(control_count) else {
-            losses.push(entity_loss(entry, "control-point offset overflows"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "control-point offset overflows"))?;
             continue;
         };
         let Some(pole_value_count) = control_count.checked_mul(3) else {
-            losses.push(entity_loss(entry, "control-point value count overflows"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "control-point value count overflows"))?;
             continue;
         };
         let Some(range_start) = pole_start.checked_add(pole_value_count) else {
-            losses.push(entity_loss(entry, "parameter-range offset overflows"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "parameter-range offset overflows"))?;
             continue;
         };
         let collect_numbers = |start: usize, count: usize| -> Option<Vec<FiniteReal>> {
@@ -2011,18 +1960,15 @@ pub(crate) fn project_geometry(
                 .collect()
         };
         let Some(finite_knots) = collect_numbers(knot_start, knot_count) else {
-            losses.push(entity_loss(entry, "knot vector is truncated or non-finite"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "knot vector is truncated or non-finite"))?;
             continue;
         };
         let Ok(knots) = KnotVector::from_finite_lanes(finite_knots.clone()) else {
-            losses.push(entity_loss(entry, "knot vector is decreasing"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "knot vector is decreasing"))?;
             continue;
         };
         let Some(native_weights) = collect_numbers(weight_start, control_count) else {
-            losses.push(entity_loss(
-                entry,
-                "weight vector is truncated or non-finite",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "weight vector is truncated or non-finite"))?;
             continue;
         };
         let Some(native_weights) = native_weights
@@ -2030,7 +1976,7 @@ pub(crate) fn project_geometry(
             .map(|weight| PositiveReal::try_from(weight).ok())
             .collect::<Option<Vec<_>>>()
         else {
-            losses.push(entity_loss(entry, "weights are not strictly positive"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "weights are not strictly positive"))?;
             continue;
         };
         let precision = global.real_precision();
@@ -2053,28 +1999,19 @@ pub(crate) fn project_geometry(
         });
         let polynomial = flags[2] == Some(1);
         if polynomial && !equal_weights {
-            losses.push(entity_loss(entry, "polynomial spline has unequal weights"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "polynomial spline has unequal weights"))?;
             continue;
         }
         if !polynomial && equal_weights {
-            losses.push(entity_loss(
-                entry,
-                "rational spline has equal weights but PROP3 declares rational",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "rational spline has equal weights but PROP3 declares rational"))?;
             continue;
         }
         let Some(native_poles) = collect_numbers(pole_start, pole_value_count) else {
-            losses.push(entity_loss(
-                entry,
-                "control-point vector is truncated or non-finite",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "control-point vector is truncated or non-finite"))?;
             continue;
         };
         let Some(mut parameter_range) = collect_numbers(range_start, 2) else {
-            losses.push(entity_loss(
-                entry,
-                "parameter range is missing or non-finite",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "parameter range is missing or non-finite"))?;
             continue;
         };
         let domain_start = finite_knots[degree_usize];
@@ -2107,10 +2044,7 @@ pub(crate) fn project_geometry(
                 },
             );
         let Some(parameter_interval) = parameter_interval else {
-            losses.push(entity_loss(
-                entry,
-                "parameter range lies outside the spline knot domain",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "parameter range lies outside the spline knot domain"))?;
             continue;
         };
         let transform = match resolve_transform(
@@ -2125,7 +2059,7 @@ pub(crate) fn project_geometry(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                losses.push(entity_loss(entry, message));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", message))?;
                 continue;
             }
         };
@@ -2140,10 +2074,7 @@ pub(crate) fn project_geometry(
             })
             .collect::<Option<Vec<_>>>()
         else {
-            losses.push(entity_loss(
-                entry,
-                "transformed control-point vector is non-finite",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "transformed control-point vector is non-finite"))?;
             continue;
         };
         let raw_control_points = control_points
@@ -2164,14 +2095,11 @@ pub(crate) fn project_geometry(
         let planar = flags[0] == Some(1);
         if planar {
             let Some(normal_start) = range_start.checked_add(2) else {
-                losses.push(entity_loss(entry, "plane-normal offset overflows"));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "plane-normal offset overflows"))?;
                 continue;
             };
             let Some(normal_values) = collect_numbers(normal_start, 3) else {
-                losses.push(entity_loss(
-                    entry,
-                    "plane-normal fields are missing or non-finite",
-                ));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "plane-normal fields are missing or non-finite"))?;
                 continue;
             };
             let normal_definition = Vector3::new(
@@ -2180,14 +2108,11 @@ pub(crate) fn project_geometry(
                 normal_values[2].get(),
             );
             if declared_unit_vector(record, normal_start, normal_definition, precision).is_none() {
-                losses.push(entity_loss(
-                    entry,
-                    "planar spline normal is not a declared unit vector",
-                ));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "planar spline normal is not a declared unit vector"))?;
                 continue;
             }
             let Some(normal) = transform.apply_vector(normal_definition) else {
-                losses.push(entity_loss(entry, "placement produces a non-finite vector"));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "placement produces a non-finite vector"))?;
                 continue;
             };
             let normal_length = normal.get().norm();
@@ -2200,17 +2125,11 @@ pub(crate) fn project_geometry(
                 )
                 || matches!(plane, ControlPointPlane::NonPlanar)
             {
-                losses.push(entity_loss(
-                    entry,
-                    "planar spline flag disagrees with the control-point geometry",
-                ));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "planar spline flag disagrees with the control-point geometry"))?;
                 continue;
             }
         } else if matches!(plane, ControlPointPlane::Unique) {
-            losses.push(entity_loss(
-                entry,
-                "non-planar spline flag disagrees with a unique control-point plane",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "non-planar spline flag disagrees with a unique control-point plane"))?;
             continue;
         }
         let weights = (!polynomial).then(|| {
@@ -2227,10 +2146,7 @@ pub(crate) fn project_geometry(
             }) {
                 Ok(nurbs) => nurbs,
                 Err(error) => {
-                    losses.push(entity_loss(
-                        entry,
-                        format!("spline cardinalities are inconsistent: {error}"),
-                    ));
+                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("spline cardinalities are inconsistent: {error}"))?;
                     continue;
                 }
             };
@@ -2239,7 +2155,7 @@ pub(crate) fn project_geometry(
             parameter_range[0].get(),
         ))?
         else {
-            losses.push(entity_loss(entry, "spline start point cannot be evaluated"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "spline start point cannot be evaluated"))?;
             continue;
         };
         let Some(end) = finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(
@@ -2247,17 +2163,14 @@ pub(crate) fn project_geometry(
             parameter_range[1].get(),
         ))?
         else {
-            losses.push(entity_loss(entry, "spline end point cannot be evaluated"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "spline end point cannot be evaluated"))?;
             continue;
         };
         let endpoint_distance = start.distance(end.get());
         let resolution = global.minimum_resolution_mm();
         let closed = endpoint_distance == 0.0 || endpoint_distance < resolution;
         if flags[1] != Some(i64::from(closed)) {
-            losses.push(entity_loss(
-                entry,
-                "closed spline flag disagrees with evaluated endpoints",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "closed spline flag disagrees with evaluated endpoints"))?;
             continue;
         }
         let stem = crate::ids::Stem::directory(entry.sequence);

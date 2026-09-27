@@ -2,6 +2,70 @@
 #![allow(clippy::unwrap_used)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::Cursor;
+use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
+use crate::loss::IgesLossCode;
+use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+use crate::IgesCodec;
+
+fn assert_entity_loss_limit(bytes: &[u8], operation: &str, retained: bool) {
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        if retained {
+            policy.limits.max_retained_bytes = cap;
+        } else {
+            policy.limits.max_collection_items = cap;
+        }
+        match IgesCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions { policy, ..DecodeOptions::default() },
+        ) {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems });
+                if limit.operation == operation {
+                    return;
+                }
+                let next = limit.used.checked_add(limit.additional).unwrap();
+                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
+                cap = next;
+            }
+            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
+        }
+    }
+    panic!("did not reach {operation} within 4096 admission boundaries");
+}
+
+#[test]
+fn entity_projection_losses_refuse_slots_and_messages() {
+    let cases = [
+        (110, 0, "110,0;", "endpoint coordinate"),
+        (150, 0, "150,0;", "primitive dimensions"),
+        (502, 1, "502,0;", "vertex-list count"),
+        (308, 0, "308,0;", "subfigure"),
+        (130, 0, "130,0;", "offset distance flag"),
+        (108, 0, "108,0;", "plane coefficients"),
+        (142, 0, "142,0;", "curve-on-surface"),
+        (112, 0, "112,0;", "spline header"),
+        (102, 0, "102,0;", "child count"),
+        (212, 0, "212,0;", "text count"),
+    ];
+    for (entity_type, form, parameters, reason) in cases {
+        let bytes = owned_test_file(&[OwnedTestEntity {
+            entity_type,
+            form,
+            label: "INVALID".into(),
+            status: "00000000",
+            parameters: parameters.into(),
+        }]);
+        let service = IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
+        assert!(service.report().losses.iter().any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind() && loss.message.contains(reason)), "{entity_type}: {:#?}", service.report().losses);
+        assert_entity_loss_limit(&bytes, "iges entity loss slots", false);
+        assert_entity_loss_limit(&bytes, "iges entity loss message", true);
+    }
+}
 
 #[test]
 fn affine_parameter_map_retains_finite_ratio_of_overflowing_span() {

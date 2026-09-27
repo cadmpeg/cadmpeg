@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Explicit IGES B-rep topology projection.
 
-use super::geometry::{entity_loss, resolve_transform, ProjectionOutcome};
+use super::geometry::{resolve_transform, ProjectionOutcome};
 use super::pointer;
 use super::trimming::pcurve_geometry;
 use crate::decode_resource::reserve_vec;
@@ -341,18 +341,15 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 502 && entry.form == 1)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
         if entry.transform != 0 {
-            losses.push(entity_loss(
-                entry,
-                "vertex lists cannot carry a transformation",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "vertex lists cannot carry a transformation"))?;
             continue;
         }
         let Some(count) = record.count(1).filter(|count| *count > 0) else {
-            losses.push(entity_loss(entry, "vertex-list count is not positive"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "vertex-list count is not positive"))?;
             continue;
         };
         let mut points = reserve_vec(ctx, count, "iges B-rep vertex-list points")?;
@@ -374,10 +371,7 @@ pub(super) fn project(
             points.push(Point3::new(x * factor, y * factor, z * factor));
         }
         if points.len() != count {
-            losses.push(entity_loss(
-                entry,
-                "vertex-list coordinates are truncated or non-finite",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "vertex-list coordinates are truncated or non-finite"))?;
             continue;
         }
         vertex_lists.insert(entry.sequence, points);
@@ -388,18 +382,15 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 504 && entry.form == 1)
     {
         if entry.transform != 0 {
-            losses.push(entity_loss(
-                entry,
-                "edge lists cannot carry a transformation",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "edge lists cannot carry a transformation"))?;
             continue;
         }
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
         let Some(count) = record.count(1).filter(|count| *count > 0) else {
-            losses.push(entity_loss(entry, "edge-list count is not positive"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "edge-list count is not positive"))?;
             continue;
         };
         let mut edges = reserve_vec(ctx, count, "iges B-rep edge-list edges")?;
@@ -436,10 +427,7 @@ pub(super) fn project(
             edges.push(edge);
         }
         if edges.len() != count {
-            losses.push(entity_loss(
-                entry,
-                "edge-list tuple is invalid or names a missing vertex",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "edge-list tuple is invalid or names a missing vertex"))?;
             continue;
         }
         edge_lists.insert(entry.sequence, edges);
@@ -450,15 +438,15 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 508 && entry.form == 1)
     {
         if entry.transform != 0 {
-            losses.push(entity_loss(entry, "loops cannot carry a transformation"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "loops cannot carry a transformation"))?;
             continue;
         }
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
         let Some(count) = record.count(1).filter(|count| *count > 0) else {
-            losses.push(entity_loss(entry, "loop edge-use count is not positive"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "loop edge-use count is not positive"))?;
             continue;
         };
         let mut index = 2;
@@ -553,7 +541,7 @@ pub(super) fn project(
             index += 5 + pcurve_count * 2;
         }
         if uses.len() != count {
-            losses.push(entity_loss(entry, "loop edge-use tuple is invalid"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "loop edge-use tuple is invalid"))?;
             continue;
         }
         loops.insert(entry.sequence, uses);
@@ -564,26 +552,26 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 510 && entry.form == 1)
     {
         if entry.transform != 0 {
-            losses.push(entity_loss(entry, "faces cannot carry a transformation"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "faces cannot carry a transformation"))?;
             continue;
         }
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
         let Some(surface) = pointer(record, 1) else {
-            losses.push(entity_loss(entry, "face surface pointer is invalid"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "face surface pointer is invalid"))?;
             continue;
         };
         let Some(count) = record.count(2).filter(|count| *count > 0) else {
-            losses.push(entity_loss(entry, "face loop count is not positive"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "face loop count is not positive"))?;
             continue;
         };
         let has_outer_loop = match record.integer(3) {
             Some(1) => true,
             Some(0) => false,
             _ => {
-                losses.push(entity_loss(entry, "face outer-loop flag is not logical"));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "face outer-loop flag is not logical"))?;
                 continue;
             }
         };
@@ -592,7 +580,7 @@ pub(super) fn project(
                 .map(|index| pointer(record, 4 + index))
                 .collect::<Option<Vec<_>>>(),
         ) else {
-            losses.push(entity_loss(entry, "face loop pointer is invalid"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "face loop pointer is invalid"))?;
             continue;
         };
         let face_loops = if has_outer_loop {
@@ -607,7 +595,7 @@ pub(super) fn project(
             .iter()
             .any(|sequence| !loops.contains_key(&sequence))
         {
-            losses.push(entity_loss(entry, "face loop is missing"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "face loop is missing"))?;
             continue;
         }
         faces.insert(
@@ -625,15 +613,15 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 514 && matches!(entry.form, 1 | 2))
     {
         if entry.transform != 0 {
-            losses.push(entity_loss(entry, "shells cannot carry a transformation"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "shells cannot carry a transformation"))?;
             continue;
         }
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
         let Some(count) = record.count(1).filter(|count| *count > 0) else {
-            losses.push(entity_loss(entry, "shell face count is not positive"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "shell face count is not positive"))?;
             continue;
         };
         let mut face_uses = reserve_vec(ctx, count, "iges B-rep shell face uses")?;
@@ -657,7 +645,7 @@ pub(super) fn project(
             face_uses.push((face, sense));
         }
         if face_uses.len() != count {
-            losses.push(entity_loss(entry, "shell face-use tuple is invalid"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "shell face-use tuple is invalid"))?;
             continue;
         }
         shell_definitions.insert(
@@ -690,26 +678,23 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 186 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
         let Some(outer) = pointer(record, 1) else {
-            losses.push(entity_loss(entry, "solid outer-shell pointer is invalid"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "solid outer-shell pointer is invalid"))?;
             continue;
         };
         let outer_sense = match record.integer(2) {
             Some(1) => Sense::Forward,
             Some(0) => Sense::Reversed,
             _ => {
-                losses.push(entity_loss(
-                    entry,
-                    "solid outer-shell orientation is not logical",
-                ));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "solid outer-shell orientation is not logical"))?;
                 continue;
             }
         };
         let Some(void_count) = record.count(3) else {
-            losses.push(entity_loss(entry, "solid void-shell count is invalid"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "solid void-shell count is invalid"))?;
             continue;
         };
         let mut shell_uses = vec![(outer, outer_sense)];
@@ -736,10 +721,7 @@ pub(super) fn project(
                     .is_none_or(|shell| shell.form != 1)
             })
         {
-            losses.push(entity_loss(
-                entry,
-                "solid shell-use tuple is invalid or not closed",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "solid shell-use tuple is invalid or not closed"))?;
             continue;
         }
         referenced_closed_shells.extend(shell_uses.iter().map(|(sequence, _)| *sequence));
@@ -755,7 +737,7 @@ pub(super) fn project(
             Ok(transform) => (entry.transform != 0).then_some(transform),
             Err(error) => {
                 let message = error.non_resource()?;
-                losses.push(entity_loss(entry, message));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", message))?;
                 continue;
             }
         };
@@ -929,20 +911,14 @@ pub(super) fn project(
                                 Ok(resolved) => resolved,
                                 Err(error) => {
                                     let error = error.non_resource()?;
-                                    losses.push(entity_loss(
-                                        entry,
-                                        format!(
+                                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!(
                                             "a loop vertex-use pcurve states no carrier: {error}"
-                                        ),
-                                    ));
+                                        ))?;
                                     valid = false;
                                     break;
                                 }
                             }) else {
-                                losses.push(entity_loss(
-                                    entry,
-                                    "loop vertex-use pcurves disagree with the pole vertex",
-                                ));
+                                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "loop vertex-use pcurves disagree with the pole vertex"))?;
                                 valid = false;
                                 break;
                             };
@@ -955,7 +931,7 @@ pub(super) fn project(
                             ) {
                                 Ok(projected) => projected,
                                 Err(error) => {
-                                    losses.push(entity_loss(entry, error));
+                                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", error))?;
                                     valid = false;
                                     break;
                                 }
@@ -983,10 +959,7 @@ pub(super) fn project(
                                 && placed
                         });
                         if !placed {
-                            losses.push(entity_loss(
-                                entry,
-                                "an edge vertex position states a non-finite coordinate",
-                            ));
+                            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "an edge vertex position states a non-finite coordinate"))?;
                             valid = false;
                             break;
                         }
@@ -1017,18 +990,12 @@ pub(super) fn project(
                             Ok(resolved) => resolved,
                             Err(error) => {
                                 let error = error.non_resource()?;
-                                losses.push(entity_loss(
-                                    entry,
-                                    format!("a loop edge-use pcurve states no carrier: {error}"),
-                                ));
+                                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("a loop edge-use pcurve states no carrier: {error}"))?;
                                 valid = false;
                                 break;
                             }
                         }) else {
-                            losses.push(entity_loss(
-                                entry,
-                                "loop edge-use pcurves disagree with the edge vertices",
-                            ));
+                            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "loop edge-use pcurves disagree with the edge vertices"))?;
                             valid = false;
                             break;
                         };
@@ -1055,10 +1022,7 @@ pub(super) fn project(
                                 .get(curve_id.as_str())
                                 .and_then(|position| ir.model.curves.get(*position))
                             else {
-                                losses.push(entity_loss(
-                                    entry,
-                                    "edge curve endpoints disagree with the vertex-list points",
-                                ));
+                                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "edge curve endpoints disagree with the vertex-list points"))?;
                                 valid = false;
                                 break;
                             };
@@ -1072,18 +1036,12 @@ pub(super) fn project(
                             ) {
                                 Ok(source_edge) => source_edge,
                                 Err(SourceEdgeSelectionError::NoMatch) => {
-                                    losses.push(entity_loss(
-                                        entry,
-                                        "edge curve endpoints disagree with the vertex-list points",
-                                    ));
+                                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "edge curve endpoints disagree with the vertex-list points"))?;
                                     valid = false;
                                     break;
                                 }
                                 Err(SourceEdgeSelectionError::Ambiguous) => {
-                                    losses.push(entity_loss(
-                                        entry,
-                                        "edge curve maps to multiple ambiguous edge occurrences",
-                                    ));
+                                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "edge curve maps to multiple ambiguous edge occurrences"))?;
                                     valid = false;
                                     break;
                                 }
@@ -1100,7 +1058,7 @@ pub(super) fn project(
                             ) {
                                 Ok(carrier) => carrier,
                                 Err(error) => {
-                                    losses.push(entity_loss(entry, error));
+                                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", error))?;
                                     valid = false;
                                     break;
                                 }
@@ -1128,7 +1086,7 @@ pub(super) fn project(
                         ) {
                             Ok(projected) => projected,
                             Err(error) => {
-                                losses.push(entity_loss(entry, error));
+                                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", error))?;
                                 valid = false;
                                 break;
                             }
@@ -1160,10 +1118,7 @@ pub(super) fn project(
                     }
                     let boundary = if coedge_ids.is_empty() {
                         let [(vertex, None, pcurves)] = loop_vertex_uses.as_slice() else {
-                            losses.push(entity_loss(
-                                entry,
-                                "vertex-only loop does not contain exactly one unanchored vertex",
-                            ));
+                            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "vertex-only loop does not contain exactly one unanchored vertex"))?;
                             valid = false;
                             break;
                         };
@@ -1184,16 +1139,13 @@ pub(super) fn project(
                             })
                             .collect::<Option<Vec<_>>>()
                         else {
-                            losses.push(entity_loss(
-                                entry,
-                                "edge loop contains an unanchored vertex use",
-                            ));
+                            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "edge loop contains an unanchored vertex use"))?;
                             valid = false;
                             break;
                         };
                         let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids, vertex_uses)
                         else {
-                            losses.push(entity_loss(entry, "edge loop has no coedges"));
+                            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "edge loop has no coedges"))?;
                             valid = false;
                             break;
                         };
@@ -1259,10 +1211,7 @@ pub(super) fn project(
             consumed.insert(shell_sequence);
         }
         if !valid {
-            losses.push(entity_loss(
-                entry,
-                "shell topology references missing geometry",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "shell topology references missing geometry"))?;
             continue;
         }
         if definition.closed
@@ -1284,10 +1233,7 @@ pub(super) fn project(
                 senses.len() != 2 || senses[0] == senses[1]
             })
         {
-            losses.push(entity_loss(
-                entry,
-                "closed shell does not use every edge exactly twice with opposite senses",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "closed shell does not use every edge exactly twice with opposite senses"))?;
             continue;
         }
         for ring in radial.values() {
@@ -1318,10 +1264,7 @@ pub(super) fn project(
         });
         candidate.model_mut().finalize();
         if commit_session.commit_model(candidate).is_err() {
-            losses.push(entity_loss(
-                entry,
-                "shell candidate failed neutral validation",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "shell candidate failed neutral validation"))?;
             continue;
         }
         decoded.insert(entry.sequence);
