@@ -960,11 +960,15 @@ fn positive_sequence(value: i64) -> Option<u32> {
 fn consumed_support_sequences(
     directory: &[DirectoryEntry],
     records: &BTreeMap<u32, &ParameterRecord>,
-) -> BTreeSet<u32> {
-    let entries = directory
-        .iter()
-        .map(|entry| (entry.sequence, entry))
-        .collect::<BTreeMap<_, _>>();
+    ctx: &DecodeContext<'_>,
+) -> Result<BTreeSet<u32>, CodecError> {
+    let mut entries = BTreeMap::new();
+    for entry in directory {
+        insert_optional_btree_map(
+            Some(ctx), &mut entries, entry.sequence, entry,
+            "iges consumed-support directory index",
+        )?;
+    }
     let mut transform_sequences = BTreeSet::new();
     for entry in directory {
         if let Some(sequence) = positive_sequence(entry.transform).filter(|sequence| {
@@ -972,7 +976,10 @@ fn consumed_support_sequences(
                 .get(sequence)
                 .is_some_and(|target| target.entity_type == 124)
         }) {
-            transform_sequences.insert(sequence);
+            insert_optional_btree_set(
+                Some(ctx), &mut transform_sequences, sequence,
+                "iges consumed-support transforms",
+            )?;
         }
     }
     for entry in directory
@@ -995,7 +1002,10 @@ fn consumed_support_sequences(
                         .is_some_and(|target| target.entity_type == 124)
                 })
             {
-                transform_sequences.insert(sequence);
+                insert_optional_btree_set(
+                    Some(ctx), &mut transform_sequences, sequence,
+                    "iges consumed-support transforms",
+                )?;
             }
         }
     }
@@ -1026,14 +1036,20 @@ fn consumed_support_sequences(
                             .is_some_and(|target| target.entity_type == 123 && target.form == 0)
                     })
             {
-                direction_sequences.insert(sequence);
+                insert_optional_btree_set(
+                    Some(ctx), &mut direction_sequences, sequence,
+                    "iges consumed-support directions",
+                )?;
             }
         }
     }
 
     let mut consumed = direction_sequences;
     while let Some(sequence) = transform_sequences.pop_first() {
-        if !consumed.insert(sequence) {
+        if !insert_optional_btree_set(
+            Some(ctx), &mut consumed, sequence,
+            "iges consumed-support closure",
+        )? {
             continue;
         }
         let Some(entry) = entries.get(&sequence).copied() else {
@@ -1044,10 +1060,13 @@ fn consumed_support_sequences(
                 .get(parent)
                 .is_some_and(|target| target.entity_type == 124)
         }) {
-            transform_sequences.insert(parent);
+            insert_optional_btree_set(
+                Some(ctx), &mut transform_sequences, parent,
+                "iges consumed-support transforms",
+            )?;
         }
     }
-    consumed
+    Ok(consumed)
 }
 
 fn admit_projected_entities(
@@ -1365,37 +1384,49 @@ pub(crate) fn project_geometry(
             ));
         }
     }
-    let admitted_directory = directory.iter().any(|entry| !admitted(entry)).then(|| {
-        directory
-            .iter()
-            .filter(|entry| admitted(entry))
-            .cloned()
-            .collect::<Vec<_>>()
-    });
+    let admitted_directory = if directory.iter().any(|entry| !admitted(entry)) {
+        let admitted_count = directory.iter().filter(|entry| admitted(entry)).count();
+        let mut admitted_entries = crate::decode_resource::reserve_vec(
+            ctx, admitted_count, "iges admitted geometry directory",
+        )?;
+        admitted_entries.extend(directory.iter().filter(|entry| admitted(entry)).cloned());
+        Some(admitted_entries)
+    } else {
+        None
+    };
     let directory = admitted_directory.as_deref().unwrap_or(directory);
-    let records = parameters
-        .iter()
-        .map(|record| (record.directory_sequence, record))
-        .collect::<BTreeMap<_, _>>();
-    let entries = directory
-        .iter()
-        .map(|entry| (entry.sequence, entry))
-        .collect::<BTreeMap<_, _>>();
+    let mut records = BTreeMap::new();
+    for record in parameters {
+        insert_optional_btree_map(
+            Some(ctx), &mut records, record.directory_sequence, record,
+            "iges geometry parameter index",
+        )?;
+    }
+    let mut entries = BTreeMap::new();
+    for entry in directory {
+        insert_optional_btree_map(
+            Some(ctx), &mut entries, entry.sequence, entry,
+            "iges geometry directory index",
+        )?;
+    }
     let mut decoded = BTreeSet::new();
     let mut boundary_vertex_derivations = Vec::new();
-    let consumed = consumed_support_sequences(directory, &records);
-    let analytic_surface_locations = directory
-        .iter()
-        .filter(|entry| {
-            matches!(entry.entity_type, 190 | 192 | 194 | 196 | 198) && matches!(entry.form, 0 | 1)
-        })
-        .filter_map(|entry| {
-            records
-                .get(&entry.sequence)
-                .and_then(|record| record.integer(1))
-                .and_then(|value| u32::try_from(value).ok())
-        })
-        .collect::<BTreeSet<_>>();
+    let consumed = consumed_support_sequences(directory, &records, ctx)?;
+    let mut analytic_surface_locations = BTreeSet::new();
+    for entry in directory.iter().filter(|entry| {
+        matches!(entry.entity_type, 190 | 192 | 194 | 196 | 198) && matches!(entry.form, 0 | 1)
+    }) {
+        if let Some(sequence) = records
+            .get(&entry.sequence)
+            .and_then(|record| record.integer(1))
+            .and_then(|value| u32::try_from(value).ok())
+        {
+            insert_optional_btree_set(
+                Some(ctx), &mut analytic_surface_locations, sequence,
+                "iges analytic-surface locations",
+            )?;
+        }
+    }
     let mut free_vertices = Vec::new();
     let mut wire_edges = Vec::new();
     for entry in directory

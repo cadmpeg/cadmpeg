@@ -12,9 +12,31 @@ use cadmpeg_ir::math::Vector3;
 
 use super::{
     base_geometry_line_font_valid, base_geometry_use_flag_valid, declared_affine_progression,
-    enforce_transform_depth, is_finite_nonzero_vector, normal_matches_plane,
+    consumed_support_sequences, enforce_transform_depth, is_finite_nonzero_vector, normal_matches_plane,
     validate_declared_transform_frame, DeclaredInterval, DeclaredTransformFrameError,
 };
+
+#[test]
+fn consumed_support_indexes_refuse_collection_limits_before_insert() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let directory = [transform_entry(1, 0), transform_entry(3, 1)];
+    let records = std::collections::BTreeMap::new();
+    for (cap, operation) in [
+        (0, "iges consumed-support directory index"),
+        (2, "iges consumed-support transforms"),
+        (3, "iges consumed-support closure"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = consumed_support_sequences(&directory, &records, &ctx).unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation));
+    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(consumed_support_sequences(&directory, &records, &ctx).unwrap(), [1].into());
+}
 use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
 use crate::test_support::test_curves_and_surfaces::{
