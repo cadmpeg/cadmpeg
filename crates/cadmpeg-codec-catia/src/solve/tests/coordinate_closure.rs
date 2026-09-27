@@ -1406,6 +1406,7 @@ fn mesh_assignment_endpoint_cycles_preserve_unconstrained_boundaries() {
 
 #[test]
 fn mesh_endpoint_pair_support_propagates_across_incident_faces() {
+    catia_test_context!(ctx);
     let assignment = |edges: &[usize]| MeshFaceBoundaryAssignment {
         boundaries: vec![edges
             .iter()
@@ -1433,15 +1434,17 @@ fn mesh_endpoint_pair_support_propagates_across_incident_faces() {
     ];
 
     assert!(prune_mesh_endpoint_pair_support(
+        &ctx,
         &mut assignments,
         &mut candidates,
-    ));
+    ).expect("service resource budget"));
     assert_eq!(candidates[0], vec![[0, 1]]);
     assert_eq!(assignments[1], vec![assignment(&[0, 3, 4])]);
 }
 
 #[test]
 fn mesh_endpoint_pair_support_does_not_treat_budget_exhaustion_as_a_contradiction() {
+    catia_test_context!(ctx);
     let mut assignments = vec![vec![MeshFaceBoundaryAssignment {
         boundaries: vec![vec![MeshBoundaryEdgeCandidate {
             edge: 0,
@@ -1453,10 +1456,58 @@ fn mesh_endpoint_pair_support_does_not_treat_budget_exhaustion_as_a_contradictio
     let mut candidates = vec![vec![[0, 0]]];
 
     assert!(prune_mesh_endpoint_pair_support_with_limit(
+        &ctx,
         &mut assignments,
         &mut candidates,
         0,
-    ));
+    ).expect("service resource budget"));
+}
+
+#[test]
+fn mesh_endpoint_pair_support_refuses_before_incident_faces_and_snapshot() {
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let assignment = |edges: &[usize]| MeshFaceBoundaryAssignment {
+        boundaries: vec![edges.iter().copied().map(|edge| MeshBoundaryEdgeCandidate {
+            edge,
+            start: 0,
+            end: 0,
+            reversed: None,
+        }).collect()],
+    };
+    let assignments = vec![
+        vec![assignment(&[0, 1, 2])],
+        vec![assignment(&[0, 3, 4]), assignment(&[0, 5, 6])],
+    ];
+    let candidates = vec![
+        vec![[0, 1], [0, 3]], vec![[1, 2]], vec![[2, 0]],
+        vec![[1, 4]], vec![[4, 0]], vec![[3, 5]], vec![[5, 0]],
+    ];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let mut assignments = assignments.clone();
+        let mut candidates = candidates.clone();
+        prune_mesh_endpoint_pair_support(ctx, &mut assignments, &mut candidates)
+    };
+    crate::test_support::with_service_context(|ctx| assert!(run(ctx).expect("service budget")));
+    let mut refusals = BTreeSet::new();
+    let mut completed = false;
+    for cap in 0..=512 {
+        match crate::test_support::with_collection_limit(cap, run) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                refusals.insert(limit.operation);
+            }
+            Ok(true) => {
+                completed = true;
+                break;
+            }
+            _ => panic!("unexpected pair support result"),
+        }
+    }
+    assert!(completed, "fixture must fit the final cap");
+    for operation in ["catia_prune_incident_faces", "catia_prune_snapshot_rows", "catia_prune_snapshot_pairs"] {
+        assert!(refusals.contains(operation), "no refusal at {operation}");
+    }
 }
 
 #[test]
