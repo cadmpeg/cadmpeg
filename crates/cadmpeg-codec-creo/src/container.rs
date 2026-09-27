@@ -1820,8 +1820,20 @@ fn feature_entity_tables(
     feature_ids: &[u32],
     rows: &[SurfaceRow],
 ) -> Result<Vec<FeatureEntityTable>, CodecError> {
-    let feature_ids = feature_ids.iter().copied().collect();
-    let surface_ids = rows.iter().map(|row| row.id).collect();
+    let mut feature_ids_set = BTreeSet::new();
+    for &feature_id in feature_ids {
+        if !feature_ids_set.contains(&feature_id) {
+            ctx.charge_collection_items(1, "creo feature entity owner ids")?;
+            feature_ids_set.insert(feature_id);
+        }
+    }
+    let mut surface_ids = BTreeSet::new();
+    for row in rows {
+        if !surface_ids.contains(&row.id) {
+            ctx.charge_collection_items(1, "creo feature entity surface ids")?;
+            surface_ids.insert(row.id);
+        }
+    }
     collect_section_records_result(
         ctx,
         sections
@@ -1830,7 +1842,7 @@ fn feature_entity_tables(
         |bytes| {
             Ok(feature::entity::entity_tables(
                 bytes,
-                &feature_ids,
+                &feature_ids_set,
                 &surface_ids,
             ))
         },

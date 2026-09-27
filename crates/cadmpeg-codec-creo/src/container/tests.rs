@@ -51,6 +51,58 @@ fn section_result_collector_refuses_before_output_vec_growth() {
     ));
 }
 
+fn feature_entity_tables_with_limit(limit: u64) -> Result<usize, cadmpeg_core::CodecError> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let row = crate::surface::SurfaceRow {
+        id: 7,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 4,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 0,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("root input is admitted");
+    Ok(super::feature_entity_tables(&ctx, &[], &[4], &[row])?.len())
+}
+
+#[test]
+fn feature_entity_owner_id_node_refuses_before_insertion() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    assert_eq!(
+        feature_entity_tables_with_limit(2).expect("two ids admitted"),
+        0
+    );
+    let error = feature_entity_tables_with_limit(0).expect_err("owner id needs a set node");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo feature entity owner ids"
+    ));
+}
+
+#[test]
+fn feature_entity_surface_id_node_refuses_before_insertion() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    let error = feature_entity_tables_with_limit(1).expect_err("surface id follows owner id");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo feature entity surface ids"
+    ));
+}
+
 #[test]
 fn detect_matches_ugc_magic_only() {
     let codec = CreoCodec;
