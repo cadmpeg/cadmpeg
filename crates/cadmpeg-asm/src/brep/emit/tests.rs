@@ -24,6 +24,46 @@ fn subtype_table(records: &[Record]) -> nurbs::toks::SubtypeTable {
 }
 
 #[test]
+fn procedural_source_id_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut sources = Vec::<(i64, SurfaceId)>::new();
+    let error = super::append_source_id(
+        &ctx, &mut sources, 1, "f3d:child:surface#1", "ASM procedural support sources",
+    )
+    .expect_err("one support source exceeds zero items");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn procedural_child_id_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut sources = Vec::<(i64, CurveId)>::new();
+    let error = super::append_source_id(
+        &ctx, &mut sources, 1, "f3d:child:curve#1", "ASM procedural curve child sources",
+    )
+    .expect_err("one child id exceeds zero retained bytes");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected retained refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+}
+
+#[test]
 fn emitted_vertex_blend_boundaries_refuse_collection_limit() {
     use crate::nurbs::proc_surface::{
         EmbeddedVertexBlend, EmbeddedVertexBlendBoundary, EmbeddedVertexBlendBoundaryGeometry,
