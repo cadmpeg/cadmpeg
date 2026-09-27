@@ -48,6 +48,20 @@ pub(crate) fn native_id_charged(
     Ok(id)
 }
 
+pub(crate) fn encoded_segment_charged(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<IdentityKey, CodecError> {
+    let len = encoded_segment_len(ctx, value, operation)?;
+    ctx.charge_retained(len as u64, operation)?;
+    let mut key = String::new();
+    key.try_reserve_exact(len)
+        .map_err(|_| crate::resource::retained_allocation_failed(ctx, len as u64, operation))?;
+    push_encoded_segment(&mut key, value);
+    IdentityKey::try_new(key).map_err(CodecError::malformed)
+}
+
 pub(crate) fn native_child_id_charged(
     ctx: &DecodeContext<'_>,
     kind: &str,
