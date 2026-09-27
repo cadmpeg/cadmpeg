@@ -16,7 +16,6 @@ use crate::design::decode::meta::{
 };
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
 use crate::design::decode::sketch::{native_scope_charged, IndexedRecordOffsets};
-use crate::ids;
 use crate::layout::indexed_design_record_header as indexed_header;
 use crate::layout::paramesh_body_wrapper as body_wrapper;
 use crate::layout::paramesh_collection_owner_backlink_prefix as collection_owner;
@@ -1174,6 +1173,34 @@ fn malformed_mesh_graph(stream: &str, invariant: &str) -> CodecError {
     ))
 }
 
+struct MeshDiagnosticLength(usize);
+
+impl std::fmt::Write for MeshDiagnosticLength {
+    fn write_str(&mut self, value: &str) -> std::fmt::Result {
+        self.0 = self.0.checked_add(value.len()).ok_or(std::fmt::Error)?;
+        Ok(())
+    }
+}
+
+fn charged_mesh_diagnostic(
+    ctx: &DecodeContext<'_>,
+    message: std::fmt::Arguments<'_>,
+) -> Result<CodecError, CodecError> {
+    let mut length = MeshDiagnosticLength(0);
+    std::fmt::write(&mut length, message).map_err(|_| {
+        ctx.refuse_codec_limit("f3d mesh graph diagnostic length", u64::MAX - 1, u64::MAX)
+    })?;
+    ctx.charge_retained(u64_from_index(length.0), "f3d mesh graph diagnostic")?;
+    let mut text = String::new();
+    text.try_reserve(length.0).map_err(|_| {
+        ctx.refuse_codec_limit("f3d mesh graph diagnostic allocation", 0, 1)
+    })?;
+    text.write_fmt(message).map_err(|_| {
+        CodecError::Malformed("F3D mesh graph diagnostic formatting failed".into())
+    })?;
+    Ok(CodecError::Malformed(text))
+}
+
 fn charged_mesh_vec<T>(
     ctx: &DecodeContext<'_>,
     count: usize,
@@ -1394,30 +1421,39 @@ where
         let candidate = candidate_scopes.next();
         let second_candidate = candidate_scopes.next();
         let Some(scope_record_index) = candidate.filter(|_| second_candidate.is_none()) else {
-            let scope_lists = scopes
-                .iter()
-                .map(|(index, scope)| (*index, scope.body_records.clone()))
-                .collect::<Vec<_>>();
-            let body_links = collection
-                .body_records
-                .iter()
-                .filter_map(|index| {
-                    bodies.get(index).map(|body| {
-                        (
-                            *index,
-                            body.scope_record_index,
-                            body.collection_record_index,
-                        )
-                    })
-                })
-                .collect::<Vec<_>>();
-            return Err(CodecError::malformed(format_args!(
+            let mut scope_lists = Vec::new();
+            for (index, scope) in &scopes {
+                let mut body_records = charged_mesh_vec(
+                    ctx,
+                    scope.body_records.len(),
+                    "f3d mesh diagnostic scope bodies",
+                )?;
+                body_records.extend_from_slice(&scope.body_records);
+                push_mesh_record(
+                    ctx,
+                    &mut scope_lists,
+                    (*index, body_records),
+                    "f3d mesh diagnostic scope lists",
+                )?;
+            }
+            let mut body_links = Vec::new();
+            for index in &collection.body_records {
+                if let Some(body) = bodies.get(index) {
+                    push_mesh_record(
+                        ctx,
+                        &mut body_links,
+                        (*index, body.scope_record_index, body.collection_record_index),
+                        "f3d mesh diagnostic body links",
+                    )?;
+                }
+            }
+            return Err(charged_mesh_diagnostic(ctx, format_args!(
                 "F3D Design mesh feature graph violates `each mesh collection has exactly one scope with the same ordered body list` in {stream}: collection {} bodies {:?}, scope lists {:?}, body links {:?}",
                 collection.collection.record().record_index(),
                 collection.body_records,
                 scope_lists,
                 body_links,
-            )));
+            ))?);
         };
         let scope = scopes.remove(&scope_record_index).ok_or_else(|| {
             stream_error("a mesh feature scope belongs to exactly one mesh collection")
@@ -1550,7 +1586,7 @@ where
         })?;
         features.push(
             DesignMeshFeature::new(
-                ids::native_design_mesh_feature_id(source_entry_name, scope_offset),
+                mesh_feature_id_charged(ctx, &stream, scope_offset)?,
                 scope.scope,
                 collection.collection,
                 DesignMeshTextureTable::new(texture_table.identity, textures)
@@ -1659,6 +1695,29 @@ fn copy_mesh_text(
 ) -> Result<String, CodecError> {
     String::from_utf8(ctx.copy_retained(value.as_bytes(), operation)?)
         .map_err(|_| CodecError::Malformed("F3D mesh source text must be UTF-8".into()))
+}
+
+fn mesh_feature_id_charged(
+    ctx: &DecodeContext<'_>,
+    stream: &str,
+    offset: usize,
+) -> Result<String, CodecError> {
+    let mut id = copy_mesh_text(ctx, stream, "f3d mesh feature ID prefix")?;
+    let mut digits = 1;
+    let mut quotient = offset;
+    while quotient >= 10 {
+        quotient /= 10;
+        digits += 1;
+    }
+    let suffix_bytes = "design-mesh-feature".len() + 2 + digits;
+    ctx.charge_retained(u64_from_index(suffix_bytes), "f3d mesh feature ID suffix")?;
+    id.try_reserve(suffix_bytes).map_err(|_| {
+        ctx.refuse_codec_limit("f3d mesh feature ID allocation", 0, 1)
+    })?;
+    write!(&mut id, ":design-mesh-feature#{offset}").map_err(|_| {
+        CodecError::Malformed("F3D mesh feature ID formatting failed".into())
+    })?;
+    Ok(id)
 }
 
 fn resolve_mesh_body(
@@ -2911,6 +2970,7 @@ mod tests {
             "f3d mesh graph features",
             "f3d mesh texture resources",
             "f3d mesh feature bodies",
+            "f3d mesh diagnostic scope bodies",
         ] {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::default();
@@ -2989,6 +3049,83 @@ mod tests {
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
                     && limit.operation == "f3d native stream key"
         ));
+    }
+
+    #[test]
+    fn mesh_graph_diagnostic_lists_refuse_collection_limit() {
+        for operation in [
+            "f3d mesh diagnostic scope lists",
+            "f3d mesh diagnostic body links",
+        ] {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+            policy.limits.max_collection_items = 0;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[], &arena, &policy,
+            )
+            .unwrap();
+            assert!(matches!(
+                super::push_mesh_record(&ctx, &mut Vec::new(), 7_u32, operation),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                        && limit.operation == operation
+            ));
+        }
+    }
+
+    #[test]
+    fn mesh_graph_diagnostic_text_refuses_retained_limit() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &policy,
+        )
+        .unwrap();
+        assert!(matches!(
+            super::charged_mesh_diagnostic(&ctx, format_args!("mesh links {:?}", [1, 2])),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                    && limit.operation == "f3d mesh graph diagnostic"
+        ));
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            let error = super::charged_mesh_diagnostic(
+                ctx,
+                format_args!("mesh links {:?}", [1, 2]),
+            )
+            .unwrap();
+            assert!(matches!(error, CodecError::Malformed(message) if message == "mesh links [1, 2]"));
+        });
+    }
+
+    #[test]
+    fn mesh_feature_identifier_refuses_prefix_and_suffix_limits() {
+        let stream = crate::ids::native_scope("Synthetic/BulkStream.dat");
+        for (limit, operation) in [
+            (0, "f3d mesh feature ID prefix"),
+            (stream.len() as u64, "f3d mesh feature ID suffix"),
+        ] {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[], &arena, &policy,
+            )
+            .unwrap();
+            assert!(matches!(
+                super::mesh_feature_id_charged(&ctx, &stream, 100),
+                Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                        && failure.operation == operation
+            ));
+        }
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            let id = super::mesh_feature_id_charged(ctx, &stream, 100).unwrap();
+            assert_eq!(
+                id,
+                crate::ids::native_design_mesh_feature_id("Synthetic/BulkStream.dat", 100)
+            );
+        });
     }
 
     #[test]
