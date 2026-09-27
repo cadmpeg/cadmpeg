@@ -7,10 +7,10 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use std::fmt::Write;
 
-use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded};
+use crate::bytes::lp_ascii_filtered;
 use crate::container::ContainerScan;
-use crate::design::decode::sketch::next_indexed_record_offset;
-use crate::ids;
+use crate::design::decode::sketch::{native_scope_charged, next_indexed_record_offset};
+use crate::design::decode::text::lp_utf16_bounded_charged;
 use crate::records::feature::assembly_features::DesignComponentOccurrence;
 
 const BASE_FRAME_LENGTH: usize = 229;
@@ -28,7 +28,7 @@ pub(crate) fn decode_component_occurrences(
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let scope = ids::native_scope(&entry.name);
+        let scope = native_scope_charged(ctx, &entry.name)?;
         let mut at = 0;
         while let Some(start) = next_indexed_record_offset(bytes, at) {
             if let Some(occurrence) = exact_component_occurrence(ctx, bytes, start, &scope)? {
@@ -89,13 +89,11 @@ fn exact_component_occurrence(
         return None;
     }
     let occurrence_ordinal = std::num::NonZeroU32::new(View::u32_le_at(bytes, start + 40)?)?;
-    let (component_guid, after_component) = lp_utf16_bounded(bytes, start + 44, 36..=36)?;
-    let (occurrence_guid, after_occurrence) = lp_utf16_bounded(bytes, start + 120, 36..=36)?;
-    let component_guid =
-        crate::records::mesh::DesignRelaxedGuidText::try_from(component_guid).ok()?;
-    let occurrence_guid =
-        crate::records::mesh::DesignRelaxedGuidText::try_from(occurrence_guid).ok()?;
-    if after_component != start + 120 || after_occurrence != start + 196 {
+    if View::u32_le_at(bytes, start + 44) != Some(36)
+        || bytes.get(start + 48..start + 120).is_none()
+        || View::u32_le_at(bytes, start + 120) != Some(36)
+        || bytes.get(start + 124..start + 196).is_none()
+    {
         return None;
     }
     let placement = match frame_length {
@@ -133,12 +131,29 @@ fn exact_component_occurrence(
         record_index,
         byte_offset,
         component_record_index,
-        component_guid,
-        occurrence_guid,
         placement,
     ))
     })();
-    let Some((class_tag, record_index, byte_offset, component_record_index, component_guid, occurrence_guid, placement)) = parsed else {
+    let Some((class_tag, record_index, byte_offset, component_record_index, placement)) = parsed else {
+        return Ok(None);
+    };
+    let Some((component_guid, after_component)) =
+        lp_utf16_bounded_charged(ctx, bytes, start + 44, 36..=36)? else {
+        return Ok(None);
+    };
+    let Some((occurrence_guid, after_occurrence)) =
+        lp_utf16_bounded_charged(ctx, bytes, start + 120, 36..=36)? else {
+        return Ok(None);
+    };
+    if after_component != start + 120 || after_occurrence != start + 196 {
+        return Ok(None);
+    }
+    let Ok(component_guid) =
+        crate::records::mesh::DesignRelaxedGuidText::try_from(component_guid) else {
+        return Ok(None);
+    };
+    let Ok(occurrence_guid) =
+        crate::records::mesh::DesignRelaxedGuidText::try_from(occurrence_guid) else {
         return Ok(None);
     };
     let mut digits = 1usize;
@@ -325,13 +340,32 @@ mod tests {
         let id_bytes = stream.len() + ":design-component-occurrence#".len() + 1;
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = u64::try_from(id_bytes - 1).unwrap();
+        policy.limits.max_retained_bytes = u64::try_from(72 + id_bytes - 1).unwrap();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = exact_component_occurrence(&ctx, &seed, 0, stream)
             .expect_err("one native occurrence ID exceeds the retained-byte limit");
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "f3d component occurrence id"));
+    }
+
+    #[test]
+    fn component_occurrence_guid_text_refuses_each_retained_limit() {
+        let mut seed = common(229, 1);
+        seed[208] = 1;
+        seed[218] = 1;
+        indexed_header(&mut seed, *b"333", 21);
+        for limit in [35, 71] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let error = exact_component_occurrence(&ctx, &seed, 0, "f3d:synthetic")
+                .err().unwrap();
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.dimension == ResourceDimension::RetainedBytes
+                    && refusal.operation == "f3d Design UTF-16 text"));
+        }
     }
 
     #[test]
