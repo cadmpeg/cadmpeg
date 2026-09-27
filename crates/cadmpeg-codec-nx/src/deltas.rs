@@ -567,24 +567,37 @@ fn tagged_reference_lanes(
     stream: &[u8],
     census: &Census,
 ) -> Result<Vec<TaggedReferenceLane>, CodecError> {
-    Ok(uncovered_spans(ctx, stream.len(), census, true)?
-        .filter_map(|(offset, end)| {
-            let mut at = offset;
-            let mut references = Vec::new();
-            while at < end {
+    let mut lanes = Vec::new();
+    for (offset, end) in uncovered_spans(ctx, stream.len(), census, true)? {
+        let mut at = offset;
+        let mut references = Vec::new();
+        let mut complete = true;
+        while at < end {
+            ctx.charge_work(1, "scan NX tagged references")?;
+            let Some((kind, xmt, next)) = (|| {
                 let kind = View::u16_be_at(stream, at)?;
                 let (xmt, consumed) = read_xmt(stream, at.checked_add(2)?)?;
-                at = at.checked_add(2 + consumed)?;
-                (at <= end).then_some(())?;
-                references.push((kind, xmt));
+                let next = at.checked_add(2 + consumed)?;
+                (next <= end).then_some((kind, xmt, next))
+            })() else {
+                complete = false;
+                break;
+            };
+            at = next;
+            census::push_event(ctx, &mut references, (kind, xmt), "NX tagged references")?;
+        }
+        if complete && at == end {
+            if let Ok(references) = TaggedReferences::try_from(references) {
+                census::push_event(
+                    ctx,
+                    &mut lanes,
+                    TaggedReferenceLane { references, offset, end },
+                    "NX tagged reference lanes",
+                )?;
             }
-            (at == end).then_some(TaggedReferenceLane {
-                references: TaggedReferences::try_from(references).ok()?,
-                offset,
-                end,
-            })
-        })
-        .collect())
+        }
+    }
+    Ok(lanes)
 }
 
 fn reference_type_maps(
@@ -592,28 +605,34 @@ fn reference_type_maps(
     stream: &[u8],
     census: &Census,
 ) -> Result<Vec<ReferenceTypeMap>, CodecError> {
-    Ok(uncovered_spans(ctx, stream.len(), census, true)?
-        .filter_map(|(offset, end)| {
-            reference_type_map(stream, offset, ReferenceTypeMapLimit::Bounded(end)).or_else(|| {
-                let following_kind = census
-                    .records
-                    .iter()
-                    .map(|record| (record.offset, record.kind()))
-                    .chain(
-                        census
-                            .tombstones
-                            .iter()
-                            .map(|tombstone| (tombstone.offset, u16::from(tombstone.kind.code()))),
-                    )
-                    .find_map(|(event_offset, kind)| (event_offset == end).then_some(kind))?;
-                let shared_end = end.checked_add(2)?;
-                let map =
-                    reference_type_map(stream, offset, ReferenceTypeMapLimit::Bounded(shared_end))?;
-                (map.target_kind.is_none() && map.entries.last_kind() == following_kind)
-                    .then_some(map)
-            })
-        })
-        .collect())
+    let mut maps = Vec::new();
+    for (offset, end) in uncovered_spans(ctx, stream.len(), census, true)? {
+        let map = if let Some(map) = reference_type_map(ctx, stream, offset, ReferenceTypeMapLimit::Bounded(end))? {
+            Some(map)
+        } else {
+            let following_kind = census
+                .records
+                .iter()
+                .map(|record| (record.offset, record.kind()))
+                .chain(
+                    census
+                        .tombstones
+                        .iter()
+                        .map(|tombstone| (tombstone.offset, u16::from(tombstone.kind.code()))),
+                )
+                .find_map(|(event_offset, kind)| (event_offset == end).then_some(kind));
+            if let Some((following_kind, shared_end)) = following_kind.zip(end.checked_add(2)) {
+                reference_type_map(ctx, stream, offset, ReferenceTypeMapLimit::Bounded(shared_end))?
+                    .filter(|map| map.target_kind.is_none() && map.entries.last_kind() == following_kind)
+            } else {
+                None
+            }
+        };
+        if let Some(map) = map {
+            census::push_event(ctx, &mut maps, map, "NX reference type maps")?;
+        }
+    }
+    Ok(maps)
 }
 
 #[derive(Clone, Copy)]
@@ -623,63 +642,98 @@ enum ReferenceTypeMapLimit {
 }
 
 fn reference_type_map(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     offset: usize,
     limit: ReferenceTypeMapLimit,
-) -> Option<ReferenceTypeMap> {
+) -> Result<Option<ReferenceTypeMap>, CodecError> {
     let expected_end = match limit {
         ReferenceTypeMapLimit::TargetTerminated => None,
         ReferenceTypeMapLimit::Bounded(end) => Some(end),
     };
-    let mut at = if let Some((1, consumed)) = read_xmt(stream, offset) {
-        let separator = offset.checked_add(consumed)?;
-        (View::u16_be_at(stream, separator) == Some(1)).then_some(())?;
-        separator.checked_add(2)?
-    } else {
-        (stream.get(offset) == Some(&1)).then_some(())?;
-        let leading_null = offset.checked_add(1)?;
-        let (reference, consumed) = read_xmt(stream, leading_null)?;
-        (reference == 1).then_some(())?;
-        leading_null.checked_add(consumed)?
+    let Some(mut at) = (|| {
+        if let Some((1, consumed)) = read_xmt(stream, offset) {
+            let separator = offset.checked_add(consumed)?;
+            (View::u16_be_at(stream, separator) == Some(1)).then_some(())?;
+            separator.checked_add(2)
+        } else {
+            (stream.get(offset) == Some(&1)).then_some(())?;
+            let leading_null = offset.checked_add(1)?;
+            let (reference, consumed) = read_xmt(stream, leading_null)?;
+            (reference == 1).then_some(())?;
+            leading_null.checked_add(consumed)
+        }
+    })() else {
+        return Ok(None);
     };
     let mut entries = Vec::new();
     loop {
+        ctx.charge_work(1, "scan NX reference type map")?;
         if expected_end == Some(at) {
-            return Some(ReferenceTypeMap {
-                entries: MapEntries::try_from(entries).ok()?,
+            return Ok(MapEntries::try_from(entries).ok().map(|entries| ReferenceTypeMap {
+                entries,
                 target_kind: None,
                 offset,
                 end: at,
-            });
+            }));
         }
-        expected_end.is_none_or(|end| at < end).then_some(())?;
-        let (reference, consumed) = read_xmt(stream, at)?;
-        at = at.checked_add(consumed)?;
-        expected_end.is_none_or(|end| at <= end).then_some(())?;
+        if expected_end.is_some_and(|end| at >= end) {
+            return Ok(None);
+        }
+        let Some((reference, consumed)) = read_xmt(stream, at) else {
+            return Ok(None);
+        };
+        let Some(next) = at.checked_add(consumed) else {
+            return Ok(None);
+        };
+        at = next;
+        if expected_end.is_some_and(|end| at > end) {
+            return Ok(None);
+        }
         if reference == 1 {
-            (View::u16_be_at(stream, at) == Some(0)).then_some(())?;
-            at = at.checked_add(2)?;
+            if View::u16_be_at(stream, at) != Some(0) {
+                return Ok(None);
+            }
+            let Some(next) = at.checked_add(2) else {
+                return Ok(None);
+            };
+            at = next;
             if expected_end == Some(at) {
-                return Some(ReferenceTypeMap {
-                    entries: MapEntries::try_from(entries).ok()?,
+                return Ok(MapEntries::try_from(entries).ok().map(|entries| ReferenceTypeMap {
+                    entries,
                     target_kind: None,
                     offset,
                     end: at,
-                });
+                }));
             }
-            let target_kind = NonZeroU16::new(View::u16_be_at(stream, at)?)?;
-            at = at.checked_add(2)?;
-            return (expected_end.is_none_or(|end| at <= end)).then_some(ReferenceTypeMap {
-                entries: MapEntries::try_from(entries).ok()?,
+            let Some(target_kind) = View::u16_be_at(stream, at).and_then(NonZeroU16::new) else {
+                return Ok(None);
+            };
+            let Some(next) = at.checked_add(2) else {
+                return Ok(None);
+            };
+            at = next;
+            if expected_end.is_some_and(|end| at > end) {
+                return Ok(None);
+            }
+            return Ok(MapEntries::try_from(entries).ok().map(|entries| ReferenceTypeMap {
+                entries,
                 target_kind: Some(target_kind),
                 offset,
                 end: at,
-            });
+            }));
         }
-        let kind = View::u16_be_at(stream, at)?;
-        at = at.checked_add(2)?;
-        expected_end.is_none_or(|end| at <= end).then_some(())?;
-        entries.push((reference, kind));
+        let Some(kind) = View::u16_be_at(stream, at) else {
+            return Ok(None);
+        };
+        let Some(next) = at.checked_add(2) else {
+            return Ok(None);
+        };
+        at = next;
+        if expected_end.is_some_and(|end| at > end) {
+            return Ok(None);
+        }
+        census::push_event(ctx, &mut entries, (reference, kind), "NX reference type map entries")?;
     }
 }
 
