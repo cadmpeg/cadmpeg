@@ -8,7 +8,7 @@ use crate::container::ContainerScan;
 use crate::design::decode::body::decode_stream;
 use crate::design::decode::dimension_frames::companion_owned_interval;
 use crate::design::decode::sketch::{native_scope_charged, next_indexed_record_offset, IndexedRecordOffsets};
-use crate::design::decode::text::lp_utf16_bounded_charged;
+use crate::design::decode::text::{design_record_id_charged, lp_utf16_bounded_charged};
 use crate::ids::{self, native_stream};
 use crate::layout::design_parameter_legacy_287_prefix as legacy_287;
 use crate::layout::design_parameter_legacy_287_tail as legacy_287_tail;
@@ -945,29 +945,34 @@ fn parse_legacy_parameter_owner_88(
 /// Decode the fixed prefix of every indexed record paired with a parameter
 /// owner. Record-specific payload after the prefix is decoded independently.
 pub(crate) fn decode_parameter_companions(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     owners: &[DesignParameterOwner],
     headers: &[DesignRecordHeader],
 ) -> Result<Vec<DesignParameterCompanion>, CodecError> {
-    let headers = headers
-        .iter()
-        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
-        .collect::<HashMap<_, _>>();
+    let mut headers_by_record = HashMap::new();
+    for header in headers {
+        let Some(stream) = native_stream(&header.id) else {
+            continue;
+        };
+        let key = (stream, header.record_index);
+        if !headers_by_record.contains_key(&key) {
+            ctx.charge_collection_items(1, "f3d parameter companion headers")?;
+            headers_by_record.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d parameter companion headers allocation", 0, 1)
+            })?;
+        }
+        headers_by_record.insert(key, header);
+    }
     let mut out = Vec::new();
     for owner in owners {
         let Some(scope) = native_stream(owner.id()) else {
             continue;
         };
-        let Some(header) = headers.get(&(scope, owner.companion_record_index())) else {
+        let Some(header) = headers_by_record.get(&(scope, owner.companion_record_index())) else {
             continue;
         };
-        let entry = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, ContainerRole::Bulkstream)
-                && owner
-                    .id()
-                    .starts_with(&ids::native_scope_prefix(&entry.name))
-        });
-        let Some(entry) = entry else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, scope) else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -981,9 +986,13 @@ pub(crate) fn decode_parameter_companions(
         {
             continue;
         }
-        let Some(companion) = parsed.into_record(&entry.name, header.byte_offset) else {
+        let Some(companion) = parsed.into_record(ctx, &entry.name, header.byte_offset)? else {
             continue;
         };
+        ctx.charge_collection_items(1, "f3d parameter companions")?;
+        out.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d parameter companions allocation", 0, 1)
+        })?;
         out.push(companion);
     }
     out.sort_by(|a, b| a.id().cmp(b.id()));
@@ -1003,16 +1012,32 @@ impl ParsedParameterCompanion {
     /// Locate this companion prefix in its containing stream. The owned payload
     /// extent and recipes are bound afterward by
     /// `bind_parameter_companion_payloads`.
-    fn into_record(self, stream: &str, frame_start: u64) -> Option<DesignParameterCompanion> {
-        Some(DesignParameterCompanion::unbound(
-            ids::native_design_parameter_companion_id(stream, frame_start),
+    fn into_record(
+        self,
+        ctx: &DecodeContext<'_>,
+        stream: &str,
+        frame_start: u64,
+    ) -> Result<Option<DesignParameterCompanion>, CodecError> {
+        let Some(timestamp_offset) = self.timestamp_micros_offset.absolute(frame_start) else {
+            return Ok(None);
+        };
+        let id = design_record_id_charged(
+            ctx,
+            stream,
+            ":design-parameter-companion#",
+            frame_start,
+            "f3d parameter companion identifier",
+            "f3d parameter companion identifier allocation",
+        )?;
+        Ok(Some(DesignParameterCompanion::unbound(
+            id,
             frame_start,
             self.class_tag,
             self.record_index,
             self.owner_record_index,
             self.timestamp_micros,
-            self.timestamp_micros_offset.absolute(frame_start)?,
-        ))
+            timestamp_offset,
+        )))
     }
 }
 
@@ -1063,23 +1088,30 @@ pub(crate) struct ParameterCompanionInputs<'a, S: std::hash::BuildHasher> {
 /// recipes nested in that interval. A companion whose payload cannot be
 /// resolved is returned unbound.
 pub(crate) fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
+    ctx: &DecodeContext<'_>,
     companions: Vec<DesignParameterCompanion>,
     inputs: &ParameterCompanionInputs<'_, S>,
-) -> Vec<DesignParameterCompanion> {
-    companions
-        .into_iter()
-        .map(|companion| match companion_payload(&companion, inputs) {
+) -> Result<Vec<DesignParameterCompanion>, CodecError> {
+    ctx.charge_collection_items(u64_from_index(companions.len()), "f3d bound parameter companions")?;
+    let mut bound = Vec::new();
+    bound.try_reserve(companions.len()).map_err(|_| {
+        ctx.refuse_codec_limit("f3d bound parameter companions allocation", 0, 1)
+    })?;
+    for companion in companions {
+        bound.push(match companion_payload(ctx, &companion, inputs)? {
             Some(payload) => companion.bound(payload),
             None => companion,
-        })
-        .collect()
+        });
+    }
+    Ok(bound)
 }
 
 /// Resolve the byte interval and nested recipes one companion owns.
 fn companion_payload<S: std::hash::BuildHasher>(
+    ctx: &DecodeContext<'_>,
     companion: &DesignParameterCompanion,
     inputs: &ParameterCompanionInputs<'_, S>,
-) -> Option<crate::records::parameters::DesignCompanionPayload> {
+) -> Result<Option<crate::records::parameters::DesignCompanionPayload>, CodecError> {
     let ParameterCompanionInputs {
         parameters,
         owners,
@@ -1089,22 +1121,30 @@ fn companion_payload<S: std::hash::BuildHasher>(
         recipes,
         stream_lengths,
     } = inputs;
-    let stream = native_stream(companion.id())?;
-    let stream_length = stream_lengths.get(stream).copied()?;
-    let (start, mut end) = companion_owned_interval(
+    let Some(stream) = native_stream(companion.id()) else {
+        return Ok(None);
+    };
+    let Some(stream_length) = stream_lengths.get(stream).copied() else {
+        return Ok(None);
+    };
+    let Some((start, mut end)) = companion_owned_interval(
         companion,
         parameters.iter(),
         owners,
         scopes,
         headers,
         stream_length,
-    )?;
+    ) else {
+        return Ok(None);
+    };
     // Entity headers precede their owning scope record. A parameter companion
     // immediately before a new scope does not own that scope's preamble even
     // though no indexed sibling separates the two records. Bind the preamble
     // through the scope's entity identity, not by an assumed class-tag or byte
     // length.
-    let preamble_limit = u64::try_from(end).ok()?;
+    let Ok(preamble_limit) = u64::try_from(end) else {
+        return Ok(None);
+    };
     end = scopes
         .iter()
         .filter(|scope| {
@@ -1128,22 +1168,42 @@ fn companion_payload<S: std::hash::BuildHasher>(
         })
         .min()
         .unwrap_or(end);
-    let byte_offset = u64::try_from(start).ok()?;
-    let byte_length = u64::try_from(end - start).ok()?;
-    let mut owned = recipes
-        .iter()
-        .filter(|recipe| {
+    let Ok(byte_offset) = u64::try_from(start) else {
+        return Ok(None);
+    };
+    let Ok(byte_length) = u64::try_from(end - start) else {
+        return Ok(None);
+    };
+    let mut owned = Vec::new();
+    for recipe in recipes.iter().filter(|recipe| {
             native_stream(&recipe.id) == Some(stream)
                 && recipe.byte_offset >= u64_from_index(start)
                 && recipe.byte_offset < u64_from_index(end)
-        })
-        .collect::<Vec<_>>();
+        }) {
+        ctx.charge_collection_items(1, "f3d companion owned recipes")?;
+        owned.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d companion owned recipes allocation", 0, 1)
+        })?;
+        owned.push(recipe);
+    }
     owned.sort_by_key(|recipe| recipe.byte_offset);
-    Some(crate::records::parameters::DesignCompanionPayload::new(
+    let mut owned_ids = Vec::new();
+    for recipe in owned {
+        let id = String::from_utf8(ctx.copy_retained(
+            recipe.id.as_bytes(),
+            "f3d companion owned recipe identifier",
+        )?).map_err(|_| CodecError::malformed("F3D companion recipe ID must be UTF-8"))?;
+        ctx.charge_collection_items(1, "f3d companion owned recipe identifiers")?;
+        owned_ids.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d companion owned recipe identifiers allocation", 0, 1)
+        })?;
+        owned_ids.push(id);
+    }
+    Ok(Some(crate::records::parameters::DesignCompanionPayload::new(
         byte_offset,
         byte_length,
-        owned.into_iter().map(|recipe| recipe.id.clone()).collect(),
-    ))
+        owned_ids,
+    )))
 }
 
 #[cfg(test)]

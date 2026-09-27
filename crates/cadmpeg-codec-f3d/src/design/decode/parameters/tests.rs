@@ -9,6 +9,7 @@
 use std::io::{Cursor, Write};
 
 use zip::CompressionMethod;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
 use super::{
     decode_parameters, parse_design_parameter_record, parse_legacy_parameter_owner_68,
@@ -885,6 +886,76 @@ fn parameter_companion_prefix_has_owner_backlink_and_timestamp() {
 }
 
 #[test]
+fn parameter_companion_decode_refuses_index_output_and_identifier_limits() {
+    const STREAM: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let mut prefix = vec![0; 58];
+    prefix[0..4].copy_from_slice(&3u32.to_le_bytes());
+    prefix[4..7].copy_from_slice(b"408");
+    prefix[7..11].copy_from_slice(&46u32.to_le_bytes());
+    prefix[31] = 1;
+    prefix[32..36].copy_from_slice(&44u32.to_le_bytes());
+    prefix[42..50].copy_from_slice(&1u64.to_le_bytes());
+    let owner = DesignParameterOwner::try_from(
+        crate::records::parameters::DesignParameterOwnerWire {
+            id: format!("{}:design-parameter-owner#1", crate::ids::native_scope(STREAM)),
+            byte_offset: 1,
+            frame_length: 104,
+            class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned()).unwrap(),
+            record_index: 44,
+            scope_record_index: 10,
+            local_ordinal: 0,
+            evaluated_value: 2.0,
+            evaluated_value_offset: 41,
+            parameter_record_index: 45,
+            owned_ordinal: 0,
+            variant: Some(0),
+            companion_record_index: 46,
+        },
+    ).unwrap();
+    let header = crate::records::decal::DesignRecordHeader {
+        id: crate::ids::native_design_record_header_id(STREAM, 0),
+        record_index: 46,
+        class_tag: crate::records::references::DesignClassTag::try_from("408".to_owned()).unwrap(),
+        byte_offset: 0,
+    };
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(STREAM, stored).unwrap();
+    zip.write_all(&prefix).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    with_scan(&archive, |scan| {
+        let scope_len = crate::ids::native_scope(STREAM).len() as u64;
+        for (items, retained, dimension, operation) in [
+            (0, u64::MAX, ResourceDimension::CollectionItems, "f3d parameter companion headers"),
+            (1, u64::MAX, ResourceDimension::CollectionItems, "f3d parameter companions"),
+            (u64::MAX, 0, ResourceDimension::RetainedBytes, "f3d native stream key"),
+            (u64::MAX, scope_len, ResourceDimension::RetainedBytes, "f3d parameter companion identifier"),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = items;
+            policy.limits.max_retained_bytes = retained;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = super::decode_parameter_companions(&ctx, scan, &[owner.clone()], &[header.clone()]);
+            assert!(matches!(
+                &result,
+                Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                    if failure.dimension == dimension && failure.operation == operation
+            ), "item limit {items}, retained limit {retained}: {result:?}");
+        }
+        let decoded = super::decode_parameter_companions(
+            &cadmpeg_test_support::service_decode_context(),
+            scan,
+            &[owner.clone()],
+            &[header.clone()],
+        ).unwrap();
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].id(), format!("{}:design-parameter-companion#0", crate::ids::native_scope(STREAM)));
+    });
+}
+
+#[test]
 fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     fn paired_header() -> [u8; 11] {
         let mut header = [0; 11];
@@ -1148,6 +1219,7 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
     let recipes = [recipe(31, 100), recipe(30, 80)];
 
     let bound = super::bind_parameter_companion_payloads(
+        &cadmpeg_test_support::service_decode_context(),
         vec![companion],
         &super::ParameterCompanionInputs {
             parameters: std::slice::from_ref(&parameter),
@@ -1158,7 +1230,7 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
             recipes: &recipes,
             stream_lengths: &std::collections::HashMap::from([(stream.to_owned(), 200)]),
         },
-    );
+    ).unwrap();
 
     let payload = bound[0].payload().expect("bound payload");
     assert_eq!(payload.byte_offset(), 68);
@@ -1170,6 +1242,61 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
             format!("{stream}:construction-recipe#31"),
         ]
     );
+}
+
+#[test]
+fn parameter_companion_binding_refuses_output_recipe_and_id_limits() {
+    let companion = DesignParameterCompanion::unbound(
+        "f3d:native:design-parameter-companion#0".into(),
+        0,
+        crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap(),
+        1,
+        2,
+        std::num::NonZeroU64::new(1).unwrap(),
+        42,
+    );
+    let recipe = ConstructionRecipe {
+        id: "f3d:native:construction-recipe#60".into(),
+        byte_offset: 60,
+        kind: ConstructionRecipeKind::Edge,
+        design: None,
+        recipe_index: 0,
+        record_index: None,
+    };
+    let lengths = std::collections::HashMap::from([("f3d:native".to_owned(), 100)]);
+    let inputs = super::ParameterCompanionInputs {
+        parameters: &[],
+        owners: &[],
+        scopes: &[],
+        entities: &[],
+        headers: &[],
+        recipes: std::slice::from_ref(&recipe),
+        stream_lengths: &lengths,
+    };
+    for (items, retained, dimension, operation) in [
+        (0, u64::MAX, ResourceDimension::CollectionItems, "f3d bound parameter companions"),
+        (1, u64::MAX, ResourceDimension::CollectionItems, "f3d companion owned recipes"),
+        (2, u64::MAX, ResourceDimension::CollectionItems, "f3d companion owned recipe identifiers"),
+        (u64::MAX, 0, ResourceDimension::RetainedBytes, "f3d companion owned recipe identifier"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = items;
+        policy.limits.max_retained_bytes = retained;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = super::bind_parameter_companion_payloads(&ctx, vec![companion.clone()], &inputs);
+        assert!(matches!(
+            &result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                if failure.dimension == dimension && failure.operation == operation
+        ), "item limit {items}, retained limit {retained}: {result:?}");
+    }
+    let bound = super::bind_parameter_companion_payloads(
+        &cadmpeg_test_support::service_decode_context(),
+        vec![companion],
+        &inputs,
+    ).unwrap();
+    assert_eq!(bound[0].payload().unwrap().owned_recipe_ids(), [recipe.id]);
 }
 
 #[test]

@@ -1083,6 +1083,7 @@ pub(super) fn fixed_kind_path_operations(
         }),
     };
     let bound = bind_parameter_companion_payloads(
+        &cadmpeg_test_support::service_decode_context(),
         vec![companion.clone()],
         &crate::design::decode::parameters::ParameterCompanionInputs {
             parameters: std::slice::from_ref(&parameter),
@@ -1093,7 +1094,7 @@ pub(super) fn fixed_kind_path_operations(
             recipes: std::slice::from_ref(&recipe),
             stream_lengths: &HashMap::from([("f3d:native".into(), 100)]),
         },
-    );
+    ).unwrap();
     let payload = bound[0].payload().expect("bound payload");
     assert_eq!(payload.byte_offset(), 58);
     assert_eq!(payload.byte_length(), 7);
@@ -1126,6 +1127,7 @@ pub(super) fn fixed_kind_path_operations(
         .expect("valid module registration"),
     };
     let bound = bind_parameter_companion_payloads(
+        &cadmpeg_test_support::service_decode_context(),
         vec![companion],
         &crate::design::decode::parameters::ParameterCompanionInputs {
             parameters: &[],
@@ -1136,7 +1138,7 @@ pub(super) fn fixed_kind_path_operations(
             recipes: &[],
             stream_lengths: &HashMap::from([("f3d:native".into(), 100)]),
         },
-    );
+    ).unwrap();
     let payload = bound[0].payload().expect("bound payload");
     assert_eq!(payload.byte_offset(), 58);
     assert_eq!(payload.byte_length(), 12);
