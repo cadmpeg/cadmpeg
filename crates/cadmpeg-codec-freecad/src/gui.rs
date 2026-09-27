@@ -112,40 +112,40 @@ fn object_appearance_id(
     )?).map_err(CodecError::malformed)
 }
 
-fn edge_appearance_id(provider: &IdentityKey) -> AppearanceId {
-    AppearanceId::compose(
-        &cadmpeg_ir::identity_namespace!("fcstd", "appearance", "edge"),
-        provider.clone(),
-    )
+fn edge_appearance_id(ctx: &DecodeContext<'_>, provider: &IdentityKey) -> Result<AppearanceId, CodecError> {
+    AppearanceId::mint(crate::resource::retained_format(ctx,
+        format_args!("fcstd:appearance:edge#{provider}"),
+        "FCStd GUI edge appearance identity",
+    )?).map_err(CodecError::malformed)
 }
 
-fn vertex_appearance_id(provider: &IdentityKey) -> AppearanceId {
-    AppearanceId::compose(
-        &cadmpeg_ir::identity_namespace!("fcstd", "appearance", "vertex"),
-        provider.clone(),
-    )
+fn vertex_appearance_id(ctx: &DecodeContext<'_>, provider: &IdentityKey) -> Result<AppearanceId, CodecError> {
+    AppearanceId::mint(crate::resource::retained_format(ctx,
+        format_args!("fcstd:appearance:vertex#{provider}"),
+        "FCStd GUI vertex appearance identity",
+    )?).map_err(CodecError::malformed)
 }
 
-fn shape_material_appearance_id(provider: &IdentityKey, index: usize) -> AppearanceId {
-    AppearanceId::compose(
-        &cadmpeg_ir::identity_namespace!("fcstd", "appearance", "shape-material"),
-        provider.clone().colon(index + 1),
-    )
+fn shape_material_appearance_id(
+    ctx: &DecodeContext<'_>, provider: &IdentityKey, index: usize,
+) -> Result<AppearanceId, CodecError> {
+    AppearanceId::mint(crate::resource::retained_format(ctx,
+        format_args!("fcstd:appearance:shape-material#{provider}:{}", index + 1),
+        "FCStd GUI shape material appearance identity",
+    )?).map_err(CodecError::malformed)
 }
 
 fn topology_appearance_id(
+    ctx: &DecodeContext<'_>,
     kind: TopologyColorKind,
     provider: &IdentityKey,
     index: usize,
-) -> AppearanceId {
-    let namespace = match kind {
-        TopologyColorKind::Face => cadmpeg_ir::identity_namespace!("fcstd", "appearance", "face"),
-        TopologyColorKind::Edge => cadmpeg_ir::identity_namespace!("fcstd", "appearance", "edge"),
-        TopologyColorKind::Vertex => {
-            cadmpeg_ir::identity_namespace!("fcstd", "appearance", "vertex")
-        }
-    };
-    AppearanceId::compose(&namespace, provider.clone().colon(index + 1))
+) -> Result<AppearanceId, CodecError> {
+    let kind = topology_binding_kind(kind);
+    AppearanceId::mint(crate::resource::retained_format(ctx,
+        format_args!("fcstd:appearance:{kind}#{provider}:{}", index + 1),
+        "FCStd GUI topology appearance identity",
+    )?).map_err(CodecError::malformed)
 }
 
 fn topology_binding_kind(kind: TopologyColorKind) -> IdentityKey {
@@ -156,11 +156,10 @@ fn topology_binding_kind(kind: TopologyColorKind) -> IdentityKey {
     }
 }
 
-fn binding_id(key: IdentityKey) -> AppearanceBindingId {
-    AppearanceBindingId::compose(
-        &cadmpeg_ir::identity_namespace!("fcstd", "appearance", "binding"),
-        key,
-    )
+fn binding_id(ctx: &DecodeContext<'_>, text: std::fmt::Arguments<'_>) -> Result<AppearanceBindingId, CodecError> {
+    AppearanceBindingId::mint(crate::resource::retained_format(
+        ctx, text, "FCStd GUI appearance binding identity",
+    )?).map_err(CodecError::malformed)
 }
 
 /// Whether the shared application-property registry knows this GUI property.
@@ -629,7 +628,7 @@ fn transfer_schema_one(
         });
         for (index, body) in body_ids.into_iter().enumerate() {
             plan.bindings.push(AppearanceBinding {
-                id: binding_id(provider_key.clone().colon(index)),
+                id: binding_id(ctx, format_args!("fcstd:appearance:binding#{provider_key}:{index}"))?,
                 target: AppearanceTarget::Body(body),
                 appearance: appearance_id.clone(),
                 source_entity_id: Some(object_id.to_owned()),
@@ -1083,7 +1082,7 @@ fn transfer_primitive_appearance(
     let provider_key = provider_identity_key(ctx, provider_name)?;
     let (appearance_id, label, property, size, binding_key, object_type, precedence) = match style {
         PrimitiveStyle::Line(width) => (
-            edge_appearance_id(&provider_key),
+            edge_appearance_id(ctx, &provider_key)?,
             "line",
             cadmpeg_core::nonblank_literal!("line_width"),
             width,
@@ -1092,7 +1091,7 @@ fn transfer_primitive_appearance(
             "edge_over_object",
         ),
         PrimitiveStyle::Point(size) => (
-            vertex_appearance_id(&provider_key),
+            vertex_appearance_id(ctx, &provider_key)?,
             "point",
             cadmpeg_core::nonblank_literal!("point_size"),
             size,
@@ -1138,7 +1137,9 @@ fn transfer_primitive_appearance(
     });
     for (index, target) in targets.into_iter().enumerate() {
         plan.bindings.push(AppearanceBinding {
-            id: binding_id(binding_key.clone().colon(provider_key.clone()).colon(index)),
+            id: binding_id(ctx, format_args!(
+                "fcstd:appearance:binding#{binding_key}:{provider_key}:{index}"
+            ))?,
             target,
             appearance: appearance_id.clone(),
             source_entity_id: Some(object_id.to_owned()),
@@ -3895,7 +3896,7 @@ fn transfer_shape_appearances(
             }
         }
         for (index, material) in materials.iter().enumerate() {
-            let appearance_id = shape_material_appearance_id(&provider_key, index);
+            let appearance_id = shape_material_appearance_id(ctx, &provider_key, index)?;
             plan.appearances.push(material_appearance(
                 appearance_id.clone(),
                 &provider.name,
@@ -3913,11 +3914,9 @@ fn transfer_shape_appearances(
                         )?),
                     });
                     plan.bindings.push(AppearanceBinding {
-                        id: binding_id(
-                            cadmpeg_ir::identity_key!("shape-material")
-                                .colon(provider_key.clone())
-                                .colon(body_index),
-                        ),
+                        id: binding_id(ctx, format_args!(
+                            "fcstd:appearance:binding#shape-material:{provider_key}:{body_index}"
+                        ))?,
                         target: AppearanceTarget::Body(body.clone()),
                         appearance: appearance_id.clone(),
                         source_entity_id: Some(object_id.to_owned()),
@@ -3928,6 +3927,7 @@ fn transfer_shape_appearances(
                 }
             } else if let Some(group) = group {
                 bind_material_faces(
+                    ctx,
                     ir,
                     plan,
                     group,
@@ -3935,7 +3935,7 @@ fn transfer_shape_appearances(
                     &appearance_id,
                     &provider_key,
                     object_id,
-                );
+                )?;
             }
         }
     }
@@ -4084,6 +4084,7 @@ fn material_appearance(
 }
 
 fn bind_material_faces(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     plan: &mut AppearancePlan,
     group: &ElementMapGroup,
@@ -4091,7 +4092,7 @@ fn bind_material_faces(
     appearance_id: &AppearanceId,
     provider_key: &IdentityKey,
     object_id: &str,
-) {
+) -> Result<(), CodecError> {
     let mut bound = HashSet::new();
     for topology_id in group.names[material_index + 1]
         .iter()
@@ -4109,11 +4110,9 @@ fn bind_material_faces(
         };
         let binding_index = ir.model.appearance_bindings.len() + plan.bindings.len();
         plan.bindings.push(AppearanceBinding {
-            id: binding_id(
-                cadmpeg_ir::identity_key!("shape-material")
-                    .colon(provider_key.clone())
-                    .colon(binding_index),
-            ),
+            id: binding_id(ctx, format_args!(
+                "fcstd:appearance:binding#shape-material:{provider_key}:{binding_index}"
+            ))?,
             target: AppearanceTarget::Face(face),
             appearance: appearance_id.clone(),
             source_entity_id: Some(object_id.to_owned()),
@@ -4126,6 +4125,7 @@ fn bind_material_faces(
             .into(),
         });
     }
+    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -4211,7 +4211,7 @@ fn transfer_topology_colors(
         return Ok(());
     }
     for (index, packed) in colors.into_iter().enumerate() {
-        let appearance_id = topology_appearance_id(kind, provider_key, index);
+        let appearance_id = topology_appearance_id(ctx, kind, provider_key, index)?;
         let uniform_names = (count == 1)
             .then_some(&group.names)
             .into_iter()
@@ -4275,29 +4275,28 @@ fn transfer_topology_colors(
                     .faces
                     .iter()
                     .find(|face| face.id.as_str() == topology_id.as_str())
-                    .map(|face| (AppearanceTarget::Face(face.id.clone()), face.id.key())),
+                    .map(|face| (AppearanceTarget::Face(face.id.clone()), crate::native::id_key(face.id.as_str()))),
                 TopologyColorKind::Edge => ir
                     .model
                     .edges
                     .iter()
                     .find(|edge| edge.id.as_str() == topology_id.as_str())
-                    .map(|edge| (AppearanceTarget::Edge(edge.id.clone()), edge.id.key())),
+                    .map(|edge| (AppearanceTarget::Edge(edge.id.clone()), crate::native::id_key(edge.id.as_str()))),
                 TopologyColorKind::Vertex => ir
                     .model
                     .vertices
                     .iter()
                     .find(|vertex| vertex.id.as_str() == topology_id.as_str())
-                    .map(|vertex| (AppearanceTarget::Vertex(vertex.id.clone()), vertex.id.key())),
+                    .map(|vertex| (AppearanceTarget::Vertex(vertex.id.clone()), crate::native::id_key(vertex.id.as_str()))),
             }) else {
                 continue;
             };
+            let kind_key = topology_binding_kind(kind);
             plan.bindings.push(AppearanceBinding {
-                id: binding_id(
-                    topology_binding_kind(kind)
-                        .colon(provider_key.clone())
-                        .colon(index + 1)
-                        .colon(topology_key),
-                ),
+                id: binding_id(ctx, format_args!(
+                    "fcstd:appearance:binding#{kind_key}:{provider_key}:{}:{topology_key}",
+                    index + 1,
+                ))?,
                 target,
                 appearance: appearance_id.clone(),
                 source_entity_id: Some(object_id.to_owned()),

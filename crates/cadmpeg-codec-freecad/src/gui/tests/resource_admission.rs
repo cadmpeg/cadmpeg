@@ -287,6 +287,68 @@ fn gui_object_appearance_identity_refuses_at_retained_limit() {
         .expect("service policy admits appearance").as_str(), identity);
 }
 
+fn assert_gui_identity_refusal(
+    expected: &str,
+    operation: &str,
+    make: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<String, cadmpeg_core::CodecError>,
+) {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = expected.len() as u64 - 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    let error = make(&ctx).expect_err("identity must charge before construction");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+        if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && failure.operation == operation), "{error:?}");
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert_eq!(make(&ctx).expect("service policy admits identity"), expected);
+}
+
+#[test]
+fn gui_edge_appearance_identity_refuses_at_retained_limit() {
+    let key = cadmpeg_ir::ids::IdentityKey::encode_segment("A B#");
+    assert_gui_identity_refusal("fcstd:appearance:edge#A%20B%23",
+        "FCStd GUI edge appearance identity",
+        |ctx| super::super::edge_appearance_id(ctx, &key).map(|id| id.to_string()));
+}
+
+#[test]
+fn gui_vertex_appearance_identity_refuses_at_retained_limit() {
+    let key = cadmpeg_ir::ids::IdentityKey::encode_segment("A B#");
+    assert_gui_identity_refusal("fcstd:appearance:vertex#A%20B%23",
+        "FCStd GUI vertex appearance identity",
+        |ctx| super::super::vertex_appearance_id(ctx, &key).map(|id| id.to_string()));
+}
+
+#[test]
+fn gui_shape_material_appearance_identity_refuses_at_retained_limit() {
+    let key = cadmpeg_ir::ids::IdentityKey::encode_segment("A B#");
+    assert_gui_identity_refusal("fcstd:appearance:shape-material#A%20B%23:2",
+        "FCStd GUI shape material appearance identity",
+        |ctx| super::super::shape_material_appearance_id(ctx, &key, 1).map(|id| id.to_string()));
+}
+
+#[test]
+fn gui_topology_appearance_identity_refuses_at_retained_limit() {
+    let key = cadmpeg_ir::ids::IdentityKey::encode_segment("A B#");
+    assert_gui_identity_refusal("fcstd:appearance:face#A%20B%23:2",
+        "FCStd GUI topology appearance identity",
+        |ctx| super::super::topology_appearance_id(ctx,
+            super::super::TopologyColorKind::Face, &key, 1).map(|id| id.to_string()));
+}
+
+#[test]
+fn gui_appearance_binding_identity_refuses_at_retained_limit() {
+    assert_gui_identity_refusal("fcstd:appearance:binding#face:A%20B%23:2:Face1",
+        "FCStd GUI appearance binding identity",
+        |ctx| super::super::binding_id(ctx,
+            format_args!("fcstd:appearance:binding#face:A%20B%23:2:Face1"))
+            .map(|id| id.to_string()));
+}
+
 #[test]
 fn y4_2_decode_refuses_unadmitted_gui_text_copy() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
