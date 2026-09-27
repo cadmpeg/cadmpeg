@@ -1201,6 +1201,7 @@ fn null_polymorphic_wrapper_contains_only_a_nil_class_uuid() {
     let uuid = crc_chunk(archive, 0x0002_fffb, &[0; 16]);
     let wrapper = long_chunk(archive, 0x0002_7ffa, &uuid);
     let (class, userdata) = crate::objects::parse_class_wrapper_with_userdata(
+        &cadmpeg_test_support::service_decode_context(),
         &wrapper,
         0..wrapper.len(),
         archive,
@@ -1210,6 +1211,59 @@ fn null_polymorphic_wrapper_contains_only_a_nil_class_uuid() {
     assert_eq!(class.class_uuid, Uuid::nil());
     assert!(class.class_data_range.is_empty());
     assert!(userdata.is_empty());
+}
+
+#[test]
+fn retained_class_userdata_refuses_collection_limit_without_affecting_scan_only() {
+    let archive = ArchiveVersion::V8;
+    let userdata = crate::test_support::test_dump::class_userdata(
+        archive,
+        [2; 16],
+        [3; 16],
+        "source.3dm",
+        false,
+    );
+    let wrapper = crate::test_support::test_dump::class_wrapper_with_userdata(
+        archive,
+        [1; 16],
+        &[],
+        &userdata,
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&wrapper, &arena, &policy)
+        .expect("root bytes admitted");
+    crate::objects::parse_class_wrapper(
+        &wrapper,
+        0..wrapper.len(),
+        archive,
+        &mut Diagnostics::new(),
+    )
+    .expect("scan-only class wrapper does not retain userdata");
+    let error = crate::objects::parse_class_wrapper_with_userdata(
+        &ctx,
+        &wrapper,
+        0..wrapper.len(),
+        archive,
+        &mut Diagnostics::new(),
+    )
+    .expect_err("retained userdata exceeds collection limit");
+    assert!(matches!(
+        error,
+        crate::chunks::FramingError::Resource(refusal)
+            if refusal.operation == "Rhino class userdata"
+    ));
+    let (class, retained) = crate::objects::parse_class_wrapper_with_userdata(
+        &cadmpeg_test_support::service_decode_context(),
+        &wrapper,
+        0..wrapper.len(),
+        archive,
+        &mut Diagnostics::new(),
+    )
+    .expect("service profile retains userdata");
+    assert_eq!(class.class_uuid, Uuid::from_wire([1; 16]));
+    assert_eq!(retained.len(), 1);
 }
 
 #[test]

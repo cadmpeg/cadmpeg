@@ -1160,8 +1160,13 @@ pub(crate) fn parse_definitions(
     for (source_order, record) in records.iter().enumerate() {
         let mut warnings = Diagnostics::new();
         let parsed = (|| {
-            let (class, userdata) =
-                parse_class_wrapper_with_userdata(data, record.body(), archive, &mut warnings)?;
+            let (class, userdata) = parse_class_wrapper_with_userdata(
+                ctx,
+                data,
+                record.body(),
+                archive,
+                &mut warnings,
+            )?;
             if class.class_uuid != INSTANCE_DEFINITION_UUID {
                 return Err(FramingError::Structural {
                     offset: record.range.start,

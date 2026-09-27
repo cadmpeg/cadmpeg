@@ -812,6 +812,7 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
     let (data, record) = metadata_record(0x2000_8050, class);
     let mut wrapper_warnings = Diagnostics::new();
     let (class_descriptor, userdata) = crate::objects::parse_class_wrapper_with_userdata(
+        &cadmpeg_test_support::service_decode_context(),
         &data,
         record.body(),
         archive,

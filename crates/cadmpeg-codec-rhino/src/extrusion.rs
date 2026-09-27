@@ -798,8 +798,13 @@ fn read_mesh_cache(
         item_reader.skip(16)?;
         let wrapper_start = item_reader.position();
         let wrapper = chunk_at(data, wrapper_start, item_reader.end(), archive, false)?;
-        let (class, userdata) =
-            parse_class_wrapper_with_userdata(data, wrapper.range(), archive, warnings)?;
+        let (class, userdata) = parse_class_wrapper_with_userdata(
+            expand.ctx(),
+            data,
+            wrapper.range(),
+            archive,
+            warnings,
+        )?;
         item_reader.skip(wrapper.next_offset() - wrapper_start)?;
         if class.class_uuid != crate::mesh::ON_MESH {
             return Err(error(wrapper_start, "mesh-cache item is not ON_Mesh"));
@@ -870,8 +875,13 @@ fn read_v5_mesh_cache(
     let mut meshes = Vec::new();
     for index in 0..3_usize {
         let wrapper = chunk_at(data, offset, cache.payload_range.end, archive, false)?;
-        let (class, nested_userdata) =
-            parse_class_wrapper_with_userdata(data, wrapper.range(), archive, warnings)?;
+        let (class, nested_userdata) = parse_class_wrapper_with_userdata(
+            expand.ctx(),
+            data,
+            wrapper.range(),
+            archive,
+            warnings,
+        )?;
         if index < 2 {
             if class.class_uuid == crate::mesh::ON_MESH {
                 let mesh = crate::mesh::decode(

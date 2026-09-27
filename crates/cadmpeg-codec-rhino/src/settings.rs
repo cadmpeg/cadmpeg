@@ -2234,7 +2234,7 @@ fn parse_layer(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(LayerRecord, bool), FramingError> {
     let (class, userdata) =
-        parse_class_wrapper_with_userdata(data, record.body(), archive, warnings)?;
+        parse_class_wrapper_with_userdata(ctx, data, record.body(), archive, warnings)?;
     if class.class_uuid != ON_LAYER_UUID {
         return Err(FramingError::Structural {
             offset: record.range.start,

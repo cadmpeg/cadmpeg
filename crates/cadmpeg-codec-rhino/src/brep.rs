@@ -14,7 +14,7 @@ use cadmpeg_ir::units::FiniteVector;
 
 use crate::chunks::{
     chunk_at, verify_checksum, verify_checksum_ranges, ArchiveVersion, BoundedReader,
-    ChecksumStatus, Chunk,
+    ChecksumStatus, Chunk, FramingError,
 };
 use crate::curves::{charged_vec, error, reserve_collection, GeometryError};
 use crate::objects::{
@@ -1871,7 +1871,7 @@ fn read_legacy_mesh_sides(
                 );
                 return Ok((degraded, start..reader.position()));
             }
-            match parse_class_wrapper_with_userdata(bytes, object.range(), archive, warnings) {
+            match parse_class_wrapper_with_userdata(ctx, bytes, object.range(), archive, warnings) {
                 Ok((class, userdata)) if supported_mesh(class.class_uuid) => Some(RawBrepMesh {
                     mesh: RawBrepChild {
                         class_uuid: class.class_uuid,
@@ -1886,6 +1886,11 @@ fn read_legacy_mesh_sides(
                         "legacy Brep mesh cache slot has wrong class".to_string(),
                     );
                     None
+                }
+                Err(FramingError::Resource(limit)) => {
+                    return Err(GeometryError::Codec(
+                        cadmpeg_core::CodecError::ResourceLimit(limit),
+                    ));
                 }
                 Err(error) => {
                     warnings.push_coded(
@@ -2293,8 +2298,13 @@ fn read_mesh_sides(
                     )
                 })?;
                 children.push(object.range());
-                let class =
-                    parse_class_wrapper_with_userdata(bytes, object.range(), archive, warnings);
+                let class = parse_class_wrapper_with_userdata(
+                    ctx,
+                    bytes,
+                    object.range(),
+                    archive,
+                    warnings,
+                );
                 child.skip(object.next_offset() - start)?;
                 match class {
                     Ok((class, userdata)) if supported_mesh(class.class_uuid) => {
@@ -2313,6 +2323,11 @@ fn read_mesh_sides(
                             "Brep mesh cache slot has wrong class".to_string(),
                         );
                         None
+                    }
+                    Err(FramingError::Resource(limit)) => {
+                        return Err(GeometryError::Codec(
+                            cadmpeg_core::CodecError::ResourceLimit(limit),
+                        ));
                     }
                     Err(error) => {
                         warnings.push_coded(
@@ -4453,6 +4468,36 @@ mod tests {
         );
         assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
         assert_eq!(reader.remaining(), 0);
+    }
+
+    #[test]
+    fn mesh_side_userdata_refuses_collection_limit_without_cache_warning() {
+        let presence = [1_u8];
+        let wrapper = mesh_class_wrapper_with_userdata();
+        let bytes = anonymous_mixed(&[(&presence, false), (&wrapper, true)]);
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+        let mut warnings = Diagnostics::new();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 2;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("root bytes admitted");
+        let error = read_mesh_sides(
+            &ctx,
+            &bytes,
+            &mut reader,
+            ArchiveVersion::V5,
+            1,
+            &mut warnings,
+        )
+        .expect_err("class userdata exceeds remaining collection items");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino class userdata"
+        ));
+        assert!(warnings.is_empty());
     }
 
     #[test]

@@ -1660,9 +1660,15 @@ fn texture_mapping_reads_nested_primitive_class_wrapper() {
     body.extend([0xaa, 0xbb]);
     let bytes = anonymous(1, &body);
 
-    let mapping = parse_texture_mapping(&bytes, 0..bytes.len(), ArchiveVersion::V8, 42)
-        .expect("texture mapping with primitive class wrapper")
-        .value;
+    let mapping = parse_texture_mapping(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        0..bytes.len(),
+        ArchiveVersion::V8,
+        42,
+    )
+    .expect("texture mapping with primitive class wrapper")
+    .value;
     assert_eq!(mapping.mapping_type, 6);
     assert_eq!(
         mapping.primitive_class_uuid,
