@@ -802,7 +802,10 @@ fn allocation_program_replays_seed_tooth_and_transition() {
         trim(0x42, [50, 51, 40, 41]),
         trim(0x4a, [60, 61, 62, 63]),
     ];
-    let points = motif_port_points(&trims, 20).expect("complete motif allocation");
+    let points =
+        crate::test_support::with_service_context(|ctx| motif_port_points(ctx, &trims, 20))
+            .expect("service resource budget")
+            .expect("complete motif allocation");
     let order = [
         20, 21, 2, 3, 0, 1, 22, 23, 32, 33, 30, 31, 40, 41, 50, 51, 60, 61, 62, 63,
     ];
@@ -812,7 +815,31 @@ fn allocation_program_replays_seed_tooth_and_transition() {
 }
 
 #[test]
+fn motif_port_identity_map_refuses_before_counted_growth() {
+    let trims = [
+        trim(0x4a, [0, 1, 2, 3]),
+        trim(0x4a, [10, 11, 12, 13]),
+        trim(0x4a, [20, 21, 22, 23]),
+    ];
+    let points = crate::test_support::with_service_context(|ctx| motif_port_points(ctx, &trims, 8))
+        .expect("service resource budget")
+        .expect("complete motif allocation");
+    assert_eq!(points.len(), 8);
+    let refusal =
+        crate::test_support::with_collection_limit(7, |ctx| motif_port_points(ctx, &trims, 8))
+            .expect_err("eighth motif identity exceeds the collection cap");
+    assert!(
+        matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "catia_motif_port_points")
+    );
+}
+
+#[test]
 fn allocation_program_rejects_an_unconsumed_trim_packet() {
     let trims = [trim(0x4a, [0, 1, 2, 3]), trim(0x41, [4, 5, 6, 7])];
-    assert!(motif_port_points(&trims, 4).is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| motif_port_points(ctx, &trims, 4))
+            .expect("service resource budget")
+            .is_none()
+    );
 }

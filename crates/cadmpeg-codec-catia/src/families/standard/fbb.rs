@@ -278,7 +278,7 @@ pub(super) fn parse_standard_motif(
     let Some(trims) = parse_trim_chain(ctx, bytes, face_start, face_count, handle_width)? else {
         return Ok(None);
     };
-    let Some(port_points) = motif_port_points(&trims, vertex_points.len()) else {
+    let Some(port_points) = motif_port_points(ctx, &trims, vertex_points.len())? else {
         return Ok(None);
     };
     let edge_points = edge_rows
@@ -1216,6 +1216,41 @@ mod allocation_tests {
         });
         assert!(operations.contains("catia_trim_primitive_lengths"));
         assert!(operations.contains("catia_trim_packet_handles"));
+    }
+
+    #[test]
+    fn cycle_cover_matches_corners_and_coedges_refuse_before_growth() {
+        use crate::families::standard::topology::{EdgeBoundaryLayout, EdgeRow};
+        use crate::solve::union_find::UnionFind;
+
+        let rows = [[0, 1], [1, 2], [2, 0]].map(|handles| EdgeRow {
+            kind: 1,
+            handles: handles.to_vec(),
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        });
+        let run = |ctx: &DecodeContext<'_>| {
+            let mut union = UnionFind::new(6);
+            super::cover_cycle(ctx, &[0, 1, 2], &rows, &mut union)
+        };
+        let boundary = crate::test_support::with_service_context(run)
+            .expect("service resource budget")
+            .expect("complete edge cycle");
+        assert_eq!(boundary.coedges.len(), 3);
+        let mut operations = std::collections::HashSet::new();
+        for cap in 0..32 {
+            let result = crate::test_support::with_collection_limit(cap, run);
+            if let Err(CodecError::ResourceLimit(refusal)) = result {
+                operations.insert(refusal.operation);
+            }
+        }
+        for operation in [
+            "catia_fbb_cycle_matches",
+            "catia_fbb_corner_union_nodes",
+            "catia_fbb_corner_nodes",
+            "catia_fbb_cycle_coedges",
+        ] {
+            assert!(operations.contains(operation), "no refusal at {operation}");
+        }
     }
 
     #[test]
@@ -2220,7 +2255,7 @@ fn cover_cycle_by_rows(
         let Some(pattern) = row.boundary_pattern() else {
             continue;
         };
-        let mut row_matches = Vec::new();
+        let mut row_match = None;
         for start in 0..length {
             let forward = pattern
                 .iter()
@@ -2232,19 +2267,25 @@ fn cover_cycle_by_rows(
                 .enumerate()
                 .all(|(offset, handle)| cycle[(start + offset) % length] == *handle);
             if forward {
-                row_matches.push((start, false));
+                if row_match.replace((start, false)).is_some() {
+                    return Ok(None);
+                }
             } else if reversed {
-                row_matches.push((start, true));
+                if row_match.replace((start, true)).is_some() {
+                    return Ok(None);
+                }
             }
         }
-        if row_matches.len() == 1 {
-            let (start, reversed) = row_matches[0];
+        if let Some((start, reversed)) = row_match {
             let Some((boundary_start, segment_count)) = row.boundary_span(start, length) else {
                 return Ok(None);
             };
-            matches.push((boundary_start, segment_count, edge_row, reversed));
-        } else if !row_matches.is_empty() {
-            return Ok(None);
+            crate::resource::push(
+                ctx,
+                &mut matches,
+                (boundary_start, segment_count, edge_row, reversed),
+                "catia_fbb_cycle_matches",
+            )?;
         }
     }
     if matches.is_empty() {
@@ -2267,12 +2308,21 @@ fn cover_cycle_by_rows(
     let mut corner_nodes = HashMap::new();
     for &(start, edge_count, _, _) in &matches {
         let end = (start + edge_count) % length;
-        corner_nodes
-            .entry(start % length)
-            .or_insert_with(|| union.push());
-        corner_nodes.entry(end).or_insert_with(|| union.push());
+        for corner in [start % length, end] {
+            if !corner_nodes.contains_key(&corner) {
+                let node = union.push_charged(ctx, "catia_fbb_corner_union_nodes")?;
+                crate::resource::insert_map(
+                    ctx,
+                    &mut corner_nodes,
+                    corner,
+                    node,
+                    "catia_fbb_corner_nodes",
+                )?;
+            }
+        }
     }
-    let mut coedges = Vec::with_capacity(matches.len());
+    let mut coedges = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut coedges, matches.len(), "catia_fbb_cycle_coedges")?;
     for (start, edge_count, edge_row, reversed) in matches {
         let start_node = corner_nodes[&(start % length)];
         let end_node = corner_nodes[&((start + edge_count) % length)];
