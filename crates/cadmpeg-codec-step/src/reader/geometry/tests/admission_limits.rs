@@ -375,6 +375,29 @@ fn directrix_geometry_scale_walk_refuses_depth_limit() {
     ));
 }
 
+macro_rules! association_name_refusal_test {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 4;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+                .expect("empty root fits policy");
+            assert!(matches!(
+                super::super::attach_geometry_source(&mut None, 1, Some("named"), &ctx, $operation),
+                Err(CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::RetainedBytes
+                        && refusal.operation == $operation
+            ));
+        }
+    };
+}
+
+association_name_refusal_test!(geometric_set_association_name_copy_refuses_retained_limit, "step_geometric_set_association_name_copy");
+association_name_refusal_test!(representation_association_name_copy_refuses_retained_limit, "step_representation_association_name_copy");
+association_name_refusal_test!(presentation_association_name_copy_refuses_retained_limit, "step_presentation_association_name_copy");
+
 #[test]
 fn curve_bounded_pcurve_set_refuses_collection_limit() {
     let arena = DecodeArena::new();
