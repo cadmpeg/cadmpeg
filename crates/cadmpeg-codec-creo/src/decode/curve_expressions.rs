@@ -169,23 +169,25 @@ fn curve_expression_parameter_order(
     record: &crate::curve::CurveExpressionRecord,
     unique_assignment_indices: &BTreeMap<String, usize>,
 ) -> Result<Option<CurveExpressionParameterOrder>, CodecError> {
-    let dependencies = record
-        .assignments
-        .iter()
-        .map(|assignment| {
-            let mut seen = BTreeSet::new();
-            assignment
-                .dependencies
-                .iter()
-                .filter_map(|name| {
-                    unique_assignment_indices
-                        .get(&crate::curve::expression_identifier_key(name))
-                        .copied()
-                })
-                .filter(|index| seen.insert(*index))
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
+    let mut dependencies = ctx.alloc_filled(
+        record.assignments.len(),
+        Vec::new(),
+        "creo curve-expression dependency rows",
+    )?;
+    for (row, assignment) in dependencies.iter_mut().zip(&record.assignments) {
+        for name in &assignment.dependencies {
+            let Some(&index) =
+                unique_assignment_indices.get(&crate::curve::expression_identifier_key(name))
+            else {
+                continue;
+            };
+            if row.contains(&index) {
+                continue;
+            }
+            ctx.try_reserve_items(row, 1, "creo curve-expression dependency indices")?;
+            row.push(index);
+        }
+    }
     let mut cyclic_edges = BTreeSet::new();
     for (consumer, dependency_indices) in dependencies.iter().enumerate() {
         for &dependency in dependency_indices {

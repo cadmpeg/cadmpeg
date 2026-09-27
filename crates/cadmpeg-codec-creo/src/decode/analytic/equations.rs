@@ -879,8 +879,10 @@ fn sylvester_polynomial(
             term = polynomial_product(ctx, &term, factor)?;
         }
         if determinant.len() < term.len() {
-            ctx.charge_collection_items(
-                (term.len() - determinant.len()) as u64,
+            let additional = term.len() - determinant.len();
+            ctx.try_reserve_items(
+                &mut determinant,
+                additional,
                 "creo polynomial determinant terms",
             )?;
             determinant.resize(term.len(), 0.0);
@@ -1700,6 +1702,35 @@ mod tests {
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
                     && limit.operation == "creo polynomial product"
+        ));
+    }
+
+    #[test]
+    fn polynomial_determinant_refuses_before_growth() {
+        let matrix = std::array::from_fn(|row| {
+            std::array::from_fn(|column| (row == column).then(|| vec![1.0]))
+        });
+        let arena = DecodeArena::new();
+        let service = DecodePolicy::service();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[0], &arena, &service).expect("test decode context");
+        assert_eq!(
+            super::sylvester_polynomial(&ctx, &matrix, |value| value)
+                .expect("service profile admits the determinant"),
+            [1.0]
+        );
+
+        let mut limited = service;
+        limited.limits.max_collection_items = 5;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[0], &arena, &limited).expect("test decode context");
+        let error = super::sylvester_polynomial(&ctx, &matrix, |value| value)
+            .expect_err("the determinant follows the identity and four products");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "creo polynomial determinant terms"
         ));
     }
 

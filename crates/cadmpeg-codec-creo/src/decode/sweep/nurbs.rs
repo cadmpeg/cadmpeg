@@ -163,20 +163,24 @@ fn solve_vector_system(
             *value /= scale;
         }
         values[column] = values[column].map(|value| value / scale);
-        let pivot_row = matrix[column].clone();
         let pivot_value = values[column];
-        for row in 0..count {
-            if row == column {
-                continue;
-            }
-            let factor = matrix[row][column];
+        let (before, pivot_and_after) = matrix.split_at_mut(column);
+        let (pivot_row, after) = pivot_and_after.split_first_mut()?;
+        let (before_values, pivot_and_after_values) = values.split_at_mut(column);
+        let (_, after_values) = pivot_and_after_values.split_first_mut()?;
+        for (row, values) in before
+            .iter_mut()
+            .chain(after.iter_mut())
+            .zip(before_values.iter_mut().chain(after_values.iter_mut()))
+        {
+            let factor = row[column];
             if factor == 0.0 {
                 continue;
             }
-            for (entry, pivot_entry) in matrix[row][column..].iter_mut().zip(&pivot_row[column..]) {
+            for (entry, pivot_entry) in row[column..].iter_mut().zip(&pivot_row[column..]) {
                 *entry -= factor * pivot_entry;
             }
-            for (value, pivot) in values[row].iter_mut().zip(pivot_value) {
+            for (value, pivot) in values.iter_mut().zip(pivot_value) {
                 *value -= factor * pivot;
             }
         }
@@ -212,36 +216,45 @@ fn interpolation_curve_data(
     };
     let mut knots =
         ctx.alloc_filled(DEGREE + 1, parameters[0], "creo interpolation curve knots")?;
-    ctx.charge_collection_items(
-        (point_count - 2 + DEGREE + 1) as u64,
+    ctx.try_reserve_items(
+        &mut knots,
+        point_count - 2 + DEGREE + 1,
         "creo interpolation curve knot tail",
     )?;
     knots.extend_from_slice(&parameters[1..point_count - 1]);
     knots.extend(std::iter::repeat_n(parameters[point_count - 1], DEGREE + 1));
-    ctx.charge_collection_items(control_count as u64, "creo interpolation matrix rows")?;
-    let mut matrix = Vec::with_capacity(control_count);
+    let mut matrix = Vec::new();
+    ctx.try_reserve_items(&mut matrix, control_count, "creo interpolation matrix rows")?;
     for parameter in parameters {
-        ctx.charge_collection_items(control_count as u64, "creo interpolation matrix values")?;
-        let Some(row) = (0..control_count)
-            .map(|index| bspline_basis(index, DEGREE, *parameter, &knots, control_count))
-            .collect::<Option<Vec<_>>>()
-        else {
-            return Ok(None);
-        };
+        let mut row = ctx.alloc_filled(control_count, 0.0, "creo interpolation matrix values")?;
+        for (index, value) in row.iter_mut().enumerate() {
+            let Some(basis) = bspline_basis(index, DEGREE, *parameter, &knots, control_count)
+            else {
+                return Ok(None);
+            };
+            *value = basis;
+        }
         matrix.push(row);
     }
     for parameter in [parameters[0], parameters[point_count - 1]] {
-        ctx.charge_collection_items(control_count as u64, "creo interpolation matrix values")?;
-        let Some(row) = (0..control_count)
-            .map(|index| bspline_basis_derivative(index, DEGREE, parameter, &knots, control_count))
-            .collect::<Option<Vec<_>>>()
-        else {
-            return Ok(None);
-        };
+        let mut row = ctx.alloc_filled(control_count, 0.0, "creo interpolation matrix values")?;
+        for (index, value) in row.iter_mut().enumerate() {
+            let Some(basis) =
+                bspline_basis_derivative(index, DEGREE, parameter, &knots, control_count)
+            else {
+                return Ok(None);
+            };
+            *value = basis;
+        }
         matrix.push(row);
     }
-    ctx.charge_collection_items(control_count as u64, "creo interpolation input values")?;
-    let mut values = points.to_vec();
+    let mut values = Vec::new();
+    ctx.try_reserve_items(
+        &mut values,
+        control_count,
+        "creo interpolation input values",
+    )?;
+    values.extend_from_slice(points);
     values.extend(endpoint_derivatives);
     Ok(solve_vector_system(matrix, values)
         .map(|controls| InterpolationCurveData { knots, controls }))
@@ -280,9 +293,14 @@ pub(in super::super) fn saved_spline_nurbs(
     else {
         return Ok(None);
     };
-    ctx.charge_collection_items(control_points.len() as u64, "creo saved spline controls")?;
-    let control_points = control_points.into_iter().map(Point3::from).collect();
-    match NurbsCurve::from_lanes(3, knots, control_points, None, false) {
+    let mut converted_controls = Vec::new();
+    ctx.try_reserve_items(
+        &mut converted_controls,
+        control_points.len(),
+        "creo saved spline controls",
+    )?;
+    converted_controls.extend(control_points.into_iter().map(Point3::from));
+    match NurbsCurve::from_lanes(3, knots, converted_controls, None, false) {
         Ok(curve) => Ok(Some(curve)),
         Err(error) => {
             refusal.note(

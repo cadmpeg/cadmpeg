@@ -219,6 +219,21 @@ impl DecodeBudget {
         )
     }
 
+    pub(super) fn collection_allocation_failed(
+        &self,
+        charged: u64,
+        operation: &'static str,
+    ) -> CodecError {
+        self.refuse(
+            ResourceDimension::CollectionItems,
+            ResourceFailure::AllocationFailed,
+            self.policy.limits.max_collection_items,
+            self.collection_items.get() - charged,
+            charged,
+            operation,
+        )
+    }
+
     pub(super) fn enter_nested(
         &self,
         operation: &'static str,
