@@ -839,7 +839,7 @@ pub(super) fn project(
         let mut consumed = BTreeSet::new();
         let mut valid = true;
         for (shell_sequence, shell_sense) in definition.shells.iter().copied() {
-            let shell_definition = shell_definitions[&shell_sequence].clone();
+            let shell_definition = &shell_definitions[&shell_sequence];
             let shell_stem = if shell_sequence == entry.sequence && definition.shells.len() == 1 {
                 stem.clone()
             } else {
@@ -847,15 +847,15 @@ pub(super) fn project(
             };
             let shell_id = crate::ids::shell(&shell_stem);
             let mut shell_faces = reserve_vec(ctx, shell_definition.faces.len(), "iges B-rep shell face ids")?;
-            for (face_sequence, native_face_sense) in shell_definition.faces {
+            for &(face_sequence, native_face_sense) in &shell_definition.faces {
                 let face_sense = compose_sense(native_face_sense, shell_sense);
-                let face_definition = faces[&face_sequence].clone();
+                let face_definition = &faces[&face_sequence];
                 let surface_id =
                     crate::ids::surface(&crate::ids::Stem::directory(face_definition.surface));
                 let Some(support_geometry) = surface_positions
                     .get(surface_id.as_str())
                     .and_then(|position| ir.model.surfaces.get(*position))
-                    .map(|surface| surface.geometry.clone())
+                    .map(|surface| &surface.geometry)
                 else {
                     valid = false;
                     break;
@@ -864,7 +864,7 @@ pub(super) fn project(
                 sequences.record_face(&face_id, face_sequence, Some(ctx))?;
                 let loop_id_for = |sequence| crate::ids::r#loop(&shell_stem.child(sequence));
                 for loop_sequence in face_definition.loops.iter() {
-                    let uses = loops[&loop_sequence].clone();
+                    let uses = &loops[&loop_sequence];
                     let loop_id = loop_id_for(loop_sequence);
                     let edge_use_count = uses.iter().filter(|use_| matches!(use_, LoopUse::Edge { .. })).count();
                     let mut edge_use_indices = reserve_vec(ctx, edge_use_count, "iges B-rep edge-use positions")?;
@@ -1200,17 +1200,17 @@ pub(super) fn project(
                 if !valid {
                     break;
                 }
-                let face_loops = match face_definition.loops {
-                    FaceLoopPointers::OuterFirst { outer, inner } => {
-                        let mut inner_ids = reserve_vec(ctx, inner.len(), "iges B-rep face inner loop ids")?;
-                        inner_ids.extend(inner.into_iter().map(loop_id_for));
-                        cadmpeg_ir::topology::FaceLoops::classified(loop_id_for(outer), inner_ids)
-                    }
-                    FaceLoopPointers::Unclassified { first, rest } => {
-                        let count = rest.len().checked_add(1).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("iges B-rep face unspecified loop ids", u64::MAX, 1))?;
-                        let mut loop_ids = reserve_vec(ctx, count, "iges B-rep face unspecified loop ids")?;
-                        loop_ids.push(loop_id_for(first));
-                        loop_ids.extend(rest.into_iter().map(loop_id_for));
+                    let face_loops = match &face_definition.loops {
+                        FaceLoopPointers::OuterFirst { outer, inner } => {
+                            let mut inner_ids = reserve_vec(ctx, inner.len(), "iges B-rep face inner loop ids")?;
+                            inner_ids.extend(inner.iter().copied().map(loop_id_for));
+                            cadmpeg_ir::topology::FaceLoops::classified(loop_id_for(*outer), inner_ids)
+                        }
+                        FaceLoopPointers::Unclassified { first, rest } => {
+                            let count = rest.len().checked_add(1).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("iges B-rep face unspecified loop ids", u64::MAX, 1))?;
+                            let mut loop_ids = reserve_vec(ctx, count, "iges B-rep face unspecified loop ids")?;
+                            loop_ids.push(loop_id_for(*first));
+                            loop_ids.extend(rest.iter().copied().map(loop_id_for));
                         cadmpeg_ir::topology::FaceLoops::unspecified(loop_ids)
                     }
                 };
