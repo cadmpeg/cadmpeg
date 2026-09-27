@@ -15,8 +15,9 @@ use super::{
 };
 
 /// A JT graph with resolved owners and consistent repeated segment fields.
-#[derive(Debug, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "DisplayJtGraphWire")]
+#[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(Deserialize))]
+#[cfg_attr(test, serde(try_from = "DisplayJtGraphWire"))]
 pub(crate) struct DisplayJtGraph(DisplayJtGraphWire);
 
 /// Raw JT arenas before aggregate admission.
@@ -239,6 +240,7 @@ impl DisplayJtGraph {
     }
 }
 
+#[cfg(test)]
 impl TryFrom<DisplayJtGraphWire> for DisplayJtGraph {
     type Error = NativeConvertError;
 
@@ -247,6 +249,7 @@ impl TryFrom<DisplayJtGraphWire> for DisplayJtGraph {
     }
 }
 
+#[cfg(test)]
 impl Serialize for DisplayJtGraph {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.0.serialize(serializer)
