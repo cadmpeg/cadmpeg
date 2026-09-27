@@ -132,7 +132,7 @@ pub(crate) fn transfer(
         reserve_vec_items(ctx, &mut output, 1, "fcstd joint records")?;
         output.push(
             JointRecord::try_new(
-                crate::native::native_id("joint", &object.name),
+                crate::native::native_id_charged(ctx, "joint", &object.name)?,
                 retained_string(ctx, &object.id, "fcstd joint object")?,
                 body,
                 parameters,
@@ -225,12 +225,9 @@ pub(crate) fn transfer_neutral(
                 None => JointOperand::root(object, subelements),
             }))
         };
-        let key = crate::native::model_key(&record.object, "constraint")
-            .map_err(CodecError::malformed)?;
-        let id = JointId::compose(
-            &cadmpeg_ir::identity_namespace!("fcstd", "model", "joint"),
-            key,
-        );
+        let id = JointId::mint(crate::native::model_id_charged(
+            ctx, "joint", &record.object, "constraint",
+        )?).map_err(CodecError::malformed)?;
         let angle = scalar("Angle").map(|value| value.get().to_radians());
         let distance = scalar("Distance");
         let distance2 = scalar("Distance2");
@@ -614,6 +611,64 @@ pub(crate) mod tests {
         assert!(matches!(super::transfer(&ctx, &[object], &[property]),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.operation == "fcstd joint records"));
+    }
+
+    #[test]
+    fn joint_native_identity_refuses_at_retained_limit() {
+        let object = crate::native::ObjectRecord {
+            id: "fcstd:native:object#Joint".into(),
+            name: "Joint".into(),
+            type_name: "App::FeaturePython".into(),
+            persistent_id: None,
+            view_type: None,
+            attributes: Default::default(),
+            dependencies: Vec::new(),
+            dependency_allow_partial: None,
+            order: 0,
+            data: None,
+        };
+        let property = crate::native::PropertyRecord {
+            id: "property".into(),
+            owner: object.id.clone(),
+            name: "ObjectToGround".into(),
+            type_name: "App::PropertyLink".into(),
+            family: crate::native::PropertyFamily::Unknown,
+            status: None,
+            body: crate::native::PropertyBody::Transient,
+            order: 0,
+            xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
+                .expect("valid XML span"),
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes = crate::native::native_id("joint", &object.name).len() as u64 - 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        assert!(matches!(super::transfer(&ctx, &[object], &[property]),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "FreeCAD native identity"));
+    }
+
+    #[test]
+    fn joint_model_identity_refuses_at_retained_limit() {
+        let record = crate::native::joint::JointRecord::try_new(
+            "fcstd:native:joint#Joint".into(),
+            "fcstd:native:object#Joint".into(),
+            crate::native::joint::JointBody::Grounded {
+                reference: None,
+                placement: Default::default(),
+            },
+            Default::default(),
+        ).expect("grounded joint record");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes = crate::native::model_id(
+            "joint", &record.object, "constraint").len() as u64 - 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        assert!(matches!(super::transfer_neutral(&ctx, &[record], &[]),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "FreeCAD model identity"));
     }
     use cadmpeg_ir::products::PairedJointKind;
     use cadmpeg_ir::{Codec, DecodeOptions};
