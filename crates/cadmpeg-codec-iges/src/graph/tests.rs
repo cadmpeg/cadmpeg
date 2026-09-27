@@ -257,3 +257,37 @@ fn zero_pointer_absence_creates_no_reference_edge() {
     assert!(graph[&1].is_empty());
     assert!(super::summary_notes(&graph).is_empty());
 }
+
+#[test]
+fn reference_target_id_streams_once_with_native_retained_limit() {
+    use cadmpeg_test_support::native_serialization::assert_native_limit;
+    use serde::Serialize;
+
+    #[derive(Serialize)]
+    struct Row<'a> {
+        id: &'static str,
+        edge: &'a super::ReferenceEdge,
+    }
+
+    let edge = super::ReferenceEdge {
+        origin: super::ReferenceOrigin::Directory(super::ReferenceKind::Transform),
+        raw_pointer: 1,
+        resolution: super::Resolution::Resolved(1),
+        expected: ReferenceExpectation::Named(ExpectationLabel::Type124Transformation),
+    };
+    let record = Row {
+        id: "iges:reference:edge#1",
+        edge: &edge,
+    };
+    assert_native_limit(
+        &record,
+        serde_json::json!({
+            "id": "iges:reference:edge#1",
+            "edge": {
+                "kind": "transform", "raw_pointer": 1,
+                "target": "iges:entity:directory#1", "resolution": "resolved",
+                "expected": "type-124-transformation"
+            }
+        }),
+    );
+}

@@ -11,4 +11,4 @@ mod passthrough;
 pub(super) mod report;
 mod report_coverage;
 mod report_losses;
-mod units;
+pub(super) mod units;

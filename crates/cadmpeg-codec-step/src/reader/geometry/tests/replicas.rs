@@ -15,7 +15,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::index::ModelIndex;
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
@@ -44,12 +44,63 @@ fn placement_axis_normalization_preserves_extreme_finite_directions() {
         Vector3::new(f64::from_bits(1), 0.0, 0.0),
     ] {
         assert_eq!(
-            super::super::normalize(vector),
+            super::super::normalize(vector).map(|unit| *unit.as_raw()),
             Some(Vector3::new(1.0, 0.0, 0.0))
         );
     }
     assert!(super::super::normalize(Vector3::new(0.0, 0.0, 0.0)).is_none());
     assert!(super::super::normalize(Vector3::new(f64::NAN, 1.0, 0.0)).is_none());
+}
+
+#[test]
+fn placement_projection_keeps_reciprocal_normalization_bits() {
+    let old_normalize = |vector: Vector3| {
+        let scale = vector.x.abs().max(vector.y.abs()).max(vector.z.abs());
+        let scaled = Vector3::new(vector.x / scale, vector.y / scale, vector.z / scale);
+        scaled.scale(1.0 / scaled.norm())
+    };
+    let axis = Vector3::new(3.0, 4.0, 5.0);
+    let reference = Vector3::new(4.0, 2.0, 1.0);
+    let admitted_axis = super::super::normalize(axis).expect("axis");
+    let admitted_reference = super::super::normalize(reference).expect("reference");
+    let old_axis = old_normalize(old_normalize(axis));
+    let old_reference = old_normalize(old_normalize(reference));
+    let expected = old_normalize(old_reference - old_axis.scale(old_reference.dot(old_axis)));
+    let actual =
+        super::super::project_axis(admitted_reference, admitted_axis).expect("projected reference");
+    assert_eq!(actual.as_raw().x.to_bits(), expected.x.to_bits());
+    assert_eq!(actual.as_raw().y.to_bits(), expected.y.to_bits());
+    assert_eq!(actual.as_raw().z.to_bits(), expected.z.to_bits());
+}
+
+#[test]
+fn placement_2d_axes_keep_hypot_normalization_bits() {
+    use cadmpeg_ir::units::HypotDirection2;
+    let old_normalize = |u: f64, v: f64| {
+        let length = u.hypot(v);
+        Point2::new(u / length, v / length)
+    };
+    let source_x = old_normalize(3.0, 4.0);
+    let source_y = old_normalize(2.0, 1.0);
+    let old_x = old_normalize(source_x.u, source_x.v);
+    let old_y = old_normalize(source_y.u, source_y.v);
+    let mut old_perpendicular = Point2::new(-old_x.v, old_x.u);
+    if old_y.u * old_perpendicular.u + old_y.v * old_perpendicular.v < 0.0 {
+        old_perpendicular = Point2::new(-old_perpendicular.u, -old_perpendicular.v);
+    }
+    let x_axis = HypotDirection2::normalized_with_length([3.0, 4.0])
+        .expect("x direction")
+        .0;
+    let y_axis = HypotDirection2::normalized_with_length([2.0, 1.0])
+        .expect("y direction")
+        .0;
+    let (actual_x, actual_y) = super::super::base_axis_2d(Some(x_axis), Some(y_axis));
+    let [actual_x_u, actual_x_v] = actual_x.get();
+    let [actual_y_u, actual_y_v] = actual_y.get();
+    assert_eq!(actual_x_u.to_bits(), old_x.u.to_bits());
+    assert_eq!(actual_x_v.to_bits(), old_x.v.to_bits());
+    assert_eq!(actual_y_u.to_bits(), old_perpendicular.u.to_bits());
+    assert_eq!(actual_y_v.to_bits(), old_perpendicular.v.to_bits());
 }
 
 #[test]

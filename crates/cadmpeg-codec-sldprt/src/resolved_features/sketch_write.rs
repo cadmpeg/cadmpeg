@@ -9,10 +9,12 @@ use cadmpeg_ir::ids::{
     VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::{Angle, PositiveLength};
 use cadmpeg_ir::sketches::{Sketch, SketchGeometry, SketchGeometryDefinition};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
+use cadmpeg_ir::units::FinitePoint2;
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::io::Write;
@@ -456,10 +458,11 @@ fn generated_sketch_curve(
         SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
-            major_radius,
-            minor_radius,
+            radii,
             bounds,
         } => {
+            let major_radius = radii.major();
+            let minor_radius = radii.minor();
             let point = |parameter: f64| {
                 Point2::new(
                     center.u + major_angle.get().cos() * major_radius.get() * parameter.cos()
@@ -475,8 +478,15 @@ fn generated_sketch_curve(
                     [start.get(), end.get()]
                 });
             let full = bounds.is_none();
+            let frame = cadmpeg_ir::units::OrthonormalFrame3::new(
+                normal,
+                vector(major_angle.get().cos(), major_angle.get().sin()),
+            )
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("EllipseCurve.axis/major_direction must form an orthonormal frame"))?;
+            let center_3d = cadmpeg_ir::features::FinitePoint3::new(lift(center.get()))
+                .ok_or_else(|| cadmpeg_core::CodecError::malformed("EllipseCurve.center must be finite"))?;
             Ok(GeneratedSketchCurve {
-                curve: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(lift(center.get()), normal, vector(major_angle.get().cos(), major_angle.get().sin()), major_radius.get(), minor_radius.get()).map_err(cadmpeg_core::CodecError::malformed)?)),
+                curve: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(cadmpeg_ir::geometry::analytic::EllipseCurve::new(center_3d, frame, *radii))),
                 start: point(start),
                 end: if full { point(start) } else { point(end) },
                 param_range: [start, end],
@@ -583,16 +593,13 @@ pub(super) fn patch_line_profiles(
                 "SLDPRT sketch write-back requires native sketch provenance".into(),
             )
         })?;
-        let (origin, normal, u_axis) = sketch
-            .resolved_placement()
-            .map(|(origin, normal, u_axis)| (origin.get(), normal.get(), u_axis.get()))
-            .ok_or_else(|| {
-                cadmpeg_core::CodecError::NotImplemented(format!(
-                    "SLDPRT sketch write-back requires resolved placement for {}",
-                    sketch.id.as_str()
-                ))
-            })?;
-        let v_axis = normal.cross(u_axis);
+        let (origin, normal, u_axis) = sketch.resolved_placement().ok_or_else(|| {
+            cadmpeg_core::CodecError::NotImplemented(format!(
+                "SLDPRT sketch write-back requires resolved placement for {}",
+                sketch.id.as_str()
+            ))
+        })?;
+        let v_axis = normal.get().cross(u_axis.get());
         for entity in ir
             .model
             .sketch_entities
@@ -609,7 +616,7 @@ pub(super) fn patch_line_profiles(
                 SketchGeometryDefinition::Point { position } => {
                     let reference = &entity.endpoint_refs[0];
                     let (stream, attr) = parse_point_ref(reference)?;
-                    let point = lift_point(position.get(), origin, u_axis, v_axis);
+                    let point = lift_point(position.get(), origin.get(), u_axis.get(), v_axis);
                     let key = (lane_id.clone(), stream, attr);
                     if let Some(previous) = requested.insert(key, point) {
                         if Point3::distance(previous, point) > EPS_SKETCH_WRITE_GEOMETRY {
@@ -622,7 +629,7 @@ pub(super) fn patch_line_profiles(
                 SketchGeometryDefinition::Line { start, end } => {
                     for (reference, point) in entity.endpoint_refs.iter().zip([start, end]) {
                         let (stream, attr) = parse_point_ref(reference)?;
-                        let point = lift_point(point.get(), origin, u_axis, v_axis);
+                        let point = lift_point(point.get(), origin.get(), u_axis.get(), v_axis);
                         let key = (lane_id.clone(), stream, attr);
                         if let Some(previous) = requested.insert(key, point) {
                             if Point3::distance(previous, point) > EPS_SKETCH_WRITE_GEOMETRY {
@@ -647,7 +654,7 @@ pub(super) fn patch_line_profiles(
                     if let Some(endpoints) = bounded_endpoints(geometry) {
                         for (reference, point) in entity.endpoint_refs.iter().zip(endpoints) {
                             let (point_stream, attr) = parse_point_ref(reference)?;
-                            let point = lift_point(point, origin, u_axis, v_axis);
+                            let point = lift_point(point, origin.get(), u_axis.get(), v_axis);
                             let key = (lane_id.clone(), point_stream, attr);
                             if let Some(previous) = requested.insert(key, point) {
                                 if Point3::distance(previous, point) > EPS_SKETCH_WRITE_GEOMETRY {
@@ -715,10 +722,11 @@ fn bounded_endpoints(geometry: &SketchGeometry) -> Option<[Point2; 2]> {
         SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
-            major_radius,
-            minor_radius,
+            radii,
             bounds: Some([start, end]),
         } => {
+            let major_radius = radii.major();
+            let minor_radius = radii.minor();
             let point = |parameter: f64| {
                 Point2::new(
                     center.u + major_angle.get().cos() * major_radius.get() * parameter.cos()
@@ -743,25 +751,24 @@ fn bounded_endpoints(geometry: &SketchGeometry) -> Option<[Point2; 2]> {
 
 enum PatchCurve {
     Circle {
-        center: Point2,
-        radius: f64,
+        center: FinitePoint2,
+        radius: PositiveLength,
     },
     Arc {
-        center: Point2,
-        radius: f64,
-        start_angle: f64,
-        end_angle: f64,
+        center: FinitePoint2,
+        radius: PositiveLength,
+        start_angle: Angle,
+        end_angle: Angle,
     },
     Ellipse(PatchEllipse),
     Nurbs(cadmpeg_ir::geometry::pcurve::PcurveNurbs),
 }
 
 struct PatchEllipse {
-    center: Point2,
-    major_angle: f64,
-    major_radius: f64,
-    minor_radius: f64,
-    bounds: Option<[f64; 2]>,
+    center: FinitePoint2,
+    major_angle: Angle,
+    radii: cadmpeg_ir::sketches::OrderedMajorRadius,
+    bounds: Option<[Angle; 2]>,
 }
 
 impl TryFrom<&SketchGeometry> for PatchCurve {
@@ -770,8 +777,8 @@ impl TryFrom<&SketchGeometry> for PatchCurve {
     fn try_from(geometry: &SketchGeometry) -> Result<Self, Self::Error> {
         match geometry.definition() {
             SketchGeometryDefinition::Circle { center, radius } => Ok(Self::Circle {
-                center: center.get(),
-                radius: radius.get(),
+                center: *center,
+                radius: *radius,
             }),
             SketchGeometryDefinition::Arc {
                 center,
@@ -779,23 +786,21 @@ impl TryFrom<&SketchGeometry> for PatchCurve {
                 start_angle,
                 end_angle,
             } => Ok(Self::Arc {
-                center: center.get(),
-                radius: radius.get(),
-                start_angle: start_angle.get(),
-                end_angle: end_angle.get(),
+                center: *center,
+                radius: *radius,
+                start_angle: *start_angle,
+                end_angle: *end_angle,
             }),
             SketchGeometryDefinition::Ellipse {
                 center,
                 major_angle,
-                major_radius,
-                minor_radius,
+                radii,
                 bounds,
             } => Ok(Self::Ellipse(PatchEllipse {
-                center: center.get(),
-                major_angle: major_angle.get(),
-                major_radius: major_radius.get(),
-                minor_radius: minor_radius.get(),
-                bounds: bounds.map(|[start, end]| [start.get(), end.get()]),
+                center: *center,
+                major_angle: *major_angle,
+                radii: *radii,
+                bounds: *bounds,
             })),
             SketchGeometryDefinition::Nurbs { curve } => Ok(Self::Nurbs(curve.clone())),
             _ => Err(cadmpeg_core::CodecError::NotImplemented(
@@ -812,8 +817,8 @@ struct CurvePatch {
     start_attr: u16,
     end_attr: u16,
     geometry: PatchCurve,
-    origin: Point3,
-    u_axis: Vector3,
+    origin: cadmpeg_ir::features::FinitePoint3,
+    u_axis: cadmpeg_ir::features::FiniteVector3,
     v_axis: Vector3,
 }
 
@@ -897,17 +902,14 @@ fn patch_direct_curve_body(
         }
     };
     let center = cadmpeg_ir::features::FinitePoint3::new(lift_point(
-        center_2d,
-        request.origin,
-        request.u_axis,
+        center_2d.get(),
+        request.origin.get(),
+        request.u_axis.get(),
         request.v_axis,
     ))
     .ok_or_else(|| cadmpeg_core::CodecError::malformed("CircleCurve.center must be finite"))?;
-    let circle_radius = cadmpeg_ir::scalar::PositiveLength::new(radius).ok_or_else(|| {
-        cadmpeg_core::CodecError::malformed("CircleCurve.radius must be positive and finite")
-    })?;
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::analytic::CircleCurve::new(center, frame, circle_radius),
+        cadmpeg_ir::geometry::analytic::CircleCurve::new(center, frame, radius),
     ));
     let (_, values) = crate::writer::curve_values(&curve, 0.001)?;
     if !crate::brep::patch_compact_values(body, request.carrier_attr, &values) {
@@ -915,12 +917,14 @@ fn patch_direct_curve_body(
             "SLDPRT sketch circle carrier cannot be patched".into(),
         ));
     }
+    let center_2d = center_2d.get();
+    let radius = radius.get();
     let endpoints = angles.map_or(
         [offset_point(center_2d, polar(radius, 0.0)); 2],
         |(start, end)| {
             [
-                offset_point(center_2d, polar(radius, start)),
-                offset_point(center_2d, polar(radius, end)),
+                offset_point(center_2d, polar(radius, start.get())),
+                offset_point(center_2d, polar(radius, end.get())),
             ]
         },
     );
@@ -928,7 +932,12 @@ fn patch_direct_curve_body(
         .into_iter()
         .zip(endpoints)
     {
-        let point = lift_point(endpoint, request.origin, request.u_axis, request.v_axis);
+        let point = lift_point(
+            endpoint,
+            request.origin.get(),
+            request.u_axis.get(),
+            request.v_axis,
+        );
         if !crate::brep::topology::patch_point(
             body,
             attr,
@@ -1009,7 +1018,14 @@ fn patch_direct_nurbs(
     curve: &cadmpeg_ir::geometry::pcurve::PcurveNurbs,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let curve = curve
-        .lift(|point| lift_point(point, request.origin, request.u_axis, request.v_axis))
+        .lift(|point| {
+            lift_point(
+                point,
+                request.origin.get(),
+                request.u_axis.get(),
+                request.v_axis,
+            )
+        })
         .map_err(|error| {
             cadmpeg_core::CodecError::malformed(format_args!(
                 "SLDPRT sketch NURBS lift is invalid: {error}"
@@ -1046,15 +1062,21 @@ fn patch_direct_ellipse(
     let PatchEllipse {
         center,
         major_angle,
-        major_radius,
-        minor_radius,
+        radii,
         bounds,
     } = *ellipse;
-    let center_3d = lift_point(center, request.origin, request.u_axis, request.v_axis);
+    let center_3d = lift_point(
+        center.get(),
+        request.origin.get(),
+        request.u_axis.get(),
+        request.v_axis,
+    );
+    let major_angle_value = major_angle.get();
+    let u_axis = request.u_axis.get();
     let major_direction = Vector3::new(
-        request.u_axis.x * major_angle.cos() + request.v_axis.x * major_angle.sin(),
-        request.u_axis.y * major_angle.cos() + request.v_axis.y * major_angle.sin(),
-        request.u_axis.z * major_angle.cos() + request.v_axis.z * major_angle.sin(),
+        u_axis.x * major_angle_value.cos() + request.v_axis.x * major_angle_value.sin(),
+        u_axis.y * major_angle_value.cos() + request.v_axis.y * major_angle_value.sin(),
+        u_axis.z * major_angle_value.cos() + request.v_axis.z * major_angle_value.sin(),
     );
     let frame = cadmpeg_ir::units::UnitVector3::new(major_direction)
         .and_then(|major_direction| {
@@ -1067,26 +1089,8 @@ fn patch_direct_ellipse(
         })?;
     let center_3d = cadmpeg_ir::features::FinitePoint3::new(center_3d)
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("EllipseCurve.center must be finite"))?;
-    let admitted_major_radius =
-        cadmpeg_ir::scalar::PositiveLength::new(major_radius).ok_or_else(|| {
-            cadmpeg_core::CodecError::malformed(
-                "EllipseCurve.major_radius must be positive and finite",
-            )
-        })?;
-    let admitted_minor_radius =
-        cadmpeg_ir::scalar::PositiveLength::new(minor_radius).ok_or_else(|| {
-            cadmpeg_core::CodecError::malformed(
-                "EllipseCurve.minor_radius must be positive and finite",
-            )
-        })?;
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-        cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
-            center_3d,
-            frame,
-            admitted_major_radius,
-            admitted_minor_radius,
-        )
-        .map_err(cadmpeg_core::CodecError::malformed)?,
+        cadmpeg_ir::geometry::analytic::EllipseCurve::new(center_3d, frame, radii),
     ));
     let (_, values) = crate::writer::curve_values(&curve, 0.001)?;
     if !crate::brep::patch_compact_values(body, request.carrier_attr, &values) {
@@ -1094,19 +1098,27 @@ fn patch_direct_ellipse(
             "SLDPRT sketch ellipse carrier cannot be patched".into(),
         ));
     }
-    let parameters = bounds.unwrap_or([0.0, 0.0]);
+    let parameters = bounds.map_or([0.0, 0.0], |bounds| bounds.map(Angle::get));
+    let center = center.get();
+    let major_radius = radii.major().get();
+    let minor_radius = radii.minor().get();
     for (attr, parameter) in [request.start_attr, request.end_attr]
         .into_iter()
         .zip(parameters)
     {
         let local = Point2::new(
-            center.u + major_angle.cos() * major_radius * parameter.cos()
-                - major_angle.sin() * minor_radius * parameter.sin(),
+            center.u + major_angle_value.cos() * major_radius * parameter.cos()
+                - major_angle_value.sin() * minor_radius * parameter.sin(),
             center.v
-                + major_angle.sin() * major_radius * parameter.cos()
-                + major_angle.cos() * minor_radius * parameter.sin(),
+                + major_angle_value.sin() * major_radius * parameter.cos()
+                + major_angle_value.cos() * minor_radius * parameter.sin(),
         );
-        let point = lift_point(local, request.origin, request.u_axis, request.v_axis);
+        let point = lift_point(
+            local,
+            request.origin.get(),
+            request.u_axis.get(),
+            request.v_axis,
+        );
         if !crate::brep::topology::patch_point(
             body,
             attr,

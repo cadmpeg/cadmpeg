@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Ordered source-block metadata for reconstructed feature payloads.
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{
+    ser::{SerializeSeq, SerializeStruct},
+    Deserialize, Deserializer, Serialize, Serializer,
+};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,7 +79,7 @@ impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> Featur
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct PayloadContentWire {
     data_blocks: Vec<String>,
     byte_len: u64,
@@ -86,31 +89,73 @@ struct PayloadContentWire {
     block_source_offsets: Vec<u64>,
 }
 
+struct BlockIds<'a>(&'a [FeaturePayloadBlock]);
+
+impl Serialize for BlockIds<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut items = serializer.serialize_seq(Some(self.0.len()))?;
+        for block in self.0 {
+            items.serialize_element(&block.id)?;
+        }
+        items.end()
+    }
+}
+
+struct BlockPayloadOffsets<'a>(&'a [FeaturePayloadBlock]);
+
+impl Serialize for BlockPayloadOffsets<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut items = serializer.serialize_seq(Some(self.0.len()))?;
+        let mut offset = 0_u64;
+        for block in self.0 {
+            items.serialize_element(&offset)?;
+            offset = offset
+                .checked_add(block.byte_len)
+                .ok_or_else(|| serde::ser::Error::custom("block_byte_lengths overflow byte_len"))?;
+        }
+        items.end()
+    }
+}
+
+struct BlockByteLengths<'a>(&'a [FeaturePayloadBlock]);
+
+impl Serialize for BlockByteLengths<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut items = serializer.serialize_seq(Some(self.0.len()))?;
+        for block in self.0 {
+            items.serialize_element(&block.byte_len)?;
+        }
+        items.end()
+    }
+}
+
+struct BlockSourceOffsets<'a>(&'a [FeaturePayloadBlock]);
+
+impl Serialize for BlockSourceOffsets<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut items = serializer.serialize_seq(Some(self.0.len()))?;
+        for block in self.0 {
+            items.serialize_element(&block.source_offset)?;
+        }
+        items.end()
+    }
+}
+
 impl<B: AsRef<[FeaturePayloadBlock]>> Serialize for FeaturePayloadContent<B> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut byte_len = 0;
-        let block_payload_offsets = self
-            .blocks()
+        let blocks = self.blocks();
+        let byte_len = blocks
             .iter()
-            .map(|block| {
-                let offset = byte_len;
-                byte_len += block.byte_len;
-                offset
-            })
-            .collect();
-        PayloadContentWire {
-            data_blocks: self.block_ids().cloned().collect(),
-            byte_len,
-            sha256: self.sha256.clone(),
-            block_payload_offsets,
-            block_byte_lengths: self.blocks().iter().map(|block| block.byte_len).collect(),
-            block_source_offsets: self
-                .blocks()
-                .iter()
-                .map(|block| block.source_offset)
-                .collect(),
-        }
-        .serialize(serializer)
+            .try_fold(0_u64, |total, block| total.checked_add(block.byte_len))
+            .ok_or_else(|| serde::ser::Error::custom("block_byte_lengths overflow byte_len"))?;
+        let mut fields = serializer.serialize_struct("PayloadContentWire", 6)?;
+        fields.serialize_field("data_blocks", &BlockIds(blocks))?;
+        fields.serialize_field("byte_len", &byte_len)?;
+        fields.serialize_field("sha256", &self.sha256)?;
+        fields.serialize_field("block_payload_offsets", &BlockPayloadOffsets(blocks))?;
+        fields.serialize_field("block_byte_lengths", &BlockByteLengths(blocks))?;
+        fields.serialize_field("block_source_offsets", &BlockSourceOffsets(blocks))?;
+        fields.end()
     }
 }
 
@@ -168,6 +213,29 @@ where
 #[cfg(test)]
 mod tests {
     use super::{FeaturePayloadBlock, FeaturePayloadContent};
+
+    #[test]
+    fn payload_content_columns_stream_once_with_native_retained_limit() {
+        #[derive(serde::Serialize)]
+        struct Row<'a> {
+            id: &'static str,
+            content: &'a FeaturePayloadContent<Vec<FeaturePayloadBlock>>,
+        }
+
+        let content: FeaturePayloadContent<Vec<FeaturePayloadBlock>> =
+            serde_json::from_str(TWO_BLOCKS).unwrap();
+        let record = Row {
+            id: "nx:feature-history:payload#1",
+            content: &content,
+        };
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::json!({
+                "id": record.id,
+                "content": serde_json::from_str::<serde_json::Value>(TWO_BLOCKS).unwrap(),
+            }),
+        );
+    }
 
     const TWO_BLOCKS: &str = r#"{"data_blocks":["first","second"],"byte_len":8,"sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","block_payload_offsets":[0,3],"block_byte_lengths":[3,5],"block_source_offsets":[10,100]}"#;
 

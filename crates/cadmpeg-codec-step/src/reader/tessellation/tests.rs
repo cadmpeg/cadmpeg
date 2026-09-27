@@ -13,6 +13,7 @@ use cadmpeg_core::decode::{
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::loss::StepLossCode;
@@ -47,7 +48,13 @@ fn decode_tessellation_under_policy(
     let mut ir = CadIr::empty();
     let geometry = super::super::geometry::decode(&exchange, &mut ir).value;
     let index = super::super::index::CarrierIndex::from_ir(&ir);
-    let topology = super::super::topology::decode(&exchange, &mut ir, &index, None)
+    let topology_arena = DecodeArena::new();
+    let (topology_ctx, _) = DecodeContext::from_root_bytes(
+        source.as_bytes(),
+        &topology_arena,
+        &DecodePolicy::service(),
+    )?;
+    let topology = super::super::topology::decode(&exchange, &mut ir, &index, &topology_ctx)
         .expect("test topology decodes")
         .value;
     let arena = DecodeArena::new();
@@ -689,7 +696,10 @@ fn tessellation_normal_rows_preserve_extreme_finite_directions() {
     assert_eq!(
         super::normal_rows(Some(&rows), &ctx)
             .expect("normal rows fit the service profile")
-            .map(|(normals, _bytes)| normals),
+            .map(|(normals, _bytes)| normals
+                .into_iter()
+                .map(FiniteVector3::get)
+                .collect::<Vec<_>>()),
         Some(vec![
             Vector3::new(1.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),

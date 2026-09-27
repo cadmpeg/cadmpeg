@@ -11,6 +11,8 @@ use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::test_support::{build_prt, push_named_analytic_prototype};
 use crate::CreoCodec;
 
+const EPS_PROTOTYPE_RADIUS_MM: f64 = 1.0e-8;
+
 #[test]
 fn first_instance_cone_prototype_transfers_its_complete_model_space_frame() {
     const EPS_CONE_FRAME: f64 = f64::EPSILON * 8192.0;
@@ -184,6 +186,52 @@ fn first_instance_type26_radius_override_replaces_prototype_radii() {
     assert_eq!(ref_direction, [0.0, 1.0, 0.0].into());
     assert_eq!(major_radius, 0.499_999_999_999_999_94);
     assert_eq!(minor_radius, 0.249_999_999_951_747_04);
+}
+
+#[test]
+fn first_instance_torus_radii_are_in_millimeters_at_ir_admission() {
+    let mut payload = b"srf_array\0\xf8\x01".to_vec();
+    payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(&[
+        0x18, 0x0d, 0x41, 0xcf, 0xff, 0xff, 0xff, 0xe5, 0x79, 0x7b, 0x0e, 0x29, 0xdf, 0xff,
+    ]);
+    payload.push(0xe3);
+    push_named_analytic_prototype(&mut payload, "torus", &[("radius1", 1.0), ("radius2", 2.0)]);
+    payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+    let mut scan = crate::container::scan_bytes_ok(build_prt(
+        "prototype-override",
+        &[("ND:0:VisibGeom:0", payload)],
+    ));
+    scan.framing.principal_unit = Some(crate::legacy::PrincipalUnitSystem::InchPoundMassSecond);
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    let mut losses = Vec::new();
+    let scale = cadmpeg_ir::scalar::PositiveReal::new(25.4).expect("inch scale");
+    let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::new(Some(scale));
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::transfer_first_instance_prototype_surfaces(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut annotations,
+            &mut losses,
+            &mut source_carriers,
+        )
+        .expect("torus prototype transfer");
+    });
+    let surface = ir.model.surfaces.first().expect("torus carrier");
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus)) = &surface.geometry else {
+        panic!("torus carrier changed family");
+    };
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(source_torus)) =
+        source_carriers.surface_geometry(surface)
+    else {
+        panic!("source torus carrier changed family");
+    };
+    assert!((source_torus.major_radius().get() - 0.5).abs() <= EPS_PROTOTYPE_RADIUS_MM);
+    assert!((source_torus.minor_radius().get() - 0.25).abs() <= EPS_PROTOTYPE_RADIUS_MM);
+    assert!((torus.major_radius().get() - 12.7).abs() <= EPS_PROTOTYPE_RADIUS_MM);
+    assert!((torus.minor_radius().get() - 6.35).abs() <= EPS_PROTOTYPE_RADIUS_MM);
 }
 
 #[test]

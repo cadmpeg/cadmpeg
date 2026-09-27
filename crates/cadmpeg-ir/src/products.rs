@@ -787,6 +787,20 @@ mod tests {
     }
 
     #[test]
+    fn joint_limits_from_parts_checks_only_presence_and_order() {
+        let lower = crate::scalar::FiniteReal::new(-2.0).unwrap();
+        let upper = crate::scalar::FiniteReal::new(1.0).unwrap();
+        assert!(JointLimits::from_parts(None, None).is_none());
+        assert!(JointLimits::from_parts(Some(upper), Some(lower)).is_none());
+        assert_eq!(
+            JointLimits::from_parts(Some(lower), Some(upper)),
+            Some(JointLimits::Range(
+                super::JointLimitRange::new(lower, upper).unwrap()
+            ))
+        );
+    }
+
+    #[test]
     fn a_joint_limit_range_owns_the_order_of_its_bounds() {
         use super::JointLimitRange;
         use crate::scalar::FiniteReal;
@@ -1141,6 +1155,11 @@ impl JointLimits {
             None => None,
             Some(value) => Some(FiniteReal::new(value)?),
         };
+        Self::from_parts(minimum, maximum)
+    }
+
+    /// Build from admitted bounds; check only presence and order.
+    pub fn from_parts(minimum: Option<FiniteReal>, maximum: Option<FiniteReal>) -> Option<Self> {
         match (minimum, maximum) {
             (None, None) => None,
             (Some(minimum), None) => Some(Self::Minimum { minimum }),

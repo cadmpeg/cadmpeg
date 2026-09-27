@@ -2209,7 +2209,7 @@ struct HelixPathConstructionWire {
 /// The two helix constructions state the same five values, so they take them
 /// as one argument and each admits them against its own contract.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct HelixFrame {
+pub struct HelixFrame<Axis = Vector3> {
     /// Helix centre in model space.
     pub center: Point3,
     /// Major radial vector.
@@ -2219,7 +2219,7 @@ pub struct HelixFrame {
     /// Pitch vector along the axis.
     pub pitch: Vector3,
     /// Helix axis direction.
-    pub axis: Vector3,
+    pub axis: Axis,
 }
 
 impl HelixPathConstruction {
@@ -2228,6 +2228,24 @@ impl HelixPathConstruction {
         angle_range: [f64; 2],
         frame: HelixFrame,
         apex_factor: f64,
+    ) -> Result<Self, &'static str> {
+        Self::try_from_axis(angle_range, frame, apex_factor, FiniteVector3::new)
+    }
+
+    /// Build a helix path from an already admitted unit axis.
+    pub fn try_with_unit_axis(
+        angle_range: [f64; 2],
+        frame: HelixFrame<crate::units::UnitVector3>,
+        apex_factor: f64,
+    ) -> Result<Self, &'static str> {
+        Self::try_from_axis(angle_range, frame, apex_factor, |axis| Some(axis.into()))
+    }
+
+    fn try_from_axis<Axis>(
+        angle_range: [f64; 2],
+        frame: HelixFrame<Axis>,
+        apex_factor: f64,
+        admit_axis: impl FnOnce(Axis) -> Option<FiniteVector3>,
     ) -> Result<Self, &'static str> {
         let HelixFrame {
             center,
@@ -2260,7 +2278,7 @@ impl HelixPathConstruction {
             FiniteVector3::new(pitch).ok_or("HelixPathConstruction.pitch must be finite")?;
         let apex_factor = FiniteReal::new(apex_factor)
             .ok_or("HelixPathConstruction.apex_factor must be finite")?;
-        let axis = FiniteVector3::new(axis).ok_or("HelixPathConstruction.axis must be finite")?;
+        let axis = admit_axis(axis).ok_or("HelixPathConstruction.axis must be finite")?;
         Ok(Self {
             angle_range,
             center,
@@ -6517,13 +6535,31 @@ impl std::fmt::Display for ParameterRangeError {
 impl std::error::Error for ParameterRangeError {}
 
 impl DirectedParameterRange {
+    /// Build from finite angle endpoints, checking only that they differ.
+    pub fn from_angle_endpoints(
+        values: [crate::scalar::Angle; 2],
+    ) -> Result<Self, ParameterRangeError> {
+        (values[0] != values[1])
+            .then_some(Self(values.map(crate::scalar::Angle::get)))
+            .ok_or(ParameterRangeError)
+    }
+
+    /// Build from finite endpoints, checking only that they differ.
+    pub fn from_finite_endpoints(
+        values: [crate::scalar::FiniteReal; 2],
+    ) -> Result<Self, ParameterRangeError> {
+        (values[0] != values[1])
+            .then_some(Self(values.map(crate::scalar::FiniteReal::get)))
+            .ok_or(ParameterRangeError)
+    }
+
     /// Construct an interval. Either ascending or descending direction is valid.
     pub fn new(values: [f64; 2]) -> Result<Self, ParameterRangeError> {
-        if values.iter().all(|value| value.is_finite()) && values[0] != values[1] {
-            Ok(Self(values))
-        } else {
-            Err(ParameterRangeError)
-        }
+        let [first, second] = values.map(FiniteReal::new);
+        let [Some(first), Some(second)] = [first, second] else {
+            return Err(ParameterRangeError);
+        };
+        Self::from_finite_endpoints([first, second])
     }
 
     /// Return the directed endpoints.

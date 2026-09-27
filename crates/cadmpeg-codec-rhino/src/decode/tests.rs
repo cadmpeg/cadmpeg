@@ -2,12 +2,12 @@
 #![allow(clippy::disallowed_methods)]
 
 use super::{
-    append_record_links, c2_curve_to_nurbs_join, coedge_sense, edge_param_range, edge_vertices,
-    face_sense, finite_tolerance, hatch_plane_transform, region_shell_groups,
+    append_record_links, brep_free_vertex_indices, c2_curve_to_nurbs_join, coedge_sense,
+    edge_param_range, edge_vertices, face_sense, hatch_plane_transform, region_shell_groups,
     region_shell_groups_without_records, scaled_tolerance, seal_for_test, set_exactness,
-    stage_brep, stage_extrusion_caps, transform_decoded_curve, with_expand, with_expand_bytes,
-    BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError, CommittedExtrusionBoundary,
-    DecodeContext, ReportBuckets,
+    stage_brep, stage_extrusion_caps, transform_decoded_curve, transform_surface, with_expand,
+    with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
+    CommittedExtrusionBoundary, DecodeContext, ReferenceFailure, ReportBuckets,
 };
 use crate::chunks::ArchiveVersion;
 use crate::loss::Diagnostics;
@@ -48,12 +48,27 @@ fn decoded_nurbs(curve: NurbsCurve) -> crate::curves::DecodedCurve {
     )
 }
 
+fn with_collection_limit<R>(
+    limit: u64,
+    f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
+) -> R {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    f(&ctx)
+}
+
 /// Brep staging judges values the model already holds, so a refusal there names
 /// no offset instead of naming byte 0.
 #[test]
 fn a_brep_staging_refusal_names_no_byte() {
-    let error = scaled_tolerance(f64::MAX, crate::test_support::millimeter_scale(f64::MAX))
-        .expect_err("overflowing scaled tolerance");
+    let error = scaled_tolerance(
+        crate::brep::BrepTolerance::new(f64::MAX).expect("valid source tolerance"),
+        crate::test_support::millimeter_scale(f64::MAX),
+    )
+    .expect_err("overflowing scaled tolerance");
     assert!(matches!(
         error,
         crate::curves::GeometryError::Malformed(
@@ -99,29 +114,155 @@ fn rejected_expansion_discards_every_report_bucket() {
 
 #[test]
 fn hatch_plane_places_and_scales_plane_space_loops_once() {
+    let admitted = |values| {
+        crate::settings::CoordinateLane::Admitted(
+            cadmpeg_ir::units::FiniteVector::new(values).expect("finite test plane"),
+        )
+    };
     let plane = crate::settings::Plane {
-        origin: [10.0, 20.0, 30.0],
-        xaxis: [0.0, 1.0, 0.0],
-        yaxis: [-1.0, 0.0, 0.0],
-        zaxis: [0.0, 0.0, 1.0],
-        equation: [0.0, 0.0, 1.0, -30.0],
+        origin: admitted([10.0, 20.0, 30.0]),
+        xaxis: cadmpeg_ir::units::FiniteVector::new([0.0, 1.0, 0.0]).expect("finite test x axis"),
+        yaxis: cadmpeg_ir::units::FiniteVector::new([-1.0, 0.0, 0.0]).expect("finite test y axis"),
+        zaxis: cadmpeg_ir::units::FiniteVector::new([0.0, 0.0, 1.0]).expect("finite test z axis"),
+        equation: crate::settings::CoordinateLane::Admitted(
+            cadmpeg_ir::units::FiniteVector::new([0.0, 0.0, 1.0, -30.0])
+                .expect("finite test plane equation"),
+        ),
     };
     let mut curve = decoded_nurbs(line_nurbs(0.0, 2.0, false));
-    transform_decoded_curve(
-        &mut curve,
-        hatch_plane_transform(
-            &plane,
-            crate::test_support::millimeter_scale(10.0),
-            "rhino hatch record #test",
+    with_expand_bytes(&[], |expand| {
+        transform_decoded_curve(
+            expand.ctx(),
+            &mut curve,
+            hatch_plane_transform(
+                &plane,
+                crate::test_support::millimeter_scale(10.0),
+                "rhino hatch record #test",
+            )
+            .expect("a finite plane states a transform"),
         )
-        .expect("a finite plane states a transform"),
-    )
+    })
     .expect("required invariant");
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = curve.reported_geometry() else {
         panic!("hatch loop must remain NURBS");
     };
     assert_eq!(curve.control_points()[0], Point3::new(100.0, 200.0, 300.0));
     assert_eq!(curve.control_points()[1], Point3::new(100.0, 220.0, 300.0));
+}
+
+#[test]
+fn instance_line_transform_keeps_component_division_and_collapse_refusal() {
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::geometry::analytic::LineCurve;
+    use cadmpeg_ir::transform::Transform;
+    use cadmpeg_ir::units::UnitVector3;
+
+    let line = || {
+        crate::curves::DecodedCurve::leaf(
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(LineCurve::new(
+                FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).expect("finite origin"),
+                UnitVector3::new(Vector3::new(0.6, 0.8, 0.0)).expect("unit direction"),
+            ))),
+            Diagnostics::new(),
+        )
+    };
+    let transform = Transform::affine([
+        [2.0, 0.0, 0.0, 4.0],
+        [0.0, 3.0, 0.0, 5.0],
+        [0.0, 0.0, 4.0, 6.0],
+    ])
+    .expect("finite affine transform");
+    let mut decoded = line();
+    with_expand_bytes(&[], |expand| {
+        transform_decoded_curve(expand.ctx(), &mut decoded, transform)
+    })
+    .expect("transformed line");
+    let CurveGeometry::Solved(SolvedCurveGeometry::Line(transformed_line)) =
+        decoded.reported_geometry()
+    else {
+        panic!("line remains solved");
+    };
+    assert_eq!(
+        transformed_line.origin().get(),
+        Point3::new(6.0, 11.0, 18.0)
+    );
+    let delta = Vector3::new(
+        (1.0 + 0.6) * 2.0 + 4.0 - 6.0,
+        (2.0 + 0.8) * 3.0 + 5.0 - 11.0,
+        0.0,
+    );
+    let length = delta.norm();
+    assert_eq!(
+        [
+            transformed_line.direction().as_raw().x,
+            transformed_line.direction().as_raw().y,
+            transformed_line.direction().as_raw().z,
+        ]
+        .map(f64::to_bits),
+        [delta.x / length, delta.y / length, delta.z / length].map(f64::to_bits)
+    );
+
+    let mut collapsed = line();
+    let zero_linear = Transform::affine([
+        [0.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 0.0],
+    ])
+    .expect("finite collapsed transform");
+    assert!(matches!(
+        with_expand_bytes(&[], |expand| {
+            transform_decoded_curve(expand.ctx(), &mut collapsed, zero_linear)
+        }),
+        Err(ReferenceFailure::Semantic(message))
+            if message == "instance line transform collapsed its direction"
+    ));
+}
+
+#[test]
+fn instance_plane_transform_keeps_component_division() {
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::geometry::analytic::PlaneSurface;
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::transform::Transform;
+    use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
+
+    let frame = OrthonormalFrame3::from_units(
+        UnitVector3::Z_AXIS,
+        UnitVector3::new(Vector3::new(0.6, 0.8, 0.0)).expect("unit reference"),
+    )
+    .expect("orthogonal frame");
+    let mut surface = Surface {
+        id: "rhino:object:surface#normalized"
+            .try_into()
+            .expect("surface id"),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(PlaneSurface::new(
+            FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).expect("finite origin"),
+            frame,
+        ))),
+        source_object: None,
+    };
+    let transform = Transform::affine([
+        [2.0, 0.0, 0.0, 4.0],
+        [0.0, 3.0, 0.0, 5.0],
+        [0.0, 0.0, 4.0, 6.0],
+    ])
+    .expect("finite affine transform");
+    transform_surface(&mut surface, transform).expect("transformed plane");
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) = surface.geometry else {
+        panic!("plane remains solved");
+    };
+    assert_eq!(plane.origin().get(), Point3::new(6.0, 11.0, 18.0));
+    let delta = Vector3::new(
+        (1.0 + 0.6) * 2.0 + 4.0 - 6.0,
+        (2.0 + 0.8) * 3.0 + 5.0 - 11.0,
+        0.0,
+    );
+    let length = delta.norm();
+    let reference = plane.frame().reference().as_raw();
+    assert_eq!(
+        [reference.x, reference.y, reference.z].map(f64::to_bits),
+        [delta.x / length, delta.y / length, delta.z / length].map(f64::to_bits)
+    );
 }
 
 /// The region fixture resolved the way validation resolves it.
@@ -282,11 +423,14 @@ fn source_shaped_plane_brep() -> (Vec<u8>, crate::brep::RawBrep) {
         .enumerate()
         .map(|(index, edges)| crate::brep::RawBrepVertex {
             index: i32::try_from(index).expect("index"),
-            point: [
-                f64::from((index == 1) as u8),
-                f64::from((index == 2) as u8),
-                0.0,
-            ],
+            point: crate::settings::CoordinateLane::Admitted(
+                crate::test_support::point3([
+                    f64::from((index == 1) as u8),
+                    f64::from((index == 2) as u8),
+                    0.0,
+                ])
+                .0,
+            ),
             edges: edges.into_iter().collect(),
             tolerance: 0.01,
             source_range: 0..0,
@@ -603,7 +747,9 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
     let (data, mut raw) = source_shaped_plane_brep();
     raw.vertices.push(crate::brep::RawBrepVertex {
         index: 3,
-        point: [2.0, 2.0, 0.0],
+        point: crate::settings::CoordinateLane::Admitted(
+            crate::test_support::point3([2.0, 2.0, 0.0]).0,
+        ),
         edges: Vec::new(),
         tolerance: 0.0,
         source_range: 0..0,
@@ -706,8 +852,10 @@ fn failed_trim_pcurve_does_not_discard_brep_topology() {
 
 #[test]
 fn disconnected_incidence_produces_deterministic_shell_groups() {
-    let grouping =
-        region_shell_groups_without_records(&[1, 0, 1, 0]).expect("shell-group allocation");
+    let grouping = with_expand_bytes(&[], |expand| {
+        region_shell_groups_without_records(expand.ctx(), &[1, 0, 1, 0])
+            .expect("shell-group allocation")
+    });
     assert!(grouping.fallback);
     assert_eq!(grouping.face_groups, vec![1, 0, 1, 0]);
     assert_eq!(
@@ -729,23 +877,115 @@ fn disconnected_incidence_produces_deterministic_shell_groups() {
 }
 
 #[test]
-fn tolerance_scaling_maps_unset_and_zero_to_none() {
+fn shell_group_slots_refuse_collection_limit_before_allocation() {
+    let Err(error) = with_collection_limit(3, |ctx| {
+        region_shell_groups_without_records(ctx, &[1, 0, 1, 0])
+    }) else {
+        panic!("four face-group slots exceed the limit of three");
+    };
+    assert!(matches!(
+        error,
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino Brep incidence face groups"
+    ));
+}
+
+#[test]
+fn brep_free_vertex_flags_refuse_collection_limit() {
+    let resolved = crate::brep::ResolvedBrep {
+        vertices: vec![crate::brep::ResolvedVertex {
+            edges: Vec::new(),
+            tolerance: crate::brep::BrepTolerance::new(0.0).expect("valid tolerance"),
+        }],
+        ..crate::brep::ResolvedBrep::default()
+    };
+    let error = with_collection_limit(0, |ctx| brep_free_vertex_indices(ctx, &resolved))
+        .expect_err("one attachment flag exceeds zero collection items");
+    assert!(matches!(
+        error,
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino Brep free-vertex attachment flags"
+    ));
     assert_eq!(
-        scaled_tolerance(0.0, crate::test_support::millimeter_scale(25.4))
+        with_expand_bytes(&[], |expand| brep_free_vertex_indices(
+            expand.ctx(),
+            &resolved
+        ))
+        .expect("service profile admits one flag"),
+        vec![0]
+    );
+}
+
+#[test]
+fn brep_fallback_face_groups_refuse_collection_limit() {
+    let raw = region_raw(Vec::new(), Vec::new());
+    let resolved = region_resolved(&raw);
+    let Err(error) =
+        with_collection_limit(0, |ctx| region_shell_groups(ctx, &raw, &resolved, &[0]))
+    else {
+        panic!("one fallback face group exceeds zero collection items");
+    };
+    assert!(matches!(
+        error,
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino Brep fallback face groups"
+    ));
+    assert!(with_expand_bytes(&[], |expand| {
+        region_shell_groups(expand.ctx(), &raw, &resolved, &[0])
+    })
+    .is_ok());
+}
+
+#[test]
+fn brep_region_face_groups_refuse_collection_limit() {
+    let raw = region_raw(
+        vec![crate::brep::RawBrepFaceSide {
+            index: 0,
+            region: 0,
+            face: 0,
+            direction: 1,
+            source_range: 0..0,
+        }],
+        vec![region(1)],
+    );
+    let resolved = region_resolved(&raw);
+    let Err(error) =
+        with_collection_limit(0, |ctx| region_shell_groups(ctx, &raw, &resolved, &[0]))
+    else {
+        panic!("one region face group exceeds zero collection items");
+    };
+    assert!(matches!(
+        error,
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino Brep region face groups"
+    ));
+    assert!(with_expand_bytes(&[], |expand| {
+        region_shell_groups(expand.ctx(), &raw, &resolved, &[0])
+    })
+    .is_ok());
+}
+
+#[test]
+fn tolerance_scaling_maps_unset_and_zero_to_none() {
+    let admitted = |value| crate::brep::BrepTolerance::new(value).expect("valid source tolerance");
+    assert_eq!(
+        scaled_tolerance(admitted(0.0), crate::test_support::millimeter_scale(25.4))
             .expect("required invariant"),
         None
     );
     assert_eq!(
-        scaled_tolerance(0.5, crate::test_support::millimeter_scale(25.4))
+        scaled_tolerance(admitted(0.5), crate::test_support::millimeter_scale(25.4))
             .expect("required invariant")
             .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(12.7)
     );
     assert_eq!(
-        finite_tolerance(0.5).map(cadmpeg_ir::geometry::FitTolerance::get),
+        crate::brep::BrepTolerance::new(0.5)
+            .and_then(crate::brep::BrepTolerance::fit)
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
         Some(0.5)
     );
-    assert_eq!(finite_tolerance(-1.0), None);
+    assert_eq!(crate::brep::BrepTolerance::new(-1.0), None);
 }
 
 #[test]
@@ -765,6 +1005,7 @@ fn edge_proxy_reversal_normalizes_endpoints_and_keeps_an_ascending_range() {
         curve: 0,
         vertices: [0, 1],
         trims: Vec::new(),
+        tolerance: crate::brep::BrepTolerance::new(0.0).expect("valid source tolerance"),
     };
     assert_eq!(edge_param_range(&edge), [3.0, 7.0]);
     assert_eq!(edge_vertices(&edge, &resolved), [0, 1]);
@@ -826,8 +1067,10 @@ fn representable_region_uses_bounded_membership_and_serialized_direction() {
         ],
         vec![region(0), region(1)],
     );
-    let grouping =
-        region_shell_groups(&raw, &region_resolved(&raw), &[0]).expect("shell-group allocation");
+    let grouping = with_expand_bytes(&[], |expand| {
+        region_shell_groups(expand.ctx(), &raw, &region_resolved(&raw), &[0])
+            .expect("shell-group allocation")
+    });
     assert!(!grouping.fallback);
     assert_eq!(grouping.face_groups, vec![0]);
     assert_eq!(
@@ -869,8 +1112,10 @@ fn two_bounded_regions_sharing_one_face_use_deterministic_incidence_fallback() {
         ],
         vec![region(0), region(1), region(1)],
     );
-    let grouping =
-        region_shell_groups(&raw, &region_resolved(&raw), &[0]).expect("shell-group allocation");
+    let grouping = with_expand_bytes(&[], |expand| {
+        region_shell_groups(expand.ctx(), &raw, &region_resolved(&raw), &[0])
+            .expect("shell-group allocation")
+    });
     assert!(grouping.fallback);
     assert_eq!(
         grouping
@@ -906,7 +1151,11 @@ fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
         end_parameter: finite_parameter(40.0),
         warnings: Diagnostics::new(),
     };
-    let merged = c2_curve_to_nurbs_join(compound, 0).expect("merge").curve;
+    let merged = with_expand_bytes(&[], |expand| {
+        c2_curve_to_nurbs_join(expand.ctx(), compound, 0)
+    })
+    .expect("merge")
+    .curve;
     assert_eq!(
         merged.knots().as_slice(),
         vec![10.0, 10.0, 20.0, 40.0, 40.0]
@@ -937,7 +1186,7 @@ fn recursive_c2_polycurve_preserves_nested_parent_parameterization() {
         end_parameter: finite_parameter(9.0),
         warnings: Diagnostics::new(),
     };
-    let merged = c2_curve_to_nurbs_join(outer, 0)
+    let merged = with_expand_bytes(&[], |expand| c2_curve_to_nurbs_join(expand.ctx(), outer, 0))
         .expect("nested merge")
         .curve;
     assert_eq!(merged.knots().as_slice(), vec![5.0, 5.0, 7.0, 9.0, 9.0]);
@@ -968,9 +1217,11 @@ fn unequal_degree_c2_polycurve_elevates_lower_degree() {
         end_parameter: finite_parameter(2.0),
         warnings: Diagnostics::new(),
     };
-    let merged = c2_curve_to_nurbs_join(compound, 0)
-        .expect("degree elevation")
-        .curve;
+    let merged = with_expand_bytes(&[], |expand| {
+        c2_curve_to_nurbs_join(expand.ctx(), compound, 0)
+    })
+    .expect("degree elevation")
+    .curve;
     assert_eq!(merged.degree(), 2);
     assert_eq!(merged.control_points().len(), 5);
     assert_eq!(
@@ -1006,8 +1257,14 @@ fn cap_boundary(points: &[Point3]) -> crate::extrusion::ExtrusionBoundary {
         end_nurbs: end.clone(),
         start_pcurve: pcurve.clone(),
         end_pcurve: pcurve,
-        lateral: crate::surfaces::extrusion_nurbs(&start, &end, [0.0, 5.0], false, 0)
-            .expect("valid cap lateral"),
+        lateral: crate::surfaces::extrusion_nurbs(
+            &start,
+            &end,
+            cadmpeg_ir::units::FiniteVector::new([0.0, 5.0]).expect("finite path domain"),
+            false,
+            0,
+        )
+        .expect("valid cap lateral"),
     }
 }
 
@@ -1030,8 +1287,8 @@ fn cap_extrusion(caps: [bool; 2]) -> crate::extrusion::DecodedExtrusion {
         boundaries: vec![outer, inner],
         direction: Vector3::new(0.0, 0.0, 5.0),
         cap_origins: [Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 5.0)],
-        cap_normals: [Vector3::new(0.0, 0.0, 1.0), Vector3::new(0.0, 0.0, 1.0)],
-        cap_u_axes: [Vector3::new(1.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)],
+        cap_normals: [cadmpeg_ir::units::UnitVector3::Z_AXIS; 2],
+        cap_u_axes: [cadmpeg_ir::units::UnitVector3::X_AXIS; 2],
         caps,
         meshes: Vec::new(),
         warnings: Diagnostics::new(),
@@ -1058,7 +1315,11 @@ fn extrusion_cap_admission_error_is_not_reported_as_ir_validation() {
     with_expand(&scan, |expand| {
         let mut context = DecodeContext::new(&scan, expand);
         let mut extrusion = cap_extrusion([true, false]);
-        extrusion.cap_normals[0] = Vector3::new(0.0, 0.0, 0.0);
+        assert_eq!(
+            cadmpeg_ir::units::UnitVector3::new(Vector3::new(0.0, 0.0, 0.0)),
+            None
+        );
+        extrusion.cap_normals[0] = cadmpeg_ir::units::UnitVector3::X_AXIS;
         assert!(!context
             .commit_extrusion(0, extrusion)
             .expect("candidate validation completes"));

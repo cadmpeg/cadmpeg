@@ -35,14 +35,15 @@ fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
     payload[curve_offset + 100..curve_offset + 104].copy_from_slice(&7u32.to_le_bytes());
     payload[curve_offset + 104..].copy_from_slice(SKETCH_MARKER);
 
-    let marker = |id: &str, offset, kind, coordinates_m| {
+    let marker = |id: &str, offset, kind, coordinates_m: Option<[f64; 2]>| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
         let mut constructed_marker =
             crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("sketch".into());
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };

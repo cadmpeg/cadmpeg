@@ -49,7 +49,7 @@ pub(crate) struct PmGraphicsPrimaryColorStyle {
     pub(crate) header_value: u32,
     pub(crate) controls: [u16; 7],
     pub(crate) color_header: [u8; 2],
-    pub(crate) colors: [[f32; 4]; 4],
+    pub(crate) colors: [[cadmpeg_ir::scalar::FiniteBinary32; 4]; 4],
     pub(crate) color_tail: [u16; 2],
     pub(crate) state: u8,
     pub(crate) values: [u16; 2],
@@ -455,7 +455,7 @@ fn project_face_bindings(
             continue;
         }
         let style = color_styles[0];
-        let [r, g, b, a] = style.colors[1];
+        let [r, g, b, a] = style.colors[1].map(cadmpeg_ir::scalar::FiniteBinary32::get);
         let Some(color) = Color::new(r, g, b, a) else {
             count_unresolved(
                 ctx,
@@ -651,6 +651,7 @@ pub(crate) fn inventory<'a>(
                     return Err(error);
                 }
                 ctx.charge_collection_items(1, "admit Inventor presentation issue")?;
+                ctx.charge_entities(1, "admit Inventor presentation issue")?;
                 admit_issue_detail(ctx, &error, "retain Inventor presentation issue detail")?;
                 ctx.charge_retained(
                     segment.pair.token.as_str().len() as u64,
@@ -720,10 +721,10 @@ fn parse_graphics_primary_color_style(
         cursor.u8("graphics primary-color header 0")?,
         cursor.u8("graphics primary-color header 1")?,
     ];
-    let mut colors = [[0.0; 4]; 4];
+    let mut colors = [[cadmpeg_ir::scalar::FiniteBinary32::ZERO; 4]; 4];
     for color in &mut colors {
         for component in color {
-            *component = cursor.f32("graphics primary-color component")?;
+            *component = cursor.finite_f32("graphics primary-color component")?;
         }
         cursor.skip(
             legacy_block_len(version),
@@ -1056,11 +1057,17 @@ impl<'a> Cursor<'a> {
         })
     }
 
-    fn f32(&mut self, field: &'static str) -> Result<f32, CodecError> {
-        Ok(self
+    fn finite_f32(
+        &mut self,
+        field: &'static str,
+    ) -> Result<cadmpeg_ir::scalar::FiniteBinary32, CodecError> {
+        let value = self
             .source
             .req_f32_le()
-            .map_err(|error| error.during(field))?)
+            .map_err(|error| error.during(field))?;
+        cadmpeg_ir::scalar::FiniteBinary32::new(value).ok_or_else(|| {
+            CodecError::malformed(format_args!("Inventor presentation {field} is not finite"))
+        })
     }
 
     fn reference(&mut self, field: &'static str) -> Result<u32, CodecError> {
@@ -1178,13 +1185,6 @@ fn hex(bytes: &[u8]) -> String {
     let mut text = String::with_capacity(bytes.len() * 2);
     crate::pmdc::push_hex(&mut text, bytes);
     text
-}
-
-pub(crate) fn suffix_fields(source: View<'_>) -> (u64, crate::native::digest::Sha256Hex) {
-    (
-        source.window().len() as u64,
-        crate::native::digest::Sha256Hex::digest(source.window()),
-    )
 }
 
 #[cfg(test)]
@@ -1490,6 +1490,30 @@ mod tests {
                     && limit.operation == "admit Inventor presentation issue"
                     && limit.used == 0
         ));
+    }
+
+    #[test]
+    fn presentation_parse_issue_refuses_entity_limit_before_push() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_entities = 0;
+        assert!(matches!(
+            inventory_with_record(SegmentKind::PmApp, DEFAULT_STYLE_TYPE, &[], policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::Entities
+                    && limit.operation == "admit Inventor presentation issue"
+        ));
+        assert_eq!(
+            inventory_with_record(
+                SegmentKind::PmApp,
+                DEFAULT_STYLE_TYPE,
+                &[],
+                DecodePolicy::service()
+            )
+            .expect("service issue")
+            .1
+            .len(),
+            1
+        );
     }
 
     #[test]
@@ -1807,11 +1831,27 @@ mod tests {
         assert_eq!(style.header_value, 31);
         assert_eq!(style.controls, [32, 33, 34, 35, 36, 37, 38]);
         assert_eq!(style.color_header, [39, 40]);
-        assert_eq!(style.colors[1], [0.2, 0.4, 0.6, 0.8]);
+        assert_eq!(
+            style.colors[1].map(cadmpeg_ir::scalar::FiniteBinary32::get),
+            [0.2, 0.4, 0.6, 0.8]
+        );
         assert_eq!(style.color_tail, [41, 42]);
         assert_eq!(style.state, 43);
         assert_eq!(style.values, [44, 45]);
         assert_eq!(style.terminal_state, 46);
+    }
+
+    #[test]
+    fn primary_color_reader_refuses_nonfinite_component() {
+        let bytes = primary_color_fixture([0.2, f32::NAN, 0.6, 0.8]);
+        let arena = DecodeArena::new();
+        let (_, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("synthetic primary-color style fits policy");
+        let error = parse_graphics_primary_color_style(root, 26)
+            .expect_err("a nonfinite primary-color component is refused by the reader");
+        assert!(error
+            .to_string()
+            .contains("graphics primary-color component is not finite"));
     }
 
     fn face_override_inventory() -> PresentationInventory<'static> {
@@ -1866,7 +1906,11 @@ mod tests {
                 header_value: 0,
                 controls: [0; 7],
                 color_header: [0; 2],
-                colors: [[0.0; 4], [0.2, 0.4, 0.6, 0.8], [0.0; 4], [0.0; 4]],
+                colors: [[0.0; 4], [0.2, 0.4, 0.6, 0.8], [0.0; 4], [0.0; 4]].map(|color| {
+                    color.map(|value| {
+                        cadmpeg_ir::scalar::FiniteBinary32::new(value).expect("finite")
+                    })
+                }),
                 color_tail: [0; 2],
                 state: 0,
                 values: [0; 2],
@@ -2065,7 +2109,8 @@ mod tests {
             (
                 "graphics primary-color component",
                 displayed_truncation(
-                    Cursor::new(View::over_retained(empty)).f32("graphics primary-color component"),
+                    Cursor::new(View::over_retained(empty))
+                        .finite_f32("graphics primary-color component"),
                 ),
             ),
             (

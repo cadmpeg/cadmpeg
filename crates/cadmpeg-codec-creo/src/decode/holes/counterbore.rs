@@ -12,6 +12,8 @@ use cadmpeg_ir::geometry::analytic::CylinderSurface;
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::PositiveLength;
 
 use crate::container::ContainerScan;
 
@@ -121,7 +123,11 @@ pub(in crate::decode) fn counterbore_dimension_tuple_matches_radius(
 ) -> bool {
     [0.5 * bore_diameter, 0.5 * counterbore_diameter]
         .into_iter()
-        .any(|expected| approximately_equal(radius, expected))
+        .any(|expected| {
+            (FiniteReal::new(radius))
+                .zip(FiniteReal::new(expected))
+                .is_some_and(|(first, second)| approximately_equal(first, second))
+        })
 }
 
 pub(in crate::decode) fn counterbore_dimension_values<'a>(
@@ -164,7 +170,9 @@ pub(in crate::decode) fn counterbore_dimension_values<'a>(
         {
             continue;
         }
-        candidates.push((2.0 * bore_radius, 2.0 * counterbore_radius, depth.abs()));
+        let bore_diameter = PositiveLength::new(2.0 * bore_radius)?;
+        let counterbore_diameter = PositiveLength::new(2.0 * counterbore_radius)?;
+        candidates.push((bore_diameter.get(), counterbore_diameter.get(), depth.abs()));
     }
     let first = *candidates.first()?;
     candidates
@@ -183,43 +191,47 @@ pub(in crate::decode) fn counterbore_dimension_values<'a>(
 
 pub(in crate::decode) fn counterbore_envelope_dimension_values<'a>(
     tables: impl Iterator<Item = &'a crate::feature::definitions::FeatureDimensionTable>,
-    source_spans: &[Option<[[Option<f64>; 2]; 3]>],
+    source_spans: &[Option<[[Option<PositiveLength>; 2]; 3]>],
 ) -> Option<(f64, f64, f64)> {
     let [first_source, second_source] = source_spans else {
         return None;
     };
-    let cylinder_diameter_matches = |diameter: f64, spans: [[Option<f64>; 2]; 3]| {
+    let cylinder_diameter_matches = |diameter: f64, spans: [[Option<PositiveLength>; 2]; 3]| {
         (0..3)
             .filter(|axis| {
-                spans[*axis]
-                    .into_iter()
-                    .flatten()
-                    .any(|span| approximately_equal(span, diameter))
+                spans[*axis].into_iter().flatten().any(|span| {
+                    (FiniteReal::new(span.get()))
+                        .zip(FiniteReal::new(diameter))
+                        .is_some_and(|(first, second)| approximately_equal(first, second))
+                })
             })
             .count()
             == 2
     };
-    let counterbore_matches = |diameter: f64, depth: f64, spans: [[Option<f64>; 2]; 3]| {
-        let diameter_axes = (0..3)
-            .filter(|axis| {
-                spans[*axis]
-                    .into_iter()
-                    .flatten()
-                    .any(|span| approximately_equal(span, diameter))
-            })
-            .collect::<Vec<_>>();
-        let [first_axis, second_axis] = diameter_axes.as_slice() else {
-            return false;
+    let counterbore_matches =
+        |diameter: f64, depth: f64, spans: [[Option<PositiveLength>; 2]; 3]| {
+            let diameter_axes = (0..3)
+                .filter(|axis| {
+                    spans[*axis].into_iter().flatten().any(|span| {
+                        (FiniteReal::new(span.get()))
+                            .zip(FiniteReal::new(diameter))
+                            .is_some_and(|(first, second)| approximately_equal(first, second))
+                    })
+                })
+                .collect::<Vec<_>>();
+            let [first_axis, second_axis] = diameter_axes.as_slice() else {
+                return false;
+            };
+            (0..3)
+                .find(|axis| axis != first_axis && axis != second_axis)
+                .is_some_and(|axis| {
+                    spans[axis].into_iter().flatten().any(|span| {
+                        (FiniteReal::new(span.get()))
+                            .zip(FiniteReal::new(depth))
+                            .is_some_and(|(first, second)| approximately_equal(first, second))
+                    })
+                })
         };
-        (0..3)
-            .find(|axis| axis != first_axis && axis != second_axis)
-            .is_some_and(|axis| {
-                spans[axis]
-                    .into_iter()
-                    .flatten()
-                    .any(|span| approximately_equal(span, depth))
-            })
-    };
     let candidates = tables
         .filter_map(|table| {
             let (bore_diameter, counterbore_diameter, counterbore_depth) =
@@ -297,8 +309,8 @@ fn counterbore_envelope_dimension_tuple(
     (signed_counterbore_depth != 0.0 && bore_radius > 0.0 && counterbore_radius > bore_radius)
         .then_some(())?;
     Some((
-        2.0 * bore_radius,
-        2.0 * counterbore_radius,
+        PositiveLength::new(2.0 * bore_radius)?.get(),
+        PositiveLength::new(2.0 * counterbore_radius)?.get(),
         signed_counterbore_depth.abs(),
     ))
 }
@@ -311,7 +323,11 @@ fn unique_counterbore_dimension_tuple(candidates: &[(f64, f64, f64)]) -> Option<
             [candidate.0, candidate.1, candidate.2]
                 .into_iter()
                 .zip([first.0, first.1, first.2])
-                .all(|(candidate, first)| approximately_equal(candidate, first))
+                .all(|(candidate, first)| {
+                    (FiniteReal::new(candidate))
+                        .zip(FiniteReal::new(first))
+                        .is_some_and(|(first, second)| approximately_equal(first, second))
+                })
         })
         .then_some(first)
 }
@@ -492,9 +508,7 @@ pub(in crate::decode) fn counterbore_support_axis_placement(
         return None;
     };
     let frame = frame.frame();
-    let origin = frame
-        .origin
-        .filter(|origin| origin.iter().all(|value| value.is_finite()))?;
+    let origin = frame.origin?;
     Some(cadmpeg_ir::features::holes::HolePlacement::Axis {
         origin: cadmpeg_ir::features::FinitePoint3::new(Point3::from(origin))?,
         axis: frame.normal?.into(),
@@ -524,6 +538,7 @@ pub(in crate::decode) fn counterbore_axis_placement_from_sources(
 pub(in crate::decode) fn counterbore_directed_placement(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
 ) -> Option<(Option<u32>, Point3, Vector3, LinearTermination)> {
     let (bore_diameter, counterbore_diameter, counterbore_depth) =
@@ -533,7 +548,7 @@ pub(in crate::decode) fn counterbore_directed_placement(
         return None;
     };
     let boundary = |ids: &[u32], radius: f64| {
-        counterbore_source_boundary_circle(scan, ir, feature_id, ids, radius)
+        counterbore_source_boundary_circle(scan, ir, source_carriers, feature_id, ids, radius)
     };
     let bore_radius = 0.5 * bore_diameter;
     let counterbore_radius = 0.5 * counterbore_diameter;
@@ -808,6 +823,7 @@ pub(in crate::decode) fn counterbore_directed_span(
 fn counterbore_source_boundary_circle(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     cylinder_ids: &[u32],
     radius: f64,
@@ -833,7 +849,8 @@ fn counterbore_source_boundary_circle(
                 let curve = exactly_one(ir.model.curves.iter().filter(|curve| {
                     curve.id == CurveId::compose(&crate::identity::VISIBGEOM_CURVE, edge.id)
                 }))?;
-                let Some(SolvedCurveGeometry::Circle(circle_curve)) = curve.geometry.solved()
+                let Some(SolvedCurveGeometry::Circle(circle_curve)) =
+                    source_carriers.curve_geometry(curve).solved()
                 else {
                     return None;
                 };
@@ -841,7 +858,7 @@ fn counterbore_source_boundary_circle(
                 let candidate = circle_curve.radius().get();
                 ((candidate - radius).abs() <= EPS_COUNTERBORE_GEOMETRY).then_some(())?;
                 let axis = unit_length(*circle_curve.frame().axis());
-                let plane = reconciled_model_plane(&local_planes, ir, other)?;
+                let plane = reconciled_model_plane(&local_planes, ir, source_carriers, other)?;
                 let normal = normalize(plane.normal)?;
                 let alignment = axis
                     .iter()

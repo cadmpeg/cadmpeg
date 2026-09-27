@@ -311,6 +311,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     if scan.framing.layout != crate::container::Layout::Nd {
         return Ok(0);
@@ -443,26 +444,29 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
-        ir.model.surfaces.push(Surface {
-            id,
-            geometry,
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                    "{}:{}",
-                    section.name(),
-                    row.id
-                ))
-                .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                })?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
+        source_carriers.admit_surface(
+            ir,
+            Surface {
+                id,
+                geometry,
+                source_object: Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        "{}:{}",
+                        section.name(),
+                        row.id
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            },
+        )?;
         transferred += 1;
     }
     Ok(transferred)
@@ -480,6 +484,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     if scan.framing.layout != crate::container::Layout::Nd {
         return Ok(0);
@@ -580,26 +585,29 @@ pub(in super::super) fn transfer_positional_spline_replays(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
-        ir.model.surfaces.push(Surface {
-            id,
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                    "{}:{}",
-                    section.name(),
-                    row.id
-                ))
-                .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                })?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
+        source_carriers.admit_surface(
+            ir,
+            Surface {
+                id,
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
+                source_object: Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        "{}:{}",
+                        section.name(),
+                        row.id
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            },
+        )?;
         transferred += 1;
     }
     Ok(transferred)
@@ -616,6 +624,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     if !matches!(
         scan.framing.layout,
@@ -743,26 +752,29 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
-        ir.model.surfaces.push(Surface {
-            id,
-            geometry,
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                    "{}{}",
-                    carrier.namespace.source_prefix(),
-                    carrier.surface_id
-                ))
-                .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                })?,
-                name: None,
-                color: None,
-                visible: Some(carrier.namespace.is_visible()),
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
+        source_carriers.admit_surface(
+            ir,
+            Surface {
+                id,
+                geometry,
+                source_object: Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        "{}{}",
+                        carrier.namespace.source_prefix(),
+                        carrier.surface_id
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
+                    name: None,
+                    color: None,
+                    visible: Some(carrier.namespace.is_visible()),
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            },
+        )?;
         transferred += 1;
     }
     Ok(transferred)

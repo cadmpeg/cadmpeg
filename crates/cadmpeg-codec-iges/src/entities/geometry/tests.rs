@@ -1264,7 +1264,7 @@ fn transform_translation_overflow_after_inch_scaling_is_rejected() {
         values
             .into_iter()
             .map(|value| Token {
-                value: TokenValue::Real(value),
+                value: TokenValue::real(value),
                 span: 0..0,
             })
             .collect(),

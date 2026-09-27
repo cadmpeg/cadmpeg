@@ -229,6 +229,15 @@ fn an_exact_spline_layout_carries_only_the_keys_its_own_arm_owns() {
         cache: None,
     })
     .unwrap();
+    let interval = crate::topology::IncreasingParameterInterval::between(
+        crate::scalar::FiniteReal::new(0.0).unwrap(),
+        crate::scalar::FiniteReal::new(1.0).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        ExactSurfacePayload::from_legacy_intervals(interval, interval, 0, None),
+        legacy
+    );
     let revision = ExactSurfacePayload::try_new(ExactSpline::Revision {
         intervals: [[Some(0.0), Some(1.0)]; 2],
         extension: 0,
@@ -1479,6 +1488,24 @@ fn a_revolution_admits_a_finite_axis_origin_and_a_unit_axis_direction() {
         serde_json::from_value::<ProceduralSurfaceDefinition>(admitted_wire).unwrap(),
         ProceduralSurfaceDefinition::Revolution(admitted)
     );
+}
+
+#[test]
+fn admitted_revolution_axis_keeps_its_finite_origin_and_unit_refusal() {
+    use super::{admit_revolution_axis, admit_revolution_axis_from_parts};
+    use crate::features::{FinitePoint3, FiniteVector3};
+    use crate::math::{Point3, Vector3};
+
+    let origin = Point3::new(1.0, 2.0, 3.0);
+    for direction in [Vector3::new(0.0, 0.0, 1.0), Vector3::new(0.0, 0.0, 2.0)] {
+        assert_eq!(
+            admit_revolution_axis_from_parts(
+                FinitePoint3::new(origin).unwrap(),
+                FiniteVector3::new(direction).unwrap(),
+            ),
+            admit_revolution_axis(origin, direction),
+        );
+    }
 }
 
 #[test]

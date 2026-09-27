@@ -8,7 +8,7 @@ pub mod bounds;
 
 use crate::features::FinitePoint3;
 use crate::math::Point3;
-use crate::scalar::NonZeroReal;
+use crate::scalar::{FiniteReal, NonZeroReal};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -29,6 +29,15 @@ impl KnotVector {
     /// Refuses a non-finite knot, then a decreasing pair.
     pub(crate) fn new(knots: Vec<f64>) -> Result<Self, NurbsError> {
         require_nondecreasing_knots(&knots)?;
+        Ok(Self(knots))
+    }
+
+    /// Build a knot vector from finite values. Only their order is checked.
+    pub fn from_finite_lanes(knots: Vec<FiniteReal>) -> Result<Self, NurbsError> {
+        let knots = knots.into_iter().map(FiniteReal::get).collect::<Vec<_>>();
+        if !knots_nondecreasing(&knots) {
+            return Err(NurbsError::Structure("knots must be non-decreasing".into()));
+        }
         Ok(Self(knots))
     }
 
@@ -81,6 +90,7 @@ mod knot_value_sealed {
     pub trait Sealed {}
 
     impl Sealed for Vec<f64> {}
+    impl Sealed for Vec<crate::scalar::FiniteReal> {}
     impl Sealed for super::KnotVector {}
 }
 
@@ -101,6 +111,16 @@ impl KnotValue for Vec<f64> {
 
     fn admit(self) -> Result<KnotVector, NurbsError> {
         KnotVector::new(self)
+    }
+}
+
+impl KnotValue for Vec<FiniteReal> {
+    fn knot_count(&self) -> usize {
+        Vec::len(self)
+    }
+
+    fn admit(self) -> Result<KnotVector, NurbsError> {
+        KnotVector::from_finite_lanes(self)
     }
 }
 
@@ -268,6 +288,22 @@ impl<P> NurbsPoles3<P> {
         Ok(Self::Rational {
             points: weighted_poles(points, weights, |index, weight| {
                 admit_weight("poles", index, weight)
+            })?,
+        })
+    }
+
+    /// Pair poles with finite weights, checking only lane length and nonzero weights.
+    pub fn from_finite_lanes(
+        points: Vec<P>,
+        weights: Option<Vec<FiniteReal>>,
+    ) -> Result<Self, NurbsError> {
+        let Some(weights) = weights else {
+            return Ok(Self::Polynomial { points });
+        };
+        require_weight_lane("poles", points.len(), weights.len())?;
+        Ok(Self::Rational {
+            points: weighted_poles(points, weights, |index, weight| {
+                admit_finite_weight("poles", index, weight)
             })?,
         })
     }
@@ -497,6 +533,21 @@ impl<P> NurbsPoleGrid<P> {
         Ok(Self::Rational {
             rows: weighted_rows(rows, weights, |index, weight| {
                 admit_weight("pole grid row", index, weight)
+            })?,
+        })
+    }
+
+    /// Pair a pole grid with finite weights, checking grid shape and nonzero weights.
+    pub fn from_finite_lanes(
+        rows: Vec<Vec<P>>,
+        weights: Option<Vec<Vec<FiniteReal>>>,
+    ) -> Result<Self, NurbsError> {
+        let Some(weights) = weights else {
+            return Ok(Self::Polynomial { rows });
+        };
+        Ok(Self::Rational {
+            rows: weighted_rows(rows, weights, |index, weight| {
+                admit_finite_weight("pole grid row", index, weight)
             })?,
         })
     }
@@ -848,6 +899,19 @@ pub(super) fn admit_weight(
     })
 }
 
+/// Check the nonzero condition of a weight whose finiteness is already admitted.
+pub(super) fn admit_finite_weight(
+    field: &str,
+    index: usize,
+    weight: FiniteReal,
+) -> Result<NonZeroReal, NurbsError> {
+    NonZeroReal::from_finite(weight).ok_or_else(|| NurbsError::UnusableWeight {
+        field: field.to_owned(),
+        index,
+        weight: weight.get(),
+    })
+}
+
 fn require_finite_scalars(field: &str, values: &[f64]) -> Result<(), NurbsError> {
     if values.iter().all(|value| value.is_finite()) {
         Ok(())
@@ -1060,15 +1124,33 @@ impl NurbsSurface {
         Self::new(u, v, poles, normal_reversed)
     }
 
-    /// Build a NURBS surface from admitted knot axes, a pole grid and an admitted weight grid.
+    /// Build from finite knots, poles, and weights. Only relationships and
+    /// the nonzero weight condition are checked.
+    pub fn from_finite_lanes(
+        u: NurbsSurfaceAxis<Vec<FiniteReal>>,
+        v: NurbsSurfaceAxis<Vec<FiniteReal>>,
+        lanes: NurbsSurfaceLanes<FinitePoint3, FiniteReal>,
+        normal_reversed: bool,
+    ) -> Result<Self, NurbsError> {
+        let NurbsSurfaceLanes {
+            control_points,
+            weights,
+        } = lanes;
+        let poles = NurbsPoleGrid::from_finite_lanes(control_points, weights)?;
+        Self::new(u, v, poles, normal_reversed)
+    }
+
+    /// Build a NURBS surface from knot axes, a pole grid and an admitted weight grid.
+    /// Admitted knot vectors are kept; raw knots are admitted by [`Self::new`].
     ///
     /// # Errors
     ///
     /// Refuses a weight grid that does not cover its pole grid, invalid
-    /// cardinalities, or a non-finite raw pole coordinate.
-    pub fn from_checked_lanes<P: PoleValue<FinitePoint3>>(
-        u: NurbsSurfaceAxis<KnotVector>,
-        v: NurbsSurfaceAxis<KnotVector>,
+    /// cardinalities, a non-finite raw pole coordinate, or a non-finite or
+    /// decreasing raw knot.
+    pub fn from_checked_lanes<P: PoleValue<FinitePoint3>, U: KnotValue, V: KnotValue>(
+        u: NurbsSurfaceAxis<U>,
+        v: NurbsSurfaceAxis<V>,
         lanes: NurbsSurfaceLanes<P, NonZeroReal>,
         normal_reversed: bool,
     ) -> Result<Self, NurbsError> {
@@ -1312,15 +1394,29 @@ impl NurbsCurve {
         Self::new(degree, knots, poles, periodic)
     }
 
-    /// Build a NURBS curve from admitted knots, a pole lane and an admitted weight lane.
+    /// Build from finite knots, poles, and weights. Only relationships and
+    /// the nonzero weight condition are checked.
+    pub fn from_finite_lanes(
+        degree: u32,
+        knots: Vec<FiniteReal>,
+        control_points: Vec<FinitePoint3>,
+        weights: Option<Vec<FiniteReal>>,
+        periodic: bool,
+    ) -> Result<Self, NurbsError> {
+        let poles = NurbsPoles3::from_finite_lanes(control_points, weights)?;
+        Self::new(degree, knots, poles, periodic)
+    }
+
+    /// Build a NURBS curve from knots, a pole lane and an admitted weight lane.
+    /// An admitted knot vector is kept; raw knots are admitted by [`Self::new`].
     ///
     /// # Errors
     ///
-    /// Refuses a weight lane that does not cover the poles or a pole count
-    /// inconsistent with the degree.
-    pub fn from_checked_lanes<P: PoleValue<FinitePoint3>>(
+    /// Refuses a weight lane that does not cover the poles, a pole count
+    /// inconsistent with the degree, or a non-finite or decreasing raw knot.
+    pub fn from_checked_lanes<P: PoleValue<FinitePoint3>, K: KnotValue>(
         degree: u32,
-        knots: KnotVector,
+        knots: K,
         control_points: Vec<P>,
         weights: Option<Vec<NonZeroReal>>,
         periodic: bool,

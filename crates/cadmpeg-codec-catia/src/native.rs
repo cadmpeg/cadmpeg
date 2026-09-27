@@ -6772,8 +6772,8 @@ macro_rules! define_catia_arenas {
             arena: stringify!($field),
             exactness: (),
             phase: Phase::ArenaOnly,
-            emit: |projection, row, namespace| {
-                namespace.set_arena(row.arena, &projection.$field)
+            emit: |ctx, projection, row, namespace| {
+                namespace.set_arena(ctx, row.arena, &projection.$field)
             },
             len: |projection| projection.$field.len(),
             counts_toward_emptiness: true,
@@ -6967,10 +6967,11 @@ const CATIA_CATALOGUE: Catalogue<
 > = Catalogue::new(CATIA_FAMILIES);
 
 fn store_projection(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     projection: &CatiaArenaProjection,
     namespace: &mut cadmpeg_ir::NativeNamespace,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    CATIA_CATALOGUE.emit_all(projection, namespace)?;
+    CATIA_CATALOGUE.emit_all(ctx, projection, namespace)?;
     Ok(())
 }
 
@@ -9109,9 +9110,10 @@ impl CatiaNative {
     /// Store this namespace while moving child arenas out of their typed owners.
     pub(crate) fn store_owned(
         self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         namespace: &mut cadmpeg_ir::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-        store_projection(&CatiaArenaProjection::from(self), namespace)
+        store_projection(ctx, &CatiaArenaProjection::from(self), namespace)
     }
 }
 

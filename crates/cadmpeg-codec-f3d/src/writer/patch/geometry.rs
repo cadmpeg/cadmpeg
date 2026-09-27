@@ -138,7 +138,7 @@ pub(in crate::writer) fn patch_framed_geometry(
 ) -> Result<(), CodecError> {
     let asm_edits = AsmEditSet::from_framed(
         records.to_vec(),
-        cadmpeg_asm::asm_header::parse(bytes)
+        cadmpeg_asm::asm_header::parse(&cadmpeg_test_support::service_decode_context(), bytes)?
             .map_or(cadmpeg_asm::kernel_header::RefWidth::Eight, |header| {
                 header.width
             }),

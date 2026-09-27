@@ -94,7 +94,7 @@ fn type212_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
     }
 
     for record in [
-        token_parameter_record(7, complete(TokenValue::Real(1.5), 1.into(), 0.into())),
+        token_parameter_record(7, complete(TokenValue::real(1.5), 1.into(), 0.into())),
         token_parameter_record(7, complete(TokenValue::Omitted, 1.into(), 0.into())),
         token_parameter_record(7, complete(i64::MAX.into(), 1.into(), 0.into())),
         token_parameter_record(7, complete(1.into(), 1.into(), 0.into())[..4].to_vec()),
@@ -399,7 +399,7 @@ fn type213_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
     truncated_group.pop();
     for values in [
         {
-            let mut values = prefix(TokenValue::Real(1.5));
+            let mut values = prefix(TokenValue::real(1.5));
             values.extend([1.into(), 3.into(), 1.into(), 5.into()]);
             values
         },
@@ -544,7 +544,7 @@ fn type228_malformed_counts_or_spans_do_not_enable_generic_recovery() {
         vec![
             228.into(),
             9.into(),
-            TokenValue::Real(1.5),
+            TokenValue::real(1.5),
             7.into(),
             0.into(),
             1.into(),
@@ -569,7 +569,7 @@ fn type228_malformed_counts_or_spans_do_not_enable_generic_recovery() {
             9.into(),
             1.into(),
             7.into(),
-            TokenValue::Real(1.5),
+            TokenValue::real(1.5),
             11.into(),
             1.into(),
             1.into(),
@@ -761,7 +761,7 @@ fn type410_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         vec![
             410.into(),
             TokenValue::String(b"bad".to_vec()),
-            TokenValue::Real(1.5),
+            TokenValue::real(1.5),
             0.into(),
             0.into(),
             1.into(),
@@ -775,13 +775,13 @@ fn type410_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
             1.into(),
             0.into(),
             5.into(),
-            TokenValue::Real(-2.0),
-            TokenValue::Real(2.0),
-            TokenValue::Real(-1.0),
-            TokenValue::Real(1.0),
+            TokenValue::real(-2.0),
+            TokenValue::real(2.0),
+            TokenValue::real(-1.0),
+            TokenValue::real(1.0),
             3.into(),
-            TokenValue::Real(-5.0),
-            TokenValue::Real(5.0),
+            TokenValue::real(-5.0),
+            TokenValue::real(5.0),
             1.into(),
             3.into(),
             0.into(),

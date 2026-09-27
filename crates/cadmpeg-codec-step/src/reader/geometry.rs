@@ -11,21 +11,25 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_parameter_near_point};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
-    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
+    nurbs::{KnotVector, NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis},
+    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles},
     sampled::{PolylineCurve, PolylineSamples},
-    CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, ProceduralCurve,
-    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, DirectedParameterRange,
+    ProceduralCurve, ProceduralCurveDefinition, ProceduralGeometryError, ProceduralSurface,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     CurveId, IdentityKey, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{
+    Angle, FiniteReal, NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal,
+};
 use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::transform::{Transform, Transform2};
+use cadmpeg_ir::units::{HypotDirection2, OrthonormalFrame3, UnitVector3};
 
 use crate::ids;
 use crate::loss::StepLossCode;
@@ -41,14 +45,17 @@ const EPS_GEOMETRY_READ_EXACT_GEOMETRY: f64 = 1.0e-12;
 const RANGE_INFERENCE_WORK_UNITS: u64 = 4_096;
 
 pub(super) struct GeometryData {
-    pub(super) placements: BTreeMap<u64, (Point3, Vector3, Vector3)>,
+    pub(super) placements: BTreeMap<u64, (FinitePoint3, UnitVector3, UnitVector3)>,
     pub(super) transformation_operators: BTreeMap<u64, Transform>,
     pub(super) units: UnitScales,
 }
 
 pub(super) fn placement_transform(
-    (origin, z_axis, x_axis): (Point3, Vector3, Vector3),
+    (origin, z_axis, x_axis): (FinitePoint3, UnitVector3, UnitVector3),
 ) -> Option<Transform> {
+    let origin = origin.get();
+    let z_axis = z_axis.as_raw();
+    let x_axis = x_axis.as_raw();
     let y_axis = Vector3::new(
         z_axis.y * x_axis.z - z_axis.z * x_axis.y,
         z_axis.z * x_axis.x - z_axis.x * x_axis.z,
@@ -228,20 +235,20 @@ fn edge_parameter_range(
 }
 
 pub(super) struct UnitScales {
-    default_length: f64,
-    default_angle: f64,
-    length: BTreeMap<u64, f64>,
-    angle: BTreeMap<u64, f64>,
+    default_length: PositiveReal,
+    default_angle: PositiveReal,
+    length: BTreeMap<u64, PositiveReal>,
+    angle: BTreeMap<u64, PositiveReal>,
 }
 
 impl UnitScales {
-    pub(super) fn length(&self, ids: impl IntoIterator<Item = u64>) -> f64 {
+    pub(super) fn length(&self, ids: impl IntoIterator<Item = u64>) -> PositiveReal {
         ids.into_iter()
             .find_map(|id| self.length.get(&id).copied())
             .unwrap_or(self.default_length)
     }
 
-    pub(super) fn angle(&self, ids: impl IntoIterator<Item = u64>) -> f64 {
+    pub(super) fn angle(&self, ids: impl IntoIterator<Item = u64>) -> PositiveReal {
         ids.into_iter()
             .find_map(|id| self.angle.get(&id).copied())
             .unwrap_or(self.default_angle)
@@ -251,7 +258,7 @@ impl UnitScales {
 fn resolve_source_curve_parameter_scales(
     exchange: &Exchange,
     unit_scales: &UnitScales,
-) -> BTreeMap<u64, f64> {
+) -> BTreeMap<u64, FiniteReal> {
     exchange
         .records()
         .keys()
@@ -267,7 +274,7 @@ fn source_curve_parameter_scale(
     exchange: &Exchange,
     unit_scales: &UnitScales,
     active: &mut BTreeSet<u64>,
-) -> Option<f64> {
+) -> Option<FiniteReal> {
     if !active.insert(id) {
         return None;
     }
@@ -280,12 +287,12 @@ fn source_curve_parameter_scale(
                 .filter(|vector| vector.partial("VECTOR").is_some())
                 .and_then(|vector| named_parameter(vector, "VECTOR", 2))
                 .and_then(Value::number)
-                .filter(|magnitude| magnitude.is_finite() && *magnitude > 0.0)?;
-            let scale = magnitude * unit_scales.length([id]);
-            return scale.is_finite().then_some(scale);
+                .and_then(PositiveReal::new)?;
+            let scale = magnitude.get() * unit_scales.length([id]).get();
+            return FiniteReal::new(scale);
         }
         if record.partial("CIRCLE").is_some() || record.partial("ELLIPSE").is_some() {
-            return Some(unit_scales.angle([id]));
+            return Some(FiniteReal::from(unit_scales.angle([id])));
         }
         if record.partial("PARABOLA").is_some()
             || record.partial("HYPERBOLA").is_some()
@@ -300,7 +307,7 @@ fn source_curve_parameter_scale(
                 )
             })
         {
-            return Some(1.0);
+            return Some(FiniteReal::ONE);
         }
         let parent = ["CURVE_REPLICA", "TRIMMED_CURVE", "OFFSET_CURVE_3D"]
             .into_iter()
@@ -334,15 +341,16 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         losses.push(StepLossCode::DocumentLengthUnitUnresolved.note(
             "the document length unit did not resolve; coordinates are unscaled and reported as millimetres",
         ));
-        1.0
+        PositiveReal::ONE
     });
     let angle_scale = plane_angle_scale(exchange).unwrap_or_else(|| {
         losses.push(StepLossCode::DocumentAngleUnitUnresolved.note(
             "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         ));
-        1.0
+        PositiveReal::ONE
     });
     let unit_scales = resolve_unit_scales(exchange, scale, angle_scale, &mut losses);
+    let angle_scale = angle_scale.get();
     let source_curve_parameter_scales =
         resolve_source_curve_parameter_scales(exchange, &unit_scales);
     let mut typed = HashSet::new();
@@ -356,10 +364,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
     let mut placements = BTreeMap::new();
     let mut placements2 = BTreeMap::new();
     match linear_uncertainty(exchange) {
-        LinearUncertainty::Value(uncertainty) => match cadmpeg_ir::scalar::PositiveLength::new(uncertainty) {
-            Some(value) => ir.tolerances.linear = value,
-            None => losses.push(StepLossCode::UncertaintyLengthUnresolved.note("linear uncertainty must be positive and finite; the linear tolerance was not transferred")),
-        },
+        LinearUncertainty::Value(uncertainty) => ir.tolerances.linear = uncertainty,
         LinearUncertainty::Empty { unresolved } => {
             if unresolved > 0 {
                 losses.push(StepLossCode::UncertaintyLengthUnresolved.note(format!(
@@ -377,7 +382,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let listed = [first, second]
                 .iter()
                 .chain(&rest)
-                .map(|value| format!("{value:?}"))
+                .map(|value| format!("{:?}", value.get()))
                 .collect::<Vec<_>>()
                 .join(", ");
             losses.push(StepLossCode::UncertaintyLengthAmbiguous.note(format!(
@@ -403,7 +408,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             ],
         ) {
             Some(point_type @ ("APLL_POINT" | "APLL_POINT_WITH_SURFACE")) => {
-                let record_scale = unit_scales.length([id]);
+                let record_scale = unit_scales.length([id]).get();
                 if let Some(position) = apll_point_coordinates(record, point_type, record_scale) {
                     points.insert(id, position);
                     let source_name = representation_item_name(record)
@@ -427,7 +432,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 }
             }
             Some("CARTESIAN_POINT") => {
-                let record_scale = unit_scales.length([id]);
+                let record_scale = unit_scales.length([id]).get();
                 if let Some(position) =
                     named_coordinates(record, "CARTESIAN_POINT", 1, record_scale)
                 {
@@ -449,8 +454,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 {
                     directions.insert(id, direction);
                     typed.insert(id);
-                } else if let Some(direction) =
-                    vector2(named_parameter(record, "DIRECTION", 1)).and_then(normalize2)
+                } else if let Some(direction) = direction2(named_parameter(record, "DIRECTION", 1))
                 {
                     directions2.insert(id, direction);
                     typed.insert(id);
@@ -552,18 +556,19 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
     }
     for (id, record) in exchange.entities("VECTOR") {
         if record.partial("VECTOR").is_some() {
-            let record_scale = unit_scales.length([id]);
+            let record_scale = unit_scales.length([id]).get();
             let value = named_parameter(record, "VECTOR", 1)
                 .and_then(Value::reference)
                 .and_then(|direction| directions.get(&direction).copied())
                 .zip(named_parameter(record, "VECTOR", 2).and_then(Value::number))
-                .map(|(direction, magnitude)| direction.scale(magnitude * record_scale));
+                .map(|(direction, magnitude)| direction.as_raw().scale(magnitude * record_scale));
             let value2 = named_parameter(record, "VECTOR", 1)
                 .and_then(Value::reference)
                 .and_then(|direction| directions2.get(&direction).copied())
                 .zip(named_parameter(record, "VECTOR", 2).and_then(Value::number))
                 .map(|(direction, magnitude)| {
-                    Point2::new(direction.u * magnitude, direction.v * magnitude)
+                    let [u, v] = direction.get();
+                    Point2::new(u * magnitude, v * magnitude)
                 });
             if let Some(value) = value {
                 vectors.insert(id, value);
@@ -586,13 +591,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         {
             let placement = named_parameter(record, placement_type, 1)
                 .and_then(Value::reference)
-                .and_then(|point| points.get(&point).copied().map(FinitePoint3::get))
+                .and_then(|point| points.get(&point).copied())
                 .map(|origin| {
                     let axis = optional_direction(
                         named_parameter(record, placement_type, 2),
                         &directions,
                     )
-                        .unwrap_or(Vector3::new(0.0, 0.0, 1.0));
+                        .unwrap_or(UnitVector3::Z_AXIS);
                     let reference = match optional_direction(
                         named_parameter(record, placement_type, 3),
                         &directions,
@@ -604,11 +609,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                                 losses.push(StepLossCode::PlacementReferenceInferred.note(format!(
                                         "AXIS2_PLACEMENT_3D #{id} has a reference direction parallel to its axis; inferred an orthogonal reference"
                                     )));
-                                first_projected_axis(axis)
-                                    .unwrap_or(Vector3::new(1.0, 0.0, 0.0))
+                                first_projected_axis(axis).unwrap_or(UnitVector3::X_AXIS)
                             }
                         }
-                        None => first_projected_axis(axis).unwrap_or(Vector3::new(1.0, 0.0, 0.0)),
+                        None => first_projected_axis(axis).unwrap_or(UnitVector3::X_AXIS),
                     };
                     (origin, axis, reference)
                 });
@@ -657,10 +661,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             .and_then(|origin| {
                 let x_axis = match named_parameter(record, "AXIS2_PLACEMENT_2D", 2) {
                     Some(Value::Reference(direction)) => directions2.get(direction).copied()?,
-                    Some(Value::Omitted) | None => Point2::new(1.0, 0.0),
+                    Some(Value::Omitted) | None => HypotDirection2::X_AXIS,
                     _ => return None,
                 };
-                Some((origin, x_axis, Point2::new(-x_axis.v, x_axis.u)))
+                Some((origin, x_axis, x_axis.quarter_turn()))
             });
         if let Some(placement) = placement {
             placements2.insert(id, placement);
@@ -686,7 +690,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             continue;
         };
         let pcurve_angle_scale = representation_id.map_or(angle_scale, |representation| {
-            unit_scales.angle([representation])
+            unit_scales.angle([representation]).get()
         });
         let decoded = items
             .iter()
@@ -722,7 +726,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         if curve_kind == LeafCurveEntity::BSplineWithKnots && record.simple_name().is_none() {
             continue;
         }
-        let record_scale = unit_scales.length([id]);
+        let record_scale = unit_scales.length([id]).get();
         let parameter_offset = if curve_kind == LeafCurveEntity::Ellipse {
             let first_radius = named_parameter(record, "ELLIPSE", 2).and_then(Value::number);
             let second_radius = named_parameter(record, "ELLIPSE", 3).and_then(Value::number);
@@ -738,33 +742,28 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         let geometry = match curve_kind {
             LeafCurveEntity::Line => named_parameter(record, "LINE", 1)
                 .and_then(Value::reference)
-                .and_then(|point| points.get(&point).copied().map(FinitePoint3::get))
+                .and_then(|point| points.get(&point).copied())
                 .zip(
                     named_parameter(record, "LINE", 2)
                         .and_then(Value::reference)
                         .and_then(|vector| vectors.get(&vector).copied())
                         .and_then(normalize),
                 )
-                .and_then(|(origin, direction)| {
-                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, direction)
-                        .ok()
-                        .map(SolvedCurveGeometry::Line)
-                        .map(CurveGeometry::Solved)
+                .map(|(origin, direction)| {
+                    CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                        cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction),
+                    ))
                 }),
             LeafCurveEntity::Circle => named_parameter(record, "CIRCLE", 1)
                 .and_then(Value::reference)
                 .and_then(|placement| placements.get(&placement).copied())
                 .zip(named_parameter(record, "CIRCLE", 2).and_then(Value::number))
                 .and_then(|((center, axis, ref_direction), radius)| {
-                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                        center,
-                        axis,
-                        ref_direction,
-                        radius * record_scale,
-                    )
-                    .ok()
-                    .map(SolvedCurveGeometry::Circle)
-                    .map(CurveGeometry::Solved)
+                    let frame = OrthonormalFrame3::from_units(axis, ref_direction)?;
+                    let radius = PositiveLength::new(radius * record_scale)?;
+                    Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                        cadmpeg_ir::geometry::analytic::CircleCurve::new(center, frame, radius),
+                    )))
                 }),
             LeafCurveEntity::Ellipse => named_parameter(record, "ELLIPSE", 1)
                 .and_then(Value::reference)
@@ -777,18 +776,25 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         let second_radius = second_radius * record_scale;
                         let (major_direction, major_radius, minor_radius) =
                             if first_radius >= second_radius {
-                                (reference_direction, first_radius, second_radius)
+                                (*reference_direction.as_raw(), first_radius, second_radius)
                             } else {
                                 // STEP ELLIPSE stores two ordered semiaxes;
                                 // neither position is required to be the
                                 // longer one. The IR ellipse is canonicalized
                                 // around its semi-major direction.
-                                (axis.cross(reference_direction), second_radius, first_radius)
+                                (
+                                    axis.as_raw().cross(*reference_direction.as_raw()),
+                                    second_radius,
+                                    first_radius,
+                                )
                             };
-                        cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
+                        let major_direction = UnitVector3::new(major_direction)?;
+                        let frame = OrthonormalFrame3::from_units(axis, major_direction)?;
+                        let major_radius = PositiveLength::new(major_radius)?;
+                        let minor_radius = PositiveLength::new(minor_radius)?;
+                        cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
                             center,
-                            axis,
-                            major_direction,
+                            frame,
                             major_radius,
                             minor_radius,
                         )
@@ -802,15 +808,15 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .and_then(|placement| placements.get(&placement).copied())
                 .zip(named_parameter(record, "PARABOLA", 2).and_then(Value::number))
                 .and_then(|((vertex, axis, major_direction), focal_distance)| {
-                    cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
-                        vertex,
-                        axis,
-                        major_direction,
-                        focal_distance * record_scale,
-                    )
-                    .ok()
-                    .map(SolvedCurveGeometry::Parabola)
-                    .map(CurveGeometry::Solved)
+                    let frame = OrthonormalFrame3::from_units(axis, major_direction)?;
+                    let focal_distance = PositiveLength::new(focal_distance * record_scale)?;
+                    Some(CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
+                        cadmpeg_ir::geometry::analytic::ParabolaCurve::new(
+                            vertex,
+                            frame,
+                            focal_distance,
+                        ),
+                    )))
                 }),
             LeafCurveEntity::Hyperbola => named_parameter(record, "HYPERBOLA", 1)
                 .and_then(Value::reference)
@@ -819,16 +825,17 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .zip(named_parameter(record, "HYPERBOLA", 3).and_then(Value::number))
                 .and_then(
                     |(((center, axis, major_direction), major_radius), minor_radius)| {
-                        cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
-                            center,
-                            axis,
-                            major_direction,
-                            major_radius * record_scale,
-                            minor_radius * record_scale,
-                        )
-                        .ok()
-                        .map(SolvedCurveGeometry::Hyperbola)
-                        .map(CurveGeometry::Solved)
+                        let frame = OrthonormalFrame3::from_units(axis, major_direction)?;
+                        let major_radius = PositiveLength::new(major_radius * record_scale)?;
+                        let minor_radius = PositiveLength::new(minor_radius * record_scale)?;
+                        Some(CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
+                            cadmpeg_ir::geometry::analytic::HyperbolaCurve::new(
+                                center,
+                                frame,
+                                major_radius,
+                                minor_radius,
+                            ),
+                        )))
                     },
                 ),
             LeafCurveEntity::Polyline => polyline(id, record, &points, &mut losses)
@@ -988,7 +995,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 continue;
             };
             let record_scale = unit_scales.length([id]);
-            let record_angle_scale = unit_scales.angle([id]);
+            let record_angle_scale = unit_scales.angle([id]).get();
             let parameter_offset = curve_parameter_offsets
                 .get(&basis_step)
                 .copied()
@@ -1000,7 +1007,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     points: &points,
                     geometry: &CurveGeometry::Solved(geometry.clone()),
                     angle_scale: record_angle_scale,
-                    linear_parameter_scale,
+                    linear_parameter_scale: linear_parameter_scale.get(),
                     parameter_offset,
                     tolerance: ir.tolerances.linear.get(),
                     master_representation,
@@ -1157,9 +1164,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         let curve = CurveId::from(ids::data(kind!("curve"), id));
         let curve_index = CurveIndex(ir.model.curves.len());
         let procedural =
-            match cadmpeg_ir::geometry::curve_payloads::SpatialOffsetCurveConstruction::try_new(
+            match cadmpeg_ir::geometry::curve_payloads::SpatialOffsetCurveConstruction::try_from_parts(
                 source,
-                distance * unit_scales.length([id]),
+                distance * unit_scales.length([id]).get(),
                 reference_direction,
                 self_intersect,
             )
@@ -1320,12 +1327,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         .and_then(|placement| placements.get(&placement).copied()),
                 )
                 .map(|(directrix, (axis_origin, axis_direction, _))| {
-                    cadmpeg_ir::geometry::surface_payloads::AxisRevolutionSurfaceConstruction::try_new(
-                        directrix,
-                        axis_origin,
-                        axis_direction,
-                    )
-                    .map(ProceduralSurfaceDefinition::AxisRevolution)
+                    let construction =
+                        cadmpeg_ir::geometry::surface_payloads::AxisRevolutionSurfaceConstruction::from_parts(
+                            directrix,
+                            axis_origin,
+                            axis_direction,
+                        );
+                    Ok(ProceduralSurfaceDefinition::AxisRevolution(construction))
                 })),
             _ => continue,
         };
@@ -1369,30 +1377,26 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         if surface_kind == LeafSurfaceEntity::BSplineWithKnots && record.simple_name().is_none() {
             continue;
         }
-        let record_scale = unit_scales.length([id]);
-        let record_angle_scale = unit_scales.angle([id]);
+        let record_scale = unit_scales.length([id]).get();
+        let record_angle_scale = unit_scales.angle([id]).get();
         let placement = named_parameter(record, surface_type, 1)
             .and_then(Value::reference)
             .and_then(|placement| placements.get(&placement).copied());
         let geometry = match surface_kind {
             LeafSurfaceEntity::Plane => placement.and_then(|(origin, normal, u_axis)| {
-                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, normal, u_axis)
-                    .ok()
-                    .map(SolvedSurfaceGeometry::Plane)
-                    .map(SurfaceGeometry::Solved)
+                let frame = OrthonormalFrame3::from_units(normal, u_axis)?;
+                Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, frame),
+                )))
             }),
             LeafSurfaceEntity::Cylindrical => placement
                 .zip(named_parameter(record, "CYLINDRICAL_SURFACE", 2).and_then(Value::number))
                 .and_then(|((origin, axis, ref_direction), radius)| {
-                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                        origin,
-                        axis,
-                        ref_direction,
-                        radius * record_scale,
-                    )
-                    .ok()
-                    .map(SolvedSurfaceGeometry::Cylinder)
-                    .map(SurfaceGeometry::Solved)
+                    let frame = OrthonormalFrame3::from_units(axis, ref_direction)?;
+                    let radius = PositiveLength::new(radius * record_scale)?;
+                    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                        cadmpeg_ir::geometry::analytic::CylinderSurface::new(origin, frame, radius),
+                    )))
                 }),
             // ISO 10303-42 `conical_surface` holds `semi_angle` in `(0, pi/2)`.
             // Every finite value comes through, because the IR cone uses the
@@ -1408,46 +1412,44 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .zip(named_parameter(record, "CONICAL_SURFACE", 2).and_then(Value::number))
                 .zip(named_parameter(record, "CONICAL_SURFACE", 3).and_then(Value::number))
                 .and_then(|(((origin, axis, ref_direction), radius), half_angle)| {
-                    cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                        origin,
-                        axis,
-                        ref_direction,
-                        radius * record_scale,
-                        1.0,
-                        half_angle * record_angle_scale,
-                    )
-                    .ok()
-                    .map(SolvedSurfaceGeometry::Cone)
-                    .map(SurfaceGeometry::Solved)
+                    let frame = OrthonormalFrame3::from_units(axis, ref_direction)?;
+                    let radius = NonNegativeLength::new(radius * record_scale)?;
+                    let half_angle = Angle::new(half_angle * record_angle_scale)?;
+                    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+                        cadmpeg_ir::geometry::analytic::ConeSurface::new(
+                            origin,
+                            frame,
+                            radius,
+                            PositiveReal::ONE,
+                            half_angle,
+                        ),
+                    )))
                 }),
             LeafSurfaceEntity::Spherical => placement
                 .zip(named_parameter(record, "SPHERICAL_SURFACE", 2).and_then(Value::number))
                 .and_then(|((center, axis, ref_direction), radius)| {
-                    cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                        center,
-                        axis,
-                        ref_direction,
-                        radius * record_scale,
-                    )
-                    .ok()
-                    .map(SolvedSurfaceGeometry::Sphere)
-                    .map(SurfaceGeometry::Solved)
+                    let frame = OrthonormalFrame3::from_units(axis, ref_direction)?;
+                    let radius = NonZeroLength::new(radius * record_scale)?;
+                    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+                        cadmpeg_ir::geometry::analytic::SphereSurface::new(center, frame, radius),
+                    )))
                 }),
             LeafSurfaceEntity::Toroidal | LeafSurfaceEntity::DegenerateToroidal => placement
                 .zip(named_parameter(record, surface_type, 2).and_then(Value::number))
                 .zip(named_parameter(record, surface_type, 3).and_then(Value::number))
                 .and_then(
                     |(((center, axis, ref_direction), major_radius), minor_radius)| {
-                        cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-                            center,
-                            axis,
-                            ref_direction,
-                            major_radius * record_scale,
-                            minor_radius * record_scale,
-                        )
-                        .ok()
-                        .map(SolvedSurfaceGeometry::Torus)
-                        .map(SurfaceGeometry::Solved)
+                        let frame = OrthonormalFrame3::from_units(axis, ref_direction)?;
+                        let major_radius = PositiveLength::new(major_radius * record_scale)?;
+                        let minor_radius = NonZeroLength::new(minor_radius * record_scale)?;
+                        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+                            cadmpeg_ir::geometry::analytic::TorusSurface::new(
+                                center,
+                                frame,
+                                major_radius,
+                                minor_radius,
+                            ),
+                        )))
                     },
                 ),
             LeafSurfaceEntity::BSplineWithKnots
@@ -1517,8 +1519,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let Some(parameters) = entity_parameters(record, "RECTANGULAR_TRIMMED_SURFACE") else {
                 continue;
             };
-            let record_scale = unit_scales.length([id]);
-            let record_angle_scale = unit_scales.angle([id]);
+            let record_scale = unit_scales.length([id]).get();
+            let record_angle_scale = unit_scales.angle([id]).get();
             let Some(support_step) = parameters.get(1).and_then(Value::reference) else {
                 continue;
             };
@@ -1591,13 +1593,16 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     }
                 }
             }
-            if parameter_ranges
-                .iter()
-                .flatten()
-                .any(|parameter| !parameter.is_finite())
-            {
+            let [[u_start, u_end], [v_start, v_end]] = parameter_ranges;
+            let [Some(u_start), Some(u_end), Some(v_start), Some(v_end)] = [
+                FiniteReal::new(u_start),
+                FiniteReal::new(u_end),
+                FiniteReal::new(v_start),
+                FiniteReal::new(v_end),
+            ] else {
                 continue;
-            }
+            };
+            let parameter_ranges = [[u_start, u_end], [v_start, v_end]];
             let surface = SurfaceId::from(ids::data(kind!("surface"), id));
             ir.model.surfaces.push(Surface {
                 id: surface.clone(),
@@ -1606,13 +1611,25 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             });
             let _attached = ir.model.add_procedural_surface(
                 surface,
-                match cadmpeg_ir::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(
-                    SurfaceId::from(ids::data(kind!("surface"), support_step)),
-                    parameter_ranges,
-                    Some(u_sense),
-                    Some(v_sense),
-                    None,
-                )
+                match (|| {
+                    let ranges = parameter_ranges.map(|range| {
+                        DirectedParameterRange::from_finite_endpoints(range).map_err(|_| {
+                            ProceduralGeometryError::Payload(
+                                "surface subset ranges are not finite and non-zero",
+                            )
+                        })
+                    });
+                    let [u_range, v_range] = ranges;
+                    Ok::<_, ProceduralGeometryError>(
+                        cadmpeg_ir::geometry::surface_payloads::SubsetSurfaceConstruction::from_parts(
+                            SurfaceId::from(ids::data(kind!("surface"), support_step)),
+                            [u_range?, v_range?],
+                            Some(u_sense),
+                            Some(v_sense),
+                            None,
+                        ),
+                    )
+                })()
                 .map(|admitted_payload| {
                     ProceduralSurface::new(
                         ProceduralSurfaceId::from(ids::construction(
@@ -1718,7 +1735,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let Some(parameters) = entity_parameters(record, "OFFSET_SURFACE") else {
                 continue;
             };
-            let record_scale = unit_scales.length([id]);
+            let record_scale = unit_scales.length([id]).get();
             let Some(support_step) = parameters.get(1).and_then(Value::reference) else {
                 continue;
             };
@@ -1949,8 +1966,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 ir,
                 &surface.id,
                 &surface.geometry,
-                unit_scales.length([id]),
-                unit_scales.angle([id]),
+                unit_scales.length([id]).get(),
+                unit_scales.angle([id]).get(),
                 &source_curve_parameter_scales,
             )?;
             Some((id, scales))
@@ -2125,7 +2142,7 @@ fn decode_tessellated_curve_sets(
             )));
             continue;
         };
-        let scale = unit_scales.length([coordinates_id]);
+        let scale = unit_scales.length([coordinates_id]).get();
         let Some(vertices) = coordinate_rows(coordinates_record, scale) else {
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "TESSELLATED_CURVE_SET #{id} has invalid COORDINATES_LIST #{coordinates_id}"
@@ -2164,9 +2181,11 @@ fn decode_tessellated_curve_sets(
             let Ok(points) = points.try_into() else {
                 continue;
             };
-            let Some(polyline) =
-                PolylineCurve::new(PolylineSamples::Unparameterized { points }, 0.0).ok()
-            else {
+            let Some(polyline) = PolylineCurve::from_checked_samples(
+                PolylineSamples::Unparameterized { points },
+                0.0,
+            )
+            .ok() else {
                 continue;
             };
             ir.model.curves.push(Curve {
@@ -3081,12 +3100,12 @@ fn surface_curve_associated_geometry(record: &RawRecord) -> Option<Vec<u64>> {
 
 fn resolve_unit_scales(
     exchange: &Exchange,
-    default_length: f64,
-    default_angle: f64,
+    default_length: PositiveReal,
+    default_angle: PositiveReal,
     losses: &mut Vec<LossNote>,
 ) -> UnitScales {
-    let mut length_candidates = BTreeMap::<u64, Vec<f64>>::new();
-    let mut angle_candidates = BTreeMap::<u64, Vec<f64>>::new();
+    let mut length_candidates = BTreeMap::<u64, Vec<PositiveReal>>::new();
+    let mut angle_candidates = BTreeMap::<u64, Vec<PositiveReal>>::new();
     for (&representation_id, representation) in exchange.records() {
         if !is_representation_record(representation) {
             continue;
@@ -3133,20 +3152,20 @@ fn resolve_unit_scales(
         default_angle,
         length: length
             .into_iter()
-            .filter(|(_, scale)| scale.is_finite() && *scale > 0.0 && *scale != default_length)
+            .filter(|(_, scale)| *scale != default_length)
             .collect(),
         angle: angle
             .into_iter()
-            .filter(|(_, scale)| scale.is_finite() && *scale > 0.0 && *scale != default_angle)
+            .filter(|(_, scale)| *scale != default_angle)
             .collect(),
     }
 }
 
 fn finalize_unit_candidates(
-    candidates: BTreeMap<u64, Vec<f64>>,
+    candidates: BTreeMap<u64, Vec<PositiveReal>>,
     dimension: &str,
     losses: &mut Vec<LossNote>,
-) -> BTreeMap<u64, f64> {
+) -> BTreeMap<u64, PositiveReal> {
     let mut selected = BTreeMap::new();
     let mut ambiguous = 0;
     for (id, values) in candidates {
@@ -3165,7 +3184,7 @@ fn finalize_unit_candidates(
     selected
 }
 
-fn unique_scale(values: &[f64]) -> Option<f64> {
+fn unique_scale(values: &[PositiveReal]) -> Option<PositiveReal> {
     let first = *values.first()?;
     values
         .iter()
@@ -3173,7 +3192,9 @@ fn unique_scale(values: &[f64]) -> Option<f64> {
         .then_some(first)
 }
 
-fn same_scale(left: f64, right: f64) -> bool {
+fn same_scale(left: PositiveReal, right: PositiveReal) -> bool {
+    let left = left.get();
+    let right = right.get();
     let tolerance = EPS_GEOMETRY_READ_EXACT_GEOMETRY * left.abs().max(right.abs()).max(1.0);
     (left - right).abs() <= tolerance
 }
@@ -3194,7 +3215,10 @@ fn representation_context(record: &RawRecord) -> Option<u64> {
         .find_map(Value::reference)
 }
 
-fn context_unit_scales(id: u64, exchange: &Exchange) -> (Option<f64>, Option<f64>) {
+fn context_unit_scales(
+    id: u64,
+    exchange: &Exchange,
+) -> (Option<PositiveReal>, Option<PositiveReal>) {
     let Some(context) = exchange.records().get(&id) else {
         return (None, None);
     };
@@ -3299,19 +3323,19 @@ fn is_representation_context_record(record: &RawRecord) -> bool {
     })
 }
 
-fn length_scale(exchange: &Exchange) -> Option<f64> {
+fn length_scale(exchange: &Exchange) -> Option<PositiveReal> {
     document_unit_scale(exchange, "LENGTH_UNIT", unit_scale_mm)
 }
 
-fn plane_angle_scale(exchange: &Exchange) -> Option<f64> {
+fn plane_angle_scale(exchange: &Exchange) -> Option<PositiveReal> {
     document_unit_scale(exchange, "PLANE_ANGLE_UNIT", unit_scale_radians)
 }
 
 fn document_unit_scale(
     exchange: &Exchange,
     dimension_partial: &str,
-    resolve: fn(u64, &Exchange, &mut BTreeSet<u64>) -> Option<f64>,
-) -> Option<f64> {
+    resolve: fn(u64, &Exchange, &mut BTreeSet<u64>) -> Option<PositiveReal>,
+) -> Option<PositiveReal> {
     let mut context_scales = Vec::new();
     let mut has_context_unit = false;
 
@@ -3364,7 +3388,7 @@ pub(super) fn unit_scale_radians(
     id: u64,
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
-) -> Option<f64> {
+) -> Option<PositiveReal> {
     unit_scale_radians_inner(id, exchange, active, 0)
 }
 
@@ -3373,7 +3397,7 @@ fn unit_scale_radians_inner(
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
     depth: usize,
-) -> Option<f64> {
+) -> Option<PositiveReal> {
     if depth >= 256 {
         return None;
     }
@@ -3400,20 +3424,20 @@ fn unit_scale_radians_inner(
             let base = record_values(factor)
                 .find_map(Value::reference)
                 .and_then(|base| unit_scale_radians_inner(base, exchange, active, depth + 1))?;
-            Some(value * base)
+            Some(value * base.get())
         } else {
             None
         }
     })();
     active.remove(&id);
-    result.filter(|scale| scale.is_finite() && *scale > 0.0)
+    result.and_then(PositiveReal::new)
 }
 
 pub(super) fn unit_scale_mm(
     id: u64,
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
-) -> Option<f64> {
+) -> Option<PositiveReal> {
     unit_scale_mm_inner(id, exchange, active, 0)
 }
 
@@ -3422,7 +3446,7 @@ fn unit_scale_mm_inner(
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
     depth: usize,
-) -> Option<f64> {
+) -> Option<PositiveReal> {
     if depth >= 256 {
         return None;
     }
@@ -3452,13 +3476,13 @@ fn unit_scale_mm_inner(
                 .flat_map(|partial| &partial.parameters)
                 .find_map(Value::reference)
                 .and_then(|base| unit_scale_mm_inner(base, exchange, active, depth + 1))?;
-            Some(value * base)
+            Some(value * base.get())
         } else {
             None
         }
     })();
     active.remove(&id);
-    result.filter(|scale| scale.is_finite() && *scale > 0.0)
+    result.and_then(PositiveReal::new)
 }
 
 const SI_MICRO: f64 = EPS_GEOMETRY_READ_COARSE_GEOMETRY;
@@ -3496,7 +3520,10 @@ fn si_prefix(prefix: &str) -> Option<f64> {
 /// the only contribution of the context. Every other context contributes each
 /// of its resolvable length measures. `linear_uncertainty` merges the equal
 /// contributions of all contexts and decides what a disagreement means.
-fn context_length_uncertainties(context: &RawRecord, exchange: &Exchange) -> (Vec<f64>, usize) {
+fn context_length_uncertainties(
+    context: &RawRecord,
+    exchange: &Exchange,
+) -> (Vec<PositiveLength>, usize) {
     let Some(references) = context
         .partial("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT")
         .and_then(|partial| partial.parameters.first())
@@ -3520,11 +3547,10 @@ fn context_length_uncertainties(context: &RawRecord, exchange: &Exchange) -> (Ve
             continue;
         };
         if let Some(scale) = unit_scale_mm(unit, exchange, &mut BTreeSet::new()) {
-            let result = value * scale;
-            if !result.is_finite() || result <= 0.0 {
+            let Some(result) = PositiveLength::new(value * scale.get()) else {
                 unresolved += 1;
                 continue;
-            }
+            };
             // The CADIR convention applies to the name attribute, not
             // the optional description attribute.
             let named_distance_accuracy = measure
@@ -3555,21 +3581,21 @@ fn context_length_uncertainties(context: &RawRecord, exchange: &Exchange) -> (Ve
 /// The document projection of the per-context linear uncertainty candidates.
 enum LinearUncertainty {
     /// One distinct candidate, in millimetres.
-    Value(f64),
+    Value(PositiveLength),
     /// No candidate, with the number of measures that did not resolve.
     Empty { unresolved: usize },
     /// Several distinct candidates in millimetres, sorted and without
     /// duplicates, with the number of measures that did not resolve.
     Ambiguous {
-        first: f64,
-        second: f64,
-        rest: Vec<f64>,
+        first: PositiveLength,
+        second: PositiveLength,
+        rest: Vec<PositiveLength>,
         unresolved: usize,
     },
 }
 
 fn linear_uncertainty(exchange: &Exchange) -> LinearUncertainty {
-    let mut candidates: Vec<f64> = Vec::new();
+    let mut candidates: Vec<PositiveLength> = Vec::new();
     let mut unresolved = 0;
     for (_, context) in exchange.entities("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT") {
         let (context_candidates, context_unresolved) =
@@ -3583,7 +3609,7 @@ fn linear_uncertainty(exchange: &Exchange) -> LinearUncertainty {
             }
         }
     }
-    candidates.sort_by(f64::total_cmp);
+    candidates.sort_by(|left, right| left.get().total_cmp(&right.get()));
 
     let mut candidates = candidates.into_iter();
     match (candidates.next(), candidates.next()) {
@@ -3761,9 +3787,9 @@ fn parameter_scale(
 fn line_parameter_scale(
     exchange: &Exchange,
     curve: u64,
-    length_scale: f64,
+    length_scale: PositiveReal,
     losses: &mut Vec<LossNote>,
-) -> f64 {
+) -> PositiveReal {
     fn inherited_parent(record: &RawRecord) -> Option<u64> {
         if record.partial("CURVE_REPLICA").is_some() {
             return named_parameter(record, "CURVE_REPLICA", 1).and_then(ValueExt::reference);
@@ -3788,10 +3814,10 @@ fn line_parameter_scale(
     fn resolve(
         exchange: &Exchange,
         curve: u64,
-        length_scale: f64,
+        length_scale: PositiveReal,
         losses: &mut Vec<LossNote>,
         visiting: &mut BTreeSet<u64>,
-    ) -> f64 {
+    ) -> PositiveReal {
         if !visiting.insert(curve) {
             return length_scale;
         }
@@ -3806,8 +3832,8 @@ fn line_parameter_scale(
                 .filter(|record| record.partial("VECTOR").is_some())
                 .and_then(|record| named_parameter(record, "VECTOR", 2))
                 .and_then(ValueExt::number)
-                .map(|magnitude| magnitude * length_scale)
-                .filter(|scale| scale.is_finite() && *scale > 0.0)
+                .and_then(PositiveReal::new)
+                .and_then(|magnitude| PositiveReal::new(magnitude.get() * length_scale.get()))
                 .unwrap_or_else(|| {
                     losses.push(StepLossCode::LineParameterScaleUnresolved.note(format!(
                         "LINE #{curve} parameter scale did not resolve; the document length scale was used"
@@ -3826,8 +3852,10 @@ fn line_parameter_scale(
     resolve(exchange, curve, length_scale, losses, &mut BTreeSet::new())
 }
 
-fn orthogonal_reference(axis: Vector3, reference: Vector3) -> Option<Vector3> {
-    let projection = axis.dot(reference);
+fn orthogonal_reference(axis: UnitVector3, reference: UnitVector3) -> Option<UnitVector3> {
+    let axis = axis.as_raw();
+    let reference = reference.as_raw();
+    let projection = axis.dot(*reference);
     normalize(Vector3::new(
         reference.x - projection * axis.x,
         reference.y - projection * axis.y,
@@ -3835,8 +3863,7 @@ fn orthogonal_reference(axis: Vector3, reference: Vector3) -> Option<Vector3> {
     ))
 }
 
-fn first_projected_axis(axis: Vector3) -> Option<Vector3> {
-    let axis = normalize(axis)?;
+fn first_projected_axis(axis: UnitVector3) -> Option<UnitVector3> {
     project_axis(default_reference_axis(axis), axis)
 }
 
@@ -4058,7 +4085,7 @@ fn periodic_value(
     }
 }
 
-pub(super) fn coordinate_rows(record: &RawRecord, scale: f64) -> Option<Vec<Point3>> {
+pub(super) fn coordinate_rows(record: &RawRecord, scale: f64) -> Option<Vec<FinitePoint3>> {
     record
         .partials
         .iter()
@@ -4076,7 +4103,7 @@ pub(super) fn coordinate_rows(record: &RawRecord, scale: f64) -> Option<Vec<Poin
                         values[1].number()? * scale,
                         values[2].number()? * scale,
                     );
-                    point.is_finite().then_some(point)
+                    FinitePoint3::new(point)
                 })
                 .collect::<Option<Vec<_>>>()
                 .filter(|vertices| !vertices.is_empty())
@@ -4137,17 +4164,13 @@ fn named_coordinates2(record: &RawRecord, name: &str, index: usize) -> Option<Po
     Some(Point2::new(values[0].number()?, values[1].number()?))
 }
 
-fn vector2(value: Option<&Value>) -> Option<Point2> {
+fn direction2(value: Option<&Value>) -> Option<HypotDirection2> {
     let values = value?.list()?;
     if values.len() != 2 {
         return None;
     }
-    Some(Point2::new(values[0].number()?, values[1].number()?))
-}
-
-fn normalize2(vector: Point2) -> Option<Point2> {
-    let length = vector.u.hypot(vector.v);
-    (length.is_finite() && length > 0.0).then(|| Point2::new(vector.u / length, vector.v / length))
+    HypotDirection2::normalized_with_length([values[0].number()?, values[1].number()?])
+        .map(|(direction, _)| direction)
 }
 
 fn vector3(value: Option<&Value>, scale: f64) -> Option<Vector3> {
@@ -4172,7 +4195,7 @@ enum DefaultNurbsKnotKind {
 struct NurbsCurveDefinition {
     degree: u32,
     control_points: Vec<u64>,
-    knots: Vec<f64>,
+    knots: KnotVector,
     weights: Option<Vec<f64>>,
     periodic: bool,
 }
@@ -4248,7 +4271,7 @@ fn default_nurbs_knots(
     control_point_count: usize,
     degree: u32,
     kind: DefaultNurbsKnotKind,
-) -> Option<Vec<f64>> {
+) -> Option<KnotVector> {
     let degree = usize::try_from(degree).ok()?;
     let expected = control_point_count.checked_add(degree)?.checked_add(1)?;
     let mut knots = Vec::new();
@@ -4288,7 +4311,14 @@ fn default_nurbs_knots(
             }
         }
     }
-    (knots.len() == expected).then_some(knots)
+    (knots.len() == expected).then_some(())?;
+    KnotVector::from_finite_lanes(
+        knots
+            .into_iter()
+            .map(FiniteReal::new)
+            .collect::<Option<Vec<_>>>()?,
+    )
+    .ok()
 }
 
 fn nurbs_curve(
@@ -4301,15 +4331,17 @@ fn nurbs_curve(
     let control_points = definition
         .control_points
         .into_iter()
-        .map(|id| points.get(&id).copied().map(FinitePoint3::get))
+        .map(|id| points.get(&id).copied())
         .collect::<Option<Vec<_>>>()?;
-    match NurbsCurve::from_lanes(
-        definition.degree,
-        definition.knots,
-        control_points,
-        definition.weights,
-        definition.periodic,
-    ) {
+    let curve = NurbsPoles3::from_lanes(control_points, definition.weights).and_then(|poles| {
+        NurbsCurve::new(
+            definition.degree,
+            definition.knots,
+            poles,
+            definition.periodic,
+        )
+    });
+    match curve {
         Ok(curve) => Some(curve),
         Err(error) => {
             losses.push(StepLossCode::DecodeWarning.note(format!(
@@ -4332,13 +4364,16 @@ fn nurbs_pcurve(
         .into_iter()
         .map(|id| points.get(&id).copied())
         .collect::<Option<Vec<_>>>()?;
-    match PcurveNurbs::from_lanes(
-        definition.degree,
-        definition.knots,
-        control_points,
-        definition.weights,
-        definition.periodic,
-    ) {
+    let pcurve =
+        PcurveNurbsPoles::from_lanes(control_points, definition.weights).and_then(|poles| {
+            PcurveNurbs::new(
+                definition.degree,
+                definition.knots,
+                poles,
+                definition.periodic,
+            )
+        });
+    match pcurve {
         Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
         Err(error) => {
             losses.push(StepLossCode::DecodeWarning.note(format!(
@@ -4355,7 +4390,7 @@ fn decode_pcurve_geometry(
     exchange: &Exchange,
     points: &BTreeMap<u64, Point2>,
     vectors: &BTreeMap<u64, Point2>,
-    placements: &BTreeMap<u64, (Point2, Point2, Point2)>,
+    placements: &BTreeMap<u64, (Point2, HypotDirection2, HypotDirection2)>,
     transformations: &BTreeMap<u64, Transform2>,
     angle_scale: f64,
     losses: &mut Vec<LossNote>,
@@ -4414,12 +4449,12 @@ fn decode_pcurve_geometry(
                     let (center, x_axis, y_axis) = placements.get(&placement).copied()?;
                     let radius = named_parameter(record, "CIRCLE", 2).and_then(Value::number)?;
                     records.insert(placement);
-                    PcurveGeometry::Circle(
-                        cadmpeg_ir::geometry::pcurve::CirclePcurve::try_new(
-                            center, x_axis, y_axis, radius,
-                        )
-                        .ok()?,
-                    )
+                    PcurveGeometry::Circle(cadmpeg_ir::geometry::pcurve::CirclePcurve::from_parts(
+                        cadmpeg_ir::units::FinitePoint2::new(center)?,
+                        cadmpeg_ir::units::FinitePoint2::from(x_axis),
+                        cadmpeg_ir::units::FinitePoint2::from(y_axis),
+                        cadmpeg_ir::scalar::PositiveReal::new(radius)?,
+                    )?)
                 }
                 "ELLIPSE" => {
                     let placement = named_parameter(record, "ELLIPSE", 1)?.reference()?;
@@ -4430,14 +4465,13 @@ fn decode_pcurve_geometry(
                         named_parameter(record, "ELLIPSE", 3).and_then(Value::number)?;
                     records.insert(placement);
                     PcurveGeometry::Ellipse(
-                        cadmpeg_ir::geometry::pcurve::EllipsePcurve::try_new(
-                            center,
-                            x_axis,
-                            y_axis,
-                            major_radius,
-                            minor_radius,
-                        )
-                        .ok()?,
+                        cadmpeg_ir::geometry::pcurve::EllipsePcurve::from_parts(
+                            cadmpeg_ir::units::FinitePoint2::new(center)?,
+                            cadmpeg_ir::units::FinitePoint2::from(x_axis),
+                            cadmpeg_ir::units::FinitePoint2::from(y_axis),
+                            cadmpeg_ir::scalar::PositiveReal::new(major_radius)?,
+                            cadmpeg_ir::scalar::PositiveReal::new(minor_radius)?,
+                        )?,
                     )
                 }
                 "PARABOLA" => {
@@ -4447,13 +4481,12 @@ fn decode_pcurve_geometry(
                         named_parameter(record, "PARABOLA", 2).and_then(Value::number)?;
                     records.insert(placement);
                     PcurveGeometry::Parabola(
-                        cadmpeg_ir::geometry::pcurve::ParabolaPcurve::try_new(
-                            vertex,
-                            x_axis,
-                            y_axis,
-                            focal_distance,
-                        )
-                        .ok()?,
+                        cadmpeg_ir::geometry::pcurve::ParabolaPcurve::from_parts(
+                            cadmpeg_ir::units::FinitePoint2::new(vertex)?,
+                            cadmpeg_ir::units::FinitePoint2::from(x_axis),
+                            cadmpeg_ir::units::FinitePoint2::from(y_axis),
+                            cadmpeg_ir::scalar::PositiveReal::new(focal_distance)?,
+                        )?,
                     )
                 }
                 "HYPERBOLA" => {
@@ -4465,14 +4498,13 @@ fn decode_pcurve_geometry(
                         named_parameter(record, "HYPERBOLA", 3).and_then(Value::number)?;
                     records.insert(placement);
                     PcurveGeometry::Hyperbola(
-                        cadmpeg_ir::geometry::pcurve::HyperbolaPcurve::try_new(
-                            center,
-                            x_axis,
-                            y_axis,
-                            major_radius,
-                            minor_radius,
-                        )
-                        .ok()?,
+                        cadmpeg_ir::geometry::pcurve::HyperbolaPcurve::from_parts(
+                            cadmpeg_ir::units::FinitePoint2::new(center)?,
+                            cadmpeg_ir::units::FinitePoint2::from(x_axis),
+                            cadmpeg_ir::units::FinitePoint2::from(y_axis),
+                            cadmpeg_ir::scalar::PositiveReal::new(major_radius)?,
+                            cadmpeg_ir::scalar::PositiveReal::new(minor_radius)?,
+                        )?,
                     )
                 }
                 "POLYLINE" => polyline_pcurve(id, record, points, losses)?,
@@ -4526,9 +4558,10 @@ fn decode_pcurve_geometry(
                         1.0
                     };
                     let start =
-                        pcurve_trim_parameter(named_parameter(record, "TRIMMED_CURVE", 2)?)?
+                        pcurve_trim_parameter(named_parameter(record, "TRIMMED_CURVE", 2)?)?.get()
                             * scale;
                     let end = pcurve_trim_parameter(named_parameter(record, "TRIMMED_CURVE", 3)?)?
+                        .get()
                         * scale;
                     records.extend(basis_records);
                     let (parameter_range, same_sense) =
@@ -4544,14 +4577,10 @@ fn decode_pcurve_geometry(
                 }
                 "OFFSET_CURVE_2D" => {
                     let basis_id = named_parameter(record, "OFFSET_CURVE_2D", 1)?.reference()?;
-                    let distance = named_parameter(record, "OFFSET_CURVE_2D", 2)?.number()?;
-                    if !distance.is_finite()
-                        || named_parameter(record, "OFFSET_CURVE_2D", 3)?
-                            .logical()
-                            .is_none()
-                    {
-                        return None;
-                    }
+                    let distance = named_parameter(record, "OFFSET_CURVE_2D", 2)?
+                        .number()
+                        .and_then(FiniteReal::new)?;
+                    named_parameter(record, "OFFSET_CURVE_2D", 3)?.logical()?;
                     let (basis, basis_records) = decode_pcurve_geometry(
                         basis_id,
                         exchange,
@@ -4566,7 +4595,7 @@ fn decode_pcurve_geometry(
                     )?;
                     records.extend(basis_records);
                     PcurveGeometry::Offset(
-                        cadmpeg_ir::geometry::pcurve::OffsetPcurve::try_new(
+                        cadmpeg_ir::geometry::pcurve::OffsetPcurve::from_finite_parts(
                             distance,
                             Box::new(basis),
                         )
@@ -4584,7 +4613,7 @@ fn decode_pcurve_geometry(
     result
 }
 
-fn pcurve_trim_parameter(value: &Value) -> Option<f64> {
+fn pcurve_trim_parameter(value: &Value) -> Option<FiniteReal> {
     fn bare_number(value: &Value) -> Option<f64> {
         match value {
             Value::Integer(value) => Some(*value as f64),
@@ -4610,7 +4639,7 @@ fn pcurve_trim_parameter(value: &Value) -> Option<f64> {
             }),
         _ => None,
     }
-    .filter(|value| value.is_finite())
+    .and_then(FiniteReal::new)
 }
 
 fn trimmed_pcurve_parameterization(
@@ -4661,11 +4690,15 @@ fn pcurve_periodic_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
     }
 }
 
-fn pcurve_nurbs_parameter_domain(degree: u32, knots: &[f64], count: usize) -> Option<[f64; 2]> {
+fn pcurve_nurbs_parameter_domain(
+    degree: u32,
+    knots: &KnotVector,
+    count: usize,
+) -> Option<[f64; 2]> {
     let degree = usize::try_from(degree).ok()?;
     let lower = *knots.get(degree)?;
     let upper = *knots.get(count)?;
-    (lower.is_finite() && upper.is_finite() && upper > lower).then_some([lower, upper])
+    (upper > lower).then_some([lower, upper])
 }
 
 fn shift_periodic_parameter(value: f64, [lower, upper]: [f64; 2]) -> f64 {
@@ -4683,7 +4716,7 @@ fn surface_parameter_scales_for_step(
     geometry: &SurfaceGeometry,
     length_scale: f64,
     angle_scale: f64,
-    source_curve_parameter_scales: &BTreeMap<u64, f64>,
+    source_curve_parameter_scales: &BTreeMap<u64, FiniteReal>,
 ) -> Option<[f64; 2]> {
     procedural_surface_parameter_scales(
         ir,
@@ -4702,7 +4735,7 @@ fn procedural_surface_parameter_scales(
     geometry: &SurfaceGeometry,
     length_scale: f64,
     angle_scale: f64,
-    source_curve_parameter_scales: &BTreeMap<u64, f64>,
+    source_curve_parameter_scales: &BTreeMap<u64, FiniteReal>,
     active: &mut BTreeSet<SurfaceId>,
 ) -> Option<[f64; 2]> {
     if !active.insert(surface_id.clone()) {
@@ -4727,7 +4760,7 @@ fn surface_geometry_parameter_scales(
     geometry: &SolvedSurfaceGeometry,
     length_scale: f64,
     angle_scale: f64,
-    source_curve_parameter_scales: &BTreeMap<u64, f64>,
+    source_curve_parameter_scales: &BTreeMap<u64, FiniteReal>,
     active: &mut BTreeSet<SurfaceId>,
 ) -> Option<[f64; 2]> {
     match geometry {
@@ -4774,7 +4807,7 @@ fn procedural_definition_parameter_scales(
     definition: &ProceduralSurfaceDefinition,
     length_scale: f64,
     angle_scale: f64,
-    source_curve_parameter_scales: &BTreeMap<u64, f64>,
+    source_curve_parameter_scales: &BTreeMap<u64, FiniteReal>,
     active: &mut BTreeSet<SurfaceId>,
 ) -> Option<[f64; 2]> {
     let support_scales = |support: &SurfaceId, active: &mut BTreeSet<SurfaceId>| {
@@ -4877,12 +4910,12 @@ fn directrix_parameter_scale(
     curve_id: &CurveId,
     length_scale: f64,
     angle_scale: f64,
-    source_curve_parameter_scales: &BTreeMap<u64, f64>,
+    source_curve_parameter_scales: &BTreeMap<u64, FiniteReal>,
 ) -> Option<f64> {
     if let Some(source_scale) =
         step_instance_id(curve_id.as_str()).and_then(|id| source_curve_parameter_scales.get(&id))
     {
-        return Some(*source_scale);
+        return Some(source_scale.get());
     }
     directrix_parameter_scale_inner(
         ir,
@@ -4974,11 +5007,15 @@ pub(super) fn surface_periodic_domains(geometry: &SolvedSurfaceGeometry) -> [Opt
     }
 }
 
-fn nurbs_surface_parameter_domain(degree: u32, knots: &[f64], count: usize) -> Option<[f64; 2]> {
+fn nurbs_surface_parameter_domain(
+    degree: u32,
+    knots: &KnotVector,
+    count: usize,
+) -> Option<[f64; 2]> {
     let degree = usize::try_from(degree).ok()?;
     let lower = *knots.get(degree)?;
     let upper = *knots.get(count)?;
-    (lower.is_finite() && upper.is_finite() && upper > lower).then_some([lower, upper])
+    (upper > lower).then_some([lower, upper])
 }
 
 fn polyline_pcurve(
@@ -5174,12 +5211,15 @@ fn nurbs_surface(
     } else {
         None
     };
-    match NurbsSurface::from_lanes(
-        NurbsSurfaceAxis::new(u_degree, u_knots, u_periodic),
-        NurbsSurfaceAxis::new(v_degree, v_knots, v_periodic),
-        NurbsSurfaceLanes::new(control_points, weights),
-        false,
-    ) {
+    let surface = NurbsPoleGrid::from_lanes(control_points, weights).and_then(|poles| {
+        NurbsSurface::new(
+            NurbsSurfaceAxis::new(u_degree, u_knots, u_periodic),
+            NurbsSurfaceAxis::new(v_degree, v_knots, v_periodic),
+            poles,
+            false,
+        )
+    });
+    match surface {
         Ok(surface) => Some(surface),
         Err(error) => {
             losses.push(StepLossCode::DecodeWarning.note(format!(
@@ -5190,7 +5230,7 @@ fn nurbs_surface(
     }
 }
 
-fn expand_knots(multiplicities: &Value, distinct: &Value, expected: usize) -> Option<Vec<f64>> {
+fn expand_knots(multiplicities: &Value, distinct: &Value, expected: usize) -> Option<KnotVector> {
     let multiplicities = multiplicities.list()?;
     let distinct = distinct.list()?;
     if multiplicities.len() != distinct.len() {
@@ -5200,8 +5240,8 @@ fn expand_knots(multiplicities: &Value, distinct: &Value, expected: usize) -> Op
     knots.try_reserve_exact(expected).ok()?;
     for (multiplicity, knot) in multiplicities.iter().zip(distinct) {
         let count = usize::try_from(multiplicity.integer()?).ok()?;
-        let knot = knot.number()?;
-        if count == 0 || !knot.is_finite() {
+        let knot = knot.number().and_then(FiniteReal::new)?;
+        if count == 0 {
             return None;
         }
         if knots.len().checked_add(count)? > expected {
@@ -5209,10 +5249,7 @@ fn expand_knots(multiplicities: &Value, distinct: &Value, expected: usize) -> Op
         }
         knots.extend(std::iter::repeat_n(knot, count));
     }
-    knots
-        .windows(2)
-        .all(|pair| pair[0] <= pair[1])
-        .then_some(knots)
+    KnotVector::from_finite_lanes(knots).ok()
 }
 
 fn references(value: &Value) -> Option<Vec<u64>> {
@@ -5237,7 +5274,7 @@ fn numbers(value: &Value) -> Option<Vec<f64>> {
     value.list()?.iter().map(Value::number).collect()
 }
 
-pub(super) fn normalize(vector: Vector3) -> Option<Vector3> {
+pub(super) fn normalize(vector: Vector3) -> Option<UnitVector3> {
     if !vector.is_finite() {
         return None;
     }
@@ -5246,43 +5283,48 @@ pub(super) fn normalize(vector: Vector3) -> Option<Vector3> {
         return None;
     }
     let scaled = Vector3::new(vector.x / scale, vector.y / scale, vector.z / scale);
-    let length = scaled.norm();
-    Some(scaled.scale(1.0 / length))
+    UnitVector3::normalized_by_reciprocal(scaled)
 }
 
-fn project_axis(vector: Vector3, normal: Vector3) -> Option<Vector3> {
-    let vector = normalize(vector)?;
-    let normal = normalize(normal)?;
+fn project_axis(vector: UnitVector3, normal: UnitVector3) -> Option<UnitVector3> {
+    let vector = *vector.recharted_by_reciprocal().as_raw();
+    let normal = *normal.recharted_by_reciprocal().as_raw();
     normalize(vector - normal.scale(vector.dot(normal)))
 }
 
-fn second_project_axis(z_axis: Vector3, x_axis: Vector3, vector: Vector3) -> Option<Vector3> {
-    let vector = normalize(vector)?;
-    let z_axis = normalize(z_axis)?;
-    let x_axis = normalize(x_axis)?;
+fn second_project_axis(
+    z_axis: UnitVector3,
+    x_axis: UnitVector3,
+    vector: UnitVector3,
+) -> Option<UnitVector3> {
+    let vector = *vector.recharted_by_reciprocal().as_raw();
+    let z_axis = *z_axis.recharted_by_reciprocal().as_raw();
+    let x_axis = *x_axis.recharted_by_reciprocal().as_raw();
     let projected = (vector - z_axis.scale(vector.dot(z_axis))) - x_axis.scale(vector.dot(x_axis));
     normalize(projected)
 }
 
 fn base_axis_3d(
-    axis1: Option<Vector3>,
-    axis2: Option<Vector3>,
-    axis3: Option<Vector3>,
-) -> Option<[Vector3; 3]> {
-    let z_axis = normalize(axis3.unwrap_or(Vector3::new(0.0, 0.0, 1.0)))?;
+    axis1: Option<UnitVector3>,
+    axis2: Option<UnitVector3>,
+    axis3: Option<UnitVector3>,
+) -> Option<[UnitVector3; 3]> {
+    let z_axis = axis3
+        .unwrap_or(UnitVector3::Z_AXIS)
+        .recharted_by_reciprocal();
     let default_x = default_reference_axis(z_axis);
     let x_axis = project_axis(axis1.unwrap_or(default_x), z_axis)?;
-    let y_axis = second_project_axis(z_axis, x_axis, axis2.unwrap_or(Vector3::new(0.0, 1.0, 0.0)))?;
+    let y_axis = second_project_axis(z_axis, x_axis, axis2.unwrap_or(UnitVector3::Y_AXIS))?;
     Some([x_axis, y_axis, z_axis])
 }
 
 const AXIS_PARALLEL_TOLERANCE: f64 = EPS_GEOMETRY_READ_EXACT_GEOMETRY;
 
-fn default_reference_axis(axis: Vector3) -> Vector3 {
-    if axis.x.abs() >= 1.0 - AXIS_PARALLEL_TOLERANCE {
-        Vector3::new(0.0, 1.0, 0.0)
+fn default_reference_axis(axis: UnitVector3) -> UnitVector3 {
+    if axis.as_raw().x.abs() >= 1.0 - AXIS_PARALLEL_TOLERANCE {
+        UnitVector3::Y_AXIS
     } else {
-        Vector3::new(1.0, 0.0, 0.0)
+        UnitVector3::X_AXIS
     }
 }
 
@@ -5302,7 +5344,7 @@ fn transformation_direction<T: Copy>(
 fn cartesian_transformation_operator(
     record: &RawRecord,
     points: &BTreeMap<u64, FinitePoint3>,
-    directions: &BTreeMap<u64, Vector3>,
+    directions: &BTreeMap<u64, UnitVector3>,
 ) -> Option<Transform> {
     let axis1 = transformation_direction(
         record,
@@ -5325,9 +5367,7 @@ fn cartesian_transformation_operator(
         Some(Value::Omitted | Value::Derived) | None => 1.0,
         Some(value) => value.number()?,
     };
-    if !scale.is_finite() || scale <= 0.0 {
-        return None;
-    }
+    let scale = PositiveReal::new(scale)?;
     let axis3 = transformation_direction(
         record,
         "CARTESIAN_TRANSFORMATION_OPERATOR_3D",
@@ -5336,23 +5376,26 @@ fn cartesian_transformation_operator(
     )
     .ok()?;
     let [axis_x, axis_y, axis_z] = base_axis_3d(axis1, axis2, axis3)?;
+    let axis_x = axis_x.as_raw();
+    let axis_y = axis_y.as_raw();
+    let axis_z = axis_z.as_raw();
     Transform::affine([
         [
-            axis_x.x * scale,
-            axis_y.x * scale,
-            axis_z.x * scale,
+            axis_x.x * scale.get(),
+            axis_y.x * scale.get(),
+            axis_z.x * scale.get(),
             origin.x,
         ],
         [
-            axis_x.y * scale,
-            axis_y.y * scale,
-            axis_z.y * scale,
+            axis_x.y * scale.get(),
+            axis_y.y * scale.get(),
+            axis_z.y * scale.get(),
             origin.y,
         ],
         [
-            axis_x.z * scale,
-            axis_y.z * scale,
-            axis_z.z * scale,
+            axis_x.z * scale.get(),
+            axis_y.z * scale.get(),
+            axis_z.z * scale.get(),
             origin.z,
         ],
     ])
@@ -5361,7 +5404,7 @@ fn cartesian_transformation_operator(
 fn cartesian_transformation_operator_2d(
     record: &RawRecord,
     points: &BTreeMap<u64, Point2>,
-    directions: &BTreeMap<u64, Point2>,
+    directions: &BTreeMap<u64, HypotDirection2>,
 ) -> Option<Transform2> {
     let axis1 = transformation_direction(
         record,
@@ -5377,7 +5420,7 @@ fn cartesian_transformation_operator_2d(
         directions,
     )
     .ok()?;
-    let (axis1, axis2) = base_axis_2d(axis1, axis2)?;
+    let (axis1, axis2) = base_axis_2d(axis1, axis2);
     let origin = transformation_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_2D", 2)?
         .reference()
         .and_then(|id| points.get(&id).copied())?;
@@ -5385,40 +5428,44 @@ fn cartesian_transformation_operator_2d(
         Some(Value::Omitted | Value::Derived) | None => 1.0,
         Some(value) => value.number()?,
     };
-    if !scale.is_finite() || scale <= 0.0 {
-        return None;
-    }
+    let scale = PositiveReal::new(scale)?;
+    let [axis1_u, axis1_v] = axis1.get();
+    let [axis2_u, axis2_v] = axis2.get();
     Transform2::affine([
-        [axis1.u * scale, axis2.u * scale, origin.u],
-        [axis1.v * scale, axis2.v * scale, origin.v],
+        [axis1_u * scale.get(), axis2_u * scale.get(), origin.u],
+        [axis1_v * scale.get(), axis2_v * scale.get(), origin.v],
     ])
 }
 
-fn base_axis_2d(axis1: Option<Point2>, axis2: Option<Point2>) -> Option<(Point2, Point2)> {
+fn base_axis_2d(
+    axis1: Option<HypotDirection2>,
+    axis2: Option<HypotDirection2>,
+) -> (HypotDirection2, HypotDirection2) {
     match (axis1, axis2) {
         (Some(axis1), axis2) => {
-            let axis1 = normalize2(axis1)?;
-            let mut perpendicular = Point2::new(-axis1.v, axis1.u);
+            let axis1 = axis1.recharted_by_hypot();
+            let mut perpendicular = axis1.quarter_turn();
             if let Some(axis2) = axis2 {
-                let axis2 = normalize2(axis2)?;
-                if axis2.u * perpendicular.u + axis2.v * perpendicular.v < 0.0 {
-                    perpendicular = Point2::new(-perpendicular.u, -perpendicular.v);
+                let [axis2_u, axis2_v] = axis2.recharted_by_hypot().get();
+                let [perpendicular_u, perpendicular_v] = perpendicular.get();
+                if axis2_u * perpendicular_u + axis2_v * perpendicular_v < 0.0 {
+                    perpendicular = axis1.reverse_quarter_turn();
                 }
             }
-            Some((axis1, perpendicular))
+            (axis1, perpendicular)
         }
         (None, Some(axis2)) => {
-            let axis2 = normalize2(axis2)?;
-            Some((Point2::new(axis2.v, -axis2.u), axis2))
+            let axis2 = axis2.recharted_by_hypot();
+            (axis2.reverse_quarter_turn(), axis2)
         }
-        (None, None) => Some((Point2::new(1.0, 0.0), Point2::new(0.0, 1.0))),
+        (None, None) => (HypotDirection2::X_AXIS, HypotDirection2::Y_AXIS),
     }
 }
 
 fn optional_direction(
     value: Option<&Value>,
-    directions: &BTreeMap<u64, Vector3>,
-) -> Option<Vector3> {
+    directions: &BTreeMap<u64, UnitVector3>,
+) -> Option<UnitVector3> {
     match value? {
         Value::Omitted => None,
         Value::Reference(id) => directions.get(id).copied(),

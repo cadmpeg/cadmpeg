@@ -9,7 +9,7 @@ use super::super::uniqueness::{
     exactly_one, unique_feature_definition_for_transform, unique_feature_section_transform,
 };
 use super::extent::resolved_feature_extrusion_span;
-use super::pcurves::add_extrusion_pcurve;
+use super::pcurves::{add_extrusion_pcurve, PcurveAdmission};
 use super::profiles::{circular_pcurve, line_pcurve};
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::recipe::feature_is_first_material_operation;
@@ -39,6 +39,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
@@ -67,12 +68,19 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         let Some(sketch_id) = model_sketch_id(scan, definition) else {
             continue;
         };
-        let Some((section_center, radius)) =
-            resolved_circular_extrusion_profile(scan, ir, transform, feature_id, &sketch_id)
-        else {
+        let Some((section_center, radius)) = resolved_circular_extrusion_profile(
+            scan,
+            ir,
+            source_carriers,
+            transform,
+            feature_id,
+            &sketch_id,
+        ) else {
             continue;
         };
-        let Some(span) = resolved_feature_extrusion_span(scan, ir, definition, transform) else {
+        let Some(span) =
+            resolved_feature_extrusion_span(scan, ir, source_carriers, definition, transform)
+        else {
             continue;
         };
         let feature_key = cadmpeg_ir::ids::IdentityKey::from(feature_id);
@@ -132,6 +140,22 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         let center = section_point_in_model(transform, section_center);
         let seam =
             std::array::from_fn::<_, 3, _>(|axis| center[axis] + radius * transform.u_axis()[axis]);
+        let side_surface_geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            CylinderSurface::try_new(
+                Point3::from(center),
+                transform.normal_vector(),
+                transform.u_axis_vector(),
+                radius,
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
+        ));
+        let side_surface = SurfaceId::compose(
+            &crate::identity::FEATURE_EXTRUSION,
+            feature_key
+                .clone()
+                .colon(cadmpeg_ir::identity_key!("surface"))
+                .colon(cadmpeg_ir::identity_key!("side")),
+        );
         let sides = [("bottom", span.lower()), ("top", span.upper())];
         let mut face_ids = Vec::new();
         let mut cap_coedges = Vec::new();
@@ -207,10 +231,23 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                     .colon(&side_key)
                     .colon(cadmpeg_ir::identity_key!("side")),
             );
+            let cap_surface_geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(
+                        transform.origin()[0] + offset * transform.normal()[0],
+                        transform.origin()[1] + offset * transform.normal()[1],
+                        transform.origin()[2] + offset * transform.normal()[2],
+                    ),
+                    transform.normal_vector(),
+                    transform.u_axis_vector(),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+            ));
             let cap_pcurve = add_extrusion_pcurve(
                 ctx,
                 ir,
                 annotations,
+                PcurveAdmission::Pending(source_carriers, &cap_surface_geometry),
                 PcurveId::compose(
                     &crate::identity::FEATURE_EXTRUSION,
                     feature_key
@@ -226,6 +263,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 ctx,
                 ir,
                 annotations,
+                PcurveAdmission::Pending(source_carriers, &side_surface_geometry),
                 PcurveId::compose(
                     &crate::identity::FEATURE_EXTRUSION,
                     feature_key
@@ -240,40 +278,35 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 })?,
             )?;
             ctx.charge_entities(1, "admit Creo model surfaces")?;
-            ir.model.surfaces.push(Surface {
-                id: cap_surface.clone(),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                        Point3::new(
-                            transform.origin()[0] + offset * transform.normal()[0],
-                            transform.origin()[1] + offset * transform.normal()[1],
-                            transform.origin()[2] + offset * transform.normal()[2],
-                        ),
-                        transform.normal_vector(),
-                        transform.u_axis_vector(),
-                    )
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
-                )),
-                source_object: None,
-            });
+            source_carriers.admit_surface(
+                ir,
+                Surface {
+                    id: cap_surface.clone(),
+                    geometry: cap_surface_geometry,
+                    source_object: None,
+                },
+            )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
-            ir.model.curves.push(Curve {
-                id: curve_id.clone(),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                        Point3::new(
-                            center[0] + offset * transform.normal()[0],
-                            center[1] + offset * transform.normal()[1],
-                            center[2] + offset * transform.normal()[2],
-                        ),
-                        transform.normal_vector(),
-                        transform.u_axis_vector(),
-                        radius,
-                    )
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
-                )),
-                source_object: None,
-            });
+            source_carriers.admit_curve(
+                ir,
+                Curve {
+                    id: curve_id.clone(),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                            Point3::new(
+                                center[0] + offset * transform.normal()[0],
+                                center[1] + offset * transform.normal()[1],
+                                center[2] + offset * transform.normal()[2],
+                            ),
+                            transform.normal_vector(),
+                            transform.u_axis_vector(),
+                            radius,
+                        )
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                    )),
+                    source_object: None,
+                },
+            )?;
             let finite_position = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
                 seam[0] + offset * transform.normal()[0],
                 seam[1] + offset * transform.normal()[1],
@@ -282,27 +315,31 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             .ok_or(Point::NON_FINITE_POSITION)
             .map_err(cadmpeg_core::CodecError::malformed)?;
             ctx.charge_entities(1, "admit Creo model points")?;
-            ir.model
-                .points
-                .push(Point::new(point_id.clone(), finite_position, None));
+            source_carriers.admit_point(ir, Point::new(point_id.clone(), finite_position, None))?;
             ctx.charge_entities(1, "admit Creo model vertices")?;
-            ir.model.vertices.push(Vertex {
-                id: vertex_id.clone(),
-                point: point_id,
-                tolerance: None,
-            });
+            source_carriers.admit_vertex(
+                ir,
+                Vertex {
+                    id: vertex_id.clone(),
+                    point: point_id,
+                    tolerance: None,
+                },
+            )?;
             ctx.charge_entities(1, "admit Creo model edges")?;
-            ir.model.edges.push(Edge {
-                id: edge_id.clone(),
-                carrier: cadmpeg_ir::topology::EdgeCarrier::new(
-                    Some(curve_id),
-                    Some([0.0, std::f64::consts::TAU]),
-                )
-                .map_err(cadmpeg_core::CodecError::malformed)?,
-                start: vertex_id.clone(),
-                end: vertex_id,
-                tolerance: None,
-            });
+            source_carriers.admit_edge(
+                ir,
+                Edge {
+                    id: edge_id.clone(),
+                    carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                        Some(curve_id),
+                        Some([0.0, std::f64::consts::TAU]),
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                    start: vertex_id.clone(),
+                    end: vertex_id,
+                    tolerance: None,
+                },
+            )?;
             ctx.charge_entities(1, "admit Creo model loops")?;
             ir.model.loops.push(IrLoop {
                 id: cap_loop.clone(),
@@ -312,49 +349,48 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 ),
             });
             ctx.charge_entities(1, "admit Creo model coedges")?;
-            ir.model.coedges.push(Coedge {
-                id: cap_coedge.clone(),
-                owner_loop: cap_loop.clone(),
-                edge: edge_id.clone(),
-                radial_next: side_coedge.clone(),
-                sense: if side_index == 0 {
-                    Sense::Reversed
-                } else {
-                    Sense::Forward
+            source_carriers.admit_coedge(
+                ir,
+                Coedge {
+                    id: cap_coedge.clone(),
+                    owner_loop: cap_loop.clone(),
+                    edge: edge_id.clone(),
+                    radial_next: side_coedge.clone(),
+                    sense: if side_index == 0 {
+                        Sense::Reversed
+                    } else {
+                        Sense::Forward
+                    },
+                    pcurves: vec![PcurveUse {
+                        pcurve: cap_pcurve,
+                        isoparametric: None,
+                        parameter_range: None,
+                    }],
+                    use_curve: None,
                 },
-                pcurves: vec![PcurveUse {
-                    pcurve: cap_pcurve,
-                    isoparametric: None,
-                    parameter_range: None,
-                }],
-                use_curve: None,
-            });
+            )?;
             ctx.charge_entities(1, "admit Creo model faces")?;
-            ir.model.faces.push(Face {
-                id: cap_face.clone(),
-                shell: shell_id.clone(),
-                surface: cap_surface,
-                sense: if side_index == 0 {
-                    Sense::Reversed
-                } else {
-                    Sense::Forward
+            source_carriers.admit_face(
+                ir,
+                Face {
+                    id: cap_face.clone(),
+                    shell: shell_id.clone(),
+                    surface: cap_surface,
+                    sense: if side_index == 0 {
+                        Sense::Reversed
+                    } else {
+                        Sense::Forward
+                    },
+                    loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![cap_loop]),
+                    name: None,
+                    color: None,
+                    tolerance: None,
                 },
-                loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![cap_loop]),
-                name: None,
-                color: None,
-                tolerance: None,
-            });
+            )?;
             face_ids.push(cap_face);
             cap_coedges.push(cap_coedge);
             side_coedges.push((side_coedge, edge_id, side_pcurve));
         }
-        let side_surface = SurfaceId::compose(
-            &crate::identity::FEATURE_EXTRUSION,
-            feature_key
-                .clone()
-                .colon(cadmpeg_ir::identity_key!("surface"))
-                .colon(cadmpeg_ir::identity_key!("side")),
-        );
         let side_face = FaceId::compose(
             &crate::identity::FEATURE_EXTRUSION,
             feature_key
@@ -364,19 +400,14 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         );
         let mut side_loops = Vec::new();
         ctx.charge_entities(1, "admit Creo model surfaces")?;
-        ir.model.surfaces.push(Surface {
-            id: side_surface.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                    Point3::from(center),
-                    transform.normal_vector(),
-                    transform.u_axis_vector(),
-                    radius,
-                )
-                .map_err(cadmpeg_core::CodecError::malformed)?,
-            )),
-            source_object: None,
-        });
+        source_carriers.admit_surface(
+            ir,
+            Surface {
+                id: side_surface.clone(),
+                geometry: side_surface_geometry,
+                source_object: None,
+            },
+        )?;
         for (side_index, ((side, _), (coedge, edge, pcurve))) in
             sides.into_iter().zip(side_coedges).enumerate()
         {
@@ -402,36 +433,42 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 ),
             });
             ctx.charge_entities(1, "admit Creo model coedges")?;
-            ir.model.coedges.push(Coedge {
-                id: coedge.clone(),
-                owner_loop: loop_id.clone(),
-                edge,
-                radial_next: cap_coedges[side_index].clone(),
-                sense: if side_index == 0 {
-                    Sense::Forward
-                } else {
-                    Sense::Reversed
+            source_carriers.admit_coedge(
+                ir,
+                Coedge {
+                    id: coedge.clone(),
+                    owner_loop: loop_id.clone(),
+                    edge,
+                    radial_next: cap_coedges[side_index].clone(),
+                    sense: if side_index == 0 {
+                        Sense::Forward
+                    } else {
+                        Sense::Reversed
+                    },
+                    pcurves: vec![PcurveUse {
+                        pcurve,
+                        isoparametric: None,
+                        parameter_range: None,
+                    }],
+                    use_curve: None,
                 },
-                pcurves: vec![PcurveUse {
-                    pcurve,
-                    isoparametric: None,
-                    parameter_range: None,
-                }],
-                use_curve: None,
-            });
+            )?;
             side_loops.push(loop_id);
         }
         ctx.charge_entities(1, "admit Creo model faces")?;
-        ir.model.faces.push(Face {
-            id: side_face.clone(),
-            shell: shell_id.clone(),
-            surface: side_surface,
-            sense: Sense::Forward,
-            loops: cadmpeg_ir::topology::FaceLoops::unspecified(side_loops),
-            name: None,
-            color: None,
-            tolerance: None,
-        });
+        source_carriers.admit_face(
+            ir,
+            Face {
+                id: side_face.clone(),
+                shell: shell_id.clone(),
+                surface: side_surface,
+                sense: Sense::Forward,
+                loops: cadmpeg_ir::topology::FaceLoops::unspecified(side_loops),
+                name: None,
+                color: None,
+                tolerance: None,
+            },
+        )?;
         face_ids.push(side_face);
         ctx.charge_entities(1, "admit Creo model shells")?;
         ir.model.shells.push(
@@ -455,15 +492,18 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             shells: vec![shell_id],
         });
         ctx.charge_entities(1, "admit Creo model bodies")?;
-        ir.model.bodies.push(Body {
-            id: body_id,
-            kind: BodyKind::Solid,
-            regions: vec![region_id],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        });
+        source_carriers.admit_body(
+            ir,
+            Body {
+                id: body_id,
+                kind: BodyKind::Solid,
+                regions: vec![region_id],
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
+        )?;
         transferred += 1;
     }
     Ok(transferred)
@@ -472,6 +512,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
 fn resolved_circular_extrusion_profile(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     transform: &crate::placement::FeatureSectionTransform,
     feature_id: u32,
     sketch_id: &SketchId,
@@ -488,7 +529,7 @@ fn resolved_circular_extrusion_profile(
                     exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
                         entity.id() == &entity_use.entity && entity.sketch == *sketch_id
                     }))
-                    .map(|entity| entity.geometry.definition())
+                    .map(|entity| source_carriers.sketch_geometry(entity).definition())
                 {
                     return Some(([center.u, center.v], radius.get()));
                 }
@@ -524,4 +565,68 @@ pub(in super::super) fn circular_section_profile_from_cylinder(
         ],
         radius,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
+        SketchGeometryDefinition, SketchId, SketchPlacement, SketchProfiles,
+    };
+
+    #[test]
+    fn circular_extrusion_profile_uses_source_sketch_geometry_after_admission() {
+        let sketch_id = SketchId::mint("creo:test:sketch#1").expect("identity grammar");
+        let entity_id =
+            SketchEntityId::mint("creo:test:sketch_entity#1").expect("identity grammar");
+        let mut ir = CadIr::empty();
+        ir.model.sketches.push(Sketch {
+            id: sketch_id.clone(),
+            name: None,
+            configuration: None,
+            visible: None,
+            placement: SketchPlacement::Unresolved {},
+            profiles: SketchProfiles::try_from(vec![vec![SketchEntityUse {
+                entity: entity_id.clone(),
+                reversed: false,
+            }]])
+            .expect("valid profile"),
+            native_ref: None,
+        });
+        let mut carriers = crate::decode::source_carriers::SourceUnitCarriers::new(
+            cadmpeg_ir::scalar::PositiveReal::new(25.4),
+        );
+        carriers
+            .admit_sketch_entities(
+                &mut ir,
+                vec![SketchEntity::new(
+                    entity_id,
+                    sketch_id.clone(),
+                    SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                        center: Point2::new(1.0, 0.0),
+                        radius: cadmpeg_ir::scalar::Length::new(2.0).expect("finite radius"),
+                    })
+                    .expect("source circle"),
+                )],
+            )
+            .expect("millimeter admission");
+        let scan = crate::container::scan_bytes_ok(Vec::new());
+        let transform = crate::placement::FeatureSectionTransform::new(
+            1,
+            Some(1),
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            0,
+        )
+        .expect("section transform");
+        assert_eq!(
+            super::resolved_circular_extrusion_profile(
+                &scan, &ir, &carriers, &transform, 1, &sketch_id,
+            ),
+            Some(([1.0, 0.0], 2.0))
+        );
+    }
 }

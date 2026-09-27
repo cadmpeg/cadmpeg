@@ -288,6 +288,21 @@ fn an_assigned_real_keeps_its_bits_in_the_length_and_angle_families() {
 }
 
 #[test]
+fn a_positive_real_assigns_to_positive_length_with_identical_bits() {
+    use crate::scalar::{PositiveLength, PositiveReal};
+
+    for value in [f64::from_bits(1), 2.5, f64::MAX] {
+        let real = PositiveReal::new(value).expect("positive real");
+        assert_eq!(
+            PositiveLength::from_assigned_positive_real(real)
+                .get()
+                .to_bits(),
+            value.to_bits()
+        );
+    }
+}
+
+#[test]
 fn a_nonzero_length_magnitude_is_the_positive_length_it_admits() {
     use crate::scalar::{NonZeroLength, PositiveLength};
 
@@ -625,6 +640,28 @@ fn a_unit_component_below_the_normal_range_is_one_quotient_of_its_component() {
 }
 
 #[test]
+fn admitted_scalar_narrowing_keeps_raw_constructor_values_and_signs() {
+    use crate::scalar::{FiniteReal, NonZeroLength, PositiveReal};
+
+    for value in [f64::MIN_POSITIVE, 1.0, f64::MAX] {
+        let finite = FiniteReal::new(value).unwrap();
+        assert_eq!(PositiveReal::from_finite(finite), PositiveReal::new(value));
+        assert_eq!(
+            NonZeroLength::from_assigned_real(finite),
+            NonZeroLength::new(value)
+        );
+    }
+    for value in [-f64::MAX, -f64::MIN_POSITIVE, -0.0, 0.0] {
+        let finite = FiniteReal::new(value).unwrap();
+        assert_eq!(PositiveReal::from_finite(finite), PositiveReal::new(value));
+        assert_eq!(
+            NonZeroLength::from_assigned_real(finite),
+            NonZeroLength::new(value)
+        );
+    }
+}
+
+#[test]
 fn finite_binary32_preserves_source_precision_and_rejects_nonfinite_values() {
     use crate::scalar::FiniteBinary32;
     use serde::de::value::{Error, F32Deserializer};
@@ -643,5 +680,16 @@ fn finite_binary32_preserves_source_precision_and_rejects_nonfinite_values() {
             F32Deserializer::<Error>::new(source)
         )
         .is_err());
+    }
+}
+
+#[test]
+fn finite_binary32_widens_exactly_to_finite_real() {
+    use crate::scalar::{FiniteBinary32, FiniteReal};
+
+    for source in [0.1_f32, -0.0_f32, f32::MIN_POSITIVE, f32::MAX] {
+        let admitted = FiniteBinary32::new(source).unwrap();
+        let widened: FiniteReal = admitted.into();
+        assert_eq!(widened.get().to_bits(), f64::from(source).to_bits());
     }
 }

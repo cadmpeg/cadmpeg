@@ -683,6 +683,10 @@ impl CatiaNative {
         &self,
         namespace: &mut cadmpeg_ir::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-        store_projection(&CatiaArenaProjection::from(self), namespace)
+        store_projection(
+            &cadmpeg_test_support::service_decode_context(),
+            &CatiaArenaProjection::from(self),
+            namespace,
+        )
     }
 }

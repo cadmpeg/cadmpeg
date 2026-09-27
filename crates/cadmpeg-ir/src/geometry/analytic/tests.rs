@@ -283,13 +283,7 @@ fn analytic_curves_rebuild_from_their_checked_getters() {
 
     let ellipse = EllipseCurve::try_new(point, axis, reference, 4.0, 2.0).unwrap();
     assert_eq!(
-        EllipseCurve::try_from_parts(
-            ellipse.center(),
-            *ellipse.frame(),
-            ellipse.major_radius(),
-            ellipse.minor_radius(),
-        )
-        .unwrap(),
+        EllipseCurve::new(ellipse.center(), *ellipse.frame(), ellipse.radii()),
         ellipse
     );
 
@@ -328,21 +322,33 @@ fn analytic_curves_rebuild_from_their_checked_getters() {
             serde_json::to_value(circle).unwrap(),
         ),
         (
-            serde_json::to_value(
-                EllipseCurve::try_from_parts(
-                    ellipse.center(),
-                    *ellipse.frame(),
-                    ellipse.major_radius(),
-                    ellipse.minor_radius(),
-                )
-                .unwrap(),
-            )
+            serde_json::to_value(EllipseCurve::new(
+                ellipse.center(),
+                *ellipse.frame(),
+                ellipse.radii(),
+            ))
             .unwrap(),
             serde_json::to_value(ellipse).unwrap(),
         ),
     ] {
         assert_eq!(rebuilt, original);
     }
+}
+
+#[test]
+fn ellipse_curve_serialization_keeps_its_wire_fields() {
+    let ellipse = EllipseCurve::try_new(
+        Point3::new(1.0, 2.0, 3.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        4.0,
+        2.0,
+    )
+    .unwrap();
+    assert_eq!(
+        serde_json::to_string(&ellipse).unwrap(),
+        r#"{"center":{"x":1.0,"y":2.0,"z":3.0},"axis":{"x":0.0,"y":0.0,"z":1.0},"major_direction":{"x":1.0,"y":0.0,"z":0.0},"major_radius":4.0,"minor_radius":2.0}"#
+    );
 }
 
 #[test]

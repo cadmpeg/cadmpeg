@@ -37,7 +37,7 @@ fn profile_payload(native_code: u32, selector: u8, endpoints: [u16; 2], terminal
 
 #[test]
 fn compact_legacy_92_profile_prefers_roster_and_recovers_direct_object_ids() {
-    let entity = |id: &str, offset, object_index, kind, coordinates_m| {
+    let entity = |id: &str, offset, object_index, kind, coordinates_m: Option<[f64; 2]>| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
         let mut constructed_marker =
@@ -45,7 +45,8 @@ fn compact_legacy_92_profile_prefers_roster_and_recovers_direct_object_ids() {
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };

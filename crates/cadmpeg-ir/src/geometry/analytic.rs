@@ -24,6 +24,7 @@
 use crate::features::FinitePoint3;
 use crate::math::{Point3, Vector3};
 use crate::scalar::{Angle, NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal};
+use crate::sketches::OrderedMajorRadius;
 use crate::units::{OrthonormalFrame3, UnitVector3};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -953,8 +954,7 @@ impl TryFrom<CircleCurveWire> for CircleCurve {
 #[serde(try_from = "EllipseCurveWire", into = "EllipseCurveWire")]
 pub struct EllipseCurve {
     center: FinitePoint3,
-    major_radius: PositiveLength,
-    minor_radius: PositiveLength,
+    radii: OrderedMajorRadius,
     frame: OrthonormalFrame3,
 }
 
@@ -978,6 +978,20 @@ impl EllipseCurve {
     /// Reverse the curve parameter direction.
     pub fn reverse_parameterization(&mut self) {
         self.frame.reverse_axis();
+    }
+
+    /// Build an ellipse from an admitted center, frame, and ordered radii.
+    #[must_use]
+    pub const fn new(
+        center: FinitePoint3,
+        frame: OrthonormalFrame3,
+        radii: OrderedMajorRadius,
+    ) -> Self {
+        Self {
+            center,
+            radii,
+            frame,
+        }
     }
 
     /// Build an ellipse from checked parts. Two positive radii do not state
@@ -1036,15 +1050,9 @@ impl EllipseCurve {
         major_radius: PositiveLength,
         minor_radius: PositiveLength,
     ) -> Result<Self, &'static str> {
-        if major_radius.get() < minor_radius.get() {
-            return Err("EllipseCurve.major_radius must be at least minor_radius");
-        }
-        Ok(Self {
-            center,
-            major_radius,
-            minor_radius,
-            frame,
-        })
+        let radii = OrderedMajorRadius::new(major_radius, minor_radius)
+            .ok_or("EllipseCurve.major_radius must be at least minor_radius")?;
+        Ok(Self::new(center, frame, radii))
     }
 
     /// Build an ellipse from radii stated in a source unit, major then
@@ -1082,12 +1090,11 @@ impl EllipseCurve {
         let [major, minor] = radii;
         (minor <= major).then_some(())?;
         let [major_radius, minor_radius] = PositiveLength::scale_ordered_pair(radii, scale).ok()?;
-        Some(Self {
+        Some(Self::new(
             center,
-            major_radius,
-            minor_radius,
             frame,
-        })
+            OrderedMajorRadius::new(major_radius, minor_radius)?,
+        ))
     }
 
     /// The ellipse with its center and radii times `scale`.
@@ -1104,7 +1111,7 @@ impl EllipseCurve {
             .scaled(scale)
             .ok_or("EllipseCurve.center must be finite")?;
         let [major_radius, minor_radius] = PositiveLength::scale_ordered_pair(
-            [self.major_radius.get(), self.minor_radius.get()],
+            [self.radii.major().get(), self.radii.minor().get()],
             scale,
         )
         .map_err(|index| {
@@ -1114,12 +1121,9 @@ impl EllipseCurve {
                 "EllipseCurve.minor_radius must be positive and finite"
             }
         })?;
-        Ok(Self {
-            center,
-            major_radius,
-            minor_radius,
-            frame: self.frame,
-        })
+        let radii = OrderedMajorRadius::new(major_radius, minor_radius)
+            .ok_or("EllipseCurve.major_radius must be at least minor_radius")?;
+        Ok(Self::new(center, self.frame, radii))
     }
 
     /// Admit finite parameters that satisfy the carrier's numeric contract.
@@ -1152,16 +1156,22 @@ impl EllipseCurve {
         &self.frame
     }
 
+    /// Return the ordered radii.
+    #[must_use]
+    pub const fn radii(&self) -> OrderedMajorRadius {
+        self.radii
+    }
+
     /// Return the major radius.
     #[must_use]
     pub const fn major_radius(&self) -> PositiveLength {
-        self.major_radius
+        self.radii.major()
     }
 
     /// Return the minor radius.
     #[must_use]
     pub const fn minor_radius(&self) -> PositiveLength {
-        self.minor_radius
+        self.radii.minor()
     }
 }
 

@@ -384,14 +384,14 @@ fn emit_carrier_surface(
                     source_object: None,
                 });
                 ProceduralSurfaceDefinition::Revolution(
-                    cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis(
-                        axis_origin,
-                        axis_direction,
-                    )
-                    .and_then(|axis| {
+                    cadmpeg_ir::features::FinitePoint3::new(axis_origin)
+                    .ok_or(cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
+                        "revolution axis_origin and axis_direction must be finite, with unit axis_direction",
+                    ))
+                    .and_then(|origin| {
                         cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
                             directrix_id,
-                            axis,
+                            (origin, axis_direction),
                             angular_interval,
                             None,
                             Some(parameter_interval),
@@ -3509,7 +3509,7 @@ fn emit_silhouette_curve(
         source_object: None,
     });
     Ok(cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette(
-        cadmpeg_ir::geometry::curve_payloads::SilhouetteCurveConstruction::try_new(
+        cadmpeg_ir::geometry::curve_payloads::SilhouetteCurveConstruction::from_unit_direction(
             cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
                 std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
                     surface: support_ids[side].clone(),
@@ -3521,8 +3521,7 @@ fn emit_silhouette_curve(
             embedded.silhouette,
             cast_surface,
             embedded.light_direction,
-        )
-        .map_err(|_| "silhouette fields are not finite or the light direction is degenerate")?,
+        ),
     ))
 }
 
@@ -4049,6 +4048,13 @@ pub(super) fn emit_vertices(
                         if let (Some(Token::Double(first)), Some(Token::Double(second))) =
                             (r.chunk(6), r.chunk(7))
                         {
+                            let [Some(first), Some(second)] =
+                                [*first, *second].map(cadmpeg_ir::scalar::FiniteReal::new)
+                            else {
+                                return Err(cadmpeg_core::CodecError::malformed(
+                                    "vertex leading tolerance must be finite",
+                                ));
+                            };
                             out.tolerant_vertex_tails.push(TolerantVertexTail {
                                 source_namespace:
                                     crate::brep::records::identity::NativeRecordNamespace::new(
@@ -4056,7 +4062,7 @@ pub(super) fn emit_vertices(
                                     ),
                                 vertex: <VertexId>::from(id(format, i)),
                                 record_index: r.index as u32,
-                                leading_tolerances: [*first, *second],
+                                leading_tolerances: [first, second],
                                 evaluated_slot: {
                                     let trailing = match r.chunk(9) {
                                         Some(Token::Long(value)) => Some(*value),
@@ -4189,14 +4195,14 @@ pub(super) fn emit_edges(
             // x 100 + header revision) is at least 2250003. All forms are
             // retained verbatim.
             let tolerant_tail = match (r.head(), r.chunk(11), r.chunk(12)) {
-                ("tedge", Some(Token::Double(tolerance)), Some(Token::Long(revision)))
-                    if tolerance.is_finite() && *tolerance >= 0.0 =>
-                {
-                    let trailing = match r.chunk(13) {
-                        Some(Token::Long(second)) => Some(*second),
-                        _ => None,
-                    };
-                    Some((*tolerance, *revision, trailing))
+                ("tedge", Some(Token::Double(tolerance)), Some(Token::Long(revision))) => {
+                    cadmpeg_ir::scalar::NonNegativeReal::new(*tolerance).map(|tolerance| {
+                        let trailing = match r.chunk(13) {
+                            Some(Token::Long(second)) => Some(*second),
+                            _ => None,
+                        };
+                        (tolerance, *revision, trailing)
+                    })
                 }
                 _ => None,
             };
@@ -4208,13 +4214,12 @@ pub(super) fn emit_edges(
                 end: VertexId::from(id(format, end)),
                 tolerance: tolerant_tail
                     .map(|(tolerance, _, _)| {
-                        cadmpeg_ir::scalar::PositiveReal::new(tolerance * LEN_TO_MM).ok_or_else(
-                            || {
+                        cadmpeg_ir::scalar::PositiveReal::new(tolerance.get() * LEN_TO_MM)
+                            .ok_or_else(|| {
                                 cadmpeg_core::CodecError::malformed(
                                     "edge tolerance must be positive and finite",
                                 )
-                            },
-                        )
+                            })
                     })
                     .transpose()?,
             });
@@ -4307,7 +4312,13 @@ pub(super) fn emit_coedges(
                             Some(_) => Some(TolerantCoedgeExtension::None {}),
                             None => None,
                         };
-                        extension.map(|extension| ([*start, *end], extension))
+                        let parameter_range = cadmpeg_ir::units::FiniteVector::new([*start, *end])
+                            .ok_or_else(|| {
+                                cadmpeg_core::CodecError::malformed(format_args!(
+                                    "tolerant coedge parameter interval must be finite"
+                                ))
+                            })?;
+                        extension.map(|extension| (parameter_range, extension))
                     }
                     _ => None,
                 }
@@ -4369,10 +4380,11 @@ pub(super) fn emit_coedges(
                     .map(|(curve, parameter_range)| {
                         Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::topology::CoedgeUseCurve {
                             curve,
-                            parameter_range: cadmpeg_ir::topology::ParameterInterval::new(
-                                parameter_range,
-                            )
-                            .map_err(cadmpeg_core::CodecError::malformed)?,
+                            parameter_range:
+                                cadmpeg_ir::topology::ParameterInterval::from_finite_endpoints(
+                                    parameter_range,
+                                )
+                                .map_err(cadmpeg_core::CodecError::malformed)?,
                         })
                     })
                     .transpose()?,

@@ -24,6 +24,13 @@ pub(crate) enum UfrxState<'a> {
     },
 }
 
+impl<'a> UfrxState<'a> {
+    fn parsed(ctx: &DecodeContext<'_>, document: UfrxDocument<'a>) -> Result<Self, CodecError> {
+        ctx.charge_collection_items(1, "admit UFRxDoc parsed document")?;
+        Ok(Self::Parsed(Box::new(document)))
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct UfrxDocument<'a> {
     pub(crate) stream: CompoundStreamId,
@@ -122,7 +129,7 @@ pub(crate) fn parse<'a>(
     let source = snapshot.open(ctx, stream)?;
     Ok(
         match parse_stream(ctx, source, stream.id(), document_kind) {
-            Ok(document) => UfrxState::Parsed(Box::new(document)),
+            Ok(document) => UfrxState::parsed(ctx, document)?,
             Err(CodecError::NotImplemented(detail)) => {
                 let (schema, section_versions) = parse_schema_table(ctx, source)?;
                 UfrxState::Unsupported {
@@ -133,10 +140,19 @@ pub(crate) fn parse<'a>(
                     detail,
                 }
             }
-            Err(error) => UfrxState::Malformed {
-                stream: stream.id(),
-                detail: crate::issue_detail(error)?,
-            },
+            Err(error) => {
+                if !matches!(error, CodecError::ResourceLimit(_)) {
+                    crate::record_issue::admit_issue_detail(
+                        ctx,
+                        &error,
+                        "retain Inventor malformed UFRx detail",
+                    )?;
+                }
+                UfrxState::Malformed {
+                    stream: stream.id(),
+                    detail: crate::issue_detail(error)?,
+                }
+            }
         },
     )
 }
@@ -222,6 +238,14 @@ fn parse_stream_grammar<'a>(
             | DocumentKind::Presentation
             | DocumentKind::Mixed
             | DocumentKind::Unknown => {
+                crate::record_issue::admit_formatted(
+                    ctx,
+                    format_args!(
+                        "UFRxDoc schema 15 {} header is not implemented",
+                        document_kind.label()
+                    ),
+                    "retain UFRx schema header diagnostic",
+                )?;
                 return Err(CodecError::NotImplemented(format!(
                     "UFRxDoc schema 15 {} header is not implemented",
                     document_kind.label()
@@ -282,6 +306,11 @@ fn parse_stream_grammar<'a>(
     let model_states = if schema == 15 {
         parse_model_states(ctx, source, &mut cursor, lod_count)?
     } else if lod_count != 0 {
+        crate::record_issue::admit_formatted(
+            ctx,
+            format_args!("UFRxDoc contains {lod_count} unframed LOD records"),
+            "retain UFRx unframed LOD diagnostic",
+        )?;
         return Err(CodecError::NotImplemented(format!(
             "UFRxDoc contains {lod_count} unframed LOD records"
         )));
@@ -621,7 +650,7 @@ fn parse_occurrence_items(
         ctx.charge_collection_items(value_count as u64, "admit UFRxDoc occurrence export values")?;
         for _ in 0..value_count {
             require_tag(cursor.u8("occurrence export repeated tag")?, tag)?;
-            parse_occurrence_item_value(cursor, tag)?;
+            parse_occurrence_item_value(ctx, cursor, tag)?;
         }
         cursor.u32("occurrence export item trailer")?;
     }
@@ -648,6 +677,11 @@ fn parse_occurrence_value(
             cursor.take(16, "occurrence property id")?;
         }
         _ => {
+            crate::record_issue::admit_formatted(
+                ctx,
+                format_args!("UFRxDoc occurrence property tag {tag:#04x} is not implemented"),
+                "retain UFRx occurrence property diagnostic",
+            )?;
             return Err(CodecError::NotImplemented(format!(
                 "UFRxDoc occurrence property tag {tag:#04x} is not implemented"
             )));
@@ -656,7 +690,11 @@ fn parse_occurrence_value(
     Ok(())
 }
 
-fn parse_occurrence_item_value(cursor: &mut Cursor<'_>, tag: u8) -> Result<(), CodecError> {
+fn parse_occurrence_item_value(
+    ctx: &DecodeContext<'_>,
+    cursor: &mut Cursor<'_>,
+    tag: u8,
+) -> Result<(), CodecError> {
     match tag {
         0x07 => {
             cursor.u8("occurrence export item byte")?;
@@ -668,6 +706,11 @@ fn parse_occurrence_item_value(cursor: &mut Cursor<'_>, tag: u8) -> Result<(), C
             cursor.take(16, "occurrence export item id")?;
         }
         _ => {
+            crate::record_issue::admit_formatted(
+                ctx,
+                format_args!("UFRxDoc occurrence export item tag {tag:#04x} is not implemented"),
+                "retain UFRx occurrence export diagnostic",
+            )?;
             return Err(CodecError::NotImplemented(format!(
                 "UFRxDoc occurrence export item tag {tag:#04x} is not implemented"
             )));
@@ -863,7 +906,23 @@ impl<'a> Cursor<'a> {
         let len = count.checked_mul(2).ok_or_else(|| {
             CodecError::malformed(format_args!("UFRxDoc {field} length overflows"))
         })?;
-        ctx.charge_retained(len as u64, "retain UFRxDoc string")?;
+        if self.view.remaining() < len {
+            return Err(CodecError::truncated(self.view.location(), field));
+        }
+        let utf8_len = crate::reader::utf16_utf8_len(self.view, count)
+            .ok_or_else(|| CodecError::malformed(format_args!("UFRxDoc {field} is not UTF-16")))?;
+        let _units = ctx.reserve_scoped(
+            u64::try_from(len).map_err(|_| {
+                ctx.refuse_codec_limit("UFRxDoc UTF-16 unit byte count", u64::MAX - 1, u64::MAX)
+            })?,
+            "decode UFRxDoc UTF-16 units",
+        )?;
+        ctx.charge_retained(
+            u64::try_from(utf8_len).map_err(|_| {
+                ctx.refuse_codec_limit("UFRxDoc UTF-8 byte count", u64::MAX - 1, u64::MAX)
+            })?,
+            "retain UFRxDoc string",
+        )?;
         // `utf16_le` proves the byte count before it reads a code unit, so a
         // short window is refused with the view still at the read's start.
         self.view.utf16_le(count).ok_or_else(|| {
@@ -906,16 +965,123 @@ mod tests {
     use crate::test_support::test_fixtures::push_u32;
     use crate::test_support::test_fixtures::push_utf16;
     use cadmpeg_container::compound::CompoundStreamId;
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
 
     use super::{
-        parse_embedded_references, parse_occurrences, parse_schema_table, parse_stream, Cursor,
+        parse_embedded_references, parse_occurrence_item_value, parse_occurrence_value,
+        parse_occurrences, parse_schema_table, parse_stream, Cursor, UfrxState,
     };
     use crate::rse::DocumentKind;
     use crate::test_support::truncation::{displayed_truncation, located_truncation};
     use cadmpeg_container::compound::CompoundSnapshot;
     use cadmpeg_core::decode::{DecodeContext, View};
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn ufrx_unknown_property_tags_refuse_retained_limit_before_format() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (limited, root) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
+        assert!(matches!(
+            parse_occurrence_value(&limited, &mut Cursor::new(root), 0xff),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+        ));
+        assert!(matches!(
+            parse_occurrence_item_value(&limited, &mut Cursor::new(root), 0xff),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+        ));
+        let (service, root) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("empty root fits service policy");
+        let property_error = parse_occurrence_value(&service, &mut Cursor::new(root), 0xff)
+            .expect_err("unknown property tag rejected");
+        let item_error = parse_occurrence_item_value(&service, &mut Cursor::new(root), 0xff)
+            .expect_err("unknown export tag rejected");
+        assert!(property_error.to_string().contains("tag 0xff"));
+        assert!(item_error.to_string().contains("tag 0xff"));
+    }
+
+    #[test]
+    fn malformed_ufrx_detail_refuses_retained_limit_before_copy() {
+        let bytes = crate::test_support::test_fixtures::fixture_with_ufrx(&[0; 2]);
+        let arena = DecodeArena::new();
+        let (setup, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("compound input fits service policy");
+        let snapshot = CompoundSnapshot::new(&setup, root).expect("synthetic compound parses");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (limited, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+        assert!(matches!(
+            super::parse(&limited, &snapshot, &DocumentKind::Part),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor malformed UFRx detail"
+        ));
+        assert!(matches!(
+            super::parse(&setup, &snapshot, &DocumentKind::Part)
+                .expect("malformed UFRx remains an inventory state"),
+            UfrxState::Malformed { .. }
+        ));
+    }
+
+    #[test]
+    fn utf16_string_uses_exact_utf8_budget_before_allocation() {
+        let bytes = [b'A', 0];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (limited, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+        assert!(matches!(
+            Cursor::new(root).utf16_counted(&limited, "value", 1),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain UFRxDoc string"
+        ));
+        policy.limits.max_retained_bytes = 1;
+        let (admitted, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("exact context");
+        assert_eq!(
+            Cursor::new(root)
+                .utf16_counted(&admitted, "value", 1)
+                .expect("exact UTF-8 bytes admitted"),
+            "A"
+        );
+    }
+
+    #[test]
+    fn parsed_document_box_refuses_collection_limit_before_allocation() {
+        let (bytes, _) = fixture(11);
+        let arena = DecodeArena::new();
+        let (setup, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("fixture context");
+        let document = parse_stream(&setup, root, stream_id(), &DocumentKind::Assembly)
+            .expect("fixture document parses");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (limited, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+        assert!(matches!(
+            UfrxState::parsed(&limited, document),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "admit UFRxDoc parsed document"
+        ));
+        let document = parse_stream(&setup, root, stream_id(), &DocumentKind::Assembly)
+            .expect("fixture document parses again");
+        let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("service context");
+        assert!(matches!(
+            UfrxState::parsed(&service, document).expect("document admitted"),
+            UfrxState::Parsed(_)
+        ));
+    }
 
     fn stream_id() -> CompoundStreamId {
         let bytes = crate::test_support::test_fixtures::fixture(true);
@@ -927,6 +1093,79 @@ mod tests {
             .stream("RSeStorage/RSeSegInfo")
             .expect("validated stream entry")
             .id()
+    }
+
+    fn assert_diagnostic_refuses_retained_limit(
+        bytes: &[u8],
+        document_kind: &DocumentKind,
+        operation: &'static str,
+    ) {
+        let arena = DecodeArena::new();
+        let mut cap = 0;
+        let mut needed = None;
+        for _ in 0..64 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("fixture context");
+            match parse_stream(&ctx, root, stream_id(), document_kind) {
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::RetainedBytes =>
+                {
+                    let next = limit
+                        .used
+                        .checked_add(limit.additional)
+                        .expect("fixture charge fits u64");
+                    if limit.operation == operation {
+                        needed = Some(next);
+                        break;
+                    }
+                    assert!(next > cap, "fixture advances to its next retained charge");
+                    cap = next;
+                }
+                result => panic!("expected retained admission before {operation}: {result:?}"),
+            }
+        }
+        let needed = needed.expect("diagnostic reached within fixture charges");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = needed - 1;
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("limited context");
+        assert!(matches!(
+            parse_stream(&ctx, root, stream_id(), document_kind),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == operation
+                    && limit.limit == needed - 1
+        ));
+        let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
+            .expect("service context");
+        assert!(matches!(
+            parse_stream(&ctx, root, stream_id(), document_kind),
+            Err(CodecError::NotImplemented(_))
+        ));
+    }
+
+    #[test]
+    fn schema_15_document_kind_diagnostic_refuses_before_format() {
+        let (bytes, _) = fixture(15);
+        assert_diagnostic_refuses_retained_limit(
+            &bytes,
+            &DocumentKind::Unknown,
+            "retain UFRx schema header diagnostic",
+        );
+    }
+
+    #[test]
+    fn unframed_lod_diagnostic_refuses_before_format() {
+        let (mut bytes, invariant_offset) = fixture(11);
+        let lod_count_offset = invariant_offset + 2 + 4 + 4;
+        bytes[lod_count_offset..lod_count_offset + 4].copy_from_slice(&1_u32.to_le_bytes());
+        assert_diagnostic_refuses_retained_limit(
+            &bytes,
+            &DocumentKind::Assembly,
+            "retain UFRx unframed LOD diagnostic",
+        );
     }
 
     #[test]

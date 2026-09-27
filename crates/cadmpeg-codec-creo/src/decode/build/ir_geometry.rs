@@ -21,7 +21,7 @@ use super::super::feature_history::revolution::{
 };
 use super::super::surfaces::brep::{
     transfer_cap_pair_cylinders, transfer_native_brep, BrepTransferDiagnostics,
-    NativeBrepTransferSummary,
+    NativeBrepCurveEvidence, NativeBrepTransferSummary,
 };
 use super::super::surfaces::cylinders::{
     transfer_active_datum_cylinders, transfer_circular_sweep_cylinders,
@@ -54,6 +54,7 @@ use crate::decode::analytic::pcurves::{
     reconcile_support_apex_cone_parameter_branches, transfer_analytic_pcurve_carriers,
 };
 use crate::decode::sketch_transfer::transfer::transfer_sketches;
+use crate::decode::source_carriers::SourceUnitCarriers;
 
 pub(super) fn transfer_and_record_scanned_geometry(
     ctx: &DecodeContext<'_>,
@@ -61,16 +62,35 @@ pub(super) fn transfer_and_record_scanned_geometry(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     coverage: &mut cadmpeg_ir::report::decode::Coverage,
-    brep_diagnostics: &mut BrepTransferDiagnostics,
     transfer_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<(), CodecError> {
-    let cross_section_plane_count = transfer_cross_section_planes(ctx, scan, ir, annotations)?;
-    let first_instance_prototype_surface_count =
-        transfer_first_instance_prototype_surfaces(ctx, scan, ir, annotations, transfer_losses)?;
-    let positional_spline_replay_count =
-        transfer_positional_spline_replays(ctx, scan, ir, annotations, transfer_losses)?;
-    let legacy_ascii_surface_carrier_count =
-        transfer_legacy_ascii_surface_carriers(ctx, scan, ir, annotations, transfer_losses)?;
+    source_carriers: &mut SourceUnitCarriers,
+) -> Result<BrepTransferDiagnostics, CodecError> {
+    let cross_section_plane_count =
+        transfer_cross_section_planes(ctx, scan, ir, annotations, source_carriers)?;
+    let first_instance_prototype_surface_count = transfer_first_instance_prototype_surfaces(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
+    let positional_spline_replay_count = transfer_positional_spline_replays(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
+    let legacy_ascii_surface_carrier_count = transfer_legacy_ascii_surface_carriers(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
     let legacy_torus_sphere_carrier_count = scan
         .surfaces
         .legacy_carriers
@@ -84,43 +104,85 @@ pub(super) fn transfer_and_record_scanned_geometry(
         })
         .count();
     let paired_envelope_sphere_count =
-        transfer_paired_envelope_spheres(ctx, scan, ir, annotations)?;
-    let positional_torus_count = transfer_positional_tori(ctx, scan, ir, annotations)?;
+        transfer_paired_envelope_spheres(ctx, scan, ir, annotations, source_carriers)?;
+    let positional_torus_count =
+        transfer_positional_tori(ctx, scan, ir, annotations, source_carriers)?;
     let positional_line_extrusion_plane_count =
-        transfer_positional_line_extrusion_planes(ctx, scan, ir, annotations)?;
-    let tabulated_cylinder_spline_extrusion_count =
-        transfer_tabulated_cylinder_spline_extrusions(ctx, scan, ir, annotations, transfer_losses)?;
-    transfer_fc05_cap_circles(ctx, scan, ir, annotations)?;
-    transfer_cap_pair_cylinders(ctx, scan, ir, annotations)?;
+        transfer_positional_line_extrusion_planes(ctx, scan, ir, annotations, source_carriers)?;
+    let tabulated_cylinder_spline_extrusion_count = transfer_tabulated_cylinder_spline_extrusions(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
+    transfer_fc05_cap_circles(ctx, scan, ir, annotations, source_carriers)?;
+    transfer_cap_pair_cylinders(ctx, scan, ir, annotations, source_carriers)?;
     let saved_spline_curve_count =
-        transfer_saved_spline_curves(ctx, scan, ir, annotations, transfer_losses)?;
-    let sketch_segment_coverage = transfer_sketches(ctx, scan, ir, annotations, transfer_losses)?;
-    let feature_revolution_surface_count =
-        transfer_resolved_revolution_surfaces(ctx, scan, ir, annotations, transfer_losses)?;
+        transfer_saved_spline_curves(ctx, scan, ir, annotations, transfer_losses, source_carriers)?;
+    let sketch_segment_coverage =
+        transfer_sketches(ctx, scan, ir, annotations, transfer_losses, source_carriers)?;
+    let feature_revolution_surface_count = transfer_resolved_revolution_surfaces(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
     let feature_revolution_vertex_orbit_curve_count =
-        transfer_resolved_revolution_vertex_orbit_curves(ctx, scan, ir, annotations)?;
-    let feature_extrusion_surface_count =
-        transfer_feature_extrusion_surfaces(ctx, scan, ir, annotations, transfer_losses)?;
+        transfer_resolved_revolution_vertex_orbit_curves(
+            ctx,
+            scan,
+            ir,
+            annotations,
+            source_carriers,
+        )?;
+    let feature_extrusion_surface_count = transfer_feature_extrusion_surfaces(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
     let feature_extrusion_vertex_orbit_curve_count =
-        transfer_resolved_extrusion_vertex_orbit_curves(ctx, scan, ir, annotations)?;
-    let active_datum_cylinder_count = transfer_active_datum_cylinders(ctx, scan, ir, annotations)?;
+        transfer_resolved_extrusion_vertex_orbit_curves(
+            ctx,
+            scan,
+            ir,
+            annotations,
+            source_carriers,
+        )?;
+    let active_datum_cylinder_count =
+        transfer_active_datum_cylinders(ctx, scan, ir, annotations, source_carriers)?;
     let circular_sweep_cylinder_count =
-        transfer_circular_sweep_cylinders(ctx, scan, ir, annotations)?;
-    let positional_cylinders = transfer_positional_cylinders(ctx, scan, ir, annotations)?;
-    let positional_cone_count = transfer_positional_cones(ctx, scan, ir, annotations)?;
+        transfer_circular_sweep_cylinders(ctx, scan, ir, annotations, source_carriers)?;
+    let positional_cylinders =
+        transfer_positional_cylinders(ctx, scan, ir, annotations, source_carriers)?;
+    let positional_cone_count =
+        transfer_positional_cones(ctx, scan, ir, annotations, source_carriers)?;
     let split_outline_cylinder_count =
-        transfer_split_outline_cylinders(ctx, scan, ir, annotations)?;
-    let hole_cylinder_count = transfer_hole_cylinders(ctx, scan, ir, annotations)?;
+        transfer_split_outline_cylinders(ctx, scan, ir, annotations, source_carriers)?;
+    let hole_cylinder_count = transfer_hole_cylinders(ctx, scan, ir, annotations, source_carriers)?;
     let constrained_slot_fillet_cylinder_count =
-        transfer_constrained_slot_fillet_cylinders(ctx, scan, ir, annotations)?;
+        transfer_constrained_slot_fillet_cylinders(ctx, scan, ir, annotations, source_carriers)?;
     let rowless_round_cylinder_count =
-        transfer_rowless_round_cylinders(ctx, scan, ir, annotations)?;
+        transfer_rowless_round_cylinders(ctx, scan, ir, annotations, source_carriers)?;
     let support_apex_cone_branch_count =
-        reconcile_support_apex_cone_parameter_branches(scan, ir, annotations);
-    let analytic_pcurve_carriers = transfer_analytic_pcurve_carriers(ctx, scan, ir, annotations)?;
+        reconcile_support_apex_cone_parameter_branches(scan, ir, annotations, source_carriers)?;
+    let analytic_pcurve_carriers =
+        transfer_analytic_pcurve_carriers(ctx, scan, ir, annotations, source_carriers)?;
     let analytic_pcurve_carrier_count = analytic_pcurve_carriers.len();
-    let nurbs_boundary_curves =
-        transfer_nurbs_boundary_curves(ctx, scan, ir, annotations, transfer_losses)?;
+    let nurbs_boundary_curves = transfer_nurbs_boundary_curves(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
     let extrusion_plane_boundary_curve_count = nurbs_boundary_curves.extrusion_plane_count;
     let extrusion_plane_section_generator_curve_count =
         nurbs_boundary_curves.extrusion_plane_section_generator_count;
@@ -132,6 +194,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
         ir,
         annotations,
         &nurbs_boundary_curves.endpoint_witnesses,
+        source_carriers,
     )?;
     derived_intersection_curves.extend(nurbs_boundary_curves.ids.iter().cloned());
     let topology_bound_plane_count = transfer_topology_bound_planes(
@@ -140,6 +203,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
         ir,
         annotations,
         &nurbs_boundary_curves.endpoint_witnesses,
+        source_carriers,
     )?;
     derived_intersection_curves.extend(transfer_carrier_intersection_curves(
         ctx,
@@ -147,6 +211,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
         ir,
         annotations,
         &nurbs_boundary_curves.endpoint_witnesses,
+        source_carriers,
     )?);
     derived_intersection_curves.extend(analytic_pcurve_carriers.iter().cloned());
     let NativeBrepTransferSummary {
@@ -158,20 +223,42 @@ pub(super) fn transfer_and_record_scanned_geometry(
         scan,
         ir,
         annotations,
-        &derived_intersection_curves,
-        &nurbs_boundary_curves.endpoint_witnesses,
+        NativeBrepCurveEvidence {
+            derived_intersections: &derived_intersection_curves,
+            nurbs_endpoints: &nurbs_boundary_curves.endpoint_witnesses,
+        },
         transfer_losses,
+        source_carriers,
     )?;
     diagnostics.record_coverage(coverage);
-    *brep_diagnostics = diagnostics;
-    let feature_revolution_brep_count =
-        transfer_resolved_revolution_breps(ctx, scan, ir, annotations, transfer_losses)?;
-    let feature_circular_extrusion_brep_count =
-        transfer_resolved_circular_extrusion_breps(ctx, scan, ir, annotations, transfer_losses)?;
-    let feature_extrusion_brep_count =
-        transfer_resolved_extrusion_breps(ctx, scan, ir, annotations, brep_diagnostics)?;
-    retain_unresolved_surface_carriers(ctx, scan, ir, annotations)?;
-    let transferred_part_product = transfer_part_product(ctx, scan, ir, annotations)?;
+    let mut brep_diagnostics = diagnostics;
+    let feature_revolution_brep_count = transfer_resolved_revolution_breps(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
+    let feature_circular_extrusion_brep_count = transfer_resolved_circular_extrusion_breps(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
+    let feature_extrusion_brep_count = transfer_resolved_extrusion_breps(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        &mut brep_diagnostics,
+        source_carriers,
+    )?;
+    retain_unresolved_surface_carriers(ctx, scan, ir, annotations, source_carriers)?;
+    let transferred_part_product =
+        transfer_part_product(ctx, scan, ir, annotations, source_carriers)?;
     let decoded_feature_skamp_count = scan
         .features
         .definitions
@@ -693,7 +780,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
             );
         }
     }
-    Ok(())
+    Ok(brep_diagnostics)
 }
 
 #[cfg(test)]
@@ -706,8 +793,6 @@ mod tests {
     use cadmpeg_ir::ids::{CurveId, SurfaceId};
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::AnnotationBuilder;
-
-    use crate::decode::surfaces::brep::BrepTransferDiagnostics;
 
     use super::transfer_and_record_scanned_geometry;
 
@@ -796,15 +881,14 @@ mod tests {
             .expect("test decode context");
         let mut annotations = AnnotationBuilder::new();
         let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
-        let mut brep_diagnostics = BrepTransferDiagnostics::default();
         transfer_and_record_scanned_geometry(
             &ctx,
             &scan,
             &mut ir,
             &mut annotations,
             &mut coverage,
-            &mut brep_diagnostics,
             &mut Vec::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
         .expect("synthetic geometry transfer");
 

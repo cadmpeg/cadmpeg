@@ -8,7 +8,7 @@ use crate::resolved_features::LEGACY_EXTENDED_SKETCH_MARKER;
 
 #[test]
 fn arc_dimension_center_requires_one_matching_radial_witness() {
-    let marker = |id: &str, offset: u64, kind, coordinates_m| {
+    let marker = |id: &str, offset: u64, kind, coordinates_m: Option<[f64; 2]>| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
         let mut constructed_marker = SketchInputEntity::new(
@@ -20,7 +20,8 @@ fn arc_dimension_center_requires_one_matching_radial_witness() {
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -78,7 +79,7 @@ fn arc_dimension_uses_two_endpoint_markers_for_a_bounded_arc() {
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = Some(coordinates_m);
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new(coordinates_m);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -89,7 +90,7 @@ fn arc_dimension_uses_two_endpoint_markers_for_a_bounded_arc() {
             SketchInputEntity::new(marker_id, marker_parent, 1, 10, SketchInputKind::Arc);
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = Some([0.0, 0.0]);
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]);
         constructed_marker.links = crate::records::SketchInputLinks::new(
             0,
             vec![
@@ -135,7 +136,7 @@ fn arc_dimension_uses_two_endpoint_markers_for_a_bounded_arc() {
     assert_eq!(arc.endpoints, Some(["start".into(), "end".into()]));
 
     let mut invalid_end = lane.sketch_entities[2].clone();
-    invalid_end.coordinates_m = Some([0.0, 0.004]);
+    invalid_end.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 0.004]);
     let invalid_lane = FeatureInputLane {
         sketch_entities: vec![center, lane.sketch_entities[1].clone(), invalid_end],
         ..lane
@@ -163,7 +164,7 @@ fn terminal_radial_address_resolves_every_consecutive_equal_radius_pair() {
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(Some(object_index), None);
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = Some(coordinates_m);
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new(coordinates_m);
         constructed_marker.links = None;
         constructed_marker
     };

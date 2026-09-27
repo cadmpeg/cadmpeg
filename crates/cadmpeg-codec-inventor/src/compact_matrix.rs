@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 
 /// A finite matrix whose implicit cells agree with its compact encoding masks.
@@ -9,7 +10,7 @@ use serde::{Deserialize, Serialize};
 pub(crate) struct CompactMatrix {
     value_mask: u16,
     zero_mask: u16,
-    matrix: [[f64; 4]; 4],
+    matrix: [[FiniteReal; 4]; 4],
 }
 
 #[derive(Serialize, Deserialize)]
@@ -20,26 +21,25 @@ struct CompactMatrixWire {
 }
 
 impl CompactMatrix {
+    pub(crate) fn masks(&self) -> (u16, u16) {
+        (self.value_mask, self.zero_mask)
+    }
+
     /// Constructs the matrix from masks and row-major explicit values.
     pub(crate) fn try_new(
         value_mask: u16,
         zero_mask: u16,
-        mut explicit: impl FnMut(usize) -> Result<f64, CodecError>,
+        mut explicit: impl FnMut(usize) -> Result<FiniteReal, CodecError>,
     ) -> Result<Self, CodecError> {
-        let mut matrix = [[0.0; 4]; 4];
+        let mut matrix = [[FiniteReal::ZERO; 4]; 4];
         for (index, value) in matrix.iter_mut().flatten().enumerate() {
             let bit = 1u16 << index;
             *value = match (value_mask & bit != 0, zero_mask & bit != 0) {
                 (false, false) => explicit(index)?,
-                (true, false) => 1.0,
-                (false, true) => 0.0,
-                (true, true) => -1.0,
+                (true, false) => FiniteReal::ONE,
+                (false, true) => FiniteReal::ZERO,
+                (true, true) => FiniteReal::ONE.negated(),
             };
-            if !value.is_finite() {
-                return Err(CodecError::malformed(format_args!(
-                    "compact matrix[{index}] is not finite"
-                )));
-            }
         }
         Ok(Self {
             value_mask,
@@ -55,9 +55,11 @@ impl CompactMatrix {
         matrix: [[f64; 4]; 4],
     ) -> Result<Self, CodecError> {
         let expected = Self::try_new(value_mask, zero_mask, |index| {
-            Ok(matrix[index / 4][index % 4])
+            FiniteReal::new(matrix[index / 4][index % 4]).ok_or_else(|| {
+                CodecError::malformed(format_args!("compact matrix[{index}] is not finite"))
+            })
         })?;
-        if expected.matrix != matrix {
+        if expected.rows() != matrix {
             return Err(CodecError::Malformed(
                 "compact matrix disagrees with value_mask or zero_mask".into(),
             ));
@@ -67,6 +69,11 @@ impl CompactMatrix {
 
     /// The admitted matrix rows.
     pub(crate) fn rows(&self) -> [[f64; 4]; 4] {
+        self.matrix.map(|row| row.map(FiniteReal::get))
+    }
+
+    /// The admitted matrix cells for transfer into a checked transform.
+    pub(crate) fn checked_rows(&self) -> [[FiniteReal; 4]; 4] {
         self.matrix
     }
 }
@@ -84,7 +91,7 @@ impl From<CompactMatrix> for CompactMatrixWire {
         Self {
             value_mask: value.value_mask,
             zero_mask: value.zero_mask,
-            matrix: value.matrix,
+            matrix: value.rows(),
         }
     }
 }
@@ -107,7 +114,7 @@ pub(crate) mod assembly_wire {
     ) -> Result<S::Ok, S::Error> {
         Wire {
             transform_encoding: [matrix.value_mask, matrix.zero_mask],
-            transform: matrix.matrix,
+            transform: matrix.rows(),
         }
         .serialize(serializer)
     }
@@ -135,7 +142,7 @@ mod tests {
         let mut indices = Vec::new();
         let matrix = CompactMatrix::try_new(0x000a, 0xfffc, |index| {
             indices.push(index);
-            Ok(2.5)
+            Ok(cadmpeg_ir::scalar::FiniteReal::new(2.5).expect("finite matrix cell"))
         })
         .expect("matrix fixture agrees with its masks");
         assert_eq!(indices, [0]);
@@ -152,7 +159,7 @@ mod tests {
             assert!(serde_json::from_value::<CompactMatrix>(invalid).is_err());
         }
         for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            assert!(CompactMatrix::try_new(0, 0, |_| Ok(value)).is_err());
+            assert!(CompactMatrix::try_from_rows(0, 0, [[value; 4]; 4]).is_err());
             let mut rows = matrix.rows();
             rows[0][1] = value;
             assert!(CompactMatrix::try_from_rows(0x000a, 0xfffc, rows).is_err());

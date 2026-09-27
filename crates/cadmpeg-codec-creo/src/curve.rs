@@ -501,6 +501,7 @@ pub(crate) struct CurveParameterOpaqueSpan {
 }
 
 /// Two pcurve endpoints represented in both adjacent face parameter frames.
+/// Both reader routes admit finite coordinates before constructing this record.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PcurveEndpoints {
     /// Owning curve identifier.
@@ -523,6 +524,7 @@ impl PcurveEndpoints {
 }
 
 /// Ordered samples of one curve represented in both incident-face charts.
+/// Every stored sample coordinate is finite at reader admission.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct TwoChartPcurveSamples {
     /// Owning curve identifier.
@@ -536,6 +538,7 @@ pub(crate) struct TwoChartPcurveSamples {
 }
 
 /// One-sided endpoint path from the complete short fc 02 curve body.
+/// Every stored endpoint coordinate is finite at reader admission.
 ///
 /// The body carries one path in the first topology face's parameter chart;
 /// the second face remains a carrier-only join. The retained terminal operand
@@ -704,6 +707,7 @@ pub(crate) struct Fc05CylinderCapPair {
 }
 
 /// Complete eight-slot pcurve endpoints from a labeled curve prototype.
+/// Every stored endpoint coordinate is finite at reader admission.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PrototypePcurveEndpoints {
     /// Prototype curve identifier.
@@ -731,6 +735,7 @@ pub(crate) struct CurvePrototypeTopology {
 }
 
 /// Prototype pcurve endpoints bound to their two labeled adjacent faces.
+/// Binding preserves the reader's finite endpoint admission.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct BoundPrototypePcurve {
     /// Prototype curve identifier.

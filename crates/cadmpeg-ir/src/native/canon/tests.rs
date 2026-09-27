@@ -6,6 +6,99 @@ use serde::{Serialize, Serializer};
 use super::CanonValue;
 use crate::native::NativeNamespace;
 
+#[test]
+fn display_value_charges_escaped_chunks_and_formats_once() {
+    use std::cell::{Cell, RefCell};
+    use std::fmt::Write as _;
+
+    struct DisplayText<'a>(&'a Cell<usize>);
+
+    impl std::fmt::Display for DisplayText<'_> {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            self.0.set(self.0.get() + 1);
+            formatter.write_str("line\n")?;
+            formatter.write_str("quote\"")?;
+            formatter.write_char('\u{1}')
+        }
+    }
+
+    impl Serialize for DisplayText<'_> {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            serializer.collect_str(self)
+        }
+    }
+
+    #[derive(Serialize)]
+    struct Record<'a> {
+        id: &'static str,
+        value: DisplayText<'a>,
+    }
+
+    let calls = Cell::new(0);
+    let captured = RefCell::new(Vec::new());
+    let sink = |bytes: &[u8]| {
+        captured.borrow_mut().extend_from_slice(bytes);
+        Ok(())
+    };
+    let record = super::super::NativeRecord::from_typed_with_sink(
+        &Record {
+            id: "test:native:record#display",
+            value: DisplayText(&calls),
+        },
+        Some(&sink),
+    )
+    .expect("valid display record");
+    assert_eq!(calls.get(), 1);
+    assert_eq!(
+        record.field("value"),
+        Some(serde_json::json!("line\nquote\"\u{1}"))
+    );
+    assert_eq!(*captured.borrow(), serde_json::to_vec(&record).unwrap());
+}
+
+#[test]
+fn display_map_key_charges_escaped_chunks_and_formats_once() {
+    use std::cell::{Cell, RefCell};
+
+    struct Key<'a>(&'a Cell<usize>);
+
+    impl std::fmt::Display for Key<'_> {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            self.0.set(self.0.get() + 1);
+            formatter.write_str("key\n")
+        }
+    }
+
+    impl Serialize for Key<'_> {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            serializer.collect_str(self)
+        }
+    }
+
+    struct Record<'a>(&'a Cell<usize>);
+
+    impl Serialize for Record<'_> {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            let mut map = serializer.serialize_map(Some(2))?;
+            map.serialize_entry("id", "test:native:record#key")?;
+            map.serialize_entry(&Key(self.0), &7)?;
+            map.end()
+        }
+    }
+
+    let calls = Cell::new(0);
+    let captured = RefCell::new(Vec::new());
+    let sink = |bytes: &[u8]| {
+        captured.borrow_mut().extend_from_slice(bytes);
+        Ok(())
+    };
+    let record = super::super::NativeRecord::from_typed_with_sink(&Record(&calls), Some(&sink))
+        .expect("valid key record");
+    assert_eq!(calls.get(), 1);
+    assert_eq!(record.field("key\n"), Some(serde_json::json!(7)));
+    assert_eq!(*captured.borrow(), serde_json::to_vec(&record).unwrap());
+}
+
 enum ObjectShape {
     Map,
     Struct,
@@ -60,11 +153,11 @@ fn duplicate_typed_fields_cannot_replace_a_native_arena() {
         };
         let mut namespace = NativeNamespace::default();
         namespace
-            .set_arena("records", &[record("second")])
+            .set_arena(&crate::native::test_ctx(), "records", &[record("second")])
             .expect("distinct keys are legal");
         let before = namespace.clone();
         let error = namespace
-            .set_arena("records", &[record("first")])
+            .set_arena(&crate::native::test_ctx(), "records", &[record("first")])
             .expect_err("duplicate fields must not collapse to their last value");
         assert!(error.to_string().contains("duplicate key first"), "{error}");
         assert_eq!(namespace, before);
@@ -101,6 +194,39 @@ fn a_rejected_sequence_element_does_not_corrupt_rendered_json() {
 }
 
 #[test]
+fn raw_value_streams_unescaped_json_before_materialization() {
+    use serde_json::value::RawValue;
+    use std::cell::RefCell;
+
+    #[derive(Serialize)]
+    struct Record {
+        id: &'static str,
+        raw: Box<RawValue>,
+    }
+
+    let typed = Record {
+        id: "test:native:record#raw-stream",
+        raw: RawValue::from_string(r#"{ "text": "quoted \"value\"" }"#.to_owned())
+            .expect("valid raw JSON"),
+    };
+    let captured = RefCell::new(Vec::new());
+    let sink = |bytes: &[u8]| {
+        captured.borrow_mut().extend_from_slice(bytes);
+        Ok(())
+    };
+    let stored = super::super::NativeRecord::from_typed_with_sink(&typed, Some(&sink))
+        .expect("valid raw record");
+    assert_eq!(
+        *captured.borrow(),
+        serde_json::to_vec(&typed).expect("reference raw JSON bytes")
+    );
+    assert_eq!(
+        stored.field("raw"),
+        Some(serde_json::json!({"text": "quoted \"value\""}))
+    );
+}
+
+#[test]
 fn raw_json_values_use_the_same_canonical_native_admission() {
     use serde_json::{value::RawValue, Value};
 
@@ -129,7 +255,7 @@ fn raw_json_values_use_the_same_canonical_native_admission() {
         document
             .native
             .namespace_mut("future")
-            .set_arena("records", &[record])
+            .set_arena(&crate::native::test_ctx(), "records", &[record])
             .expect("raw fields have ordinary JSON semantics");
         let wire = serde_json::to_value(&document).expect("document writes");
         let admitted: crate::CadIr = serde_json::from_value(wire.clone()).expect("document reads");
@@ -152,7 +278,7 @@ fn raw_json_values_use_the_same_canonical_native_admission() {
         .expect("object fixture");
     let mut namespace = NativeNamespace::default();
     namespace
-        .set_arena("records", &[raw])
+        .set_arena(&crate::native::test_ctx(), "records", &[raw])
         .expect("raw object record");
     assert_eq!(
         namespace.arenas()["records"][0].field("value"),
@@ -166,7 +292,7 @@ fn raw_json_values_use_the_same_canonical_native_admission() {
             raw: RawValue::from_string(json.to_owned()).expect("raw JSON retains duplicate keys"),
         };
         let error = namespace
-            .set_arena("records", &[record])
+            .set_arena(&crate::native::test_ctx(), "records", &[record])
             .expect_err("duplicate raw keys");
         assert!(error.to_string().contains("duplicate key a"), "{error}");
         assert_eq!(namespace, before);
@@ -175,6 +301,7 @@ fn raw_json_values_use_the_same_canonical_native_admission() {
     let ordinary = serde_json::json!({"$serde_json::private::RawValue": "null"});
     namespace
         .set_arena(
+            &crate::native::test_ctx(),
             "records",
             &[serde_json::json!({
                 "id": "test:native:record#ordinary", "value": ordinary.clone(),

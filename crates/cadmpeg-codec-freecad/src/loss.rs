@@ -35,6 +35,8 @@ pub(crate) enum FreecadLossCode {
     SketchNativeConstraint,
     /// Topology color values were retained because their count did not match mapped topology.
     AppearanceTopologyColorCountMismatch,
+    /// A primitive style size could not enter the neutral appearance.
+    AppearancePrimitiveSizeNotTransferred,
     /// The declared persistence schema names no dialect this codec has a strategy for.
     SourceDialectUnverified,
     /// The GUI document used schema-1 vocabulary under another declaration.
@@ -54,6 +56,7 @@ impl FreecadLossCode {
         Self::SketchNativeGeometry,
         Self::SketchNativeConstraint,
         Self::AppearanceTopologyColorCountMismatch,
+        Self::AppearancePrimitiveSizeNotTransferred,
         Self::SourceDialectUnverified,
         Self::SourceGuiSchemaUnverified,
         Self::SourceGuiPropertyKeyBlank,
@@ -71,6 +74,9 @@ impl FreecadLossCode {
             Self::AppearanceTopologyColorCountMismatch => {
                 "appearance.topology-color-count-mismatch"
             }
+            Self::AppearancePrimitiveSizeNotTransferred => {
+                "appearance.primitive-size-not-transferred"
+            }
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::SourceGuiSchemaUnverified => "source.gui-schema-unverified",
             Self::SourceGuiPropertyKeyBlank => "source.gui-property-key-blank",
@@ -87,6 +93,7 @@ impl FreecadLossCode {
             | Self::SketchNativeGeometry
             | Self::SketchNativeConstraint => Severity::Blocking,
             Self::AppearanceTopologyColorCountMismatch
+            | Self::AppearancePrimitiveSizeNotTransferred
             | Self::SourceDialectUnverified
             | Self::SourceGuiSchemaUnverified
             | Self::SourceGuiPropertyKeyBlank
@@ -103,7 +110,8 @@ impl FreecadLossCode {
             | Self::SketchNativeConstraint
             | Self::SourceGuiPropertyKeyBlank
             | Self::PcurveNotTransferred => LossTaxonomy::RecordNotTyped,
-            Self::AppearanceTopologyColorCountMismatch => LossTaxonomy::MaterialNotTransferred,
+            Self::AppearanceTopologyColorCountMismatch
+            | Self::AppearancePrimitiveSizeNotTransferred => LossTaxonomy::MaterialNotTransferred,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::SourceGuiSchemaUnverified => LossTaxonomy::SourceDialectUnverified,
         }
@@ -149,6 +157,7 @@ mod tests {
                 "sketch.native-geometry",
                 "sketch.native-constraint",
                 "appearance.topology-color-count-mismatch",
+                "appearance.primitive-size-not-transferred",
                 "source.dialect-unverified",
                 "source.gui-schema-unverified",
                 "source.gui-property-key-blank",

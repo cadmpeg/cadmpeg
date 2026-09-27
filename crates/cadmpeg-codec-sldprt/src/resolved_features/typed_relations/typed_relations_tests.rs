@@ -37,7 +37,9 @@ fn compact_legacy_coordinate_line_ends_at_the_following_marker_coordinate() {
     assert_eq!(
         consecutive_legacy_profile_line_endpoints(&payload, &entities[0], &markers)
             .iter()
-            .map(|marker| marker.coordinates_m)
+            .map(|marker| marker
+                .coordinates_m
+                .map(cadmpeg_ir::units::FiniteVector::get))
             .collect::<Vec<_>>(),
         vec![Some([1.25, -2.5]), Some([3.0, 4.0])]
     );
@@ -73,7 +75,7 @@ fn coordinate_lines_use_their_centered_endpoint_pairs() {
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker.state_value = None;
-        constructed_marker.coordinates_m = Some(coordinates_m);
+        constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new(coordinates_m);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -135,7 +137,7 @@ fn current_coordinate_line_uses_its_single_local_link() {
     payload[90..94].fill(0xff);
     payload[102..106].copy_from_slice(&(-2i32).to_le_bytes());
     payload[152..].copy_from_slice(SKETCH_MARKER);
-    let entity = |id: &str, offset, local_id, kind, coordinates_m| {
+    let entity = |id: &str, offset, local_id, kind, coordinates_m: Option<[f64; 2]>| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
         let mut constructed_marker =
@@ -143,7 +145,8 @@ fn current_coordinate_line_uses_its_single_local_link() {
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(None, local_id);
         constructed_marker.state_value = None;
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -185,7 +188,7 @@ fn current_coordinate_line_accepts_a_coordinate_bearing_curve_vertex() {
     payload[90..94].fill(0xff);
     payload[102..106].copy_from_slice(&(-2i32).to_le_bytes());
     payload[152..].copy_from_slice(SKETCH_MARKER);
-    let entity = |id: &str, offset, local_id, kind, coordinates_m| {
+    let entity = |id: &str, offset, local_id, kind, coordinates_m: Option<[f64; 2]>| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
         let mut constructed_marker =
@@ -193,7 +196,8 @@ fn current_coordinate_line_accepts_a_coordinate_bearing_curve_vertex() {
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(None, local_id);
         constructed_marker.state_value = None;
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -250,7 +254,8 @@ fn extended_wide_selected_axis_uses_object_ids_then_one_based_point_roster() {
             constructed_marker.feature_ref = Some("sketch".into());
             constructed_marker = constructed_marker.with_test_identity(object_index, None);
             constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-            constructed_marker.coordinates_m = coordinates_m;
+            constructed_marker.coordinates_m =
+                coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
             constructed_marker.links = None;
             constructed_marker
         };
@@ -291,14 +296,15 @@ fn current_line_resolves_one_based_point_roster_endpoints() {
     payload[60..64].copy_from_slice(&1u32.to_le_bytes());
     payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
     payload[84..].copy_from_slice(SKETCH_MARKER);
-    let entity = |id: &str, offset, coordinates_m, kind: SketchInputKind| {
+    let entity = |id: &str, offset, coordinates_m: Option<[f64; 2]>, kind: SketchInputKind| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
         let mut constructed_marker =
             crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("sketch".into());
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -354,14 +360,15 @@ fn legacy_geometry_locus_line_resolves_zero_based_point_roster_endpoints() {
     payload[76..80].copy_from_slice(&5u32.to_le_bytes());
     payload[80..84].copy_from_slice(&4u32.to_le_bytes());
     payload[84..].copy_from_slice(LEGACY_SKETCH_MARKER);
-    let entity = |id: &str, offset, coordinates_m, kind: SketchInputKind| {
+    let entity = |id: &str, offset, coordinates_m: Option<[f64; 2]>, kind: SketchInputKind| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
         let mut constructed_marker =
             crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("sketch".into());
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -481,8 +488,10 @@ fn ellipse_membership_rejects_nonfinite_intermediates() {
             SketchGeometryDefinition::Ellipse {
                 center,
                 major_angle: Angle::new(0.).unwrap(),
-                major_radius: Length::new(1.).unwrap(),
-                minor_radius: Length::new(0.5).unwrap(),
+                radii: cadmpeg_ir::sketches::EllipseRadii {
+                    major_radius: Length::new(1.).unwrap(),
+                    minor_radius: Length::new(0.5).unwrap(),
+                },
                 bounds: None,
             }
             .try_into()

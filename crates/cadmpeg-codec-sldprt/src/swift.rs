@@ -12,7 +12,9 @@ use cadmpeg_ir::pmi::{
     DatumReference, DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiAnnotation,
     PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
 };
+use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
 use cadmpeg_ir::topology::{Body, Edge, Face, Vertex};
+use cadmpeg_ir::units::FiniteVector;
 
 use crate::container::ContainerScan;
 
@@ -209,7 +211,7 @@ fn unique_id_for_attribute<'a, T: 'a>(
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct RenderedDimension {
     kind: RenderedDimensionKind,
-    value: f64,
+    value: PositiveReal,
     decimal_places: u32,
 }
 
@@ -221,15 +223,15 @@ enum RenderedDimensionKind {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ImplicitNominal {
-    Exact(f64),
+    Exact(PositiveReal),
     Rendered {
         kind: RenderedDimensionKind,
-        geometry: f64,
+        geometry: PositiveReal,
     },
     RenderedOrExact {
         kind: RenderedDimensionKind,
-        geometry: f64,
-        exact: f64,
+        geometry: PositiveReal,
+        exact: PositiveReal,
     },
 }
 
@@ -238,7 +240,7 @@ pub(crate) fn annotations(
     scan: &ContainerScan<'_>,
     annotations: &mut Annotations,
     topology: Option<&TopologyIdentityIndex>,
-    pattern_hole_nominals: Option<&BTreeMap<String, f64>>,
+    pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
 ) -> Vec<PmiAnnotation> {
     let Some((stream, root, rendered_dimensions)) = scan_root(scan) else {
         return Vec::new();
@@ -277,8 +279,8 @@ pub(crate) fn annotations(
 /// `LPatternN` whose sole seed is consumed by exactly one later Hole feature.
 pub(crate) fn pattern_hole_nominal_context(
     features: &[cadmpeg_ir::features::Feature],
-) -> BTreeMap<String, f64> {
-    let mut candidates = BTreeMap::<String, Vec<f64>>::new();
+) -> BTreeMap<String, PositiveReal> {
+    let mut candidates = BTreeMap::<String, Vec<PositiveReal>>::new();
     for pattern in features {
         let Some(name) = pattern.name.as_deref() else {
             continue;
@@ -330,11 +332,7 @@ pub(crate) fn pattern_hole_nominal_context(
                 else {
                     return None;
                 };
-                Some(
-                    shape
-                        .diameter()
-                        .map(cadmpeg_ir::scalar::PositiveLength::get),
-                )
+                Some(shape.diameter().map(PositiveReal::from_assigned_length))
             })
             .collect::<Vec<_>>();
         let [Some(diameter)] = holes.as_slice() else {
@@ -640,7 +638,7 @@ fn enrich_implicit_nominals_with_context(
     root: &Entity,
     rendered: &[RenderedDimension],
     annotations: &mut Vec<PmiAnnotation>,
-    pattern_hole_nominals: Option<&BTreeMap<String, f64>>,
+    pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
 ) {
     *annotations = project_with_topology(root, None, rendered, pattern_hole_nominals);
 }
@@ -649,7 +647,7 @@ fn project_with_topology(
     root: &Entity,
     topology: Option<&TopologyIdentityIndex>,
     rendered: &[RenderedDimension],
-    pattern_hole_nominals: Option<&BTreeMap<String, f64>>,
+    pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
 ) -> Vec<PmiAnnotation> {
     if root.annotations.references.len() != root.annotations.entities.len() {
         return Vec::new();
@@ -791,10 +789,10 @@ fn project_tolerance(
     datum_ids: &BTreeMap<&str, PmiId>,
 ) -> Option<ProjectedTolerance> {
     let kind = tolerance_kind(short_class(&entity.class))?;
-    let magnitude = finite_nonnegative(entity.doubles.get("Tolerance").copied()?)?;
+    let magnitude = NonNegativeReal::new(entity.doubles.get("Tolerance").copied()?)?;
     Some(ProjectedTolerance {
         kind,
-        magnitude: cadmpeg_ir::pmi::PmiMagnitude::new(length(magnitude)?)?,
+        magnitude: cadmpeg_ir::pmi::PmiMagnitude::from_parts(magnitude, PmiQuantity::Length),
         references: datum_references(entity, datum_ids).try_into().ok()?,
     })
 }
@@ -805,7 +803,7 @@ fn project_lower_profile_tier(
     feature_index: &BTreeMap<&str, &Entity>,
     topology: Option<&TopologyIdentityIndex>,
 ) -> Option<PmiAnnotation> {
-    let magnitude = finite_nonnegative(entity.doubles.get("ToleranceLowerTier").copied()?)?;
+    let magnitude = NonNegativeReal::new(entity.doubles.get("ToleranceLowerTier").copied()?)?;
     Some(PmiAnnotation {
         id: PmiId::from(
             cadmpeg_ir::ids::Identity::from(pmi_id(&reference.id)?).with_key_tail(
@@ -818,7 +816,7 @@ fn project_lower_profile_tier(
         targets: targets(entity, feature_index, topology)?,
         definition: PmiDefinition::GeometricTolerance {
             tolerance: GeometricToleranceKind::SurfaceProfile,
-            magnitude: cadmpeg_ir::pmi::PmiMagnitude::new(length(magnitude)?)?,
+            magnitude: cadmpeg_ir::pmi::PmiMagnitude::from_parts(magnitude, PmiQuantity::Length),
             defined_unit: None,
             defined_area_unit: None,
             defined_area_second_unit: None,
@@ -835,28 +833,31 @@ fn project_dimension(
     feature_index: &BTreeMap<&str, &Entity>,
     topology: Option<&TopologyIdentityIndex>,
     rendered: &[RenderedDimension],
-    pattern_hole_nominals: Option<&BTreeMap<String, f64>>,
+    pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
 ) -> Option<PmiAnnotation> {
     let dimension = dimension_kind(short_class(&entity.class))?;
     let quantity = dimension_quantity(&dimension);
-    let nominal = finite(entity.doubles.get("Nominal").copied()?)
-        .filter(|value| {
-            *value != 0.0
+    let explicit_nominal =
+        FiniteReal::new(entity.doubles.get("Nominal").copied()?).filter(|value| {
+            value.get() != 0.0
                 || entity
                     .integers
                     .get("Dimension")
                     .is_some_and(|dimension| *dimension != 0)
-        })
-        .or_else(|| {
-            implicit_dimension_nominal(root, entity, feature_index, rendered, pattern_hole_nominals)
         });
+    let implicit_nominal = if explicit_nominal.is_none() {
+        implicit_dimension_nominal(root, entity, feature_index, rendered, pattern_hole_nominals)
+    } else {
+        None
+    };
+    let nominal = explicit_nominal.or(implicit_nominal);
     let tolerance = match (
         deviation(entity, nominal, "LowerLimit", "MinusTolerance"),
         deviation(entity, nominal, "UpperLimit", "PlusTolerance"),
     ) {
         (Some(lower), Some(upper)) => Some(DimensionTolerance::PlusMinus {
-            lower: pmi_value(lower, quantity)?,
-            upper: pmi_value(upper, quantity)?,
+            lower: PmiValue::from_parts(lower, quantity),
+            upper: PmiValue::from_parts(upper, quantity),
         }),
         _ => None,
     };
@@ -868,10 +869,7 @@ fn project_dimension(
         definition: PmiDefinition::Dimension(
             cadmpeg_ir::pmi::PmiDimension::new(
                 dimension,
-                match nominal {
-                    Some(value) => Some(pmi_value(value, quantity)?),
-                    None => None,
-                },
+                nominal.map(|value| PmiValue::from_parts(value, quantity)),
                 tolerance,
             )
             .ok()?,
@@ -884,8 +882,8 @@ fn implicit_dimension_nominal(
     entity: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
     rendered: &[RenderedDimension],
-    pattern_hole_nominals: Option<&BTreeMap<String, f64>>,
-) -> Option<f64> {
+    pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
+) -> Option<FiniteReal> {
     let source = match short_class(&entity.class) {
         "GdtDiameter" => diameter_nominal(root, entity, feature_index, pattern_hole_nominals),
         "GdtDepth" => depth_nominal(root, entity, feature_index),
@@ -913,7 +911,7 @@ fn implicit_dimension_nominal(
         _ => None,
     }?;
     match source {
-        ImplicitNominal::Exact(value) => Some(value),
+        ImplicitNominal::Exact(value) => Some(FiniteReal::from(value)),
         ImplicitNominal::Rendered { kind, geometry } => entity
             .integers
             .get("BlockToleranceDecimalPlaces")
@@ -932,7 +930,7 @@ fn implicit_dimension_nominal(
             .and_then(|value| u32::try_from(value).ok())
             .filter(|value| *value <= 9)
             .and_then(|decimal_places| rendered_nominal(geometry, decimal_places, kind, rendered))
-            .or(Some(exact)),
+            .or(Some(FiniteReal::from(exact))),
     }
 }
 
@@ -945,14 +943,14 @@ fn dimension_quantity(dimension: &DimensionKind) -> PmiQuantity {
 fn diameter_from_applied_geometry(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Option<f64> {
+) -> Option<PositiveReal> {
     unique_diameter(&diameter_contributors(annotation, feature_index))
 }
 
 fn directional_distance(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Option<f64> {
+) -> Option<PositiveReal> {
     if annotation.integers.get("ComputeAnswerBy") != Some(&0)
         || annotation.integers.get("Direction") != Some(&4)
         || annotation.integers.get("NormalTo") != Some(&1)
@@ -962,25 +960,28 @@ fn directional_distance(
     }
     let direction_entity = &unique_related(annotation, "DirectionVector")?.entity;
     let direction = vector(direction_entity, ["I", "J", "K"])?;
-    if !approximately_equal(direction[0].hypot(direction[1]).hypot(direction[2]), 1.0) {
+    let [direction_i, direction_j, direction_k] = direction.get();
+    if !approximately_equal(direction_i.hypot(direction_j).hypot(direction_k), 1.0) {
         return None;
     }
-    if let Some(length) = closed_slot_feature_size_distance(annotation, feature_index, direction) {
+    if let Some(length) =
+        closed_slot_feature_size_distance(annotation, feature_index, direction.get())
+    {
         return Some(length);
     }
     let [first, second] = annotation.features.references.as_slice() else {
         return None;
     };
-    let first = location_projection(&first.id, feature_index, direction)?;
-    let second = location_projection(&second.id, feature_index, direction)?;
-    finite_positive((second - first).abs())
+    let first = location_projection(&first.id, feature_index, direction.get())?;
+    let second = location_projection(&second.id, feature_index, direction.get())?;
+    PositiveReal::new((second.get() - first.get()).abs())
 }
 
 fn closed_slot_feature_size_distance(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
     direction: [f64; 3],
-) -> Option<f64> {
+) -> Option<PositiveReal> {
     if annotation.integers.get("FeatureFosUsage") != Some(&2)
         || annotation.integers.get("OriginFeatureFosUsage") != Some(&2)
     {
@@ -1012,63 +1013,47 @@ fn closed_slot_feature_size_distance(
     }
     let slot_geometry = &unique_related(slot, "NomClosedSlot")?.entity;
     let cylinder_geometry = &unique_related(cylinder, "NomCylinder")?.entity;
-    let length = finite_positive(slot_geometry.doubles.get("Length").copied()?)?;
-    let width = finite_positive(slot_geometry.doubles.get("Width").copied()?)?;
-    let radius = finite_positive(cylinder_geometry.doubles.get("R").copied()?)?;
-    if length <= width || !diameters_equivalent(radius * 2.0, width) {
+    let length = PositiveReal::new(slot_geometry.doubles.get("Length").copied()?)?;
+    let width = PositiveReal::new(slot_geometry.doubles.get("Width").copied()?)?;
+    let radius = PositiveReal::new(cylinder_geometry.doubles.get("R").copied()?)?;
+    if length <= width || !diameters_equivalent(radius.get() * 2.0, width.get()) {
         return None;
     }
-    let slot_normal = vector(slot_geometry, ["I", "J", "K"])?;
-    let longitude = vector(slot_geometry, ["LongitudeI", "LongitudeJ", "LongitudeK"])?;
-    let slot_point = vector(slot_geometry, ["X", "Y", "Z"])?;
-    let cylinder_axis = vector(cylinder_geometry, ["I", "J", "K"])?;
-    let cylinder_point = vector(cylinder_geometry, ["X", "Y", "Z"])?;
-    if !approximately_equal(
-        slot_normal[0].hypot(slot_normal[1]).hypot(slot_normal[2]),
-        1.0,
-    ) || !approximately_equal(longitude[0].hypot(longitude[1]).hypot(longitude[2]), 1.0)
+    let [slot_normal_i, slot_normal_j, slot_normal_k] =
+        vector(slot_geometry, ["I", "J", "K"])?.get();
+    let [longitude_i, longitude_j, longitude_k] =
+        vector(slot_geometry, ["LongitudeI", "LongitudeJ", "LongitudeK"])?.get();
+    let [slot_x, slot_y, slot_z] = vector(slot_geometry, ["X", "Y", "Z"])?.get();
+    let [axis_i, axis_j, axis_k] = vector(cylinder_geometry, ["I", "J", "K"])?.get();
+    let [cylinder_x, cylinder_y, cylinder_z] = vector(cylinder_geometry, ["X", "Y", "Z"])?.get();
+    let [direction_i, direction_j, direction_k] = direction;
+    if !approximately_equal(slot_normal_i.hypot(slot_normal_j).hypot(slot_normal_k), 1.0)
+        || !approximately_equal(longitude_i.hypot(longitude_j).hypot(longitude_k), 1.0)
+        || !approximately_equal(axis_i.hypot(axis_j).hypot(axis_k), 1.0)
         || !approximately_equal(
-            cylinder_axis[0]
-                .hypot(cylinder_axis[1])
-                .hypot(cylinder_axis[2]),
+            (slot_normal_i * axis_i + slot_normal_j * axis_j + slot_normal_k * axis_k).abs(),
             1.0,
         )
         || !approximately_equal(
-            (slot_normal[0] * cylinder_axis[0]
-                + slot_normal[1] * cylinder_axis[1]
-                + slot_normal[2] * cylinder_axis[2])
-                .abs(),
-            1.0,
-        )
-        || !approximately_equal(
-            slot_normal[0] * longitude[0]
-                + slot_normal[1] * longitude[1]
-                + slot_normal[2] * longitude[2],
+            slot_normal_i * longitude_i + slot_normal_j * longitude_j + slot_normal_k * longitude_k,
             0.0,
         )
         || !approximately_equal(
-            (longitude[0] * direction[0]
-                + longitude[1] * direction[1]
-                + longitude[2] * direction[2])
+            (longitude_i * direction_i + longitude_j * direction_j + longitude_k * direction_k)
                 .abs(),
             1.0,
         )
     {
         return None;
     }
-    let displacement = [
-        cylinder_point[0] - slot_point[0],
-        cylinder_point[1] - slot_point[1],
-        cylinder_point[2] - slot_point[2],
-    ];
-    let displacement_norm = displacement[0]
-        .hypot(displacement[1])
-        .hypot(displacement[2]);
-    let longitudinal = displacement[0] * longitude[0]
-        + displacement[1] * longitude[1]
-        + displacement[2] * longitude[2];
+    let displacement_x = cylinder_x - slot_x;
+    let displacement_y = cylinder_y - slot_y;
+    let displacement_z = cylinder_z - slot_z;
+    let displacement_norm = displacement_x.hypot(displacement_y).hypot(displacement_z);
+    let longitudinal =
+        displacement_x * longitude_i + displacement_y * longitude_j + displacement_z * longitude_k;
     (approximately_equal(displacement_norm, longitudinal.abs())
-        && approximately_equal(longitudinal.abs(), (length - width) / 2.0))
+        && approximately_equal(longitudinal.abs(), (length.get() - width.get()) / 2.0))
     .then_some(length)
 }
 
@@ -1128,7 +1113,7 @@ fn location_projection(
     id: &str,
     feature_index: &BTreeMap<&str, &Entity>,
     direction: [f64; 3],
-) -> Option<f64> {
+) -> Option<FiniteReal> {
     let feature = feature_index.get(id)?;
     match short_class(&feature.class) {
         "GdtPlane" | "GdtIntersectPlane" => plane_projection(feature, direction),
@@ -1150,39 +1135,36 @@ fn location_projection(
     }
 }
 
-fn plane_projection(feature: &Entity, direction: [f64; 3]) -> Option<f64> {
+fn plane_projection(feature: &Entity, direction: [f64; 3]) -> Option<FiniteReal> {
     let plane = &unique_related(feature, "NomPlane")?.entity;
-    let normal = vector(plane, ["I", "J", "K"])?;
-    let point = vector(plane, ["X", "Y", "Z"])?;
-    if !approximately_equal(normal[0].hypot(normal[1]).hypot(normal[2]), 1.0)
+    let [normal_i, normal_j, normal_k] = vector(plane, ["I", "J", "K"])?.get();
+    let [point_x, point_y, point_z] = vector(plane, ["X", "Y", "Z"])?.get();
+    let [direction_i, direction_j, direction_k] = direction;
+    if !approximately_equal(normal_i.hypot(normal_j).hypot(normal_k), 1.0)
         || !approximately_equal(
-            (normal[0] * direction[0] + normal[1] * direction[1] + normal[2] * direction[2]).abs(),
+            (normal_i * direction_i + normal_j * direction_j + normal_k * direction_k).abs(),
             1.0,
         )
     {
         return None;
     }
-    finite(point[0] * direction[0] + point[1] * direction[1] + point[2] * direction[2])
+    FiniteReal::new(point_x * direction_i + point_y * direction_j + point_z * direction_k)
 }
 
-fn axis_projection(feature: &Entity, geometry: &str, direction: [f64; 3]) -> Option<f64> {
+fn axis_projection(feature: &Entity, geometry: &str, direction: [f64; 3]) -> Option<FiniteReal> {
     let axis = &unique_related(feature, geometry)?.entity;
-    let axis_direction = vector(axis, ["I", "J", "K"])?;
-    let point = vector(axis, ["X", "Y", "Z"])?;
-    if !approximately_equal(
-        axis_direction[0]
-            .hypot(axis_direction[1])
-            .hypot(axis_direction[2]),
-        1.0,
-    ) || !approximately_equal(
-        axis_direction[0] * direction[0]
-            + axis_direction[1] * direction[1]
-            + axis_direction[2] * direction[2],
-        0.0,
-    ) {
+    let [axis_i, axis_j, axis_k] = vector(axis, ["I", "J", "K"])?.get();
+    let [point_x, point_y, point_z] = vector(axis, ["X", "Y", "Z"])?.get();
+    let [direction_i, direction_j, direction_k] = direction;
+    if !approximately_equal(axis_i.hypot(axis_j).hypot(axis_k), 1.0)
+        || !approximately_equal(
+            axis_i * direction_i + axis_j * direction_j + axis_k * direction_k,
+            0.0,
+        )
+    {
         return None;
     }
-    finite(point[0] * direction[0] + point[1] * direction[1] + point[2] * direction[2])
+    FiniteReal::new(point_x * direction_i + point_y * direction_j + point_z * direction_k)
 }
 
 fn collect_rotational_projections(
@@ -1191,7 +1173,7 @@ fn collect_rotational_projections(
     direction: [f64; 3],
     visited: &mut BTreeSet<String>,
     depth: usize,
-    projections: &mut Vec<f64>,
+    projections: &mut Vec<FiniteReal>,
 ) {
     if depth >= MAX_DEPTH || !visited.insert(id.to_string()) {
         return;
@@ -1227,7 +1209,7 @@ fn diameter_nominal(
     root: &Entity,
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-    pattern_hole_nominals: Option<&BTreeMap<String, f64>>,
+    pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
 ) -> Option<ImplicitNominal> {
     if let Some(geometry) = diameter_from_applied_geometry(annotation, feature_index)
         .or_else(|| hole_diameter_excluding_counterbore(root, annotation, feature_index))
@@ -1250,8 +1232,8 @@ fn diameter_nominal(
 fn empty_pattern_hole_nominal(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-    pattern_hole_nominals: Option<&BTreeMap<String, f64>>,
-) -> Option<f64> {
+    pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
+) -> Option<PositiveReal> {
     let [reference] = annotation.features.references.as_slice() else {
         return None;
     };
@@ -1274,17 +1256,14 @@ fn empty_pattern_hole_nominal(
         return None;
     }
     let name = object_name(pattern)?;
-    pattern_hole_nominals?
-        .get(&name)
-        .copied()
-        .filter(|diameter| diameter.is_finite() && *diameter > 0.0)
+    pattern_hole_nominals?.get(&name).copied()
 }
 
 fn hole_diameter_excluding_counterbore(
     root: &Entity,
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Option<f64> {
+) -> Option<PositiveReal> {
     let context = annotation
         .features
         .references
@@ -1312,14 +1291,17 @@ fn hole_diameter_excluding_counterbore(
     let remaining = contributors
         .iter()
         .copied()
-        .filter(|value| !diameters_equivalent(*value, counterbore_diameter))
+        .filter(|value| !diameters_equivalent(value.get(), counterbore_diameter.get()))
         .collect::<Vec<_>>();
     (remaining.len() < contributors.len())
         .then(|| unique_diameter(&remaining))
         .flatten()
 }
 
-fn diameter_contributors(annotation: &Entity, feature_index: &BTreeMap<&str, &Entity>) -> Vec<f64> {
+fn diameter_contributors(
+    annotation: &Entity,
+    feature_index: &BTreeMap<&str, &Entity>,
+) -> Vec<PositiveReal> {
     let mut values = Vec::new();
     for reference in &annotation.features.references {
         collect_diameter_contributors(
@@ -1338,7 +1320,7 @@ fn collect_diameter_contributors(
     feature_index: &BTreeMap<&str, &Entity>,
     visited: &mut BTreeSet<String>,
     depth: usize,
-    values: &mut Vec<f64>,
+    values: &mut Vec<PositiveReal>,
 ) {
     if depth >= MAX_DEPTH || !visited.insert(id.to_string()) {
         return;
@@ -1351,7 +1333,7 @@ fn collect_diameter_contributors(
         "GdtSphere" => nominal_radius(feature, "NomSphere"),
         _ => None,
     };
-    if let Some(diameter) = radius.and_then(|radius| finite_positive(radius * 2.0)) {
+    if let Some(diameter) = radius.and_then(|radius| PositiveReal::new(radius.get() * 2.0)) {
         values.push(diameter);
         return;
     }
@@ -1372,7 +1354,7 @@ fn collect_diameter_contributors(
 fn depth_from_applied_geometry(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Option<f64> {
+) -> Option<PositiveReal> {
     measurement_from_applied_geometry(annotation, |id| {
         depth_for_feature(id, feature_index, &mut BTreeSet::new(), 0)
     })
@@ -1417,7 +1399,7 @@ fn counterbore_depth_from_sibling(
     root: &Entity,
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Option<f64> {
+) -> Option<PositiveReal> {
     let plane = unique_direct_feature(annotation, feature_index, "GdtPlane")?;
     let context = direct_feature_context(annotation, feature_index, "GdtPlane")?;
     let candidates = root
@@ -1489,19 +1471,26 @@ fn plane_terminates_cylinder(plane_feature: &Entity, cylinder_feature: &Entity) 
     else {
         return false;
     };
-    let Some([plane_i, plane_j, plane_k]) = vector(plane, ["I", "J", "K"]) else {
+    let Some([plane_i, plane_j, plane_k]) = vector(plane, ["I", "J", "K"]).map(FiniteVector::get)
+    else {
         return false;
     };
-    let Some([plane_x, plane_y, plane_z]) = vector(plane, ["X", "Y", "Z"]) else {
+    let Some([plane_x, plane_y, plane_z]) = vector(plane, ["X", "Y", "Z"]).map(FiniteVector::get)
+    else {
         return false;
     };
-    let Some([origin_x, origin_y, origin_z]) = vector(origin, ["X", "Y", "Z"]) else {
+    let Some([origin_x, origin_y, origin_z]) =
+        vector(origin, ["X", "Y", "Z"]).map(FiniteVector::get)
+    else {
         return false;
     };
-    let Some([axis_x, axis_y, axis_z]) = vector(cylinder, ["I", "J", "K"]) else {
+    let Some([axis_x, axis_y, axis_z]) = vector(cylinder, ["I", "J", "K"]).map(FiniteVector::get)
+    else {
         return false;
     };
-    let Some([bottom_x, bottom_y, bottom_z]) = vector(bottom, ["X", "Y", "Z"]) else {
+    let Some([bottom_x, bottom_y, bottom_z]) =
+        vector(bottom, ["X", "Y", "Z"]).map(FiniteVector::get)
+    else {
         return false;
     };
     approximately_equal(plane_i.hypot(plane_j).hypot(plane_k), 1.0)
@@ -1524,7 +1513,7 @@ fn plane_terminates_cylinder(plane_feature: &Entity, cylinder_feature: &Entity) 
 fn direct_cylinder_depth(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Option<f64> {
+) -> Option<PositiveReal> {
     measurement_from_direct_features(
         annotation,
         feature_index,
@@ -1536,7 +1525,7 @@ fn direct_cylinder_depth(
 fn thread_depth_from_direct_geometry(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Option<f64> {
+) -> Option<PositiveReal> {
     measurement_from_direct_features(annotation, feature_index, "GdtCylinder", |feature| {
         feature
             .integers
@@ -1547,7 +1536,7 @@ fn thread_depth_from_direct_geometry(
                     .doubles
                     .get("ThreadDepth")
                     .copied()
-                    .and_then(finite_positive)
+                    .and_then(PositiveReal::new)
             })
             .flatten()
     })
@@ -1556,7 +1545,7 @@ fn thread_depth_from_direct_geometry(
 fn width_from_applied_geometry(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Option<f64> {
+) -> Option<PositiveReal> {
     measurement_from_applied_geometry(annotation, |id| {
         width_for_feature(id, feature_index, &mut BTreeSet::new(), 0)
     })
@@ -1565,7 +1554,7 @@ fn width_from_applied_geometry(
 fn radius_from_applied_geometry(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Option<f64> {
+) -> Option<PositiveReal> {
     measurement_from_applied_geometry(annotation, |id| {
         radius_for_feature(id, feature_index, &mut BTreeSet::new(), 0)
     })
@@ -1574,7 +1563,7 @@ fn radius_from_applied_geometry(
 fn length_from_applied_geometry(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Option<f64> {
+) -> Option<PositiveReal> {
     measurement_from_applied_geometry(annotation, |id| {
         length_for_feature(id, feature_index, &mut BTreeSet::new(), 0)
     })
@@ -1583,16 +1572,16 @@ fn length_from_applied_geometry(
 fn counterbore_from_direct_geometry(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Option<f64> {
+) -> Option<PositiveReal> {
     measurement_from_direct_features(annotation, feature_index, "GdtCylinder", |feature| {
-        finite_positive(nominal_radius(feature, "NomCylinder")? * 2.0)
+        PositiveReal::new(nominal_radius(feature, "NomCylinder")?.get() * 2.0)
     })
 }
 
 fn countersink_diameter_from_direct_geometry(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Option<f64> {
+) -> Option<PositiveReal> {
     measurement_from_direct_features(
         annotation,
         feature_index,
@@ -1604,14 +1593,14 @@ fn countersink_diameter_from_direct_geometry(
 fn countersink_angle_from_direct_geometry(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Option<f64> {
+) -> Option<PositiveReal> {
     measurement_from_direct_features(annotation, feature_index, "GdtCone", nominal_cone_angle)
 }
 
 fn measurement_from_applied_geometry(
     annotation: &Entity,
-    mut measurement: impl FnMut(&str) -> Option<f64>,
-) -> Option<f64> {
+    mut measurement: impl FnMut(&str) -> Option<PositiveReal>,
+) -> Option<PositiveReal> {
     let candidates = annotation
         .features
         .references
@@ -1625,8 +1614,8 @@ fn measurement_from_direct_features(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
     class: &str,
-    measurement: impl Fn(&Entity) -> Option<f64>,
-) -> Option<f64> {
+    measurement: impl Fn(&Entity) -> Option<PositiveReal>,
+) -> Option<PositiveReal> {
     let candidates = annotation
         .features
         .references
@@ -1639,11 +1628,11 @@ fn measurement_from_direct_features(
 }
 
 fn rendered_nominal(
-    raw_mm: f64,
+    raw_mm: PositiveReal,
     decimal_places: u32,
     kind: RenderedDimensionKind,
     rendered_dimensions: &[RenderedDimension],
-) -> Option<f64> {
+) -> Option<FiniteReal> {
     const LENGTH_SCALES_MM: &[f64] = &[
         EPS_SWIFT_RENDERED_NOMINAL_E7,
         EPS_SWIFT_RENDERED_NOMINAL_E6,
@@ -1659,13 +1648,13 @@ fn rendered_nominal(
     let precision = 10.0_f64.powi(exponent);
     let mut candidates = Vec::new();
     for scale in LENGTH_SCALES_MM {
-        let rendered = (raw_mm / scale * precision).round() / precision;
+        let rendered = (raw_mm.get() / scale * precision).round() / precision;
         for value in rendered_dimensions
             .iter()
             .filter(|value| value.kind == kind && value.decimal_places == decimal_places)
         {
-            if approximately_equal(value.value, rendered) {
-                candidates.push(value.value * scale);
+            if approximately_equal(value.value.get(), rendered) {
+                candidates.push(FiniteReal::new(value.value.get() * scale)?);
             }
         }
     }
@@ -1714,7 +1703,7 @@ fn rendered_dimension_literals(text: &str) -> Vec<RenderedDimension> {
                 let places = u32::try_from(fractional.len()).ok();
                 if !fractional.is_empty() && fractional.bytes().all(|byte| byte.is_ascii_digit()) {
                     if let (Some(value), Some(decimal_places)) = (parsed, places) {
-                        if value.is_finite() && value > 0.0 {
+                        if let Some(value) = PositiveReal::new(value) {
                             values.push(RenderedDimension {
                                 kind: *kind,
                                 value,
@@ -1735,7 +1724,7 @@ fn depth_for_feature(
     feature_index: &BTreeMap<&str, &Entity>,
     visited: &mut BTreeSet<String>,
     depth: usize,
-) -> Option<f64> {
+) -> Option<PositiveReal> {
     measurement_for_feature(id, feature_index, visited, depth, |feature| {
         (short_class(&feature.class) == "GdtCylinder")
             .then(|| nominal_cylinder_depth(feature))
@@ -1748,7 +1737,7 @@ fn width_for_feature(
     feature_index: &BTreeMap<&str, &Entity>,
     visited: &mut BTreeSet<String>,
     depth: usize,
-) -> Option<f64> {
+) -> Option<PositiveReal> {
     measurement_for_feature(
         id,
         feature_index,
@@ -1767,7 +1756,7 @@ fn radius_for_feature(
     feature_index: &BTreeMap<&str, &Entity>,
     visited: &mut BTreeSet<String>,
     depth: usize,
-) -> Option<f64> {
+) -> Option<PositiveReal> {
     measurement_for_feature(
         id,
         feature_index,
@@ -1778,7 +1767,7 @@ fn radius_for_feature(
                 .doubles
                 .get("Radius")
                 .copied()
-                .and_then(finite_positive),
+                .and_then(PositiveReal::new),
             "GdtCylinder" => nominal_radius(feature, "NomCylinder"),
             "GdtSphere" => nominal_radius(feature, "NomSphere"),
             _ => None,
@@ -1791,7 +1780,7 @@ fn length_for_feature(
     feature_index: &BTreeMap<&str, &Entity>,
     visited: &mut BTreeSet<String>,
     depth: usize,
-) -> Option<f64> {
+) -> Option<PositiveReal> {
     measurement_for_feature(
         id,
         feature_index,
@@ -1809,8 +1798,8 @@ fn measurement_for_feature(
     feature_index: &BTreeMap<&str, &Entity>,
     visited: &mut BTreeSet<String>,
     depth: usize,
-    direct_measurement: impl Copy + Fn(&Entity) -> Option<f64>,
-) -> Option<f64> {
+    direct_measurement: impl Copy + Fn(&Entity) -> Option<PositiveReal>,
+) -> Option<PositiveReal> {
     if depth >= MAX_DEPTH || !visited.insert(id.to_string()) {
         return None;
     }
@@ -1847,12 +1836,12 @@ fn child_feature_ids(feature: &Entity) -> Vec<&str> {
     ids
 }
 
-fn nominal_radius(feature: &Entity, name: &str) -> Option<f64> {
+fn nominal_radius(feature: &Entity, name: &str) -> Option<PositiveReal> {
     nominal_measurement(feature, name, "R")
 }
 
-fn nominal_measurement(feature: &Entity, object: &str, field: &str) -> Option<f64> {
-    finite_positive(
+fn nominal_measurement(feature: &Entity, object: &str, field: &str) -> Option<PositiveReal> {
+    PositiveReal::new(
         unique_related(feature, object)?
             .entity
             .doubles
@@ -1861,13 +1850,13 @@ fn nominal_measurement(feature: &Entity, object: &str, field: &str) -> Option<f6
     )
 }
 
-fn nominal_cylinder_depth(feature: &Entity) -> Option<f64> {
+fn nominal_cylinder_depth(feature: &Entity) -> Option<PositiveReal> {
     let cylinder = &unique_related(feature, "NomCylinder")?.entity;
     let top = &unique_related(feature, "NomTop")?.entity;
     let bottom = &unique_related(feature, "NomBottom")?.entity;
-    let [i, j, k] = vector(cylinder, ["I", "J", "K"])?;
-    let [top_x, top_y, top_z] = vector(top, ["X", "Y", "Z"])?;
-    let [bottom_x, bottom_y, bottom_z] = vector(bottom, ["X", "Y", "Z"])?;
+    let [i, j, k] = vector(cylinder, ["I", "J", "K"])?.get();
+    let [top_x, top_y, top_z] = vector(top, ["X", "Y", "Z"])?.get();
+    let [bottom_x, bottom_y, bottom_z] = vector(bottom, ["X", "Y", "Z"])?.get();
     let axis_norm = i.hypot(j).hypot(k);
     if !approximately_equal(axis_norm, 1.0) {
         return None;
@@ -1879,27 +1868,27 @@ fn nominal_cylinder_depth(feature: &Entity) -> Option<f64> {
     let axial = (dx * i + dy * j + dz * k).abs();
     approximately_equal(displacement, axial)
         .then_some(axial)
-        .and_then(finite_positive)
+        .and_then(PositiveReal::new)
 }
 
-fn nominal_cone_angle(feature: &Entity) -> Option<f64> {
+fn nominal_cone_angle(feature: &Entity) -> Option<PositiveReal> {
     let angle = unique_related(feature, "NomCone")?
         .entity
         .doubles
         .get("FullAngle")
         .copied()
-        .and_then(finite_positive)?;
-    (angle < std::f64::consts::PI).then_some(angle)
+        .and_then(PositiveReal::new)?;
+    (angle.get() < std::f64::consts::PI).then_some(angle)
 }
 
-fn nominal_cone_top_diameter(feature: &Entity) -> Option<f64> {
+fn nominal_cone_top_diameter(feature: &Entity) -> Option<PositiveReal> {
     let cone = &unique_related(feature, "NomCone")?.entity;
     let top = &unique_related(feature, "NomTop")?.entity;
-    let angle = nominal_cone_angle(feature)?;
-    let [axis_x, axis_y, axis_z] = vector(cone, ["I", "J", "K"])?;
-    let [apex_x, apex_y, apex_z] = vector(cone, ["X", "Y", "Z"])?;
-    let [top_i, top_j, top_k] = vector(top, ["I", "J", "K"])?;
-    let [top_x, top_y, top_z] = vector(top, ["X", "Y", "Z"])?;
+    let angle = nominal_cone_angle(feature)?.get();
+    let [axis_x, axis_y, axis_z] = vector(cone, ["I", "J", "K"])?.get();
+    let [apex_x, apex_y, apex_z] = vector(cone, ["X", "Y", "Z"])?.get();
+    let [top_i, top_j, top_k] = vector(top, ["I", "J", "K"])?.get();
+    let [top_x, top_y, top_z] = vector(top, ["X", "Y", "Z"])?.get();
     if !approximately_equal(axis_x.hypot(axis_y).hypot(axis_z), 1.0)
         || !approximately_equal(top_i.hypot(top_j).hypot(top_k), 1.0)
         || !approximately_equal(
@@ -1917,31 +1906,32 @@ fn nominal_cone_top_diameter(feature: &Entity) -> Option<f64> {
     if !approximately_equal(displacement, axial) {
         return None;
     }
-    finite_positive(axial * (angle / 2.0).tan() * 2.0)
+    PositiveReal::new(axial * (angle / 2.0).tan() * 2.0)
 }
 
-fn vector<const N: usize>(entity: &Entity, names: [&str; N]) -> Option<[f64; N]> {
-    let values = names.map(|name| entity.doubles.get(name).copied().and_then(finite));
-    values
+fn vector<const N: usize>(entity: &Entity, names: [&str; N]) -> Option<FiniteVector<N>> {
+    let values = names.map(|name| entity.doubles.get(name).copied());
+    let values = values
         .into_iter()
         .collect::<Option<Vec<_>>>()?
         .try_into()
-        .ok()
+        .ok()?;
+    FiniteVector::new(values)
 }
 
-fn unique_measurement(values: &[f64]) -> Option<f64> {
+fn unique_measurement<T: Copy + Into<f64>>(values: &[T]) -> Option<T> {
     let first = *values.first()?;
     values
         .iter()
-        .all(|value| approximately_equal(*value, first))
+        .all(|value| approximately_equal((*value).into(), first.into()))
         .then_some(first)
 }
 
-fn unique_diameter(values: &[f64]) -> Option<f64> {
+fn unique_diameter<T: Copy + Into<f64>>(values: &[T]) -> Option<T> {
     let first = *values.first()?;
     values
         .iter()
-        .all(|value| diameters_equivalent(*value, first))
+        .all(|value| diameters_equivalent((*value).into(), first.into()))
         .then_some(first)
 }
 
@@ -1959,12 +1949,12 @@ fn approximately_equal(left: f64, right: f64) -> bool {
 
 fn deviation(
     entity: &Entity,
-    nominal: Option<f64>,
+    nominal: Option<FiniteReal>,
     limit_key: &str,
     tolerance_key: &str,
-) -> Option<f64> {
-    let tolerance = finite(entity.doubles.get(tolerance_key).copied()?);
-    if tolerance != Some(0.0) {
+) -> Option<FiniteReal> {
+    let tolerance = FiniteReal::new(entity.doubles.get(tolerance_key).copied()?);
+    if tolerance.map(FiniteReal::get) != Some(0.0) {
         return tolerance;
     }
     if let (Some(nominal), Some(limit)) = (
@@ -1973,10 +1963,10 @@ fn deviation(
             .doubles
             .get(limit_key)
             .copied()
-            .and_then(finite)
-            .filter(|limit| *limit != 0.0),
+            .and_then(FiniteReal::new)
+            .filter(|limit| limit.get() != 0.0),
     ) {
-        return finite(limit - nominal);
+        return FiniteReal::new(limit.get() - nominal.get());
     }
     tolerance
 }
@@ -2162,9 +2152,9 @@ fn tolerance_modifiers(entity: &Entity) -> Vec<String> {
         if let Some(value) = entity
             .doubles
             .get("ProjectedZoneValue")
-            .and_then(|v| finite_nonnegative(*v))
+            .and_then(|v| NonNegativeReal::new(*v))
         {
-            values.push(format!("projected_zone:{value}_mm"));
+            values.push(format!("projected_zone:{}_mm", value.get()));
         } else {
             values.push("projected_zone".into());
         }
@@ -2177,9 +2167,9 @@ fn tolerance_modifiers(entity: &Entity) -> Vec<String> {
         if let Some(value) = entity
             .doubles
             .get("MaxTolerance")
-            .and_then(|v| finite_nonnegative(*v))
+            .and_then(|v| NonNegativeReal::new(*v))
         {
-            values.push(format!("maximum_tolerance:{value}_mm"));
+            values.push(format!("maximum_tolerance:{}_mm", value.get()));
         } else {
             values.push("maximum_tolerance".into());
         }
@@ -2210,23 +2200,23 @@ fn defined_area(entity: &Entity) -> (Option<PmiValue>, Option<String>, Option<Pm
                 .doubles
                 .get("PerUnitAreaLength")
                 .copied()
-                .and_then(finite_positive)
-                .and_then(length),
+                .and_then(PositiveReal::new)
+                .map(|value| PmiValue::from_parts(value.into(), PmiQuantity::Length)),
             Some("rectangular".into()),
             entity
                 .doubles
                 .get("PerUnitAreaWidth")
                 .copied()
-                .and_then(finite_positive)
-                .and_then(length),
+                .and_then(PositiveReal::new)
+                .map(|value| PmiValue::from_parts(value.into(), PmiQuantity::Length)),
         ),
         Some(1) => (
             entity
                 .doubles
                 .get("PerUnitAreaDiameter")
                 .copied()
-                .and_then(finite_positive)
-                .and_then(length),
+                .and_then(PositiveReal::new)
+                .map(|value| PmiValue::from_parts(value.into(), PmiQuantity::Length)),
             Some("circular".into()),
             None,
         ),
@@ -2292,26 +2282,6 @@ fn suppressed(entity: &Entity) -> bool {
         .integers
         .get("IsSuppressed")
         .is_some_and(|value| *value != 0)
-}
-
-fn finite(value: f64) -> Option<f64> {
-    value.is_finite().then_some(value)
-}
-
-fn finite_nonnegative(value: f64) -> Option<f64> {
-    (value.is_finite() && value >= 0.0).then_some(value)
-}
-
-fn finite_positive(value: f64) -> Option<f64> {
-    (value.is_finite() && value > 0.0).then_some(value)
-}
-
-fn length(value: f64) -> Option<PmiValue> {
-    pmi_value(value, PmiQuantity::Length)
-}
-
-fn pmi_value(value: f64, quantity: PmiQuantity) -> Option<PmiValue> {
-    PmiValue::new(value, quantity)
 }
 
 #[cfg(test)]

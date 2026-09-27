@@ -15,6 +15,7 @@ use cadmpeg_ir::presentation::{
     ViewPresentation,
 };
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::FiniteBinary32;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::SourceProvenance;
 
@@ -499,16 +500,19 @@ fn transfer_schema_one(
         {
             let width = values
                 .get("LineWidth")
-                .and_then(|value| value.attribute("value"))
-                .and_then(|value| value.parse::<f64>().ok());
+                .and_then(|value| value.attribute("value"));
             transfer_primitive_appearance(
                 ir,
                 &mut plan,
-                name,
-                object_id,
-                color,
-                PrimitiveStyle::Line(width),
-                &payload_prefixes,
+                &mut losses,
+                PrimitiveAppearanceSource {
+                    provider_name: name,
+                    object_id,
+                    packed_color: color,
+                    style: PrimitiveStyle::Line(PrimitiveSize::from_source(width)),
+                    payload_prefixes: &payload_prefixes,
+                    provenance: property_provenance("LineWidth", "App::PropertyFloatConstraint"),
+                },
             );
         }
         if let Some(file) = values
@@ -540,16 +544,19 @@ fn transfer_schema_one(
         {
             let size = values
                 .get("PointSize")
-                .and_then(|value| value.attribute("value"))
-                .and_then(|value| value.parse::<f64>().ok());
+                .and_then(|value| value.attribute("value"));
             transfer_primitive_appearance(
                 ir,
                 &mut plan,
-                name,
-                object_id,
-                color,
-                PrimitiveStyle::Point(size),
-                &payload_prefixes,
+                &mut losses,
+                PrimitiveAppearanceSource {
+                    provider_name: name,
+                    object_id,
+                    packed_color: color,
+                    style: PrimitiveStyle::Point(PrimitiveSize::from_source(size)),
+                    payload_prefixes: &payload_prefixes,
+                    provenance: property_provenance("PointSize", "App::PropertyFloatConstraint"),
+                },
             );
         }
         if let Some(file) = values
@@ -939,19 +946,51 @@ fn camera_field<const N: usize>(
 
 #[derive(Clone, Copy)]
 enum PrimitiveStyle {
-    Line(Option<f64>),
-    Point(Option<f64>),
+    Line(PrimitiveSize),
+    Point(PrimitiveSize),
+}
+
+#[derive(Clone, Copy)]
+enum PrimitiveSize {
+    Absent,
+    Admitted(cadmpeg_ir::scalar::FiniteReal),
+    NonFinite,
+}
+
+impl PrimitiveSize {
+    fn from_source(value: Option<&str>) -> Self {
+        match value.and_then(|text| text.parse::<f64>().ok()) {
+            None => Self::Absent,
+            Some(value) => {
+                cadmpeg_ir::scalar::FiniteReal::new(value).map_or(Self::NonFinite, Self::Admitted)
+            }
+        }
+    }
+}
+
+struct PrimitiveAppearanceSource<'a> {
+    provider_name: &'a str,
+    object_id: &'a str,
+    packed_color: u32,
+    style: PrimitiveStyle,
+    payload_prefixes: &'a [String],
+    provenance: SourceProvenance,
 }
 
 fn transfer_primitive_appearance(
     ir: &CadIr,
     plan: &mut AppearancePlan,
-    provider_name: &str,
-    object_id: &str,
-    packed_color: u32,
-    style: PrimitiveStyle,
-    payload_prefixes: &[String],
+    losses: &mut Vec<LossNote>,
+    source: PrimitiveAppearanceSource<'_>,
 ) {
+    let PrimitiveAppearanceSource {
+        provider_name,
+        object_id,
+        packed_color,
+        style,
+        payload_prefixes,
+        provenance,
+    } = source;
     let targets = match style {
         PrimitiveStyle::Line(_) => ir
             .model
@@ -1000,6 +1039,21 @@ fn transfer_primitive_appearance(
             "vertex_over_object",
         ),
     };
+    let admitted_size = match size {
+        PrimitiveSize::Admitted(value) if value.get() >= 0.0 => Some(value),
+        PrimitiveSize::Absent | PrimitiveSize::Admitted(_) | PrimitiveSize::NonFinite => None,
+    };
+    if matches!(size, PrimitiveSize::NonFinite | PrimitiveSize::Admitted(_))
+        && admitted_size.is_none()
+    {
+        losses.push(
+            FreecadLossCode::AppearancePrimitiveSizeNotTransferred
+                .note(format!(
+                    "FCStd provider {provider_name} {label} size cannot enter the neutral appearance"
+                ))
+                .with_provenance(provenance),
+        );
+    }
     plan.appearances.push(Appearance {
         id: appearance_id.clone(),
         name: Some(format!("{provider_name} {label} appearance")),
@@ -1016,9 +1070,7 @@ fn transfer_primitive_appearance(
             packed_color as u8,
         )),
         textures: Vec::new(),
-        properties: size
-            .filter(|width| *width >= 0.0)
-            .and_then(cadmpeg_ir::scalar::FiniteReal::new)
+        properties: admitted_size
             .map(|width| [(property, width)].into())
             .unwrap_or_default(),
     });
@@ -3339,8 +3391,8 @@ struct GuiMaterial {
     diffuse: u32,
     specular: u32,
     emissive: u32,
-    shininess: f32,
-    transparency: f32,
+    shininess: FiniteBinary32,
+    transparency: FiniteBinary32,
     image: String,
     image_path: String,
     uuid: String,
@@ -3601,32 +3653,46 @@ fn parse_material_list(
             )));
         }
     };
-    let mut materials = view
+    let raw_materials = view
         .read_counted(count.into(), 24, |view| {
-            Some(GuiMaterial {
-                ambient: view.u32_le()?,
-                diffuse: view.u32_le()?,
-                specular: view.u32_le()?,
-                emissive: view.u32_le()?,
-                shininess: view.f32_le()?,
-                transparency: view.f32_le()?,
-                image: String::new(),
-                image_path: String::new(),
-                uuid: String::new(),
-            })
+            Some((
+                [
+                    view.u32_le()?,
+                    view.u32_le()?,
+                    view.u32_le()?,
+                    view.u32_le()?,
+                ],
+                [view.f32_le()?, view.f32_le()?],
+            ))
         })
         .ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "GUI material list {property_id} count exceeds its payload"
             ))
         })?;
-    for material in &materials {
-        if !material.shininess.is_finite() || !material.transparency.is_finite() {
-            return Err(CodecError::malformed(format_args!(
-                "GUI material list {property_id} has non-finite scalars"
-            )));
-        }
-    }
+    let mut materials = raw_materials
+        .into_iter()
+        .map(
+            |([ambient, diffuse, specular, emissive], [shininess, transparency])| {
+                let invalid = || {
+                    CodecError::malformed(format_args!(
+                        "GUI material list {property_id} has non-finite scalars"
+                    ))
+                };
+                Ok(GuiMaterial {
+                    ambient,
+                    diffuse,
+                    specular,
+                    emissive,
+                    shininess: FiniteBinary32::new(shininess).ok_or_else(invalid)?,
+                    transparency: FiniteBinary32::new(transparency).ok_or_else(invalid)?,
+                    image: String::new(),
+                    image_path: String::new(),
+                    uuid: String::new(),
+                })
+            },
+        )
+        .collect::<Result<Vec<_>, CodecError>>()?;
     if requires_alpha_conversion {
         for material in &mut materials {
             material.ambient = convert_packed_alpha(material.ambient, true);
@@ -3763,7 +3829,10 @@ fn transfer_shape_appearances(
                     plan.body_updates.push(BodyUpdate {
                         id: body.clone(),
                         visible: Assignment::Keep,
-                        color: Some(decode_color(material.diffuse, Some(material.transparency))?),
+                        color: Some(decode_color(
+                            material.diffuse,
+                            Some(material.transparency.get()),
+                        )?),
                     });
                     plan.bindings.push(AppearanceBinding {
                         id: binding_id(
@@ -3905,7 +3974,10 @@ fn material_appearance(
         physical_token: None,
         schema: Some("FCStd ShapeAppearance".into()),
         category: None,
-        base_color: Some(decode_color(material.diffuse, Some(material.transparency))?),
+        base_color: Some(decode_color(
+            material.diffuse,
+            Some(material.transparency.get()),
+        )?),
         textures: Vec::new(),
         properties: [
             (
@@ -3922,11 +3994,11 @@ fn material_appearance(
             ),
             (
                 cadmpeg_core::nonblank_literal!("shininess"),
-                scalar("shininess", f64::from(material.shininess))?,
+                material.shininess.into(),
             ),
             (
                 cadmpeg_core::nonblank_literal!("transparency"),
-                scalar("transparency", f64::from(material.transparency))?,
+                material.transparency.into(),
             ),
         ]
         .into(),
@@ -4229,6 +4301,27 @@ mod color_tests {
         assert_eq!(materials[0].diffuse, 0x4455_66bf);
         assert_eq!(materials[0].specular, 0x7788_997f);
         assert_eq!(materials[0].emissive, 0xaabb_cc00);
+    }
+
+    #[test]
+    fn material_list_rejects_nonfinite_source_scalars() {
+        for [shininess, transparency] in [[f32::NAN, 0.25], [0.5, f32::INFINITY]] {
+            let mut bytes = 1_u32.to_le_bytes().to_vec();
+            for color in [0_u32; 4] {
+                bytes.extend_from_slice(&color.to_le_bytes());
+            }
+            bytes.extend_from_slice(&shininess.to_le_bytes());
+            bytes.extend_from_slice(&transparency.to_le_bytes());
+            let error = parse_material_list(
+                cadmpeg_core::decode::View::over_retained(&bytes),
+                0,
+                "property",
+                false,
+            )
+            .err()
+            .expect("nonfinite material scalar");
+            assert!(error.to_string().contains("has non-finite scalars"));
+        }
     }
 }
 

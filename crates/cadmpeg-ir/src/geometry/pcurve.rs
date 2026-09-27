@@ -2,8 +2,8 @@
 //! Parameter-space curves, NURBS payloads, and source parameterization.
 
 use super::nurbs::{
-    admit_weight, non_finite_control_point, require_curve_cardinality, require_weight_lane,
-    KnotVector, NurbsCurve, NurbsError, PoleValue,
+    admit_finite_weight, admit_weight, non_finite_control_point, require_curve_cardinality,
+    require_weight_lane, KnotVector, NurbsCurve, NurbsError, PoleValue,
 };
 use super::{FitTolerance, MAX_GEOMETRY_NESTING};
 use crate::ids::PcurveId;
@@ -15,6 +15,11 @@ use crate::units::{FinitePoint2, FiniteVector, NonzeroPoint2};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+fn finite_axis_is_nonzero(axis: FinitePoint2) -> bool {
+    let axis = axis.get();
+    axis.u.hypot(axis.v) > 0.0
+}
 
 /// One rational pole in parameter space: its position and its weight.
 // A source states a raw position; a `PcurveNurbs` holds the admitted row,
@@ -132,6 +137,22 @@ impl<P> PcurveNurbsPoles<P> {
         Ok(Self::Rational {
             points: weighted_poles_2(points, weights, |index, weight| {
                 admit_weight("pcurve poles", index, weight)
+            })?,
+        })
+    }
+
+    /// Pair parameter poles with finite weights, checking lane length and nonzero weights.
+    pub fn from_finite_lanes(
+        points: Vec<P>,
+        weights: Option<Vec<FiniteReal>>,
+    ) -> Result<Self, NurbsError> {
+        let Some(weights) = weights else {
+            return Ok(Self::Polynomial { points });
+        };
+        require_weight_lane("pcurve poles", points.len(), weights.len())?;
+        Ok(Self::Rational {
+            points: weighted_poles_2(points, weights, |index, weight| {
+                admit_finite_weight("pcurve poles", index, weight)
             })?,
         })
     }
@@ -575,6 +596,22 @@ struct CirclePcurveWire {
 }
 
 impl CirclePcurve {
+    /// Build from admitted finite axes and a positive radius. Only the two
+    /// nonzero axis conditions remain to check.
+    pub fn from_parts(
+        center: FinitePoint2,
+        x_axis: FinitePoint2,
+        y_axis: FinitePoint2,
+        radius: PositiveReal,
+    ) -> Option<Self> {
+        (finite_axis_is_nonzero(x_axis) && finite_axis_is_nonzero(y_axis)).then_some(Self {
+            center,
+            x_axis,
+            y_axis,
+            radius,
+        })
+    }
+
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(
         center: Point2,
@@ -675,6 +712,24 @@ struct EllipsePcurveWire {
 }
 
 impl EllipsePcurve {
+    /// Build from admitted finite axes and positive radii. Only the two
+    /// nonzero axis conditions remain to check.
+    pub fn from_parts(
+        center: FinitePoint2,
+        x_axis: FinitePoint2,
+        y_axis: FinitePoint2,
+        major_radius: PositiveReal,
+        minor_radius: PositiveReal,
+    ) -> Option<Self> {
+        (finite_axis_is_nonzero(x_axis) && finite_axis_is_nonzero(y_axis)).then_some(Self {
+            center,
+            x_axis,
+            y_axis,
+            major_radius,
+            minor_radius,
+        })
+    }
+
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(
         center: Point2,
@@ -866,6 +921,22 @@ struct ParabolaPcurveWire {
 }
 
 impl ParabolaPcurve {
+    /// Build from admitted finite axes and a positive focal distance. Only
+    /// the two nonzero axis conditions remain to check.
+    pub fn from_parts(
+        vertex: FinitePoint2,
+        x_axis: FinitePoint2,
+        y_axis: FinitePoint2,
+        focal_distance: PositiveReal,
+    ) -> Option<Self> {
+        (finite_axis_is_nonzero(x_axis) && finite_axis_is_nonzero(y_axis)).then_some(Self {
+            vertex,
+            x_axis,
+            y_axis,
+            focal_distance,
+        })
+    }
+
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(
         vertex: Point2,
@@ -964,6 +1035,24 @@ struct HyperbolaPcurveWire {
 }
 
 impl HyperbolaPcurve {
+    /// Build from admitted finite axes and positive radii. Only the two
+    /// nonzero axis conditions remain to check.
+    pub fn from_parts(
+        center: FinitePoint2,
+        x_axis: FinitePoint2,
+        y_axis: FinitePoint2,
+        major_radius: PositiveReal,
+        minor_radius: PositiveReal,
+    ) -> Option<Self> {
+        (finite_axis_is_nonzero(x_axis) && finite_axis_is_nonzero(y_axis)).then_some(Self {
+            center,
+            x_axis,
+            y_axis,
+            major_radius,
+            minor_radius,
+        })
+    }
+
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(
         center: Point2,
@@ -1170,13 +1259,13 @@ struct TrimmedPcurveWire {
 }
 
 impl TrimmedPcurve {
-    /// Admit finite parameters that satisfy the carrier's numeric contract.
-    pub fn try_new(
-        parameter_range: [f64; 2],
+    /// Build from finite endpoints, checking their order and the basis depth.
+    pub fn from_finite_parts(
+        parameter_range: [FiniteReal; 2],
         same_sense: bool,
         basis: Box<PcurveGeometry>,
     ) -> Result<Self, &'static str> {
-        let parameter_range = ParameterInterval::new(parameter_range)
+        let parameter_range = ParameterInterval::from_finite_endpoints(parameter_range.into())
             .map_err(|_| "TrimmedPcurve.parameter_range must be finite and ordered")?;
         let depth = nesting_depth_over(&basis)
             .ok_or("TrimmedPcurve.basis nests past the admitted inline basis depth")?;
@@ -1186,6 +1275,19 @@ impl TrimmedPcurve {
             basis,
             depth,
         })
+    }
+
+    /// Admit finite parameters that satisfy the carrier's numeric contract.
+    pub fn try_new(
+        parameter_range: [f64; 2],
+        same_sense: bool,
+        basis: Box<PcurveGeometry>,
+    ) -> Result<Self, &'static str> {
+        let first = FiniteReal::new(parameter_range[0])
+            .ok_or("TrimmedPcurve.parameter_range must be finite and ordered")?;
+        let last = FiniteReal::new(parameter_range[1])
+            .ok_or("TrimmedPcurve.parameter_range must be finite and ordered")?;
+        Self::from_finite_parts([first, last], same_sense, basis)
     }
 
     /// Return the parameter range.
@@ -1239,6 +1341,14 @@ impl OffsetPcurve {
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(distance: f64, basis: Box<PcurveGeometry>) -> Result<Self, &'static str> {
         let distance = FiniteReal::new(distance).ok_or("OffsetPcurve.distance must be finite")?;
+        Self::from_finite_parts(distance, basis)
+    }
+
+    /// Build from a finite distance, checking only the basis depth.
+    pub fn from_finite_parts(
+        distance: FiniteReal,
+        basis: Box<PcurveGeometry>,
+    ) -> Result<Self, &'static str> {
         let depth = nesting_depth_over(&basis)
             .ok_or("OffsetPcurve.basis nests past the admitted inline basis depth")?;
         Ok(Self {
@@ -1768,6 +1878,19 @@ impl PcurveNurbs {
         periodic: bool,
     ) -> Result<Self, NurbsError> {
         let poles = PcurveNurbsPoles::from_lanes(control_points, weights)?;
+        Self::new(degree, knots, poles, periodic)
+    }
+
+    /// Build from finite knot, pole, and weight lanes. Only relationships and
+    /// the nonzero weight condition are checked.
+    pub fn from_finite_lanes(
+        degree: u32,
+        knots: Vec<FiniteReal>,
+        control_points: Vec<FinitePoint2>,
+        weights: Option<Vec<FiniteReal>>,
+        periodic: bool,
+    ) -> Result<Self, NurbsError> {
+        let poles = PcurveNurbsPoles::from_finite_lanes(control_points, weights)?;
         Self::new(degree, knots, poles, periodic)
     }
 

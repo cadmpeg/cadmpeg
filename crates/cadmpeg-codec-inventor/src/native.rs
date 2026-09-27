@@ -5,12 +5,54 @@ pub(crate) mod digest;
 pub(crate) mod protein;
 pub(crate) mod ufrx;
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
-use serde::{de::Error as _, Deserialize, Serialize};
+use serde::{
+    de::Error as _,
+    ser::{SerializeSeq, SerializeStruct},
+    Deserialize, Serialize,
+};
 use std::fmt::{Display, Formatter};
 
 use crate::pmdc::{PmDcPairedReferenceList, PmDcReference};
 use crate::presentation::RenderingStyleExtension;
+
+fn retained_copy(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let len = u64::try_from(value.len()).map_err(|_| {
+        ctx.refuse_codec_limit("Inventor native string length", u64::MAX - 1, u64::MAX)
+    })?;
+    ctx.charge_retained(len, operation)?;
+    Ok(value.to_owned())
+}
+
+fn retained_digest(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    ctx.charge_retained(64, operation)?;
+    ctx.charge_work(
+        u64::try_from(bytes.len()).map_err(|_| {
+            ctx.refuse_codec_limit("Inventor native digest work", u64::MAX - 1, u64::MAX)
+        })?,
+        "hash Inventor native record bytes",
+    )?;
+    Ok(cadmpeg_ir::hash::sha256_hex(bytes))
+}
+
+fn retained_format(
+    ctx: &DecodeContext<'_>,
+    value: std::fmt::Arguments<'_>,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    crate::record_issue::admit_formatted(ctx, value, operation)?;
+    Ok(value.to_string())
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct VersionTupleRecord {
@@ -235,8 +277,8 @@ impl Display for PropertyValueKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "PropertyRecordWire", into = "PropertyRecordWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "PropertyRecordWire")]
 pub(crate) struct PropertyRecord {
     pub(crate) id: String,
     pub(crate) set_path: String,
@@ -250,7 +292,33 @@ pub(crate) struct PropertyRecord {
     pub(crate) raw_sha256: digest::Sha256Hex,
 }
 
-#[derive(Serialize, Deserialize)]
+struct DisplayField<'a, T: Display>(&'a T);
+
+impl<T: Display> Serialize for DisplayField<'_, T> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self.0)
+    }
+}
+
+impl Serialize for PropertyRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut fields = serializer.serialize_struct("PropertyRecordWire", 11)?;
+        fields.serialize_field("id", &self.id)?;
+        fields.serialize_field("set_path", &self.set_path)?;
+        fields.serialize_field("section_ordinal", &self.section_ordinal)?;
+        fields.serialize_field("fmtid", &self.fmtid)?;
+        fields.serialize_field("property_id", &self.property_id)?;
+        fields.serialize_field("name", &self.name)?;
+        fields.serialize_field("type_code", &self.value_kind.type_code())?;
+        fields.serialize_field("value_kind", &DisplayField(&self.value_kind))?;
+        fields.serialize_field("scalar_value", &self.scalar_value)?;
+        fields.serialize_field("raw_len", &self.raw_len)?;
+        fields.serialize_field("raw_sha256", &self.raw_sha256)?;
+        fields.end()
+    }
+}
+
+#[derive(Deserialize)]
 struct PropertyRecordWire {
     id: String,
     set_path: String,
@@ -263,24 +331,6 @@ struct PropertyRecordWire {
     scalar_value: Option<String>,
     raw_len: u64,
     raw_sha256: String,
-}
-
-impl From<PropertyRecord> for PropertyRecordWire {
-    fn from(value: PropertyRecord) -> Self {
-        Self {
-            type_code: value.value_kind.type_code(),
-            value_kind: value.value_kind.to_string(),
-            id: value.id,
-            set_path: value.set_path,
-            section_ordinal: value.section_ordinal,
-            fmtid: value.fmtid,
-            property_id: value.property_id,
-            name: value.name,
-            scalar_value: value.scalar_value,
-            raw_len: value.raw_len,
-            raw_sha256: value.raw_sha256.into(),
-        }
-    }
 }
 
 impl TryFrom<PropertyRecordWire> for PropertyRecord {
@@ -341,11 +391,53 @@ pub(crate) struct AssemblyOccurrenceRecord {
     pub(crate) occurrence_id: u32,
 }
 
+impl AssemblyOccurrenceRecord {
+    pub(crate) fn from_occurrence(
+        ctx: &DecodeContext<'_>,
+        occurrence: &crate::assembly::AssemblyOccurrence,
+    ) -> Result<Self, CodecError> {
+        ctx.charge_collection_items(1, "collect Inventor native assembly occurrence")?;
+        ctx.charge_entities(1, "admit Inventor native assembly occurrence")?;
+        let id = retained_format(
+            ctx,
+            format_args!(
+                "inventor:assembly:occurrence#{}-{}",
+                occurrence.segment_token, occurrence.record_ordinal
+            ),
+            "retain Inventor assembly occurrence id",
+        )?;
+        let segment_token = retained_copy(
+            ctx,
+            &occurrence.segment_token,
+            "retain Inventor assembly occurrence token",
+        )?;
+        ctx.charge_collection_items(
+            u64::try_from(occurrence.related_references.len()).map_err(|_| {
+                ctx.refuse_codec_limit("Inventor related-reference count", u64::MAX - 1, u64::MAX)
+            })?,
+            "copy Inventor assembly related references",
+        )?;
+        Ok(Self {
+            id,
+            segment_token,
+            record_ordinal: occurrence.record_ordinal,
+            header_value: occurrence.header_value,
+            header_id: occurrence.header_id,
+            next_reference: occurrence.next_reference,
+            flags: occurrence.flags,
+            owner_reference: occurrence.owner_reference,
+            node_index: occurrence.node_index,
+            state: occurrence.state,
+            ordinal_key: occurrence.ordinal_key,
+            related_references: occurrence.related_references.clone(),
+            child_reference: occurrence.child_reference,
+            occurrence_id: occurrence.occurrence_id,
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "AssemblyPlacementRecordWire",
-    into = "AssemblyPlacementRecordWire"
-)]
+#[serde(try_from = "AssemblyPlacementRecordWire")]
 pub(crate) struct AssemblyPlacementRecord {
     pub(crate) id: String,
     segment_token: String,
@@ -387,6 +479,49 @@ pub(crate) struct AssemblyPlacementRecordWire {
     pub(crate) suffix_sha256: String,
 }
 
+impl AssemblyPlacementRecordWire {
+    pub(crate) fn from_placement(
+        ctx: &DecodeContext<'_>,
+        placement: &crate::assembly::AssemblyPlacement<'_>,
+    ) -> Result<Self, CodecError> {
+        Ok(Self {
+            id: retained_format(
+                ctx,
+                format_args!(
+                    "inventor:assembly:placement#{}-{}",
+                    placement.segment_token, placement.record_ordinal
+                ),
+                "retain Inventor assembly placement id",
+            )?,
+            segment_token: retained_copy(
+                ctx,
+                &placement.segment_token,
+                "retain Inventor assembly placement token",
+            )?,
+            record_ordinal: placement.record_ordinal,
+            header_id: placement.header_id,
+            owner_reference: placement.owner_reference,
+            attribute_reference: placement.attribute_reference,
+            state: placement.state,
+            transform_prefix: placement.transform_prefix,
+            transform: placement.transform,
+            branch: placement.branch,
+            graphics_state: placement.graphics_state,
+            occurrence_id: placement.occurrence_id,
+            graphics_index: placement.graphics_index,
+            object_reference: placement.object_reference,
+            suffix_len: u64::try_from(placement.suffix.window().len()).map_err(|_| {
+                ctx.refuse_codec_limit("Inventor placement suffix length", u64::MAX - 1, u64::MAX)
+            })?,
+            suffix_sha256: retained_digest(
+                ctx,
+                placement.suffix.window(),
+                "retain Inventor assembly placement suffix digest",
+            )?,
+        })
+    }
+}
+
 impl TryFrom<AssemblyPlacementRecordWire> for AssemblyPlacementRecord {
     type Error = String;
     fn try_from(wire: AssemblyPlacementRecordWire) -> Result<Self, Self::Error> {
@@ -413,29 +548,6 @@ impl TryFrom<AssemblyPlacementRecordWire> for AssemblyPlacementRecord {
     }
 }
 
-impl From<AssemblyPlacementRecord> for AssemblyPlacementRecordWire {
-    fn from(value: AssemblyPlacementRecord) -> Self {
-        Self {
-            id: value.id,
-            segment_token: value.segment_token,
-            record_ordinal: value.record_ordinal,
-            header_id: value.header_id,
-            owner_reference: value.owner_reference,
-            attribute_reference: value.attribute_reference,
-            state: value.state,
-            transform_prefix: value.transform_prefix,
-            transform: value.transform,
-            branch: value.branch,
-            graphics_state: value.graphics_state,
-            occurrence_id: value.occurrence_id,
-            graphics_index: value.graphics_index,
-            object_reference: value.object_reference,
-            suffix_len: value.suffix_len.get(),
-            suffix_sha256: value.suffix_sha256.into(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct PmAppDefaultStyleRecord {
     pub(crate) id: String,
@@ -453,11 +565,8 @@ pub(crate) struct PmAppDefaultStyleRecord {
     pub(crate) suffix_sha256: digest::Sha256Hex,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "PmAppRenderingStyleRecordWire",
-    into = "PmAppRenderingStyleRecordWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "PmAppRenderingStyleRecordWire")]
 pub(crate) struct PmAppRenderingStyleRecord {
     pub(crate) id: String,
     pub(crate) segment_token: String,
@@ -479,7 +588,51 @@ pub(crate) struct PmAppRenderingStyleRecord {
     suffix_sha256: digest::Sha256Hex,
 }
 
-#[derive(Serialize, Deserialize)]
+impl Serialize for PmAppRenderingStyleRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let extension = self.extension.as_ref();
+        let mut fields = serializer.serialize_struct("PmAppRenderingStyleRecordWire", 24)?;
+        fields.serialize_field("id", &self.id)?;
+        fields.serialize_field("segment_token", &self.segment_token)?;
+        fields.serialize_field("record_ordinal", &self.record_ordinal)?;
+        fields.serialize_field("segment_version_major", &self.segment_version_major)?;
+        fields.serialize_field("header_value", &self.header_value)?;
+        fields.serialize_field("header_id", &self.header_id)?;
+        fields.serialize_field("state", &self.state)?;
+        fields.serialize_field("flags", &self.flags)?;
+        fields.serialize_field("values", &self.values)?;
+        fields.serialize_field("default_state", &self.default_state)?;
+        fields.serialize_field("value", &self.value)?;
+        fields.serialize_field("name_reference", &self.name_reference)?;
+        fields.serialize_field("name", &self.name)?;
+        fields.serialize_field("comment", &self.comment)?;
+        fields.serialize_field("long_name", &self.long_name)?;
+        fields.serialize_field("style_state", &extension.map(|value| value.style_state))?;
+        fields.serialize_field(
+            "style_label",
+            &extension.map(|value| value.style_label.as_str()),
+        )?;
+        fields.serialize_field(
+            "asset_guid",
+            &extension.map(|value| value.asset_guid.as_str()),
+        )?;
+        fields.serialize_field(
+            "material_id",
+            &extension.map(|value| value.material_id.as_str()),
+        )?;
+        fields.serialize_field(
+            "asset_library_id",
+            &extension.map(|value| value.asset_library_id.as_str()),
+        )?;
+        fields.serialize_field("style_values", &extension.map(|value| value.style_values))?;
+        fields.serialize_field("guid", &extension.map(|value| value.guid.as_str()))?;
+        fields.serialize_field("suffix_len", &self.suffix_len)?;
+        fields.serialize_field("suffix_sha256", &self.suffix_sha256)?;
+        fields.end()
+    }
+}
+
+#[derive(Deserialize)]
 pub(crate) struct PmAppRenderingStyleRecordWire {
     pub(crate) id: String,
     pub(crate) segment_token: String,
@@ -505,57 +658,6 @@ pub(crate) struct PmAppRenderingStyleRecordWire {
     pub(crate) guid: Option<String>,
     pub(crate) suffix_len: u64,
     pub(crate) suffix_sha256: String,
-}
-
-impl From<PmAppRenderingStyleRecord> for PmAppRenderingStyleRecordWire {
-    fn from(value: PmAppRenderingStyleRecord) -> Self {
-        let (
-            style_state,
-            style_label,
-            asset_guid,
-            material_id,
-            asset_library_id,
-            style_values,
-            guid,
-        ) = match value.extension {
-            Some(extension) => (
-                Some(extension.style_state),
-                Some(extension.style_label),
-                Some(extension.asset_guid),
-                Some(extension.material_id),
-                Some(extension.asset_library_id),
-                Some(extension.style_values),
-                Some(extension.guid),
-            ),
-            None => (None, None, None, None, None, None, None),
-        };
-        Self {
-            id: value.id,
-            segment_token: value.segment_token,
-            record_ordinal: value.record_ordinal,
-            segment_version_major: value.segment_version_major,
-            header_value: value.header_value,
-            header_id: value.header_id,
-            state: value.state,
-            flags: value.flags,
-            values: value.values,
-            default_state: value.default_state,
-            value: value.value,
-            name_reference: value.name_reference,
-            name: value.name,
-            comment: value.comment,
-            long_name: value.long_name,
-            style_state,
-            style_label,
-            asset_guid,
-            material_id,
-            asset_library_id,
-            style_values,
-            guid,
-            suffix_len: value.suffix_len,
-            suffix_sha256: value.suffix_sha256.into(),
-        }
-    }
 }
 
 impl TryFrom<PmAppRenderingStyleRecordWire> for PmAppRenderingStyleRecord {
@@ -593,13 +695,12 @@ impl TryFrom<PmAppRenderingStyleRecordWire> for PmAppRenderingStyleRecord {
                 return Err("rendering style extension fields must be present together".into());
             }
         };
-        if extension.is_some() != (wire.segment_version_major >= 17) {
-            return Err("rendering style extension disagrees with segment_version_major".into());
-        }
-        if wire.segment_version_major >= 17 && !wire.comment.is_empty() {
-            return Err(
-                "rendering style comment must be empty for segment_version_major >= 17".into(),
-            );
+        if let Some(detail) = rendering_style_issue(
+            wire.segment_version_major,
+            &wire.comment,
+            extension.is_some(),
+        ) {
+            return Err(detail.into());
         }
         Ok(Self {
             id: wire.id,
@@ -625,11 +726,22 @@ impl TryFrom<PmAppRenderingStyleRecordWire> for PmAppRenderingStyleRecord {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "PmGraphicsFaceRecordWire",
-    into = "PmGraphicsFaceRecordWire"
-)]
+pub(super) fn rendering_style_issue(
+    segment_version_major: u8,
+    comment: &str,
+    has_extension: bool,
+) -> Option<&'static str> {
+    if has_extension != (segment_version_major >= 17) {
+        Some("rendering style extension disagrees with segment_version_major")
+    } else if segment_version_major >= 17 && !comment.is_empty() {
+        Some("rendering style comment must be empty for segment_version_major >= 17")
+    } else {
+        None
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "PmGraphicsFaceRecordWire")]
 pub(crate) struct PmGraphicsFaceRecord {
     pub(crate) id: String,
     pub(crate) segment_token: String,
@@ -649,7 +761,66 @@ pub(crate) struct PmGraphicsFaceRecord {
     pub(crate) values: [u32; 2],
 }
 
-#[derive(Serialize, Deserialize)]
+struct ReferenceIndexes<'a>(&'a [PmDcReference]);
+
+impl Serialize for ReferenceIndexes<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut items = serializer.serialize_seq(Some(self.0.len()))?;
+        for reference in self.0 {
+            items.serialize_element(&reference.index)?;
+        }
+        items.end()
+    }
+}
+
+struct ReferenceQualifiers<'a>(&'a [PmDcReference]);
+
+impl Serialize for ReferenceQualifiers<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut items = serializer.serialize_seq(Some(self.0.len()))?;
+        for reference in self.0 {
+            items.serialize_element(&reference.qualified)?;
+        }
+        items.end()
+    }
+}
+
+impl Serialize for PmGraphicsFaceRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let references = self.edge_references.references();
+        let mut fields = serializer.serialize_struct("PmGraphicsFaceRecordWire", 21)?;
+        fields.serialize_field("id", &self.id)?;
+        fields.serialize_field("segment_token", &self.segment_token)?;
+        fields.serialize_field("record_ordinal", &self.record_ordinal)?;
+        fields.serialize_field("segment_version_major", &self.segment_version_major)?;
+        fields.serialize_field("header_value", &self.header_value)?;
+        fields.serialize_field("header_id", &self.header_id)?;
+        fields.serialize_field("flags", &self.flags)?;
+        fields.serialize_field("styles_reference", &self.styles.index)?;
+        fields.serialize_field("styles_reference_qualified", &self.styles.qualified)?;
+        fields.serialize_field("surface_reference", &self.surface.index)?;
+        fields.serialize_field("surface_reference_qualified", &self.surface.qualified)?;
+        fields.serialize_field("parent_reference", &self.parent.index)?;
+        fields.serialize_field("parent_reference_qualified", &self.parent.qualified)?;
+        fields.serialize_field("state", &self.state)?;
+        fields.serialize_field("edge_references", &ReferenceIndexes(references))?;
+        fields.serialize_field(
+            "edge_reference_qualifiers",
+            &ReferenceQualifiers(references),
+        )?;
+        fields.serialize_field(
+            "edge_list_metadata",
+            &self.edge_references.metadata().copied(),
+        )?;
+        fields.serialize_field("visibility_state", &self.visibility_state)?;
+        fields.serialize_field("bounds", &self.bounds)?;
+        fields.serialize_field("key", &self.key)?;
+        fields.serialize_field("values", &self.values)?;
+        fields.end()
+    }
+}
+
+#[derive(Deserialize)]
 struct PmGraphicsFaceRecordWire {
     id: String,
     segment_token: String,
@@ -672,36 +843,6 @@ struct PmGraphicsFaceRecordWire {
     bounds: [cadmpeg_ir::scalar::FiniteReal; 6],
     key: u32,
     values: [u32; 2],
-}
-
-impl From<PmGraphicsFaceRecord> for PmGraphicsFaceRecordWire {
-    fn from(value: PmGraphicsFaceRecord) -> Self {
-        let (edge_references, edge_reference_qualifiers) =
-            PmDcReference::unzip(value.edge_references.references());
-        Self {
-            id: value.id,
-            segment_token: value.segment_token,
-            record_ordinal: value.record_ordinal,
-            segment_version_major: value.segment_version_major,
-            header_value: value.header_value,
-            header_id: value.header_id,
-            flags: value.flags,
-            styles_reference: value.styles.index,
-            styles_reference_qualified: value.styles.qualified,
-            surface_reference: value.surface.index,
-            surface_reference_qualified: value.surface.qualified,
-            parent_reference: value.parent.index,
-            parent_reference_qualified: value.parent.qualified,
-            state: value.state,
-            edge_references,
-            edge_reference_qualifiers,
-            edge_list_metadata: value.edge_references.metadata().copied(),
-            visibility_state: value.visibility_state,
-            bounds: value.bounds,
-            key: value.key,
-            values: value.values,
-        }
-    }
 }
 
 impl TryFrom<PmGraphicsFaceRecordWire> for PmGraphicsFaceRecord {
@@ -742,11 +883,8 @@ impl TryFrom<PmGraphicsFaceRecordWire> for PmGraphicsFaceRecord {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "PmGraphicsStyleCollectionRecordWire",
-    into = "PmGraphicsStyleCollectionRecordWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "PmGraphicsStyleCollectionRecordWire")]
 pub(crate) struct PmGraphicsStyleCollectionRecord {
     pub(crate) id: String,
     pub(crate) segment_token: String,
@@ -755,7 +893,25 @@ pub(crate) struct PmGraphicsStyleCollectionRecord {
     pub(crate) style_references: PmDcPairedReferenceList<[u32; 2]>,
 }
 
-#[derive(Serialize, Deserialize)]
+impl Serialize for PmGraphicsStyleCollectionRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let references = self.style_references.references();
+        let mut fields = serializer.serialize_struct("PmGraphicsStyleCollectionRecordWire", 7)?;
+        fields.serialize_field("id", &self.id)?;
+        fields.serialize_field("segment_token", &self.segment_token)?;
+        fields.serialize_field("record_ordinal", &self.record_ordinal)?;
+        fields.serialize_field("segment_version_major", &self.segment_version_major)?;
+        fields.serialize_field("style_references", &ReferenceIndexes(references))?;
+        fields.serialize_field(
+            "style_reference_qualifiers",
+            &ReferenceQualifiers(references),
+        )?;
+        fields.serialize_field("list_metadata", &self.style_references.metadata().copied())?;
+        fields.end()
+    }
+}
+
+#[derive(Deserialize)]
 struct PmGraphicsStyleCollectionRecordWire {
     id: String,
     segment_token: String,
@@ -764,22 +920,6 @@ struct PmGraphicsStyleCollectionRecordWire {
     style_references: Vec<u32>,
     style_reference_qualifiers: Vec<bool>,
     list_metadata: Option<[u32; 2]>,
-}
-
-impl From<PmGraphicsStyleCollectionRecord> for PmGraphicsStyleCollectionRecordWire {
-    fn from(value: PmGraphicsStyleCollectionRecord) -> Self {
-        let (style_references, style_reference_qualifiers) =
-            PmDcReference::unzip(value.style_references.references());
-        Self {
-            id: value.id,
-            segment_token: value.segment_token,
-            record_ordinal: value.record_ordinal,
-            segment_version_major: value.segment_version_major,
-            style_references,
-            style_reference_qualifiers,
-            list_metadata: value.style_references.metadata().copied(),
-        }
-    }
 }
 
 impl TryFrom<PmGraphicsStyleCollectionRecordWire> for PmGraphicsStyleCollectionRecord {
@@ -809,7 +949,7 @@ pub(crate) struct PmGraphicsPrimaryColorStyleRecord {
     pub(crate) header_value: u32,
     pub(crate) controls: [u16; 7],
     pub(crate) color_header: [u8; 2],
-    pub(crate) colors: [[f32; 4]; 4],
+    pub(crate) colors: [[cadmpeg_ir::scalar::FiniteBinary32; 4]; 4],
     pub(crate) color_tail: [u16; 2],
     pub(crate) state: u8,
     pub(crate) values: [u16; 2],
@@ -885,34 +1025,31 @@ pub(crate) struct MetaTypeRecord {
     pub(crate) fields: [(u16, u32); 2],
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "SegmentMetaIssueRecordWire",
-    into = "SegmentMetaIssueRecordWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "SegmentMetaIssueRecordWire")]
 pub(crate) struct SegmentMetaIssueRecord {
     pub(crate) id: String,
     pub(crate) token: String,
     pub(crate) detail: String,
 }
 
-#[derive(Serialize, Deserialize)]
+impl Serialize for SegmentMetaIssueRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut fields = serializer.serialize_struct("SegmentMetaIssueRecordWire", 4)?;
+        fields.serialize_field("id", &self.id)?;
+        fields.serialize_field("token", &self.token)?;
+        fields.serialize_field("status", "malformed")?;
+        fields.serialize_field("detail", &self.detail)?;
+        fields.end()
+    }
+}
+
+#[derive(Deserialize)]
 struct SegmentMetaIssueRecordWire {
     id: String,
     token: String,
     status: String,
     detail: String,
-}
-
-impl From<SegmentMetaIssueRecord> for SegmentMetaIssueRecordWire {
-    fn from(value: SegmentMetaIssueRecord) -> Self {
-        Self {
-            id: value.id,
-            token: value.token,
-            status: "malformed".into(),
-            detail: value.detail,
-        }
-    }
 }
 
 impl TryFrom<SegmentMetaIssueRecordWire> for SegmentMetaIssueRecord {
@@ -930,8 +1067,8 @@ impl TryFrom<SegmentMetaIssueRecordWire> for SegmentMetaIssueRecord {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "SegmentBulkRecordWire", into = "SegmentBulkRecordWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "SegmentBulkRecordWire")]
 pub(crate) struct SegmentBulkRecord {
     pub(crate) id: String,
     pub(crate) token: String,
@@ -942,6 +1079,43 @@ pub(crate) struct SegmentBulkRecord {
     pub(crate) expanded_len: u64,
     pub(crate) expanded_sha256: String,
     pub(crate) records: SegmentBulkFrame,
+}
+
+impl Serialize for SegmentBulkRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (record_state, record_count, stream_trailer_len, stream_trailer_sha256, record_detail) =
+            match &self.records {
+                SegmentBulkFrame::Framed {
+                    record_count,
+                    stream_trailer_len,
+                    stream_trailer_sha256,
+                } => (
+                    "framed",
+                    *record_count,
+                    Some(*stream_trailer_len),
+                    Some(stream_trailer_sha256.as_str()),
+                    None,
+                ),
+                SegmentBulkFrame::Unavailable { detail } => {
+                    ("unavailable", 0, None, None, Some(detail.as_str()))
+                }
+            };
+        let mut fields = serializer.serialize_struct("SegmentBulkRecordWire", 13)?;
+        fields.serialize_field("id", &self.id)?;
+        fields.serialize_field("token", &self.token)?;
+        fields.serialize_field("prefix", &self.prefix)?;
+        fields.serialize_field("form", &self.form)?;
+        fields.serialize_field("compressed_len", &self.compressed_len)?;
+        fields.serialize_field("compressed_sha256", &self.compressed_sha256)?;
+        fields.serialize_field("expanded_len", &self.expanded_len)?;
+        fields.serialize_field("expanded_sha256", &self.expanded_sha256)?;
+        fields.serialize_field("record_state", record_state)?;
+        fields.serialize_field("record_count", &record_count)?;
+        fields.serialize_field("stream_trailer_len", &stream_trailer_len)?;
+        fields.serialize_field("stream_trailer_sha256", &stream_trailer_sha256)?;
+        fields.serialize_field("record_detail", &record_detail)?;
+        fields.end()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -956,7 +1130,7 @@ pub(crate) enum SegmentBulkFrame {
     },
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct SegmentBulkRecordWire {
     id: String,
     token: String,
@@ -971,43 +1145,6 @@ struct SegmentBulkRecordWire {
     stream_trailer_len: Option<u64>,
     stream_trailer_sha256: Option<String>,
     record_detail: Option<String>,
-}
-
-impl From<SegmentBulkRecord> for SegmentBulkRecordWire {
-    fn from(value: SegmentBulkRecord) -> Self {
-        let (record_state, record_count, stream_trailer_len, stream_trailer_sha256, record_detail) =
-            match value.records {
-                SegmentBulkFrame::Framed {
-                    record_count,
-                    stream_trailer_len,
-                    stream_trailer_sha256,
-                } => (
-                    "framed".into(),
-                    record_count,
-                    Some(stream_trailer_len),
-                    Some(stream_trailer_sha256),
-                    None,
-                ),
-                SegmentBulkFrame::Unavailable { detail } => {
-                    ("unavailable".into(), 0, None, None, Some(detail))
-                }
-            };
-        Self {
-            id: value.id,
-            token: value.token,
-            prefix: value.prefix,
-            form: value.form,
-            compressed_len: value.compressed_len,
-            compressed_sha256: value.compressed_sha256,
-            expanded_len: value.expanded_len,
-            expanded_sha256: value.expanded_sha256,
-            record_state,
-            record_count,
-            stream_trailer_len,
-            stream_trailer_sha256,
-            record_detail,
-        }
-    }
 }
 
 impl TryFrom<SegmentBulkRecordWire> for SegmentBulkRecord {
@@ -1056,7 +1193,7 @@ impl TryFrom<SegmentBulkRecordWire> for SegmentBulkRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "RseRecordRecordWire", into = "RseRecordRecordWire")]
+#[serde(try_from = "RseRecordRecordWire")]
 pub(crate) struct RseRecordRecord {
     pub(crate) id: String,
     pub(crate) token: String,
@@ -1073,21 +1210,42 @@ pub(crate) struct RseRecordRecord {
 }
 
 impl RseRecordRecord {
-    pub(crate) fn from_frame(token: &str, frame: &crate::records::RseRecordFrame<'_>) -> Self {
-        Self {
-            id: format!("inventor:rse:record#{token}-{}", frame.ordinal),
-            token: token.into(),
+    pub(crate) fn from_frame(
+        ctx: &DecodeContext<'_>,
+        token: &str,
+        frame: &crate::records::RseRecordFrame<'_>,
+    ) -> Result<Self, CodecError> {
+        Ok(Self {
+            id: retained_format(
+                ctx,
+                format_args!("inventor:rse:record#{token}-{}", frame.ordinal),
+                "retain Inventor RSe record id",
+            )?,
+            token: retained_copy(ctx, token, "retain Inventor RSe record token")?,
             ordinal: frame.ordinal,
             selector: frame.selector,
             type_index: frame.type_index(),
-            type_id: crate::pmdc::type_id_string(frame.type_id),
+            type_id: {
+                ctx.charge_retained(32, "retain Inventor RSe record type GUID")?;
+                crate::pmdc::type_id_string(frame.type_id)
+            },
             payload_offset: frame.payload_offset,
             payload_len: u64::from(frame.payload_len()),
-            payload_sha256: cadmpeg_ir::hash::sha256_hex(frame.payload.window()),
+            payload_sha256: retained_digest(
+                ctx,
+                frame.payload.window(),
+                "retain Inventor RSe payload digest",
+            )?,
             trailing_payload_len: frame.trailing_payload_len(),
-            trailer_len: frame.trailer.window().len() as u64,
-            trailer_sha256: cadmpeg_ir::hash::sha256_hex(frame.trailer.window()),
-        }
+            trailer_len: u64::try_from(frame.trailer.window().len()).map_err(|_| {
+                ctx.refuse_codec_limit("Inventor record trailer length", u64::MAX - 1, u64::MAX)
+            })?,
+            trailer_sha256: retained_digest(
+                ctx,
+                frame.trailer.window(),
+                "retain Inventor RSe trailer digest",
+            )?,
+        })
     }
     pub(crate) fn type_index(&self) -> u8 {
         self.type_index
@@ -1111,25 +1269,6 @@ struct RseRecordRecordWire {
     trailing_payload_len: u32,
     trailer_len: u64,
     trailer_sha256: String,
-}
-
-impl From<RseRecordRecord> for RseRecordRecordWire {
-    fn from(record: RseRecordRecord) -> Self {
-        Self {
-            id: record.id,
-            token: record.token,
-            ordinal: record.ordinal,
-            selector: record.selector,
-            type_index: record.type_index,
-            type_id: record.type_id,
-            payload_offset: record.payload_offset,
-            payload_len: record.payload_len,
-            payload_sha256: record.payload_sha256,
-            trailing_payload_len: record.trailing_payload_len,
-            trailer_len: record.trailer_len,
-            trailer_sha256: record.trailer_sha256,
-        }
-    }
 }
 
 impl TryFrom<RseRecordRecordWire> for RseRecordRecord {
@@ -1160,8 +1299,8 @@ impl TryFrom<RseRecordRecordWire> for RseRecordRecord {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "ActiveCarrierRecordWire", into = "ActiveCarrierRecordWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "ActiveCarrierRecordWire")]
 pub(crate) enum ActiveCarrierRecord {
     NotApplicable {
         id: String,
@@ -1190,7 +1329,35 @@ pub(crate) enum ActiveCarrierRecord {
     },
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
+struct ActiveCarrierRecordView<'a> {
+    id: &'a str,
+    state: ActiveCarrierRecordState,
+    segment_token: Option<&'a str>,
+    record_ordinal: Option<u32>,
+    segment_version_major: Option<u8>,
+    family: Option<&'a str>,
+    header_state: Option<u32>,
+    header_kind: Option<u16>,
+    header_value: Option<u32>,
+    schema: Option<u32>,
+    carrier_len: Option<u64>,
+    carrier_offset: Option<u64>,
+    carrier_sha256: Option<&'a str>,
+    selected_key: Option<u32>,
+    enabled: Option<bool>,
+    delta_state: Option<i32>,
+    history_reference: Option<u32>,
+    detail: Option<&'a str>,
+}
+
+impl Serialize for ActiveCarrierRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ActiveCarrierRecordView::from(self).serialize(serializer)
+    }
+}
+
+#[derive(Deserialize)]
 struct ActiveCarrierRecordWire {
     id: String,
     state: ActiveCarrierRecordState,
@@ -1220,8 +1387,8 @@ enum ActiveCarrierRecordState {
     Unavailable,
 }
 
-impl From<ActiveCarrierRecord> for ActiveCarrierRecordWire {
-    fn from(value: ActiveCarrierRecord) -> Self {
+impl<'a> From<&'a ActiveCarrierRecord> for ActiveCarrierRecordView<'a> {
+    fn from(value: &'a ActiveCarrierRecord) -> Self {
         match value {
             ActiveCarrierRecord::NotApplicable { id } => Self {
                 id,
@@ -1284,20 +1451,20 @@ impl From<ActiveCarrierRecord> for ActiveCarrierRecordWire {
                 id,
                 state: ActiveCarrierRecordState::Selected,
                 segment_token: Some(segment_token),
-                record_ordinal: Some(record_ordinal),
-                segment_version_major: Some(segment_version_major),
-                family: Some(family.label().into()),
-                header_state: Some(header_state),
-                header_kind: Some(header_kind),
-                header_value: Some(header_value),
-                schema: Some(schema),
+                record_ordinal: Some(*record_ordinal),
+                segment_version_major: Some(*segment_version_major),
+                family: Some(family.label()),
+                header_state: Some(*header_state),
+                header_kind: Some(*header_kind),
+                header_value: Some(*header_value),
+                schema: Some(*schema),
                 carrier_len: Some(carrier_len.get()),
-                carrier_offset: Some(carrier_offset),
+                carrier_offset: Some(*carrier_offset),
                 carrier_sha256: Some(carrier_sha256),
-                selected_key: Some(selected_key),
-                enabled: Some(enabled),
-                delta_state: Some(delta_state),
-                history_reference: Some(history_reference),
+                selected_key: Some(*selected_key),
+                enabled: Some(*enabled),
+                delta_state: Some(*delta_state),
+                history_reference: Some(*history_reference),
                 detail: None,
             },
         }
@@ -1402,6 +1569,50 @@ impl TryFrom<ActiveCarrierRecordWire> for ActiveCarrierRecord {
 }
 
 impl ActiveCarrierRecord {
+    pub(crate) fn from_state(
+        ctx: &DecodeContext<'_>,
+        state: &crate::kernel::ActiveCarrierState<'_>,
+    ) -> Result<Self, CodecError> {
+        let id = retained_copy(
+            ctx,
+            "inventor:kernel:active-carrier#root",
+            "retain Inventor active carrier id",
+        )?;
+        Ok(match state {
+            crate::kernel::ActiveCarrierState::NotApplicable => Self::NotApplicable { id },
+            crate::kernel::ActiveCarrierState::Unavailable(detail) => Self::Unavailable {
+                id,
+                detail: retained_copy(ctx, detail, "retain Inventor active carrier issue")?,
+            },
+            crate::kernel::ActiveCarrierState::Selected(carrier) => Self::Selected {
+                id,
+                segment_token: retained_copy(
+                    ctx,
+                    carrier.segment_token.as_str(),
+                    "retain Inventor active carrier segment token",
+                )?,
+                record_ordinal: carrier.record_ordinal,
+                segment_version_major: carrier.segment_version_major,
+                family: carrier.family,
+                header_state: carrier.header_state,
+                header_kind: carrier.header_kind,
+                header_value: carrier.header_value,
+                schema: carrier.schema,
+                carrier_len: carrier.carrier_len,
+                carrier_offset: carrier.carrier_offset,
+                carrier_sha256: retained_digest(
+                    ctx,
+                    carrier.bytes.window(),
+                    "retain Inventor active carrier digest",
+                )?,
+                selected_key: carrier.selected_key,
+                enabled: carrier.enabled,
+                delta_state: carrier.delta_state,
+                history_reference: carrier.history_reference,
+            },
+        })
+    }
+
     pub(crate) fn read(namespace: &NativeNamespace) -> Result<Self, NativeConvertError> {
         let [record] = <[_; 1]>::try_from(namespace.arena_as::<Self>("active_carrier")?).map_err(
             |records: Vec<_>| {
@@ -1431,10 +1642,164 @@ pub(crate) struct SegmentBulkIssueRecord {
 }
 
 #[cfg(test)]
+pub(crate) fn test_ctx() -> cadmpeg_core::decode::DecodeContext<'static> {
+    let arena = Box::leak(Box::new(cadmpeg_core::decode::DecodeArena::new()));
+    cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty test input fits the service policy")
+    .0
+}
+
+#[cfg(test)]
 mod tests {
     use super::{
         ActiveCarrierRecord, PmAppRenderingStyleRecord, SegmentBulkFrame, SegmentBulkRecord,
     };
+    use cadmpeg_test_support::native_serialization::assert_native_limit;
+
+    #[test]
+    fn property_record_streams_once_with_retained_limit() {
+        let expected = serde_json::json!({
+            "id": "inventor:property:record#1", "set_path": "SummaryInformation",
+            "section_ordinal": 0, "fmtid": "fmtid", "property_id": 2,
+            "name": "title", "type_code": 3, "value_kind": "signed",
+            "scalar_value": "7", "raw_len": 0, "raw_sha256": "0".repeat(64)
+        });
+        let record: super::PropertyRecord =
+            serde_json::from_value(expected.clone()).expect("valid fixture");
+        assert_native_limit(&record, expected);
+    }
+
+    #[test]
+    fn assembly_placement_streams_once_with_retained_limit() {
+        let expected = serde_json::json!({
+            "id": "inventor:pmdc:placement#1", "segment_token": "segment",
+            "record_ordinal": 0, "header_id": 0, "owner_reference": 0,
+            "attribute_reference": 0, "state": 0, "transform_prefix": false,
+            "transform_encoding": [33825, 31710],
+            "transform": [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0],
+                          [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]],
+            "branch": 0, "graphics_state": 0, "occurrence_id": 0,
+            "graphics_index": 0, "object_reference": 0,
+            "suffix_len": 48, "suffix_sha256": "0".repeat(64)
+        });
+        let record: super::AssemblyPlacementRecord =
+            serde_json::from_value(expected.clone()).expect("valid fixture");
+        assert_native_limit(&record, expected);
+    }
+
+    #[test]
+    fn rendering_style_streams_once_with_retained_limit() {
+        let expected = serde_json::json!({
+            "id": "inventor:pmdc:rendering-style#1", "segment_token": "segment",
+            "record_ordinal": 0, "segment_version_major": 16,
+            "header_value": 0, "header_id": 0, "state": 0, "flags": 0,
+            "values": [0, 0], "default_state": 0, "value": 0,
+            "name_reference": 0, "name": "", "comment": "comment",
+            "long_name": "", "style_state": null, "style_label": null,
+            "asset_guid": null, "material_id": null,
+            "asset_library_id": null, "style_values": null,
+            "guid": null, "suffix_len": 0,
+            "suffix_sha256": "0".repeat(64)
+        });
+        let record: PmAppRenderingStyleRecord =
+            serde_json::from_value(expected.clone()).expect("valid fixture");
+        assert_native_limit(&record, expected);
+    }
+
+    #[test]
+    fn graphics_face_references_stream_once_with_retained_limit() {
+        let expected = serde_json::json!({
+            "id": "inventor:pmdc:graphics-face#1", "segment_token": "segment",
+            "record_ordinal": 0, "segment_version_major": 17,
+            "header_value": 0, "header_id": 0, "flags": 0,
+            "styles_reference": 0, "styles_reference_qualified": false,
+            "surface_reference": 0, "surface_reference_qualified": false,
+            "parent_reference": 0, "parent_reference_qualified": false,
+            "state": 0, "edge_references": [], "edge_reference_qualifiers": [],
+            "edge_list_metadata": null, "visibility_state": 0,
+            "bounds": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "key": 0,
+            "values": [0, 0]
+        });
+        let record: super::PmGraphicsFaceRecord =
+            serde_json::from_value(expected.clone()).expect("valid fixture");
+        assert_native_limit(&record, expected);
+    }
+
+    #[test]
+    fn graphics_style_references_stream_once_with_retained_limit() {
+        let expected = serde_json::json!({
+            "id": "inventor:pmdc:graphics-style-collection#1", "segment_token": "segment",
+            "record_ordinal": 0, "segment_version_major": 17,
+            "style_references": [], "style_reference_qualifiers": [],
+            "list_metadata": null
+        });
+        let record: super::PmGraphicsStyleCollectionRecord =
+            serde_json::from_value(expected.clone()).expect("valid fixture");
+        assert_native_limit(&record, expected);
+    }
+
+    #[test]
+    fn segment_meta_issue_streams_once_with_retained_limit() {
+        let expected = serde_json::json!({
+            "id": "inventor:rse:meta-issue#1", "token": "segment",
+            "status": "malformed", "detail": "short metadata"
+        });
+        let record: super::SegmentMetaIssueRecord =
+            serde_json::from_value(expected.clone()).expect("valid fixture");
+        assert_native_limit(&record, expected);
+    }
+
+    #[test]
+    fn segment_bulk_streams_once_with_retained_limit() {
+        let expected = serde_json::json!({
+            "id": "inventor:rse:bulk#1", "token": "segment", "prefix": "RSe",
+            "form": 1, "compressed_len": 0, "compressed_sha256": "0".repeat(64),
+            "expanded_len": 0, "expanded_sha256": "0".repeat(64),
+            "record_state": "framed", "record_count": 0,
+            "stream_trailer_len": 0, "stream_trailer_sha256": "0".repeat(64),
+            "record_detail": null
+        });
+        let record: SegmentBulkRecord =
+            serde_json::from_value(expected.clone()).expect("valid fixture");
+        assert_native_limit(&record, expected);
+    }
+
+    #[test]
+    fn rse_record_streams_once_with_retained_limit() {
+        let expected = serde_json::json!({
+            "id": "inventor:rse:record#1", "token": "segment", "ordinal": 0,
+            "selector": 0, "type_index": 0, "type_id": "type",
+            "payload_offset": 0, "payload_len": 0, "payload_sha256": "0",
+            "trailing_payload_len": 0, "trailer_len": 0, "trailer_sha256": "0"
+        });
+        let record: super::RseRecordRecord =
+            serde_json::from_value(expected.clone()).expect("valid fixture");
+        assert_native_limit(&record, expected);
+    }
+
+    #[test]
+    fn active_carrier_streams_once_with_retained_limit() {
+        let record = ActiveCarrierRecord::NotApplicable {
+            id: "inventor:kernel:active-carrier#root".into(),
+        };
+        assert_native_limit(
+            &record,
+            serde_json::json!({
+                "id": "inventor:kernel:active-carrier#root", "state": "not_applicable",
+                "segment_token": null, "record_ordinal": null,
+                "segment_version_major": null, "family": null,
+                "header_state": null, "header_kind": null, "header_value": null,
+                "schema": null, "carrier_len": null, "carrier_offset": null,
+                "carrier_sha256": null, "selected_key": null,
+                "enabled": null, "delta_state": null,
+                "history_reference": null, "detail": null
+            }),
+        );
+    }
 
     #[test]
     fn active_carrier_admission_requires_one_arena_record() {
@@ -1444,7 +1809,11 @@ mod tests {
         let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
         assert!(ActiveCarrierRecord::read(&namespace).is_err());
         namespace
-            .set_arena("active_carrier", std::slice::from_ref(&record))
+            .set_arena(
+                &crate::native::test_ctx(),
+                "active_carrier",
+                std::slice::from_ref(&record),
+            )
             .expect("valid carrier");
         assert_eq!(
             ActiveCarrierRecord::read(&namespace).expect("single carrier"),
@@ -1467,7 +1836,7 @@ mod tests {
             ],
         ] {
             namespace
-                .set_arena("active_carrier", &records)
+                .set_arena(&crate::native::test_ctx(), "active_carrier", &records)
                 .expect("valid wire records");
             assert!(ActiveCarrierRecord::read(&namespace)
                 .expect_err("invalid cardinality")

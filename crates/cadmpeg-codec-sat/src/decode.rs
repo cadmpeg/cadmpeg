@@ -21,7 +21,7 @@ use crate::loss::SatLossCode;
 use crate::FORMAT;
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecError> {
-    match classify(bytes) {
+    match classify(ctx, bytes)? {
         Some(StreamKind::AsmBinary(header)) => decode_asm_binary(ctx, bytes, &header),
         Some(StreamKind::Text) => decode_text(ctx, bytes),
         Some(StreamKind::AcisBinary(header)) => decode_acis_binary(ctx, bytes, &header),
@@ -175,7 +175,10 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
     let header = stream.header.as_kernel_header();
     let mut attributes = BTreeMap::new();
     header_attributes(&header, stream.terminator.into(), &mut attributes);
-    attributes.insert("scale".to_string(), format!("{}", stream.header.scale));
+    attributes.insert(
+        "scale".to_string(),
+        format!("{}", stream.header.scale().get()),
+    );
     // The ACIS branch carries the same save-format band as the ACIS binary
     // stream, so it takes the same admission — literally the same code path,
     // through `classify`. Neither branch gates the record decode on it.

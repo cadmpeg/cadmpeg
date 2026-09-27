@@ -17,7 +17,7 @@ use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
-use cadmpeg_ir::scalar::PositiveReal;
+use cadmpeg_ir::scalar::{PositiveLength, PositiveReal};
 use std::collections::BTreeSet;
 
 const EPS_CYLINDER_FIT: f64 = 1.0e-8;
@@ -386,6 +386,7 @@ fn prototype_round_radius(
 pub(in super::super) fn round_constant_radius(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
 ) -> Result<Option<f64>, cadmpeg_core::CodecError> {
     match scan
@@ -396,7 +397,7 @@ pub(in super::super) fn round_constant_radius(
         .map(|round| round.radius)
     {
         Some(LegacyRoundRadius::Constant(radius)) => {
-            if !legacy_round_radius_agrees(scan, ir, feature_id, radius) {
+            if !legacy_round_radius_agrees(scan, ir, source_carriers, feature_id, radius) {
                 return Ok(None);
             }
             return Ok(Some(radius.get()));
@@ -408,12 +409,12 @@ pub(in super::super) fn round_constant_radius(
         .as_deref()
         .and_then(unique_positive_length)
     {
-        if complete_direct_placed_cylinder_radius_agreement(scan, ir, feature_id)
+        if complete_direct_placed_cylinder_radius_agreement(scan, ir, source_carriers, feature_id)
             .is_some_and(|agrees| !agrees)
         {
             return Ok(None);
         }
-        return Ok(Some(radius));
+        return Ok(Some(radius.get()));
     }
     let generated_rows = scan
         .surfaces
@@ -422,9 +423,9 @@ pub(in super::super) fn round_constant_radius(
         .filter(|row| row.feature_id == feature_id)
         .collect::<Vec<_>>();
     if generated_rows.is_empty() {
-        return Ok(round_support_radius(scan, ir, feature_id));
+        return Ok(round_support_radius(scan, ir, source_carriers, feature_id));
     }
-    if let Some(radius) = round_replay_radius(scan, ir, feature_id) {
+    if let Some(radius) = round_replay_radius(scan, ir, source_carriers, feature_id) {
         return Ok(Some(radius));
     }
     // Unequal decoded rolling-radius samples identify a variable-radius
@@ -456,11 +457,12 @@ pub(in super::super) fn round_constant_radius(
             )
         })
     {
-        if let Some(radii) = mixed_round_radius_samples(scan, ir, &generated_rows)? {
-            return Ok(unique_positive_length(&radii));
+        if let Some(radii) = mixed_round_radius_samples(scan, ir, source_carriers, &generated_rows)?
+        {
+            return Ok(unique_positive_length(&radii).map(PositiveLength::get));
         }
     }
-    let cylinder_radii = round_placed_cylinder_radii(scan, ir, feature_id);
+    let cylinder_radii = round_placed_cylinder_radii(scan, ir, source_carriers, feature_id);
     if differing_positive_lengths(&cylinder_radii) {
         // Independent placed cylinder samples remain decisive when an
         // unresolved toroidal sibling prevents the complete mixed-family
@@ -478,15 +480,25 @@ pub(in super::super) fn round_constant_radius(
         )
     });
     if cylinder_radii.len() == cylinder_rows.len() && non_radius_rows_are_planes {
-        return Ok(unique_positive_length(&cylinder_radii));
+        return Ok(unique_positive_length(&cylinder_radii).map(PositiveLength::get));
     }
-    Ok(round_support_radius(scan, ir, feature_id))
+    Ok(round_support_radius(scan, ir, source_carriers, feature_id))
 }
 
-fn round_replay_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Option<f64> {
+fn round_replay_radius(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
+    feature_id: u32,
+) -> Option<f64> {
     let mut samples = round_observed_radii(scan, feature_id);
-    samples.extend(round_placed_cylinder_radii(scan, ir, feature_id));
-    let radius = unique_positive_length(&samples)?;
+    samples.extend(round_placed_cylinder_radii(
+        scan,
+        ir,
+        source_carriers,
+        feature_id,
+    ));
+    let radius = unique_positive_length(&samples)?.get();
     let scale = radius.abs().max(1.0);
     scan.features
         .round_replay_scalars
@@ -502,12 +514,18 @@ fn round_replay_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Opt
 fn legacy_round_radius_agrees(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     radius: PositiveReal,
 ) -> bool {
     let radius = radius.get();
     let mut samples = round_observed_radii(scan, feature_id);
-    samples.extend(round_placed_cylinder_radii(scan, ir, feature_id));
+    samples.extend(round_placed_cylinder_radii(
+        scan,
+        ir,
+        source_carriers,
+        feature_id,
+    ));
     if samples
         .iter()
         .any(|sample| !sample.is_finite() || *sample <= 0.0)
@@ -528,6 +546,7 @@ fn legacy_round_radius_agrees(
 fn complete_direct_placed_cylinder_radius_agreement(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
 ) -> Option<bool> {
     let cylinder_rows = scan
@@ -547,7 +566,7 @@ fn complete_direct_placed_cylinder_radius_agreement(
         .collect::<Option<Vec<_>>>()?;
     let placed_radii = cylinder_rows
         .iter()
-        .map(|row| round_placed_cylinder_radius(ir, row))
+        .map(|row| round_placed_cylinder_radius(ir, row, source_carriers))
         .collect::<Option<Vec<_>>>()?;
     Some(
         direct_radii
@@ -567,6 +586,7 @@ fn complete_direct_placed_cylinder_radius_agreement(
 fn mixed_round_radius_samples(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     rows: &[&crate::surface::SurfaceRow],
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
     let cylinder_rows = rows
@@ -585,7 +605,7 @@ fn mixed_round_radius_samples(
 
     let Some(cylinder_radii) = cylinder_rows
         .iter()
-        .map(|row| round_cylinder_radius(scan, ir, row))
+        .map(|row| round_cylinder_radius(scan, ir, source_carriers, row))
         .collect::<Option<Vec<_>>>()
     else {
         return Ok(None);
@@ -634,16 +654,18 @@ fn mixed_torus_radius_samples(
 fn round_cylinder_radius(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     row: &crate::surface::SurfaceRow,
 ) -> Option<f64> {
     unique_surface_parameter_record(scan, row)
         .and_then(SurfaceParameterRecord::type24_generated_round_radius)
-        .or_else(|| round_placed_cylinder_radius(ir, row))
+        .or_else(|| round_placed_cylinder_radius(ir, row, source_carriers))
 }
 
 pub(in super::super) fn round_support_radius(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
 ) -> Option<f64> {
     let affected_ids = agreed_feature_geometry_ids(
@@ -658,8 +680,8 @@ pub(in super::super) fn round_support_radius(
         return None;
     }
     let local_planes = placed_planes(scan);
-    let first_cap = reconciled_model_plane(&local_planes, ir, *first_cap_id)?;
-    let second_cap = reconciled_model_plane(&local_planes, ir, *second_cap_id)?;
+    let first_cap = reconciled_model_plane(&local_planes, ir, source_carriers, *first_cap_id)?;
+    let second_cap = reconciled_model_plane(&local_planes, ir, source_carriers, *second_cap_id)?;
     let first_cap_normal = normalize(first_cap.normal)?;
     let second_cap_normal = normalize(second_cap.normal)?;
     if (dot(first_cap_normal, second_cap_normal).abs() - 1.0).abs() > EPS_ROUND_CAP_PARALLEL {
@@ -675,7 +697,7 @@ pub(in super::super) fn round_support_radius(
     }
     let support_planes = support_ids
         .iter()
-        .map(|id| reconciled_model_plane(&local_planes, ir, *id))
+        .map(|id| reconciled_model_plane(&local_planes, ir, source_carriers, *id))
         .collect::<Option<Vec<_>>>()?;
     support_planes
         .iter()
@@ -695,11 +717,12 @@ pub(in super::super) fn round_support_radius(
 pub(in super::super) fn round_support_envelope_cylinder(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     envelope: Type24RoundEnvelope,
 ) -> Option<crate::surface::PositionalCylinderFrame> {
     let ([first_cap, second_cap], support_planes) =
-        resolved_round_support_planes(scan, ir, feature_id)?;
+        resolved_round_support_planes(scan, ir, source_carriers, feature_id)?;
     let axis = normalize(first_cap.normal)?;
     let second_cap_normal = normalize(second_cap.normal)?;
     if (dot(axis, second_cap_normal).abs() - 1.0).abs() > EPS_ROUND_CAP_PARALLEL {
@@ -802,6 +825,7 @@ pub(in super::super) fn round_support_envelope_cylinder(
 fn resolved_round_support_planes(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
 ) -> Option<([PlaneEquation; 2], Vec<PlaneEquation>)> {
     let affected_ids = agreed_feature_geometry_ids(
@@ -817,8 +841,8 @@ fn resolved_round_support_planes(
     }
     let local_planes = placed_planes(scan);
     let caps = [
-        reconciled_model_plane(&local_planes, ir, *first_cap_id)?,
-        reconciled_model_plane(&local_planes, ir, *second_cap_id)?,
+        reconciled_model_plane(&local_planes, ir, source_carriers, *first_cap_id)?,
+        reconciled_model_plane(&local_planes, ir, source_carriers, *second_cap_id)?,
     ];
     let first_cap_normal = normalize(caps[0].normal)?;
     let second_cap_normal = normalize(caps[1].normal)?;
@@ -835,7 +859,7 @@ fn resolved_round_support_planes(
     }
     let support_planes = support_ids
         .iter()
-        .filter_map(|id| reconciled_model_plane(&local_planes, ir, *id))
+        .filter_map(|id| reconciled_model_plane(&local_planes, ir, source_carriers, *id))
         .collect::<Vec<_>>();
     (support_planes.len() >= 2).then_some(())?;
     support_planes
@@ -852,6 +876,7 @@ fn resolved_round_support_planes(
 pub(in super::super) fn round_placed_cylinder_radii(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
 ) -> Vec<f64> {
     scan.surfaces
@@ -860,14 +885,18 @@ pub(in super::super) fn round_placed_cylinder_radii(
         .filter(|row| {
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
         })
-        .filter_map(|row| round_placed_cylinder_radius(ir, row))
+        .filter_map(|row| round_placed_cylinder_radius(ir, row, source_carriers))
         .collect()
 }
 
-fn round_placed_cylinder_radius(ir: &CadIr, row: &crate::surface::SurfaceRow) -> Option<f64> {
+fn round_placed_cylinder_radius(
+    ir: &CadIr,
+    row: &crate::surface::SurfaceRow,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
+) -> Option<f64> {
     let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id);
     exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id)).and_then(|surface| {
-        match surface.geometry {
+        match source_carriers.surface_geometry(surface) {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                 let radius = cylinder_surface.radius().get();
                 Some(radius)
@@ -928,22 +957,20 @@ pub(in super::super) fn differing_positive_lengths(values: &[f64]) -> bool {
         .any(|value| (*value - first).abs() > EPS_GEOMETRY_AGREEMENT * scale)
 }
 
-pub(in super::super) fn unique_positive_length(values: &[f64]) -> Option<f64> {
-    let value = *values.first()?;
-    if !value.is_finite() || value <= 0.0 {
-        return None;
-    }
+pub(in super::super) fn unique_positive_length(values: &[f64]) -> Option<PositiveLength> {
+    let value = PositiveLength::new(*values.first()?)?;
+    let value_raw = value.get();
     let scale = values
         .iter()
         .copied()
         .map(f64::abs)
-        .fold(value.abs().max(1.0), f64::max);
+        .fold(value_raw.abs().max(1.0), f64::max);
     values
         .iter()
         .all(|candidate| {
             candidate.is_finite()
                 && *candidate > 0.0
-                && (*candidate - value).abs() <= EPS_GEOMETRY_AGREEMENT * scale
+                && (*candidate - value_raw).abs() <= EPS_GEOMETRY_AGREEMENT * scale
         })
         .then_some(value)
 }
@@ -978,12 +1005,13 @@ fn equal_distance_chamfer_setback(
                 .min_by(f64::total_cmp)
         })
         .collect::<Option<Vec<_>>>()?;
-    unique_positive_length(&setbacks)
+    unique_positive_length(&setbacks).map(PositiveLength::get)
 }
 
 fn chamfer_cone_equation(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     row: &crate::surface::SurfaceRow,
 ) -> Option<ConeEquation> {
     let parameter_records = scan
@@ -1010,7 +1038,9 @@ fn chamfer_cone_equation(
     }
     let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id);
     let surface = exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id))?;
-    let Some(SolvedSurfaceGeometry::Cone(cone_surface)) = surface.geometry.solved() else {
+    let Some(SolvedSurfaceGeometry::Cone(cone_surface)) =
+        source_carriers.surface_geometry(surface).solved()
+    else {
         return None;
     };
     let origin = cone_surface.origin().get();
@@ -1032,6 +1062,7 @@ fn chamfer_cone_equation(
 pub(in super::super) fn chamfer_constant_distance(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
 ) -> Option<f64> {
     let rows = scan
@@ -1047,7 +1078,7 @@ pub(in super::super) fn chamfer_constant_distance(
     .then_some(())?;
     let cones = rows
         .iter()
-        .map(|row| chamfer_cone_equation(scan, ir, row))
+        .map(|row| chamfer_cone_equation(scan, ir, source_carriers, row))
         .collect::<Option<Vec<_>>>()?;
     let affected_ids = agreed_feature_geometry_ids(
         &scan.features.affected_ids,
@@ -1076,7 +1107,7 @@ pub(in super::super) fn chamfer_constant_distance(
                 match model_surfaces.as_slice() {
                     [] => false,
                     [surface] => matches!(
-                        surface.geometry.solved(),
+                        source_carriers.surface_geometry(surface).solved(),
                         Some(SolvedSurfaceGeometry::Plane(_))
                     ),
                     _ => return None,
@@ -1094,7 +1125,7 @@ pub(in super::super) fn chamfer_constant_distance(
         if !is_support_plane || !support_plane_ids.insert(*id) {
             continue;
         }
-        let plane = reconciled_model_plane(&local_planes, ir, *id)?;
+        let plane = reconciled_model_plane(&local_planes, ir, source_carriers, *id)?;
         support_planes.push(plane);
     }
     equal_distance_chamfer_setback(&cones, &support_planes)

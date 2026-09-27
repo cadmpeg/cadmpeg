@@ -131,7 +131,7 @@ fn type208_and_210_malformed_leader_counts_do_not_enable_generic_recovery() {
     ]);
 
     let mut cases = Vec::new();
-    for count in [TokenValue::Real(0.0), TokenValue::Omitted, (-1_i64).into()] {
+    for count in [TokenValue::real(0.0), TokenValue::Omitted, (-1_i64).into()] {
         let mut values: Vec<TokenValue> = vec![
             208.into(),
             0.into(),
@@ -329,7 +329,7 @@ fn type214_malformed_count_or_span_does_not_enable_generic_recovery() {
         TokenValue::Integer(0),
     ];
     let mut wrong_type = n1.clone();
-    wrong_type[1] = TokenValue::Real(1.0);
+    wrong_type[1] = TokenValue::real(1.0);
     let mut omitted = n1.clone();
     omitted[1] = TokenValue::Omitted;
     let mut zero = n1.clone();
@@ -419,7 +419,7 @@ fn type218_forms_share_fixed_primary_boundary() {
             vec![
                 TokenValue::Integer(218),
                 TokenValue::Integer(3),
-                TokenValue::Real(5.0),
+                TokenValue::real(5.0),
                 TokenValue::Integer(1),
                 TokenValue::Integer(3),
                 TokenValue::Integer(0),
@@ -444,7 +444,7 @@ fn type218_forms_share_fixed_primary_boundary() {
                 TokenValue::Integer(218),
                 TokenValue::Integer(3),
                 TokenValue::Integer(5),
-                TokenValue::Real(7.0),
+                TokenValue::real(7.0),
                 TokenValue::Integer(1),
                 TokenValue::Integer(3),
                 TokenValue::Integer(0),
@@ -659,7 +659,7 @@ fn type406_form1_malformed_np_or_span_does_not_enable_generic_recovery() {
     for values in [
         vec![
             TokenValue::Integer(406),
-            TokenValue::Real(1.0),
+            TokenValue::real(1.0),
             TokenValue::Integer(5),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
@@ -861,7 +861,7 @@ fn type406_drawing_property_malformed_np_or_span_does_not_enable_generic_recover
             vec![
                 vec![
                     TokenValue::Integer(406),
-                    TokenValue::Real(2.0),
+                    TokenValue::real(2.0),
                     TokenValue::Integer(10),
                     TokenValue::Integer(20),
                     TokenValue::Integer(1),
@@ -898,7 +898,7 @@ fn type406_drawing_property_malformed_np_or_span_does_not_enable_generic_recover
             vec![
                 vec![
                     TokenValue::Integer(406),
-                    TokenValue::Real(2.0),
+                    TokenValue::real(2.0),
                     TokenValue::Integer(2),
                     TokenValue::String(b"MM".to_vec()),
                     TokenValue::Integer(1),
@@ -957,8 +957,8 @@ fn type406_form6_entity_table_boundary_follows_fixed_values() {
         vec![
             TokenValue::Integer(406),
             TokenValue::Integer(5),
-            TokenValue::Real(1.0),
-            TokenValue::Real(2.0),
+            TokenValue::real(1.0),
+            TokenValue::real(2.0),
             TokenValue::Integer(1),
             TokenValue::Integer(2),
             TokenValue::Integer(8),
@@ -970,7 +970,7 @@ fn type406_form6_entity_table_boundary_follows_fixed_values() {
             TokenValue::Integer(406),
             TokenValue::Integer(4),
             TokenValue::Integer(1),
-            TokenValue::Real(2.0),
+            TokenValue::real(2.0),
             TokenValue::Integer(2),
             TokenValue::Integer(2),
             TokenValue::Integer(8),
@@ -981,8 +981,8 @@ fn type406_form6_entity_table_boundary_follows_fixed_values() {
         vec![
             TokenValue::Integer(406),
             TokenValue::Omitted,
-            TokenValue::Real(1.0),
-            TokenValue::Real(2.0),
+            TokenValue::real(1.0),
+            TokenValue::real(2.0),
             TokenValue::Integer(1),
             TokenValue::Integer(2),
             TokenValue::Integer(8),
@@ -993,8 +993,8 @@ fn type406_form6_entity_table_boundary_follows_fixed_values() {
         vec![
             TokenValue::Integer(406),
             TokenValue::Integer(5),
-            TokenValue::Real(1.0),
-            TokenValue::Real(2.0),
+            TokenValue::real(1.0),
+            TokenValue::real(2.0),
             TokenValue::Integer(2),
             TokenValue::Integer(2),
             TokenValue::Integer(8),
@@ -1080,11 +1080,11 @@ fn type406_forms5_and7_entity_table_boundaries_follow_fixed_values() {
                 vec![
                     TokenValue::Integer(406),
                     TokenValue::Integer(5),
-                    TokenValue::Real(1.5),
+                    TokenValue::real(1.5),
                     TokenValue::Integer(0),
                     TokenValue::Integer(2),
                     TokenValue::Integer(1),
-                    TokenValue::Real(0.25),
+                    TokenValue::real(0.25),
                     TokenValue::Integer(3),
                     TokenValue::Integer(3),
                     TokenValue::Integer(3),
@@ -1108,11 +1108,11 @@ fn type406_forms5_and7_entity_table_boundaries_follow_fixed_values() {
                 vec![
                     TokenValue::Integer(406),
                     TokenValue::Omitted,
-                    TokenValue::Real(1.5),
+                    TokenValue::real(1.5),
                     TokenValue::Integer(0),
                     TokenValue::Integer(2),
                     TokenValue::Integer(1),
-                    TokenValue::Real(0.25),
+                    TokenValue::real(0.25),
                     TokenValue::Integer(3),
                     TokenValue::Integer(3),
                     TokenValue::Integer(3),
@@ -1126,7 +1126,7 @@ fn type406_forms5_and7_entity_table_boundaries_follow_fixed_values() {
                     TokenValue::Integer(0),
                     TokenValue::Integer(2),
                     TokenValue::Integer(1),
-                    TokenValue::Real(0.25),
+                    TokenValue::real(0.25),
                     TokenValue::Integer(3),
                     TokenValue::Integer(3),
                     TokenValue::Integer(3),
@@ -1314,7 +1314,7 @@ fn type406_form19_entity_table_boundary_follows_fixed_values() {
         vec![
             406.into(),
             1.into(),
-            TokenValue::Real(12.0),
+            TokenValue::real(12.0),
             1.into(),
             3.into(),
             0.into(),

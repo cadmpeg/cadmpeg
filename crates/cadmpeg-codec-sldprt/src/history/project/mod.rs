@@ -309,7 +309,7 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
     const FRAME_TOLERANCE: f64 = 1.0e-8;
 
     let stored_frame = |feature: &cadmpeg_ir::features::Feature| {
-        let origin = parse_point3_mm(feature.source_properties.get("Origin")?)?;
+        let origin = parse_point3_mm(feature.source_properties.get("Origin")?)?.get();
         let normal = parse_vector3(feature.source_properties.get("Normal")?)?;
         let u_axis = parse_vector3(feature.source_properties.get("UAxis")?)?;
         valid_plane_frame(normal, u_axis).then_some((origin, normal, u_axis))
@@ -377,7 +377,7 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
     };
     let serialized_reference_frame = |feature: &cadmpeg_ir::features::Feature| {
         Some((
-            parse_point3_mm(feature.source_properties.get("ReferenceFaceOrigin")?)?,
+            parse_point3_mm(feature.source_properties.get("ReferenceFaceOrigin")?)?.get(),
             parse_vector3(feature.source_properties.get("ReferenceFaceNormal")?)?,
             parse_vector3(feature.source_properties.get("ReferenceFaceUAxis")?)?,
         ))
@@ -716,10 +716,14 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
         };
         *reference = (|| {
             Some(DatumPlaneReference::ResolvedPlane {
-                frame: cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
+                frame: cadmpeg_ir::features::FeatureSupportPlaneFrame::from_parts(
                     parse_point3_mm(feature.source_properties.get("ReferenceFaceOrigin")?)?,
-                    parse_vector3(feature.source_properties.get("ReferenceFaceNormal")?)?,
-                    parse_vector3(feature.source_properties.get("ReferenceFaceUAxis")?)?,
+                    cadmpeg_ir::features::FeatureDirection3::new(parse_vector3(
+                        feature.source_properties.get("ReferenceFaceNormal")?,
+                    )?)?,
+                    cadmpeg_ir::features::FeatureDirection3::new(parse_vector3(
+                        feature.source_properties.get("ReferenceFaceUAxis")?,
+                    )?)?,
                 )?,
             })
         })();
