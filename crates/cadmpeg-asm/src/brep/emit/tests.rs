@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{emit_carrier_curve, emit_coedges, emit_faces, emit_vertices};
+use super::{emit_carrier_curve, emit_coedges, emit_faces, emit_vertices, into_support_sides};
 use crate::brep::records::{FaceSidedness, TolerantCoedgeExtension};
 use crate::brep::{AsmBrep, Carriers, Reachable};
 use crate::nurbs;
@@ -21,6 +21,30 @@ fn subtype_table(records: &[Record]) -> nurbs::toks::SubtypeTable {
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     nurbs::toks::SubtypeTable::from_records(&ctx, records).unwrap()
+}
+
+#[test]
+fn support_sides_move_pcurve_storage() {
+    use cadmpeg_ir::geometry::{pcurve::PcurveGeometry, SupportPcurve};
+    use cadmpeg_ir::math::Point2;
+
+    let pcurve = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+        None,
+        false,
+    ).unwrap();
+    let knot_address = pcurve.knots().as_slice().as_ptr();
+    let sides = into_support_sides(
+        [None, None],
+        [Some(SupportPcurve::from(PcurveGeometry::Nurbs { nurbs: pcurve })), None],
+    );
+    let Some(SupportPcurve { geometry: PcurveGeometry::Nurbs { nurbs }, .. }) = &sides[0].pcurve else {
+        panic!("first support pcurve was lost");
+    };
+    assert_eq!(nurbs.knots().as_slice().as_ptr(), knot_address);
+    assert!(sides[1].pcurve.is_none());
 }
 
 #[test]

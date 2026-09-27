@@ -58,6 +58,28 @@ macro_rules! charged_push {
     }};
 }
 
+fn into_support_sides<S, P>(
+    surfaces: [S; 2],
+    pcurves: [P; 2],
+) -> [cadmpeg_ir::geometry::IntcurveSupportSide; 2]
+where
+    Option<SurfaceId>: From<S>,
+    Option<cadmpeg_ir::geometry::SupportPcurve>: From<P>,
+{
+    let [first_surface, second_surface] = surfaces;
+    let [first_pcurve, second_pcurve] = pcurves;
+    [
+        cadmpeg_ir::geometry::IntcurveSupportSide {
+            surface: first_surface.into(),
+            pcurve: first_pcurve.into(),
+        },
+        cadmpeg_ir::geometry::IntcurveSupportSide {
+            surface: second_surface.into(),
+            pcurve: second_pcurve.into(),
+        },
+    ]
+}
+
 fn append_source_id<T>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     sources: &mut Vec<(i64, T)>,
@@ -3133,12 +3155,7 @@ fn emit_carrier_curve(
                         cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset(
                             TwoSidedOffsetCurveConstruction::try_new(
                                 cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
-                                    std::array::from_fn(|side| {
-                                        cadmpeg_ir::geometry::IntcurveSupportSide {
-                                            surface: surfaces[side].clone(),
-                                            pcurve: pcurves[side].clone(),
-                                        }
-                                    }),
+                                    into_support_sides(surfaces, pcurves),
                                     embedded.parameter_range,
                                     embedded.discontinuities,
                                 )?,
@@ -3177,12 +3194,7 @@ fn emit_carrier_curve(
                         });
                         cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
                             context: cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
-                                std::array::from_fn(|side| {
-                                    cadmpeg_ir::geometry::IntcurveSupportSide {
-                                        surface: surfaces[side].clone(),
-                                        pcurve: pcurves[side].clone(),
-                                    }
-                                }),
+                                into_support_sides(surfaces, pcurves),
                                 embedded.parameter_range,
                                 embedded.discontinuities,
                             )?,
@@ -3216,18 +3228,18 @@ fn emit_carrier_curve(
                                 nurbs,
                             })
                         });
+                        let [first_surface, second_surface, third_surface] = surface_ids;
+                        let [first_pcurve, second_pcurve, third_pcurve] = pcurves;
                         cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection(cadmpeg_ir::geometry::curve_payloads::ThreeSurfaceIntersectionCurvePayload::try_new(cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
-                                std::array::from_fn(|side| {
-                                    cadmpeg_ir::geometry::IntcurveSupportSide {
-                                        surface: Some(surface_ids[side].clone()),
-                                        pcurve: Some(pcurves[side].clone()),
-                                    }
-                                }),
+                                into_support_sides(
+                                    [first_surface, second_surface],
+                                    [first_pcurve, second_pcurve],
+                                ),
                                 embedded.parameter_range,
                                 embedded.discontinuities,
                             )?, embedded.selector, cadmpeg_ir::geometry::IntcurveSupportSide {
-                                surface: Some(surface_ids[2].clone()),
-                                pcurve: Some(pcurves[2].clone()),
+                                surface: Some(third_surface),
+                                pcurve: Some(third_pcurve),
                             }).map_err(|_| "three-surface intersection context is not finite and ordered")?)
                     }
                     ProceduralCurveConstruction::SurfaceCurve(family) => {
@@ -3339,12 +3351,7 @@ fn emit_carrier_curve(
                         cadmpeg_ir::geometry::ProceduralCurveDefinition::Deformable(
                             DeformableCurveConstruction::try_new(
                                 cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
-                                    std::array::from_fn(|side| {
-                                        cadmpeg_ir::geometry::IntcurveSupportSide {
-                                            surface: support_ids[side].clone(),
-                                            pcurve: pcurves[side].clone(),
-                                        }
-                                    }),
+                                    into_support_sides(support_ids, pcurves),
                                     context.parameter_range,
                                     context.discontinuities,
                                 )?,
@@ -3509,10 +3516,7 @@ fn emit_surface_curve_layout<F>(
             .map(|nurbs| cadmpeg_ir::geometry::SupportPcurve::from(PcurveGeometry::Nurbs { nurbs }))
     });
     let context = cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
-        std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
-            surface: surfaces[side].clone(),
-            pcurve: pcurves[side].clone(),
-        }),
+        into_support_sides(surfaces, pcurves),
         embedded.parameter_range,
         embedded.discontinuities,
     )?;
@@ -3592,10 +3596,7 @@ fn emit_silhouette_curve(
     Ok(cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette(
         cadmpeg_ir::geometry::curve_payloads::SilhouetteCurveConstruction::from_unit_direction(
             cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
-                std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
-                    surface: support_ids[side].clone(),
-                    pcurve: pcurves[side].clone(),
-                }),
+                into_support_sides(support_ids, pcurves),
                 embedded.parameter_range,
                 embedded.discontinuities,
             )?,
@@ -3660,10 +3661,7 @@ fn emit_surface_offset_curve(
         cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset(
             cadmpeg_ir::geometry::curve_payloads::SurfaceOffsetCurveConstruction::try_new(
                 cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
-                    std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
-                        surface: support_ids[side].clone(),
-                        pcurve: pcurves[side].clone(),
-                    }),
+                    into_support_sides(support_ids, pcurves),
                     context.parameter_range,
                     context.discontinuities,
                 )?,
@@ -3833,10 +3831,7 @@ fn emit_projection_curve(
     Ok(cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection(
         cadmpeg_ir::geometry::curve_payloads::ProjectionCurvePayload::try_new(
             cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
-                std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
-                    surface: surfaces[side].clone(),
-                    pcurve: pcurves[side].clone(),
-                }),
+                into_support_sides(surfaces, pcurves),
                 embedded.parameter_range,
                 embedded.discontinuities,
             )?,
@@ -3914,10 +3909,7 @@ fn emit_law_curve(
     };
     Ok(cadmpeg_ir::geometry::ProceduralCurveDefinition::Law {
         context: cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
-            std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
-                surface: surfaces[side].clone(),
-                pcurve: pcurves[side].clone(),
-            }),
+            into_support_sides(surfaces, pcurves),
             parameter_range,
             embedded.discontinuities,
         )?,
