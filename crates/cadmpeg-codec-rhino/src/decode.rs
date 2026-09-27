@@ -4286,6 +4286,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     if let Some(cause) = child_cause {
         return Ok(finish_brep_fallback(staged, cause));
     }
+    let ctx = expand.ctx();
     let DecodedPcurves {
         ids: c2,
         values: pcurves,
@@ -4305,7 +4306,20 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         &cadmpeg_ir::identity_namespace!("rhino", "object", "body"),
         key.clone(),
     );
-    let mut vertex_ids = Vec::with_capacity(raw.vertices.len());
+    let mut vertex_ids =
+        crate::curves::charged_vec(ctx, raw.vertices.len(), "Rhino staged Brep vertex IDs")?;
+    crate::curves::reserve_collection(
+        ctx,
+        &mut staged.draft.model_mut().points,
+        raw.vertices.len(),
+        "Rhino staged Brep points",
+    )?;
+    crate::curves::reserve_collection(
+        ctx,
+        &mut staged.draft.model_mut().vertices,
+        raw.vertices.len(),
+        "Rhino staged Brep vertices",
+    )?;
     for (index, vertex) in raw.vertices.iter().enumerate() {
         let point_id = cadmpeg_ir::ids::PointId::compose(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "point"),
@@ -4334,7 +4348,14 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         });
         vertex_ids.push(vertex_id);
     }
-    let mut edge_ids = Vec::with_capacity(raw.edges.len());
+    let mut edge_ids =
+        crate::curves::charged_vec(ctx, raw.edges.len(), "Rhino staged Brep edge IDs")?;
+    crate::curves::reserve_collection(
+        ctx,
+        &mut staged.draft.model_mut().edges,
+        raw.edges.len(),
+        "Rhino staged Brep edges",
+    )?;
     for (index, edge) in raw.edges.iter().enumerate() {
         let id = cadmpeg_ir::ids::EdgeId::compose(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "edge"),
@@ -4363,25 +4384,35 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             "Brep free vertices have no unique shell membership",
         ));
     }
-    let free_vertex_ids = free_vertex_indices
-        .iter()
-        .map(|index| {
-            cadmpeg_ir::ids::VertexId::compose(
-                &cadmpeg_ir::identity_namespace!("rhino", "object", "vertex"),
-                key.clone()
-                    .then(cadmpeg_ir::identity_key!(".slot-"))
-                    .then(*index),
-            )
-        })
-        .collect::<Vec<cadmpeg_ir::ids::VertexId>>();
+    let mut free_vertex_ids = crate::curves::charged_vec(
+        ctx,
+        free_vertex_indices.len(),
+        "Rhino staged Brep free vertex IDs",
+    )?;
+    free_vertex_ids.extend(free_vertex_indices.iter().map(|index| {
+        cadmpeg_ir::ids::VertexId::compose(
+            &cadmpeg_ir::identity_namespace!("rhino", "object", "vertex"),
+            key.clone()
+                .then(cadmpeg_ir::identity_key!(".slot-"))
+                .then(*index),
+        )
+    }));
     if grouping.fallback {
         staged.warnings.push(
             "Brep 3.3 region topology was not representable; incidence-derived shells used"
                 .to_string(),
         );
     }
-    let mut face_ids = Vec::with_capacity(raw.faces.len());
-    let mut pending_faces = Vec::with_capacity(raw.faces.len());
+    let mut face_ids =
+        crate::curves::charged_vec(ctx, raw.faces.len(), "Rhino staged Brep face IDs")?;
+    let mut pending_faces =
+        crate::curves::charged_vec(ctx, raw.faces.len(), "Rhino staged Brep pending faces")?;
+    crate::curves::reserve_collection(
+        ctx,
+        &mut staged.draft.model_mut().faces,
+        raw.faces.len(),
+        "Rhino staged Brep faces",
+    )?;
     for (index, face) in raw.faces.iter().enumerate() {
         let surface = surfaces
             .get(&resolved.faces[index].surface)
@@ -4412,8 +4443,28 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         ));
         face_ids.push(id);
     }
-    let mut face_loop_ids: BTreeMap<usize, Vec<cadmpeg_ir::ids::LoopId>> = BTreeMap::new();
-    let mut synthetic_edges = BTreeMap::new();
+    let mut face_loop_ids = ctx.alloc_filled(
+        raw.faces.len(),
+        Vec::<cadmpeg_ir::ids::LoopId>::new(),
+        "Rhino staged Brep face loop lists",
+    )?;
+    let mut coedge_positions = ctx.alloc_filled(
+        raw.trims.len(),
+        None::<usize>,
+        "Rhino staged Brep coedge positions",
+    )?;
+    crate::curves::reserve_collection(
+        ctx,
+        &mut staged.draft.model_mut().loops,
+        resolved.loops.len(),
+        "Rhino staged Brep loops",
+    )?;
+    crate::curves::reserve_collection(
+        ctx,
+        &mut staged.draft.model_mut().coedges,
+        raw.trims.len(),
+        "Rhino staged Brep coedges",
+    )?;
     for (index, loop_record) in resolved.loops.iter().enumerate() {
         let id = cadmpeg_ir::ids::LoopId::compose(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "loop"),
@@ -4422,7 +4473,11 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                 .then(index),
         );
         let face_id = face_ids[loop_record.face].clone();
-        let mut coedges = Vec::with_capacity(loop_record.trims.len());
+        let mut coedges = crate::curves::charged_vec(
+            ctx,
+            loop_record.trims.len(),
+            "Rhino staged Brep loop coedges",
+        )?;
         for trim_index in &loop_record.trims {
             let trim = &raw.trims[*trim_index];
             let trim_refs = &resolved.trims[*trim_index];
@@ -4443,7 +4498,13 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                         .then(cadmpeg_ir::identity_key!(".singular-"))
                         .then(*trim_index),
                 );
-                if !synthetic_edges.contains_key(trim_index) {
+                if coedge_positions[*trim_index].is_none() {
+                    crate::curves::reserve_collection(
+                        ctx,
+                        &mut staged.draft.model_mut().edges,
+                        1,
+                        "Rhino staged Brep singular edges",
+                    )?;
                     staged.draft.model_mut().edges.push(Edge {
                         id: synthetic_id.clone(),
                         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
@@ -4451,7 +4512,6 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                         end: vertex_ids[trim_refs.vertices[0]].clone(),
                         tolerance: scaled_tolerance(trim_refs.tolerances[1], scale)?,
                     });
-                    synthetic_edges.insert(*trim_index, synthetic_id.clone());
                 }
                 synthetic_id
             };
@@ -4460,6 +4520,19 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             } else {
                 c2.get(trim_index).cloned()
             };
+            coedge_positions[*trim_index] = Some(staged.draft.model().coedges.len());
+            let mut pcurves = crate::curves::charged_vec(
+                ctx,
+                usize::from(pcurve.is_some()),
+                "Rhino staged Brep coedge pcurves",
+            )?;
+            if let Some(pcurve) = pcurve {
+                pcurves.push(cadmpeg_ir::topology::PcurveUse {
+                    pcurve,
+                    isoparametric: None,
+                    parameter_range: None,
+                });
+            }
             staged.draft.model_mut().coedges.push(Coedge {
                 id: coedge_id.clone(),
                 owner_loop: id.clone(),
@@ -4471,14 +4544,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                         .edge
                         .is_some_and(|edge| raw.edges[edge].proxy_reversed),
                 ),
-                pcurves: pcurve
-                    .into_iter()
-                    .map(|pcurve| cadmpeg_ir::topology::PcurveUse {
-                        pcurve,
-                        isoparametric: None,
-                        parameter_range: None,
-                    })
-                    .collect(),
+                pcurves,
                 use_curve: None,
             });
             coedges.push(coedge_id);
@@ -4492,7 +4558,13 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                 })?,
             ),
         });
-        face_loop_ids.entry(loop_record.face).or_default().push(id);
+        crate::curves::reserve_collection(
+            ctx,
+            &mut face_loop_ids[loop_record.face],
+            1,
+            "Rhino staged Brep face loops",
+        )?;
+        face_loop_ids[loop_record.face].push(id);
     }
     for (face_index, (id, shell, surface, sense, color)) in pending_faces.into_iter().enumerate() {
         staged.draft.model_mut().faces.push(Face {
@@ -4500,41 +4572,27 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             shell,
             surface,
             sense,
-            loops: cadmpeg_ir::topology::FaceLoops::unspecified(
-                face_loop_ids.remove(&face_index).unwrap_or_default(),
-            ),
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(std::mem::take(
+                &mut face_loop_ids[face_index],
+            )),
             name: None,
             color,
             tolerance: None,
         });
     }
-    let coedge_positions: BTreeMap<cadmpeg_ir::ids::CoedgeId, usize> = staged
-        .draft
-        .model()
-        .coedges
-        .iter()
-        .enumerate()
-        .map(|(index, coedge)| (coedge.id.clone(), index))
-        .collect();
     for edge_index in 0..resolved.edges.len() {
-        let uses: Vec<_> = resolved.edges[edge_index]
-            .trims
-            .iter()
-            .map(|trim| {
-                cadmpeg_ir::ids::CoedgeId::compose(
-                    &cadmpeg_ir::identity_namespace!("rhino", "object", "coedge"),
-                    key.clone()
-                        .then(cadmpeg_ir::identity_key!(".slot-"))
-                        .then(*trim),
-                )
-            })
-            .collect::<Vec<cadmpeg_ir::ids::CoedgeId>>();
+        let uses = &resolved.edges[edge_index].trims;
         if uses.is_empty() {
             continue;
         }
-        for (offset, id) in uses.iter().enumerate() {
-            let next = uses[(offset + 1) % uses.len()].clone();
-            let Some(&position) = coedge_positions.get(id) else {
+        for (offset, trim_index) in uses.iter().enumerate() {
+            let next = cadmpeg_ir::ids::CoedgeId::compose(
+                &cadmpeg_ir::identity_namespace!("rhino", "object", "coedge"),
+                key.clone()
+                    .then(cadmpeg_ir::identity_key!(".slot-"))
+                    .then(uses[(offset + 1) % uses.len()]),
+            );
+            let Some(position) = coedge_positions[*trim_index] else {
                 return Err(crate::curves::GeometryError::unpositioned(
                     "Brep coedge position is missing",
                 ));
@@ -4542,8 +4600,13 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             staged.draft.model_mut().coedges[position].radial_next = next;
         }
     }
-    let mut regions = Vec::new();
-    let mut region_shell_ids: BTreeMap<usize, Vec<cadmpeg_ir::ids::ShellId>> = BTreeMap::new();
+    let mut regions: Vec<Region> = Vec::new();
+    crate::curves::reserve_collection(
+        ctx,
+        &mut staged.draft.model_mut().shells,
+        grouping.shells.len(),
+        "Rhino staged Brep shells",
+    )?;
     for (component, shell) in grouping.shells.iter().enumerate() {
         let region_label = shell.region;
         let region_id = cadmpeg_ir::ids::RegionId::compose(
@@ -4558,61 +4621,67 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                 .then(cadmpeg_ir::identity_key!(".component-"))
                 .then(component),
         );
-        region_shell_ids
-            .entry(region_label)
-            .or_default()
-            .push(shell_id.clone());
+        let mut shell_faces =
+            crate::curves::charged_vec(ctx, shell.faces.len(), "Rhino staged Brep shell faces")?;
+        shell_faces.extend(shell.faces.iter().map(|index| face_ids[*index].clone()));
         staged.draft.model_mut().shells.push(
             Shell::new(
-                shell_id,
+                shell_id.clone(),
                 region_id.clone(),
-                shell
-                    .faces
-                    .iter()
-                    .map(|index| face_ids[*index].clone())
-                    .collect(),
+                shell_faces,
                 Vec::new(),
                 if component == 0 {
-                    free_vertex_ids.clone()
+                    std::mem::take(&mut free_vertex_ids)
                 } else {
                     Vec::new()
                 },
             )
             .map_err(|message| crate::curves::GeometryError::unpositioned(message.to_string()))?,
         );
-        if !regions.iter().any(|region: &Region| region.id == region_id) {
+        if let Some(region) = regions.iter_mut().find(|region| region.id == region_id) {
+            crate::curves::reserve_collection(
+                ctx,
+                &mut region.shells,
+                1,
+                "Rhino staged Brep region shells",
+            )?;
+            region.shells.push(shell_id);
+        } else {
+            crate::curves::reserve_collection(ctx, &mut regions, 1, "Rhino staged Brep regions")?;
+            let mut shell_ids =
+                crate::curves::charged_vec(ctx, 1, "Rhino staged Brep region shells")?;
+            shell_ids.push(shell_id);
             regions.push(Region {
                 id: region_id,
                 body: body_id.clone(),
-                shells: Vec::new(),
+                shells: shell_ids,
             });
         }
     }
-    for (label, shell_ids) in region_shell_ids {
-        if let Some(region) = regions.iter_mut().find(|region| {
-            region.id
-                == cadmpeg_ir::ids::RegionId::compose(
-                    &cadmpeg_ir::identity_namespace!("rhino", "object", "region"),
-                    key.clone()
-                        .then(cadmpeg_ir::identity_key!(".slot-"))
-                        .then(label),
-                )
-        }) {
-            region.shells = shell_ids;
-        }
-    }
     staged.draft.model_mut().regions = regions;
-    let body_regions = staged
-        .draft
-        .model()
-        .regions
-        .iter()
-        .map(|region| region.id.clone())
-        .collect();
+    let mut body_regions = crate::curves::charged_vec(
+        ctx,
+        staged.draft.model().regions.len(),
+        "Rhino staged Brep body regions",
+    )?;
+    body_regions.extend(
+        staged
+            .draft
+            .model()
+            .regions
+            .iter()
+            .map(|region| region.id.clone()),
+    );
     let (body_kind, body_kind_substituted) = brep.body_kind(writer_version);
     if let Some(loss) = body_kind_substituted {
         staged.typed_losses.push(loss);
     }
+    crate::curves::reserve_collection(
+        ctx,
+        &mut staged.draft.model_mut().bodies,
+        1,
+        "Rhino staged Brep bodies",
+    )?;
     staged.draft.model_mut().bodies.push(Body {
         id: body_id.clone(),
         kind: match body_kind {
@@ -4625,6 +4694,12 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         color: association.color,
         visible: association.visible,
     });
+    crate::curves::reserve_collection(
+        ctx,
+        &mut staged.links,
+        staged.draft.model().curves.len() + staged.draft.model().surfaces.len() + 1,
+        "Rhino staged Brep links",
+    )?;
     staged.links.extend(
         staged
             .draft
@@ -4644,20 +4719,33 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     staged.links.push(body_id.to_string());
     let derived_ids = {
         let model = staged.draft.model();
-        model
-            .bodies
-            .iter()
-            .map(|value| value.id.to_string())
-            .chain(model.regions.iter().map(|value| value.id.to_string()))
-            .chain(model.shells.iter().map(|value| value.id.to_string()))
-            .chain(model.faces.iter().map(|value| value.id.to_string()))
-            .chain(model.loops.iter().map(|value| value.id.to_string()))
-            .chain(model.coedges.iter().map(|value| value.id.to_string()))
-            .chain(model.edges.iter().map(|value| value.id.to_string()))
-            .chain(model.vertices.iter().map(|value| value.id.to_string()))
-            .chain(model.points.iter().map(|value| value.id.to_string()))
-            .chain(model.pcurves.iter().map(|value| value.id.to_string()))
-            .collect::<Vec<_>>()
+        let count = model.bodies.len()
+            + model.regions.len()
+            + model.shells.len()
+            + model.faces.len()
+            + model.loops.len()
+            + model.coedges.len()
+            + model.edges.len()
+            + model.vertices.len()
+            + model.points.len()
+            + model.pcurves.len();
+        let mut ids = crate::curves::charged_vec(ctx, count, "Rhino staged Brep derived IDs")?;
+        ids.extend(
+            model
+                .bodies
+                .iter()
+                .map(|value| value.id.to_string())
+                .chain(model.regions.iter().map(|value| value.id.to_string()))
+                .chain(model.shells.iter().map(|value| value.id.to_string()))
+                .chain(model.faces.iter().map(|value| value.id.to_string()))
+                .chain(model.loops.iter().map(|value| value.id.to_string()))
+                .chain(model.coedges.iter().map(|value| value.id.to_string()))
+                .chain(model.edges.iter().map(|value| value.id.to_string()))
+                .chain(model.vertices.iter().map(|value| value.id.to_string()))
+                .chain(model.points.iter().map(|value| value.id.to_string()))
+                .chain(model.pcurves.iter().map(|value| value.id.to_string())),
+        );
+        ids
     };
     for id in derived_ids {
         staged.draft.exactness(id, Exactness::Derived);
