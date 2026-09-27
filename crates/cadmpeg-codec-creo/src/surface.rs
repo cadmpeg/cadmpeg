@@ -3168,7 +3168,10 @@ fn named_surface_value(
     if let Some(reason) = refusal.reason() {
         refusals.note(record, &format_args!("named field `{name}` {reason}"));
     }
-    Ok(SurfaceNamedValue::Opaque(body.to_vec()))
+    Ok(SurfaceNamedValue::Opaque(ctx.copy_retained(
+        body,
+        "creo opaque surface parameter bytes",
+    )?))
 }
 
 fn parsed_named_surface_value(
@@ -3198,7 +3201,10 @@ fn parsed_named_surface_value(
             | "data_type"
     );
     if scalar_field && body == [0x18] {
-        return Some(Ok(SurfaceNamedValue::ScalarSequence(vec![0.0])));
+        return Some(
+            ctx.alloc_filled(1, 0.0, "creo zero surface scalar")
+                .map(SurfaceNamedValue::ScalarSequence),
+        );
     }
     if name == "flip" {
         if body.first() == Some(&0xf1) {
@@ -3233,8 +3239,20 @@ fn parsed_named_surface_value(
                 if let Ok((start_id, next)) = psb::reference_id(body, cursor + 1) {
                     if body.get(next) == Some(&psb::token::ARRAY_CLOSE) {
                         if let Some(end_id) = start_id.checked_add(count) {
+                            let mut references = Vec::new();
+                            let Some(count) = usize::try_from(count).ok() else {
+                                return None;
+                            };
+                            if let Err(error) = ctx.try_reserve_items(
+                                &mut references,
+                                count,
+                                "creo contiguous surface references",
+                            ) {
+                                return Some(Err(error));
+                            }
+                            references.extend(start_id..end_id);
                             return Some(Ok(SurfaceNamedValue::ContiguousEntityReferences(
-                                (start_id..end_id).collect(),
+                                references,
                             )));
                         }
                     }
@@ -3266,6 +3284,11 @@ fn parsed_named_surface_value(
                 let (value, next) = compact_int(body, cursor);
                 if next == cursor {
                     break;
+                }
+                if let Err(error) =
+                    ctx.try_reserve_items(&mut values, 1, "creo compact surface integers")
+                {
+                    return Some(Err(error));
                 }
                 values.push(value);
                 cursor = next;
