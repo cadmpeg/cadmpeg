@@ -20,6 +20,65 @@ use super::{
     ProjectionOutcome, WireProjectionOutcome,
 };
 
+fn assert_geometry_collection_refusal(bytes: &[u8], operation: &str) {
+    use cadmpeg_core::decode::DecodePolicy;
+    use cadmpeg_ir::codec::DecodeFailure;
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        match crate::IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                if limit.operation == operation { return; }
+                cap = limit.used.checked_add(limit.additional).unwrap();
+            }
+            other => panic!("expected geometry collection refusal at {operation}: {other:?}"),
+        }
+    }
+    panic!("geometry collection refusal was not reached: {operation}");
+}
+
+#[test]
+fn nurbs_projection_refuses_source_lanes_neutral_slots_and_decoded_node() {
+    let bytes = crate::test_support::test_curves_and_surfaces::rational_nurbs_curve_file();
+    for operation in [
+        "iges NURBS source knots",
+        "iges NURBS source weights",
+        "iges NURBS positive weights",
+        "iges NURBS source poles",
+        "iges NURBS source range",
+        "iges NURBS placed controls",
+        "iges NURBS plane controls",
+        "iges NURBS neutral weights",
+        "iges NURBS neutral point slots",
+        "iges NURBS neutral vertex slots",
+        "iges NURBS neutral curve slots",
+        "iges NURBS neutral edge slots",
+        "iges NURBS wire edge slots",
+        "iges NURBS decoded sequences",
+    ] {
+        assert_geometry_collection_refusal(&bytes, operation);
+    }
+    crate::IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+}
+
+#[test]
+fn circular_arc_projection_refuses_neutral_slots_and_decoded_node() {
+    let bytes = crate::test_support::test_curves_and_surfaces::circular_arc_file();
+    for operation in [
+        "iges circle neutral point slots",
+        "iges circle neutral vertex slots",
+        "iges circle neutral curve slots",
+        "iges circle neutral edge slots",
+        "iges circle wire edge slots",
+        "iges circle decoded sequences",
+    ] {
+        assert_geometry_collection_refusal(&bytes, operation);
+    }
+    crate::IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+}
+
 #[test]
 fn projector_merges_refuse_decoded_loss_and_wire_growth() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
