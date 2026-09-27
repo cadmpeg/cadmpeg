@@ -4,6 +4,7 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use std::collections::BTreeSet;
+use std::collections::HashSet;
 
 fn set_refuses(operation: &'static str) {
     let arena = DecodeArena::new();
@@ -69,6 +70,37 @@ fn vector_refuses(operation: &'static str) {
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == operation
     ));
+}
+
+fn style_target_refuses(operation: &str, depth_limit: bool) {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=GEOMETRIC_SET('',(#2));#2=CARTESIAN_POINT('',(0.,0.,0.));ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("style set exchange");
+    let refused = (0..=8).any(|limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        if depth_limit {
+            policy.limits.max_recursion_depth = limit;
+        } else {
+            policy.limits.max_collection_items = limit;
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+            .expect("root fits style target policy");
+        matches!(
+            super::super::expand_style_targets(
+                1,
+                &exchange,
+                &mut HashSet::new(),
+                &mut BTreeSet::new(),
+                0,
+                128,
+                Some(&ctx),
+            ),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.operation == operation
+                    && refusal.dimension == if depth_limit { ResourceDimension::RecursionDepth } else { ResourceDimension::CollectionItems }
+        )
+    });
+    assert!(refused, "no refusal for {operation}");
 }
 
 #[test]
@@ -169,4 +201,35 @@ fn presentation_style_references_refuse_collection_limit() {
 #[test]
 fn presentation_context_style_ids_refuse_collection_limit() {
     ordered_set_refuses("step_presentation_context_style_ids");
+}
+
+#[test]
+fn presentation_typed_claims_refuse_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    let result = super::super::claim_presentation_typed(&mut HashSet::new(), 1, Some(&ctx));
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_presentation_typed_claims"
+    ));
+}
+
+#[test]
+fn presentation_style_target_active_refuses_collection_limit() {
+    style_target_refuses("step_presentation_style_target_active", false);
+}
+
+#[test]
+fn presentation_style_target_items_refuse_collection_limit() {
+    style_target_refuses("step_presentation_style_target_items", false);
+}
+
+#[test]
+fn presentation_style_target_walk_refuses_depth_limit() {
+    style_target_refuses("step_presentation_style_target_walk", true);
 }
