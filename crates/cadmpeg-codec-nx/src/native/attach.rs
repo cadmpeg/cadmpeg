@@ -8,7 +8,7 @@ use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::{alloc_filled, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
@@ -1931,7 +1931,7 @@ fn attach_feature_operations(
         counterbore_operations(simple_hole_templates, &operation_positions).unwrap_or_default();
     let mut counterbore_dimensions = BTreeMap::new();
     if let Some(projection) =
-        counterbore_body_projection(Some(ctx), ir, &counterbore_operations, &hole_outputs)?
+        counterbore_body_projection(ctx, ir, &counterbore_operations, &hole_outputs)?
     {
         hole_outputs.extend(projection.outputs);
         simple_hole_diameters.extend(projection.diameters);
@@ -1949,7 +1949,7 @@ fn attach_feature_operations(
     let simple_hole_placements =
         hole_axis_placements_for_operations(ir, &simple_hole_operations, &hole_outputs);
     let counterbore_hole_placements = counterbore_axis_placements_for_operations(
-        Some(ctx),
+        ctx,
         ir,
         &counterbore_operations,
         &hole_outputs,
@@ -1957,7 +1957,7 @@ fn attach_feature_operations(
     let blind_hole_placements =
         blind_hole_axis_placements_for_operations(ir, &blind_hole_operations, &hole_outputs);
     let simple_hole_chamfers =
-        simple_hole_chamfers(Some(ctx), ir, simple_hole_templates, &hole_outputs)?;
+        simple_hole_chamfers(ctx, ir, simple_hole_templates, &hole_outputs)?;
     let hole_packages = hole_package_projection(
         ir,
         simple_hole_templates,
@@ -7105,7 +7105,7 @@ fn hole_body_projection(
 }
 
 fn counterbore_body_projection(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
@@ -7226,7 +7226,7 @@ fn hole_axis_placements_for_operations(
 }
 
 fn counterbore_axis_placements_for_operations(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
@@ -7691,7 +7691,7 @@ fn plane_annulus_witness(
 }
 
 fn counterbore_cylinders(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     body_faces: &[&Face],
 ) -> Result<Option<Vec<CounterboreCylinderWitness>>, CodecError> {
@@ -7703,18 +7703,11 @@ fn counterbore_cylinders(
     }
     let linear_tolerance = ir.tolerances.linear.get();
     let angular_tolerance = ir.tolerances.angular.get();
-    let mut candidates = match ctx {
-        Some(ctx) => ctx.alloc_filled(
-            cylinders.len(),
-            Vec::<(usize, CounterboreCylinderWitness)>::new(),
-            "nx counterbore cylinder candidates",
-        )?,
-        None => alloc_filled(
-            cylinders.len(),
-            Vec::<(usize, CounterboreCylinderWitness)>::new(),
-            "nx counterbore cylinder candidates",
-        )?,
-    };
+    let mut candidates = ctx.alloc_filled(
+        cylinders.len(),
+        Vec::<(usize, CounterboreCylinderWitness)>::new(),
+        "nx counterbore cylinder candidates",
+    )?;
     for (first_index, first) in cylinders.iter().enumerate() {
         for (second_index, second) in cylinders.iter().enumerate().skip(first_index + 1) {
             let (small, large) = if first.radius < second.radius {
@@ -7770,9 +7763,7 @@ fn counterbore_cylinders(
                 counterbore_radius: large.radius,
                 depth,
             };
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(2, "nx counterbore candidate pair")?;
-            }
+            ctx.charge_collection_items(2, "nx counterbore candidate pair")?;
             reserve_attach_vec(
                 ctx,
                 &mut candidates[first_index],
@@ -7792,12 +7783,10 @@ fn counterbore_cylinders(
     if candidates.iter().any(|candidates| candidates.len() != 1) {
         return Ok(None);
     }
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(cylinders.len() / 2),
-            "nx counterbore cylinder witnesses",
-        )?;
-    }
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(cylinders.len() / 2),
+        "nx counterbore cylinder witnesses",
+    )?;
     let mut witnesses = Vec::new();
     reserve_attach_vec(
         ctx,
@@ -7805,18 +7794,11 @@ fn counterbore_cylinders(
         cylinders.len() / 2,
         "nx counterbore cylinder witnesses",
     )?;
-    let mut used = match ctx {
-        Some(ctx) => ctx.alloc_filled(
-            cylinders.len(),
-            false,
-            "nx counterbore cylinder assignments",
-        )?,
-        None => alloc_filled(
-            cylinders.len(),
-            false,
-            "nx counterbore cylinder assignments",
-        )?,
-    };
+    let mut used = ctx.alloc_filled(
+        cylinders.len(),
+        false,
+        "nx counterbore cylinder assignments",
+    )?;
     for first_index in 0..cylinders.len() {
         if used[first_index] {
             continue;
@@ -7836,16 +7818,15 @@ fn counterbore_cylinders(
 }
 
 fn reserve_attach_vec<T>(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     values: &mut Vec<T>,
     additional: usize,
     operation: &'static str,
 ) -> Result<(), CodecError> {
     let count = cadmpeg_core::decode::u64_from_index(additional);
-    values.try_reserve_exact(additional).map_err(|_| match ctx {
-        Some(ctx) => ctx.refuse_codec_limit(operation, 0, count),
-        None => cadmpeg_core::decode::refuse_local_limit(operation, count, count),
-    })
+    values
+        .try_reserve_exact(additional)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))
 }
 
 /// Identify one blind bore from its unique planar termination. The cylinder
@@ -8017,7 +7998,7 @@ fn through_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<(Point
 /// through-hole bore has exactly two coaxial conical faces and every cone is
 /// bounded by the bore circle and one equal larger circle.
 fn simple_hole_chamfers(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
     outputs: &BTreeMap<String, Vec<BodyId>>,
@@ -8097,12 +8078,8 @@ fn simple_hole_chamfers(
         {
             return Ok(BTreeMap::new());
         }
-        let mut cone_counts = match ctx {
-            Some(ctx) => {
-                ctx.alloc_filled(bores.len(), 0usize, "nx simple-hole chamfer cone counts")?
-            }
-            None => alloc_filled(bores.len(), 0usize, "nx simple-hole chamfer cone counts")?,
-        };
+        let mut cone_counts =
+            ctx.alloc_filled(bores.len(), 0usize, "nx simple-hole chamfer cone counts")?;
         let mut outer_radii = Vec::new();
         let mut included_angles = Vec::new();
         for face in body_faces
@@ -8120,12 +8097,10 @@ fn simple_hole_chamfers(
             if half_angle <= 0.0 || half_angle >= std::f64::consts::FRAC_PI_2 {
                 return Ok(BTreeMap::new());
             }
-            if let Some(ctx) = ctx {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(bores.len()),
-                    "nx chamfer bore matching",
-                )?;
-            }
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(bores.len()),
+                "nx chamfer bore matching",
+            )?;
             let mut matching_bore = None;
             let mut multiple_bores = false;
             for (ordinal, (bore_origin, bore_axis, _)) in bores.iter().enumerate() {
@@ -8180,9 +8155,7 @@ fn simple_hole_chamfers(
             if inner.to_bits() != bore_radius.to_bits() || outer <= inner {
                 return Ok(BTreeMap::new());
             }
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(2, "nx chamfer cone geometry")?;
-            }
+            ctx.charge_collection_items(2, "nx chamfer cone geometry")?;
             reserve_attach_vec(ctx, &mut outer_radii, 1, "nx chamfer outer radii")?;
             reserve_attach_vec(ctx, &mut included_angles, 1, "nx chamfer included angles")?;
             outer_radii.push(outer);
