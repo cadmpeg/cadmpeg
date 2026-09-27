@@ -383,19 +383,48 @@ impl SldprtLossCode {
 /// own refusal. The B-rep model carries the absence of one carrier, so the
 /// refusal is a loss and the decode continues.
 #[must_use]
-pub(crate) fn spline_lane_refusal(record: &str) -> LossNote {
-    SldprtLossCode::GeometrySplineLanesUnpaired.note(format!(
-        "{record}; the carrier is not emitted and the entities that reference it fall back \
-         to an untyped support."
-    ))
+pub(crate) fn spline_lane_refusal(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    record: impl std::fmt::Display,
+) -> Result<LossNote, cadmpeg_core::CodecError> {
+    let message = crate::lane_refusal::format_retained(
+        ctx,
+        format_args!(
+            "{record}; the carrier is not emitted and the entities that reference it fall back \
+             to an untyped support."
+        ),
+        "record SLDPRT spline lane loss",
+    )?;
+    Ok(SldprtLossCode::GeometrySplineLanesUnpaired.note(message))
 }
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::report::loss::{LossTaxonomy, StrictConsequence};
 
     use super::SldprtLossCode;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn spline_lane_loss_refuses_retained_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 5;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root fits policy");
+        let Err(CodecError::ResourceLimit(limit)) = super::spline_lane_refusal(
+            &ctx, "carrier attribute 9",
+        ) else { panic!("input-sized loss text must use retained budget") };
+        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("empty root fits service policy");
+        let note = super::spline_lane_refusal(&ctx, "carrier attribute 9")
+            .expect("service budget");
+        assert_eq!(note.message, "carrier attribute 9; the carrier is not emitted and the entities that reference it fall back to an untyped support.");
+    }
 
     #[test]
     fn all_covers_every_declared_variant() {
