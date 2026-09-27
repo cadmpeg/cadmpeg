@@ -66,13 +66,21 @@ fn circle(radius: f64, z: f64, distortion: f64) -> NurbsCurve {
 }
 #[test]
 fn numerical_followup_circle_recognition_preserves_relative_shape() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for radius in [1e-200, 1e-8, 1.0, 1e150] {
-        assert!(rational_four_arc_circle(&circle(radius, 0., 0.)).is_some());
-        assert!(rational_four_arc_circle(&circle(radius, 0., 0.004 * radius)).is_none());
+        assert!(rational_four_arc_circle(&resource_ctx, &circle(radius, 0., 0.)).is_some());
+        assert!(rational_four_arc_circle(&resource_ctx, &circle(radius, 0., 0.004 * radius)).is_none());
     }
 }
 #[test]
 fn numerical_followup_rolling_ball_requires_tangent_supports() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for radius in [1e-8, 1.0] {
         let axis = Vector3::new(0., 0., 1.);
         let reference = Vector3::new(1., 0., 0.);
@@ -91,8 +99,7 @@ fn numerical_followup_rolling_ball_requires_tangent_supports() {
                     .unwrap(),
                 ))),
             ];
-            let result = analytic_rolling_ball_surface(
-                &supports,
+            let result = analytic_rolling_ball_surface(&resource_ctx, &supports,
                 None,
                 &circle(3. * radius, radius, 0.),
                 radius,

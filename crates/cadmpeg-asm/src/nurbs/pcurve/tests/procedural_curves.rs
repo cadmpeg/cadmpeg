@@ -65,6 +65,10 @@ fn extrusion_layout_walks_modern_and_legacy_names_at_both_widths() {
 
 #[test]
 fn extrusion_definition_decodes_without_a_solved_surface_cache() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "cyl_spl_sur");
@@ -75,11 +79,10 @@ fn extrusion_definition_decodes_without_a_solved_surface_cache() {
         bytes.extend_from_slice(&curve_block(int_width));
         bytes.push(0x10);
 
-        let decoded = crate::nurbs::blend::cyl_spl_sur(
-            &lex_test_span(&bytes, int_width).expect("valid single-record byte fixture"),
+        let decoded = crate::nurbs::blend::cyl_spl_sur(&resource_ctx,             &lex_test_span(&bytes, int_width).expect("valid single-record byte fixture"),
             None,
         )
-        .unwrap_or_else(|| panic!("cache-less extrusion at width {int_width}"));
+        .transpose().expect("resource allocation").unwrap_or_else(|| panic!("cache-less extrusion at width {int_width}"));
         assert_eq!(decoded.legacy_cache_fit_tolerance(), None);
         let (definition, _) = decoded.into_parts();
         let DecodedProceduralSurfaceDefinition::Extrusion {

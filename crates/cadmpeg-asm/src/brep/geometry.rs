@@ -33,6 +33,15 @@ const EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E10: f64 = 1.0e-10;
 const EPS_GEOMETRY_REDUCE_HOMOGENEOUS_BEZIER_TO_QUADRATIC_E10: f64 = 1.0e-10;
 const EPS_GEOMETRY_CLAMP_EDGE_RANGES_TO_CARRIER_DOMAINS_E9: f64 = 1.0e-9;
 
+macro_rules! propagate_resource {
+    ($result:expr) => {
+        match $result {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        }
+    };
+}
+
 /// Ordered typed values pulled from a carrier record's payload.
 pub(in crate::brep) struct Carrier {
     pub(super) positions: Vec<[f64; 3]>,
@@ -560,27 +569,29 @@ pub(super) fn procedural_surface_definition_is_exact_carrier(
 }
 
 pub(super) fn analytic_procedural_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &DecodedProceduralSurfaceDefinition,
-) -> Option<SurfaceGeometry> {
+) -> Option<Result<SurfaceGeometry, cadmpeg_core::CodecError>> {
     match definition {
         DecodedProceduralSurfaceDefinition::Extrusion {
             directrix,
             direction,
             ..
         } => {
-            let (center, normal, ref_direction, radius) = rational_four_arc_circle(directrix)?;
+            let (center, normal, ref_direction, radius) =
+                propagate_resource!(rational_four_arc_circle(ctx, directrix)?);
             let axis = UnitVector3::normalized(*direction)?;
             if 1.0 - axis.as_raw().dot(normal).abs() > EPS_GEOMETRY_ANALYTIC_PROCEDURAL_SURFACE_E10
             {
                 return None;
             }
-            Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            Some(Ok(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 CylinderSurface::new(
                     FinitePoint3::new(center)?,
                     OrthonormalFrame3::from_units(axis, UnitVector3::new(ref_direction)?)?,
                     PositiveLength::new(radius)?,
                 ),
-            )))
+            ))))
         }
         DecodedProceduralSurfaceDefinition::Blend {
             supports,
@@ -589,18 +600,19 @@ pub(super) fn analytic_procedural_surface(
             cross_section: cadmpeg_ir::geometry::BlendCrossSection::Circular,
             native,
         } if signed_radius == end_offset => {
-            analytic_rolling_ball_surface(supports, native.as_deref(), spine, *signed_radius)
+            analytic_rolling_ball_surface(ctx, supports, native.as_deref(), spine, *signed_radius)
         }
         _ => None,
     }
 }
 
 fn analytic_rolling_ball_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     supports: &[Option<SurfaceGeometry>; 2],
     native: Option<&EmbeddedRollingBall>,
     spine: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     signed_radius: f64,
-) -> Option<SurfaceGeometry> {
+) -> Option<Result<SurfaceGeometry, cadmpeg_core::CodecError>> {
     let radius = signed_radius.abs();
     if !radius.is_finite() || radius <= f64::EPSILON {
         return None;
@@ -653,7 +665,7 @@ fn analytic_rolling_ball_surface(
                 return None;
             }
         }
-        return Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        return Some(Ok(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             CylinderSurface::new(
                 FinitePoint3::new(origin)?,
                 OrthonormalFrame3::from_units(
@@ -664,7 +676,7 @@ fn analytic_rolling_ball_surface(
                 )?,
                 PositiveLength::new(radius)?,
             ),
-        )));
+        ))));
     }
 
     let (plane_origin, plane_normal, cylinder_origin, cylinder_axis, cylinder_radius) =
@@ -707,7 +719,8 @@ fn analytic_rolling_ball_surface(
                 return None;
             }
         };
-    let (center, axis, ref_direction, major_radius) = rational_four_arc_circle(spine)?;
+    let (center, axis, ref_direction, major_radius) =
+        propagate_resource!(rational_four_arc_circle(ctx, spine)?);
     let scale = major_radius.max(radius).max(cylinder_radius);
     let tolerance = EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10 * scale;
     let center_offset = point_vector(cylinder_origin, center);
@@ -721,9 +734,9 @@ fn analytic_rolling_ball_surface(
     {
         return None;
     }
-    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+    Some(Ok(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
         TorusSurface::try_new(center, axis, ref_direction, major_radius, signed_radius).ok()?,
-    )))
+    ))))
 }
 
 fn linear_nurbs_spine(
@@ -769,11 +782,14 @@ fn linear_nurbs_spine(
 }
 
 pub(super) fn rational_four_arc_circle(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
-) -> Option<(Point3, Vector3, Vector3, f64)> {
-    let weights = curve.weights()?;
+) -> Option<Result<(Point3, Vector3, Vector3, f64), cadmpeg_core::CodecError>> {
+    let cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } = curve.pole_rows() else {
+        return None;
+    };
     let degree = curve.degree() as usize;
-    if degree < 2 || curve.periodic() || curve.control_points().len() != 4 * degree + 1 {
+    if degree < 2 || curve.periodic() || points.len() != 4 * degree + 1 {
         return None;
     }
     let knot_tolerance = EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E12
@@ -804,30 +820,34 @@ pub(super) fn rational_four_arc_circle(
     {
         return None;
     }
-    let weight_scale = weights
+    let weight_scale = points
         .iter()
-        .map(|weight| weight.get().abs())
+        .map(|pole| pole.weight.get().abs())
         .fold(0.0, f64::max);
-    let homogeneous = curve
-        .control_points()
-        .iter()
-        .zip(weights)
-        .map(|(point, weight)| {
-            let weight = weight.get() / weight_scale;
-            let homogeneous = [point.x * weight, point.y * weight, point.z * weight, weight];
-            (weight.is_finite()
+    let mut homogeneous = propagate_resource!(crate::decode_alloc::counted_vec(
+        ctx,
+        points.len(),
+        "ASM rational four-arc homogeneous poles",
+    ));
+    for pole in points {
+            let point = pole.point;
+            let weight = pole.weight.get() / weight_scale;
+            let homogeneous_pole = [point.x * weight, point.y * weight, point.z * weight, weight];
+            if !(weight.is_finite()
                 && weight != 0.0
-                && homogeneous.iter().all(|value| value.is_finite()))
-            .then_some(homogeneous)
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let quadratics = (0..4)
-        .map(|span| {
-            reduce_homogeneous_bezier_to_quadratic(
-                homogeneous[span * degree..=span * degree + degree].to_vec(),
-            )
-        })
-        .collect::<Option<Vec<_>>>()?;
+                && homogeneous_pole.iter().all(|value| value.is_finite())) {
+                return None;
+            }
+            homogeneous.push(homogeneous_pole);
+    }
+    let mut quadratics = [None; 4];
+    for (span, quadratic) in quadratics.iter_mut().enumerate() {
+        *quadratic = Some(propagate_resource!(reduce_homogeneous_bezier_to_quadratic(
+            ctx,
+            &homogeneous[span * degree..=span * degree + degree],
+        )?));
+    }
+    let quadratics = [quadratics[0]?, quadratics[1]?, quadratics[2]?, quadratics[3]?];
     let base_weight = quadratics[0][0][3];
     let weight_scale = base_weight.abs();
     let weight_tolerance = EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E10 * weight_scale;
@@ -843,7 +863,6 @@ pub(super) fn rational_four_arc_circle(
         return None;
     }
     let quadratic_points = quadratics
-        .iter()
         .map(|span| {
             span.map(|point| {
                 Point3::new(
@@ -852,8 +871,7 @@ pub(super) fn rational_four_arc_circle(
                     point[2] / point[3],
                 )
             })
-        })
-        .collect::<Vec<_>>();
+        });
     let point_distance = |left: Point3, right: Point3| point_vector(left, right).norm();
     let scale = quadratic_points
         .iter()
@@ -904,18 +922,31 @@ pub(super) fn rational_four_arc_circle(
         }
         normal.get_or_insert(span_normal);
     }
-    Some((
+    Some(Ok((
         first_center,
         normal?,
         FiniteVector3::new(first_radial)?.unit_nonzero()?,
         radius,
-    ))
+    )))
 }
 
-fn reduce_homogeneous_bezier_to_quadratic(mut control: Vec<[f64; 4]>) -> Option<[[f64; 4]; 3]> {
+fn reduce_homogeneous_bezier_to_quadratic(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    input: &[[f64; 4]],
+) -> Option<Result<[[f64; 4]; 3], cadmpeg_core::CodecError>> {
+    let mut control = propagate_resource!(crate::decode_alloc::counted_vec(
+        ctx,
+        input.len(),
+        "ASM rational four-arc control copy",
+    ));
+    control.extend_from_slice(input);
     while control.len() > 3 {
         let degree = control.len() - 1;
-        let mut reduced = Vec::with_capacity(degree);
+        let mut reduced = propagate_resource!(crate::decode_alloc::counted_vec(
+            ctx,
+            degree,
+            "ASM rational four-arc degree reduction",
+        ));
         reduced.push(control[0]);
         for index in 1..degree {
             let alpha = index as f64 / degree as f64;
@@ -939,7 +970,7 @@ fn reduce_homogeneous_bezier_to_quadratic(mut control: Vec<[f64; 4]>) -> Option<
         }
         control = reduced;
     }
-    control.try_into().ok()
+    control.try_into().ok().map(Ok)
 }
 
 pub(super) fn point_vector(origin: Point3, point: Point3) -> Vector3 {
@@ -1170,6 +1201,25 @@ mod tests {
     mod numerical_ranges;
     use super::Point3;
     const SMALL_CURVED_SPINE_EXTENT: f64 = 1.0e-10;
+
+    #[test]
+    fn rational_circle_degree_reduction_refuses_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 6;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let poles = [[0.0, 0.0, 0.0, 1.0]; 4];
+        let error = super::reduce_homogeneous_bezier_to_quadratic(&ctx, &poles)
+            .expect("degree-four input")
+            .expect_err("control copy and degree reduction need seven items");
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected collection refusal: {error:?}");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    }
     #[test]
     fn numerical_seventh_analytic_spine_rejects_relative_curvature_at_small_scale() {
         for scale in [1.0, SMALL_CURVED_SPINE_EXTENT, 1.0e100] {
@@ -1193,6 +1243,10 @@ mod tests {
     }
     #[test]
     fn audit_regression_circle_recognition_ignores_knot_units() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
         for scale in [1.0, 1e-13] {
             let knots = [0., 0., 0., 1., 1., 2., 2., 3., 3., 4., 4., 4.]
@@ -1222,7 +1276,10 @@ mod tests {
                 })
                 .collect();
             let circle = NurbsCurve::from_lanes(2, knots, poles, Some(weights), false).unwrap();
-            let (_, _, _, radius) = super::rational_four_arc_circle(&circle).unwrap();
+            let (_, _, _, radius) = super::rational_four_arc_circle(&resource_ctx, &circle)
+                .transpose()
+                .expect("resource allocation")
+                .unwrap();
             assert!((radius - 1.0).abs() <= 8.0 * f64::EPSILON);
         }
     }

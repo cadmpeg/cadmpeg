@@ -136,6 +136,7 @@ fn revision_sum_solved_cache_remains_a_nurbs_face_carrier() {
             .expect("generated identities are valid");
             assert_eq!(out.stats.nurbs_surfaces, 1);
             crate::brep::emit::emit_carrier_records(
+                &asm_decode_ctx,
                 &mut out,
                 &records,
                 &mut carriers,
@@ -195,6 +196,7 @@ fn history_pcurve_use_has_no_invented_parameter_interval() {
     )
     .expect("history topology is within resource limits");
     super::super::emit::emit_coedges(
+        &asm_decode_ctx,
         &mut out,
         &records,
         &table,

@@ -6,8 +6,9 @@ use cadmpeg_test_support::edit;
 
 use super::emit::{emit_attributes, emit_edges};
 use super::geometry::{
-    analytic_procedural_surface, edge_pcurve_parameter_ranges, is_asm_stream_delimiter,
-    is_known_record_head, pcurve_ranges_on_domain, point_vector, rational_four_arc_circle,
+    analytic_procedural_surface as decode_analytic_procedural_surface,
+    edge_pcurve_parameter_ranges, is_asm_stream_delimiter, is_known_record_head,
+    pcurve_ranges_on_domain, point_vector, rational_four_arc_circle as decode_rational_four_arc_circle,
 };
 use super::records::{self, BodyNativeKey};
 use super::topology::{shell_faces, shell_wire_roots, subshell_ancestor_shells};
@@ -27,6 +28,42 @@ use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 
 const FORMAT: IdFormat = crate::asm_format!("f3d");
+
+fn analytic_procedural_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    definition: &nurbs::proc_surface::DecodedProceduralSurfaceDefinition,
+) -> Option<SurfaceGeometry> {
+    decode_analytic_procedural_surface(ctx, definition)
+        .transpose()
+        .expect("resource allocation")
+}
+
+fn rational_four_arc_circle(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
+) -> Option<(Point3, Vector3, Vector3, f64)> {
+    decode_rational_four_arc_circle(ctx, curve)
+        .transpose()
+        .expect("resource allocation")
+}
+
+#[test]
+fn rational_circle_homogeneous_poles_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 8;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = decode_rational_four_arc_circle(&ctx, &exact_circle_directrix())
+        .expect("valid circle")
+        .expect_err("nine poles exceed eight items");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+}
 
 #[test]
 fn subtype_definition_index_refuses_collection_limit_before_construction() {
@@ -117,6 +154,10 @@ fn exact_circle_directrix() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
 
 #[test]
 fn exact_circle_extrusion_reduces_to_cylinder_only_along_normal() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     let definition =
         |direction| nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Extrusion {
             directrix: exact_circle_directrix(),
@@ -126,7 +167,7 @@ fn exact_circle_extrusion_reduces_to_cylinder_only_along_normal() {
             revision_form: None,
         };
     let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))) =
-        analytic_procedural_surface(&definition(Vector3::new(0.0, 0.0, -8.0)))
+        analytic_procedural_surface(&resource_ctx, &definition(Vector3::new(0.0, 0.0, -8.0)))
     else {
         panic!("exact circle extrusion did not reduce")
     };
@@ -140,7 +181,7 @@ fn exact_circle_extrusion_reduces_to_cylinder_only_along_normal() {
     assert!(ref_direction.y.abs() < 1.0e-12);
     assert!(ref_direction.z.abs() < 1.0e-12);
     assert!((radius - 5.0).abs() < 1.0e-12);
-    assert!(analytic_procedural_surface(&definition(Vector3::new(1.0, 0.0, 8.0))).is_none());
+    assert!(analytic_procedural_surface(&resource_ctx, &definition(Vector3::new(1.0, 0.0, 8.0))).is_none());
     let mut approximate = exact_circle_directrix();
     approximate
         .edit_control_points({
@@ -154,7 +195,7 @@ fn exact_circle_extrusion_reduces_to_cylinder_only_along_normal() {
             }
         })
         .unwrap();
-    assert!(rational_four_arc_circle(&approximate).is_none());
+    assert!(rational_four_arc_circle(&resource_ctx, &approximate).is_none());
 }
 
 fn degree_elevated_circle() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
@@ -216,6 +257,10 @@ fn degree_elevated_circle() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
 
 #[test]
 fn exact_circle_recognition_is_projective_and_degree_invariant() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     let mut scaled = exact_circle_directrix();
     let scaled_weights = scaled.weights().map(|weights| {
         weights
@@ -239,13 +284,12 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
         })
     }
     .unwrap();
-    assert!(rational_four_arc_circle(&scaled).is_some());
+    assert!(rational_four_arc_circle(&resource_ctx, &scaled).is_some());
 
     let mut elevated = degree_elevated_circle();
-    assert!(rational_four_arc_circle(&elevated).is_some());
+    assert!(rational_four_arc_circle(&resource_ctx, &elevated).is_some());
     assert!(matches!(
-        analytic_procedural_surface(
-            &nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Extrusion {
+        analytic_procedural_surface(&resource_ctx, &nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Extrusion {
                 directrix: elevated.clone(),
                 parameter_interval: [0.0, 4.0],
                 direction: Vector3::new(0.0, 0.0, 3.0),
@@ -267,7 +311,7 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
             }
         })
         .unwrap();
-    assert!(rational_four_arc_circle(&elevated).is_none());
+    assert!(rational_four_arc_circle(&resource_ctx, &elevated).is_none());
 }
 
 fn plane(origin: Point3, normal: Vector3, u_axis: Vector3) -> SurfaceGeometry {
@@ -301,6 +345,10 @@ fn linear_spine(points: Vec<Point3>) -> cadmpeg_ir::geometry::nurbs::NurbsCurve 
 
 #[test]
 fn constant_circular_plane_plane_blend_reduces_to_tangent_cylinder() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     let mut definition = nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend {
         supports: Box::new([
             Some(plane(
@@ -324,7 +372,7 @@ fn constant_circular_plane_plane_blend_reduces_to_tangent_cylinder() {
         native: None,
     };
     assert!(
-        matches!(analytic_procedural_surface(&definition), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)))
+        matches!(analytic_procedural_surface(&resource_ctx, &definition), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)))
                 if {
                     let origin = cylinder_surface.origin();
         let axis = cylinder_surface.frame().axis().as_raw();
@@ -353,11 +401,15 @@ fn constant_circular_plane_plane_blend_reduces_to_tangent_cylinder() {
             }
         })
         .unwrap();
-    assert!(analytic_procedural_surface(&definition).is_none());
+    assert!(analytic_procedural_surface(&resource_ctx, &definition).is_none());
 }
 
 #[test]
 fn constant_circular_plane_cylinder_blend_reduces_to_tangent_torus() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     let mut circle = exact_circle_directrix();
     circle
         .edit_control_points(|point| {
@@ -386,7 +438,7 @@ fn constant_circular_plane_cylinder_blend_reduces_to_tangent_torus() {
         native: None,
     };
     assert!(
-        matches!(analytic_procedural_surface(&definition), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)))
+        matches!(analytic_procedural_surface(&resource_ctx, &definition), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)))
                 if {
                     let center = torus_surface.center();
         let axis = torus_surface.frame().axis().as_raw();
@@ -415,7 +467,7 @@ fn constant_circular_plane_cylinder_blend_reduces_to_tangent_torus() {
         ),
         Vector3::new(1.0, 0.0, 0.0),
     ));
-    assert!(analytic_procedural_surface(&definition).is_none());
+    assert!(analytic_procedural_surface(&resource_ctx, &definition).is_none());
 }
 
 #[test]
@@ -1300,6 +1352,10 @@ fn the_join_projections_read_the_key_records() {
 
 #[test]
 fn circle_recognition_is_invariant_under_common_weight_scale() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for curve in [exact_circle_directrix(), degree_elevated_circle()] {
         for scale in [1e-200, 1.0, 1e200] {
             let rescaled = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
@@ -1317,7 +1373,7 @@ fn circle_recognition_is_invariant_under_common_weight_scale() {
                 false,
             )
             .unwrap();
-            assert!(rational_four_arc_circle(&rescaled).is_some());
+            assert!(rational_four_arc_circle(&resource_ctx, &rescaled).is_some());
         }
     }
     let curve = exact_circle_directrix();
@@ -1330,7 +1386,7 @@ fn circle_recognition_is_invariant_under_common_weight_scale() {
             false,
         )
         .unwrap();
-        assert!(rational_four_arc_circle(&polynomial).is_none());
+        assert!(rational_four_arc_circle(&resource_ctx, &polynomial).is_none());
     }
 }
 

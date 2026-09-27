@@ -215,24 +215,40 @@ impl<'a> Cur<'a> {
 /// Expansion adds one to each endpoint multiplicity. The pole count is
 /// `sum(mult) - (degree - 1)`.
 pub(super) fn take_knot_table(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     n: usize,
     degree: i64,
-) -> Option<(Vec<f64>, usize)> {
-    let mut values = Vec::new();
-    let mut mults = Vec::new();
+) -> Option<Result<(Vec<f64>, usize), cadmpeg_core::CodecError>> {
+    let mut values = match crate::decode_alloc::counted_vec(ctx, n, "ASM unique knot values") {
+        Ok(values) => values,
+        Err(error) => return Some(Err(error)),
+    };
+    let mut mults = match crate::decode_alloc::counted_vec(ctx, n, "ASM knot multiplicities") {
+        Ok(mults) => mults,
+        Err(error) => return Some(Err(error)),
+    };
     for _ in 0..n {
         values.push(cur.take_f64()?);
         mults.push(cur.take_long()?);
     }
     let expansion = checked_knot_layout(&mults, degree)?;
-    let mut expanded = Vec::with_capacity(expansion.expanded_len());
-    for (value, &run_length) in values.iter().zip(&expansion.expanded_run_lengths) {
+    let mut expanded = match crate::decode_alloc::counted_vec(
+        ctx,
+        expansion.expanded_len(),
+        "ASM expanded knots",
+    ) {
+        Ok(expanded) => expanded,
+        Err(error) => return Some(Err(error)),
+    };
+    for (index, (value, multiplicity)) in values.iter().zip(&mults).enumerate() {
+        let run_length = usize::try_from(*multiplicity).ok()?
+            + usize::from(index == 0 || index + 1 == mults.len());
         for _ in 0..run_length {
             expanded.push(*value);
         }
     }
-    Some((expanded, expansion.n_poles))
+    Some(Ok((expanded, expansion.n_poles)))
 }
 
 /// The B-spline marker at token `pos`, if any.

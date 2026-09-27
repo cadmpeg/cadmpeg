@@ -92,6 +92,7 @@ fn emit(record: &Record) -> Result<(), cadmpeg_core::CodecError> {
     );
     carriers.procedural_surface_defs.insert(0, decoded);
     emit_carrier_surface(
+        &asm_decode_ctx,
         &mut AsmBrep::default(),
         record,
         0,

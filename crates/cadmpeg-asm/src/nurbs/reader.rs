@@ -31,6 +31,26 @@ impl ReadPoles3 {
         }
     }
 
+    pub(super) fn with_counted_capacity(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        count: usize,
+        rational: bool,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        if rational {
+            Ok(Self::Rational(crate::decode_alloc::counted_vec(
+                ctx,
+                count,
+                "ASM rational NURBS poles",
+            )?))
+        } else {
+            Ok(Self::Polynomial(crate::decode_alloc::counted_vec(
+                ctx,
+                count,
+                "ASM polynomial NURBS poles",
+            )?))
+        }
+    }
+
     /// Add one pole with the weight its own slot states.
     pub(super) fn push(&mut self, point: Point3, weight: f64) -> Option<()> {
         match self {
@@ -265,12 +285,12 @@ const MAX_EXPANDED_NURBS_KNOTS: usize = MAX_NURBS_POLES + MAX_NURBS_DEGREE + 1;
 /// Checked expansion metadata for one unique-knot multiplicity table.
 pub(in crate::nurbs) struct KnotExpansionLayout {
     pub(super) n_poles: usize,
-    pub(super) expanded_run_lengths: Vec<usize>,
+    expanded_len: usize,
 }
 
 impl KnotExpansionLayout {
     pub(super) fn expanded_len(&self) -> usize {
-        self.expanded_run_lengths.iter().sum()
+        self.expanded_len
     }
 }
 
@@ -283,7 +303,6 @@ pub(super) fn checked_knot_layout(
         .filter(|degree| (1..=MAX_NURBS_DEGREE).contains(degree))?;
     let mut sum = 0usize;
     let mut expanded_len = 0usize;
-    let mut expanded_run_lengths = Vec::with_capacity(multiplicities.len());
     for (index, &multiplicity) in multiplicities.iter().enumerate() {
         let multiplicity = usize::try_from(multiplicity).ok()?;
         sum = sum.checked_add(multiplicity)?;
@@ -293,7 +312,6 @@ pub(super) fn checked_knot_layout(
         if expanded_len > MAX_EXPANDED_NURBS_KNOTS {
             return None;
         }
-        expanded_run_lengths.push(run_length);
     }
     let n_poles = sum.checked_sub(degree - 1)?;
     if !(2..=MAX_NURBS_POLES).contains(&n_poles) {
@@ -302,7 +320,7 @@ pub(super) fn checked_knot_layout(
     let derived_max = n_poles.checked_add(degree)?.checked_add(1)?;
     (expanded_len <= derived_max).then_some(KnotExpansionLayout {
         n_poles,
-        expanded_run_lengths,
+        expanded_len,
     })
 }
 
@@ -335,7 +353,9 @@ pub(super) fn read_knots(
     }
     let expansion = checked_knot_layout(&mults, degree)?;
     let mut expanded = Vec::with_capacity(expansion.expanded_len());
-    for (kv, &run_length) in knots.iter().zip(&expansion.expanded_run_lengths) {
+    for (index, (kv, multiplicity)) in knots.iter().zip(&mults).enumerate() {
+        let run_length = usize::try_from(*multiplicity).ok()?
+            + usize::from(index == 0 || index + 1 == mults.len());
         for _ in 0..run_length {
             expanded.push(*kv);
         }

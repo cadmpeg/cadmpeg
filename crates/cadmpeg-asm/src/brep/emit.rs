@@ -88,6 +88,7 @@ const EPS_EMIT_EMIT_EDGES_E9: f64 = 1.0e-9;
 /// Emit a kept surface carrier and, when present, its procedural-surface
 /// construction and nested support carriers.
 fn emit_carrier_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     r: &Record,
     i: i64,
@@ -483,7 +484,7 @@ fn emit_carrier_surface(
                 emit_revision_g2_blend_surface(out, i, construction, format)?
             }
             DecodedProceduralSurfaceDefinition::VertexBlend(construction) => {
-                emit_vertex_blend_surface(out, i, *construction, format)?
+                emit_vertex_blend_surface(ctx, out, i, *construction, format)?
             }
             DecodedProceduralSurfaceDefinition::Blend {
                 supports,
@@ -2658,12 +2659,17 @@ fn emit_revision_g2_blend_surface(
 }
 
 fn emit_vertex_blend_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     i: i64,
     construction: EmbeddedVertexBlend,
     format: IdFormat,
 ) -> Result<ProceduralSurfaceDefinition, cadmpeg_core::CodecError> {
-    let mut boundaries = Vec::with_capacity(construction.boundaries.len());
+    let mut boundaries = crate::decode_alloc::counted_vec(
+        ctx,
+        construction.boundaries.len(),
+        "ASM emitted vertex blend boundaries",
+    )?;
     for (boundary_index, boundary) in construction.boundaries.into_iter().enumerate() {
         let prefix = brep_key!(i, ":vertex_boundary", boundary_index);
         let geometry = match boundary.geometry {
@@ -3844,6 +3850,7 @@ fn emit_law_curve(
 /// Pass 3: emit surface and curve carriers in `RecordTable` order for
 /// deterministic output.
 pub(super) fn emit_carrier_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     records: &[Record],
     carriers: &mut Carriers,
@@ -3856,7 +3863,7 @@ pub(super) fn emit_carrier_records(
         let i = r.index as i64;
         match r.head() {
             _ if reach.surfaces.contains(&i) => {
-                emit_carrier_surface(out, r, i, carriers, reach, format)?;
+                emit_carrier_surface(ctx, out, r, i, carriers, reach, format)?;
             }
             _ if reach.unknown_surface_records.contains(&i) => {
                 // Topology-known face on an undecoded surface: emit an opaque
@@ -3887,6 +3894,7 @@ pub(super) fn emit_carrier_records(
 
 /// Emit reachable pcurve carriers with their wrapper and fit-tolerance tails.
 pub(super) fn emit_pcurves(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     records: &[Record],
     carriers: &mut Carriers,
@@ -3912,7 +3920,7 @@ pub(super) fn emit_pcurves(
                 let fit_tolerance = match (r.chunk(3), r.chunk(4)) {
                     (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
                         nurbs::toks::payload_subtype_toks(r, 5, "exp_par_cur")
-                            .and_then(nurbs::pcurve::pcurve_fit_tolerance)
+                            .and_then(|scope| nurbs::pcurve::pcurve_fit_tolerance(ctx, scope))
                     }
                     _ => None,
                 };
@@ -3924,6 +3932,7 @@ pub(super) fn emit_pcurves(
                     .transpose()
                     .map_err(cadmpeg_core::CodecError::malformed)?;
                 let fit_tolerance = fit_tolerance
+                    .transpose()?
                     .map(|value| {
                         cadmpeg_ir::geometry::FitTolerance::try_new(value)
                             .map_err(|_| PcurveMetadata::INVALID_FIT_TOLERANCE)
@@ -4260,7 +4269,7 @@ pub(super) fn emit_edges(
 
 /// Emit reachable coedges with pcurve links, tolerant parameters, and any
 /// embedded use-curve carrier.
-pub(super) fn emit_coedges(
+pub(super) fn emit_coedges(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     records: &[Record],
     token_table: &nurbs::toks::SubtypeTable,
@@ -4333,8 +4342,8 @@ pub(super) fn emit_coedges(
                         parameter_range,
                         ..
                     },
-                )) => match nurbs::core::curve_cache_resolving_refs(&r.tokens, token_table) {
-                    Some(mut curve) => {
+                )) => match nurbs::core::curve_cache_resolving_refs(ctx, &r.tokens, token_table) {
+                    Some(Ok(mut curve)) => {
                         if *curve_reversed {
                             curve.reverse_parameterization();
                         }
@@ -4346,6 +4355,7 @@ pub(super) fn emit_coedges(
                         });
                         Some((curve_id, parameter_range.unwrap_or(*range)))
                     }
+                    Some(Err(error)) => return Err(error),
                     None => None,
                 },
                 _ => None,

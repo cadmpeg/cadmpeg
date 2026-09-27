@@ -953,6 +953,10 @@ fn revision_revolution_uses_the_shared_tails_solved_cache_domain() {
 
 #[test]
 fn surface_cache_resolves_width4_subtype_ref() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     // Active slice: one named subtype span holding the surface cache.
     let mut active = vec![0x0f, 0x0d, 0x07];
     active.extend_from_slice(b"spl_sur");
@@ -963,18 +967,21 @@ fn surface_cache_resolves_width4_subtype_ref() {
     record.extend_from_slice(b"ref");
     push_int(&mut record, 0x04, 0, RefWidth::Four);
     record.push(0x10);
-    let surface = crate::nurbs::core::surface_cache_resolving_refs(
-        &crate::nurbs::toks::lex_test_span(&record, RefWidth::Four)
+    let surface = crate::nurbs::core::surface_cache_resolving_refs(&resource_ctx,         &crate::nurbs::toks::lex_test_span(&record, RefWidth::Four)
             .expect("valid single-record byte fixture"),
         &crate::nurbs::toks::test_table(&active, RefWidth::Four)
             .expect("valid single-record byte fixture"),
     )
-    .expect("resolved width-4 ref");
+    .transpose().expect("resource allocation").expect("resolved width-4 ref");
     assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
 }
 
 #[test]
 fn surface_cache_resolves_compact_subtype_refs_at_both_widths() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut active = vec![0x0f];
         push_ident(&mut active, "spl_sur");
@@ -983,13 +990,12 @@ fn surface_cache_resolves_compact_subtype_refs_at_both_widths() {
         let mut record = vec![0x0f];
         push_int(&mut record, 0x04, 0, int_width);
         record.push(0x10);
-        let surface = crate::nurbs::core::surface_cache_resolving_refs(
-            &crate::nurbs::toks::lex_test_span(&record, int_width)
+        let surface = crate::nurbs::core::surface_cache_resolving_refs(&resource_ctx,             &crate::nurbs::toks::lex_test_span(&record, int_width)
                 .expect("valid single-record byte fixture"),
             &crate::nurbs::toks::test_table(&active, int_width)
                 .expect("valid single-record byte fixture"),
         )
-        .unwrap_or_else(|| panic!("compact subtype ref at width {int_width}"));
+        .transpose().expect("resource allocation").unwrap_or_else(|| panic!("compact subtype ref at width {int_width}"));
         assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
     }
 }
