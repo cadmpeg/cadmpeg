@@ -1877,22 +1877,39 @@ pub(super) fn decode(
                 continue;
             };
             let support = SurfaceId::from(ids::data(kind!("surface"), support_step));
-            let boundary_steps = parameters.get(2).and_then(references);
-            let boundaries = boundary_steps.as_ref().map(|boundaries| {
-                boundaries
-                    .iter()
-                    .copied()
-                    .map(|boundary| CurveId::from(ids::data(kind!("curve"), boundary)))
-                    .collect::<Vec<_>>()
-            });
-            let boundary_pcurves = boundary_steps
-                .iter()
-                .flatten()
-                .flat_map(|boundary| boundary_pcurve_steps(*boundary, support_step, exchange))
-                .map(|pcurve| PcurveId::from(ids::data(kind!("pcurve"), pcurve)))
-                .collect::<BTreeSet<_>>()
+            let boundary_steps = parameters
+                .get(2)
+                .and_then(Value::list)
+                .filter(|values| values.iter().all(|value| value.reference().is_some()));
+            let mut boundaries = boundary_steps.map(|_| Vec::new());
+            if let (Some(values), Some(boundaries)) = (boundary_steps, boundaries.as_mut()) {
+                for boundary in values.iter().filter_map(Value::reference) {
+                    push_geometry_vec(
+                        boundaries,
+                        CurveId::from(ids::data(kind!("curve"), boundary)),
+                        ctx,
+                        "step_curve_bounded_boundaries",
+                    )?;
+                }
+            }
+            let mut boundary_pcurve_set = BTreeSet::new();
+            for pcurve in boundary_steps
                 .into_iter()
-                .collect();
+                .flatten()
+                .filter_map(Value::reference)
+                .flat_map(|boundary| boundary_pcurve_steps(boundary, support_step, exchange))
+            {
+                insert_geometry_set(
+                    &mut boundary_pcurve_set,
+                    PcurveId::from(ids::data(kind!("pcurve"), pcurve)),
+                    ctx,
+                    "step_curve_bounded_pcurve_set",
+                )?;
+            }
+            let mut boundary_pcurves = Vec::new();
+            for pcurve in boundary_pcurve_set {
+                push_geometry_vec(&mut boundary_pcurves, pcurve, ctx, "step_curve_bounded_pcurves")?;
+            }
             let implicit_outer = parameters.get(3).and_then(Value::logical);
             let Some((boundaries, implicit_outer, geometry)) = ir
                 .model
@@ -4370,15 +4387,16 @@ fn composite_curve_segment_parameters(record: &RawRecord) -> Option<&[Value]> {
         .map(|partial| partial.parameters.as_slice())
 }
 
-fn boundary_pcurve_steps(boundary: u64, support: u64, exchange: &Exchange) -> Vec<u64> {
-    let Some(record) = exchange.records().get(&boundary) else {
-        return Vec::new();
-    };
-    let Some((parameters, offset)) = composite_curve_parameters(record) else {
-        return Vec::new();
-    };
-    parameters
-        .get(offset)
+fn boundary_pcurve_steps<'a>(
+    boundary: u64,
+    support: u64,
+    exchange: &'a Exchange,
+) -> impl Iterator<Item = u64> + 'a {
+    exchange
+        .records()
+        .get(&boundary)
+        .and_then(composite_curve_parameters)
+        .and_then(|(parameters, offset)| parameters.get(offset))
         .and_then(Value::list)
         .into_iter()
         .flatten()
@@ -4395,8 +4413,8 @@ fn boundary_pcurve_steps(boundary: u64, support: u64, exchange: &Exchange) -> Ve
                 )
             })
         })
-        .flat_map(|curve| surface_curve_pcurves(curve).unwrap_or_default())
-        .filter(|pcurve| {
+        .flat_map(surface_curve_pcurves)
+        .filter(move |pcurve| {
             exchange
                 .records()
                 .get(pcurve)
@@ -4404,18 +4422,24 @@ fn boundary_pcurve_steps(boundary: u64, support: u64, exchange: &Exchange) -> Ve
                 .and_then(Value::reference)
                 == Some(support)
         })
-        .collect()
 }
 
-fn surface_curve_pcurves(record: &RawRecord) -> Option<Vec<u64>> {
-    if record.partials.len() == 1 {
-        return record.parameter(2).and_then(references);
-    }
-    record
-        .partial("SURFACE_CURVE")
-        .or_else(|| record.partial("SEAM_CURVE"))
-        .or_else(|| record.partial("INTERSECTION_CURVE"))
-        .and_then(|partial| partial.parameters.get(1).and_then(references))
+fn surface_curve_pcurves(record: &RawRecord) -> impl Iterator<Item = u64> + '_ {
+    let value = if record.partials.len() == 1 {
+        record.parameter(2)
+    } else {
+        record
+            .partial("SURFACE_CURVE")
+            .or_else(|| record.partial("SEAM_CURVE"))
+            .or_else(|| record.partial("INTERSECTION_CURVE"))
+            .and_then(|partial| partial.parameters.get(1))
+    };
+    value
+        .and_then(Value::list)
+        .filter(|values| values.iter().all(|value| value.reference().is_some()))
+        .into_iter()
+        .flatten()
+        .filter_map(Value::reference)
 }
 
 fn logical_value(value: &Value) -> Result<Option<bool>, ()> {
