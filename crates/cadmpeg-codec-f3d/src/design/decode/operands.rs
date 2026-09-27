@@ -18,7 +18,7 @@ use crate::design::decode::scopes::parameter_scope::payload_prologue;
 use crate::design::decode::scopes::shared_frames::marked_record_reference;
 use crate::design::decode::sketch::{
     indexed_record_header_at, next_indexed_record_offset, next_indexed_record_offset_with_index,
-    IndexedRecordOffsets,
+    cached_borrowed_record_offsets, cached_owned_record_offsets, IndexedRecordOffsets,
 };
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
@@ -155,12 +155,7 @@ pub(crate) fn decode_edge_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = match record_offset_index.entry(stream) {
-            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(IndexedRecordOffsets::build(ctx, bytes)?)
-            }
-        };
+        let records = cached_borrowed_record_offsets(ctx, &mut record_offset_index, stream, bytes)?;
         for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
             if !member_indices.contains(&record_index) {
                 continue;
@@ -233,12 +228,7 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = match record_offset_index.entry(stream) {
-            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(IndexedRecordOffsets::build(ctx, bytes)?)
-            }
-        };
+        let records = cached_borrowed_record_offsets(ctx, &mut record_offset_index, stream, bytes)?;
         for (scope_reference_ordinal, record_index) in
             scope.reference_members().values().copied().enumerate()
         {
@@ -339,12 +329,7 @@ pub(crate) fn bind_work_point_input_carriers(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = match record_offset_index.entry(stream.clone()) {
-            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(IndexedRecordOffsets::build(ctx, bytes)?)
-            }
-        };
+        let records = cached_owned_record_offsets(ctx, &mut record_offset_index, &stream, bytes)?;
         let scope_record_index = scope.record_index;
         let Some(construction) = scope.work_point_construction_mut() else {
             continue;
@@ -520,12 +505,7 @@ pub(crate) fn bind_work_plane_constructions(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = match record_offset_index.entry(stream.clone()) {
-            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(IndexedRecordOffsets::build(ctx, bytes)?)
-            }
-        };
+        let records = cached_owned_record_offsets(ctx, &mut record_offset_index, &stream, bytes)?;
         let Some([placement_record_index, first, second, third, extra_offset]) =
             scope.reference_members().values_array()
         else {
@@ -854,12 +834,7 @@ pub(crate) fn decode_face_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = match record_offset_index.entry(stream) {
-            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(IndexedRecordOffsets::build(ctx, bytes)?)
-            }
-        };
+        let records = cached_borrowed_record_offsets(ctx, &mut record_offset_index, stream, bytes)?;
         for (group_member_index, record_index) in group
             .members()
             .iter()
@@ -939,12 +914,7 @@ pub(crate) fn decode_face_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = match record_offset_index.entry(stream) {
-            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(IndexedRecordOffsets::build(ctx, bytes)?)
-            }
-        };
+        let records = cached_borrowed_record_offsets(ctx, &mut record_offset_index, stream, bytes)?;
         let ordinals = if scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt
             && crate::design::assembly::legacy_as_built_421_generation(
                 scope.frame_length(),
@@ -1028,12 +998,7 @@ pub(crate) fn decode_face_source_groups(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = match record_offset_index.entry(stream) {
-            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(IndexedRecordOffsets::build(ctx, bytes)?)
-            }
-        };
+        let records = cached_borrowed_record_offsets(ctx, &mut record_offset_index, stream, bytes)?;
         let Ok(scope_start) = usize::try_from(scope.byte_offset()) else {
             continue;
         };
@@ -3633,12 +3598,7 @@ pub(crate) fn decode_body_recipe_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = match record_offset_index.entry(stream) {
-            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(IndexedRecordOffsets::build(ctx, bytes)?)
-            }
-        };
+        let records = cached_borrowed_record_offsets(ctx, &mut record_offset_index, stream, bytes)?;
         for (ordinal, record_index) in group
             .members()
             .iter()
@@ -3681,12 +3641,7 @@ pub(crate) fn decode_body_recipe_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = match record_offset_index.entry(stream) {
-            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(IndexedRecordOffsets::build(ctx, bytes)?)
-            }
-        };
+        let records = cached_borrowed_record_offsets(ctx, &mut record_offset_index, stream, bytes)?;
         let operation = scope.combine_operation();
         let record_indexes = operation
             .into_iter()

@@ -8,7 +8,8 @@ use crate::design::decode::operands::parse_entity_selection_frame;
 use crate::design::decode::scopes::shared_frames::exact_indexed_header_at;
 use crate::design::decode::scopes::shared_frames::marked_record_reference;
 use crate::design::decode::sketch::{
-    indexed_record_header_at, next_indexed_record_offset, IndexedRecordOffsets,
+    cached_owned_record_offsets, indexed_record_header_at, next_indexed_record_offset,
+    IndexedRecordOffsets,
 };
 use crate::ids::{native_design_surface_trim_operation_id, native_stream};
 use crate::records::feature::{
@@ -210,12 +211,7 @@ pub(crate) fn decode_surface_trim_operations(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = match record_offsets.entry(stream.to_owned()) {
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(IndexedRecordOffsets::build(ctx, bytes)?)
-            }
-            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-        };
+        let records = cached_owned_record_offsets(ctx, &mut record_offsets, stream, bytes)?;
         let Some(mut operation) = exact_surface_trim_operation(ctx, bytes, records, scope)? else {
             continue;
         };
