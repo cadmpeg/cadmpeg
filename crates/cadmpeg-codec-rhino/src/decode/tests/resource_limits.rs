@@ -9,6 +9,37 @@ use super::{
     DecodeContext, POINT_CLASS,
 };
 
+#[test]
+fn class_loss_tag_refuses_retained_limit() {
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
+    let outcome = super::super::ClassOutcome {
+        decoded: 0,
+        retained: 1,
+        native: None,
+        attribute_degraded: 0,
+        failed_framed: 0,
+        first_object: &scan.objects[0],
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let refusal = super::super::loss_provenance(&ctx, "fixture", &outcome)
+        .expect_err("class loss tag exceeds retained limit");
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino class loss tag"
+    ));
+    super::super::loss_provenance(
+        &cadmpeg_test_support::service_decode_context(),
+        "fixture",
+        &outcome,
+    )
+    .expect("service profile admits the tag");
+}
+
 fn staged_curve_tree_refusal(limit: u64, operation: &str) {
     let refusal = with_collection_limit(limit, |ctx| {
         let mut staged = BrepDraft::default();
