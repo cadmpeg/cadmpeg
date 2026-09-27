@@ -1267,9 +1267,11 @@ impl DesignMeshCollection {
 }
 
 /// One complete `Base Mesh Feature` Design graph.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "DesignMeshFeatureWire", into = "DesignMeshFeatureWire")]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "DesignMeshFeatureWire")]
 pub(crate) struct DesignMeshFeature {
+    #[cfg(test)]
+    clone_probe: MeshFeatureCloneProbe,
     /// Globally unique deterministic identity keyed by the feature-scope record.
     pub(crate) id: String,
     /// Feature scope and its closing owner reference.
@@ -1282,6 +1284,23 @@ pub(crate) struct DesignMeshFeature {
     pub(crate) collection_owner: DesignMeshCollectionOwner,
     /// Mesh bodies in the source collection order.
     bodies: Vec<DesignMeshBody>,
+}
+
+#[cfg(test)]
+thread_local! {
+    static MESH_FEATURE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+#[derive(Debug, PartialEq, Eq)]
+struct MeshFeatureCloneProbe;
+
+#[cfg(test)]
+impl Clone for MeshFeatureCloneProbe {
+    fn clone(&self) -> Self {
+        MESH_FEATURE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self
+    }
 }
 
 impl DesignMeshFeature {
@@ -1304,6 +1323,8 @@ impl DesignMeshFeature {
             return Err("bodies reference run must end before scope_base_record".into());
         }
         Ok(Self {
+            #[cfg(test)]
+            clone_probe: MeshFeatureCloneProbe,
             id,
             scope,
             collection,
@@ -1476,6 +1497,7 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
     }
 }
 
+#[cfg(test)]
 impl From<DesignMeshFeature> for DesignMeshFeatureWire {
     // Output cardinalities are bounded by already-materialized input vectors.
     #[allow(clippy::disallowed_methods)]
@@ -1686,3 +1708,5 @@ impl<const LENGTH: u64> From<DesignMeshFixedRecord<LENGTH>> for DesignMeshRecord
 
 #[cfg(test)]
 mod tests;
+
+mod serialize;
