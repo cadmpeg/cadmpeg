@@ -3,6 +3,8 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::directory::{DirectoryEntry, SourceStatus};
+use cadmpeg_core::decode::{DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
@@ -30,6 +32,7 @@ use super::{
     clipping_plane_valid, depth_clipping_valid, display_flag_valid, drawing_directory_valid,
     drawing_property_value, has_in_plane_component, standard_color_valid, standard_line_font_valid,
     view_directory_valid, views_visible_directory_valid, DrawingPropertyValue,
+    push_drawing_entity_loss,
 };
 use crate::parameter::{ParameterRecord, Token, TokenValue};
 
@@ -54,6 +57,31 @@ fn directory_entry(entity_type: i64, form: i64) -> DirectoryEntry {
         label: [b' '; 8],
         subscript: 0,
     }
+}
+
+#[test]
+fn drawing_entity_loss_refuses_unadmitted_slot_and_message() {
+    let entry = directory_entry(404, 0);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut losses = Vec::new();
+    let error = push_drawing_entity_loss(&ctx, &mut losses, &entry, "missing").unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "iges drawing loss slots"));
+    assert!(losses.is_empty());
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = push_drawing_entity_loss(&ctx, &mut losses, &entry, "missing").unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges drawing loss message"));
+    assert!(losses.is_empty());
+
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    push_drawing_entity_loss(&ctx, &mut losses, &entry, "missing").unwrap();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].message, "IGES entity type 404 form 0 was not projected: missing");
 }
 
 #[test]
