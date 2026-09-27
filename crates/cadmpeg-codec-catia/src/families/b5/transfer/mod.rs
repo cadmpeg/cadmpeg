@@ -881,7 +881,7 @@ pub(in crate::families) fn resolved_object_stream_pcurve(
     let Some(carrier) = graph_carrier.or_else(|| resolved_surface_carrier(surface)) else {
         return Ok(None);
     };
-    let Some((knots, control_points)) = pcurve.bspline() else {
+    let Some((knots, control_points)) = pcurve.bspline(ctx)? else {
         return Ok(None);
     };
     let Some(nurbs) = crate::nurbs::note_refusal(

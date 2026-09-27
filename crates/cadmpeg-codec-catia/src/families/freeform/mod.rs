@@ -17,7 +17,7 @@ use cadmpeg_ir::ids::{
     ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::{FiniteReal, NonZeroLength, PositiveLength};
+use cadmpeg_ir::scalar::{NonZeroLength, PositiveLength};
 use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
 use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3};
 use cadmpeg_ir::AnnotationBuilder;
@@ -1442,43 +1442,42 @@ pub(super) fn append_freeform_surface_pools(
     )?;
 
     for guide in crate::families::a5a8::records::a5_guide_curves_from_records(data, records) {
-        let points = guide
-            .sites
-            .iter()
-            .map(|site| site.point.get())
-            .collect::<Vec<_>>();
-        let first = guide
-            .sites
-            .iter()
-            .map(|site| {
+        let ctx = admission.context();
+        let mut points = Vec::new();
+        let mut first = Vec::new();
+        let mut second = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut points, guide.sites.len(), "catia A5 guide points")?;
+        crate::resource::reserve_vec(ctx, &mut first, guide.sites.len(), "catia A5 guide first jets")?;
+        crate::resource::reserve_vec(ctx, &mut second, guide.sites.len(), "catia A5 guide second jets")?;
+        for site in &guide.sites {
+            points.push(site.point.get());
+            {
                 let value = site.first_derivative;
-                [value[0], value[1], value[2]]
-            })
-            .collect::<Vec<_>>();
-        let second = guide
-            .sites
-            .iter()
-            .map(|site| {
+                first.push([value[0], value[1], value[2]]);
+            }
+            {
                 let value = site.second_derivative;
-                [value[0], value[1], value[2]]
-            })
-            .collect::<Vec<_>>();
+                second.push([value[0], value[1], value[2]]);
+            }
+        }
+        let distinct_knots = guide.knots(ctx)?;
         let Some((knots, control_points)) = crate::nurbs::quintic_jet_bspline(
+            ctx,
             guide.degree,
-            &guide.knots(),
+            &distinct_knots,
             &points,
             &first,
             &second,
-        ) else {
+        )? else {
             continue;
         };
+        let mut poles = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut poles, control_points.len(), "catia A5 guide poles")?;
+        poles.extend(control_points.into_iter().map(|point| Point3::new(point[0], point[1], point[2])));
         let geometry = NurbsCurve::from_lanes(
             guide.degree,
             knots,
-            control_points
-                .into_iter()
-                .map(|point| Point3::new(point[0], point[1], point[2]))
-                .collect(),
+            poles,
             None,
             false,
         )?;
@@ -1505,10 +1504,11 @@ pub(super) fn append_freeform_surface_pools(
     for jet in crate::families::a5a8::records::a5_freeform_curves_from_records(data, records) {
         for second_limit in [false, true] {
             let Some(curve) = crate::families::a5a8::records::rolling_ball_limit_curve(
+                admission.context(),
                 &jet,
                 second_limit,
                 refusal,
-            ) else {
+            )? else {
                 continue;
             };
             let side = usize::from(second_limit);
@@ -1686,31 +1686,32 @@ impl ConsolidatedCarrierChart<'_> {
 }
 
 fn consolidated_jet_pcurve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     pcurve: &crate::wire::records::ConsolidatedPcurve,
     chart: &ConsolidatedCarrierChart<'_>,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<PcurveGeometry> {
-    let points = pcurve
-        .sites
-        .iter()
-        .map(|site| chart.point(site.point.get()))
-        .collect::<Vec<_>>();
-    let first = pcurve
-        .sites
-        .iter()
-        .map(|site| chart.derivative(site.first_derivatives.get()))
-        .collect::<Vec<_>>();
-    let second = pcurve
-        .sites
-        .iter()
-        .map(|site| chart.derivative(site.second_derivatives.get()))
-        .collect::<Vec<_>>();
-    let knots = FiniteReal::raw_lane(&pcurve.knots());
+) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
+    let mut points = Vec::new();
+    let mut first = Vec::new();
+    let mut second = Vec::new();
+    let mut knots = Vec::new();
+    let count = pcurve.sites.len();
+    crate::resource::reserve_vec(ctx, &mut points, count, "catia consolidated pcurve points")?;
+    crate::resource::reserve_vec(ctx, &mut first, count, "catia consolidated pcurve first jets")?;
+    crate::resource::reserve_vec(ctx, &mut second, count, "catia consolidated pcurve second jets")?;
+    crate::resource::reserve_vec(ctx, &mut knots, count, "catia consolidated pcurve knots")?;
+    for site in &pcurve.sites {
+        points.push(chart.point(site.point.get()));
+        first.push(chart.derivative(site.first_derivatives.get()));
+        second.push(chart.derivative(site.second_derivatives.get()));
+        knots.push(site.knot.get());
+    }
     let record = format!(
         "consolidated quintic-jet pcurve record at byte {}",
         pcurve.pos
     );
     quintic_jet_pcurve(
+        ctx,
         crate::wire::records::ConsolidatedPcurve::DEGREE,
         &knots,
         &points,
@@ -1946,7 +1947,7 @@ fn append_resolved_consolidated_surface_curves(
                     continue;
                 };
                 let Some(geometry) =
-                    consolidated_jet_pcurve(pcurve, &ConsolidatedCarrierChart::Identity, refusal)
+                    consolidated_jet_pcurve(admission.context(), pcurve, &ConsolidatedCarrierChart::Identity, refusal)?
                 else {
                     continue;
                 };
@@ -2051,7 +2052,7 @@ fn append_resolved_consolidated_surface_curves(
                     }
                 };
                 let chart = ConsolidatedCarrierChart::Identity;
-                let Some(geometry) = consolidated_jet_pcurve(pcurve, &chart, refusal) else {
+                let Some(geometry) = consolidated_jet_pcurve(admission.context(), pcurve, &chart, refusal)? else {
                     continue;
                 };
                 sides[side] = IntcurveSupportSide {
@@ -2181,7 +2182,7 @@ fn append_resolved_consolidated_surface_curves(
                 id
             };
 
-            let Some(geometry) = consolidated_jet_pcurve(pcurve, &chart, refusal) else {
+            let Some(geometry) = consolidated_jet_pcurve(admission.context(), pcurve, &chart, refusal)? else {
                 continue;
             };
             sides[side] = IntcurveSupportSide {
@@ -2198,54 +2199,56 @@ fn append_resolved_consolidated_surface_curves(
             .filter(|(_, side)| side.surface.is_some() && side.pcurve.is_some())
             .map(|(side, _)| side)
             .collect::<Vec<_>>();
-        let inferred_partner = (|| {
-            let [resolved_side] = resolved_sides.as_slice() else {
-                return None;
-            };
+        let inferred_partner = if let [resolved_side] = resolved_sides.as_slice() {
             let partner = 1 - *resolved_side;
-            let resolved_geometry = &ir
+            let resolved_geometry = ir
                 .model
                 .surfaces
                 .iter()
-                .find(|surface| Some(&surface.id) == sides[*resolved_side].surface.as_ref())?
-                .geometry;
-            let partner_pcurve = consolidated_jet_pcurve(
-                &resolved.block.pcurves[partner],
-                &ConsolidatedCarrierChart::Identity,
-                refusal,
-            )?;
-            let candidates: Vec<_> = freeform_surfaces
-                .iter()
-                .enumerate()
-                .map(|(index, surface)| {
-                    (
-                        index,
-                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                            surface.geometry.clone(),
-                        )),
-                    )
-                })
-                .collect();
-            let carrier = unique_paired_surface_lift_match(
-                &sides[*resolved_side].pcurve.as_ref()?.geometry,
-                resolved_geometry,
-                &partner_pcurve,
-                resolved.block.parameters.range.endpoints(),
-                candidates
-                    .iter()
-                    .map(|(index, geometry)| (*index, geometry)),
-            );
-            if let Some(carrier) = carrier {
-                sides[partner] = IntcurveSupportSide {
-                    surface: Some(freeform_surface_ids[carrier].clone()),
-                    pcurve: Some(partner_pcurve.into()),
-                };
-                partner_support_blocks.insert(resolved.block.pcurves[0].pos);
-                Some((*resolved_side, carrier))
+                .find(|surface| Some(&surface.id) == sides[*resolved_side].surface.as_ref())
+                .map(|surface| &surface.geometry);
+            if let (Some(resolved_geometry), Some(resolved_pcurve)) =
+                (resolved_geometry, sides[*resolved_side].pcurve.as_ref())
+            {
+                if let Some(partner_pcurve) = consolidated_jet_pcurve(
+                    admission.context(),
+                    &resolved.block.pcurves[partner],
+                    &ConsolidatedCarrierChart::Identity,
+                    refusal,
+                )? {
+                let mut candidates = Vec::new();
+                crate::resource::reserve_vec(admission.context(), &mut candidates, freeform_surfaces.len(), "catia consolidated partner surface candidates")?;
+                for (index, surface) in freeform_surfaces.iter().enumerate() {
+                    candidates.push((index, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                        crate::resource::copy_nurbs_surface(admission.context(), &surface.geometry, "catia consolidated partner surface copy")?,
+                    ))));
+                }
+                let carrier = unique_paired_surface_lift_match(
+                    &resolved_pcurve.geometry,
+                    resolved_geometry,
+                    &partner_pcurve,
+                    resolved.block.parameters.range.endpoints(),
+                    candidates.iter().map(|(index, geometry)| (*index, geometry)),
+                );
+                if let Some(carrier) = carrier {
+                    sides[partner] = IntcurveSupportSide {
+                        surface: Some(freeform_surface_ids[carrier].clone()),
+                        pcurve: Some(partner_pcurve.into()),
+                    };
+                    partner_support_blocks.insert(resolved.block.pcurves[0].pos);
+                    Some((*resolved_side, carrier))
+                } else {
+                    None
+                }
+                } else {
+                    None
+                }
             } else {
                 None
             }
-        })();
+        } else {
+            None
+        };
         let exact_side_count = sides
             .iter()
             .filter(|side| side.surface.is_some() && side.pcurve.is_some())
@@ -2267,7 +2270,16 @@ fn append_resolved_consolidated_surface_curves(
                     }),
             )
         });
-        let attachment = attachment.and_then(|(identity, reversed)| {
+        macro_rules! option_or_none {
+            ($value:expr) => {
+                match $value {
+                    Some(value) => value,
+                    None => return Ok(None),
+                }
+            };
+        }
+        let attachment = match attachment {
+            Some((identity, reversed)) => (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
             if reversed {
                 let reversed_pcurves = sides
                     .iter()
@@ -2284,7 +2296,8 @@ fn append_resolved_consolidated_surface_curves(
                         .map(Some),
                         None => Some(None),
                     })
-                    .collect::<Option<Vec<_>>>()?;
+                    .collect::<Option<Vec<_>>>();
+                let reversed_pcurves = option_or_none!(reversed_pcurves);
                 for (side, pcurve) in sides.iter_mut().zip(reversed_pcurves) {
                     side.pcurve = pcurve.map(Into::into);
                 }
@@ -2305,12 +2318,12 @@ fn append_resolved_consolidated_surface_curves(
                     Some(*resolved_side)
                 });
             let partner_pcurves = if let Some(resolved_side) = resolved_side {
-                let resolved_surface = sides[resolved_side].surface.as_ref()?;
-                let resolved_geometry = &ir
+                let resolved_surface = option_or_none!(sides[resolved_side].surface.as_ref());
+                let resolved_geometry = &option_or_none!(ir
                     .model
                     .surfaces
                     .iter()
-                    .find(|surface| &surface.id == resolved_surface)?
+                    .find(|surface| &surface.id == resolved_surface))
                     .geometry;
                 let matches = standard_surfaces
                     .iter()
@@ -2330,11 +2343,11 @@ fn append_resolved_consolidated_surface_curves(
                     let partner = 1 - resolved_side;
                     if let Some((_, carrier)) = inferred_partner {
                         let standard_partner = &standard_surfaces[1 - *standard_resolved_side];
-                        let standard_partner_geometry = &ir
+                        let standard_partner_geometry = &option_or_none!(ir
                             .model
                             .surfaces
                             .iter()
-                            .find(|surface| &surface.id == standard_partner)?
+                            .find(|surface| &surface.id == standard_partner))
                             .geometry;
                         if !matches!(
                             standard_partner_geometry,
@@ -2344,16 +2357,16 @@ fn append_resolved_consolidated_surface_curves(
                                 freeform_surfaces[carrier].geometry.clone(),
                             ))
                         {
-                            return Some((identity, None));
+                            return Ok(Some((identity, None)));
                         }
                     }
-                    let standard_partner_geometry = &ir
+                    let standard_partner_geometry = &option_or_none!(ir
                         .model
                         .surfaces
                         .iter()
                         .find(|surface| {
                             surface.id == standard_surfaces[1 - *standard_resolved_side]
-                        })?
+                        }))
                         .geometry;
                     let partner_pcurve = match &sides[partner].pcurve {
                         Some(pcurve) => pcurve.geometry.clone(),
@@ -2376,15 +2389,16 @@ fn append_resolved_consolidated_surface_curves(
                             }) else {
                                 // The free side has no defined chart relation
                                 // to a non-planar or unresolved partner.
-                                return Some((identity, None));
+                                return Ok(Some((identity, None)));
                             };
-                            let mut pcurve = consolidated_jet_pcurve(
+                            let Some(mut pcurve) = consolidated_jet_pcurve(
+                                admission.context(),
                                 &resolved.block.pcurves[partner],
                                 &chart,
                                 refusal,
-                            )?;
+                            )? else { return Ok(None); };
                             if reversed {
-                                pcurve = crate::nurbs::reverse_pcurve_geometry(
+                                pcurve = option_or_none!(crate::nurbs::reverse_pcurve_geometry(
                                     &pcurve,
                                     resolved.block.parameters.range.endpoints(),
                                     refusal,
@@ -2392,27 +2406,27 @@ fn append_resolved_consolidated_surface_curves(
                                         "consolidated partner pcurve of the edge block at byte {} reversed onto its edge",
                                         resolved.block.pcurves[0].pos
                                     ),
-                                )?;
+                                ));
                             }
                             pcurve
                         }
                     };
-                    let standard_surface_geometry = &ir
+                    let standard_surface_geometry = &option_or_none!(ir
                         .model
                         .surfaces
                         .iter()
-                        .find(|surface| surface.id == standard_surfaces[*standard_resolved_side])?
+                        .find(|surface| surface.id == standard_surfaces[*standard_resolved_side]))
                         .geometry;
                     let resolved_pcurve = match rechart_equivalent_surface_pcurve(
-                        &sides[resolved_side].pcurve.as_ref()?.geometry,
+                        &option_or_none!(sides[resolved_side].pcurve.as_ref()).geometry,
                         resolved_geometry,
                         standard_surface_geometry,
                     ) {
                         Ok(Some(pcurve)) => pcurve,
-                        Ok(None) => return None,
+                        Ok(None) => return Ok(None),
                         Err(RechartFailure::NonFinite) => {
                             binding_counts.rechart_numeric_failures += 1;
-                            return None;
+                            return Ok(None);
                         }
                     };
                     let standard_geometries = [resolved_pcurve, partner_pcurve];
@@ -2427,8 +2441,8 @@ fn append_resolved_consolidated_surface_curves(
                     let edge = &ir.model.edges[identity.0];
                     let edge_id = &edge.id;
                     let edge_endpoints = [
-                        *vertex_positions.get(&edge.start)?,
-                        *vertex_positions.get(&edge.end)?,
+                        *option_or_none!(vertex_positions.get(&edge.start)),
+                        *option_or_none!(vertex_positions.get(&edge.end)),
                     ];
                     // The shared coincidence bound, widened by whatever the
                     // topology itself declares. A binding accepted here is one
@@ -2514,8 +2528,10 @@ fn append_resolved_consolidated_surface_curves(
             } else {
                 None
             };
-            Some((identity, partner_pcurves))
-        });
+            Ok(Some((identity, partner_pcurves)))
+            })()?,
+            None => None,
+        };
         let mut bound_new_standard_surface = false;
         if let Some((_, Some(binding))) = attachment.as_ref() {
             if let Some((standard_partner_side, carrier)) = binding.inferred_partner {

@@ -399,7 +399,7 @@ fn derive_e5_vertices(
                     | crate::families::e5::graph::E5Pcurve::Nurbs { surface, .. } => *surface,
                 };
                 let Some(surface) = surface_for_ref.get(&surface_ref) else { return Ok(None); };
-                let Some((_, range, endpoints)) = e5_pcurve_on_surface(pcurve, surface, refusal) else { return Ok(None); };
+                let Some((_, range, endpoints)) = e5_pcurve_on_surface(ctx, pcurve, surface, refusal)? else { return Ok(None); };
                 let Some(reversed) = e5_stored_pcurve_reversed(topology, edge_ref, pcurve_ref, range) else { return Ok(None); };
                 let endpoints = if reversed {
                     [endpoints[1], endpoints[0]]
@@ -1277,7 +1277,7 @@ fn plan_e5_boundary<'a>(
                     return Ok(None);
                 };
                 let Some((geometry, range, endpoints)) =
-                    e5_pcurve_on_surface(pcurve, decoded_surface, refusal)
+                    e5_pcurve_on_surface(ctx, pcurve, decoded_surface, refusal)?
                 else {
                     return Ok(None);
                 };
@@ -1433,7 +1433,7 @@ fn plan_e5_boundary<'a>(
                 continue;
             };
             let Some((geometry, range, endpoints)) =
-                e5_pcurve_on_surface(pcurve, decoded_surface, refusal)
+                e5_pcurve_on_surface(ctx, pcurve, decoded_surface, refusal)?
             else {
                 // A known intersection pcurve that cannot be normalized must
                 // reject the topology route; omitting one side would claim a
@@ -2240,10 +2240,11 @@ fn parameter_ranges_reversed(parameters: [f64; 2], native_range: [f64; 2]) -> Op
 }
 
 fn e5_pcurve_on_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     pcurve: &crate::families::e5::graph::E5Pcurve,
     decoded_surface: &crate::families::e5::records::E5Surface,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<(PcurveGeometry, [f64; 2], [Point3; 2])> {
+) -> Result<Option<(PcurveGeometry, [f64; 2], [Point3; 2])>, cadmpeg_core::CodecError> {
     let surface = &decoded_surface.geometry;
     match pcurve {
         crate::families::e5::graph::E5Pcurve::Line {
@@ -2251,7 +2252,7 @@ fn e5_pcurve_on_surface(
             direction,
             range,
             ..
-        } => {
+        } => Ok((|| {
             let range = range.map(FiniteReal::get);
             let origin = e5_surface_uv(decoded_surface, *raw_origin);
             let direction = Point2::new(
@@ -2280,13 +2281,13 @@ fn e5_pcurve_on_surface(
                 range,
                 endpoints,
             ))
-        }
+        })()),
         crate::families::e5::graph::E5Pcurve::Circle {
             center,
             radius,
             range,
             ..
-        } => {
+        } => Ok((|| {
             let (center, radius) = (center.map(FiniteReal::get), radius.get());
             let angular_range = ordered_range([range[0].get() / radius, range[1].get() / radius]);
             if !angular_range.into_iter().all(f64::is_finite) {
@@ -2320,24 +2321,25 @@ fn e5_pcurve_on_surface(
             });
             let endpoints = [endpoints[0]?.get(), endpoints[1]?.get()];
             Some((geometry, angular_range, endpoints))
-        }
+        })()),
         crate::families::e5::graph::E5Pcurve::Jet { sites, range, .. } => {
             let scale = decoded_surface.uv_scale.map(FiniteReal::get);
-            let knots = sites.iter().map(|site| site.knot.get()).collect::<Vec<_>>();
+            let mut knots = Vec::new();
+            let mut points = Vec::new();
+            let mut first_derivatives = Vec::new();
+            let mut second_derivatives = Vec::new();
+            crate::resource::reserve_vec(ctx, &mut knots, sites.len(), "catia E5 pcurve jet knots")?;
+            crate::resource::reserve_vec(ctx, &mut points, sites.len(), "catia E5 pcurve jet points")?;
+            crate::resource::reserve_vec(ctx, &mut first_derivatives, sites.len(), "catia E5 pcurve first jets")?;
+            crate::resource::reserve_vec(ctx, &mut second_derivatives, sites.len(), "catia E5 pcurve second jets")?;
             let scaled =
                 |values: [FiniteReal; 2]| [values[0].get() * scale[0], values[1].get() * scale[1]];
-            let points = sites
-                .iter()
-                .map(|site| scaled(site.point))
-                .collect::<Vec<_>>();
-            let first_derivatives = sites
-                .iter()
-                .map(|site| scaled(site.first_derivatives))
-                .collect::<Vec<_>>();
-            let second_derivatives = sites
-                .iter()
-                .map(|site| scaled(site.second_derivatives))
-                .collect::<Vec<_>>();
+            for site in sites {
+                knots.push(site.knot.get());
+                points.push(scaled(site.point));
+                first_derivatives.push(scaled(site.first_derivatives));
+                second_derivatives.push(scaled(site.second_derivatives));
+            }
             if !points.iter().flatten().copied().all(f64::is_finite)
                 || !first_derivatives
                     .iter()
@@ -2350,9 +2352,10 @@ fn e5_pcurve_on_surface(
                     .copied()
                     .all(f64::is_finite)
             {
-                return None;
+                return Ok(None);
             }
-            let geometry = quintic_jet_pcurve(
+            let Some(geometry) = quintic_jet_pcurve(
+                ctx,
                 crate::families::e5::graph::E5Pcurve::JET_DEGREE,
                 &knots,
                 &points,
@@ -2363,11 +2366,12 @@ fn e5_pcurve_on_surface(
                     "e5 quintic-jet pcurve on surface record {} at byte {}",
                     decoded_surface.record_id, decoded_surface.pos
                 ),
-            )?;
-            let endpoints = [*points.first()?, *points.last()?]
+            )? else { return Ok(None); };
+            let (Some(first), Some(last)) = (points.first(), points.last()) else { return Ok(None); };
+            let endpoints = [*first, *last]
                 .map(|uv| cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1]).ok());
-            let endpoints = [endpoints[0]?.get(), endpoints[1]?.get()];
-            Some((geometry, range.map(FiniteReal::get), endpoints))
+            let (Some(start), Some(end)) = (endpoints[0], endpoints[1]) else { return Ok(None); };
+            Ok(Some((geometry, range.map(FiniteReal::get), [start.get(), end.get()])))
         }
         crate::families::e5::graph::E5Pcurve::Nurbs {
             degree,
@@ -2377,17 +2381,15 @@ fn e5_pcurve_on_surface(
             ..
         } => {
             let scale = decoded_surface.uv_scale.map(FiniteReal::get);
-            let knots = knots
-                .iter()
-                .copied()
-                .map(FiniteReal::get)
-                .collect::<Vec<_>>();
-            let control_points = control_points
-                .iter()
-                .map(|[u, v]| Point2::new(u.get() * scale[0], v.get() * scale[1]))
-                .collect::<Vec<_>>();
+            let mut knot_values = Vec::new();
+            crate::resource::reserve_vec(ctx, &mut knot_values, knots.len(), "catia E5 NURBS pcurve knots")?;
+            knot_values.extend(knots.iter().copied().map(FiniteReal::get));
+            let mut scaled_points = Vec::new();
+            crate::resource::reserve_vec(ctx, &mut scaled_points, control_points.len(), "catia E5 NURBS pcurve points")?;
+            scaled_points.extend(control_points.iter().map(|[u, v]| Point2::new(u.get() * scale[0], v.get() * scale[1])));
+            Ok((|| {
             if !scale.into_iter().all(|value| value != 0.0)
-                || !control_points
+                || !scaled_points
                     .iter()
                     .copied()
                     .all(|point| point.is_finite())
@@ -2396,7 +2398,7 @@ fn e5_pcurve_on_surface(
             }
             let geometry = PcurveGeometry::Nurbs {
                 nurbs: crate::nurbs::note_refusal(
-                    PcurveNurbs::from_lanes(*degree, knots, control_points, None, false),
+                    PcurveNurbs::from_lanes(*degree, knot_values, scaled_points, None, false),
                     refusal,
                     format_args!(
                         "e5 NURBS pcurve on surface record {} at byte {}",
@@ -2413,6 +2415,7 @@ fn e5_pcurve_on_surface(
             let endpoints = lifted[0].zip(lifted[1])?;
             let endpoints = [endpoints.0.get(), endpoints.1.get()];
             Some((geometry, range, endpoints))
+            })())
         }
     }
 }
@@ -3182,6 +3185,60 @@ mod route_tests {
     use crate::test_support::test_b5::{finite, finite_lane, finite_pair, point, positive};
     use std::collections::{BTreeMap, HashMap};
 
+    fn fixture_pcurve_on_surface(
+        pcurve: &E5Pcurve,
+        surface: &E5Surface,
+        refusal: &mut crate::nurbs::LaneRefusals,
+    ) -> Option<(PcurveGeometry, [f64; 2], [Point3; 2])> {
+        crate::test_support::with_service_context(|ctx| {
+            e5_pcurve_on_surface(ctx, pcurve, surface, refusal)
+        })
+        .expect("service resource budget")
+    }
+
+    #[test]
+    fn e5_jet_pcurve_refuses_scaled_lane_allocations() {
+        let surface = E5Surface {
+            pos: 0,
+            record_id: 7,
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid plane fixture"),
+            )),
+            uv_scale: finite_pair([1.0, 1.0]),
+        };
+        let pcurve = jet_pcurve(
+            7,
+            vec![0.0, 1.0],
+            vec![6, 6],
+            vec![[0.0, 0.0], [1.0, 0.0]],
+            vec![[1.0, 0.0]; 2],
+            vec![[0.0, 0.0]; 2],
+            [0.0, 1.0],
+        );
+        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            e5_pcurve_on_surface(ctx, &pcurve, &surface, &mut crate::nurbs::LaneRefusals::new())
+        };
+        assert!(crate::test_support::with_service_context(run)
+            .expect("service resource budget")
+            .is_some());
+        for (cap, operation) in [
+            (0, "catia E5 pcurve jet knots"),
+            (2, "catia E5 pcurve jet points"),
+            (4, "catia E5 pcurve first jets"),
+            (6, "catia E5 pcurve second jets"),
+        ] {
+            assert!(matches!(
+                crate::test_support::with_collection_limit(cap, run),
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation
+            ));
+        }
+    }
+
     fn jet_pcurve(
         surface: u32,
         knots: Vec<f64>,
@@ -3415,7 +3472,7 @@ mod route_tests {
             )),
             uv_scale,
         };
-        let (pcurve, range, endpoints) = e5_pcurve_on_surface(
+        let (pcurve, range, endpoints) = fixture_pcurve_on_surface(
             &E5Pcurve::Line {
                 surface: 100,
                 origin: finite_pair([0.0, 0.0]),
@@ -4527,6 +4584,10 @@ mod route_tests {
 
     #[test]
     fn e5_plane_jet_boundary_lifts_control_net_affinely() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits input limit");
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(1.0, 2.0, 3.0),
@@ -4548,6 +4609,7 @@ mod route_tests {
             [0.0, 1.0],
         );
         let pcurve = quintic_jet_pcurve(
+            &ctx,
             5,
             &[0.0, 1.0],
             &points,
@@ -4556,6 +4618,7 @@ mod route_tests {
             &mut crate::nurbs::LaneRefusals::new(),
             "test record",
         )
+        .expect("service resource budget")
         .expect("quintic pcurve");
         let (curve, range) = e5_boundary_curve(
             &surface,
@@ -4737,7 +4800,7 @@ mod route_tests {
             [0.0, 1.0],
         );
         let (geometry, range, endpoints) =
-            e5_pcurve_on_surface(&pcurve, &surface, &mut crate::nurbs::LaneRefusals::new())
+            fixture_pcurve_on_surface(&pcurve, &surface, &mut crate::nurbs::LaneRefusals::new())
                 .expect("normalized cylinder jet");
         assert_eq!(range, [0.0, 1.0]);
         let PcurveGeometry::Nurbs { nurbs } = geometry else {
@@ -4798,7 +4861,7 @@ mod route_tests {
         };
 
         let (geometry, range, endpoints) =
-            e5_pcurve_on_surface(&pcurve, &surface, &mut crate::nurbs::LaneRefusals::new())
+            fixture_pcurve_on_surface(&pcurve, &surface, &mut crate::nurbs::LaneRefusals::new())
                 .expect("NURBS pcurve on surface");
         assert_eq!(range, [0.0, 1.0]);
         assert!(matches!(
@@ -4847,7 +4910,7 @@ mod route_tests {
         );
 
         let (geometry, range, endpoints) =
-            e5_pcurve_on_surface(&pcurve, &surface, &mut crate::nurbs::LaneRefusals::new())
+            fixture_pcurve_on_surface(&pcurve, &surface, &mut crate::nurbs::LaneRefusals::new())
                 .expect("normalized cone jet");
         assert_eq!(range, [0.0, 1.0]);
         let PcurveGeometry::Nurbs { nurbs } = geometry else {
@@ -4911,7 +4974,7 @@ mod route_tests {
             range: finite_pair([0.0, 1.0]),
         };
         assert!(
-            e5_pcurve_on_surface(&pcurve, &surface, &mut crate::nurbs::LaneRefusals::new())
+            fixture_pcurve_on_surface(&pcurve, &surface, &mut crate::nurbs::LaneRefusals::new())
                 .is_none()
         );
     }
@@ -4940,7 +5003,7 @@ mod route_tests {
             tail: finite_pair([0.0, 0.0]),
         };
         assert!(
-            e5_pcurve_on_surface(&pcurve, &surface, &mut crate::nurbs::LaneRefusals::new())
+            fixture_pcurve_on_surface(&pcurve, &surface, &mut crate::nurbs::LaneRefusals::new())
                 .is_none()
         );
     }
@@ -4970,7 +5033,7 @@ mod route_tests {
             [0.0, 1.0],
         );
         assert!(
-            e5_pcurve_on_surface(&pcurve, &surface, &mut crate::nurbs::LaneRefusals::new())
+            fixture_pcurve_on_surface(&pcurve, &surface, &mut crate::nurbs::LaneRefusals::new())
                 .is_none()
         );
     }
@@ -5042,7 +5105,7 @@ mod route_tests {
             tail: finite_pair([0.0, 0.0]),
         };
         let (geometry, range, endpoints) =
-            e5_pcurve_on_surface(&pcurve, &surface, &mut crate::nurbs::LaneRefusals::new())
+            fixture_pcurve_on_surface(&pcurve, &surface, &mut crate::nurbs::LaneRefusals::new())
                 .expect("normalized torus circle");
         assert_eq!(range, [0.0, std::f64::consts::FRAC_PI_2]);
         let PcurveGeometry::Nurbs { nurbs } = geometry else {

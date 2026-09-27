@@ -922,14 +922,22 @@ pub(in crate::families) fn parse_from_records_budgeted(
     budget: Option<&WorkBudget<'_>>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<B5Graph>, CodecError> {
-    let by_id: HashMap<u32, &B5Record> = records
-        .iter()
-        .map(|record| (record.object_id, record))
-        .collect();
+    let mut by_id = HashMap::new();
+    crate::resource::reserve_map(ctx, &mut by_id, records.len(), "catia B5 record index")?;
+    for record in records {
+        by_id.insert(record.object_id, record);
+    }
     if records.is_empty() || by_id.len() != records.len() {
         return Ok(None);
     }
     let class21_candidates = a8_class21_pcurves_from_frames(ctx, bytes, frames)?;
+    let object_stream_pcurve_jets = crate::families::a5a8::records::object_stream_pcurves(bytes);
+    let mut object_stream_pcurve_candidates = Vec::new();
+    for jet in &object_stream_pcurve_jets {
+        if let Some(candidate) = object_stream_pcurve_candidate(ctx, jet)? {
+            crate::resource::push(ctx, &mut object_stream_pcurve_candidates, candidate, "catia B5 object pcurve candidates")?;
+        }
+    }
     Ok(parse_from_records_with_class21(
         bytes,
         records,
@@ -939,6 +947,7 @@ pub(in crate::families) fn parse_from_records_budgeted(
         refusal,
         PreparedB5Graph {
             class21_candidates,
+            object_stream_pcurve_candidates,
             by_id: &by_id,
         },
     ))
@@ -946,6 +955,7 @@ pub(in crate::families) fn parse_from_records_budgeted(
 
 struct PreparedB5Graph<'a, 'b> {
     class21_candidates: Vec<B5Pcurve>,
+    object_stream_pcurve_candidates: Vec<B5Pcurve>,
     by_id: &'a HashMap<u32, &'b B5Record>,
 }
 
@@ -960,16 +970,13 @@ fn parse_from_records_with_class21(
 ) -> Option<B5Graph> {
     let PreparedB5Graph {
         class21_candidates,
+        object_stream_pcurve_candidates: object_stream_candidates,
         by_id,
     } = prepared;
-    let object_stream_pcurve_jets = crate::families::a5a8::records::object_stream_pcurves(bytes);
     let mut object_stream_pcurve_candidates = BTreeMap::new();
     let mut conflicting_object_stream_pcurves = HashSet::new();
     let mut object_stream_pcurve_classes = HashMap::<u32, Option<u8>>::new();
-    for jet in &object_stream_pcurve_jets {
-        let Some(candidate) = object_stream_pcurve_candidate(jet) else {
-            continue;
-        };
+    for candidate in object_stream_candidates {
         object_stream_pcurve_classes
             .entry(candidate.object_id)
             .and_modify(|class| {
@@ -1551,22 +1558,23 @@ fn surface_alias_carrier(
 }
 
 fn object_stream_pcurve_candidate(
+    ctx: &DecodeContext<'_>,
     jet: &crate::families::a5a8::records::A8Pcurve,
-) -> Option<B5Pcurve> {
-    let (_, control_points) = jet.bspline()?;
-    Some(B5Pcurve {
+) -> Result<Option<B5Pcurve>, CodecError> {
+    let Some((_, control_points)) = jet.bspline(ctx)? else { return Ok(None); };
+    Ok(Some(B5Pcurve {
         object_id: jet.object_id,
         surface: jet.support_id,
         degree: crate::families::a5a8::records::A8Pcurve::DEGREE,
-        distinct_knots: jet.knots(),
-        multiplicities: vec![crate::families::a5a8::records::A8Pcurve::DEGREE + 1; jet.sites.len()],
+        distinct_knots: jet.knots(ctx)?,
+        multiplicities: ctx.alloc_filled(jet.sites.len(), crate::families::a5a8::records::A8Pcurve::DEGREE + 1, "catia_B5_object_pcurve_multiplicities")?,
         control_points,
         weights: None,
         parameter_range: Some(jet.range),
         parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
-    })
+    }))
 }
 
 #[cfg(test)]
@@ -1727,16 +1735,13 @@ fn parse_a8_class21_pcurve(
         let mut second = Vec::new();
         if let Err(error) = crate::resource::reserve_admitted_vec(&mut second, knot_count, "catia B5 pcurve second jets") { return Some(Err(error)); }
         second.extend(ddu.into_iter().zip(ddv).map(|(u, v)| [u, v]));
-        let control_count = knot_count.checked_sub(1)?.checked_mul(6)?;
-        if let Err(error) = admit_items(ctx, control_count, "catia B5 pcurve control net") {
-            return Some(Err(error));
-        }
-        let full_knot_count = knot_count.checked_mul(6)?;
-        if let Err(error) = admit_items(ctx, full_knot_count, "catia B5 pcurve full knots") {
-            return Some(Err(error));
-        }
-        let (_, control_points) =
-            crate::nurbs::quintic_jet_bspline(degree, &knot_values, &points, &first, &second)?;
+        let (_, control_points) = match crate::nurbs::quintic_jet_bspline(
+            ctx, degree, &knot_values, &points, &first, &second,
+        ) {
+            Ok(Some(curve)) => curve,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let tail = payload.get(position..)?;
         let tail_control = tail.get(..2);
         let extension_control = tail.get(34..36);

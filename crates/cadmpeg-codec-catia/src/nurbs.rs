@@ -663,12 +663,13 @@ fn circular_helix_point(construction: &ProceduralCurveDefinition, angle: f64) ->
 /// Convert degree-5 position/first/second-derivative knot jets into an exact
 /// piecewise Bézier B-spline control net, in any point dimension.
 pub(crate) fn quintic_jet_bspline<const N: usize>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     degree: u32,
     knots: &[f64],
     points: &[[f64; N]],
     first: &[[f64; N]],
     second: &[[f64; N]],
-) -> Option<(Vec<f64>, Vec<FiniteVector<N>>)> {
+) -> Result<Option<(Vec<f64>, Vec<FiniteVector<N>>)>, cadmpeg_core::CodecError> {
     if degree != 5
         || knots.len() < 2
         || points.len() != knots.len()
@@ -679,14 +680,21 @@ pub(crate) fn quintic_jet_bspline<const N: usize>(
         || !first.iter().flatten().copied().all(f64::is_finite)
         || !second.iter().flatten().copied().all(f64::is_finite)
     {
-        return None;
+        return Ok(None);
     }
-    let mut controls = Vec::with_capacity(6 * (knots.len() - 1));
-    let mut full_knots = vec![knots[0]; 6];
+    let control_count = knots.len().checked_sub(1).and_then(|count| count.checked_mul(6))
+        .ok_or_else(|| ctx.refuse_codec_limit("catia quintic jet controls", u64::MAX, u64::MAX))?;
+    let full_knot_count = knots.len().checked_mul(6)
+        .ok_or_else(|| ctx.refuse_codec_limit("catia quintic jet knots", u64::MAX, u64::MAX))?;
+    let mut controls = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut controls, control_count, "catia quintic jet controls")?;
+    let mut full_knots = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut full_knots, full_knot_count, "catia quintic jet knots")?;
+    full_knots.extend([knots[0]; 6]);
     for index in 0..knots.len() - 1 {
         let h = knots[index + 1] - knots[index];
         if !h.is_finite() || h <= 0.0 {
-            return None;
+            return Ok(None);
         }
         let p0 = points[index];
         let p1 = points[index + 1];
@@ -727,13 +735,17 @@ pub(crate) fn quintic_jet_bspline<const N: usize>(
         full_knots.extend([knots[index + 1]; 6]);
     }
     if !full_knots.iter().copied().all(f64::is_finite) {
-        return None;
+        return Ok(None);
     }
-    let controls = controls
-        .into_iter()
-        .map(FiniteVector::new)
-        .collect::<Option<Vec<_>>>()?;
-    Some((full_knots, controls))
+    let mut finite_controls = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut finite_controls, controls.len(), "catia quintic jet finite controls")?;
+    for control in controls {
+        let Some(control) = FiniteVector::new(control) else {
+            return Ok(None);
+        };
+        finite_controls.push(control);
+    }
+    Ok(Some((full_knots, finite_controls)))
 }
 
 pub(crate) fn expand_knots(distinct: &[f64], multiplicities: &[u32]) -> Option<Vec<f64>> {
@@ -1263,22 +1275,28 @@ mod tests {
 
     #[test]
     fn quintic_jet_rejects_nonfinite_control_net() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits input limit");
         assert!(quintic_jet_bspline(
+            &ctx,
             5,
             &[0.0, 10.0],
             &[[0.0, 0.0], [1.0, 0.0]],
             &[[f64::MAX, 0.0], [f64::MAX, 0.0]],
             &[[0.0, 0.0], [0.0, 0.0]],
         )
-        .is_none());
+        .expect("service resource budget").is_none());
         assert!(quintic_jet_bspline(
+            &ctx,
             5,
             &[0.0, 1.0],
             &[[f64::NAN, 0.0], [1.0, 0.0]],
             &[[1.0, 0.0], [1.0, 0.0]],
             &[[0.0, 0.0], [0.0, 0.0]],
         )
-        .is_none());
+        .expect("service resource budget").is_none());
     }
 
     #[test]
