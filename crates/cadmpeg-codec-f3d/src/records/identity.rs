@@ -409,7 +409,24 @@ impl NativeRecordId {
         key: impl std::fmt::Display,
     ) -> Result<Self, String> {
         let stream = crate::ids::native_stream(&text).ok_or("id must contain a native stream")?;
-        if text != format!("{stream}:{kind}#{key}") {
+        struct MatchText<'a>(&'a str);
+        impl std::fmt::Write for MatchText<'_> {
+            fn write_str(&mut self, value: &str) -> std::fmt::Result {
+                self.0 = self.0.strip_prefix(value).ok_or(std::fmt::Error)?;
+                Ok(())
+            }
+        }
+        let expected_key = text
+            .strip_prefix(stream)
+            .and_then(|suffix| suffix.strip_prefix(':'))
+            .and_then(|suffix| suffix.strip_prefix(kind))
+            .and_then(|suffix| suffix.strip_prefix('#'));
+        let valid = expected_key.is_some_and(|expected_key| {
+            let mut comparison = MatchText(expected_key);
+            std::fmt::Write::write_fmt(&mut comparison, format_args!("{key}")).is_ok()
+                && comparison.0.is_empty()
+        });
+        if !valid {
             return Err(format!("id must identify {kind} at {key}"));
         }
         let stream_end = stream.len();
@@ -417,5 +434,27 @@ impl NativeRecordId {
     }
     pub(super) fn stream(&self) -> &str {
         &self.text[..self.stream_end]
+    }
+}
+
+#[cfg(test)]
+mod native_record_id_tests {
+    use super::NativeRecordId;
+
+    #[test]
+    fn native_record_id_matches_scoped_kind_and_key_without_copying_the_scope() {
+        let id = NativeRecordId::try_new(
+            "f3d:Design%2Fmain:act-guid#42".into(),
+            "act-guid",
+            42,
+        )
+        .unwrap();
+        assert_eq!(id.stream(), "f3d:Design%2Fmain");
+        assert!(NativeRecordId::try_new(
+            "f3d:Design%2Fmain:act-guid#43".into(),
+            "act-guid",
+            42,
+        )
+        .is_err());
     }
 }
