@@ -5736,6 +5736,21 @@ pub(crate) fn clone_source_association(ctx: &DecodeContext<'_>, source: &SourceO
     })
 }
 
+fn model_identity<I>(
+    ctx: &DecodeContext<'_>,
+    kind: &str,
+    parent: &str,
+    child: &str,
+    operation: &'static str,
+) -> Result<I, CodecError>
+where
+    I: TryFrom<String>,
+    I::Error: std::fmt::Display,
+{
+    I::try_from(native::model_id_charged_at(ctx, kind, parent, child, operation)?)
+        .map_err(CodecError::malformed)
+}
+
 pub(crate) fn transfer_text_curves(
     ctx: &DecodeContext<'_>,
     payloads: &[ShapePayloadRecord],
@@ -5761,11 +5776,10 @@ pub(crate) fn transfer_text_curves(
             instance_path: Vec::new(),
         };
         for (index, curve) in curves.iter().enumerate() {
-            let id = CurveId::compose(
-                &cadmpeg_ir::identity_namespace!("fcstd", "model", "curve"),
-                native::model_key(&payload.id, (index + 1).to_string())
-                    .map_err(CodecError::malformed)?,
-            );
+            let id: CurveId = model_identity(
+                ctx, "curve", &payload.id, &(index + 1).to_string(),
+                "FreeCAD transferred curve identity",
+            )?;
             append_text_curve(ctx, curve, id, &association, &mut transfer)?;
         }
     }
@@ -5904,12 +5918,13 @@ fn append_text_curve(
             parameter_range,
             basis,
         } => {
-            let basis_id = CurveId::compose(
-                &cadmpeg_ir::identity_namespace!("fcstd", "model", "curve"),
-                id.key().colon(cadmpeg_ir::identity_key!("basis")),
-            );
+            let basis_id: CurveId = model_identity(
+                ctx, "curve", id.as_str(), "basis", "FreeCAD curve basis identity",
+            )?;
             let basis_geometry =
-                append_text_curve(ctx, basis.curve(), basis_id.clone(), association, transfer)?;
+                append_text_curve(ctx, basis.curve(), crate::resource::copied_identity(
+                    ctx, basis_id.as_str(), "FreeCAD curve basis identity copy",
+                )?, association, transfer)?;
             let parameter_range = crate::topology_transfer::normalize_occt_curve_range(
                 basis_geometry.solved().ok_or_else(|| {
                     cadmpeg_core::CodecError::NotImplemented(
@@ -5920,24 +5935,21 @@ fn append_text_curve(
             )
             .unwrap_or(*parameter_range);
             reserve_vec_items(ctx, &mut transfer.procedural, 1, "FreeCAD procedural curves")?;
+            let procedural_id: CurveId = crate::resource::copied_identity(
+                ctx, id.as_str(), "FreeCAD procedural curve identity copy",
+            )?;
+            let admitted_payload = cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction::from_finite_parts(
+                basis_id, parameter_range, true, None,
+            ).map_err(cadmpeg_core::CodecError::malformed)?;
+            let construction_id: ProceduralCurveId = model_identity(
+                ctx, "curve", id.as_str(), "construction", "FreeCAD curve construction identity",
+            )?;
             transfer.procedural.push((
-                id.clone(),
-                cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction::from_finite_parts(
-                    basis_id,
-                    parameter_range,
-                    true,
-                    None,
-                )
-                .map(|admitted_payload| {
-                    ProceduralCurve::new(
-                        ProceduralCurveId::compose(
-                            &cadmpeg_ir::identity_namespace!("fcstd", "model", "curve"),
-                            id.key().colon(cadmpeg_ir::identity_key!("construction")),
-                        ),
-                        ProceduralCurveDefinition::Subset(admitted_payload),
-                    )
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+                procedural_id,
+                ProceduralCurve::new(
+                    construction_id,
+                    ProceduralCurveDefinition::Subset(admitted_payload),
+                ),
             ));
             basis_geometry
         }
@@ -5946,29 +5958,28 @@ fn append_text_curve(
             direction,
             basis,
         } => {
-            let basis_id = CurveId::compose(
-                &cadmpeg_ir::identity_namespace!("fcstd", "model", "curve"),
-                id.key().colon(cadmpeg_ir::identity_key!("basis")),
-            );
-            append_text_curve(ctx, basis.curve(), basis_id.clone(), association, transfer)?;
+            let basis_id: CurveId = model_identity(
+                ctx, "curve", id.as_str(), "basis", "FreeCAD curve basis identity",
+            )?;
+            append_text_curve(ctx, basis.curve(), crate::resource::copied_identity(
+                ctx, basis_id.as_str(), "FreeCAD curve basis identity copy",
+            )?, association, transfer)?;
             reserve_vec_items(ctx, &mut transfer.procedural, 1, "FreeCAD procedural curves")?;
+            let procedural_id: CurveId = crate::resource::copied_identity(
+                ctx, id.as_str(), "FreeCAD procedural curve identity copy",
+            )?;
+            let admitted_payload = cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::from_admitted_direction(
+                basis_id, *distance, *direction,
+            ).map_err(cadmpeg_core::CodecError::malformed)?;
+            let construction_id: ProceduralCurveId = model_identity(
+                ctx, "curve", id.as_str(), "construction", "FreeCAD curve construction identity",
+            )?;
             transfer.procedural.push((
-                id.clone(),
-                cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::from_admitted_direction(
-                    basis_id,
-                    *distance,
-                    *direction,
-                )
-                .map(|admitted_payload| {
-                    ProceduralCurve::new(
-                        ProceduralCurveId::compose(
-                            &cadmpeg_ir::identity_namespace!("fcstd", "model", "curve"),
-                            id.key().colon(cadmpeg_ir::identity_key!("construction")),
-                        ),
-                        ProceduralCurveDefinition::Offset(admitted_payload),
-                    )
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+                procedural_id,
+                ProceduralCurve::new(
+                    construction_id,
+                    ProceduralCurveDefinition::Offset(admitted_payload),
+                ),
             ));
             CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None })
         }
@@ -6014,14 +6025,14 @@ pub(crate) fn transfer_text_surfaces(
             instance_path: Vec::new(),
         };
         for (index, surface) in surfaces.iter().enumerate() {
+            let id: SurfaceId = model_identity(
+                ctx, "surface", &payload.id, &(index + 1).to_string(),
+                "FreeCAD transferred surface identity",
+            )?;
             append_text_surface(
                 ctx,
                 surface,
-                SurfaceId::compose(
-                    &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
-                    native::model_key(&payload.id, (index + 1).to_string())
-                        .map_err(CodecError::malformed)?,
-                ),
+                id,
                 &association,
                 curve_transfer,
                 &mut transfer,
@@ -6169,14 +6180,15 @@ fn append_text_surface(
             direction,
             directrix,
         } => {
-            let directrix_id = CurveId::compose(
-                &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
-                id.key().colon(cadmpeg_ir::identity_key!("directrix")),
-            );
+            let directrix_id: CurveId = model_identity(
+                ctx, "surface", id.as_str(), "directrix", "FreeCAD surface directrix identity",
+            )?;
             append_text_curve(
                 ctx,
                 directrix.curve(),
-                directrix_id.clone(),
+                crate::resource::copied_identity(
+                    ctx, directrix_id.as_str(), "FreeCAD surface directrix identity copy",
+                )?,
                 association,
                 curve_transfer,
             )?;
@@ -6189,13 +6201,16 @@ fn append_text_surface(
                     None,
                 );
             reserve_vec_items(ctx, &mut transfer.procedural, 1, "FreeCAD procedural surfaces")?;
+            let procedural_id: SurfaceId = crate::resource::copied_identity(
+                ctx, id.as_str(), "FreeCAD procedural surface identity copy",
+            )?;
+            let construction_id: ProceduralSurfaceId = model_identity(
+                ctx, "surface", id.as_str(), "construction", "FreeCAD surface construction identity",
+            )?;
             transfer.procedural.push((
-                id.clone(),
+                procedural_id,
                 ProceduralSurface::new(
-                    ProceduralSurfaceId::compose(
-                        &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
-                        id.key().colon(cadmpeg_ir::identity_key!("construction")),
-                    ),
+                    construction_id,
                     ProceduralSurfaceDefinition::Extrusion(admitted_payload),
                     None,
                 ),
@@ -6207,46 +6222,40 @@ fn append_text_surface(
             axis_direction,
             directrix,
         } => {
-            let directrix_id = CurveId::compose(
-                &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
-                id.key().colon(cadmpeg_ir::identity_key!("directrix")),
-            );
+            let directrix_id: CurveId = model_identity(
+                ctx, "surface", id.as_str(), "directrix", "FreeCAD surface directrix identity",
+            )?;
             append_text_curve(
                 ctx,
                 directrix.curve(),
-                directrix_id.clone(),
+                crate::resource::copied_identity(
+                    ctx, directrix_id.as_str(), "FreeCAD surface directrix identity copy",
+                )?,
                 association,
                 curve_transfer,
             )?;
             reserve_vec_items(ctx, &mut transfer.procedural, 1, "FreeCAD procedural surfaces")?;
-            transfer.procedural.push((
-                id.clone(),
-                cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis_from_parts(
-                    *axis_origin,
-                    *axis_direction,
+            let procedural_id: SurfaceId = crate::resource::copied_identity(
+                ctx, id.as_str(), "FreeCAD procedural surface identity copy",
+            )?;
+            let admitted_payload = cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis_from_parts(
+                *axis_origin, *axis_direction,
+            ).and_then(|axis| {
+                cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+                    directrix_id, axis, [0.0, std::f64::consts::TAU], None, None, true,
+                    cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )
-                .and_then(|axis| {
-                    cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
-                        directrix_id,
-                        axis,
-                        [0.0, std::f64::consts::TAU],
-                        None,
-                        None,
-                        true,
-                        cadmpeg_ir::geometry::CacheContract::from_form(None),
-                    )
-                })
-                .map(|admitted_payload| {
-                    ProceduralSurface::new(
-                        ProceduralSurfaceId::compose(
-                            &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
-                            id.key().colon(cadmpeg_ir::identity_key!("construction")),
-                        ),
-                        ProceduralSurfaceDefinition::Revolution(admitted_payload),
-                        None,
-                    )
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+            }).map_err(cadmpeg_core::CodecError::malformed)?;
+            let construction_id: ProceduralSurfaceId = model_identity(
+                ctx, "surface", id.as_str(), "construction", "FreeCAD surface construction identity",
+            )?;
+            transfer.procedural.push((
+                procedural_id,
+                ProceduralSurface::new(
+                    construction_id,
+                    ProceduralSurfaceDefinition::Revolution(admitted_payload),
+                    None,
+                ),
             ));
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None })
         }
@@ -6267,51 +6276,49 @@ fn append_text_surface(
                         .mul_add(basis_parameters.v_scale, basis_parameters.v_offset)
                 }),
             ];
-            let basis_id = SurfaceId::compose(
-                &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
-                id.key().colon(cadmpeg_ir::identity_key!("basis")),
-            );
+            let basis_id: SurfaceId = model_identity(
+                ctx, "surface", id.as_str(), "basis", "FreeCAD surface basis identity",
+            )?;
             let basis_geometry = append_text_surface(
                 ctx,
                 basis.surface(),
-                basis_id.clone(),
+                crate::resource::copied_identity(
+                    ctx, basis_id.as_str(), "FreeCAD surface basis identity copy",
+                )?,
                 association,
                 curve_transfer,
                 transfer,
             )?;
             reserve_vec_items(ctx, &mut transfer.procedural, 1, "FreeCAD procedural surfaces")?;
+            let procedural_id: SurfaceId = crate::resource::copied_identity(
+                ctx, id.as_str(), "FreeCAD procedural surface identity copy",
+            )?;
+            let admitted_payload = cadmpeg_ir::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(
+                basis_id, parameter_ranges, None, None, None,
+            ).map_err(cadmpeg_core::CodecError::malformed)?;
+            let construction_id: ProceduralSurfaceId = model_identity(
+                ctx, "surface", id.as_str(), "construction", "FreeCAD surface construction identity",
+            )?;
             transfer.procedural.push((
-                id.clone(),
-                cadmpeg_ir::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(
-                    basis_id,
-                    parameter_ranges,
+                procedural_id,
+                ProceduralSurface::new(
+                    construction_id,
+                    ProceduralSurfaceDefinition::Subset(admitted_payload),
                     None,
-                    None,
-                    None,
-                )
-                .map(|admitted_payload| {
-                    ProceduralSurface::new(
-                        ProceduralSurfaceId::compose(
-                            &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
-                            id.key().colon(cadmpeg_ir::identity_key!("construction")),
-                        ),
-                        ProceduralSurfaceDefinition::Subset(admitted_payload),
-                        None,
-                    )
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+                ),
             ));
             basis_geometry
         }
         TextSurface::Offset { distance, basis } => {
-            let basis_id = SurfaceId::compose(
-                &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
-                id.key().colon(cadmpeg_ir::identity_key!("basis")),
-            );
+            let basis_id: SurfaceId = model_identity(
+                ctx, "surface", id.as_str(), "basis", "FreeCAD surface basis identity",
+            )?;
             append_text_surface(
                 ctx,
                 basis.surface(),
-                basis_id.clone(),
+                crate::resource::copied_identity(
+                    ctx, basis_id.as_str(), "FreeCAD surface basis identity copy",
+                )?,
                 association,
                 curve_transfer,
                 transfer,
@@ -6327,13 +6334,16 @@ fn append_text_surface(
                     None,
                 );
             reserve_vec_items(ctx, &mut transfer.procedural, 1, "FreeCAD procedural surfaces")?;
+            let procedural_id: SurfaceId = crate::resource::copied_identity(
+                ctx, id.as_str(), "FreeCAD procedural surface identity copy",
+            )?;
+            let construction_id: ProceduralSurfaceId = model_identity(
+                ctx, "surface", id.as_str(), "construction", "FreeCAD surface construction identity",
+            )?;
             transfer.procedural.push((
-                id.clone(),
+                procedural_id,
                 ProceduralSurface::new(
-                    ProceduralSurfaceId::compose(
-                        &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
-                        id.key().colon(cadmpeg_ir::identity_key!("construction")),
-                    ),
+                    construction_id,
                     ProceduralSurfaceDefinition::Offset(admitted_payload),
                     None,
                 ),
