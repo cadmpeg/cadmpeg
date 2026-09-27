@@ -23,6 +23,72 @@ fn assert_scalar_cache_refusal(error: CodecError) {
             && limit.operation == "creo scalar cache unique images"));
 }
 
+fn named_records_with_limits(
+    payload: &[u8],
+    collection_items: u64,
+    retained_bytes: u64,
+) -> Result<Vec<super::super::SurfacePrototypeRecord>, CodecError> {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_items;
+    policy.limits.max_retained_bytes = retained_bytes;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root input is admitted");
+    super::super::named_prototype_records(
+        &ctx,
+        payload,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+}
+
+#[test]
+fn named_prototype_record_refuses_before_vec_growth() {
+    let payload = b"srf_prim_ptr(plane)\0";
+    assert_eq!(
+        named_records_with_limits(payload, 1, u64::MAX)
+            .expect("one record admitted")
+            .len(),
+        1
+    );
+    let error =
+        named_records_with_limits(payload, 0, u64::MAX).expect_err("record needs one Vec item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo named prototype records"));
+}
+
+#[test]
+fn named_prototype_parameter_refuses_before_vec_growth() {
+    let payload = b"srf_prim_ptr(torus)\0\xe0\x01radius2\0\x2e\x05\x33\xf1\xf7\x0e\xe3";
+    assert_eq!(
+        named_records_with_limits(payload, u64::MAX, u64::MAX).expect("one parameter admitted")[0]
+            .parameters
+            .len(),
+        1
+    );
+    let error =
+        named_records_with_limits(payload, 0, u64::MAX).expect_err("parameter needs one Vec item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo named prototype parameters"));
+}
+
+#[test]
+fn named_prototype_body_refuses_before_retained_copy() {
+    let payload = b"srf_prim_ptr(torus)\0\xe0\x01radius2\0\x2e\x05\x33\xf1\xf7\x0e\xe3";
+    assert_eq!(
+        named_records_with_limits(payload, u64::MAX, u64::MAX).expect("body admitted")[0]
+            .parameters[0]
+            .body,
+        [0x2e, 0x05, 0x33, 0xf1, 0xf7, 0x0e]
+    );
+    let error =
+        named_records_with_limits(payload, u64::MAX, 0).expect_err("body needs retained bytes");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo named prototype parameter body"));
+}
+
 #[test]
 fn named_prototype_scalar_cache_refuses_before_hashset_growth() {
     assert!(
