@@ -2782,8 +2782,14 @@ pub(crate) fn scan_bytes<'a>(
         .unwrap_or_default();
     let model_geometry_sections = model_geometry_sections(ctx, &sections)?;
     let census = geom_census(&sections)?;
-    let principal_unit =
-        binary_principal_unit(&data).or_else(|| legacy_ascii?.persistence.principal_unit_system());
+    let principal_unit = if let Some(unit) = binary_principal_unit(&data) {
+        Some(unit)
+    } else {
+        legacy_ascii
+            .map(|framing| framing.persistence.principal_unit_system(ctx))
+            .transpose()?
+            .flatten()
+    };
     let family_table = family_table(&data, &sections);
     let legacy_family_table = legacy_ascii
         .map(|framing| crate::legacy_family::parse(ctx, &framing.persistence))
