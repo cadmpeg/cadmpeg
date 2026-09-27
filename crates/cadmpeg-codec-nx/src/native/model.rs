@@ -875,9 +875,10 @@ impl NativeModel {
             &display_jt_vertex_texture_coordinates,
         );
         let display_jt_polygon_meshes = display_jt_polygon_meshes(
+            ctx,
             &display_jt_topology_packet_sequences,
             &display_jt_coordinate_array_headers,
-        );
+        )?;
         let (display_jt_compressed_elements, display_jt_compressed_element_sequences) =
             display_jt_compressed_element_sequences(budget, container, &display_jt_segments)?;
         let display_jt_string_property_atoms =

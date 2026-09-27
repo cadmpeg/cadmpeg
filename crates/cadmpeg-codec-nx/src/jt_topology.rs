@@ -4,7 +4,8 @@
 const MAX_TOPOLOGY_ITEMS: usize = 1_000_000;
 const MAX_TOPOLOGY_SLOTS: usize = 8_000_000;
 
-use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
+use cadmpeg_core::CodecError;
 use std::num::NonZeroUsize;
 
 mod face_slots;
@@ -106,60 +107,75 @@ impl Symbols<'_> {
         (face > 0).then_some((face, position))
     }
 
-    fn attribute_mask(&mut self, degree: NonZeroUsize) -> Option<Vec<bool>> {
+    fn attribute_mask(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        degree: NonZeroUsize,
+    ) -> Result<Option<Vec<bool>>, CodecError> {
         let context = AttributeMaskContext::of(degree);
         let lane = context.lane();
         let degree = degree.get();
         if degree <= 64 {
             let position = self.attribute_mask_pos[lane];
-            let low =
-                u64::from(u32::try_from(*self.attribute_masks.small[lane].get(position)?).ok()?);
-            let mask = if context == AttributeMaskContext::COMBINED {
-                let next = u64::from(
-                    u32::try_from(*self.attribute_masks.context_7_next_30.get(position)?).ok()?,
+            let Some(mask) = (|| -> Option<u64> {
+                let low = u64::from(
+                    u32::try_from(*self.attribute_masks.small[lane].get(position)?).ok()?,
                 );
-                let upper = u64::from(
-                    u32::try_from(*self.attribute_masks.context_7_upper_4.get(position)?).ok()?,
-                );
-                if low >= 1_u64 << 30 || next >= 1_u64 << 30 || upper >= 1_u64 << 4 {
-                    return None;
-                }
-                low | (next << 30) | (upper << 60)
-            } else {
-                low
+                let mask = if context == AttributeMaskContext::COMBINED {
+                    let next = u64::from(
+                        u32::try_from(*self.attribute_masks.context_7_next_30.get(position)?)
+                            .ok()?,
+                    );
+                    let upper = u64::from(
+                        u32::try_from(*self.attribute_masks.context_7_upper_4.get(position)?)
+                            .ok()?,
+                    );
+                    if low >= 1_u64 << 30 || next >= 1_u64 << 30 || upper >= 1_u64 << 4 {
+                        return None;
+                    }
+                    low | (next << 30) | (upper << 60)
+                } else {
+                    low
+                };
+                (degree == 64 || mask >> degree == 0).then_some(mask)
+            })() else {
+                return Ok(None);
             };
-            if degree < 64 && mask >> degree != 0 {
-                return None;
-            }
             self.attribute_mask_pos[lane] += 1;
-            let mut result = Vec::new();
-            result.try_reserve_exact(degree).ok()?;
-            for bit in 0..degree {
-                result.push(mask & (1_u64 << bit) != 0);
+            let mut result = ctx.alloc_filled(degree, false, "nx JT face attribute mask")?;
+            for (bit, target) in result.iter_mut().enumerate() {
+                *target = mask & (1_u64 << bit) != 0;
             }
-            return Some(result);
+            return Ok(Some(result));
         }
         let word_count = degree.div_ceil(32);
-        let end = self.large_mask_pos.checked_add(word_count)?;
-        let words = self
+        let Some(end) = self.large_mask_pos.checked_add(word_count) else {
+            return Ok(None);
+        };
+        let Some(words) = self
             .attribute_masks
             .large_words
-            .get(self.large_mask_pos..end)?;
+            .get(self.large_mask_pos..end)
+        else {
+            return Ok(None);
+        };
         self.large_mask_pos = end;
-        let mut mask = Vec::new();
-        mask.try_reserve_exact(degree).ok()?;
-        for bit in 0..degree {
-            let word = words[bit / 32] as u32;
-            mask.push(word & (1_u32 << (bit % 32)) != 0);
-        }
         if !degree.is_multiple_of(32) {
             let used = degree % 32;
-            let last = *words.last()? as u32;
+            let Some(last) = words.last() else {
+                return Ok(None);
+            };
+            let last = *last as u32;
             if last >> used != 0 {
-                return None;
+                return Ok(None);
             }
         }
-        Some(mask)
+        let mut mask = ctx.alloc_filled(degree, false, "nx JT high-degree face attribute mask")?;
+        for (bit, target) in mask.iter_mut().enumerate() {
+            let word = words[bit / 32] as u32;
+            *target = word & (1_u32 << (bit % 32)) != 0;
+        }
+        Ok(Some(mask))
     }
 
     fn exhausted(&self) -> bool {
@@ -195,20 +211,29 @@ struct Decoder<'a> {
 }
 
 impl Decoder<'_> {
-    fn new_vertex(&mut self) -> Option<usize> {
-        let (valence, group, flags) = self.symbols.vertex()?;
-        self.slot_count = self.slot_count.checked_add(valence)?;
+    fn new_vertex(&mut self, ctx: &DecodeContext<'_>) -> Result<Option<usize>, CodecError> {
+        let Some((valence, group, flags)) = self.symbols.vertex() else {
+            return Ok(None);
+        };
+        let Some(slot_count) = self.slot_count.checked_add(valence) else {
+            return Ok(None);
+        };
+        self.slot_count = slot_count;
         if self.slot_count > MAX_TOPOLOGY_SLOTS {
-            return None;
+            return Ok(None);
         }
+        let faces = ctx.alloc_filled(valence, None, "nx JT vertex face slots")?;
+        ctx.charge_collection_items(1, "nx JT topology vertices")?;
         let index = self.vertices.len();
-        self.vertices.try_reserve(1).ok()?;
+        self.vertices
+            .try_reserve(1)
+            .map_err(|_| refuse_local_limit("nx JT topology vertices", 1, 1))?;
         self.vertices.push(Vertex {
-            faces: alloc_filled(valence, None, "nx JT vertex face slots").ok()?,
+            faces,
             group,
             flags,
         });
-        Some(index)
+        Ok(Some(index))
     }
 
     fn face_context(&self, vertex: usize) -> Option<usize> {
@@ -295,119 +320,224 @@ impl Decoder<'_> {
         Some(())
     }
 
-    fn activate_face(&mut self, vertex: usize, slot: usize) -> Option<usize> {
-        let context = self.face_context(vertex)?;
-        let degree = self.symbols.degree(context)?;
+    fn activate_face(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        vertex: usize,
+        slot: usize,
+    ) -> Result<Option<usize>, CodecError> {
+        let Some(context) = self.face_context(vertex) else {
+            return Ok(None);
+        };
+        let Some(degree) = self.symbols.degree(context) else {
+            return Ok(None);
+        };
         if degree != 0 {
-            let degree = NonZeroUsize::new(usize::try_from(degree).ok()?)?;
+            let Some(degree) = usize::try_from(degree).ok().and_then(NonZeroUsize::new) else {
+                return Ok(None);
+            };
             if degree.get() > MAX_TOPOLOGY_ITEMS {
-                return None;
+                return Ok(None);
             }
-            self.slot_count = self.slot_count.checked_add(degree.get())?;
+            let Some(slot_count) = self.slot_count.checked_add(degree.get()) else {
+                return Ok(None);
+            };
+            self.slot_count = slot_count;
             if self.slot_count > MAX_TOPOLOGY_SLOTS {
-                return None;
+                return Ok(None);
             }
             let face = self.faces.len();
-            let attribute_mask = self.symbols.attribute_mask(degree)?;
-            let face_attribute_count =
-                u32::try_from(attribute_mask.iter().filter(|&&bit| bit).count()).ok()?;
-            let attribute_end = self.attribute_count.checked_add(face_attribute_count)?;
+            let Some(attribute_mask) = self.symbols.attribute_mask(ctx, degree)? else {
+                return Ok(None);
+            };
+            let Some(face_attribute_count) =
+                u32::try_from(attribute_mask.iter().filter(|&&bit| bit).count()).ok()
+            else {
+                return Ok(None);
+            };
+            let Some(attribute_end) = self.attribute_count.checked_add(face_attribute_count) else {
+                return Ok(None);
+            };
+            let Some(attribute_len) = usize::try_from(face_attribute_count).ok() else {
+                return Ok(None);
+            };
+            ctx.charge_collection_items(attribute_len as u64, "nx JT face attributes")?;
             let mut attributes = Vec::new();
-            attributes
-                .try_reserve_exact(usize::try_from(face_attribute_count).ok()?)
-                .ok()?;
+            attributes.try_reserve_exact(attribute_len).map_err(|_| {
+                refuse_local_limit(
+                    "nx JT face attributes",
+                    attribute_len as u64,
+                    attribute_len as u64,
+                )
+            })?;
             attributes.extend(self.attribute_count..attribute_end);
-            self.faces.try_reserve(1).ok()?;
-            self.removed.try_reserve(1).ok()?;
-            self.active.try_reserve(1).ok()?;
+            let vertices = FaceSlots::new(ctx, degree.get())?;
+            ctx.charge_collection_items(1, "nx JT topology faces")?;
+            self.faces
+                .try_reserve(1)
+                .map_err(|_| refuse_local_limit("nx JT topology faces", 1, 1))?;
+            ctx.charge_collection_items(1, "nx JT removed faces")?;
+            self.removed
+                .try_reserve(1)
+                .map_err(|_| refuse_local_limit("nx JT removed faces", 1, 1))?;
+            ctx.charge_collection_items(1, "nx JT active faces")?;
+            self.active
+                .try_reserve(1)
+                .map_err(|_| refuse_local_limit("nx JT active faces", 1, 1))?;
             self.faces.push(Face {
-                vertices: FaceSlots::new(degree.get())?,
+                vertices,
                 attribute_mask,
                 attributes,
             });
             self.attribute_count = attribute_end;
             self.removed.push(false);
-            self.set_vertex_face(vertex, slot, face)?;
-            self.set_face_vertex(face, 0, vertex)?;
+            if self.set_vertex_face(vertex, slot, face).is_none()
+                || self.set_face_vertex(face, 0, vertex).is_none()
+            {
+                return Ok(None);
+            }
             self.active.push(face);
-            return Some(face);
+            return Ok(Some(face));
         }
-        let (offset, face_slot) = self.symbols.split()?;
-        let active_index = self.active.len().checked_sub(offset)?;
-        let face = *self.active.get(active_index)?;
-        self.set_vertex_face(vertex, slot, face)?;
-        self.add_vertex_to_face(vertex, slot, face, face_slot)?;
-        Some(face)
+        let Some((offset, face_slot)) = self.symbols.split() else {
+            return Ok(None);
+        };
+        let Some(active_index) = self.active.len().checked_sub(offset) else {
+            return Ok(None);
+        };
+        let Some(&face) = self.active.get(active_index) else {
+            return Ok(None);
+        };
+        if self.set_vertex_face(vertex, slot, face).is_none()
+            || self
+                .add_vertex_to_face(vertex, slot, face, face_slot)
+                .is_none()
+        {
+            return Ok(None);
+        }
+        Ok(Some(face))
     }
 
-    fn activate_vertex(&mut self, face: usize, face_slot: usize) -> Option<usize> {
-        let vertex = self.new_vertex()?;
-        self.set_vertex_face(vertex, 0, face)?;
-        self.add_vertex_to_face(vertex, 0, face, face_slot)?;
-        Some(vertex)
+    fn activate_vertex(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        face: usize,
+        face_slot: usize,
+    ) -> Result<Option<usize>, CodecError> {
+        let Some(vertex) = self.new_vertex(ctx)? else {
+            return Ok(None);
+        };
+        if self.set_vertex_face(vertex, 0, face).is_none()
+            || self
+                .add_vertex_to_face(vertex, 0, face, face_slot)
+                .is_none()
+        {
+            return Ok(None);
+        }
+        Ok(Some(vertex))
     }
 
-    fn complete_vertex(&mut self, vertex: usize, vertex_slot_on_face: usize) -> Option<()> {
-        let valence = self.vertices.get(vertex)?.faces.len();
-        let mut previous_face = self.vertices[vertex].faces[0]?;
+    fn complete_vertex(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        vertex: usize,
+        vertex_slot_on_face: usize,
+    ) -> Result<Option<()>, CodecError> {
+        let Some(vertex_faces) = self.vertices.get(vertex).map(|vertex| &vertex.faces) else {
+            return Ok(None);
+        };
+        let valence = vertex_faces.len();
+        let Some(&Some(mut previous_face)) = vertex_faces.first() else {
+            return Ok(None);
+        };
         let mut previous_slot = vertex_slot_on_face;
         let mut slot = 1usize;
         while slot < valence {
             let Some(next_face) = self.vertices[vertex].faces[slot] else {
                 break;
             };
-            let degree = self.faces.get(previous_face)?.vertices.len();
+            let Some(degree) = self
+                .faces
+                .get(previous_face)
+                .map(|face| face.vertices.len())
+            else {
+                return Ok(None);
+            };
             previous_slot = (previous_slot + degree - 1) % degree;
             let Some(neighbor) = self.faces[previous_face].vertices[previous_slot] else {
                 break;
             };
-            let found = self
+            let Some(found) = self
                 .faces
-                .get(next_face)?
-                .vertices
-                .iter()
-                .position(|&v| v == Some(neighbor))?;
+                .get(next_face)
+                .and_then(|face| face.vertices.iter().position(|&v| v == Some(neighbor)))
+            else {
+                return Ok(None);
+            };
             let next_degree = self.faces[next_face].vertices.len();
             let next_slot = (found + next_degree - 1) % next_degree;
-            self.add_vertex_to_face(vertex, slot, next_face, next_slot)?;
+            if self
+                .add_vertex_to_face(vertex, slot, next_face, next_slot)
+                .is_none()
+            {
+                return Ok(None);
+            }
             previous_face = next_face;
             previous_slot = next_slot;
             slot += 1;
         }
         if slot == valence {
-            return Some(());
+            return Ok(Some(()));
         }
         let first_unresolved = slot;
-        previous_face = self.vertices[vertex].faces[0]?;
+        let Some(first_face) = self.vertices[vertex].faces[0] else {
+            return Ok(None);
+        };
+        previous_face = first_face;
         previous_slot = vertex_slot_on_face;
         slot = valence - 1;
         while slot >= first_unresolved {
             let Some(next_face) = self.vertices[vertex].faces[slot] else {
                 break;
             };
-            previous_slot = (previous_slot + 1) % self.faces.get(previous_face)?.vertices.len();
+            let Some(degree) = self
+                .faces
+                .get(previous_face)
+                .map(|face| face.vertices.len())
+            else {
+                return Ok(None);
+            };
+            previous_slot = (previous_slot + 1) % degree;
             let Some(neighbor) = self.faces[previous_face].vertices[previous_slot] else {
                 break;
             };
-            let found = self
+            let Some(found) = self
                 .faces
-                .get(next_face)?
-                .vertices
-                .iter()
-                .position(|&v| v == Some(neighbor))?;
+                .get(next_face)
+                .and_then(|face| face.vertices.iter().position(|&v| v == Some(neighbor)))
+            else {
+                return Ok(None);
+            };
             let next_slot = (found + 1) % self.faces[next_face].vertices.len();
-            self.add_vertex_to_face(vertex, slot, next_face, next_slot)?;
+            if self
+                .add_vertex_to_face(vertex, slot, next_face, next_slot)
+                .is_none()
+            {
+                return Ok(None);
+            }
             previous_face = next_face;
             previous_slot = next_slot;
             if slot == first_unresolved {
-                return Some(());
+                return Ok(Some(()));
             }
             slot -= 1;
         }
         for unresolved in first_unresolved..=slot {
-            self.activate_face(vertex, unresolved)?;
+            if self.activate_face(ctx, vertex, unresolved)?.is_none() {
+                return Ok(None);
+            }
         }
-        Some(())
+        Ok(Some(()))
     }
 
     fn next_active_face(&mut self) -> Option<usize> {
@@ -430,16 +560,24 @@ impl Decoder<'_> {
         best
     }
 
-    fn run(mut self) -> Option<Vec<Polygon>> {
+    fn run(mut self, ctx: &DecodeContext<'_>) -> Result<Option<Vec<Polygon>>, CodecError> {
         while self.symbols.vertex_pos < self.symbols.valences.len() {
-            let seed = self.new_vertex()?;
+            let Some(seed) = self.new_vertex(ctx)? else {
+                return Ok(None);
+            };
             for slot in 0..self.vertices[seed].faces.len() {
-                self.activate_face(seed, slot)?;
+                if self.activate_face(ctx, seed, slot)?.is_none() {
+                    return Ok(None);
+                }
             }
             while let Some(face) = self.next_active_face() {
                 while let Some(slot) = self.faces[face].vertices.iter().position(Option::is_none) {
-                    let vertex = self.activate_vertex(face, slot)?;
-                    self.complete_vertex(vertex, slot)?;
+                    let Some(vertex) = self.activate_vertex(ctx, face, slot)? else {
+                        return Ok(None);
+                    };
+                    if self.complete_vertex(ctx, vertex, slot)?.is_none() {
+                        return Ok(None);
+                    }
                 }
                 self.removed[face] = true;
             }
@@ -451,23 +589,46 @@ impl Decoder<'_> {
                 .iter()
                 .any(|vertex| vertex.faces.iter().any(Option::is_none))
         {
-            return None;
+            return Ok(None);
         }
+        ctx.charge_collection_items(self.vertices.len() as u64, "nx JT output polygons")?;
         let mut polygons = Vec::new();
-        polygons.try_reserve_exact(self.vertices.len()).ok()?;
+        polygons
+            .try_reserve_exact(self.vertices.len())
+            .map_err(|_| {
+                refuse_local_limit(
+                    "nx JT output polygons",
+                    self.vertices.len() as u64,
+                    self.vertices.len() as u64,
+                )
+            })?;
         for (vertex_index, vertex) in self.vertices.into_iter().enumerate() {
+            ctx.charge_collection_items(vertex.faces.len() as u64, "nx JT polygon corners")?;
             let mut corners = Vec::new();
-            corners.try_reserve_exact(vertex.faces.len()).ok()?;
+            corners.try_reserve_exact(vertex.faces.len()).map_err(|_| {
+                refuse_local_limit(
+                    "nx JT polygon corners",
+                    vertex.faces.len() as u64,
+                    vertex.faces.len() as u64,
+                )
+            })?;
             for face_index in vertex.faces {
-                let face_index = face_index?;
-                let face = self.faces.get(face_index)?;
+                let Some(face_index) = face_index else {
+                    return Ok(None);
+                };
+                let Some(face) = self.faces.get(face_index) else {
+                    return Ok(None);
+                };
                 let attribute = if face.attributes.is_empty() {
                     None
                 } else {
-                    let vertex_slot = face
+                    let Some(vertex_slot) = face
                         .vertices
                         .iter()
-                        .position(|&candidate| candidate == Some(vertex_index))?;
+                        .position(|&candidate| candidate == Some(vertex_index))
+                    else {
+                        return Ok(None);
+                    };
                     let mut attribute_slot = face.attributes.len() - 1;
                     for slot in 0..=vertex_slot {
                         if face.attribute_mask[slot] {
@@ -476,7 +637,10 @@ impl Decoder<'_> {
                     }
                     Some(face.attributes[attribute_slot])
                 };
-                corners.push((u32::try_from(face_index).ok()?, attribute));
+                let Ok(face_index) = u32::try_from(face_index) else {
+                    return Ok(None);
+                };
+                corners.push((face_index, attribute));
             }
             polygons.push(Polygon {
                 corners,
@@ -484,12 +648,13 @@ impl Decoder<'_> {
                 flags: vertex.flags,
             });
         }
-        Some(polygons)
+        Ok(Some(polygons))
     }
 }
 
 /// Reconstruct polygon connectivity from the JT topological dual-mesh lanes.
 pub(crate) fn decode(
+    ctx: &DecodeContext<'_>,
     degrees: [&[i32]; 8],
     valences: &[i32],
     groups: &[i32],
@@ -497,12 +662,12 @@ pub(crate) fn decode(
     split_faces: &[i32],
     split_positions: &[i32],
     attribute_masks: AttributeMaskLanes<'_>,
-) -> Option<Vec<Polygon>> {
+) -> Result<Option<Vec<Polygon>>, CodecError> {
     if valences.len() > MAX_TOPOLOGY_ITEMS
         || groups.len() != valences.len()
         || flags.len() != valences.len()
     {
-        return None;
+        return Ok(None);
     }
     Decoder {
         symbols: Symbols {
@@ -526,7 +691,7 @@ pub(crate) fn decode(
         slot_count: 0,
         attribute_count: 0,
     }
-    .run()
+    .run(ctx)
 }
 
 #[cfg(test)]
