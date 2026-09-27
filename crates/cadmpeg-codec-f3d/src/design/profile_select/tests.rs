@@ -326,6 +326,7 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
         linear_tolerance: 1.0e-6,
         angular_tolerance: 1.0e-9,
         arrangement_budget: &arrangement_budget,
+        ctx: None,
     };
     let scoped_resolution = resolution.scoped(&[]);
 
@@ -1065,7 +1066,9 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
             &[point],
             1.0e-6,
             &arrangement_budget,
-        ),
+            None,
+        )
+        .unwrap(),
         Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0]))
     );
 
@@ -1111,7 +1114,9 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
             &endpoints,
             1.0e-6,
             &arrangement_budget,
-        ),
+            None,
+        )
+        .unwrap(),
         Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0]))
     );
 
@@ -1130,7 +1135,9 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
             &[point],
             1.0e-6,
             &arrangement_budget,
-        ),
+            None,
+        )
+        .unwrap(),
         None
     );
 }
