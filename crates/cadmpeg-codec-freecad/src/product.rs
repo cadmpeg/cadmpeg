@@ -16,6 +16,7 @@ use crate::native::{
 };
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use crate::resource::{collection_allocation_failed, collection_vec, reserve_vec_items, retained_string};
 use cadmpeg_ir::ids::{IdentityKey, OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
     CopyOnChange, CopyOnChangePolicy, ExternalDocument, LinkState, Occurrence, OccurrenceParent,
@@ -27,38 +28,35 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::FiniteVector;
 
 pub(crate) fn transfer(
+    ctx: &DecodeContext<'_>,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
     entries: &BTreeMap<String, View<'_>>,
 ) -> Result<Vec<ProductNodeRecord>, CodecError> {
-    let by_owner = properties.iter().fold(
-        HashMap::<&str, Vec<&PropertyRecord>>::new(),
-        |mut map, property| {
-            map.entry(&property.owner).or_default().push(property);
-            map
-        },
-    );
+    let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
+    for property in properties {
+        if !by_owner.contains_key(property.owner.as_str()) {
+            ctx.charge_collection_items(1, "fcstd product owner index")?;
+            by_owner.try_reserve(1).map_err(|_| collection_allocation_failed(ctx, 1, "fcstd product owner index"))?;
+            by_owner.insert(&property.owner, Vec::new());
+        }
+        if let Some(owned) = by_owner.get_mut(property.owner.as_str()) {
+            reserve_vec_items(ctx, owned, 1, "fcstd product owner properties")?;
+            owned.push(property);
+        }
+    }
     let mut output = Vec::new();
     for object in objects {
         let Some(kind) = product_kind(&object.type_name) else {
             continue;
         };
-        let owned = by_owner
-            .get(object.id.as_str())
-            .cloned()
-            .unwrap_or_default();
+        let source = by_owner.get(object.id.as_str()).map(Vec::as_slice).unwrap_or(&[]);
+        let mut owned = collection_vec(ctx, source.len(), "fcstd product selected properties")?;
+        owned.extend_from_slice(source);
         let group = sole_named_property("product", &owned, "Group")?;
-        let members = group
-            .map(|property| {
-                link_list(property, "App::PropertyLinkList", "Group").map(|links| {
-                    links
-                        .iter()
-                        .filter_map(|link| link.as_ref()?.object().map(str::to_owned))
-                        .collect::<Vec<_>>()
-                })
-            })
-            .transpose()?
-            .unwrap_or_default();
+        let members = group.map(|property| {
+            linked_object_names(ctx, link_list(property, "App::PropertyLinkList", "Group")?)
+        }).transpose()?.unwrap_or_default();
         let linked = sole_named_property("product", &owned, "LinkedObject")?;
         let prototype_link = linked
             .map(|property| single_link(property, "App::PropertyXLink", "XLink", "LinkedObject"))
@@ -72,55 +70,47 @@ pub(crate) fn transfer(
             .transpose()
             .map_err(|_| malformed("negative ElementCount"))?;
         let claim_child = bool_property(&owned, "LinkClaimChild")?;
-        let copy_on_change = copy_on_change_property(&owned)?;
+        let copy_on_change = copy_on_change_property(ctx, &owned)?;
         let copy_on_change_source = linked_target(
+            ctx,
             &owned,
             "LinkCopyOnChangeSource",
             "App::PropertyXLink",
             "XLink",
         )?;
         let copy_on_change_group =
-            linked_target(&owned, "LinkCopyOnChangeGroup", "App::PropertyLink", "Link")?;
+            linked_target(ctx, &owned, "LinkCopyOnChangeGroup", "App::PropertyLink", "Link")?;
         let copy_on_change_touched = bool_property(&owned, "LinkCopyOnChangeTouched")?;
         let scale = scale_property(&owned)?;
-        let element_visibility = bool_list(&owned, "VisibilityList")?;
+        let element_visibility = bool_list(ctx, &owned, "VisibilityList")?;
         let element_objects = sole_named_property("product", &owned, "ElementList")?
             .map(|property| {
-                link_list(property, "App::PropertyLinkList", "ElementList").map(|links| {
-                    links
-                        .iter()
-                        .filter_map(|link| link.as_ref()?.object().map(str::to_owned))
-                        .collect::<Vec<_>>()
-                })
+                linked_object_names(ctx, link_list(property, "App::PropertyLinkList", "ElementList")?)
             })
             .transpose()?
             .unwrap_or_default();
-        let placement_property = placement.map(|property| property.id.clone());
+        let placement_property = placement.map(|property| retained_string(ctx, &property.id, "fcstd product placement property")).transpose()?;
         let node = match kind {
             ProductKind::Occurrence => ProductNode::Occurrence(LinkOccurrence {
                 members,
-                prototype: prototype_link.and_then(|link| link.object().map(str::to_owned)),
-                external_document: prototype_link.and_then(|link| link.document().cloned()),
+                prototype: prototype_link.and_then(|link| link.object())
+                    .map(|name| retained_string(ctx, name, "fcstd product prototype")).transpose()?,
+                external_document: prototype_link.and_then(|link| link.document())
+                    .map(|document| document.clone_with_context(ctx)).transpose()?,
                 local_transform,
                 placement_property,
                 array: crate::native::LinkArray::try_new(
                     element_count,
-                    parse_placement_list(&owned, entries)?,
-                    parse_vector_list(&owned, entries)?,
+                    parse_placement_list(ctx, &owned, entries)?,
+                    parse_vector_list(ctx, &owned, entries)?,
                     element_visibility,
                     element_objects,
                 )
                 .map_err(malformed)?,
                 link_transform,
                 linked_subelements: prototype_link
-                    .map(|link| {
-                        link.subelements()
-                            .iter()
-                            .filter(|subelement| !subelement.is_empty())
-                            .cloned()
-                            .collect()
-                    })
-                    .unwrap_or_default(),
+                    .map(|link| nonempty_subelements(ctx, link.subelements()))
+                    .transpose()?.unwrap_or_default(),
                 claim_child,
                 copy_on_change: crate::native::CopyOnChange::from_admitted(
                     copy_on_change,
@@ -150,13 +140,37 @@ pub(crate) fn transfer(
                 element_objects,
             },
         };
+        reserve_vec_items(ctx, &mut output, 1, "fcstd product records")?;
         output.push(ProductNodeRecord {
             id: crate::native::native_id("product", &object.name),
-            object: object.id.clone(),
+            object: retained_string(ctx, &object.id, "fcstd product object")?,
             node,
         });
     }
     Ok(output)
+}
+
+fn linked_object_names(
+    ctx: &DecodeContext<'_>,
+    links: &[Option<crate::native::LinkTarget>],
+) -> Result<Vec<String>, CodecError> {
+    let count = links.iter().flatten().filter(|link| link.object().is_some()).count();
+    let mut names = collection_vec(ctx, count, "fcstd product linked object names")?;
+    for link in links.iter().flatten() {
+        if let Some(name) = link.object() {
+            names.push(retained_string(ctx, name, "fcstd product linked object name")?);
+        }
+    }
+    Ok(names)
+}
+
+fn nonempty_subelements(ctx: &DecodeContext<'_>, values: &[String]) -> Result<Vec<String>, CodecError> {
+    let count = values.iter().filter(|value| !value.is_empty()).count();
+    let mut subelements = collection_vec(ctx, count, "fcstd product linked subelements")?;
+    for value in values.iter().filter(|value| !value.is_empty()) {
+        subelements.push(retained_string(ctx, value, "fcstd product linked subelement")?);
+    }
+    Ok(subelements)
 }
 
 fn product_record_index(
@@ -627,6 +641,7 @@ pub(crate) fn multiply(left: [[f64; 4]; 4], right: [[f64; 4]; 4]) -> [[f64; 4]; 
 }
 
 fn parse_placement_list(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     entries: &BTreeMap<String, View<'_>>,
 ) -> Result<Vec<FiniteFrame>, CodecError> {
@@ -642,20 +657,20 @@ fn parse_placement_list(
     else {
         return Ok(Vec::new());
     };
-    list_layout::<7>(view, "PlacementList")?
-        .map(|positions| {
-            let values = positions
-                .into_iter()
-                .map(read_real)
-                .collect::<Result<Vec<_>, _>>()?;
-            placement_components(&values).ok_or_else(|| {
+    let positions = list_layout::<7>(view, "PlacementList")?;
+    let mut placements = collection_vec(ctx, positions.len(), "fcstd product placement list")?;
+    for positions in positions {
+            let [a, b, c, d, e, f, g] = positions.map(read_real);
+            let values = [a?, b?, c?, d?, e?, f?, g?];
+            placements.push(placement_components(&values).ok_or_else(|| {
                 CodecError::Malformed("PlacementList contains an invalid placement value".into())
-            })
-        })
-        .collect()
+            })?);
+    }
+    Ok(placements)
 }
 
 fn parse_vector_list(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     entries: &BTreeMap<String, View<'_>>,
 ) -> Result<Vec<cadmpeg_ir::units::FiniteVector<3>>, CodecError> {
@@ -665,13 +680,14 @@ fn parse_vector_list(
     let Some(view) = side_bytes(property, "App::PropertyVectorList", "VectorList", entries)? else {
         return Ok(Vec::new());
     };
-    list_layout::<3>(view, "ScaleList")?
-        .map(|positions| {
+    let positions = list_layout::<3>(view, "ScaleList")?;
+    let mut vectors = collection_vec(ctx, positions.len(), "fcstd product scale list")?;
+    for positions in positions {
             let [x, y, z] = positions.map(read_real);
-            cadmpeg_ir::units::FiniteVector::new([x?, y?, z?])
-                .ok_or_else(|| malformed("element_scales: scale vector components must be finite"))
-        })
-        .collect()
+            vectors.push(cadmpeg_ir::units::FiniteVector::new([x?, y?, z?])
+                .ok_or_else(|| malformed("element_scales: scale vector components must be finite"))?);
+    }
+    Ok(vectors)
 }
 
 fn side_bytes<'a>(
@@ -830,7 +846,7 @@ struct RealPosition<'a> {
 fn list_layout<'a, const N: usize>(
     view: View<'a>,
     name: &str,
-) -> Result<impl Iterator<Item = [RealPosition<'a>; N]>, CodecError> {
+) -> Result<impl ExactSizeIterator<Item = [RealPosition<'a>; N]>, CodecError> {
     let len = view.end() - view.start();
     if len < link_array::LEN {
         return Err(CodecError::malformed(format_args!("{name} is truncated")));
@@ -962,6 +978,7 @@ fn integer_property(properties: &[&PropertyRecord], name: &str) -> Result<Option
 }
 
 fn copy_on_change_property(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
 ) -> Result<Option<NativeCopyOnChangePolicy>, CodecError> {
     let Some(property) = sole_named_property("product", properties, "LinkCopyOnChange")? else {
@@ -979,7 +996,7 @@ fn copy_on_change_property(
             property.id
         ))
     })?;
-    NativeCopyOnChangePolicy::from_raw(raw.to_owned())
+    NativeCopyOnChangePolicy::from_raw(retained_string(ctx, raw, "fcstd copy on change policy")?)
         .map(Some)
         .map_err(|_| {
             malformed(format!(
@@ -990,6 +1007,7 @@ fn copy_on_change_property(
 }
 
 fn linked_target(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     name: &str,
     expected_type: &str,
@@ -999,7 +1017,7 @@ fn linked_target(
         return Ok(None);
     };
     let link = single_link(property, expected_type, root, name)?;
-    Ok(link.cloned())
+    link.map(|link| link.clone_with_context(ctx)).transpose()
 }
 
 fn neutral_link_target(
@@ -1094,7 +1112,7 @@ fn parse_finite(
         })
 }
 
-fn bool_list(properties: &[&PropertyRecord], name: &str) -> Result<Vec<bool>, CodecError> {
+fn bool_list(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord], name: &str) -> Result<Vec<bool>, CodecError> {
     let Some(property) = sole_named_property("product", properties, name)? else {
         return Ok(Vec::new());
     };
@@ -1114,7 +1132,9 @@ fn bool_list(properties: &[&PropertyRecord], name: &str) -> Result<Vec<bool>, Co
     // FreeCAD writes the most-significant bit first: the rightmost source bit
     // belongs to element zero. The raw XML remains on the property record;
     // this projection follows the element order used by the other carriers.
-    Ok(encoded.bytes().rev().map(|byte| byte == b'1').collect())
+    let mut values = collection_vec(ctx, encoded.len(), "fcstd product visibility list")?;
+    values.extend(encoded.bytes().rev().map(|byte| byte == b'1'));
+    Ok(values)
 }
 
 pub(crate) fn product_cycle_nodes<'a>(

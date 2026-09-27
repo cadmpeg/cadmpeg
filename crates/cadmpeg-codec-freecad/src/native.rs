@@ -2625,6 +2625,16 @@ pub(crate) enum ExternalDocument {
 }
 
 impl ExternalDocument {
+    pub(crate) fn clone_with_context(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        let value = NonBlankString::new(crate::resource::retained_string(
+            ctx, self.as_str(), "FreeCAD external document copy",
+        )?).ok_or_else(|| CodecError::Malformed("external document is empty".into()))?;
+        Ok(match self {
+            Self::File(_) => Self::File(value),
+            Self::Name(_) => Self::Name(value),
+        })
+    }
+
     /// Document token retained on the CADIR wire.
     pub(crate) fn as_str(&self) -> &str {
         match self {
@@ -2675,17 +2685,7 @@ pub(crate) struct LinkTarget {
 
 impl LinkTarget {
     pub(crate) fn clone_with_context(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        let document = match &self.document {
-            Some(ExternalDocument::File(value)) => Some(ExternalDocument::File(
-                NonBlankString::new(crate::resource::retained_string(ctx, value.as_str(), "FreeCAD link document copy")?)
-                    .ok_or_else(|| CodecError::Malformed("link document is empty".into()))?,
-            )),
-            Some(ExternalDocument::Name(value)) => Some(ExternalDocument::Name(
-                NonBlankString::new(crate::resource::retained_string(ctx, value.as_str(), "FreeCAD link document copy")?)
-                    .ok_or_else(|| CodecError::Malformed("link document is empty".into()))?,
-            )),
-            None => None,
-        };
+        let document = self.document.as_ref().map(|document| document.clone_with_context(ctx)).transpose()?;
         let object = self.object.as_ref().map(|value| {
             NonBlankString::new(crate::resource::retained_string(ctx, value.as_str(), "FreeCAD link object copy")?)
                 .ok_or_else(|| CodecError::Malformed("link object is empty".into()))
