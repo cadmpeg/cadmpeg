@@ -407,7 +407,7 @@ fn parasolid_partition_selection_uses_the_namespaced_manifest_active_id() {
         Some((1, Some("Second".to_string())))
     );
     assert_eq!(
-        container::active_configuration_name(&scan).as_deref(),
+        container::active_configuration_name_ref(&scan),
         Some("Second")
     );
     assert_eq!(container::active_configuration_index(&scan), Some(1));

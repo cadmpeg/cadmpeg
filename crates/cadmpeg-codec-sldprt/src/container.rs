@@ -1252,10 +1252,6 @@ fn explicit_active_configuration_index(scan: &ContainerScan<'_>) -> Option<usize
     (indices.len() == 1).then(|| indices[0])
 }
 
-pub(crate) fn active_configuration_name(scan: &ContainerScan<'_>) -> Option<String> {
-    active_configuration_name_ref(scan).map(str::to_owned)
-}
-
 pub(crate) fn active_configuration_name_ref<'a>(scan: &'a ContainerScan<'_>) -> Option<&'a str> {
     scan.solidworks
         .manifest_active_configuration
