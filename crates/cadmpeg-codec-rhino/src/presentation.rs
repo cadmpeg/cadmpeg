@@ -1810,7 +1810,8 @@ fn parse_light_record_attributes(
         .transpose()?;
     let attributes_userdata = attributes_userdata_body_range
         .as_ref()
-        .map(|range| parse_attribute_userdata(data, range.clone(), archive, &mut warnings))
+        .map(|range| parse_attribute_userdata(ctx, data, range.clone(), archive, &mut warnings))
+        .transpose()?
         .unwrap_or_default();
     let userdata_requires_opaque = attributes_userdata.iter().any(|descriptor| {
         let Some(descriptor) = descriptor.known() else {
