@@ -4224,7 +4224,7 @@ pub(crate) fn propagate_partial_edge_port_points_with_ordered_seeds(
     if !ordered_endpoint_pairs.is_empty() && ordered_endpoint_pairs.len() != endpoint_pairs.len() {
         return Ok(None);
     }
-    let mut resolved = endpoint_pairs.to_vec();
+    let mut resolved = crate::resource::copy_slice(ctx, endpoint_pairs, "catia_partial_port_resolved_pairs")?;
     if !ordered_endpoint_pairs.is_empty() {
         for (edge, ordered) in ordered_endpoint_pairs.iter().enumerate() {
             let Some(ordered) = ordered else { continue };
@@ -4234,23 +4234,26 @@ pub(crate) fn propagate_partial_edge_port_points_with_ordered_seeds(
             resolved[edge] = Some(*ordered);
         }
     }
-    let known = edge_ports
-        .iter()
-        .enumerate()
-        .filter_map(|(edge, ports)| ports.map(|ports| (edge, ports)))
-        .collect::<Vec<_>>();
+    let mut known = Vec::new();
+    for (edge, ports) in edge_ports.iter().enumerate() {
+        if let Some(ports) = ports {
+            crate::resource::push(ctx, &mut known, (edge, *ports), "catia_partial_known_port_rows")?;
+        }
+    }
     if known.is_empty() {
         return Ok(Some(resolved));
     }
-    let ports = known.iter().map(|(_, ports)| *ports).collect::<Vec<_>>();
-    let pairs = known
-        .iter()
-        .map(|(edge, _)| resolved[*edge])
-        .collect::<Vec<_>>();
-    let ordered = known
-        .iter()
-        .map(|(edge, _)| ordered_endpoint_pairs.get(*edge).copied().flatten())
-        .collect::<Vec<_>>();
+    let mut ports = Vec::new();
+    let mut pairs = Vec::new();
+    let mut ordered = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut ports, known.len(), "catia_partial_port_rows")?;
+    crate::resource::reserve_vec(ctx, &mut pairs, known.len(), "catia_partial_pair_rows")?;
+    crate::resource::reserve_vec(ctx, &mut ordered, known.len(), "catia_partial_ordered_rows")?;
+    for &(edge, port) in &known {
+        ports.push(port);
+        pairs.push(resolved[edge]);
+        ordered.push(ordered_endpoint_pairs.get(edge).copied().flatten());
+    }
     let Some(propagated) =
         propagate_edge_port_points_with_ordered_seeds(ctx, &ports, &pairs, &ordered)?
     else {
