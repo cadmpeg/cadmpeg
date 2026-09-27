@@ -2790,14 +2790,14 @@ fn parse_binary_prefix(
         let node_count = cursor.count("binary 3D polygon node count")?;
         let has_parameters = cursor.bool("binary 3D polygon parameter flag")?;
         let deflection = cursor.finite_f64("binary 3D polygon deflection")?;
-        let nodes = (0..node_count)
-            .map(|_| cursor.finite_point3("binary 3D polygon node"))
-            .collect::<Result<Vec<_>, _>>()?;
+        let nodes = cursor.read_counted(node_count, "FreeCAD binary polygon nodes", |cursor| {
+            cursor.finite_point3("binary 3D polygon node")
+        })?;
         let parameters = has_parameters
             .then(|| {
-                (0..node_count)
-                    .map(|_| cursor.finite_f64("binary 3D polygon parameter"))
-                    .collect::<Result<Vec<_>, _>>()
+                cursor.read_counted(node_count, "FreeCAD binary polygon parameters", |cursor| {
+                    cursor.finite_f64("binary 3D polygon parameter")
+                })
             })
             .transpose()?;
         polygons3d.push(TextPolygon3d {
@@ -2815,14 +2815,12 @@ fn parse_binary_prefix(
     )?, "FreeCAD B-rep parse_binary_prefix")?;
     for _ in 0..indexed_polygon_count {
         let node_count = cursor.count("binary indexed polygon node count")?;
-        let nodes = (0..node_count)
-            .map(|_| {
+        let nodes = cursor.read_counted(node_count, "FreeCAD binary indexed polygon nodes", |cursor| {
                 let node = cursor.i32("binary indexed polygon node")?;
                 u32::try_from(node).map_err(|_| {
                     CodecError::Malformed("non-positive binary indexed polygon node".into())
                 })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+            })?;
         if nodes.contains(&0) {
             return Err(CodecError::Malformed(
                 "binary indexed polygon node indices are one-based".into(),
@@ -2832,9 +2830,9 @@ fn parse_binary_prefix(
         let has_parameters = cursor.bool("binary indexed polygon parameter flag")?;
         let parameters = has_parameters
             .then(|| {
-                (0..node_count)
-                    .map(|_| cursor.finite_f64("binary indexed polygon parameter"))
-                    .collect::<Result<Vec<_>, _>>()
+                cursor.read_counted(node_count, "FreeCAD binary indexed polygon parameters", |cursor| {
+                    cursor.finite_f64("binary indexed polygon parameter")
+                })
             })
             .transpose()?;
         polygons_on_triangulations.push(TextPolygonOnTriangulation {
@@ -2859,18 +2857,17 @@ fn parse_binary_prefix(
         let has_uv = cursor.bool("binary triangulation UV flag")?;
         let has_normals = version >= 4 && cursor.bool("binary triangulation normal flag")?;
         let deflection = cursor.finite_f64("binary triangulation deflection")?;
-        let nodes = (0..node_count)
-            .map(|_| cursor.finite_point3("binary triangulation node"))
-            .collect::<Result<Vec<_>, _>>()?;
+        let nodes = cursor.read_counted(node_count, "FreeCAD binary triangulation nodes", |cursor| {
+            cursor.finite_point3("binary triangulation node")
+        })?;
         let uv_nodes = has_uv
             .then(|| {
-                (0..node_count)
-                    .map(|_| cursor.finite_point2("binary triangulation UV node"))
-                    .collect::<Result<Vec<_>, _>>()
+                cursor.read_counted(node_count, "FreeCAD binary triangulation UV nodes", |cursor| {
+                    cursor.finite_point2("binary triangulation UV node")
+                })
             })
             .transpose()?;
-        let triangles = (0..triangle_count)
-            .map(|_| {
+        let triangles = cursor.read_counted(triangle_count, "FreeCAD binary triangulation triangles", |cursor| {
                 let mut triangle = [0_u32; 3];
                 for node in &mut triangle {
                     let value = cursor.i32("binary triangulation triangle node")?;
@@ -2879,13 +2876,12 @@ fn parse_binary_prefix(
                     })?;
                 }
                 Ok(triangle)
-            })
-            .collect::<Result<Vec<_>, CodecError>>()?;
+            })?;
         let normals = has_normals
             .then(|| {
-                (0..node_count)
-                    .map(|_| cursor.finite_vector3_f32("binary triangulation normal"))
-                    .collect::<Result<Vec<_>, _>>()
+                cursor.read_counted(node_count, "FreeCAD binary triangulation normals", |cursor| {
+                    cursor.finite_vector3_f32("binary triangulation normal")
+                })
             })
             .transpose()?;
         triangulations.push(
@@ -3893,6 +3889,19 @@ impl<'a, 'c, 'r> BinaryCursor<'a, 'c, 'r> {
 
     fn remaining(&self) -> usize {
         self.view.remaining()
+    }
+
+    fn read_counted<T>(
+        &mut self,
+        count: usize,
+        operation: &'static str,
+        mut read: impl FnMut(&mut Self) -> Result<T, CodecError>,
+    ) -> Result<Vec<T>, CodecError> {
+        let mut values = collection_vec(self.ctx, count, operation)?;
+        for _ in 0..count {
+            values.push(read(self)?);
+        }
+        Ok(values)
     }
 
     fn truncated(label: &str) -> CodecError {
