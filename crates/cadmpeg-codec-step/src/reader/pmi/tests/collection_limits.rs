@@ -480,6 +480,22 @@ fn pmi_datum_system_references_refuse_collection_limit() {
     );
 }
 
+#[test]
+fn pmi_datum_compartments_refuse_collection_limit() {
+    pmi_refuses(
+        "#1=DATUM('A');#2=DATUM_REFERENCE_COMPARTMENT($,$,$,$,#1,$);#3=DATUM_SYSTEM('S','',#4,.F.,(#2));#4=ITEM();",
+        "step_pmi_datum_compartments",
+    );
+}
+
+#[test]
+fn pmi_datum_common_groups_refuse_collection_limit() {
+    pmi_refuses(
+        "#1=DATUM('A');#2=DATUM('B');#3=DATUM_REFERENCE_ELEMENT('',$,#7,.F.,#1,());#4=DATUM_REFERENCE_ELEMENT('',$,#7,.F.,#2,());#5=DATUM_REFERENCE_COMPARTMENT('',$,#7,.F.,COMMON_DATUM_LIST((#3,#4)),());#6=DATUM_SYSTEM('S','',#7,.F.,(#5));#7=ITEM();",
+        "step_pmi_datum_common_groups",
+    );
+}
+
 fn placement_refuses(operation: &str) {
     let source = format!(
         "{HEADER}#1=CARTESIAN_POINT('',(0.,0.,0.));#2=DIRECTION('',(0.,0.,1.));#3=DIRECTION('',(1.,0.,0.));#4=AXIS2_PLACEMENT_3D('',#1,#2,#3);#5=TEXT_LITERAL('note',#4,'left',.RIGHT.,$);{TAIL}"
