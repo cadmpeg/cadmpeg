@@ -93,7 +93,7 @@ fn assert_association_name_refuses(
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let index = crate::reader::index::CarrierIndex::from_ir(&ir, &ctx)
         .expect("empty model has no carrier index entries");
-    let owned = super::super::topology_owned_carriers(&ir, &index);
+    let owned = super::super::topology_owned_carriers(&ir, &index, &ctx).expect("empty model has no owned carriers");
     let mut losses = Vec::new();
     assert!(matches!(
         run(&exchange, &mut ir, &index, &owned, &mut losses, &ctx),

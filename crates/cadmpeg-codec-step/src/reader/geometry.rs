@@ -116,6 +116,21 @@ fn claim_geometry_typed(
     Ok(())
 }
 
+fn insert_geometry_hash_set<T: Eq + Hash>(
+    values: &mut HashSet<T>,
+    value: T,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !values.contains(&value) {
+        ctx.charge_collection_items(1, operation)?;
+        values.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        values.insert(value);
+    }
+    Ok(())
+}
+
 pub(super) struct GeometryData {
     pub(super) placements: BTreeMap<u64, (FinitePoint3, UnitVector3, UnitVector3)>,
     pub(super) transformation_operators: BTreeMap<u64, Transform>,
@@ -2943,8 +2958,13 @@ pub(super) struct OwnedCarriers {
     points: HashSet<PointIndex>,
 }
 
-pub(super) fn topology_owned_carriers(ir: &CadIr, index: &CarrierIndex) -> OwnedCarriers {
-    let curves = ir
+pub(super) fn topology_owned_carriers(
+    ir: &CadIr,
+    index: &CarrierIndex,
+    ctx: &DecodeContext<'_>,
+) -> Result<OwnedCarriers, CodecError> {
+    let mut curves = HashSet::new();
+    for curve in ir
         .model
         .edges
         .iter()
@@ -2957,26 +2977,30 @@ pub(super) fn topology_owned_carriers(ir: &CadIr, index: &CarrierIndex) -> Owned
         )
         .filter_map(|curve| step_instance_id(curve.as_str()))
         .filter_map(|id| index.curves.get(&id).copied())
-        .collect();
-    let surfaces = ir
+    {
+        insert_geometry_hash_set(&mut curves, curve, ctx, "step_owned_curve_carriers")?;
+    }
+    let mut surfaces = HashSet::new();
+    for surface in ir
         .model
         .faces
         .iter()
         .filter_map(|face| step_instance_id(face.surface.as_str()))
         .filter_map(|id| index.surfaces.get(&id).copied())
-        .collect();
-    let points = ir
+    {
+        insert_geometry_hash_set(&mut surfaces, surface, ctx, "step_owned_surface_carriers")?;
+    }
+    let mut points = HashSet::new();
+    for point in ir
         .model
         .vertices
         .iter()
         .filter_map(|vertex| step_instance_id(vertex.point.as_str()))
         .filter_map(|id| index.points.get(&id).map(|point| &point.index).copied())
-        .collect();
-    OwnedCarriers {
-        curves,
-        surfaces,
-        points,
+    {
+        insert_geometry_hash_set(&mut points, point, ctx, "step_owned_point_carriers")?;
     }
+    Ok(OwnedCarriers { curves, surfaces, points })
 }
 
 pub(super) fn associate_topology_carriers(
@@ -3075,8 +3099,14 @@ pub(super) fn associate_replica_bases(exchange: &Exchange, ir: &mut CadIr, index
 /// PCURVE records. The canonical pcurve stores its parameter-space geometry
 /// inline, so this source association preserves reachability of the separate
 /// support carrier.
-pub(super) fn associate_pcurve_supports(exchange: &Exchange, ir: &mut CadIr, index: &CarrierIndex) {
-    let owned_pcurves = ir
+pub(super) fn associate_pcurve_supports(
+    exchange: &Exchange,
+    ir: &mut CadIr,
+    index: &CarrierIndex,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    let mut owned_pcurves = BTreeSet::new();
+    for pcurve in ir
         .model
         .coedges
         .iter()
@@ -3103,7 +3133,10 @@ pub(super) fn associate_pcurve_supports(exchange: &Exchange, ir: &mut CadIr, ind
                 .flatten()
                 .map(cadmpeg_ir::ids::PcurveId::as_str),
         )
-        .collect::<BTreeSet<_>>();
+    {
+        insert_geometry_set(&mut owned_pcurves, pcurve, ctx, "step_owned_pcurve_supports")?;
+    }
+
     for (pcurve_id, record) in exchange.entities("PCURVE") {
         let pcurve_identity = ids::data(kind!("pcurve"), pcurve_id);
         if !owned_pcurves.contains(pcurve_identity.as_str()) {
@@ -3121,6 +3154,7 @@ pub(super) fn associate_pcurve_supports(exchange: &Exchange, ir: &mut CadIr, ind
                 Some(super::step_source_association(pcurve_id, None));
         }
     }
+    Ok(())
 }
 
 /// Associate surfaces listed by retained `SURFACE_CURVE` records.

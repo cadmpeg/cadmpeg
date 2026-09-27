@@ -74,6 +74,29 @@ macro_rules! hash_refusal_test {
 hash_refusal_test!(geometry_curve_index_refuses_collection_limit, "step_geometry_curve_index");
 hash_refusal_test!(geometry_surface_index_refuses_collection_limit, "step_geometry_surface_index");
 
+macro_rules! hash_set_refusal_test {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+                .expect("empty root fits policy");
+            assert!(matches!(
+                super::super::insert_geometry_hash_set(&mut HashSet::new(), 1u64, &ctx, $operation),
+                Err(CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::CollectionItems
+                        && refusal.operation == $operation
+            ));
+        }
+    };
+}
+
+hash_set_refusal_test!(owned_curve_carriers_refuse_collection_limit, "step_owned_curve_carriers");
+hash_set_refusal_test!(owned_surface_carriers_refuse_collection_limit, "step_owned_surface_carriers");
+hash_set_refusal_test!(owned_point_carriers_refuse_collection_limit, "step_owned_point_carriers");
+
 #[test]
 fn geometry_typed_ids_refuse_collection_limit() {
     let arena = DecodeArena::new();
@@ -360,5 +383,20 @@ fn pcurve_geometry_records_refuse_collection_limit() {
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_pcurve_geometry_records"
+    ));
+}
+
+#[test]
+fn owned_pcurve_supports_refuse_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    assert!(matches!(
+        super::super::insert_geometry_set(&mut BTreeSet::new(), "step:data:pcurve#1", &ctx, "step_owned_pcurve_supports"),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_owned_pcurve_supports"
     ));
 }
