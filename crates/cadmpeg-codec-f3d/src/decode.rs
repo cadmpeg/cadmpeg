@@ -3358,7 +3358,8 @@ fn project_mesh_bodies(
         // corner-normal channel, so the lane arrives absent, never empty.
         let record = id.clone();
         let tessellation = cadmpeg_ir::tessellation::Tessellation::from_parts(
-            id,
+            cadmpeg_ir::tessellation::TessellationId::mint(id)
+                .map_err(|error| CodecError::Malformed(error.to_string()))?,
             cadmpeg_ir::tessellation::TessellationMesh::from_corner_lanes(
                 body.vertices,
                 body.triangles,

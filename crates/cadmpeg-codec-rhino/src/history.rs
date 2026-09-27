@@ -1250,8 +1250,9 @@ impl serde::Serialize for MeshJson<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeMap;
         let tessellation = &self.0.tessellation;
-        let mut map = serializer.serialize_map(Some(6))?;
+        let mut map = serializer.serialize_map(Some(7))?;
         map.serialize_entry("channels", tessellation.channels())?;
+        map.serialize_entry("id", &tessellation.id)?;
         map.serialize_entry("kind", "mesh")?;
         map.serialize_entry("normals", &MeshNormals(tessellation.mesh()))?;
         map.serialize_entry("strip_lengths", &MeshStripLengths(tessellation.mesh()))?;
@@ -1592,7 +1593,12 @@ fn extended_geometry_json(
                 crate::mesh::MeshDecodeOptions {
                     writer_version,
                     association: None,
-                    id: "rhino:history:embedded-mesh".to_string().into(),
+                    id: crate::mesh::MeshId::Ready(
+                        cadmpeg_ir::tessellation::TessellationId::compose(
+                            &cadmpeg_ir::identity_namespace!("rhino", "history", "mesh"),
+                            cadmpeg_ir::identity_key!("embedded"),
+                        ),
+                    ),
                     scale,
                     userdata: &value.userdata,
                 },

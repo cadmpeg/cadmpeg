@@ -421,7 +421,10 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .enumerate()
         .map(|(index, body)| {
             Tessellation::new(
-                format!("synthetic:test:tessellation#{index}"),
+                cadmpeg_ir::tessellation::TessellationId::mint(format!(
+                    "synthetic:test:tessellation#{index}"
+                ))
+                .expect("valid identity"),
                 cadmpeg_ir::tessellation::TessellationMesh::from_strip_lanes(
                     vec![
                         Point3::new(0.0, 0.0, 0.0),

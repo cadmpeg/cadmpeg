@@ -6129,19 +6129,27 @@ fn display_jt_tessellation_rows(
                 (vertices, triangles, None, Vec::new())
             };
             tessellations.try_reserve(1).ok()?;
+            let id = if path.node_path.len() == 1 {
+                format!(
+                    "nx:display-jt:tessellation#{}-{}",
+                    shape_element.source_offset, shape_element.object_id
+                )
+            } else {
+                format!(
+                    "nx:display-jt:tessellation#{}-{}-path-{node_path}",
+                    shape_element.source_offset, shape_element.object_id
+                )
+            };
+            let id = cadmpeg_ir::tessellation::TessellationId::mint(id)
+                .map_err(|error| {
+                    *refusal = Some(CodecError::malformed(format_args!(
+                        "display-jt tessellation: {error}"
+                    )));
+                })
+                .ok()?;
             tessellations.push((
                 Tessellation::from_parts(
-                    if path.node_path.len() == 1 {
-                        format!(
-                            "nx:display-jt:tessellation#{}-{}",
-                            shape_element.source_offset, shape_element.object_id
-                        )
-                    } else {
-                        format!(
-                            "nx:display-jt:tessellation#{}-{}-path-{node_path}",
-                            shape_element.source_offset, shape_element.object_id
-                        )
-                    },
+                    id,
                     match cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
                         vertices,
                         triangles,

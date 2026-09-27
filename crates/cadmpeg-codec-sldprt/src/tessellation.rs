@@ -120,7 +120,7 @@ impl Mesh {
 
     pub(crate) fn into_tessellation(
         self,
-        id: String,
+        id: cadmpeg_ir::tessellation::TessellationId,
     ) -> Result<cadmpeg_ir::tessellation::Tessellation, cadmpeg_ir::tessellation::TessellationError>
     {
         cadmpeg_ir::tessellation::Tessellation::new(id, self.mesh, self.channels)

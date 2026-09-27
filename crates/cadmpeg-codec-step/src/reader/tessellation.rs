@@ -1484,7 +1484,10 @@ fn decimal_digits(id: u64) -> u64 {
     }
 }
 
-fn admitted_mesh_id(id: u64, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
+fn admitted_mesh_id(
+    id: u64,
+    ctx: &DecodeContext<'_>,
+) -> Result<cadmpeg_ir::tessellation::TessellationId, CodecError> {
     let digits = decimal_digits(id);
     let _key_bytes = ctx.reserve_scoped(digits, "step_tessellation_mesh_key")?;
     ctx.charge_retained(
@@ -1495,7 +1498,7 @@ fn admitted_mesh_id(id: u64, ctx: &DecodeContext<'_>) -> Result<String, CodecErr
             })?,
         "step_tessellation_mesh_id",
     )?;
-    Ok(ids::tessellation(kind!("mesh"), id).into_string())
+    Ok(ids::tessellation(kind!("mesh"), id).into())
 }
 
 fn admitted_surface_id<'a>(
