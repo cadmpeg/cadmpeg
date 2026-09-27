@@ -301,12 +301,14 @@ pub(super) fn decode(
                 |definition| format!("PRODUCT_DEFINITION #{definition}"),
             );
             if !missing.is_empty() {
+                reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "{owner} omitted uncommitted shape body reference(s): {}",
                     missing.join(", ")
                 )));
             }
             if has_shape_binding && bodies.is_empty() {
+                reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "{owner} has a shape representation with no committed topology body"
                 )));
@@ -410,6 +412,7 @@ pub(super) fn decode(
             continue;
         }
         let Some(prototype) = definition_prototypes.get(&definition).cloned() else {
+            reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "PRODUCT_DEFINITION #{definition} has no local product prototype"
             )));
@@ -471,6 +474,7 @@ pub(super) fn decode(
         } else {
             "occurrence-owned mapped"
         };
+        reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
         losses.push(StepLossCode::NauoPlacementAmbiguous.note(format!(
             "NAUO #{usage_id} has multiple resolved {placement_kind} placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"
         )));
@@ -481,6 +485,7 @@ pub(super) fn decode(
             .map(|id| format!("#{id}"))
             .collect::<Vec<_>>()
             .join(", ");
+        reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
         losses.push(StepLossCode::NauoPlacementAmbiguous.note(format!(
             "NAUO #{usage_id} has resolved context-dependent and occurrence-owned mapped placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"
         )));
@@ -518,6 +523,7 @@ pub(super) fn decode(
             let usage = &usages[&usage_id];
             let Some(prototype) = definition_prototypes.get(&usage.child_definition).cloned()
             else {
+                reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "NAUO #{usage_id} references an unresolved child definition"
                 )));
@@ -526,12 +532,14 @@ pub(super) fn decode(
             let parent_path = occurrence_paths.get(&parent).cloned().unwrap_or_default();
             let depth_limit = assembly_depth_limit(ctx);
             if parent_path.len() >= depth_limit {
+                reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "NAUO #{usage_id} exceeds the {depth_limit}-level assembly depth limit"
                 )));
                 continue;
             }
             if parent_path.contains(&usage.child_definition) {
+                reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "NAUO #{usage_id} closes an assembly definition cycle"
                 )));
@@ -552,6 +560,7 @@ pub(super) fn decode(
             ));
             let occurrence_cap = occurrence_limit(ctx);
             if ir.model.occurrences.len() >= occurrence_cap {
+                reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "assembly occurrence expansion exceeds the {occurrence_cap}-occurrence limit"
                 )));
@@ -562,6 +571,7 @@ pub(super) fn decode(
                 transform
             } else {
                 if missing_placement_reports.insert(usage_id) {
+                    reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
                     losses.push(StepLossCode::NauoPlacementUnresolved.note(format!(
                         "NAUO #{usage_id} has no resolved occurrence transform; \
                              identity placement was used"
@@ -596,6 +606,7 @@ pub(super) fn decode(
         }
     }
     if !had_roots && !usages.is_empty() {
+        reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
         losses.push(
             StepLossCode::DecodeWarning.note("assembly occurrence graph has no resolvable root"),
         );
@@ -772,6 +783,7 @@ fn apply_body_placements(
         let transform = match mapped_item_transform(origin, target, geometry) {
             Ok(Some(transform)) => transform,
             Ok(None) | Err(TransformError::Singular) => {
+                reserve_product_items(losses, 1, ctx, "step_product_losses")?;
                 losses.push(
                     StepLossCode::DecodeWarning
                         .note(format!("MAPPED_ITEM #{id} has no resolved body placement")),
@@ -812,6 +824,7 @@ fn apply_body_placements(
                     .map(|(id, _)| format!("#{id}"))
                     .collect::<Vec<_>>()
                     .join(", ");
+                reserve_product_items(losses, 1, ctx, "step_product_losses")?;
                 losses.push(StepLossCode::BodyConflictingMappedPlacements.note(format!(
                         "body {body} has conflicting standalone MAPPED_ITEM placements ({mapped_items}); no body placement was selected"
                     )));
@@ -1109,6 +1122,7 @@ fn occurrence_placements(
             }
             Ok(None) => {}
             Err(TransformError::Singular) => {
+                reserve_product_items(losses, 1, ctx, "step_product_losses")?;
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION #{record_id} has a singular placement"
                 )));
@@ -1174,6 +1188,7 @@ fn occurrence_placements(
                         Ok(Some(placement)) => placement,
                         Ok(None) => continue,
                         Err(TransformError::Singular) => {
+                            reserve_product_items(losses, 1, ctx, "step_product_losses")?;
                             losses.push(
                                 StepLossCode::DecodeWarning.note(format!(
                                     "MAPPED_ITEM #{item_id} has a singular placement"
@@ -1257,6 +1272,7 @@ fn occurrence_placements(
                         Ok(Some(placement)) => placement,
                         Ok(None) => continue,
                         Err(TransformError::Singular) => {
+                            reserve_product_items(losses, 1, ctx, "step_product_losses")?;
                             losses.push(
                                 StepLossCode::DecodeWarning.note(format!(
                                     "MAPPED_ITEM #{item_id} has a singular placement"
@@ -1284,6 +1300,7 @@ fn occurrence_placements(
         if sibling_usage_count == 1 && placements.len() == 1 {
             result.insert(usage_id, placements[0]);
         } else if !placements.is_empty() {
+            reserve_product_items(losses, 1, ctx, "step_product_losses")?;
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "NAUO #{usage_id} has an ambiguous mapped-item placement"
             )));

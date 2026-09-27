@@ -238,6 +238,11 @@ fn product_source_group_members_refuse_collection_limit() {
     product_collection_refuses("step_product_source_group_members");
 }
 
+#[test]
+fn product_losses_refuse_collection_limit() {
+    product_collection_refuses("step_product_losses");
+}
+
 fn shape_binding_collection_refuses(operation: &str) {
     let source = String::from_utf8_lossy(include_bytes!(
         "../../../tests/fixtures/ap214_sheet.p21"
