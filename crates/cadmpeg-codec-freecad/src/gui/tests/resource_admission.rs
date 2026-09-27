@@ -104,6 +104,41 @@ fn y4_2_gui_xml_tree_is_admitted_before_allocation() {
     ));
 }
 
+#[test]
+fn gui_state_records_refuse_at_caller_limit() {
+    let text = "<Document><Camera/></Document>";
+    let xml = roxmltree::Document::parse(text).expect("GUI document XML");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(text.as_bytes(), &arena, &policy)
+        .expect("GUI document context");
+    assert!(matches!(super::super::transfer_schema_one(&ctx, &cadmpeg_ir::CadIr::empty(), text,
+        &xml, None, None, &std::collections::BTreeMap::new(), &[], &[], &[], &[], false),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FCStd GUI state records"));
+}
+
+#[test]
+fn gui_object_name_index_refuses_at_caller_limit() {
+    let text = "<Document><Camera/></Document>";
+    let xml = roxmltree::Document::parse(text).expect("GUI document XML");
+    let object = crate::native::ObjectRecord {
+        id: "fcstd:native:object#P".into(), name: "P".into(), type_name: "Part::Feature".into(),
+        persistent_id: None, view_type: None, attributes: std::collections::BTreeMap::new(),
+        dependencies: Vec::new(), dependency_allow_partial: None, order: 0, data: None,
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(text.as_bytes(), &arena, &policy)
+        .expect("GUI document context");
+    assert!(matches!(super::super::transfer_schema_one(&ctx, &cadmpeg_ir::CadIr::empty(), text,
+        &xml, None, None, &std::collections::BTreeMap::new(), &[object], &[], &[], &[], false),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FCStd GUI object names"));
+}
+
 fn assert_gui_state_service(xml: &str) {
     let document = roxmltree::Document::parse(xml).expect("GUI state XML");
     let arena = cadmpeg_core::decode::DecodeArena::new();
