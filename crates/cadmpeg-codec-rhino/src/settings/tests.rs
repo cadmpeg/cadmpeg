@@ -217,7 +217,12 @@ pub(crate) fn parses_units_with_single_scale_transfer_and_legacy_order() {
     body.extend(0.01_f64.to_le_bytes());
     body.extend(0.001_f64.to_le_bytes());
     let (data, record) = metadata_record(0x2000_8031, body);
-    let units = settings::parse_units(&data, &record).expect("required invariant");
+    let units = settings::parse_units(
+        &cadmpeg_test_support::service_decode_context(),
+        &data,
+        &record,
+    )
+    .expect("required invariant");
     assert_eq!(units.millimeters_per_unit(), Some(25.4));
     assert_eq!(units.absolute_tolerance, crate::test_support::positive(0.5));
     assert_eq!(
@@ -242,7 +247,12 @@ pub(crate) fn parses_units_with_single_scale_transfer_and_legacy_order() {
     legacy.extend(0.002_f64.to_le_bytes());
     legacy.extend(0.01_f64.to_le_bytes());
     let (data, record) = metadata_record(0x2000_8031, legacy);
-    let units = settings::parse_units(&data, &record).expect("required invariant");
+    let units = settings::parse_units(
+        &cadmpeg_test_support::service_decode_context(),
+        &data,
+        &record,
+    )
+    .expect("required invariant");
     assert_eq!(
         units.relative_tolerance,
         crate::test_support::positive(0.002)
@@ -267,7 +277,12 @@ fn accepts_future_units_version_with_source_prefix_and_bounded_suffix() {
     body.extend(0_u32.to_le_bytes());
     body.extend([0xde, 0xad]);
     let (data, record) = metadata_record(0x2000_8031, body);
-    let units = settings::parse_units(&data, &record).expect("future units version");
+    let units = settings::parse_units(
+        &cadmpeg_test_support::service_decode_context(),
+        &data,
+        &record,
+    )
+    .expect("future units version");
     assert_eq!(
         units.unit,
         settings::UnitSystem::Standard(settings::StandardUnit::Inches)
@@ -289,8 +304,12 @@ fn property_readers_follow_source_version_gates_and_boundaries() {
     revision_body.extend(7_i32.to_le_bytes());
     revision_body.extend([0xde, 0xad]);
     let (revision_data, revision_record) = metadata_record(0x2000_8021, revision_body);
-    let revision = settings::parse_revision(&revision_data, &revision_record)
-        .expect("revision-history future minor");
+    let revision = settings::parse_revision(
+        &cadmpeg_test_support::service_decode_context(),
+        &revision_data,
+        &revision_record,
+    )
+    .expect("revision-history future minor");
     assert_eq!(revision.created_by, "creator");
     assert_eq!(revision.last_edited_by, "editor");
     assert_eq!(revision.revision_count, 7);
@@ -303,7 +322,12 @@ fn property_readers_follow_source_version_gates_and_boundaries() {
     notes_body.push(1);
     notes_body.extend([0xbe, 0xef]);
     let (notes_data, notes_record) = metadata_record(0x2000_8022, notes_body);
-    let notes = settings::parse_notes(&notes_data, &notes_record).expect("notes future minor");
+    let notes = settings::parse_notes(
+        &cadmpeg_test_support::service_decode_context(),
+        &notes_data,
+        &notes_record,
+    )
+    .expect("notes future minor");
     assert_eq!(notes.text, "notes");
     assert!(notes.locked);
 
@@ -313,11 +337,218 @@ fn property_readers_follow_source_version_gates_and_boundaries() {
     application_body.extend(utf16_bytes("details"));
     application_body.extend([0xaa, 0xbb]);
     let (application_data, application_record) = metadata_record(0x2000_8024, application_body);
-    let application = settings::parse_application(&application_data, &application_record)
-        .expect("application future major");
+    let application = settings::parse_application(
+        &cadmpeg_test_support::service_decode_context(),
+        &application_data,
+        &application_record,
+    )
+    .expect("application future major");
     assert_eq!(application.name, "app");
     assert_eq!(application.url, "https://example.test");
     assert_eq!(application.details, "details");
+}
+
+fn retained_limit_context<'a>(
+    bytes: &'a [u8],
+    arena: &'a cadmpeg_core::decode::DecodeArena,
+    policy: &'a cadmpeg_core::decode::DecodePolicy,
+) -> cadmpeg_core::decode::DecodeContext<'a> {
+    cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, arena, policy)
+        .expect("metadata root admitted")
+        .0
+}
+
+fn property_text_refusal(kind: &str, limit: u64) -> crate::chunks::FramingError {
+    let (typecode, body) = match kind {
+        "revision" => {
+            let mut body = vec![0x10];
+            body.extend(utf16_bytes("creator"));
+            body.extend([0; 32]);
+            body.extend(utf16_bytes("editor"));
+            body.extend([0; 32]);
+            body.extend(1_i32.to_le_bytes());
+            (0x2000_8021, body)
+        }
+        "notes" => {
+            let mut body = vec![0x10];
+            body.extend(0_i32.to_le_bytes());
+            body.extend(utf16_bytes("notes"));
+            body.extend(0_i32.to_le_bytes());
+            body.extend([0; 16]);
+            (0x2000_8022, body)
+        }
+        "application" => {
+            let mut body = vec![0x10];
+            body.extend(utf16_bytes("app"));
+            body.extend(utf16_bytes("url"));
+            body.extend(utf16_bytes("details"));
+            (0x2000_8024, body)
+        }
+        _ => panic!("unknown property fixture: {kind}"),
+    };
+    let (data, record) = metadata_record(typecode, body);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = limit;
+    let ctx = retained_limit_context(&data, &arena, &policy);
+    match kind {
+        "revision" => {
+            settings::parse_revision(&ctx, &data, &record).expect_err("revision text exceeds limit")
+        }
+        "notes" => {
+            settings::parse_notes(&ctx, &data, &record).expect_err("notes text exceeds limit")
+        }
+        "application" => settings::parse_application(&ctx, &data, &record)
+            .expect_err("application text exceeds limit"),
+        _ => panic!("unknown property fixture: {kind}"),
+    }
+}
+
+macro_rules! property_text_limit {
+    ($name:ident, $kind:literal, $limit:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            assert!(matches!(property_text_refusal($kind, $limit), crate::chunks::FramingError::Resource(refusal) if refusal.operation == $operation));
+        }
+    };
+}
+
+property_text_limit!(
+    revision_creator_refuses_retained_limit,
+    "revision",
+    0,
+    "Rhino revision creator"
+);
+property_text_limit!(
+    revision_editor_refuses_retained_limit,
+    "revision",
+    7,
+    "Rhino revision editor"
+);
+property_text_limit!(
+    document_notes_refuse_retained_limit,
+    "notes",
+    0,
+    "Rhino document notes"
+);
+property_text_limit!(
+    application_name_refuses_retained_limit,
+    "application",
+    0,
+    "Rhino application name"
+);
+property_text_limit!(
+    application_url_refuses_retained_limit,
+    "application",
+    3,
+    "Rhino application URL"
+);
+property_text_limit!(
+    application_details_refuse_retained_limit,
+    "application",
+    6,
+    "Rhino application details"
+);
+
+fn custom_units_body() -> Vec<u8> {
+    let mut body = 102_i32.to_le_bytes().to_vec();
+    body.extend(11_i32.to_le_bytes());
+    body.extend(0.5_f64.to_le_bytes());
+    body.extend(0.01_f64.to_le_bytes());
+    body.extend(0.001_f64.to_le_bytes());
+    body.extend(0_i32.to_le_bytes());
+    body.extend(3_i32.to_le_bytes());
+    body.extend(0.001_f64.to_le_bytes());
+    body.extend(utf16_bytes("custom"));
+    body
+}
+
+#[test]
+fn custom_unit_name_refuses_retained_limit() {
+    let (data, record) = metadata_record(0x2000_8031, custom_units_body());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 5;
+    let ctx = retained_limit_context(&data, &arena, &policy);
+    let error = settings::parse_units(&ctx, &data, &record)
+        .expect_err("custom unit name exceeds retained limit");
+    assert!(
+        matches!(error, crate::chunks::FramingError::Resource(refusal) if refusal.operation == "Rhino custom unit name")
+    );
+    let admitted = settings::parse_units(
+        &cadmpeg_test_support::service_decode_context(),
+        &data,
+        &record,
+    )
+    .expect("custom unit name fits service profile");
+    assert_eq!(admitted.millimeters_per_unit(), Some(1.0));
+}
+
+#[test]
+fn discarded_page_units_custom_name_uses_no_retained_budget() {
+    let data = custom_units_body();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let ctx = retained_limit_context(&data, &arena, &policy);
+    let mut reader = BoundedReader::new(&data, 0, data.len()).expect("unit bounds");
+    let units = settings::parse_units_reader(&ctx, &mut reader, false)
+        .expect("discarded custom name needs no retained budget");
+    assert_eq!(units.millimeters_per_unit(), Some(1.0));
+}
+
+#[test]
+fn as_file_name_refuses_retained_limit() {
+    let (data, record) = metadata_record(0x2000_8027, utf16_bytes("file.3dm"));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 7;
+    let ctx = retained_limit_context(&data, &arena, &policy);
+    let error = settings::utf16_record(&ctx, &data, &record, "Rhino as-file name")
+        .expect_err("as-file name exceeds retained limit");
+    assert!(
+        matches!(error, crate::chunks::FramingError::Resource(refusal) if refusal.operation == "Rhino as-file name")
+    );
+    assert_eq!(
+        settings::utf16_record(
+            &cadmpeg_test_support::service_decode_context(),
+            &data,
+            &record,
+            "Rhino as-file name",
+        )
+        .expect("as-file name fits service profile"),
+        "file.3dm"
+    );
+}
+
+#[test]
+fn model_url_refuses_retained_limit() {
+    let (data, record) = metadata_record(0x2000_8131, utf16_bytes("model URL"));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 8;
+    let ctx = retained_limit_context(&data, &arena, &policy);
+    let mut settings_value = settings::DocumentSettings::default();
+    let error = settings::parse_setting(
+        &ctx,
+        &data,
+        &record,
+        &mut settings_value,
+        ArchiveVersion::V8,
+    )
+    .expect_err("model URL exceeds retained limit");
+    assert!(
+        matches!(error, crate::chunks::FramingError::Resource(refusal) if refusal.operation == "Rhino model URL")
+    );
+    settings::parse_setting(
+        &cadmpeg_test_support::service_decode_context(),
+        &data,
+        &record,
+        &mut settings_value,
+        ArchiveVersion::V8,
+    )
+    .expect("model URL fits service profile");
+    assert_eq!(settings_value.model_url.as_deref(), Some("model URL"));
 }
 
 #[test]
@@ -435,7 +666,13 @@ fn parses_settings_attributes_prefix_nested_records_and_future_minor_suffix() {
     body.extend([0xde, 0xad]);
 
     let (data, record) = metadata_record(0x2000_8134, body);
-    settings::parse_settings_attributes(&data, &record, archive).expect("attributes");
+    settings::parse_settings_attributes(
+        &cadmpeg_test_support::service_decode_context(),
+        &data,
+        &record,
+        archive,
+    )
+    .expect("attributes");
 }
 
 #[test]
@@ -467,9 +704,16 @@ fn top_level_mesh_settings_use_outer_boundary_for_future_minor_suffix() {
     let (data, render_record) = metadata_record(0x2000_8032, body.clone());
     let (analysis_data, analysis_record) = metadata_record(0x2000_8033, body);
     let mut settings_value = settings::DocumentSettings::default();
-    settings::parse_setting(&data, &render_record, &mut settings_value, archive)
-        .expect("render mesh settings");
     settings::parse_setting(
+        &cadmpeg_test_support::service_decode_context(),
+        &data,
+        &render_record,
+        &mut settings_value,
+        archive,
+    )
+    .expect("render mesh settings");
+    settings::parse_setting(
+        &cadmpeg_test_support::service_decode_context(),
         &analysis_data,
         &analysis_record,
         &mut settings_value,
@@ -496,7 +740,12 @@ fn nonfinite_unit_tolerances_are_refused_at_the_value_first_byte() {
             body.extend(value.to_le_bytes());
         }
         let (data, record) = metadata_record(0x2000_8031, body);
-        let error = settings::parse_units(&data, &record).expect_err("nonfinite tolerance");
+        let error = settings::parse_units(
+            &cadmpeg_test_support::service_decode_context(),
+            &data,
+            &record,
+        )
+        .expect_err("nonfinite tolerance");
         assert_eq!(
             error,
             crate::chunks::FramingError::structural(
@@ -621,8 +870,14 @@ fn nonfinite_mesh_tolerance_is_refused_at_the_value_first_byte() {
 
     let (data, record) = metadata_record(0x2000_8032, body);
     let mut settings_value = settings::DocumentSettings::default();
-    let error = settings::parse_setting(&data, &record, &mut settings_value, archive)
-        .expect_err("nonfinite mesh tolerance");
+    let error = settings::parse_setting(
+        &cadmpeg_test_support::service_decode_context(),
+        &data,
+        &record,
+        &mut settings_value,
+        archive,
+    )
+    .expect_err("nonfinite mesh tolerance");
     assert_eq!(
         error,
         crate::chunks::FramingError::structural(tolerance_offset, "mesh tolerance is not finite")
@@ -644,7 +899,12 @@ fn rejects_invalid_unit_tolerances_and_trailing_bytes() {
     body.extend(b"m\0");
     body.extend(1_u8.to_le_bytes());
     let (data, record) = metadata_record(0x2000_8031, body);
-    assert!(settings::parse_units(&data, &record).is_err());
+    assert!(settings::parse_units(
+        &cadmpeg_test_support::service_decode_context(),
+        &data,
+        &record
+    )
+    .is_err());
 }
 
 #[test]
@@ -661,7 +921,12 @@ fn rejects_custom_scale_and_tolerance_products_that_overflow() {
     scale_overflow.extend(1_u32.to_le_bytes());
     scale_overflow.extend([0_u8, 0]);
     let (data, record) = metadata_record(0x2000_8031, scale_overflow);
-    assert!(settings::parse_units(&data, &record).is_err());
+    assert!(settings::parse_units(
+        &cadmpeg_test_support::service_decode_context(),
+        &data,
+        &record
+    )
+    .is_err());
 
     let mut tolerance_overflow = Vec::new();
     tolerance_overflow.extend(102_i32.to_le_bytes());
@@ -675,7 +940,12 @@ fn rejects_custom_scale_and_tolerance_products_that_overflow() {
     tolerance_overflow.extend(1_u32.to_le_bytes());
     tolerance_overflow.extend([0_u8, 0]);
     let (data, record) = metadata_record(0x2000_8031, tolerance_overflow);
-    assert!(settings::parse_units(&data, &record).is_err());
+    assert!(settings::parse_units(
+        &cadmpeg_test_support::service_decode_context(),
+        &data,
+        &record
+    )
+    .is_err());
 }
 
 #[test]
@@ -923,6 +1193,18 @@ fn layer_metadata_with_record_count_and_id(
     record_count: usize,
     id: [u8; 16],
 ) -> (settings::DocumentMetadata, Diagnostics) {
+    let (data, tables) = layer_fixture(extension, writer_version, record_count, id);
+    let mut warnings = Diagnostics::new();
+    let metadata = parse_test_metadata(&data, ArchiveVersion::V8, &tables, &mut warnings);
+    (metadata, warnings)
+}
+
+fn layer_fixture(
+    extension: &[u8],
+    writer_version: Option<i64>,
+    record_count: usize,
+    id: [u8; 16],
+) -> (Vec<u8>, Vec<crate::container::Table>) {
     let archive = ArchiveVersion::V8;
     let mut payload = vec![0x1f];
     payload.extend(0_i32.to_le_bytes());
@@ -981,9 +1263,7 @@ fn layer_metadata_with_record_count_and_id(
         ));
     }
     tables.push(table);
-    let mut warnings = Diagnostics::new();
-    let metadata = parse_test_metadata(&data, archive, &tables, &mut warnings);
-    (metadata, warnings)
+    (data, tables)
 }
 
 /// The layer parent link rests on the stamp, so the loss follows the stamp.
@@ -1109,6 +1389,46 @@ fn layer_metadata_with_description(description: &str) -> settings::DocumentMetad
     extension.extend(utf16_bytes(description));
     extension.push(0);
     layer_metadata_with_extension(&extension)
+}
+
+fn layer_text_refusal(extension: &[u8], limit: u64) -> cadmpeg_core::CodecError {
+    let (data, tables) = layer_fixture(extension, None, 1, [0; 16]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = limit;
+    let ctx = retained_limit_context(&data, &arena, &policy);
+    settings::parse_metadata(
+        &ctx,
+        &data,
+        ArchiveVersion::V8,
+        &tables,
+        &mut Diagnostics::new(),
+    )
+    .expect_err("layer text exceeds retained limit")
+}
+
+#[test]
+fn layer_name_refuses_retained_limit() {
+    let error = layer_text_refusal(&[0], 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino layer name")
+    );
+}
+
+#[test]
+fn layer_description_refuses_retained_limit() {
+    let mut extension = vec![37];
+    extension.extend(utf16_bytes(" description "));
+    extension.push(0);
+    let error = layer_text_refusal(&extension, 1);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino layer description")
+    );
+    let admitted = layer_metadata_with_description(" description ");
+    assert_eq!(
+        admitted.layers[0].description.as_deref(),
+        Some("description")
+    );
 }
 
 #[test]
@@ -1728,6 +2048,7 @@ fn parses_selector_widths_and_skips_direct_suffix() {
     let material_record =
         crate::container::Record::long(0x2000_8039, 0..material_data.len(), 0..material_data.len());
     settings::parse_setting(
+        &cadmpeg_test_support::service_decode_context(),
         &material_data,
         &material_record,
         &mut settings_value,
@@ -1753,6 +2074,7 @@ fn parses_selector_widths_and_skips_direct_suffix() {
     let color_record =
         crate::container::Record::long(0x2000_803a, 0..color_data.len(), 0..color_data.len());
     settings::parse_setting(
+        &cadmpeg_test_support::service_decode_context(),
         &color_data,
         &color_record,
         &mut settings_value,
@@ -1779,8 +2101,14 @@ fn parses_selector_widths_and_skips_direct_suffix() {
         (0xa000_0133, 9),
     ] {
         let record = crate::container::Record::short(typecode, 0..0, value);
-        settings::parse_setting(&[], &record, &mut settings_value, ArchiveVersion::V8)
-            .expect("required invariant");
+        settings::parse_setting(
+            &cadmpeg_test_support::service_decode_context(),
+            &[],
+            &record,
+            &mut settings_value,
+            ArchiveVersion::V8,
+        )
+        .expect("required invariant");
     }
     assert_eq!(settings_value.current_layer, Some(3));
     assert_eq!(settings_value.current_wire_density, Some(5));
@@ -1795,8 +2123,14 @@ fn current_material_accepts_the_source_reader_i32_range() {
     let record = crate::container::Record::long(0x2000_8039, 0..data.len(), 0..data.len());
     let mut settings_value = settings::DocumentSettings::default();
 
-    settings::parse_setting(&data, &record, &mut settings_value, ArchiveVersion::V8)
-        .expect("source reader accepts every signed i32 material index");
+    settings::parse_setting(
+        &cadmpeg_test_support::service_decode_context(),
+        &data,
+        &record,
+        &mut settings_value,
+        ArchiveVersion::V8,
+    )
+    .expect("source reader accepts every signed i32 material index");
 
     assert_eq!(
         settings_value
